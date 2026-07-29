@@ -224,10 +224,12 @@ Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
 4. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
    (**`docs-sweep`** / **`taskdeck-verification-doc-sync`**).
 
-Merge in **dependency-safe order** (base-first; never delete a stacked base; pull `main`; after
-a wave **verify `main` clean + CI green**). **Strategic direction docs or security/deny-floor
-gates that flip project posture are maintainer decisions — stage + defer (Q-N), don't
-self-merge.**
+After every preceding Taskdeck-local gate holds, resume the canonical `review-and-ship` pipeline
+and execute its merge action only when that pipeline and the declared authority permit. That
+canonical action must preserve **dependency-safe order** (base-first; never delete a stacked base;
+pull `main`; after a wave **verify `main` clean + CI green**). **Strategic direction docs or
+security/deny-floor gates that flip project posture are maintainer decisions — stage + defer
+(Q-N), don't self-merge.**
 
 ---
 

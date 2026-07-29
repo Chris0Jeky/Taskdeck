@@ -56,17 +56,27 @@ cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 
 Report any failures immediately — do not proceed to merge.
 
-## Step 4: Confirm exact-head/base declared-review evidence
+## Step 4: Refresh external state and confirm exact-head/base declared-review evidence
+
+Immediately after the local checks, rerun the Step 1 PR query, every Step 2 comment/review/thread
+read through its final cursor, and `gh pr checks`. This is the final external-state snapshot used by
+the verdict. Compare its `headRefOid` and `baseRefOid` with the initial values. If either OID changed,
+if mergeability changed, if a cursor is incomplete, or if the PR changes while the snapshot is being
+read, fail closed and return the PR to the canonical pipeline; never combine old review evidence with
+new local-check evidence.
 
 Read the repository's current authority and the canonical pipeline result instead of copying its
-tier row here. When that declared gate requires independent review, use the `headRefOid` and
-`baseRefOid` from Step 1 and the reviews, review summaries, and comments already read in Step 2.
+tier row here. When that declared gate requires independent review, use the refreshed `headRefOid`,
+`baseRefOid`, reviews, review summaries, comments, threads, and checks from this final snapshot.
 Require an **arrived independent review of that exact head and base** which posts either findings or
 an explicit no-finding result. The evidence artifact must record both reviewed OIDs (or a stable
 diff identity derived from both), and the gate must compare them with the current values. GitHub's
 review `commit_id` binds only the head; it is not proof of the reviewed base. A review request,
-acknowledgement/reaction, worker-authored review, or coordinator metadata scan does not satisfy an
-independent-review requirement. Evidence from an older head or an older base is stale.
+acknowledgement/reaction, evidence authored by the PR author, implementation worker, or coordinator,
+or a coordinator metadata scan does not satisfy an independent-review requirement. A distinct,
+declared read-only reviewer artifact does satisfy the authorship boundary when it records both exact
+OIDs, whether that fresh-context reviewer ran inline or as a reviewer worker. Evidence from an older
+head or an older base is stale.
 
 Confirm that every finding from that review has a recorded disposition and that all review threads
 are settled. If exact-head independent-review evidence is missing or unsettled, report the PR as
@@ -75,11 +85,8 @@ review; it does not perform another review lens or start a separate review/fix c
 
 ## Step 5: CI status
 
-```bash
-gh pr checks $ARGUMENTS
-```
-
-All checks must be terminal and green. If any are pending or red, report the PR as not ready. Route
+Use the `gh pr checks` result from Step 4's refreshed snapshot. All checks must be terminal and green.
+If any are pending or red, report the PR as not ready. Route
 red-check diagnosis and any canonical-pipeline-selected fix batch through
 `taskdeck-ci-conflict-recovery`; this gate does not choose or execute fixes.
 

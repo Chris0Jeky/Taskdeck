@@ -146,6 +146,36 @@ def expect_text_order(path: str, before: str, after: str, label: str) -> None:
         raise AssertionError(f"{label} must render the failure ledger before testing synchronization")
 
 
+def test_review_gate_contracts() -> None:
+    pre_merge = (ROOT / ".claude" / "skills" / "pre-merge-gate" / "SKILL.md").read_text(encoding="utf-8")
+    step_3 = pre_merge.find("## Step 3: Run local checks")
+    refresh = pre_merge.find("## Step 4: Refresh external state")
+    report = pre_merge.find("## Step 6: Report")
+    if not 0 <= step_3 < refresh < report:
+        raise AssertionError("pre-merge gate must refresh external state after local checks and before its verdict")
+
+    required_pre_merge_contracts = [
+        "rerun the Step 1 PR query, every Step 2 comment/review/thread",
+        "If either OID changed",
+        "distinct,\ndeclared read-only reviewer artifact",
+        "PR author, implementation worker, or coordinator",
+        "Use the `gh pr checks` result from Step 4's refreshed snapshot",
+    ]
+    for contract in required_pre_merge_contracts:
+        if contract not in pre_merge:
+            raise AssertionError(f"pre-merge gate lost required contract: {contract!r}")
+    if "worker-authored review" in pre_merge:
+        raise AssertionError("pre-merge gate must not reject a distinct read-only reviewer solely for being a worker")
+
+    for path in [
+        "docs/agentic/OVERNIGHT_LOOP.claude.md",
+        "docs/agentic/OVERNIGHT_LOOP.codex.md",
+    ]:
+        manual = (ROOT / path).read_text(encoding="utf-8")
+        if "resume the canonical `review-and-ship` pipeline" not in manual:
+            raise AssertionError(f"{path} must re-enter the canonical pipeline for the merge action")
+
+
 def test_failure_ledger_command_order() -> None:
     local_workflows = [
         (
@@ -486,6 +516,7 @@ def test_pre_commit_hook(settings: dict[str, object]) -> None:
 
 def main() -> int:
     settings = load_settings()
+    test_review_gate_contracts()
     test_failure_ledger_command_order()
     test_configured_python_launchers(settings)
     test_pre_tool_use(settings)

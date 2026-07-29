@@ -5,7 +5,7 @@ Deterministic Claude Code guardrails wired from `.claude/settings.json`. Stdlib-
 - `pre_tool_use.py` — Bash-only deny floor: rm -rf, git reset --hard / clean -f / checkout -- /
   restore --worktree, force-push, sudo, chmod -R 777, remote-pipe-to-shell, `npm publish`,
   `dotnet ef database drop`, `DROP TABLE/DATABASE`, secret-file mutation. Hard-denies
-  unconditionally — deliberately stricter than the tier baseline (`.claude/tier.json` notes).
+  unconditionally — deliberately stricter than the tier baseline (`.agent-harness/tier.json` notes).
 - `post_tool_use.py` — reminders only (frontend typecheck nudge, PR-create review-pipeline
   nudge). Never denies.
 - `post_tool_failure.py` — appends redacted failures to `docs/agentic/failure_ledger.jsonl`.

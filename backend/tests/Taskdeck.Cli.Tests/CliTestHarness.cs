@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using FluentAssertions;
 
@@ -11,11 +13,22 @@ namespace Taskdeck.Cli.Tests;
 internal sealed class CliTestHarness : IAsyncDisposable
 {
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
+    private static readonly int DefaultProcessLaunchLimit = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+    private static readonly CliProcessLaunchGate DefaultProcessLaunchGate = new(DefaultProcessLaunchLimit);
 
     private readonly string _dataDirectory;
     private readonly string _databasePath;
     private readonly string _connectionString;
     private readonly bool _provisionEncryptionKey;
+    private readonly TimeSpan _processTimeout;
+    private readonly CliProcessLaunchGate _processLaunchGate;
+    private readonly CancellationToken _processCancellationToken;
+    private readonly Func<Process, Task> _terminateAndReapAsync;
+    private readonly Func<Process, CancellationToken, Task<string>> _readStandardOutputAsync;
+    private readonly TaskCompletionSource<int>? _processStartedSignal;
+    private int _lastStartedProcessId;
 
     /// <param name="provisionEncryptionKey">
     /// When true (default) the harness injects a test connector encryption key via
@@ -23,8 +36,22 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// simulates a CLEAN machine: no key is supplied, so the CLI must bootstrap
     /// one itself.
     /// </param>
-    public CliTestHarness(string dbPrefix = "taskdeck-cli-tests", bool provisionEncryptionKey = true)
+    public CliTestHarness(
+        string dbPrefix = "taskdeck-cli-tests",
+        bool provisionEncryptionKey = true,
+        TimeSpan? processTimeout = null,
+        CliProcessLaunchGate? processLaunchGate = null,
+        CancellationToken processCancellationToken = default,
+        Func<Process, Task>? terminateAndReapAsync = null,
+        Func<Process, CancellationToken, Task<string>>? readStandardOutputAsync = null,
+        TaskCompletionSource<int>? processStartedSignal = null)
     {
+        _processTimeout = processTimeout ?? ProcessTimeout;
+        if (_processTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processTimeout));
+        }
+
         // Each harness gets its own data directory so the SQLite file -- and any
         // appsettings.local.json written by the CLI's first-run bootstrap -- are
         // isolated from other tests and cleaned up on dispose.
@@ -33,6 +60,12 @@ internal sealed class CliTestHarness : IAsyncDisposable
         _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
         _provisionEncryptionKey = provisionEncryptionKey;
+        _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
+        _processCancellationToken = processCancellationToken;
+        _terminateAndReapAsync = terminateAndReapAsync ?? TerminateAndReapAsync;
+        _readStandardOutputAsync = readStandardOutputAsync ??
+            (static (process, cancellationToken) => process.StandardOutput.ReadToEndAsync(cancellationToken));
+        _processStartedSignal = processStartedSignal;
     }
 
     /// <summary>
@@ -42,6 +75,14 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// </summary>
     public string DataDirectory => _dataDirectory;
     public string DatabasePath => _databasePath;
+    internal int? LastStartedProcessId
+    {
+        get
+        {
+            var processId = Volatile.Read(ref _lastStartedProcessId);
+            return processId == 0 ? null : processId;
+        }
+    }
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -69,70 +110,350 @@ internal sealed class CliTestHarness : IAsyncDisposable
         string arguments,
         IReadOnlyDictionary<string, string?>? extraEnvironment = null)
     {
-        var cliDllPath = ResolveCliDllPath();
-        var startInfo = new ProcessStartInfo
+        await _processLaunchGate.WaitAsync();
+        try
         {
-            FileName = "dotnet",
-            Arguments = string.IsNullOrWhiteSpace(arguments)
-                ? $"\"{cliDllPath}\""
-                : $"\"{cliDllPath}\" {arguments}",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-
-        startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
-        startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        if (_provisionEncryptionKey)
-        {
-            // Test-only 256-bit encryption key for connector credentials.
-            startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        }
-        else
-        {
-            // Clean machine: ensure no key leaks in from the parent environment so
-            // the CLI's first-run bootstrap is exercised.
-            startInfo.Environment.Remove("Connectors__EncryptionKey");
-            startInfo.Environment.Remove("TASKDECK_CONNECTORS__ENCRYPTIONKEY");
-        }
-
-        // Test-supplied overrides win over the provisioning defaults above.
-        if (extraEnvironment is not null)
-        {
-            foreach (var (name, value) in extraEnvironment)
+            var cliDllPath = ResolveCliDllPath();
+            var startInfo = new ProcessStartInfo
             {
-                if (value is null)
+                FileName = "dotnet",
+                Arguments = string.IsNullOrWhiteSpace(arguments)
+                    ? $"\"{cliDllPath}\""
+                    : $"\"{cliDllPath}\" {arguments}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = _dataDirectory
+            };
+
+            startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
+            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+            if (_provisionEncryptionKey)
+            {
+                // Test-only 256-bit encryption key for connector credentials.
+                startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            }
+            else
+            {
+                // Clean machine: ensure no key leaks in from the parent environment so
+                // the CLI's first-run bootstrap is exercised.
+                startInfo.Environment.Remove("Connectors__EncryptionKey");
+                startInfo.Environment.Remove("TASKDECK_CONNECTORS__ENCRYPTIONKEY");
+            }
+
+            // Test-supplied overrides win over the provisioning defaults above.
+            if (extraEnvironment is not null)
+            {
+                foreach (var (name, value) in extraEnvironment)
                 {
-                    startInfo.Environment.Remove(name);
+                    if (value is null)
+                    {
+                        startInfo.Environment.Remove(name);
+                    }
+                    else
+                    {
+                        startInfo.Environment[name] = value;
+                    }
                 }
-                else
+            }
+
+            using var process = new Process { StartInfo = startInfo };
+            using var timeoutCts = new CancellationTokenSource(_processTimeout);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+                timeoutCts.Token,
+                _processCancellationToken);
+
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("The CLI process could not be started.");
+            }
+
+            Task<string>? standardOutputTask = null;
+            Task<string>? standardErrorTask = null;
+            Task? processExitTask = null;
+            try
+            {
+                Volatile.Write(ref _lastStartedProcessId, process.Id);
+                _processStartedSignal?.TrySetResult(process.Id);
+
+                standardOutputTask = _readStandardOutputAsync(process, cts.Token);
+                standardErrorTask = process.StandardError.ReadToEndAsync(cts.Token);
+                processExitTask = process.WaitForExitAsync(cts.Token);
+                await ObserveProcessTasksAsync(
+                    standardOutputTask,
+                    standardErrorTask,
+                    processExitTask);
+
+                return new CliCommandResult(
+                    process.ExitCode,
+                    standardOutputTask.Result.Trim(),
+                    standardErrorTask.Result.Trim());
+            }
+            catch (Exception executionFailure)
+            {
+                // A drain failure can arrive while the child is still blocked. Cancel
+                // the remaining observations immediately, then reap before retaining
+                // the selected original failure. Waiting for Task.WhenAll here would
+                // defer cleanup until the normal process deadline.
+                Exception? observationCancellationFailure = null;
+                try
                 {
-                    startInfo.Environment[name] = value;
+                    cts.Cancel();
                 }
+                catch (Exception exception)
+                {
+                    // Cancellation callbacks are allowed to throw. Preserve that
+                    // evidence, but never let it bypass process cleanup.
+                    observationCancellationFailure = exception;
+                }
+
+                Exception? cleanupFailure = null;
+                try
+                {
+                    await _terminateAndReapAsync(process);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailure = exception;
+                    _processLaunchGate.Poison(cleanupFailure);
+                }
+
+                await SettleProcessTasksAsync(
+                    standardOutputTask,
+                    standardErrorTask,
+                    processExitTask);
+
+                if (cleanupFailure is not null)
+                {
+                    if (executionFailure is OperationCanceledException && cleanupFailure is TimeoutException)
+                    {
+                        var timeoutFailures = new[]
+                            {
+                                executionFailure,
+                                observationCancellationFailure,
+                                cleanupFailure
+                            }
+                            .Where(failure => failure is not null)
+                            .Cast<Exception>();
+                        throw new TimeoutException(
+                            $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
+                            $"could not prove that every tracked process exited. Args: {arguments}. " +
+                            cleanupFailure.Message,
+                            new AggregateException(timeoutFailures));
+                    }
+
+                    var combinedFailures = new[]
+                        {
+                            executionFailure,
+                            observationCancellationFailure,
+                            cleanupFailure
+                        }
+                        .Where(failure => failure is not null)
+                        .Cast<Exception>();
+                    throw new AggregateException(
+                        $"CLI process failed after launch and cleanup also failed. Args: {arguments}. " +
+                        cleanupFailure.Message,
+                        combinedFailures);
+                }
+
+                if (observationCancellationFailure is not null)
+                {
+                    throw new AggregateException(
+                        $"CLI process failed after launch and cancellation of remaining process " +
+                        $"observations also failed. Args: {arguments}.",
+                        executionFailure,
+                        observationCancellationFailure);
+                }
+
+                if (executionFailure is OperationCanceledException timeoutCancellation)
+                {
+                    throw new TimeoutException(
+                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
+                        timeoutCancellation);
+                }
+
+                ExceptionDispatchInfo.Capture(executionFailure).Throw();
+                throw new UnreachableException();
+            }
+        }
+        finally
+        {
+            _processLaunchGate.Release();
+        }
+    }
+
+    private static async Task ObserveProcessTasksAsync(params Task[] orderedTasks)
+    {
+        var pendingTasks = orderedTasks.ToList();
+        while (pendingTasks.Count > 0)
+        {
+            await Task.WhenAny(pendingTasks);
+
+            // Faults take precedence over cancellation, and declaration order makes
+            // the selected original exception deterministic when tasks finish together.
+            var faultedTask = pendingTasks.FirstOrDefault(task => task.IsFaulted);
+            if (faultedTask is not null)
+            {
+                await faultedTask;
+            }
+
+            var canceledTask = pendingTasks.FirstOrDefault(task => task.IsCanceled);
+            if (canceledTask is not null)
+            {
+                await canceledTask;
+            }
+
+            pendingTasks.RemoveAll(task => task.IsCompletedSuccessfully);
+        }
+    }
+
+    private static async Task SettleProcessTasksAsync(params Task?[] tasks)
+    {
+        foreach (var task in tasks.Where(task => task is not null))
+        {
+            try
+            {
+                await task!;
+            }
+            catch (Exception)
+            {
+                // The selected execution failure is propagated after every remaining
+                // observation has reached a terminal state. Await here only observes
+                // secondary faults/cancellation so they cannot escape unobserved.
+            }
+        }
+    }
+
+    private static async Task TerminateAndReapAsync(Process process)
+    {
+        // Taskdeck.Cli executes in the directly launched dotnet process and does not
+        // spawn child processes. CreateNoWindow also removes the Windows conhost lane
+        // seen in the failing hosted runs. Each concurrent harness root is therefore
+        // tracked independently; Kill(true) remains defense-in-depth for an unexpected
+        // descendant, while the direct-root fallback guarantees that a tree-kill error
+        // cannot skip termination of the process this harness owns.
+        var trackedProcessIds = new[] { process.Id };
+        var stopwatch = Stopwatch.StartNew();
+
+        await TerminateAndReapAsync(
+            trackedProcessIds,
+            killProcessTree: () => process.Kill(entireProcessTree: true),
+            killRootProcess: process.Kill,
+            isProcessRunning: IsProcessRunning,
+            getElapsed: () => stopwatch.Elapsed,
+            delayAsync: Task.Delay,
+            terminationTimeout: TerminationTimeout,
+            pollInterval: TerminationPollInterval);
+    }
+
+    internal static async Task TerminateAndReapAsync(
+        IReadOnlyCollection<int> trackedProcessIds,
+        Action killProcessTree,
+        Action killRootProcess,
+        Func<int, bool> isProcessRunning,
+        Func<TimeSpan> getElapsed,
+        Func<TimeSpan, Task> delayAsync,
+        TimeSpan terminationTimeout,
+        TimeSpan pollInterval)
+    {
+        ArgumentNullException.ThrowIfNull(trackedProcessIds);
+        ArgumentNullException.ThrowIfNull(killProcessTree);
+        ArgumentNullException.ThrowIfNull(killRootProcess);
+        ArgumentNullException.ThrowIfNull(isProcessRunning);
+        ArgumentNullException.ThrowIfNull(getElapsed);
+        ArgumentNullException.ThrowIfNull(delayAsync);
+
+        var processIds = trackedProcessIds.Distinct().Order().ToArray();
+        if (processIds.Length == 0 || processIds.Any(processId => processId <= 0))
+        {
+            throw new ArgumentException("Tracked process IDs must contain only positive values.", nameof(trackedProcessIds));
+        }
+
+        if (terminationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(terminationTimeout));
+        }
+
+        if (pollInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pollInterval));
+        }
+
+        Exception? treeKillFailure = null;
+        try
+        {
+            killProcessTree();
+        }
+        catch (Exception exception) when (IsExpectedTerminationException(exception))
+        {
+            treeKillFailure = exception;
+        }
+
+        Exception? rootKillFailure = null;
+        if (treeKillFailure is not null)
+        {
+            try
+            {
+                killRootProcess();
+            }
+            catch (Exception exception) when (IsExpectedTerminationException(exception))
+            {
+                rootKillFailure = exception;
             }
         }
 
-        using var process = new Process { StartInfo = startInfo };
-        using var cts = new CancellationTokenSource(ProcessTimeout);
+        while (true)
+        {
+            var liveProcessIds = processIds.Where(isProcessRunning).ToArray();
+            if (liveProcessIds.Length == 0)
+            {
+                return;
+            }
 
-        process.Start();
+            var remaining = terminationTimeout - getElapsed();
+            if (remaining <= TimeSpan.Zero)
+            {
+                var failures = new[] { treeKillFailure, rootKillFailure }
+                    .Where(failure => failure is not null)
+                    .Cast<Exception>()
+                    .ToArray();
+                var innerException = failures.Length switch
+                {
+                    0 => null,
+                    1 => failures[0],
+                    _ => new AggregateException(failures)
+                };
 
-        string stdOut, stdErr;
+                throw new TimeoutException(
+                    $"Process cleanup did not reap tracked PID(s) " +
+                    $"{string.Join(", ", liveProcessIds)} within {terminationTimeout.TotalSeconds}s.",
+                    innerException);
+            }
+
+            await delayAsync(remaining < pollInterval ? remaining : pollInterval);
+        }
+    }
+
+    private static bool IsProcessRunning(int processId)
+    {
         try
         {
-            stdOut = await process.StandardOutput.ReadToEndAsync(cts.Token);
-            stdErr = await process.StandardError.ReadToEndAsync(cts.Token);
-            await process.WaitForExitAsync(cts.Token);
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
         }
-        catch (OperationCanceledException)
+        catch (ArgumentException)
         {
-            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            throw new TimeoutException(
-                $"CLI process did not exit within {ProcessTimeout.TotalSeconds}s. Args: {arguments}");
+            return false;
         }
-
-        return new CliCommandResult(process.ExitCode, stdOut.Trim(), stdErr.Trim());
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
+
+    private static bool IsExpectedTerminationException(Exception exception) =>
+        exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException;
 
     public ValueTask DisposeAsync()
     {
@@ -160,6 +481,93 @@ internal sealed class CliTestHarness : IAsyncDisposable
         throw new FileNotFoundException(
             $"Taskdeck.Cli.dll was not found in the test execution directory ({AppContext.BaseDirectory}). " +
             "Ensure the CLI project is referenced and built.");
+    }
+}
+
+/// <summary>
+/// Bounds CLI subprocess concurrency and fails closed after cleanup cannot prove
+/// that a child exited. Poisoning wakes queued callers and prevents every future
+/// acquisition instead of admitting more work beside an unreaped process.
+/// </summary>
+internal sealed class CliProcessLaunchGate : IDisposable
+{
+    private readonly SemaphoreSlim _semaphore;
+    private readonly CancellationTokenSource _poisonCancellation = new();
+    private Exception? _poisonReason;
+    private int _waitingCount;
+
+    public CliProcessLaunchGate(int capacity)
+    {
+        if (capacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity));
+        }
+
+        _semaphore = new SemaphoreSlim(capacity, capacity);
+    }
+
+    internal int CurrentCount => _semaphore.CurrentCount;
+    internal int WaitingCount => Volatile.Read(ref _waitingCount);
+    internal bool IsPoisoned => Volatile.Read(ref _poisonReason) is not null;
+
+    internal async Task WaitAsync()
+    {
+        ThrowIfPoisoned();
+        Interlocked.Increment(ref _waitingCount);
+        try
+        {
+            try
+            {
+                await _semaphore.WaitAsync(_poisonCancellation.Token);
+            }
+            catch (OperationCanceledException) when (IsPoisoned)
+            {
+                ThrowIfPoisoned();
+                throw;
+            }
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _waitingCount);
+        }
+
+        // Poison can race with a successful semaphore acquisition. Recheck before
+        // the caller is allowed to launch a child.
+        ThrowIfPoisoned();
+    }
+
+    internal void Release()
+    {
+        if (!IsPoisoned)
+        {
+            _semaphore.Release();
+        }
+    }
+
+    internal void Poison(Exception reason)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        if (Interlocked.CompareExchange(ref _poisonReason, reason, null) is null)
+        {
+            _poisonCancellation.Cancel();
+        }
+    }
+
+    public void Dispose()
+    {
+        _poisonCancellation.Dispose();
+        _semaphore.Dispose();
+    }
+
+    private void ThrowIfPoisoned()
+    {
+        var reason = Volatile.Read(ref _poisonReason);
+        if (reason is not null)
+        {
+            throw new InvalidOperationException(
+                "CLI process launch gate is poisoned because a prior child could not be reaped.",
+                reason);
+        }
     }
 }
 

@@ -207,10 +207,12 @@ What this manual adds:
 4. No unresolved blockers; backward compatibility preserved; canonical docs synced if reality
    changed (`STATUS.md` for current state, `MASTERPLAN` for delivery history — via docs gate).
 
-Then merge in **dependency-safe order** (base-first in a stack; never delete a stacked base;
-pull `main`; after a wave, **verify `main` is clean and its CI green**). If merging strategic
-direction docs or a security gate that flips project posture, that's a **maintainer decision**
-— stage it and defer (Q-N), don't self-merge.
+After every preceding Taskdeck-local gate holds, resume the canonical `review-and-ship` pipeline
+and execute its merge action only when that pipeline and the declared authority permit. That
+canonical action must preserve **dependency-safe order** (base-first in a stack; never delete a
+stacked base; pull `main`; after a wave, **verify `main` is clean and its CI green**). If merging
+strategic direction docs or a security gate that flips project posture, that's a **maintainer
+decision** — stage it and defer (Q-N), don't self-merge.
 
 ---
 
