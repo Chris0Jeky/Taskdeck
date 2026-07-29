@@ -194,7 +194,7 @@ which is genuinely mechanical, and how the lanes are shaped.**
 
 **Doctrine has one home: global laws 2 and 11 and the global `review-and-ship` skill.** Round
 count, severity bar, comment triage, and when to reopen or park all live there — do not restate
-them in this manual. Taskdeck's tier row (T3 per `.claude/tier.json`): push free, merge free on
+them in this manual. Taskdeck's tier row (T3 per `.agent-harness/tier.json`): push free, merge free on
 green CI at the head plus one comment-triage pass and one independent review pass.
 
 What this manual adds: use **`taskdeck-pr-review-loop`** for the Taskdeck lenses, prefer a
