@@ -15,7 +15,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
-    private static readonly int DefaultProcessLaunchLimit = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+    // Windows CI has demonstrated that overlapping real CLI roots can leave
+    // unrelated launches stuck at the shared process deadline. Keep the normal
+    // harness lane serial; lifecycle tests can still inject a wider gate when
+    // they need to exercise concurrent cleanup behavior.
+    private const int DefaultProcessLaunchLimit = 1;
     private static readonly CliProcessLaunchGate DefaultProcessLaunchGate = new(DefaultProcessLaunchLimit);
 
     private readonly string _dataDirectory;
