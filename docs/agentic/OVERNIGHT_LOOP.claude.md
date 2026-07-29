@@ -180,9 +180,10 @@ which is genuinely mechanical, and how the lanes are shaped.**
   and **never two full test suites at once, box-wide**.
 - **Reviewers are read-only** (`reviewer` / `pr-review-toolkit:*` subagents) — they can't edit,
   so their only output is findings (structurally safe). Review is judgment work: the cheap rung is
-  never eligible for it. **You, the coordinator, always own final synthesis, verification, and the
-  merge — never delegate those.** For background subagents, relay only the conclusion, not file
-  dumps; continue a running one with `SendMessage` rather than respawning.
+  never eligible for it. **You, the coordinator, always own pipeline entry or re-entry, final
+  evidence synthesis, and the verification handoff — never delegate those.** For background
+  subagents, relay only the conclusion, not file dumps; continue a running one with `SendMessage`
+  rather than respawning.
 - **Budget:** checkpoint often; keep diffs and test runs targeted (`dotnet --filter`,
   `vitest --maxWorkers=2`) to avoid burning time/OOM. Deep in a rabbit hole → stop, record the
   finding, take a cheaper path.

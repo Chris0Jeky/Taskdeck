@@ -13,13 +13,48 @@ Execute the local checks as one atomic operation; this skill does not decide rev
 
 `$ARGUMENTS` is a PR number or empty (current branch's PR).
 
-## Step 1: Identify PR and branch
+## Step 1: Prove the exact PR head and base
 
 ```bash
-gh pr view $ARGUMENTS --json number,headRefName,baseRefName,mergeable,statusCheckRollup
+set -euo pipefail
+
+pr_args=()
+if [[ -n "${ARGUMENTS:-}" ]]; then
+  pr_args=("$ARGUMENTS")
+fi
+
+pr_fields="$(gh pr view "${pr_args[@]}" \
+  --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable \
+  --jq '[.number,.headRefName,.headRefOid,.baseRefName,.baseRefOid,.mergeable] | @tsv')"
+IFS=$'\t' read -r pr_number pr_head_ref pr_head_oid pr_base_ref pr_base_oid pr_mergeable \
+  <<<"$pr_fields"
+
+local_head_oid="$(git rev-parse HEAD)"
+if [[ "$local_head_oid" != "$pr_head_oid" ]]; then
+  echo "BLOCKED: local HEAD $local_head_oid is not PR head $pr_head_oid" >&2
+  exit 1
+fi
+if [[ -n "$(git status --porcelain=v1)" ]]; then
+  echo "BLOCKED: exact-head evidence requires a clean worktree" >&2
+  exit 1
+fi
+
+git fetch --no-tags origin "$pr_base_ref"
+fetched_base_oid="$(git rev-parse FETCH_HEAD)"
+if [[ "$fetched_base_oid" != "$pr_base_oid" ]]; then
+  echo "BLOCKED: fetched base $fetched_base_oid is not PR base $pr_base_oid" >&2
+  exit 1
+fi
+
+merge_base_oid="$(git merge-base HEAD FETCH_HEAD)"
+if [[ "$merge_base_oid" != "$pr_base_oid" ]]; then
+  echo "BLOCKED: PR head does not incorporate exact base $pr_base_oid (merge base: $merge_base_oid)" >&2
+  exit 1
+fi
 ```
 
-If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
+Any lookup, fetch, or identity mismatch stops the gate before tests. Run this skill only from the
+PR's exact-head worktree. If `pr_mergeable` is `CONFLICTING`, stop and report; do not auto-resolve.
 
 ## Step 2: Check bot comments
 
@@ -85,6 +120,10 @@ Output a Taskdeck evidence summary:
 ```
 ## Taskdeck Evidence: PR #XXX
 
+- [ ] Local HEAD equals remote PR head OID: PASS/FAIL
+- [ ] Exact-head worktree is clean: PASS/FAIL
+- [ ] Fetched base equals remote PR base OID: PASS/FAIL
+- [ ] Merge base equals current remote base OID: PASS/FAIL
 - [ ] Backend build: PASS/FAIL
 - [ ] Backend tests: PASS/FAIL (N passed, M failed)
 - [ ] Frontend build: PASS/FAIL

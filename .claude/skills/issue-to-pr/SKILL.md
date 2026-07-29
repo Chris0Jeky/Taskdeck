@@ -81,10 +81,13 @@ EOF
 )"
 ```
 
-### 7. Review
+### 7. Coordinator handoff
 
-Open the PR ready-for-review, then run the global `review-and-ship` skill (global laws 2 and 11).
-Taskdeck-specific lenses: `taskdeck-pr-review-loop`.
+Open the PR ready-for-review, capture its exact head/base identity and verification evidence, then
+return it to the coordinator. Only the coordinator enters or re-enters the global
+`review-and-ship` pipeline (global laws 2 and 11) with the Taskdeck-specific
+`taskdeck-pr-review-loop` lenses. Resume implementation only for pipeline-directed fixes returned
+by the coordinator.
 
 ### 8. Report back
 
@@ -95,5 +98,5 @@ Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`
 - do not skip tests
 - if the issue is ambiguous, ask the user before implementing
 - if the issue is too large for one PR, propose a split and implement the first slice
-- hand the ready PR to the global `review-and-ship` pipeline through
-  `taskdeck-pr-review-loop`, then report the pipeline state without adding local review or merge rules
+- hand the ready PR and exact evidence to the coordinator; do not enter the review pipeline or
+  decide merge disposition from this implementation skill
