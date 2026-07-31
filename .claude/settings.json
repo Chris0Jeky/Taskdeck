@@ -155,7 +155,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "Write-Output 'Taskdeck repo. Read CLAUDE.md for context. Read docs/STATUS.md for current state before making changes. Check OUTSTANDING_TASKS.md and surface its open items in summaries.'",
+            "command": "Write-Output 'Taskdeck repo. T3 per .agent-harness/tier.json. Orient:autodoc/AGENT_INDEX.md (seam map) then CLAUDE.md (facts + per-seam proving checks). Section-read docs/STATUS.md, never bulk-read it. Surface open OUTSTANDING_TASKS.md items in every summary. Deny floor is stricter than T3 by design: a deny is final.'",
             "timeout": 5
           }
         ]

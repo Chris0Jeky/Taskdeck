@@ -1,6 +1,6 @@
 ---
 name: taskdeck-issue-batch-orchestrator
-description: Coordinate high-autonomy Taskdeck issue batches from selection through worktrees, PRs, review, CI recovery, docs reconciliation, and handoff. Use when asked to take care of many issues, pick next issues, coordinate agents, run review loops, or reconcile GitHub project status.
+description: Coordinate high-autonomy Taskdeck issue batches from selection through worktrees, PRs, canonical review handoff, CI recovery, docs reconciliation, and handoff. Use when asked to take care of many issues, pick next issues, coordinate agents, or reconcile GitHub project status.
 ---
 
 # Taskdeck Issue Batch Orchestrator
@@ -15,7 +15,9 @@ Read as needed: `docs/GITHUB_PROJECT_AUTOMATION.md` (Status/Priority project-boa
 
 ## Coordinator Responsibilities
 
-The coordinator owns issue selection, dependency checks, worktree prompts, conflict resolution, PR quality, project status/priority sync, adversarial review assignment, CI/comment loops, docs rehydration, and final handoff.
+The coordinator owns issue selection, dependency checks, worktree prompts, conflict resolution, PR
+quality, project status/priority sync, canonical review-pipeline evidence handoff, CI/comment
+recovery, docs rehydration, and final handoff.
 
 Do not delegate final synthesis. Do not silently defer work.
 
@@ -26,7 +28,7 @@ Split only by non-overlapping ownership:
 - one backend issue per worker
 - one frontend issue per worker
 - one docs-only issue per worker
-- one reviewer per PR
+- review workers only when the global pipeline requests Taskdeck lenses
 - one CI/conflict worker per failing PR
 
 Avoid concurrent edits to the same view, store, service, migration chain, project file, or canonical doc unless the coordinator controls merge order.
@@ -53,12 +55,13 @@ For isolated workers:
 4. From a Bash worker, launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; never resolve bare `powershell`. Otherwise use the first guard command from `docs/WORKTREE_AGENT_PROTOCOL.md`; never substitute a PATH-first batch shim.
 5. Assign explicit file/module ownership.
 6. Tell workers they are not alone in the codebase and must not revert others' edits.
-7. Require targeted tests and self-review before handoff.
+7. Require targeted tests and handoff into the canonical review pipeline.
 8. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 
-Every PR needs self-review. Sensitive PRs need fresh adversarial review:
+Enter ready PRs into the global `review-and-ship` pipeline (laws 2 and 11). Supply these surfaces
+as Taskdeck-specific risk context:
 
 - auth, sessions, tokens, security, secrets, redaction
 - migrations, persistence, deletion, import/export
@@ -67,7 +70,9 @@ Every PR needs self-review. Sensitive PRs need fresh adversarial review:
 - CI, project automation, scripts
 - broad frontend route/store/shell changes
 
-Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for review and recovery work.
+Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for Taskdeck lenses and recovery
+work. Reviewer invocation, counts, severity, convergence, aging, and merge disposition remain in
+the global pipeline.
 
 ## Final Reconciliation
 

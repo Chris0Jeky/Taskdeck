@@ -74,13 +74,12 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
   `check-golden-principles.mjs` (STATUS/GOLDEN need an exact `Last Updated: YYYY-MM-DD` line —
   don't append after the date); EF migration merges verified by
   `dotnet ef migrations has-pending-model-changes ...` = "No changes".
-- **VCS / CI reality (READ TWICE):** `gh` for PRs; default branch `main`. **Branch protection is
-  fully lenient — `strict=false`, zero required checks, zero required reviews. GitHub will let
-  you merge a red/unreviewed PR. YOU are the only gate** — merge only when *your* gate (§5)
-  holds, never on GitHub's permission. `ci-required.yml` is the intended gate; `ci-nightly.yml`
-  is "CI Extended" (has had systemic `startup_failure` modes — understand a red, don't assume).
-  Use merge commits for stacked bases; **never `--delete-branch` a stacked base** (cascade-
-  closes children); **merge base/oldest first** then retarget children.
+- **VCS / CI reality (READ TWICE):** `gh` for PRs; default branch `main`. Branch protection is
+  lenient and therefore is not evidence of eligibility; enter the canonical global review
+  pipeline for review and merge disposition. `ci-required.yml` is the Taskdeck gate;
+  `ci-nightly.yml` is "CI Extended" (has had systemic `startup_failure` modes — understand a red,
+  don't assume). Preserve merge commits for stacked bases; **never `--delete-branch` a stacked
+  base** (cascade-closes children); **oldest/base first**, then retarget children.
 - **Inventory** open PRs, issues, red CI, `TODO`/`FIXME`, the failure ledger → seeds the backlog.
 - **Windows/env:** if git misbehaves, use `C:\Program Files\Git\cmd\git.exe`; PowerShell `&&` is
   a parser error (use `;` + `$LASTEXITCODE`, or the Bash tool); `reset --hard`/force-push are
@@ -181,65 +180,57 @@ which is genuinely mechanical, and how the lanes are shaped.**
   and **never two full test suites at once, box-wide**.
 - **Reviewers are read-only** (`reviewer` / `pr-review-toolkit:*` subagents) — they can't edit,
   so their only output is findings (structurally safe). Review is judgment work: the cheap rung is
-  never eligible for it. **You, the coordinator, always own final synthesis, verification, and the
-  merge — never delegate those.** For background subagents, relay only the conclusion, not file
-  dumps; continue a running one with `SendMessage` rather than respawning.
+  never eligible for it. **You, the coordinator, always own pipeline entry or re-entry, final
+  evidence synthesis, and the verification handoff — never delegate those.** For background
+  subagents, relay only the conclusion, not file dumps; continue a running one with `SendMessage`
+  rather than respawning.
 - **Budget:** checkpoint often; keep diffs and test runs targeted (`dotnet --filter`,
   `vitest --maxWorkers=2`) to avoid burning time/OOM. Deep in a rabbit hole → stop, record the
   finding, take a cheaper path.
 
 ---
 
-## 4) REVIEW — two independent adversarial passes per PR
+## 4) REVIEW — enter the canonical pipeline
 
-Run the **`adversarial-review`** / **`taskdeck-pr-review-loop`** skills. Two reviewers that
-**don't share context/conclusions**, each trying to *refute* the change (bugs, security, edge
-cases, regressions, missed requirements); prefer **distinct lenses** (correctness / security /
-test-coverage / does-it-repro) over duplicate passes; 3-vote majority for high-stakes findings.
-For open PRs, address **ALL** prior human + bot threads (`@codex`, Gemini, Copilot) first; batch
-fixes (every push = a fresh bot round). **Fix EVERY finding of EVERY severity** — no
-"non-blocking" dismissals; out-of-scope → seed a tracked issue and link it. **Post findings on
-the PR + post fix-evidence** (finding → commit → verification). Re-review after non-trivial
-fixes. Record everything in the findings ledger.
+Run global laws 2 and 11 through the global `review-and-ship` skill. That pipeline exclusively
+owns reviewer invocation, reviewer count, severity, comment disposition, fix/re-review
+convergence, post-push eligibility, and merge disposition; do not restate any of them here.
+
+This manual contributes the **`taskdeck-pr-review-loop`** lenses, exact head/base evidence, and the
+findings-ledger location. When the global pipeline returns a state, carry that state into §5.
 
 ---
 
-## 5) VERIFY & MERGE GATE — merge only when ALL hold (you are the gate)
+## 5) TASKDECK EVIDENCE — return it to the global pipeline
 
-Use **`pre-merge-gate`** + **`verification-closeout`**. Gate:
-1. Exact diff builds; **targeted tests + lint + type-check + docs-gates pass locally** — state
-   the commands run and real counts; never claim a test passed unless it ran (drive the actual
-   behavior via `/verify` when there's a runtime surface, not just green tests).
-2. **CI green on the exact head.** Investigate *every* red; never dismiss as flaky without proof
-   (rerun; passes on identical code ⇒ flaky ⇒ **track as an issue and move on**, don't ignore).
-3. Both adversarial reviews resolved; all human + bot feedback addressed — **verified by
-   CONTENT**: query `reviewThreads` (require `isResolved == false` count of 0 and READ any
-   late arrivals) AND sweep top-level PR comments and review-summary bodies posted since the
-   final push — findings land in all three places, not just inline threads. Never gate on
-   reviewer names or review-event presence; a "review" with no findings looks identical to one
-   carrying P2s until read. Applies to docs-only PRs too.
-4. PR **aged** enough for automation to weigh in (30–60 min from the FINAL push; every push
-   restarts the clock) — don't merge seconds after opening.
-5. No unresolved blockers; back-compat preserved; canonical docs synced if reality changed
-   (**`docs-sweep`** / **`taskdeck-verification-doc-sync`**).
+Use **`pre-merge-gate`** + **`verification-closeout`** to assemble the repo-specific packet:
 
-Merge in **dependency-safe order** (base-first; never delete a stacked base; pull `main`; after
-a wave **verify `main` clean + CI green**). **Strategic direction docs or security/deny-floor
-gates that flip project posture are maintainer decisions — stage + defer (Q-N), don't
-self-merge.**
+1. Exact diff/head/base identity and the **targeted tests + lint + type-check + docs gates** that
+   exercise it — state commands and real counts; use `/verify` for runtime surfaces.
+2. Exact-head `ci-required.yml` state plus the understood status of any relevant extended lane.
+3. Feedback content from unresolved threads, top-level PR comments, and review-summary bodies;
+   supply the content to the global pipeline without inventing local triage rules.
+4. Backward-compatibility and canonical-doc impact (`docs-sweep` /
+   `taskdeck-verification-doc-sync`).
+
+Return that packet to `review-and-ship`; it determines the next action. For any action it permits,
+preserve **dependency-safe order** (base-first; never delete a stacked base; pull `main`; after a
+wave verify `main` clean + CI green). Authority and stop disposition come from
+`.agent-harness/tier.json`, the global laws, and explicit task scope — not local hold classes.
 
 ---
 
 ## 6) SAFETY GUARDRAILS (hard rules)
 
 Never force-push / rebase shared branches / amend-after-push / `reset --hard`-discard without
-approval (`git merge --abort` / `git stash` are fine). Never commit secrets (found one → STOP, propose
-rotation). Don't touch prod creds/data, branch protections, release tags, licensing/legal, or
-trademark — maintainer-owned; the deny-floor/harness gates are T4-class (PR only, never
-self-merge). Confirm irreversible/outward-facing actions unless authorized. Never pipe listings
-into deletion or delete with bare wildcards. Classify honestly: blocker / non-blocking risk /
-pre-existing noise / invalid signal — don't swallow failures. Use **`safe-shell`** before
-anything destructive; **`taskdeck-failure-capture`** to record friction.
+approval (`git merge --abort` / `git stash` are fine). Never commit secrets (found one → STOP,
+propose rotation). Production credentials/data, branch protections, release tags,
+licensing/legal, trademark, and deny-floor/harness changes follow the global laws, declared
+authority, and explicit task scope; this manual adds no merge-ownership rule. Confirm
+irreversible/outward-facing actions unless authorized. Never pipe listings into deletion or delete
+with bare wildcards. Classify honestly: blocker / non-blocking risk / pre-existing noise / invalid
+signal — don't swallow failures. Use **`safe-shell`** before anything destructive;
+**`taskdeck-failure-capture`** to record friction.
 
 ---
 

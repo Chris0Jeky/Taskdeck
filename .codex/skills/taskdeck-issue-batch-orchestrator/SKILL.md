@@ -38,8 +38,8 @@ The coordinator must own:
 - final conflict resolution
 - PR body quality and linked issues
 - GitHub project status/priority sync
-- adversarial-review assignment
-- CI/comment/conflict loops
+- canonical review-pipeline evidence handoff
+- CI/comment/conflict recovery
 - docs and testing-guide rehydration
 - final handoff
 
@@ -52,7 +52,7 @@ Split only when file ownership or concerns do not overlap. Good splits:
 - one backend issue per worker
 - one frontend issue per worker
 - one docs-only issue per worker
-- one reviewer worker per PR
+- review workers only when the global pipeline requests Taskdeck lenses
 - one CI/conflict worker per failing PR
 
 Avoid parallel workers on the same view, store, service, migration chain, project file, or canonical doc unless the coordinator plans the merge order.
@@ -85,28 +85,26 @@ For each issue:
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
 
-## Review loop
+## Review pipeline handoff
 
-Every PR needs:
+Enter every ready PR into the global `review-and-ship` pipeline. This skill contributes only the
+Taskdeck handoff packet: the coordinator checks the PR body, linked issue, test evidence, docs
+impact, and these repo-specific risk surfaces before entry:
 
-1. Worker self-review after opening the PR.
-2. Coordinator review of PR body, linked issue, test evidence, and docs impact.
-3. Fresh adversarial review for sensitive or risky PRs:
-   - auth/authz/security
-   - migrations/persistence
-   - capture/review/proposal execution
-   - CI/workflows/project automation
-   - broad frontend flow changes
-   - flaky or failing tests
-4. Posted review findings or explicit no-finding comment.
-5. Fix commits for findings.
-6. Re-review after fixes.
+- auth/authz/security
+- migrations/persistence
+- capture/review/proposal execution
+- CI/workflows/project automation
+- broad frontend flow changes
+- flaky or failing tests
 
-Use `taskdeck-pr-review-loop` for review workers.
+Use `taskdeck-pr-review-loop` for Taskdeck lenses and record the state returned by the global
+pipeline. Reviewer invocation, counts, severity, fix/re-review convergence, aging, and merge
+disposition are not defined here.
 
 ## CI and comments
 
-After PR creation and after every fix push:
+After PR creation and after any pipeline-directed fix push:
 
 - inspect CI status
 - inspect review comments and bot comments

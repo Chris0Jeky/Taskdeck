@@ -96,18 +96,13 @@ EOF
 )"
 ```
 
-### 7. Self-review and post findings
+### 7. Coordinator handoff
 
-After opening the PR, perform a deliberate reviewer-style pass:
-
-1. Read the full PR diff with `gh pr diff <number>`
-2. Check ALL existing PR comments (bot comments, CI output) with `gh pr view <number> --comments`
-3. Review for issues at all severity levels (CRITICAL, HIGH, MEDIUM, LOW)
-4. Post findings as a PR comment (`gh pr comment <number>`)
-5. Fix ALL findings — no "non-blocking" dismissals, no skipping lower priorities
-6. If a finding is real but out of scope, seed a GitHub issue to track it
-7. Post a follow-up comment mapping findings to fix commits
-8. Verify CI is green with `gh pr checks <number>`
+Open the PR ready-for-review, capture its exact head/base identity and verification evidence, then
+return it to the coordinator. Only the coordinator enters or re-enters the global
+`review-and-ship` pipeline (global laws 2 and 11) with the Taskdeck-specific
+`taskdeck-pr-review-loop` lenses. Resume implementation only for pipeline-directed fixes returned
+by the coordinator.
 
 ### 8. Report back
 
@@ -115,8 +110,8 @@ Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`
 
 ## Guardrails
 
-- do not merge the PR -- leave it for human review
 - do not skip tests
 - if the issue is ambiguous, ask the user before implementing
 - if the issue is too large for one PR, propose a split and implement the first slice
-- always self-review and post findings on the PR before reporting done
+- hand the ready PR and exact evidence to the coordinator; do not enter the review pipeline or
+  decide merge disposition from this implementation skill

@@ -1,0 +1,26 @@
+{
+  "tier": 3,
+  "name": "workshop",
+  "authority": {
+    "push": "free",
+    "merge": "free"
+  },
+  "flags": {
+    "sensitive_data": false,
+    "wave_mode": false,
+    "dormant_production": false,
+    "relaxed_work_loss_guards": false
+  },
+  "model_routing": {
+    "harness_and_review": "top",
+    "slices": "mid",
+    "maintenance": "cheap"
+  },
+  "budgets": {
+    "standing_context_tokens": 6000,
+    "session_baseline_tokens": null
+  },
+  "human_todo": "OUTSTANDING_TASKS.md",
+  "notes": "Local floor is stricter than the T3 baseline by choice (post-incident, 2026-05/06 worktree main-leaks): reset --hard / clean -f / checkout -- are hard-denied by .claude/settings.json deny rules and scripts/agent_hooks/pre_tool_use.py, so the T3 'ask' path for those ops never fires here. ci-required.yml is the sole merge gate. Migrated from legacy .claude/tier.json on 2026-07-27.",
+  "last_reviewed": "2026-07-27"
+}

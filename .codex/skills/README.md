@@ -9,7 +9,7 @@ Repo-local Codex skills live here and supplement `AGENTS.md`. Use the smallest s
 | `taskdeck-repo-onramp` | broad orientation, unfamiliar areas, reconciling current Taskdeck reality | `.codex/memories/00_ACTIVE.md`, `docs/STATUS.md` |
 | `taskdeck-issue-batch-orchestrator` | many issues, worker coordination, PR/review/CI batches, project sync | `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` |
 | `taskdeck-worktree-issue-worker` | one assigned issue in an isolated worktree | `scripts/worktree_guard.ps1`, issue acceptance criteria |
-| `taskdeck-pr-review-loop` | self-review, adversarial review, review/bot comments | PR diff and linked issue |
+| `taskdeck-pr-review-loop` | Taskdeck review lenses (pipeline: global `review-and-ship`) | PR diff and linked issue |
 | `taskdeck-ci-conflict-recovery` | failing CI, stale branches, conflicts, blocked PRs | CI logs, `scripts/github/Inspect-TaskdeckPrs.ps1` |
 | `taskdeck-verification-doc-sync` | final checks, docs sync decisions, handoff summary | `docs/TESTING_GUIDE.md`, active docs |
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Taskdeck PR Review Loop"
   short_description: "Review PRs and address feedback"
-  default_prompt: "Use $taskdeck-pr-review-loop to perform adversarial review, post findings, address comments, and re-review Taskdeck PRs."
+  default_prompt: "Use $taskdeck-pr-review-loop to apply Taskdeck-specific lenses inside the canonical global review pipeline and report evidence-backed findings."

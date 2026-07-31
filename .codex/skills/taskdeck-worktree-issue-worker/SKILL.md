@@ -82,7 +82,10 @@ PR body must include:
 - risks/follow-ups
 - `Closes #<issue>`
 
-After opening the PR, run a deliberate self-review using `taskdeck-pr-review-loop`. Fix findings before handing back to the coordinator.
+After opening the ready PR, return its exact head/base identity and verification evidence to the
+coordinator. Only the coordinator enters or re-enters `review-and-ship` through
+`taskdeck-pr-review-loop`; resume this worker only for fixes the coordinator returns from that
+pipeline.
 
 ## Handoff
 
@@ -93,5 +96,6 @@ Report:
 - tests added
 - commands run and results
 - docs changed
-- review findings fixed or explicit no-finding result
+- exact PR head/base identity and verification evidence
+- any pipeline-directed fix evidence from a resumed worker turn
 - any deferred follow-up issue numbers or blocked seeding notes
