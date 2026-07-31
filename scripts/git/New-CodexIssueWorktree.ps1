@@ -8,7 +8,10 @@ param(
 
     [string]$BaseBranch = "origin/main",
     [string]$WorktreeRoot = ".worktrees",
-    [string]$BranchName
+    [string]$BranchName,
+
+    [ValidateRange(1, 300)]
+    [int]$GitCommandTimeoutSeconds = 45
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,6 +67,133 @@ function ConvertTo-NativeArgument {
     return $builder.ToString()
 }
 
+function Wait-ForAsyncTask {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Threading.Tasks.Task]$Task,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description,
+
+        [int]$TimeoutMilliseconds = 5000
+    )
+
+    try {
+        $completed = $Task.Wait($TimeoutMilliseconds)
+    }
+    catch [System.AggregateException] {
+        # Preserve the original asynchronous exception instead of its AggregateException wrapper.
+        $Task.GetAwaiter().GetResult()
+        return
+    }
+    if (-not $completed) {
+        throw "$Description did not finish within $TimeoutMilliseconds ms after its process exited."
+    }
+}
+
+function Stop-HelperOwnedProcessTree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Process,
+
+        [int]$ReapTimeoutMilliseconds = 5000
+    )
+
+    if ($Process.HasExited) {
+        $Process.WaitForExit()
+        throw "Timed-out Git PID $($Process.Id) exited before descendant cleanup could be proven."
+    }
+
+    $expectedProcessId = $Process.Id
+    $expectedStartTime = $Process.StartTime
+    $liveProcess = Get-Process -Id $expectedProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $liveProcess) {
+        $Process.WaitForExit()
+        throw "Timed-out Git PID $expectedProcessId disappeared before descendant cleanup could be proven."
+    }
+    if ($liveProcess.StartTime -ne $expectedStartTime) {
+        throw "Refusing to terminate recycled PID $expectedProcessId after a Git timeout."
+    }
+
+    $isWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    if ($isWindows) {
+        $taskkillPath = Join-Path $env:SystemRoot "System32/taskkill.exe"
+        if (-not (Test-Path -LiteralPath $taskkillPath -PathType Leaf)) {
+            throw "Cannot terminate the timed-out Git process tree because taskkill.exe was not found."
+        }
+
+        $taskkill = $null
+        try {
+            $taskkillStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $taskkillStartInfo.FileName = $taskkillPath
+            $taskkillStartInfo.UseShellExecute = $false
+            $taskkillStartInfo.CreateNoWindow = $true
+            $taskkillStartInfo.RedirectStandardOutput = $true
+            $taskkillStartInfo.RedirectStandardError = $true
+            $taskkillArguments = @("/PID", [string]$expectedProcessId, "/T", "/F")
+            if ($null -ne $taskkillStartInfo.PSObject.Properties['ArgumentList']) {
+                foreach ($argument in $taskkillArguments) {
+                    $taskkillStartInfo.ArgumentList.Add($argument)
+                }
+            }
+            else {
+                $taskkillStartInfo.Arguments = (($taskkillArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+            }
+
+            $taskkill = [System.Diagnostics.Process]::new()
+            $taskkill.StartInfo = $taskkillStartInfo
+            if (-not $taskkill.Start()) {
+                throw "taskkill.exe did not start for timed-out Git PID $expectedProcessId."
+            }
+            $taskkillStdout = $taskkill.StandardOutput.ReadToEndAsync()
+            $taskkillStderr = $taskkill.StandardError.ReadToEndAsync()
+            if (-not $taskkill.WaitForExit($ReapTimeoutMilliseconds)) {
+                try {
+                    $taskkill.Kill()
+                }
+                catch {
+                    throw "taskkill.exe did not finish within $ReapTimeoutMilliseconds ms and could not be terminated for timed-out Git PID ${expectedProcessId}: $($_.Exception.Message)"
+                }
+                if (-not $taskkill.WaitForExit($ReapTimeoutMilliseconds)) {
+                    throw "taskkill.exe remained alive for $ReapTimeoutMilliseconds ms after termination was requested for timed-out Git PID $expectedProcessId."
+                }
+                $taskkill.WaitForExit()
+                Wait-ForAsyncTask -Task $taskkillStdout -Description "terminated taskkill.exe stdout drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                Wait-ForAsyncTask -Task $taskkillStderr -Description "terminated taskkill.exe stderr drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+                throw "taskkill.exe exceeded its $ReapTimeoutMilliseconds ms cleanup deadline and was terminated and reaped for timed-out Git PID $expectedProcessId."
+            }
+            $taskkill.WaitForExit()
+            Wait-ForAsyncTask -Task $taskkillStdout -Description "taskkill.exe stdout drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+            Wait-ForAsyncTask -Task $taskkillStderr -Description "taskkill.exe stderr drain" -TimeoutMilliseconds $ReapTimeoutMilliseconds
+            $taskkillOutput = (@(
+                $taskkillStdout.GetAwaiter().GetResult().Trim(),
+                $taskkillStderr.GetAwaiter().GetResult().Trim()
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+            if ($taskkill.ExitCode -ne 0) {
+                throw "taskkill.exe failed for timed-out Git PID $expectedProcessId (exit $($taskkill.ExitCode)). $taskkillOutput"
+            }
+        }
+        finally {
+            if ($null -ne $taskkill) {
+                $taskkill.Dispose()
+            }
+        }
+    }
+    else {
+        $killTreeMethod = $Process.GetType().GetMethod("Kill", [Type[]]@([bool]))
+        if ($null -eq $killTreeMethod) {
+            try { $Process.Kill() } catch { }
+            throw "This platform cannot guarantee descendant cleanup for timed-out Git PID $expectedProcessId."
+        }
+        $Process.Kill($true)
+    }
+
+    if (-not $Process.WaitForExit($ReapTimeoutMilliseconds)) {
+        throw "Timed-out Git PID $expectedProcessId did not exit within $ReapTimeoutMilliseconds ms after process-tree termination."
+    }
+    $Process.WaitForExit()
+}
+
 function Invoke-GitCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -78,6 +208,8 @@ function Invoke-GitCommand {
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
         $startInfo.RedirectStandardError = $true
+        $startInfo.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0"
+        $startInfo.EnvironmentVariables["GCM_INTERACTIVE"] = "Never"
 
         if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
             foreach ($argument in $Arguments) {
@@ -96,10 +228,31 @@ function Invoke-GitCommand {
 
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
+        $timedOut = -not $process.WaitForExit($GitCommandTimeoutSeconds * 1000)
+        if ($timedOut) {
+            try {
+                Stop-HelperOwnedProcessTree -Process $process
+            }
+            catch {
+                throw "Git command timed out after $GitCommandTimeoutSeconds seconds, and helper-owned process-tree cleanup failed: $($_.Exception.Message)"
+            }
+
+        }
+        else {
+            $process.WaitForExit()
+        }
+
+        Wait-ForAsyncTask -Task $stdoutTask -Description "Git stdout drain"
+        Wait-ForAsyncTask -Task $stderrTask -Description "Git stderr drain"
         $rawStdout = $stdoutTask.GetAwaiter().GetResult()
         $stdout = $rawStdout.Trim()
         $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
+        if ($timedOut) {
+            $timedOutOutput = (@($stdout, $stderr) |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+            $timedOutContext = if ([string]::IsNullOrWhiteSpace($timedOutOutput)) { "" } else { "`n$timedOutOutput" }
+            throw "Git command timed out after $GitCommandTimeoutSeconds seconds; its helper-owned process tree was terminated and reaped.$timedOutContext"
+        }
         $output = (@($stdout, $stderr) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
 
         return [pscustomobject]@{
@@ -144,6 +297,8 @@ function Invoke-GitBlobBytes {
         $startInfo.UseShellExecute = $false
         $startInfo.RedirectStandardOutput = $true
         $startInfo.RedirectStandardError = $true
+        $startInfo.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0"
+        $startInfo.EnvironmentVariables["GCM_INTERACTIVE"] = "Never"
         $arguments = @("-C", $Repository, "cat-file", "blob", $Blob)
 
         if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
@@ -164,9 +319,27 @@ function Invoke-GitBlobBytes {
         $memoryStream = [System.IO.MemoryStream]::new()
         $stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($memoryStream)
         $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
+        $timedOut = -not $process.WaitForExit($GitCommandTimeoutSeconds * 1000)
+        if ($timedOut) {
+            try {
+                Stop-HelperOwnedProcessTree -Process $process
+            }
+            catch {
+                throw "Git blob command timed out after $GitCommandTimeoutSeconds seconds, and helper-owned process-tree cleanup failed: $($_.Exception.Message)"
+            }
+        }
+        else {
+            $process.WaitForExit()
+        }
+
+        Wait-ForAsyncTask -Task $stdoutTask -Description "Git blob stdout drain"
+        Wait-ForAsyncTask -Task $stderrTask -Description "Git blob stderr drain"
         $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
+        if ($timedOut) {
+            $timedOutContext = if ([string]::IsNullOrWhiteSpace($stderr)) { "" } else { "`n$stderr" }
+            throw "Git blob command timed out after $GitCommandTimeoutSeconds seconds; its helper-owned process tree was terminated and reaped.$timedOutContext"
+        }
 
         return [pscustomobject]@{
             ExitCode = $process.ExitCode

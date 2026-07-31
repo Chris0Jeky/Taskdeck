@@ -545,7 +545,147 @@ try {
         finally {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "ORIGIN")
         }
-        Complete-Test "complete remote names are case-canonicalized, option-delimited, refreshed, and resolved without local-ref shadowing"
+
+        $timeoutProbeDirectory = Join-Path $testRoot "timeout-probe"
+        New-Item -ItemType Directory -Path $timeoutProbeDirectory | Out-Null
+        $timeoutRemoteScript = Join-Path $timeoutProbeDirectory "remote-helper.ps1"
+        $timeoutRootPidPath = Join-Path $timeoutProbeDirectory "root.pid"
+        $timeoutRootStartPath = Join-Path $timeoutProbeDirectory "root.start"
+        $timeoutChildPidPath = Join-Path $timeoutProbeDirectory "child.pid"
+        $timeoutChildStartPath = Join-Path $timeoutProbeDirectory "child.start"
+        Set-Content -LiteralPath $timeoutRemoteScript -Encoding Ascii -Value @'
+$ErrorActionPreference = "Stop"
+$self = Get-Process -Id $PID
+[System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_ROOT_PID, [string]$PID)
+[System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_ROOT_START, [string]$self.StartTime.ToUniversalTime().Ticks)
+$childStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$childStartInfo.FileName = $self.Path
+$childStartInfo.UseShellExecute = $false
+$childStartInfo.CreateNoWindow = $true
+$childArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")
+if ($null -ne $childStartInfo.PSObject.Properties['ArgumentList']) {
+    foreach ($argument in $childArguments) {
+        $childStartInfo.ArgumentList.Add($argument)
+    }
+}
+else {
+    $childStartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
+}
+$child = [System.Diagnostics.Process]::new()
+try {
+    $child.StartInfo = $childStartInfo
+    if (-not $child.Start()) {
+        throw "Timeout-probe child process did not start."
+    }
+    [System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_CHILD_PID, [string]$child.Id)
+    [System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_CHILD_START, [string]$child.StartTime.ToUniversalTime().Ticks)
+    $child.WaitForExit()
+}
+finally {
+    $child.Dispose()
+}
+'@
+
+        $timeoutRootPid = $null
+        $timeoutRootStart = $null
+        $timeoutChildPid = $null
+        $timeoutChildStart = $null
+        $timeoutEnvironment = @{
+            TASKDECK_TIMEOUT_ROOT_PID = $timeoutRootPidPath
+            TASKDECK_TIMEOUT_ROOT_START = $timeoutRootStartPath
+            TASKDECK_TIMEOUT_CHILD_PID = $timeoutChildPidPath
+            TASKDECK_TIMEOUT_CHILD_START = $timeoutChildStartPath
+        }
+        $previousTimeoutEnvironment = @{}
+        foreach ($environmentName in $timeoutEnvironment.Keys) {
+            $previousTimeoutEnvironment[$environmentName] = [System.Environment]::GetEnvironmentVariable($environmentName, "Process")
+            [System.Environment]::SetEnvironmentVariable($environmentName, $timeoutEnvironment[$environmentName], "Process")
+        }
+        $timeoutPowerShellArgument = $powerShellExecutable.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $timeoutScriptArgument = $timeoutRemoteScript.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $timeoutRemoteUrl = "ext::$timeoutPowerShellArgument -NoLogo -NoProfile -NonInteractive -File $timeoutScriptArgument"
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "protocol.ext.allow", "always")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "timeout-probe", $timeoutRemoteUrl)
+        try {
+            $timeoutTarget = Join-Path $callerPath ".worktrees/codex-498-git-timeout"
+            $timeoutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $timeoutRefsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            $timeoutStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            $timeoutResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "498",
+                "-Slug", "git-timeout",
+                "-BaseBranch", "timeout-probe/main",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            $timeoutStopwatch.Stop()
+
+            Assert-True ($timeoutResult.ExitCode -ne 0) "A non-responsive remote helper must fail closed."
+            Assert-NormalizedContains $timeoutResult.Output "Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped." "Timeout diagnostic did not confirm bounded tree cleanup."
+            Assert-True ($timeoutStopwatch.Elapsed.TotalSeconds -lt 20) "Timed-out Git command returned too slowly: $($timeoutStopwatch.Elapsed.TotalSeconds) seconds."
+            Assert-True (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) "Timeout fixture did not record its root process."
+            Assert-True (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) "Timeout fixture did not record its child process."
+            $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
+            $timeoutRootStart = [long](Get-Content -Raw -LiteralPath $timeoutRootStartPath)
+            $timeoutChildPid = [int](Get-Content -Raw -LiteralPath $timeoutChildPidPath)
+            $timeoutChildStart = [long](Get-Content -Raw -LiteralPath $timeoutChildStartPath)
+            $liveTimeoutRoot = Get-Process -Id $timeoutRootPid -ErrorAction SilentlyContinue
+            $liveTimeoutChild = Get-Process -Id $timeoutChildPid -ErrorAction SilentlyContinue
+            $sameTimeoutRoot = $null -ne $liveTimeoutRoot -and $liveTimeoutRoot.StartTime.ToUniversalTime().Ticks -eq $timeoutRootStart
+            $sameTimeoutChild = $null -ne $liveTimeoutChild -and $liveTimeoutChild.StartTime.ToUniversalTime().Ticks -eq $timeoutChildStart
+            Assert-True (-not $sameTimeoutRoot) "Timed-out Git command returned while its exact remote-helper root was still alive."
+            Assert-True (-not $sameTimeoutChild) "Timed-out Git command returned while its exact remote-helper child was still alive."
+            Assert-True (-not (Test-Path -LiteralPath $timeoutTarget)) "Timed-out remote lookup created a worktree target."
+            $timeoutBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-498/git-timeout") -WorkingDirectory $callerPath
+            Assert-Equal 1 $timeoutBranch.ExitCode "Timed-out remote lookup created its planned branch."
+            $timeoutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $timeoutRefsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            Assert-Equal $timeoutRegistrationsBefore $timeoutRegistrationsAfter "Timed-out remote lookup changed worktree registrations."
+            Assert-Equal $timeoutRefsBefore $timeoutRefsAfter "Timed-out remote lookup changed Git refs."
+        }
+        finally {
+            foreach ($environmentName in $timeoutEnvironment.Keys) {
+                [System.Environment]::SetEnvironmentVariable($environmentName, $previousTimeoutEnvironment[$environmentName], "Process")
+            }
+            if ($null -eq $timeoutRootPid -and
+                (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $timeoutRootStartPath -PathType Leaf)) {
+                $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
+                $timeoutRootStart = [long](Get-Content -Raw -LiteralPath $timeoutRootStartPath)
+            }
+            if ($null -eq $timeoutChildPid -and
+                (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $timeoutChildStartPath -PathType Leaf)) {
+                $timeoutChildPid = [int](Get-Content -Raw -LiteralPath $timeoutChildPidPath)
+                $timeoutChildStart = [long](Get-Content -Raw -LiteralPath $timeoutChildStartPath)
+            }
+            foreach ($processIdentity in @(
+                [pscustomobject]@{ Id = $timeoutChildPid; Start = $timeoutChildStart },
+                [pscustomobject]@{ Id = $timeoutRootPid; Start = $timeoutRootStart }
+            )) {
+                if ($null -eq $processIdentity.Id -or $null -eq $processIdentity.Start) {
+                    continue
+                }
+                $recordedProcess = Get-Process -Id $processIdentity.Id -ErrorAction SilentlyContinue
+                if ($null -ne $recordedProcess -and
+                    $recordedProcess.StartTime.ToUniversalTime().Ticks -eq $processIdentity.Start) {
+                    try {
+                        if (-not $recordedProcess.HasExited) {
+                            $recordedProcess.Kill()
+                            if (-not $recordedProcess.WaitForExit(5000)) {
+                                throw "Timeout fixture process $($recordedProcess.Id) did not exit during test cleanup."
+                            }
+                            $recordedProcess.WaitForExit()
+                        }
+                    }
+                    finally {
+                        $recordedProcess.Dispose()
+                    }
+                }
+            }
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "timeout-probe")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "protocol.ext.allow")
+        }
+        Complete-Test "complete remote names are safely refreshed and non-responsive Git process trees are bounded and reaped"
     }
 
     if (Test-CaseSelected "remote-default-head") {
