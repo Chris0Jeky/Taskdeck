@@ -55,6 +55,13 @@ different working artifacts fail closed. This is a dirty-artifact hygiene check,
 authentication of the helper: PowerShell must begin executing the helper before it can perform its
 own path and byte checks. A same-user process could replace the helper before or during those checks;
 closing that bootstrap boundary would require an independently reviewed, hash-pinned launcher.
+Every helper-owned Git process is non-interactive and has a 45-second deadline by default, including
+the raw-blob reads used by these hygiene checks. A timeout terminates and boundedly reaps the launched
+process tree before the helper returns a failure; a cleanup or output-drain timeout is reported as a
+separate failure rather than as a successful reap. `-GitCommandTimeoutSeconds` can adjust that bound
+for a controlled test or measured exceptional environment. On Windows, cleanup verifies the captured Git
+root PID and start time before using `taskkill /T`; this prevents ordinary stale-PID targeting but
+does not make the shared same-user process namespace an authentication boundary.
 Every selected base must contain the exact reviewed `scripts/worktree_guard.ps1` and
 `scripts/git/Initialize-CodexIssueWorktree.ps1` blob identities. A commit or tag with missing or
 different handoff code is rejected before the target path or Git worktree registration is created.

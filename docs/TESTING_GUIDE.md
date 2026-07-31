@@ -1549,8 +1549,9 @@ Required workflow: `.github/workflows/ci-required.yml`
     pasteable here-string syntax, real PowerShell 5.1 two-argv transport, occupied-target rejection
     before normal or dry-run ref mutation, bounded dirty-artifact cleanup without force,
     clean-only separate-Git-dir late-collision removal plus tracked/untracked/ignored-content
-    preservation, case-variant remote refresh, and pre-mutation rejection
-    of invalid, overlong, or namespace-colliding Windows branch refs
+    preservation, case-variant remote refresh, and a real stalled remote-helper root plus child that
+    must be absent before bounded failure returns without changing refs or worktrees. It also covers
+    pre-mutation rejection of invalid, overlong, or namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`
