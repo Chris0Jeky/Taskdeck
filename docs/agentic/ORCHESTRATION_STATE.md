@@ -88,7 +88,7 @@ _(Point-in-time snapshot — several items below were **subsequently delivered**
 - PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; current-head adversarial review clean.
 - PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; merge-policy/date cleanup in progress after review findings; CI pending.
 
-User authorized merging PRs only after green CI/tests, bot comments addressed, every review finding fixed or tracked, and two adversarial review rounds over the current head.
+User authorizes merging only under the current risk-calibrated `AGENTS.md` gate: green proving checks at the reviewed head, one triage pass over every review comment, confirmed blockers fixed, and other findings tracked or declined.
 
 ### Active PR Stack
 - #1078 -> `main`
