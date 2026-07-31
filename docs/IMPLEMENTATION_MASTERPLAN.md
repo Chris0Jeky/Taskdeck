@@ -10,6 +10,12 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-07-31, Taskdeck runtime-hook retirement)
+
+- **`#1552` removes the Taskdeck-owned runtime harness while retaining authority:** `.claude/settings.json` no longer declares hook groups or a local deny list, no root `.codex/hooks.json` is installed, and dead PreToolUse/PostToolUse/PostToolUseFailure/pre-commit/smoke handlers are deleted. Normal development permissions, worktree configuration, T3 push/merge authority, global laws, Required CI, and the guarded worktree protocol remain. User-, organization-, and runtime-level hooks are separate layers and are not represented as disabled by this repo change.
+- **Deliberate evidence capture remains:** the JSONL failure ledger, renderer, 11-test synchronization suite, and Required Docs Governance projection check stay. Automatic capture is removed because it could convert routine tool/timeout noise into false durable rows without a consumer.
+- **The local security-expansion queue is retired, not silently declared complete:** `#1456` and adapter PR `#1538` are closed as not planned; `#1293`, `#1475`, `#1476`, and `#1497` are superseded by the removal. Cross-repo generalization is tracked in agent-harness `#188`–`#191`, using merged Taskdeck PRs `#1496` and `#1499` as consumer prior art.
+
 ## Delivery update (2026-07-27, proxy-safe direct egress)
 
 - **`#1513` shipped implementation:** the registered OpenAI, Gemini, Ollama, and outbound-webhook handlers set `UseProxy = false`, keeping the configured origin as the connect-time validation target. Just before send, protected registrations mask the URI seen by outer .NET HTTP diagnostics; the inner handler restores the real URI for transport and re-masks it for retry/completion. Public caller-owned provider clients keep normal `HttpClient` behavior. The four protected clients remove default request loggers, disable distributed-trace header propagation, and use a private HTTP metric scope; Taskdeck's configured OpenTelemetry provider drops their marked activities and scope. Enabled Sentry removes its outbound factory handler only from these four client pipelines, so unrelated clients retain instrumentation and server-side exception tracking remains active. The proven boundary includes pre-handler `System.Net.Http` EventSource path/query suppression, but excludes independently installed process-global activity/meter listeners and transport-stage host/IP observers. Existing localhost opt-ins and automatic-redirect blocking remain unchanged. No proxy-aware outbound mode exists; corporate proxy-only deployments fail closed.
@@ -24,8 +30,8 @@ Companion Active Docs:
 
 ## Delivery update (2026-07-26, agentic governance)
 
-- **Failure-ledger projection gate (`#1492`):** Required Docs Governance now pins Python 3.12 and runs the existing JSONL↔Markdown synchronization unittest before the governance checks, so a JSONL-only change with stale generated Markdown fails Required CI without regeneration masking it. Local agentic update workflows use the distinct render-then-test order so hook-appended JSONL can be projected, and the smoke contract pins both sides of that distinction.
-- **Cross-platform agent-hook launchers (`#1487`):** native-Windows handlers and PowerShell-scoped agent-utility commands use the verified `py -3 -B` launcher instead of the unusable Microsoft Store aliases, while POSIX Bash guidance keeps `python3 -B`. The smoke harness uses its active `sys.executable -B` for child scripts, rejects drift in the exact configured-handler inventory and the five-utilities-plus-renderer-test permission surface, and proves that missing PreToolUse launchers or policies fail closed with exit 2. The smoke payloads identify `Bash`; native PowerShell-tool deny coverage is separate T4 work tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497). No interpreter install, PATH mutation, resolver wrapper, or product-runtime change is added.
+- **Failure-ledger projection gate (`#1492`):** Required Docs Governance pins Python 3.12 and runs the JSONL↔Markdown synchronization unittest before governance, so stale generated Markdown fails without regeneration masking it. Local workflows retain the distinct render-then-test order for deliberately recorded entries.
+- **Historical cross-platform launcher repair (`#1487`):** before `#1552` retired project runtime handlers, native Windows used verified `py -3 -B`, POSIX used `python3 -B`, and child tests used `sys.executable -B`. The surviving manual ledger utilities retain that platform contract without installing Python or mutating PATH.
 
 ## Delivery update (2026-07-26, security runway)
 
@@ -41,11 +47,11 @@ Companion Active Docs:
 - **`#1477` + `#1481` (`#1123`)** — the release pipeline can now be **rehearsed without pushing a tag**, which is what makes `#1303`'s tag push verifiable in advance rather than a first-run. Rehearsed live (run `30160400273`): four platforms built, **three smoke-tested**, `create-release` skipped, zero tags/releases created. `osx-x64` is built, packaged, checksummed and uploaded **without ever being launched** — it is cross-arch on the arm64 `macos-latest` runner (`if: matrix.rid != 'osx-x64'`), so that one archive carries less release evidence than the other three. Worth knowing before the `#1303` tag push.
 - **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
 - **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.
-- **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). The overlay is still *needed* — 11 rule-classes are `allow` at every tier including T4 — so the salvage plan and acceptance criteria live on **`#1293`**.
+- **`#1295` closed as superseded** (13/13 bypass failures; targeted floor v1.3.0 vs installed 1.6.5). Its uncovered rule classes and review corpus remain evidence, but `#1552` later retired the Taskdeck-local floor; generic gaps route upstream.
 - **Repo hardening:** force-push and deletion blocked on `main` (otherwise deliberately relaxed); a 1,444-item snapshot synced 288 truncation-hidden project-priority mismatches (`#1474`), while `#1458` owns the durable complete-audit and remaining data-cleanup gate.
 - **`#1270` backlog triage:** 12 issues closed with dated notes; an adversarial pass bounced **13 of 25** proposed closures, including the `#1123` ship-gate item. `#1270` stays open — two of its own ACs are obsolete against ADR-0044 / REVIVAL_PLAN §6.
 - **Seeded:** `#1470` `#1473` `#1474` `#1475` `#1476` `#1480` `#1482`, plus upstream `agent-harness#56`.
-- **Remaining T4 hold:** `#1457` only — do not run the published canaries yet. Its current head has red DCO, stale review evidence, and material main-branch drift; the 2026-07-26 audit also found its v1.6.5 pin behind the installed/producer v1.6.12 floor while root/common-directory hook discovery remains unresolved. Repair those prerequisites and regenerate exact-head CI/reviews before the maintainer-only `/hooks` trust and live-canary step.
+- **Historical T4 hold retired:** `#1457` was superseded by signed replacement PR `#1538`; the maintainer then chose local harness retirement under `#1552`, so the replacement and `#1456` closed without activation.
 
 ## Delivery update (2026-07-23/24, overnight wave)
 
@@ -264,7 +270,7 @@ Latest tooling addition (2026-05-11):
 - Agentic operating layer expansion added `docs/agentic/QUESTION_PROTOCOL.md`, `docs/agentic/FAILURE_LEDGER.md`, `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, and `docs/agentic/SKILL_REGISTRY.md` so blocker questions, failed tools/checks, and guide updates are explicit artifacts instead of ad hoc chat memory.
 - `autodoc/AGENT_INDEX.md` now provides a low-context seam map, context traps, and verification hints for Taskdeck agents.
 - Codex and Claude skill mirrors now include `taskdeck-question-batch`, `taskdeck-failure-capture`, and `taskdeck-interface-map`.
-- Claude project settings now call deterministic hook scripts under `scripts/agent_hooks/` for dangerous shell-command checks and failed-tool ledger capture.
+- Historical Claude project settings called deterministic runtime handlers under `scripts/agent_hooks/` for dangerous shell-command checks and failed-tool ledger capture; `#1552` later retired that local hook surface while retaining the manual ledger tools.
 - Codex/Claude tool parity is now documented in `docs/agentic/AGENT_TOOL_PARITY.md`, and Claude `.mcp.json` mirrors the shared MCP baseline for OpenAI docs, GitHub, Context7, Playwright, Chrome DevTools, and Docker gateway access.
 
 Previous tooling addition (2026-04-25):

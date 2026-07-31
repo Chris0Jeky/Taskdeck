@@ -30,7 +30,7 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` | ~1s, green |
 | `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` | ~1s, green |
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` | ~1s, green |
-| `scripts/agent_hooks/**` (deny floor) | `py -3 -B scripts/agent_hooks/smoke_test.py` | ~10s, green |
+| Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` | ~1s, 11 passed |
 | One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` | Domain: ~30s cold, 1636 passed |
 | Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` | minutes — last resort |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` | — |
@@ -78,9 +78,9 @@ LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platfor
   `git merge --signoff --no-gpg-sign <branch>`, `git commit -s --no-gpg-sign --no-edit` after resolving
   conflicts. Never `--no-verify`. GitHub's server-side merge commit is outside the PR commit set — do not
   rewrite shared history to add a trailer to it.
-- **Deny floor is stricter than T3 by design.** `reset --hard`, `clean -f`, `checkout --` are hard-denied
-  by `.claude/settings.json` + `scripts/agent_hooks/pre_tool_use.py` after the 2026-05/06 main-leak
-  incidents. A deny is final. Deny-floor changes are T4-class.
+- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or local command-deny
+  list, and the root has no `.codex/hooks.json`. T3 authority, global laws, CI, and worktree guards still
+  apply; user-, organization-, and runtime-level hooks are separate effective layers.
 - **PowerShell:** no `&&` chaining; use `;` and check `$LASTEXITCODE`.
 - **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run
   `bash scripts/check-git-env.sh` (or `powershell -File scripts/check-git-env.ps1`); it also clears a

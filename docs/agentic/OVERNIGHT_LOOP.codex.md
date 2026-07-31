@@ -46,10 +46,10 @@ terse and factual. It must hold:
   the fix or workaround. This is what §8 acts on.
 - **Checkpoint** after every merge and every cycle: 2–4 factual lines.
 
-Also record durable, cross-session failures in the repo's **`docs/agentic/failure_ledger.jsonl`**
-(rendered `FAILURE_LEDGER.md`) per its format — but only *real* failures. Note: a hook may
-auto-append a false-positive when a shell command merely times out; prune those so the ledger
-stays signal.
+Also record durable, cross-session failures deliberately in the repo's
+**`docs/agentic/failure_ledger.jsonl`** (rendered `FAILURE_LEDGER.md`) per its format — but only
+*real* failures. Taskdeck installs no automatic failure-capture hook; do not turn routine timeout
+or tool noise into durable rows.
 
 ---
 
