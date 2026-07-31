@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-07-13
+Last Updated: 2026-07-31
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
@@ -92,9 +92,9 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 
 Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175, #1138, #1222/#1227) continue as capacity allows, unchanged.
 
-### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Proposed**, tracker `#1327`)
+### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Accepted**, tracker `#1327`)
 
-Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). **Ratification pending on GEN-00 `#1327`** — until the maintainer ratifies ADR-0046, only lane **G-A** foundational work is authorized (per maintainer instruction 2026-07-13); lanes G-B/G-C wait for ratification in addition to their technical dependencies. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe immediately (stays off the transcript-lane files while PR #1312 is open), lane **G-B** waits for REVIVAL-08 M1 (`#1312`) to merge, lane **G-C** follows Phase 1.
+Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). The GEN-00 `#1327` tracker and each lane's technical dependencies remain binding. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe, lane **G-B** follows REVIVAL-08 M1 (`#1312`), and lane **G-C** follows Phase 1.
 
 | Item | Issue | Lane |
 |---|---|---|

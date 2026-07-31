@@ -31,7 +31,7 @@ Verification note:
 
 ## Proxy-Safe Direct Egress Checkpoint (`#1513`)
 
-Local issue-branch verification on 2026-07-27 covers the direct-only primary
+Issue-branch verification shipped in PR `#1516` on 2026-07-27 and covers the direct-only primary
 clients for OpenAI, Gemini, Ollama, and outbound webhook delivery:
 
 ```powershell
@@ -76,8 +76,9 @@ The full serialized backend passed at pre-documentation head `dad8d22a` with **7
 5 intentional skips, and 0 failed** (Domain 1,636; Application 3,577; API 2,171 + 4 skips;
 CLI 100; Architecture 20 + 1 skip; Integration 35). The only subsequent issue-scope change is
 this verification-document correction; the current-main merge adds the separately reviewed
-`#1522` frontend/docs slice and leaves the backend subtree identical. Required CI, CodeQL, and
-final exact-current-head publication evidence remain required before merge.
+`#1522` frontend/docs slice and leaves the backend subtree identical. Published head `dc2a099c`
+then passed exact-head Required CI 16/16, CI Extended with four successes and 11 intentional
+path-based skips, and CodeQL 4/4 before merging as `840874ac`.
 
 ## Roadmap v4 Verification Spine (Seeded 2026-04-25)
 
