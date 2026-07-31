@@ -1024,6 +1024,40 @@ try {
         $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
 
+        $ignoredCollisionResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "498", "-Slug", "ignored-collision")
+        Assert-Equal 0 $ignoredCollisionResult.ExitCode "Ignored-collision fixture worktree creation should succeed.`n$($ignoredCollisionResult.Output)"
+        $ignoredCollisionWorktree = Join-Path $callerPath ".worktrees/codex-498-ignored-collision"
+        $ignoredCollisionHead = Invoke-Git -WorkingDirectory $ignoredCollisionWorktree -Arguments @("rev-parse", "HEAD")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-498/ignored-collision", $ignoredCollisionHead)
+        $ignoredCanaryDirectory = Join-Path $ignoredCollisionWorktree ".runtime-codex"
+        $ignoredCanaryPath = Join-Path $ignoredCanaryDirectory "preserve.txt"
+        $callerCommonGitDirectory = Invoke-Git -WorkingDirectory $callerPath -Arguments @(
+            "rev-parse", "--path-format=absolute", "--git-common-dir"
+        )
+        Add-Content -LiteralPath (Join-Path $callerCommonGitDirectory "info/exclude") -Value "/.runtime-codex/" -Encoding Ascii
+        $null = New-Item -ItemType Directory -Path $ignoredCanaryDirectory
+        Set-Content -LiteralPath $ignoredCanaryPath -Value "must survive refused cleanup" -Encoding Ascii
+        $ignoredStatusBefore = Invoke-Git -WorkingDirectory $ignoredCollisionWorktree -Arguments @(
+            "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--"
+        )
+        Assert-NormalizedContains $ignoredStatusBefore "!! .runtime-codex/" "Ignored-collision fixture did not expose the ignored canary to the cleanup inventory."
+
+        $ignoredCollisionScript = Join-Path $fixtureRoot "initializer-ignored-branch-collision.ps1"
+        Set-Content -LiteralPath $ignoredCollisionScript -Value @(Get-PrintedHandoffLines -Output $ignoredCollisionResult.Output) -Encoding Ascii
+        $ignoredCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $ignoredCollisionScript) -WorkingDirectory $ignoredCollisionWorktree
+        Assert-True ($ignoredCollision.ExitCode -ne 0) "A late branch collision with ignored content should fail the initializer."
+        Assert-NormalizedContains $ignoredCollision.Output "cleanup was refused because the helper-created worktree contains tracked, untracked, or ignored content" "Ignored-content collision should explain why cleanup was refused."
+        Assert-NormalizedContains $ignoredCollision.Output "the worktree was preserved at" "Ignored-content collision should report preservation instead of scheduled removal."
+        Start-Sleep -Milliseconds 500
+        Assert-True (Test-Path -LiteralPath $ignoredCanaryPath -PathType Leaf) "Refused collision cleanup deleted ignored worktree content."
+        Assert-True (Test-Path -LiteralPath $ignoredCollisionWorktree -PathType Container) "Refused collision cleanup deleted the helper-created worktree."
+        $ignoredRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $normalizedIgnoredCollisionWorktree = $ignoredCollisionWorktree.Replace('\', '/')
+        Assert-True $ignoredRegistrationsAfter.Replace('\', '/').Contains($normalizedIgnoredCollisionWorktree) "Refused collision cleanup removed the worktree registration."
+
+        Remove-Item -LiteralPath $ignoredCanaryDirectory -Recurse -Force
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $ignoredCollisionWorktree)
+
         $separateGitDirectory = Join-Path $fixtureRoot "separate common git directory"
         $separateGitCaller = Join-Path $fixtureRoot "separate git caller"
         $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @(
@@ -1103,7 +1137,7 @@ try {
         ) -WorkingDirectory $initializerWorktree
         Assert-Equal 1 $attachedInitializer.ExitCode "Initializer should reject an already-attached helper worktree."
         Assert-Equal "manual-attached" (Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("branch", "--show-current")) "Attached-worktree rejection should preserve the current branch."
-        Complete-Test "initializer cleans conventional and separate-Git-dir collisions and fails closed on invalid detached state or input"
+        Complete-Test "initializer removes only clean collision worktrees, preserves ignored content, and fails closed on invalid detached state or input"
     }
 
     if (Test-CaseSelected "existing-branch") {

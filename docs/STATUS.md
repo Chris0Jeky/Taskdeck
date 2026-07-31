@@ -1237,7 +1237,8 @@ Required workflow: `.github/workflows/ci-required.yml`
   initialization requires a restored-after-launch host opt-in and exact guard-plus-initializer
   rules while later commands remain on the Bash-only hook surface. The same gate proves occupied
   targets cannot refresh refs in normal or `-WhatIf` mode, dirty handoff-only cleanup remains plain
-  and bounded, and late-collision removal works with a separate common Git directory. The helper is
+  and bounded, and late-collision cleanup removes only an empty worktree while preserving tracked,
+  untracked, or ignored content, including with a separate common Git directory. The helper is
   main-checkout-only, rejects linked-source invocation before mutation,
   rejects Git-syntax-valid names, overlong lock paths, and branch namespace collisions that cannot
   become Windows loose refs, and keeps `claude -p` in the helper-created target instead of creating

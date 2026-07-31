@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-31
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
 
@@ -102,9 +102,11 @@ producing a false-green dry run.
 
 Run the complete printed PowerShell handoff unchanged inside the worker worktree. Its first command
 is the target guard itself at its exact absolute path, then the bounded initializer verifies the exact
-worktree and detached base before creating and switching to the issue branch. A late switch collision
-removes the unused detached worktree through its verified common Git directory before returning the
-failure, including separate-Git-dir layouts. A target-byte failure may neutralize only verified
+worktree and detached base before creating and switching to the issue branch. After a late switch
+collision, cleanup inventories tracked, untracked, and ignored content and preserves the worktree
+path and registration when any exist. Only an empty worktree is scheduled for plain removal, and the
+delayed remover revalidates its exact top-level, common Git directory, detached base, and empty
+inventory immediately before removal, including separate-Git-dir layouts. A target-byte failure may neutralize only verified
 handoff-artifact dirtiness in that expected detached worktree before a plain, never-forced removal;
 unexpected dirt fails closed. The creation-time target-byte
 check does not authenticate a same-user replacement after the handoff was emitted; an external

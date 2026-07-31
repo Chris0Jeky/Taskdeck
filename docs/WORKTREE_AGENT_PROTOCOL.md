@@ -1,6 +1,6 @@
 # Worktree Agent Protocol
 
-Last Updated: 2026-07-26
+Last Updated: 2026-07-31
 
 Use this protocol when running multiple agents or Codex sessions in parallel. The failure mode this prevents is simple: workers accidentally operate in the main checkout, switch branches under each other, or commit to the wrong branch.
 
@@ -95,9 +95,12 @@ Run the helper's entire printed PowerShell block unchanged from the new worktree
 target guard itself as the first worktree command with the helper-selected argv-safe Git executable,
 then invokes the bounded initializer at its exact absolute path. The initializer rechecks the exact
 helper-created worktree and detached base, then creates and switches to the planned branch. If a
-late branch collision makes that switch fail, the initializer removes its unused detached worktree
-registration before returning the failure, including repositories whose common Git directory is
-stored separately from the main checkout. If target-byte verification discovers dirtiness limited
+late branch collision makes that switch fail, the initializer inventories tracked, untracked, and
+ignored content before cleanup. It schedules a plain removal only when that inventory is empty;
+otherwise it preserves the worktree path and registration for inspection. The delayed remover
+revalidates the exact top-level, common Git directory, detached base, and empty inventory immediately
+before removal, including repositories whose common Git directory is stored separately from the
+main checkout. If target-byte verification discovers dirtiness limited
 to exact reviewed handoff artifacts at the expected detached commit, cleanup temporarily marks only
 those verified per-worktree index entries `skip-worktree`, performs a plain (never forced) worktree
 removal, and restores the flags if removal fails. Any other tracked, untracked, or ignored dirt is

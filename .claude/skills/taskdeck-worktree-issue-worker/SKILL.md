@@ -14,7 +14,8 @@ invocation is rejected), run its complete printed PowerShell
 handoff block unchanged. Its first command invokes the exact absolute target `worktree_guard.ps1`
 with pinned Git; the bounded `Initialize-CodexIssueWorktree.ps1` follows only on guard success,
 verifies the exact helper-created worktree and detached base, then performs `switch -c`. A late
-switch collision removes the unused detached worktree before failing. The printed block
+switch collision removes the unused detached worktree only when its tracked, untracked, and ignored
+inventory is empty; otherwise it is preserved for inspection. The printed block
 invokes the wrapper in the already-running PowerShell host. Creation-time blob checks do not
 authenticate a same-user replacement after handoff emission, though the helper checks target
 guard/initializer bytes against reviewed raw blobs before emitting commands. From Bash, launch a reviewed absolute

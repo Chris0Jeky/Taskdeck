@@ -126,8 +126,21 @@ function Invoke-InitializerGit {
 function Schedule-FailedInitializerWorktreeRemoval {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Worktree
+        [string]$Worktree,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedHead
     )
+
+    $statusResult = Invoke-InitializerGit -Arguments @(
+        "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--"
+    )
+    if (-not $statusResult.InvocationSucceeded -or $statusResult.ExitCode -ne 0) {
+        Exit-WithInitializerError "git switch -c failed and cleanup was refused because Git could not inventory tracked, untracked, and ignored worktree content; the helper-created worktree was preserved at '$Worktree'." 2
+    }
+    if (-not [string]::IsNullOrWhiteSpace($statusResult.Output)) {
+        Exit-WithInitializerError "git switch -c failed and cleanup was refused because the helper-created worktree contains tracked, untracked, or ignored content; the worktree was preserved at '$Worktree'. Inspect it before any plain git worktree remove." 1
+    }
 
     $commonGitDirectory = Invoke-InitializerGit -Arguments @("rev-parse", "--path-format=absolute", "--git-common-dir")
     if (-not $commonGitDirectory.InvocationSucceeded -or $commonGitDirectory.ExitCode -ne 0 -or
@@ -142,10 +155,34 @@ function Schedule-FailedInitializerWorktreeRemoval {
     $escapedGit = $script:ResolvedGitExecutable.Replace("'", "''")
     $escapedCommonGitDirectory = $resolvedCommonGitDirectory.Replace("'", "''")
     $escapedWorktree = $Worktree.Replace("'", "''")
+    $escapedExpectedHead = $ExpectedHead.Replace("'", "''")
     $cleanupScript = @"
 `$parentProcessId = $PID
 while (`$null -ne (Get-Process -Id `$parentProcessId -ErrorAction SilentlyContinue)) {
     Start-Sleep -Milliseconds 100
+}
+`$cleanupTopLevel = @(& '$escapedGit' -C '$escapedWorktree' rev-parse --path-format=absolute --show-toplevel 2>`$null)
+if (`$LASTEXITCODE -ne 0 -or `$cleanupTopLevel.Count -ne 1 -or
+    -not [System.IO.Path]::GetFullPath(`$cleanupTopLevel[0]).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).Equals('$escapedWorktree', [System.StringComparison]::OrdinalIgnoreCase)) {
+    exit 3
+}
+`$cleanupCommonDirectory = @(& '$escapedGit' -C '$escapedWorktree' rev-parse --path-format=absolute --git-common-dir 2>`$null)
+if (`$LASTEXITCODE -ne 0 -or `$cleanupCommonDirectory.Count -ne 1 -or
+    -not [System.IO.Path]::GetFullPath(`$cleanupCommonDirectory[0]).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).Equals('$escapedCommonGitDirectory', [System.StringComparison]::OrdinalIgnoreCase)) {
+    exit 3
+}
+`$cleanupHead = @(& '$escapedGit' -C '$escapedWorktree' rev-parse --verify HEAD 2>`$null)
+if (`$LASTEXITCODE -ne 0 -or `$cleanupHead.Count -ne 1 -or
+    -not `$cleanupHead[0].Trim().Equals('$escapedExpectedHead', [System.StringComparison]::OrdinalIgnoreCase)) {
+    exit 3
+}
+& '$escapedGit' -C '$escapedWorktree' symbolic-ref --quiet HEAD >`$null 2>`$null
+if (`$LASTEXITCODE -ne 1) {
+    exit 3
+}
+`$cleanupStatus = @(& '$escapedGit' -C '$escapedWorktree' status --porcelain=v1 --untracked-files=all --ignored=matching -- 2>`$null)
+if (`$LASTEXITCODE -ne 0 -or `$cleanupStatus.Count -ne 0) {
+    exit 4
 }
 & '$escapedGit' '--git-dir=$escapedCommonGitDirectory' worktree remove '$escapedWorktree'
 exit `$LASTEXITCODE
@@ -236,12 +273,12 @@ if (-not $branchValidation.InvocationSucceeded -or $branchValidation.ExitCode -n
 
 $switchResult = Invoke-InitializerGit -Arguments @("switch", "-c", $BranchName)
 if (-not $switchResult.InvocationSucceeded -and $null -eq $switchResult.ExitCode) {
-    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath
+    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath -ExpectedHead $ExpectedHead
     Exit-WithInitializerError "the selected Git executable could not create branch '$BranchName'; removal of the unused helper-created worktree was scheduled." 2
 }
 if ($switchResult.ExitCode -ne 0) {
     $switchContext = if ([string]::IsNullOrWhiteSpace($switchResult.Output)) { "" } else { " $($switchResult.Output)" }
-    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath
+    Schedule-FailedInitializerWorktreeRemoval -Worktree $expectedWorktreePath -ExpectedHead $ExpectedHead
     Exit-WithInitializerError "git switch -c failed for '$BranchName' (exit code $($switchResult.ExitCode)); removal of the unused helper-created worktree was scheduled.$switchContext" $switchResult.ExitCode
 }
 if (-not [string]::IsNullOrWhiteSpace($switchResult.Output)) {

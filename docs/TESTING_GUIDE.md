@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-27
+Last Updated: 2026-07-31
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -1547,7 +1547,8 @@ Required workflow: `.github/workflows/ci-required.yml`
     guard/initializer launch rules without a second Claude worktree, restored host opt-in, directly
     pasteable here-string syntax, real PowerShell 5.1 two-argv transport, occupied-target rejection
     before normal or dry-run ref mutation, bounded dirty-artifact cleanup without force,
-    separate-Git-dir late-collision removal, case-variant remote refresh, and pre-mutation rejection
+    clean-only separate-Git-dir late-collision removal plus tracked/untracked/ignored-content
+    preservation, case-variant remote refresh, and pre-mutation rejection
     of invalid, overlong, or namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
