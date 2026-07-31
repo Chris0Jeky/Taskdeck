@@ -3,7 +3,7 @@
 **Purpose:** a durable, human-owned checklist of work the maintainer (Chris) wants to keep visible across sessions and agents, so nothing is forgotten between context resets.
 
 **Rules for agents (Claude, Codex, etc.):**
-1. **Read this file at the start of every session** (it is referenced from `CLAUDE.md` and `AGENTS.md` and the SessionStart hook).
+1. **Read this file at the start of every session** (it is referenced from `CLAUDE.md` and `AGENTS.md`).
 2. **Surface the open items** whenever you give a summary, status update, handoff, or "what's next" — list the open (`[ ]`) tasks with their IDs so the maintainer is reminded.
 3. **Only clear/check a task when the maintainer explicitly says it's done.** Do not auto-complete items just because a related PR was opened or you think it's finished. When told an item is complete, change `[ ]`→`[x]` (or remove it) and note the date in the changelog at the bottom.
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.

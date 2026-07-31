@@ -197,12 +197,15 @@ PowerShell(<exact absolute initializer command and pinned arguments printed by t
 Do not add `--worktree`: Claude Code would create a second `.claude/worktrees/...` checkout instead
 of staying in the helper-created target, so the exact-worktree guard would reject the handoff. The
 helper handoff requires the PowerShell tool shape, but the repository deliberately does not enable
-that tool or grant PowerShell commands project-wide. Enable it only in the trusted host environment
-for this task-scoped launch, and restore its prior process value after `claude -p` returns.
+that tool or grant generic PowerShell access project-wide. Two narrow manual failure-ledger utility
+rules remain effective from committed settings when a trusted host enables the tool. Review those
+two rules together with the exact guard and initializer rules for this task-scoped launch, and
+restore its prior process value after `claude -p` returns.
 When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed. This
 repository installs no project command-deny, failure-capture, or pre-commit hooks on any shell.
-Therefore the unattended posture permits only the exact guard and initializer PowerShell rules and
-keeps other command execution on Git Bash. User-, organization-, and runtime-level hooks can still
+Therefore the unattended posture adds only the exact guard and initializer PowerShell rules; the
+two committed manual utility rules remain part of the effective permission set. Keep other command
+execution on Git Bash. User-, organization-, and runtime-level hooks can still
 apply and must be inventoried separately. Do not present the launch allowlist as the sole
 authorization boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization

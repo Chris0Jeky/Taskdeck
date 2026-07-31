@@ -137,9 +137,11 @@ add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follo
 effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources,
 review committed permission configuration and explicit rules together, account for built-in
 read-only Bash, and treat managed policy as an administrator-owned trust boundary. The repository neither enables
-the progressive Windows PowerShell tool nor grants PowerShell commands project-wide. Set
+the progressive Windows PowerShell tool nor grants generic PowerShell access project-wide; committed
+settings retain two narrow manual failure-ledger utility rules. Set
 `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` only in the trusted host environment for the task-scoped
-guard and initializer launch, then restore its prior process value after `claude -p` returns; PowerShell is
+guard and initializer launch, review the two utility rules together with both exact handoff rules,
+then restore its prior process value after `claude -p` returns; PowerShell is
 unsandboxed on Windows and Taskdeck installs no project command-deny hook, so keep all other commands on Git
 Bash as the documented portable shell. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
 an untrusted workspace trusted; project allows and additional directories remain ignored until

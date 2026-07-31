@@ -270,7 +270,7 @@ Latest tooling addition (2026-05-11):
 - Agentic operating layer expansion added `docs/agentic/QUESTION_PROTOCOL.md`, `docs/agentic/FAILURE_LEDGER.md`, `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, and `docs/agentic/SKILL_REGISTRY.md` so blocker questions, failed tools/checks, and guide updates are explicit artifacts instead of ad hoc chat memory.
 - `autodoc/AGENT_INDEX.md` now provides a low-context seam map, context traps, and verification hints for Taskdeck agents.
 - Codex and Claude skill mirrors now include `taskdeck-question-batch`, `taskdeck-failure-capture`, and `taskdeck-interface-map`.
-- Claude project settings now call deterministic hook scripts under `scripts/agent_hooks/` for dangerous shell-command checks and failed-tool ledger capture.
+- Historical Claude project settings called deterministic runtime handlers under `scripts/agent_hooks/` for dangerous shell-command checks and failed-tool ledger capture; `#1552` later retired that local hook surface while retaining the manual ledger tools.
 - Codex/Claude tool parity is now documented in `docs/agentic/AGENT_TOOL_PARITY.md`, and Claude `.mcp.json` mirrors the shared MCP baseline for OpenAI docs, GitHub, Context7, Playwright, Chrome DevTools, and Docker gateway access.
 
 Previous tooling addition (2026-04-25):

@@ -1238,9 +1238,11 @@ Required workflow: `.github/workflows/ci-required.yml`
   authenticate the helper before PowerShell starts it; an external hash-pinned launcher remains a
   separate bootstrap trust boundary. The same residual applies after creation: a same-user process
   can replace the target initializer or guard before handoff execution. The repository does not
-  enable or grant Claude Code's unsandboxed Windows PowerShell tool project-wide; headless
-  initialization requires a restored-after-launch host opt-in and exact guard-plus-initializer
-  rules while later commands remain on the Bash-only hook surface. The same gate proves occupied
+  enable Claude Code's unsandboxed Windows PowerShell tool or grant generic PowerShell access
+  project-wide. Committed settings retain two narrow manual failure-ledger utility rules; headless
+  initialization requires a restored-after-launch host opt-in and reviews those alongside exact
+  guard-plus-initializer rules, while later commands use Git Bash without a project command-deny
+  hook. The same gate proves occupied
   targets cannot refresh refs in normal or `-WhatIf` mode, dirty handoff-only cleanup remains plain
   and bounded, and late-collision cleanup removes only an empty worktree while preserving tracked,
   untracked, or ignored content, including with a separate common Git directory. The helper is
