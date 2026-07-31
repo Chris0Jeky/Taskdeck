@@ -135,13 +135,13 @@ Bash workers must launch a reviewed absolute PowerShell application in the workt
 whole printed block. For headless Claude workers, launch `claude -p` from that exact target; do not
 add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follow the reviewed
 effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources,
-review committed permission/hook configuration and explicit rules together, account for built-in
+review committed permission configuration and explicit rules together, account for built-in
 read-only Bash, and treat managed policy as an administrator-owned trust boundary. The repository neither enables
 the progressive Windows PowerShell tool nor grants PowerShell commands project-wide. Set
 `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` only in the trusted host environment for the task-scoped
 guard and initializer launch, then restore its prior process value after `claude -p` returns; PowerShell is
-unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep all other commands on Git
-Bash. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
+unsandboxed on Windows and Taskdeck installs no project command-deny hook, so keep all other commands on Git
+Bash as the documented portable shell. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
 an untrusted workspace trusted; project allows and additional directories remain ignored until
 trust is accepted. `acceptEdits` alone is not command authorization.
 

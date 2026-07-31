@@ -22,11 +22,11 @@ guard/initializer bytes against reviewed raw blobs before emitting commands. Fro
 PowerShell application in the worktree for that block; never resolve a bare `powershell` command
 through PATH. Pass the helper's ordered guard-plus-initializer rule array as two `--allowedTools`
 argv values. For a headless worker, start `claude -p` in the exact helper-created target without
-`--worktree`, accept project trust interactively before relying on settings or hooks, and note that
+`--worktree`, accept project trust interactively before relying on project settings, and note that
 the project grants no PowerShell commands. Enable the PowerShell tool only through the trusted host
 environment for the two exact handoff rules and restore the prior host value when the launch returns.
-The tool is unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep later commands on Git
-Bash. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an
+The tool is unsandboxed on Windows and Taskdeck installs no project command-deny hook, so keep later commands on Git
+Bash as the documented portable shell. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an
 interactive coordinator launch. For headless launch authorization, use the reviewed
 effective-permission posture and both exact additive full-command task rules printed by the helper,
 including every applicable pinned argument and no wildcard; never use a generic relative handoff rule. The launch allowlist is not the sole boundary, and `acceptEdits` alone

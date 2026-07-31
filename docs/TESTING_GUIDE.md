@@ -107,9 +107,9 @@ Pop-Location
 if ($code -ne 0) { exit $code }
 ```
 
-## Agentic Operating Layer Smoke Checks
+## Agentic Operating Layer Checks
 
-For docs/skill/hook-only agentic changes, use targeted checks rather than the full product suite unless product runtime files changed. These local update-and-verify sequences render the failure ledger before testing synchronization so a valid hook-appended JSONL entry can become visible. Required CI deliberately does not render and keeps its test-before-governance order, so an unprojected JSONL change fails instead of being masked. On Windows PowerShell, use the verified Python launcher and compile hook sources in memory so verification does not leave `__pycache__` output:
+For docs/skill/agent-tooling changes, use targeted checks rather than the full product suite unless product runtime files changed. Taskdeck installs no project runtime hooks. The local sequence renders deliberately recorded JSONL entries before testing synchronization; Required CI does not render and keeps its test-before-governance order, so an unprojected JSONL change fails instead of being masked. On Windows PowerShell, use the verified Python launcher:
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -117,7 +117,11 @@ try {
     Get-Command py -ErrorAction Stop | Out-Null
     Get-Command node -ErrorAction Stop | Out-Null
     Get-Content -Raw .mcp.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
-    Get-Content -Raw .claude\settings.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+    $claudeSettings = Get-Content -Raw .claude\settings.json | ConvertFrom-Json -ErrorAction Stop
+    Get-Content -Raw .agent-harness\tier.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+    if ($null -ne $claudeSettings.PSObject.Properties['hooks']) { throw 'Taskdeck project hooks must remain absent.' }
+    if ($null -ne $claudeSettings.permissions.PSObject.Properties['deny']) { throw 'Taskdeck project deny rules must remain absent.' }
+    if (Test-Path -LiteralPath .codex\hooks.json) { throw 'Taskdeck Codex project hooks must remain absent.' }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
@@ -128,8 +132,6 @@ py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_val
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-question-batch; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-failure-capture; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-interface-map; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { py -3 -B -c "import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding='utf-8'), str(source), 'exec')" $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
-py -3 -B scripts/agent_hooks/smoke_test.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -138,19 +140,20 @@ node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTE
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-On POSIX, use `python3 -B` for direct utilities and fail fast. Do not run the full configured-handler smoke there: `.claude/settings.json` declares those handlers with `shell: powershell`, so `smoke_test.py` is native-Windows-host proof until that shell contract is redesigned.
+On POSIX, use `python3 -B` for the manual utilities and fail fast:
 
 ```sh
 set -eu
 python3 -B -m json.tool .mcp.json >/dev/null
 python3 -B -m json.tool .claude/settings.json >/dev/null
+python3 -B -m json.tool .agent-harness/tier.json >/dev/null
+python3 -B -c 'import json, pathlib; settings = json.loads(pathlib.Path(".claude/settings.json").read_text()); assert "hooks" not in settings; assert "deny" not in settings["permissions"]; assert not pathlib.Path(".codex/hooks.json").exists()'
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-question-batch
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-failure-capture
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-interface-map
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-question-batch
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-failure-capture
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-interface-map
-for file in scripts/agent_hooks/*.py; do python3 -B -c 'import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding="utf-8"), str(source), "exec")' "$file" || exit $?; done
 python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 node scripts/check-docs-governance.mjs
@@ -158,11 +161,11 @@ node scripts/check-golden-principles.mjs
 node scripts/check-github-ops-governance.mjs
 ```
 
-The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
+The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
 
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
 
-When `.claude/settings.json` changes outside the agentic smoke path, also parse it with PowerShell:
+When `.claude/settings.json` changes outside this path, also parse it with PowerShell:
 
 ```powershell
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
