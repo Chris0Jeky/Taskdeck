@@ -206,7 +206,7 @@ Agentic operating layer expansion (2026-05-11):
 - Taskdeck now has a shared agentic protocol layer under `docs/agentic/` for blocker-question batching, failure/workaround capture, guide-update promotion rules, and skill routing.
 - `autodoc/AGENT_INDEX.md` is the fast agent seam map for low-context orientation, context traps, and verification hints; it is a pointer layer, not canonical product truth.
 - Codex and Claude skill mirrors now include `taskdeck-question-batch`, `taskdeck-failure-capture`, and `taskdeck-interface-map`.
-- Claude project hooks now route dangerous shell-command checks and failed-tool capture through `scripts/agent_hooks/`, while preserving existing Taskdeck-specific pre-commit and PR-review reminders.
+- Historical: the 2026-05-11 Claude project layer routed dangerous shell-command checks and failed-tool capture through `scripts/agent_hooks/` and retained Taskdeck-specific pre-commit and PR-review reminders. `#1552` supersedes that runtime posture by retiring the project-owned hooks and handlers; only the deliberate manual failure-ledger utilities remain.
 - Codex and Claude tool parity is explicit in `docs/agentic/AGENT_TOOL_PARITY.md`; Claude `.mcp.json` now mirrors the shared MCP baseline with OpenAI docs, GitHub, Context7, Playwright, Chrome DevTools, and Docker gateway access.
 
 Paper backend gap delivery (2026-05-05, PRs `#1031`--`#1040`, 10 of 10 issues `#1015`--`#1024`):
