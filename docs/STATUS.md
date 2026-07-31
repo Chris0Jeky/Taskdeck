@@ -1239,9 +1239,12 @@ Required workflow: `.github/workflows/ci-required.yml`
   targets cannot refresh refs in normal or `-WhatIf` mode, dirty handoff-only cleanup remains plain
   and bounded, and late-collision cleanup removes only an empty worktree while preserving tracked,
   untracked, or ignored content, including with a separate common Git directory. Helper-owned text
-  and blob Git commands are non-interactive and bounded to 45 seconds by default; a real stalled
+  and blob Git commands disable Git/Git Credential Manager prompts and are bounded to 45 seconds by
+  default; a real stalled
   remote-helper root and child regression proves timeout cleanup completes before return with no ref
-  or worktree mutation. The helper is
+  or worktree mutation. A second real timeout after post-checkout registration proves the populated
+  target and locked metadata are removed through exact-identity, clean-only, plain cleanup. SSH may
+  retain a transport-owned console prompt, but it cannot exceed the same deadline. The helper is
   main-checkout-only, rejects linked-source invocation before mutation,
   rejects Git-syntax-valid names, overlong lock paths, and branch namespace collisions that cannot
   become Windows loose refs, and keeps `claude -p` in the helper-created target instead of creating

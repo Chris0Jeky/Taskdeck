@@ -1875,6 +1875,79 @@ finally {
     }
 
     if (Test-CaseSelected "git-add-failure") {
+        $timeoutHookDirectory = Join-Path $testRoot "worktree-add-timeout-hook"
+        New-Item -ItemType Directory -Path $timeoutHookDirectory | Out-Null
+        $timeoutHookPath = Join-Path $timeoutHookDirectory "post-checkout"
+        $timeoutHookStartedPath = Join-Path $timeoutHookDirectory "started.txt"
+        $timeoutHookStartedArgument = $timeoutHookStartedPath.Replace('\', '/')
+        $timeoutHookContent = @'
+#!/bin/sh
+printf started > "__STARTED_PATH__"
+if [ "$TASKDECK_DIRTY_TIMEOUT_HOOK" = "1" ]; then
+    printf '\n# dirty timeout hook canary\n' >> scripts/worktree_guard.ps1
+fi
+sleep 30
+'@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument)
+        [System.IO.File]::WriteAllText(
+            $timeoutHookPath,
+            $timeoutHookContent,
+            [System.Text.UTF8Encoding]::new($false))
+        $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
+        $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $timedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "499",
+                "-Slug", "git-add-timeout",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True ($timedOutAdd.ExitCode -ne 0) "A timed-out git worktree add must fail closed."
+            Assert-NormalizedContains $timedOutAdd.Output "git worktree add failed for" "Timed-out worktree-add diagnostic omitted the failed operation."
+            $normalizedTimedOutAdd = $timedOutAdd.Output -replace '\s+', ' '
+            $reportedBoundedTermination =
+                $normalizedTimedOutAdd.Contains("Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped.") -or
+                $normalizedTimedOutAdd.Contains("Git stderr drain did not finish within 5000 ms after its process exited.")
+            Assert-True $reportedBoundedTermination "Timed-out worktree-add diagnostic omitted its bounded termination result."
+            Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Post-checkout timeout fixture did not start."
+            Assert-True (-not (Test-Path -LiteralPath $timedOutWorktree)) "Timed-out worktree add left its populated target behind."
+            $timedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-Equal $timedOutRegistrationsBefore $timedOutRegistrationsAfter "Timed-out worktree add left stale registration metadata."
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+        }
+
+        $dirtyTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-500-dirty-git-add-timeout"
+        $dirtyTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $previousDirtyTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "Process")
+        [System.Environment]::SetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "1", "Process")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $dirtyTimedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "500",
+                "-Slug", "dirty-git-add-timeout",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True ($dirtyTimedOutAdd.ExitCode -ne 0) "A dirty timed-out git worktree add must fail closed."
+            Assert-NormalizedContains $dirtyTimedOutAdd.Output "Refusing to remove partially created worktree" "Dirty partial-registration cleanup did not explain its preservation decision."
+            Assert-True (Test-Path -LiteralPath $dirtyTimedOutWorktree -PathType Container) "Dirty partial-registration cleanup deleted the populated target."
+            $dirtyGuardPath = Join-Path $dirtyTimedOutWorktree "scripts/worktree_guard.ps1"
+            Assert-NormalizedContains (Get-Content -Raw -LiteralPath $dirtyGuardPath) "dirty timeout hook canary" "Dirty timeout hook did not modify the preservation canary."
+            $dirtyTimedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-True ($dirtyTimedOutRegistrationsAfter -cne $dirtyTimedOutRegistrationsBefore) "Dirty partial-registration cleanup removed the worktree registration."
+            Assert-NormalizedContains $dirtyTimedOutRegistrationsAfter ($dirtyTimedOutWorktree.Replace('\', '/')) "Dirty partial-registration cleanup did not preserve the exact registration."
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", $previousDirtyTimeoutHook, "Process")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+            if (Test-Path -LiteralPath $dirtyTimedOutWorktree -PathType Container) {
+                $null = Invoke-Git -WorkingDirectory $dirtyTimedOutWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+                $null = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "unlock", $dirtyTimedOutWorktree) -WorkingDirectory $callerPath
+                $dirtyCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $dirtyTimedOutWorktree) -WorkingDirectory $callerPath
+                Assert-Equal 0 $dirtyCleanup.ExitCode "Dirty timeout fixture cleanup failed after its preservation proof.`n$($dirtyCleanup.Output)"
+            }
+        }
+
         $gitFailureTarget = Join-Path $callerPath ".worktrees/codex-431-git-failure"
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "add", "--detach", $gitFailureTarget, "refs/remotes/origin/main")
         $parkedGitFailureTarget = Join-Path $callerPath ".worktrees/parked-git-failure"
@@ -1885,7 +1958,7 @@ finally {
         Assert-NormalizedContains $gitFailure.Output "is a missing but already registered worktree" "Git stderr context should be preserved."
         Assert-NormalizedContains $gitFailure.Output "(exit code 128)" "Git failure diagnostic omitted the native exit code."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-431-git-failure"))) "Failed git worktree add should not leave a target worktree."
-        Complete-Test "native git failure propagates with a clear diagnostic"
+        Complete-Test "native git failures and post-registration timeouts clean up safely with clear diagnostics"
     }
 
     Write-Host "PASS: $passed/$($selectedCases.Count) selected worktree helper regression checks"

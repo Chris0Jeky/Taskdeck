@@ -1551,7 +1551,9 @@ Required workflow: `.github/workflows/ci-required.yml`
     clean-only separate-Git-dir late-collision removal plus tracked/untracked/ignored-content
     preservation, case-variant remote refresh, and a real stalled remote-helper root plus child that
     must be absent before bounded failure returns without changing refs or worktrees. It also covers
-    pre-mutation rejection of invalid, overlong, or namespace-colliding Windows branch refs
+    a post-checkout-hook timeout after worktree registration and proves the populated target plus
+    locked metadata are removed safely, alongside pre-mutation rejection of invalid, overlong, or
+    namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`

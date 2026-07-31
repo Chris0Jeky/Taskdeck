@@ -716,6 +716,52 @@ function Assert-HelperCreatedWorktreeIdentity {
     }
 }
 
+function Get-HelperCreatedWorktreeRegistration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    $listResult = Invoke-GitCommand -Arguments @("worktree", "list", "--porcelain")
+    if ($listResult.ExitCode -ne 0) {
+        throw "Could not inspect helper-created worktree registration '$Worktree'.$(Format-GitContext $listResult.Output)"
+    }
+
+    $pathComparison = if ([System.IO.Path]::DirectorySeparatorChar -eq [char]'\') {
+        [System.StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [System.StringComparison]::Ordinal
+    }
+    $expectedPath = [System.IO.Path]::GetFullPath($Worktree).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $matchingRegistrations = @(
+        foreach ($record in ($listResult.RawStdout -split '(?:\r?\n){2,}')) {
+            $lines = @($record -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($lines.Count -eq 0 -or -not $lines[0].StartsWith("worktree ", [System.StringComparison]::Ordinal)) {
+                continue
+            }
+            $registeredPath = [System.IO.Path]::GetFullPath($lines[0].Substring("worktree ".Length)).TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar)
+            if ($registeredPath.Equals($expectedPath, $pathComparison)) {
+                [pscustomobject]@{
+                    Path = $registeredPath
+                    IsLocked = @($lines | Where-Object {
+                        $_ -ceq "locked" -or $_.StartsWith("locked ", [System.StringComparison]::Ordinal)
+                    }).Count -gt 0
+                }
+            }
+        }
+    )
+    if ($matchingRegistrations.Count -ne 1) {
+        throw "Expected exactly one helper-created worktree registration for '$Worktree'; found $($matchingRegistrations.Count)."
+    }
+
+    return $matchingRegistrations[0]
+}
+
 function Remove-HelperCreatedWorktree {
     param(
         [Parameter(Mandatory = $true)]
@@ -725,11 +771,17 @@ function Remove-HelperCreatedWorktree {
         [string]$ExpectedHead,
 
         [Parameter(Mandatory = $true)]
-        [System.Collections.IDictionary]$ReviewedArtifacts
+        [System.Collections.IDictionary]$ReviewedArtifacts,
+
+        [switch]$RequireCleanWorktree
     )
 
     Assert-HelperCreatedWorktreeIdentity -Worktree $Worktree -ExpectedHead $ExpectedHead
+    $registration = Get-HelperCreatedWorktreeRegistration -Worktree $Worktree
     $statusLines = @(Get-WorktreeStatusLines -Worktree $Worktree)
+    if ($RequireCleanWorktree -and $statusLines.Count -ne 0) {
+        throw "Refusing to remove partially created worktree '$Worktree' because it contains tracked, untracked, or ignored content: $($statusLines -join '; ')"
+    }
     $neutralizedArtifacts = @()
     foreach ($statusLine in $statusLines) {
         if ($statusLine.Length -lt 4) {
@@ -768,6 +820,13 @@ function Remove-HelperCreatedWorktree {
             $remainingStatus = @(Get-WorktreeStatusLines -Worktree $Worktree)
             if ($remainingStatus.Count -ne 0) {
                 throw "Refusing to remove helper-created worktree '$Worktree' because dirt remained after bounded handoff-artifact neutralization: $($remainingStatus -join '; ')"
+            }
+        }
+
+        if ($registration.IsLocked) {
+            $unlockResult = Invoke-GitCommand -Arguments @("worktree", "unlock", $Worktree)
+            if ($unlockResult.ExitCode -ne 0) {
+                throw "Could not unlock the exact helper-created worktree '$Worktree' before cleanup.$(Format-GitContext $unlockResult.Output)"
             }
         }
 
@@ -1077,7 +1136,6 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
 
         $worktreeAddResult = Invoke-GitCommand -Arguments @("worktree", "add", "--detach", $worktreeDir, $baseCommit)
         if ($worktreeAddResult.ExitCode -ne 0) {
-            Remove-EmptyReservedWorktreeTarget -Worktree $worktreeDir
             throw "git worktree add failed for '$worktreeDir' from '$BaseBranch' (exit code $($worktreeAddResult.ExitCode)).$(Format-GitContext $worktreeAddResult.Output)"
         }
         $worktreeAdded = $true
@@ -1088,13 +1146,27 @@ if ($PSCmdlet.ShouldProcess($worktreeDir, "Refresh the base when remote and crea
     }
     catch {
         $creationFailure = $_
-        if ($worktreeAdded) {
-            try {
+        try {
+            if ($worktreeAdded) {
                 Remove-HelperCreatedWorktree -Worktree $worktreeDir -ExpectedHead $baseCommit -ReviewedArtifacts $reviewedHandoffArtifacts
             }
-            catch {
-                throw "$($creationFailure.Exception.Message) Cleanup also failed: $($_.Exception.Message)"
+            else {
+                try {
+                    Remove-HelperCreatedWorktree -Worktree $worktreeDir -ExpectedHead $baseCommit -ReviewedArtifacts $reviewedHandoffArtifacts -RequireCleanWorktree
+                }
+                catch {
+                    $registeredCleanupFailure = $_
+                    try {
+                        Remove-EmptyReservedWorktreeTarget -Worktree $worktreeDir
+                    }
+                    catch {
+                        throw "Registered-worktree cleanup failed: $($registeredCleanupFailure.Exception.Message) Empty-reservation cleanup also failed: $($_.Exception.Message)"
+                    }
+                }
             }
+        }
+        catch {
+            throw "$($creationFailure.Exception.Message) Cleanup also failed: $($_.Exception.Message)"
         }
         throw $creationFailure
     }
