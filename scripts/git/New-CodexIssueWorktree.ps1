@@ -668,6 +668,23 @@ function Get-WorktreeStatusLines {
     )
 }
 
+function Get-WorktreeHiddenIndexEntries {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree
+    )
+
+    $indexFlagsResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "ls-files", "-v", "-z")
+    if ($indexFlagsResult.ExitCode -ne 0) {
+        throw "Could not inspect helper-created worktree index flags '$Worktree' before cleanup.$(Format-GitContext $indexFlagsResult.Output)"
+    }
+
+    return @(
+        $indexFlagsResult.RawStdout -split "`0" |
+            Where-Object { $_ -cmatch '^(?:[a-z]|S) ' }
+    )
+}
+
 function Assert-HelperCreatedWorktreeIdentity {
     param(
         [Parameter(Mandatory = $true)]
@@ -778,6 +795,10 @@ function Remove-HelperCreatedWorktree {
 
     Assert-HelperCreatedWorktreeIdentity -Worktree $Worktree -ExpectedHead $ExpectedHead
     $registration = Get-HelperCreatedWorktreeRegistration -Worktree $Worktree
+    $hiddenIndexEntries = @(Get-WorktreeHiddenIndexEntries -Worktree $Worktree)
+    if ($hiddenIndexEntries.Count -ne 0) {
+        throw "Refusing to remove helper-created worktree '$Worktree' because its index contains assume-unchanged or skip-worktree entries that can hide modified data."
+    }
     $statusLines = @(Get-WorktreeStatusLines -Worktree $Worktree)
     if ($RequireCleanWorktree -and $statusLines.Count -ne 0) {
         throw "Refusing to remove partially created worktree '$Worktree' because it contains tracked, untracked, or ignored content: $($statusLines -join '; ')"

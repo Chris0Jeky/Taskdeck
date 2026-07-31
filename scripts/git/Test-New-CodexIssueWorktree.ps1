@@ -1880,14 +1880,23 @@ finally {
         $timeoutHookPath = Join-Path $timeoutHookDirectory "post-checkout"
         $timeoutHookStartedPath = Join-Path $timeoutHookDirectory "started.txt"
         $timeoutHookStartedArgument = $timeoutHookStartedPath.Replace('\', '/')
+        $timeoutGitArgument = $gitExecutable.Replace('\', '/')
         $timeoutHookContent = @'
 #!/bin/sh
 printf started > "__STARTED_PATH__"
 if [ "$TASKDECK_DIRTY_TIMEOUT_HOOK" = "1" ]; then
     printf '\n# dirty timeout hook canary\n' >> scripts/worktree_guard.ps1
 fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "assume" ]; then
+    "__GIT_EXECUTABLE__" update-index --assume-unchanged -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary assume\n' >> scripts/worktree_guard.ps1
+fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "skip" ]; then
+    "__GIT_EXECUTABLE__" update-index --skip-worktree -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary skip\n' >> scripts/worktree_guard.ps1
+fi
 sleep 30
-'@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument)
+'@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
         [System.IO.File]::WriteAllText(
             $timeoutHookPath,
             $timeoutHookContent,
@@ -1946,6 +1955,52 @@ sleep 30
                 $dirtyCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $dirtyTimedOutWorktree) -WorkingDirectory $callerPath
                 Assert-Equal 0 $dirtyCleanup.ExitCode "Dirty timeout fixture cleanup failed after its preservation proof.`n$($dirtyCleanup.Output)"
             }
+        }
+
+        $previousHiddenTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", "Process")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $hiddenTimeoutScenarios = @(
+                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged" },
+                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree" }
+            )
+            foreach ($scenario in $hiddenTimeoutScenarios) {
+                $hiddenTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-$($scenario.Issue)-$($scenario.Slug)"
+                $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+                [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
+                if (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $timeoutHookStartedPath -Force
+                }
+                try {
+                    $hiddenTimedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                        "-IssueNumber", $scenario.Issue,
+                        "-Slug", $scenario.Slug,
+                        "-GitCommandTimeoutSeconds", "5"
+                    )
+                    Assert-True ($hiddenTimedOutAdd.ExitCode -ne 0) "An index-hidden dirty timed-out git worktree add must fail closed."
+                    Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged or skip-worktree entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
+                    Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Index-hidden timeout fixture did not start."
+                    Assert-True (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) "Index-hidden partial-registration cleanup deleted the populated target."
+                    $hiddenGuardPath = Join-Path $hiddenTimedOutWorktree "scripts/worktree_guard.ps1"
+                    Assert-NormalizedContains (Get-Content -Raw -LiteralPath $hiddenGuardPath) "hidden timeout hook canary $($scenario.Flag)" "Index-hidden timeout hook did not preserve its modified bytes."
+                    $hiddenTimedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+                    Assert-True ($hiddenTimedOutRegistrationsAfter -cne $hiddenTimedOutRegistrationsBefore) "Index-hidden partial-registration cleanup removed the worktree registration."
+                    Assert-NormalizedContains $hiddenTimedOutRegistrationsAfter ($hiddenTimedOutWorktree.Replace('\', '/')) "Index-hidden partial-registration cleanup did not preserve the exact registration."
+                }
+                finally {
+                    if (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) {
+                        $null = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("update-index", $scenario.ClearArgument, "--", "scripts/worktree_guard.ps1")
+                        $null = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+                        $null = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "unlock", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
+                        $hiddenCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
+                        Assert-Equal 0 $hiddenCleanup.ExitCode "Index-hidden timeout fixture cleanup failed after its preservation proof.`n$($hiddenCleanup.Output)"
+                    }
+                }
+            }
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $previousHiddenTimeoutHook, "Process")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
         }
 
         $gitFailureTarget = Join-Path $callerPath ".worktrees/codex-431-git-failure"
