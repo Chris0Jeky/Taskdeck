@@ -25,12 +25,11 @@ This file is the persistent memory and execution state for Claude Code's autonom
 2. **Implement**: Small, focused commits. One commit per logical unit.
 3. **Test**: Run `dotnet test backend/Taskdeck.sln -c Release -m:1` and/or `cd frontend/taskdeck-web && npx vitest --run`
 4. **PR**: Create with `gh pr create` linking the issue. Include Summary + Test Plan.
-5. **Review Round 1**: Use `adversarial-review` skill or manual review. Post ALL findings as a PR comment. Fix every finding (CRITICAL through LOW). Push fixes.
-6. **Review Round 2**: Fresh adversarial review of the fixes. Post findings. Fix everything. Push.
-7. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
-8. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
-9. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. _(The 2026-05-17 cleanup session WAS merge-authorized after those gates; that authorization was session-scoped and is historical.)_
-10. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
+5. **Review**: Follow the authoritative `review-and-ship` pipeline named by root `AGENTS.md`; this snapshot sets no fixed review-round count or fix-all rule.
+6. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
+7. **Verify**: Run tests again post-fix. Confirm CI passes (check via `gh pr checks <PR#>`).
+8. **Merge gate**: Leave PRs open unless the active user request explicitly authorizes merging after the normal review, bot-comment, test, and CI gates. _(The 2026-05-17 cleanup session WAS merge-authorized after those gates; that authorization was session-scoped and is historical.)_
+9. **Stack if needed**: If the next issue depends on this PR, branch from the PR branch.
 
 ### Parallel Subagent Protocol:
 
@@ -88,7 +87,7 @@ _(Point-in-time snapshot — several items below were **subsequently delivered**
 - PR #1083 `paper/1001-board-kanban-surface`: CI green at last inspection; current-head adversarial review clean.
 - PR #1084 `tst/1081-composable-coverage-part2`: watcher review findings fixed in `a1d3449a`; merge-policy/date cleanup in progress after review findings; CI pending.
 
-User authorizes merging only under the current risk-calibrated `AGENTS.md` gate: green proving checks at the reviewed head, one triage pass over every review comment, confirmed blockers fixed, and other findings tracked or declined.
+Session merge authorization remains subject to the authoritative `review-and-ship` pipeline named by root `AGENTS.md`, plus current exact-head proving, CI, and comment gates as remeasured live.
 
 ### Active PR Stack
 - #1078 -> `main`
