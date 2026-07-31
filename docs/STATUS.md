@@ -1225,7 +1225,24 @@ Result:
 
 Required workflow: `.github/workflows/ci-required.yml`
 
-- `docs-governance` (Ubuntu)
+- `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 28-case
+  detached-first worktree-helper regression harness (Windows PowerShell), including rejection of
+  dirty, missing, locally filter-covered, or index-hidden source helper/guard/initializer bytes and
+  selected bases whose guard/initializer blobs do not exactly match the invoking checkout's
+  committed versions. These in-helper checks run before its intended mutations but do not
+  authenticate the helper before PowerShell starts it; an external hash-pinned launcher remains a
+  separate bootstrap trust boundary. The same residual applies after creation: a same-user process
+  can replace the target initializer or guard before handoff execution. The repository does not
+  enable or grant Claude Code's unsandboxed Windows PowerShell tool project-wide; headless
+  initialization requires a restored-after-launch host opt-in and exact guard-plus-initializer
+  rules while later commands remain on the Bash-only hook surface. The same gate proves occupied
+  targets cannot refresh refs in normal or `-WhatIf` mode, dirty handoff-only cleanup remains plain
+  and bounded, and late-collision cleanup removes only an empty worktree while preserving tracked,
+  untracked, or ignored content, including with a separate common Git directory. The helper is
+  main-checkout-only, rejects linked-source invocation before mutation,
+  rejects Git-syntax-valid names, overlong lock paths, and branch namespace collisions that cannot
+  become Windows loose refs, and keeps `claude -p` in the helper-created target instead of creating
+  a second Claude worktree.
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
 - `api-integration` (Ubuntu/Windows)

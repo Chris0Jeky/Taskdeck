@@ -86,8 +86,9 @@ LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platfor
   `bash scripts/check-git-env.sh` (or `powershell -File scripts/check-git-env.ps1`); it also clears a
   stale `.git/index.lock` after confirming no git process is live.
 - **`.worktrees/` holds ~30 stale issue checkouts** with unpushed branches. Do not prune or clean them.
-- Create issue worktrees with `scripts/git/New-CodexIssueWorktree.ps1`; first command inside one is
-  `powershell -File scripts/worktree_guard.ps1`.
+- Create issue worktrees with `scripts/git/New-CodexIssueWorktree.ps1`. Run its complete printed handoff:
+  the exact pinned-Git `worktree_guard.ps1` command first, then the bounded
+  `Initialize-CodexIssueWorktree.ps1` command before creating the issue branch.
 
 ## Definition of done
 

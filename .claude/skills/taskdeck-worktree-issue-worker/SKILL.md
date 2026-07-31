@@ -9,13 +9,38 @@ Use this skill when assigned one issue or task in an isolated worktree.
 
 ## First Commands
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Then read the issue's body + acceptance criteria and the domain skill matching the files you own.
+When the coordinator used `New-CodexIssueWorktree.ps1` from the main checkout (linked-source
+invocation is rejected), run its complete printed PowerShell
+handoff block unchanged. Its first command invokes the exact absolute target `worktree_guard.ps1`
+with pinned Git; the bounded `Initialize-CodexIssueWorktree.ps1` follows only on guard success,
+verifies the exact helper-created worktree and detached base, then performs `switch -c`. A late
+switch collision removes the unused detached worktree only when its tracked, untracked, and ignored
+inventory is empty; otherwise it is preserved for inspection. The printed block
+invokes the wrapper in the already-running PowerShell host. Creation-time blob checks do not
+authenticate a same-user replacement after handoff emission, though the helper checks target
+guard/initializer bytes against reviewed raw blobs before emitting commands. From Bash, launch a reviewed absolute
+PowerShell application in the worktree for that block; never resolve a bare `powershell` command
+through PATH. Pass the helper's ordered guard-plus-initializer rule array as two `--allowedTools`
+argv values. For a headless worker, start `claude -p` in the exact helper-created target without
+`--worktree`, accept project trust interactively before relying on settings or hooks, and note that
+the project grants no PowerShell commands. Enable the PowerShell tool only through the trusted host
+environment for the two exact handoff rules and restore the prior host value when the launch returns.
+The tool is unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep later commands on Git
+Bash. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an
+interactive coordinator launch. For headless launch authorization, use the reviewed
+effective-permission posture and both exact additive full-command task rules printed by the helper,
+including every applicable pinned argument and no wildcard; never use a generic relative handoff rule. The launch allowlist is not the sole boundary, and `acceptEdits` alone
+is insufficient.
 
-Validate worktree isolation with the command required by `docs/WORKTREE_AGENT_PROTOCOL.md` or:
+For an already-created worktree that does not need the helper handoff, validate isolation with:
 
 ```powershell
 powershell -File scripts/worktree_guard.ps1
 ```
+
+Do not substitute a PATH-first batch shim.
+
+Only then orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Then read the issue's body + acceptance criteria and the domain skill matching the files you own.
 
 ## Ownership
 

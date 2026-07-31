@@ -49,13 +49,14 @@ When editing with structured patches:
 
 For isolated workers:
 
-1. Use Claude `isolation: "worktree"` or the repo worktree script, depending on runtime.
+1. Use Claude `isolation: "worktree"` or the repo worktree script from the main checkout, depending on runtime; the repo helper rejects linked-source invocation.
 2. Do not include absolute main-checkout paths in worker prompts.
-3. Require the first command from `docs/WORKTREE_AGENT_PROTOCOL.md` or `powershell -File scripts/worktree_guard.ps1`.
-4. Assign explicit file/module ownership.
-5. Tell workers they are not alone in the codebase and must not revert others' edits.
-6. Require targeted tests and handoff into the canonical review pipeline.
-7. Require every file-editing worker prompt to restate the structured patch discipline above.
+3. When the repo helper was used, require its complete printed PowerShell handoff block as the first worker commands. Its first command invokes the exact absolute target `worktree_guard.ps1` with pinned Git; the bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows on guard success, binds the detached base, and only then runs `switch -c`. A late collision removes the unused detached worktree only when its tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper validates target guard/initializer bytes against reviewed raw blobs before emitting the block, but same-user replacement after emission remains outside this boundary. When launch authorization requires PowerShell rules, use both exact additive full-command rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard; pass its ordered rule array as two `--allowedTools` argv values, never a generic relative handoff rule. Start `claude -p` in the exact helper-created target without `--worktree`; accept project trust interactively before relying on project settings or hooks. The project grants no PowerShell commands. Enable the unsandboxed Windows PowerShell tool only through the trusted host environment for the two exact handoff rules, restore the prior host value when the launch returns, then keep later commands on Taskdeck's Bash-only hook surface. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an interactive coordinator launch.
+4. From a Bash worker, launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; never resolve bare `powershell`. Otherwise use the first guard command from `docs/WORKTREE_AGENT_PROTOCOL.md`; never substitute a PATH-first batch shim.
+5. Assign explicit file/module ownership.
+6. Tell workers they are not alone in the codebase and must not revert others' edits.
+7. Require targeted tests and handoff into the canonical review pipeline.
+8. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 

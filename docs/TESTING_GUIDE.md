@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-27
+Last Updated: 2026-07-31
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -131,6 +131,7 @@ Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { py -3 -B -c "i
 py -3 -B scripts/agent_hooks/smoke_test.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-docs-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -1531,7 +1532,24 @@ Required workflow: `.github/workflows/ci-required.yml`
     (`continue-on-error: true`); promotion into branch protection remains
     maintainer-owned under #1173
 - `docs-governance`
-  - Enforces required active docs and docs index invariants
+  - Ubuntu `Docs Governance` enforces required active docs, failure-ledger synchronization, Golden
+    Principles, and GitHub-operations invariants
+  - Windows `Worktree Helper (Windows PowerShell)` runs
+    `powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1`
+    as a 28-case harness enforcing detached-first creation, clean source helper/guard/initializer
+    artifacts (including local clean-filter canaries and index-hidden byte changes), independent
+    guard/initializer selected-base blob pinning, fail-closed initialization, and
+    permission-contract regressions. The helper's self-check is covered as pre-mutation hygiene, not
+    as authentication before PowerShell starts executing it; selected-base OID checks likewise do
+    not authenticate target initializer/guard bytes at handoff execution time. The permission model
+    asserts no project-wide opt-in to Claude Code's unsandboxed Windows PowerShell tool, trusted
+    versus untrusted project settings, main-checkout-only helper invocation, two exact target-bound
+    guard/initializer launch rules without a second Claude worktree, restored host opt-in, directly
+    pasteable here-string syntax, real PowerShell 5.1 two-argv transport, occupied-target rejection
+    before normal or dry-run ref mutation, bounded dirty-artifact cleanup without force,
+    clean-only separate-Git-dir late-collision removal plus tracked/untracked/ignored-content
+    preservation, case-variant remote refresh, and pre-mutation rejection
+    of invalid, overlong, or namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`
