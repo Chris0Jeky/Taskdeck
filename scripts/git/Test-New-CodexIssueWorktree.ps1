@@ -654,6 +654,8 @@ try {
             Assert-True (-not $initializerAllowRule.Contains(":*)")) "Exact full-command initializer rule must not retain a wildcard suffix."
 
             $claudeSettings = Get-Content -Raw -LiteralPath $claudeSettingsPath | ConvertFrom-Json
+            Assert-True ($null -eq $claudeSettings.PSObject.Properties['hooks']) "Taskdeck project settings must not install runtime hooks."
+            Assert-True ($null -eq $claudeSettings.permissions.PSObject.Properties['deny']) "Taskdeck project settings must not install a local command-deny list."
             Assert-True ($claudeSettings.permissions.allow -notcontains "PowerShell(& 'scripts/git/Initialize-CodexIssueWorktree.ps1':*)") "Claude permissions retained the cross-worktree relative initializer rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains $guardAllowRule) "Claude project settings should not commit a task-specific absolute guard rule."
             Assert-True ($claudeSettings.permissions.allow -notcontains $initializerAllowRule) "Claude project settings should not commit a task-specific absolute initializer rule."
@@ -714,20 +716,16 @@ try {
             Assert-True ($reviewedConfiguration.Allow -contains $taskLaunchRule) "The reviewed effective permissions should include explicit task launch rules."
             Assert-True (-not $reviewedConfiguration.Environment.ContainsKey("CLAUDE_CODE_USE_POWERSHELL_TOOL")) "Project settings must not enable the unsandboxed Windows PowerShell tool repo-wide."
             $committedPowerShellRules = @($claudeSettings.permissions.allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            $expectedHookLauncherPowerShellRules = @(
-                "PowerShell(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
-                "PowerShell(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
-                "PowerShell(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
+            $expectedProjectUtilityPowerShellRules = @(
                 "PowerShell(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
-                "PowerShell(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
                 'PowerShell(py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py":*)'
             )
-            Assert-Equal $expectedHookLauncherPowerShellRules.Count $committedPowerShellRules.Count "Project settings must permit only the reviewed hook-launcher PowerShell commands."
-            foreach ($expectedHookLauncherRule in $expectedHookLauncherPowerShellRules) {
-                Assert-True ($committedPowerShellRules -contains $expectedHookLauncherRule) "Project settings omitted or replaced a reviewed hook-launcher PowerShell command: $expectedHookLauncherRule"
+            Assert-Equal $expectedProjectUtilityPowerShellRules.Count $committedPowerShellRules.Count "Project settings must permit only the reviewed manual agent-utility PowerShell commands."
+            foreach ($expectedProjectUtilityRule in $expectedProjectUtilityPowerShellRules) {
+                Assert-True ($committedPowerShellRules -contains $expectedProjectUtilityRule) "Project settings omitted or replaced a reviewed manual agent-utility PowerShell command: $expectedProjectUtilityRule"
             }
             $effectivePowerShellRules = @($reviewedConfiguration.Allow | Where-Object { $_.StartsWith('PowerShell(', [System.StringComparison]::Ordinal) })
-            Assert-Equal ($expectedHookLauncherPowerShellRules.Count + 2) $effectivePowerShellRules.Count "The supported headless posture should add only the exact guard and initializer PowerShell rules to reviewed hook launchers."
+            Assert-Equal ($expectedProjectUtilityPowerShellRules.Count + 2) $effectivePowerShellRules.Count "The supported headless posture should add only the exact guard and initializer PowerShell rules to reviewed manual utilities."
             Assert-True ($effectivePowerShellRules -contains $powerShellGuardRule) "The supported headless posture should permit the exact guard PowerShell rule."
             Assert-True ($effectivePowerShellRules -contains $powerShellInitializerRule) "The supported headless posture should permit the exact initializer PowerShell rule."
 
@@ -759,14 +757,14 @@ try {
             Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
             Assert-NormalizedContains $protocol "Do not present the launch allowlist as the sole authorization boundary" "Headless guidance must describe the complete effective permission boundary."
             Assert-NormalizedContains $protocol "Organization-managed settings remain effective" "Headless guidance must bound residual administrator-owned trust."
-            Assert-NormalizedContains $protocol "built-in read-only Bash commands, or applicable hook approvals" "Headless guidance must retain documented non-allowlist authorization paths."
+            Assert-NormalizedContains $protocol "built-in read-only Bash commands, or applicable externally managed hook decisions" "Headless guidance must retain documented non-allowlist authorization paths."
             Assert-NormalizedContains $protocol 'overrides a file-backed `defaultMode` for that session' "Headless guidance must distinguish the command-line mode override from merged allow rules."
             Assert-Contains $protocol "CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance omitted the task-scoped host PowerShell-tool enablement."
             Assert-Contains $protocol "Remove-Item Env:CLAUDE_CODE_USE_POWERSHELL_TOOL" "Headless guidance did not restore an absent host PowerShell-tool value after launch."
             Assert-NormalizedContains $protocol 'restore its prior process value after `claude -p` returns' "Headless guidance did not bound the PowerShell-tool opt-in to one launch."
             Assert-NormalizedContains $protocol "repository deliberately does not enable that tool or grant PowerShell commands project-wide" "Headless guidance omitted the no-project-wide-PowerShell boundary."
             Assert-NormalizedContains $protocol "on Windows it is not sandboxed" "Headless guidance omitted the PowerShell sandbox limitation."
-            Assert-NormalizedContains $protocol "command deny/failure/pre-commit hooks are currently Bash-only" "Headless guidance omitted the repository hook-coverage boundary."
+            Assert-NormalizedContains $protocol "repository installs no project command-deny, failure-capture, or pre-commit hooks" "Headless guidance omitted the no-project-hook boundary."
             Assert-NormalizedContains $protocol "does not make an untrusted workspace trusted" "Headless guidance must not treat -p as accepted project trust."
             Assert-NormalizedContains $protocol "Pass every required allow rule through CLI argv" "Headless guidance omitted the untrusted-workspace CLI-only posture."
             Assert-Contains $protocol '$guardAllowRule = @''' "Headless guidance omitted quote-safe guard-rule transport."
