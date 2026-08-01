@@ -38,7 +38,7 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` | slow; bare `vitest --run` **OOMs on this box** |
 | E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` | needs a running stack |
 
-`ci-required.yml` is the sole merge gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
+`ci-required.yml` is the required CI gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
 `deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
 jobs are label-gated). Read its results, but it does not gate the merge.
 
@@ -79,7 +79,7 @@ LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platfor
   conflicts. Never `--no-verify`. GitHub's server-side merge commit is outside the PR commit set — do not
   rewrite shared history to add a trailer to it.
 - **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or local command-deny
-  list, and the root has no `.codex/hooks.json`. T3 authority, global laws, CI, and worktree guards still
+  list, and the root has no `.codex/hooks.json`. Declared authority, global laws, CI, and worktree guards still
   apply; user-, organization-, and runtime-level hooks are separate effective layers.
 - **PowerShell:** no `&&` chaining; use `;` and check `$LASTEXITCODE`.
 - **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run
@@ -103,8 +103,9 @@ contributor — technology, data model, security posture, automation safety boun
 
 ## Authority
 
-T3 workshop per `.agent-harness/tier.json` — push free, merge free once `ci-required` is green at the head
-and the global law-2 gate is satisfied. Human-action file: `OUTSTANDING_TASKS.md`.
+Read `.agent-harness/tier.json` live for tier and push/merge authority; do not mirror those values here.
+`ci-required` is Taskdeck's repository evidence gate, while review/merge disposition comes from the
+canonical global laws and `review-and-ship` pipeline. Human-action file: `OUTSTANDING_TASKS.md`.
 
 ## Key docs
 

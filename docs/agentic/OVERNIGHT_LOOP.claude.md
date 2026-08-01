@@ -97,7 +97,8 @@ Undiscoverable-but-needed convention → sane default, record the assumption, pr
 Priority (highest first): **(1)** unblock the substrate — red `main`, broken command, or
 recurring friction from §8; **(2)** correctness & security (data loss, auth, crashes, injection)
 severity-first; **(3)** pre-existing errors (failing/flaky tests, lint/type errors, latent
-bugs); **(4)** ready-to-land open PRs (§5), keep WIP small; **(5)** high-value features, then
+bugs); **(4)** ready open PRs, reconciled through the canonical pipeline with WIP kept small;
+**(5)** high-value features, then
 polish. Respect `REVIVAL_PLAN.md`'s ratified wave list. **Empty queue → generate the queue**
 (analyze for bugs/risks/debt/missing tests/docs drift, seed issues with scope + acceptance
 criteria), never idle. Leave `CODEX-*`-labelled trackers for Codex. The

@@ -12,7 +12,7 @@ the contributor contract in `../AGENTS.md`; review doctrine in the global laws. 
 | `skills/` | 16 repo-local workflow skills — **prefer these over plugin equivalents**; routing table in `../AGENTS.md` |
 | `worktrees/` | Claude-managed worktrees — do not read by default |
 
-Tier/authority is declared in `../.agent-harness/tier.json` (T3, push free, merge free).
+Tier and push/merge authority are declared only in `../.agent-harness/tier.json`; read it live rather than copying its values into routing docs.
 
 ## Orientation order
 
