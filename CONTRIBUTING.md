@@ -297,8 +297,9 @@ See `AGENTS.md` (Commit & Pull Request Guidelines) for the authoritative rules.
    workflows (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`),
    or project files (`*.csproj`) also trigger CI Extended — that must be green
    before merging those PRs.
-7. **Self-review the diff** before requesting review. A deliberate
-   reviewer-style pass on your own PR catches most avoidable feedback.
+7. **Enter the canonical review pipeline** after publishing the ready PR. The global
+   `review-and-ship` workflow owns reviewer selection, feedback triage, convergence, and
+   disposition; Taskdeck's `taskdeck-pr-review-loop` supplies codebase-specific review lenses.
 
 The full definition of done, required output format, and review protocol live
 in [AGENTS.md](AGENTS.md). Read it before your first PR.
