@@ -80,6 +80,16 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void TranscriptModel_IsRepresentedByTheFreshMigrationChain()
+    {
+        _context.Database.Migrate();
+
+        _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
+        GetUserTables().Should().Contain("Transcripts");
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
     public void Migrations_are_idempotent_when_already_applied()
     {
         // Arrange — apply all migrations once

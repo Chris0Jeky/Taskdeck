@@ -80,6 +80,7 @@ public static class DependencyInjection
         services.AddScoped<IRegistrationPolicyStore, RegistrationPolicyStore>();
         services.AddScoped<ISourceArtefactRepository, SourceArtefactRepository>();
         services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
+        services.AddScoped<ITranscriptRepository, TranscriptRepository>();
         services.AddScoped<IArtefactTextExtractor, PdfPigArtefactTextExtractor>();
 
         // Vector index is local; hash-based in-memory embeddings are development/test
