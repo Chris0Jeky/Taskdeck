@@ -47,8 +47,8 @@ erDiagram
     Board ||--o{ ArchiveItem : "stores (logical)"
     Board ||--o{ KnowledgeDocument : "scoped to (logical)"
     Board ||--o{ LlmRequest : "scoped to (FK)"
-    Board ||--o{ SourceArtefact : "scopes (FK)"
-    Board ||--o{ Transcript : "scopes (FK)"
+    Board o|--o{ SourceArtefact : "optionally scopes (FK, SetNull)"
+    Board o|--o{ Transcript : "optionally scopes (FK, SetNull)"
 
     Column ||--o{ Card : "holds (FK)"
 
@@ -77,7 +77,7 @@ erDiagram
 
     SourceArtefact ||--o| ArtefactBlob : "stores (FK)"
     SourceArtefact ||--o{ ArtefactExtraction : "extracts (FK)"
-    SourceArtefact ||--o{ Transcript : "originates (FK)"
+    SourceArtefact o|--o{ Transcript : "optionally originates (FK, SetNull)"
 ```
 
 > **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist in `Taskdeck.Domain.Entities` but are not yet mapped to the database (no `DbSet` or EF configuration). They are documented in the [Audit and Abuse](#audit-and-abuse) section for completeness but are not shown in the ERD above.
