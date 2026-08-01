@@ -145,7 +145,7 @@ Six-pass decomposition from monolith to reusable workflow topology:
 - **ci-release.yml**: Build verification + CycloneDX SBOMs + SLSA provenance
 - **release-security.yml**: Dependency inventory + vulnerability reporting
 
-Ubuntu + Windows matrix on key lanes. CODEOWNERS enforcement. Merge-queue trigger parity.
+Ubuntu + Windows matrix on key lanes. CODEOWNERS declarations for sensitive workflow ownership (policy-enforced pending branch-protection work in `#1173`). Merge-queue trigger parity.
 
 ### Containerized Deployment
 Production Dockerfiles for backend and frontend. Docker Compose profile with reverse proxy, compression, forwarded-header processing, and security headers. Deployment verification script with secret-enforcement validation and startup/restart/shutdown checks. Deployment hardening matrix documentation.

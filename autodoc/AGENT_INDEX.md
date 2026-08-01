@@ -1,7 +1,8 @@
 # Agent Index - Taskdeck (seam map)
 
-Last-Verified: 2026-07-13 (4-region code exploration). Re-verify when a seam moves; treat a
-stamp older than ~90 days as stale (a wrong map misroutes — worse than no map).
+Last-Verified: 2026-08-01 (routing plus transcript/MCP/container seams; other regions retain the
+2026-07-13 exploration). Re-verify when a seam moves; treat a stamp older than ~90 days as stale
+(a wrong map misroutes — worse than no map).
 
 This is the repo's seam map — a fast orientation layer for coding agents. It points to
 interfaces, invariants, and verification commands; it does not duplicate implementation.
@@ -14,9 +15,9 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
   `frontend/taskdeck-web/`, `scripts/agent_hooks/`) — Claude Code loads it when you touch files
   there. Read that, not the whole repo.
 - Current shipped state: `docs/STATUS.md` (source of truth) — read the relevant section, it is
-  ~1.3k lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (~1.6k
+  ~1.5k lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (~1.7k
   lines — also section-read only, never bulk-read).
-- Contract: `AGENTS.md`. Invariants: `docs/GOLDEN_PRINCIPLES.md`. Skills: `.claude/skills/`.
+- Contract: `AGENTS.md`. Invariants: `docs/GOLDEN_PRINCIPLES.md`. Skills: `.codex/skills/` for Codex and `.claude/skills/` for Claude.
 
 ## Do Not Read By Default
 
@@ -31,8 +32,9 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
 
 | Domain | Entry points | Invariants (load-bearing) | Verify |
 | --- | --- | --- | --- |
-| Capture → review → board | `Api/Controllers/CaptureController.cs`, `AutomationProposalsController.cs`; `views/InboxView.vue`, `ReviewView.vue`, `composables/useReviewProposals.ts` | **Preview == Apply** (#1235: diff + executor both materialize the latest `ProposalRevision`); approve & execute are two explicit calls; execute needs an Idempotency-Key; provenance server-stamped, client identity fields rejected; triage is a deterministic regex extractor (`deterministic-extractor`), never the LLM | capture/review unit + `CaptureApiTests`, `ProposalRevisionApiTests`; E2E `capture-loop.spec.ts` |
+| Capture → review → board | `Api/Controllers/CaptureController.cs`, `AutomationProposalsController.cs`; `Application/Services/LlmCaptureTriageExtractor.cs`; `views/InboxView.vue`, `ReviewView.vue`, `composables/useReviewProposals.ts` | **Preview == Apply** (#1235: diff + executor both materialize the latest `ProposalRevision`); approve & execute are two explicit calls; execute needs an Idempotency-Key; provenance server-stamped, client identity fields rejected; transcript triage uses the LLM-backed extractor only after kill-switch/provider-health/quota gates and otherwise records deterministic fallback honestly | capture/review unit + `CaptureApiTests`, `ProposalRevisionApiTests`; E2E `capture-loop.spec.ts` |
 | Artefact intake and local extraction | `backend/src/Taskdeck.Api/Controllers/ArtefactsController.cs`, `backend/src/Taskdeck.Application/Interfaces/IArtefactTextExtractor.cs`, `backend/src/Taskdeck.Application/Services/IArtefactExtractionService.cs` | `SourceArtefact` is the immutable user-owned source; extraction appends bounded, warning-bearing history and never mutates task state | `dotnet test backend/Taskdeck.sln -c Release -m:1 --filter "FullyQualifiedName~ArtefactExtraction"`; `MigrationBootstrapTests` |
+| Transcript persistence and evidence | `backend/src/Taskdeck.Domain/Entities/Transcript.cs`, `backend/src/Taskdeck.Application/Interfaces/ITranscriptRepository.cs`, `backend/src/Taskdeck.Infrastructure/Repositories/TranscriptRepository.cs`, migration `backend/src/Taskdeck.Infrastructure/Migrations/20260801173142_AddTranscripts.cs` | `Transcript.Text` is the sole durable text home; reads/deletion/export are user-scoped; optional board/artefact deletion nulls references rather than deleting the transcript; `#1305` remains open for triage linkage, evidence spans, provenance API, and Paper deep links | the three Transcript checkpoint commands in `docs/TESTING_GUIDE.md` |
 | Proposal operation vocabulary | [`autodoc/interfaces/proposal-operation-vocabulary.md`](interfaces/proposal-operation-vocabulary.md), `ProposalOperationContractValidator`, `OperationHandlerRegistry`, `AutomationProposalService.GetProposalDiffAsync` | board-scoped preview/apply validation, card metadata handlers, chat executors, and `Taskdeck.Api/Mcp/WriteTools` | pipeline handler, proposal diff/revision, MCP/write-tool, and proposal API tests |
 | Backend API/application | `backend/Taskdeck.sln`, `Api/`, `Application/`; DI at `Infrastructure/DependencyInjection.cs` | Domain has no infra/framework refs; Application no Api/Infra refs (Architecture.Tests); claims-first identity; stable HTTP 400/401/403/404/409; no cross-user leak | `dotnet test backend/Taskdeck.sln -c Release -m:1` (see `backend/CLAUDE.md`) |
 | Frontend workspace | `frontend/taskdeck-web/src/`: `router`, `views`, `store/board*`, `composables/`, `api/http.ts`, `components/ui` (17 `Td*`) | Review-first UI gating; per-board SignalR (`useBoardRealtime.ts`), not global; `boardStore` is a facade over `store/board/*`; all HTTP through `api/http.ts` | `npm run typecheck`, `npm run build`, `npx vitest --run` (OOM-prone: `--maxWorkers=2`/targeted), Playwright (see `frontend/taskdeck-web/CLAUDE.md`) |

@@ -28,7 +28,7 @@ Taskdeck is strongest today as:
 Taskdeck is not yet:
 
 - a broad autonomous project manager
-- a finished `Agents` or `Integrations` workspace
+- a finished end-to-end agent configuration or knowledge workspace
 - a replacement for human review
 
 ## Core Vocabulary
@@ -39,8 +39,9 @@ Taskdeck is not yet:
 - `Review`: trust gate where proposed changes stop before they touch a board
 - `Boards`: current shipped board surface. In product language, think of these as projects
 - `Workbench tools`: advanced surfaces such as `Chat`, `Activity`, `Ops`, `Access`, and `Archive`
-  - in Workbench mode, all shipped advanced surfaces appear in the nav by default
-  - in Guided mode, some advanced surfaces remain opt-in via feature-flag toggles in `Settings`
+  - `Search` / `Ctrl+K` is the complete route finder in every mode
+  - Workbench makes the available advanced groups visible and bypasses selected presentation flags
+  - Guided keeps designated operator destinations under the explicit `Advanced` disclosure and still respects feature flags
 
 ## Pick A Workspace Mode
 
@@ -51,10 +52,10 @@ All three workspace modes keep the same review-first trust model. They change ho
   - keeps `Home`, `Today`, `Review`, `Boards`, and `Inbox` front and center
 - `Workbench`
   - best for power users and operators
-  - shows the full shipped workspace in the nav, including `Chat`, `Notifications`, `Settings`, `Preferences`, `Activity`, `Ops`, `Access`, and `Archive`, without requiring feature flags for shipped surfaces
+  - makes the available operator tool groups visible, including `Chat`, `Notifications`, `Integrations`, `Settings`, `Preferences`, `Activity`, `Ops`, `Access`, and `Archive`
 - `Agent`
-  - preserves the same shipped product loop today
-  - reserves the mental model for later `Agents` / `Runs` / `Knowledge` work without claiming those pages already exist
+  - preserves the same review-first product loop and the stored agent-oriented preference
+  - use `Search` / `Ctrl+K` to open `Agents`, then select a profile for its run history and run detail; a dedicated `Knowledge` page remains future work
 
 ## First 10 Minutes
 

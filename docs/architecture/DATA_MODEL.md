@@ -1,8 +1,12 @@
 # Data Model Reference
 
+Last Verified: 2026-08-01 (artefact/transcript persistence, AutomationProposal pin/defer fields, and the corrected delete-behavior rows below)
+
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
-> **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with cascade/restrict behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
+> **Recertification boundary:** This reference now includes the shipped artefact/transcript seam and corrects known delete-behavior drift. It is not yet a complete inventory of all 51 live `DbSet` mappings; open issue `#1470` owns the remaining full-model recertification.
+
+> **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with Cascade, Restrict, or SetNull behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
 
 **Related docs:** [API Quickstart](../api/QUICKSTART.md) | [Boards API](../api/BOARDS.md) | [Capture API](../api/CAPTURE.md) | [Chat API](../api/CHAT.md) | [Webhooks API](../api/WEBHOOKS.md) | [Authentication](../api/AUTHENTICATION.md) | [Integrations Registry](INTEGRATIONS_REGISTRY.md)
 
@@ -27,6 +31,8 @@ erDiagram
     User ||--o{ AuditLog : "triggers (FK)"
     User ||--o{ IntegrationConnector : "owns (FK)"
     User ||--o{ OutboundWebhookSubscription : "manages (FK)"
+    User ||--o{ SourceArtefact : "owns (FK)"
+    User ||--o{ Transcript : "owns (FK)"
     User ||--o{ ChatSession : "creates (logical)"
     User ||--o{ LlmUsageRecord : "tracked for (logical)"
     User ||--o{ KnowledgeDocument : "owns (logical)"
@@ -41,6 +47,8 @@ erDiagram
     Board ||--o{ ArchiveItem : "stores (logical)"
     Board ||--o{ KnowledgeDocument : "scoped to (logical)"
     Board ||--o{ LlmRequest : "scoped to (FK)"
+    Board ||--o{ SourceArtefact : "scopes (FK)"
+    Board ||--o{ Transcript : "scopes (FK)"
 
     Column ||--o{ Card : "holds (FK)"
 
@@ -66,6 +74,10 @@ erDiagram
     AgentRun ||--o{ AgentRunEvent : "emits (FK)"
 
     OutboundWebhookSubscription ||--o{ OutboundWebhookDelivery : "delivers (FK)"
+
+    SourceArtefact ||--o| ArtefactBlob : "stores (FK)"
+    SourceArtefact ||--o{ ArtefactExtraction : "extracts (FK)"
+    SourceArtefact ||--o{ Transcript : "originates (FK)"
 ```
 
 > **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist in `Taskdeck.Domain.Entities` but are not yet mapped to the database (no `DbSet` or EF configuration). They are documented in the [Audit and Abuse](#audit-and-abuse) section for completeness but are not shown in the ERD above.
@@ -74,7 +86,7 @@ erDiagram
 
 ## Base Entity
 
-All entities (except `CardLabel`) inherit from `Entity`, which provides:
+Most entities inherit from `Entity`, which provides the fields below. `CardLabel` and `RegistrationBootstrap` use different key shapes, while EF maps `ArtefactBlob` through its `SourceArtefactId` shared key and ignores the inherited base fields.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -245,7 +257,7 @@ A review-first automation proposal containing one or more operations.
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | SourceType | `ProposalSourceType` | Yes | Enum: Queue, Chat, Manual | Origin of proposal |
-| SourceReferenceId | `string?` | No | | External reference |
+| SourceReferenceId | `string?` | No | Max 100 chars | External reference |
 | BoardId | `Guid?` | No | References Board (no FK) | Target board |
 | RequestedByUserId | `Guid` | Yes | References User (no FK) | Initiating user |
 | Status | `ProposalStatus` | Yes | Enum: PendingReview, Approved, Rejected, Applied, Failed, Expired, Dismissed | Lifecycle state |
@@ -254,15 +266,19 @@ A review-first automation proposal containing one or more operations.
 | DiffPreview | `string?` | No | | Rendered diff |
 | ValidationIssues | `string?` | No | | Detected issues |
 | ExpiresAt | `DateTime` | Yes | | Auto-expire timestamp |
+| DeferredUntil | `DateTime?` | No | Each defer is 1–1440 minutes | Pending-review snooze; defer keeps the status pending and floors expiry at least 24 hours after this timestamp |
 | DecidedAt | `DateTime?` | No | | When approved/rejected |
 | DecidedByUserId | `Guid?` | No | | Who approved/rejected |
 | AppliedAt | `DateTime?` | No | | When applied |
-| FailureReason | `string?` | No | | Failure or rejection reason |
-| CorrelationId | `string` | Yes | Non-empty | Request correlation |
+| ApprovedRevisionId | `Guid?` | No | References ProposalRevision (no FK) | Exact revision pinned at approval; null means the original operations |
+| FailureReason | `string?` | No | Max 1000 chars | Failure or rejection reason |
+| CorrelationId | `string` | Yes | 1-100 chars | Request correlation |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
-**Navigation:** Operations (children)
+**Navigation:** Operations, Revisions, Outcomes (children)
+
+`DeferredUntil` is cleared on approve, reject, apply, fail, expire, and dismiss. `ApprovedRevisionId` deliberately remains a scalar logical pointer rather than a database FK, avoiding a proposal/revision FK cycle while preventing a later revision from changing what Apply executes.
 
 ### AutomationProposalOperation
 
@@ -483,6 +499,82 @@ Per-user workspace preferences (one per user).
 | OnboardingCompletedAt | `DateTimeOffset?` | No | | When onboarding was completed |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
+
+---
+
+## Capture Artefacts and Transcripts
+
+### SourceArtefact
+
+Immutable metadata for a user-owned source. Binary content is stored separately so metadata reads do not materialize the blob.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
+| BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
+| Kind | `ArtefactKind` | Yes | Image, Pdf, TextFile | Bounded artefact type |
+| MimeType | `string` | Yes | 1-100 chars | Media type |
+| FileName | `string` | Yes | 1-255 chars | Original file name |
+| ByteSize | `long` | Yes | > 0 | Content size |
+| Sha256 | `string` | Yes | 64 hexadecimal chars | Lowercase content digest |
+| CaptureSource | `CaptureSource` | Yes | Defined enum value | Intake source |
+| OriginReference | `string?` | No | Max 1000 chars | Content-free trusted-adapter locator; never dereferenced during upload |
+| CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Soft provenance link; capture retention may be shorter |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Indexes:** `(UserId, CreatedAt)`, `BoardId`, `(UserId, Sha256)` (not unique).
+
+### ArtefactBlob
+
+Cold binary payload in a shared-primary-key one-to-one table.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| SourceArtefactId | `Guid` | Yes | PK and FK to SourceArtefact (Cascade) | Owning metadata row |
+| Content | `byte[]` | Yes | Non-empty | Binary payload |
+
+`ArtefactBlob` inherits from `Entity` in the domain, but EF ignores the inherited `Id`, `CreatedAt`, and `UpdatedAt`; `SourceArtefactId` is the persisted identity.
+
+### ArtefactExtraction
+
+Immutable extracted-text history. Re-extraction appends a row; consumers select the latest record.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| SourceArtefactId | `Guid` | Yes | FK to SourceArtefact (Cascade) | Source metadata |
+| ExtractorName | `string` | Yes | 1-100, control-free, valid UTF-16 | Extractor identity |
+| ExtractorVersion | `string` | Yes | 1-50, control-free, valid UTF-16 | Extractor version |
+| WarningsJson | `string` | Yes | Max 4096 chars; up to 16 warnings of 128 chars | Serialized warning list |
+| ExtractedText | `string` | Yes | Max 102,400 chars; LF-only, valid UTF-16 | Immutable extracted text; may be empty |
+| TextLength | `int` | Yes | Derived from text | Character count |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Index:** `(SourceArtefactId, CreatedAt)`.
+
+### Transcript
+
+User-owned normalized transcript text. This is the sole durable transcript-text home; proposals and source artefacts retain references only.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
+| BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
+| CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
+| Text | `string` | Yes | 1-102,400 chars; normalized LF, valid UTF-16 | Sole durable transcript text |
+| SegmentsJson | `string` | Yes | Max 1,048,576 chars; at most 5,000 segments | Serialized line-indexed annotations |
+| CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
+| SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+`Segments` is a non-mapped JSON view. Each `TranscriptSegment` has zero-based inclusive `StartLine`/`EndLine` within the normalized text, an optional control-free valid-UTF-16 speaker name up to 128 characters, and an optional non-negative timestamp in milliseconds.
+
+**Indexes:** `(UserId, Id)`, `BoardId`, `SourceArtefactId`.
 
 ---
 
@@ -844,7 +936,7 @@ Immutable audit record for abuse detection events and state transitions.
 | Relationship | Type | FK/Logical | Description |
 |---|---|---|---|
 | User -> Board | One-to-many | FK (SetNull) | A user can own many boards (via `OwnerId`) |
-| User -> BoardAccess | One-to-many | FK (Cascade) | A user can have access to many boards |
+| User -> BoardAccess | One-to-many | FK (Restrict) | A user can have access to many boards; access rows must be removed explicitly before user deletion |
 | User -> ApiKey | One-to-many | FK (Cascade) | A user can have many API keys |
 | User -> ExternalLogin | One-to-many | FK (Cascade) | A user can link many OAuth providers |
 | User -> MfaCredential | One-to-zero-or-one | FK (Cascade) | A user has at most one TOTP credential |
@@ -856,6 +948,8 @@ Immutable audit record for abuse detection events and state transitions.
 | User -> AuditLog | One-to-many | FK (SetNull) | A user triggers many audit log entries |
 | User -> IntegrationConnector | One-to-many | FK (Cascade) | A user owns many connectors |
 | User -> OutboundWebhookSubscription | One-to-many | FK (Restrict) | A user manages many webhook subscriptions |
+| User -> SourceArtefact | One-to-many | FK (Restrict) | A user owns source artefacts; explicit erasure deletes them before account anonymization |
+| User -> Transcript | One-to-many | FK (Restrict) | A user owns durable transcripts |
 | User -> ChatSession | One-to-many | Logical | A user owns many chat sessions |
 | User -> LlmUsageRecord | One-to-many | Logical | Token usage tracked per user |
 | User -> KnowledgeDocument | One-to-many | Logical | A user owns many documents |
@@ -869,7 +963,9 @@ Immutable audit record for abuse detection events and state transitions.
 | Board -> AutomationProposal | One-to-many | Logical | Proposals target boards |
 | Board -> ArchiveItem | One-to-many | Logical | Archived snapshots scoped to a board |
 | Board -> KnowledgeDocument | One-to-many (optional) | Logical | Documents optionally scoped to a board |
-| Column -> Card | One-to-many | FK (Cascade) | A column holds many cards |
+| Board -> SourceArtefact | One-to-many (optional) | FK (SetNull) | Artefact metadata may survive board deletion under its user owner |
+| Board -> Transcript | One-to-many (optional) | FK (SetNull) | A transcript survives board deletion |
+| Column -> Card | One-to-many | FK (Restrict) | Cards must be moved or removed before their column can be deleted |
 | Card <-> Label | Many-to-many | FK (Cascade) | Via `CardLabel` join table |
 | Card -> CardComment | One-to-many | FK (Cascade) | A card has many comments |
 | CardComment -> CardComment | Self-referencing | FK (Restrict) | Threaded replies via `ParentCommentId` |
@@ -882,6 +978,11 @@ Immutable audit record for abuse detection events and state transitions.
 | AgentProfile -> AgentRun | One-to-many | FK (Cascade) | A profile executes many runs |
 | AgentRun -> AgentRunEvent | One-to-many | FK (Cascade) | A run emits many events |
 | CommandRun -> CommandRunLog | One-to-many | FK (Cascade) | Execution logs per command run |
+| LlmRequest -> SourceArtefact | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
+| LlmRequest -> Transcript | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
+| SourceArtefact -> ArtefactBlob | One-to-zero-or-one | FK (Cascade) | Binary payload keyed by `SourceArtefactId` |
+| SourceArtefact -> ArtefactExtraction | One-to-many | FK (Cascade) | Append-only extraction history |
+| SourceArtefact -> Transcript | One-to-many (optional) | FK (SetNull) | Transcript survives source-artefact deletion |
 
 ---
 
@@ -890,8 +991,8 @@ Immutable audit record for abuse detection events and state transitions.
 - **Database:** SQLite via EF Core.
 - **Concurrency:** `UpdatedAt` used as optimistic concurrency token on key entities.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
-- **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`).
+- **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`, `WarningsJson`, `SegmentsJson`).
 - **Enum storage:** Enums are stored as integers by default. Exceptions: `UserPreference.WorkspaceMode` and `UserPreference.OnboardingVisibility` are stored as strings.
-- **Key format:** All primary keys are `Guid` (UUID v4). API keys use `tdsk_` prefix with SHA-256 hash at rest.
-- **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. Some entities (e.g., `ChatSession`, `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`, `CommandRun`) use logical references only -- referential integrity is maintained by application code. See the [Relationship Summary](#relationship-summary) for the complete FK vs. logical breakdown.
+- **Key format:** Most primary keys are `Guid` values. `CardLabel` has a composite key, `RegistrationBootstrap` uses the fixed string key `registration`, and `ArtefactBlob` reuses `SourceArtefactId` as its primary key. API keys use a `tdsk_` prefix with a SHA-256 hash at rest.
+- **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. Some entities (e.g., `ChatSession`, `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`, `CommandRun`) use logical references only -- referential integrity is maintained by application code. The [Relationship Summary](#relationship-summary) is a curated overview, not a complete inventory; `#1470` owns full live-model recertification.
 - **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist as domain classes but have no EF Core mapping, no `DbSet`, and no database table. They are included in this reference for completeness.

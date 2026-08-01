@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-01
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -18,7 +18,7 @@ Companion Active Docs:
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
   - CLI contract (**newer than this dated aggregate**): 112 passed / 0 skipped / 0 failed on Windows at `#1533`; hosted exact-head Windows recertification remains required
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
-  - Integration project (**newer than this dated aggregate**): 35 tests at #1518 — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute.
+  - Integration project (**newer than this dated aggregate**): 35 tests at `#1520` — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute and pass the hosted TRX identity contract.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing
 - Combined automated total: **~9,881+ passing** (backend 6,614 + frontend unit 3,267 + E2E)
@@ -28,6 +28,43 @@ Verification note:
 - bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
+
+## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
+
+The durable Transcript foundation is covered directly by its domain, portability/deletion, repository,
+and migration/bootstrap seams:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~DataExportServiceTests|FullyQualifiedName~AccountDeletionServiceTests|FullyQualifiedName~GdprDataExportRoundTripTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
+```
+
+Current-main result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
+skips. This proves persistence, export/deletion, and migration/bootstrap behavior only; `#1305`
+remains open for triage linkage, evidence spans, provenance API reads, and Paper deep links.
+
+The MCP create-card column contract is exercised through the real write tool and SQLite-backed
+proposal lifecycle:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~McpToolsTests"
+```
+
+Current-main result: **33 passed / 0 failed / 0 skipped**. The cases pin omitted-column
+canonicalization and the inaccessible-board, wrong-board-column, and columnless-board failures.
+
+The container result parser and normal Dockerless contract are independently reproducible:
+
+```powershell
+py -3 -B -m unittest scripts.ci.test_assert_container_integration_results
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
+```
+
+Current-main result: **5/5 parser tests passed** and the local Dockerless project reported
+**7 passed / 28 skipped / 0 failed**. That second result proves graceful gating only. Positive
+PostgreSQL evidence comes from the hosted required-mode lane described below, whose TRX must contain
+zero skipped PostgreSQL-backed cases and at least 28 passing fully qualified PostgreSQL tests.
 
 ## Proxy-Safe Direct Egress Checkpoint (`#1513`)
 
@@ -1936,7 +1973,7 @@ New test coverage (~390+ new tests total):
 - **MEDIUM**: Key-existence oracle + modulo bias in API key generation (`#792`), capture DTO round-trip test (`#789`), history window denominator (`#790`), CancellationToken forwarding (`#787`)
 - Fixed test quality issues: misleading doc comments, weak assertions, non-thread-safe variables, redundant ARIA roles, missing screen reader announcements
 
-Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-04-25) for latest recertified counts.
+Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-05-16) for latest recertified counts.
 
 ### Test expansion wave (`#721`) completion
 

@@ -43,26 +43,22 @@ That is the current product loop.
 
 Workspace modes are display preferences, not permission boundaries.
 
-Guided mode keeps the normal loop prominent:
+The reduced sidebar keeps the normal loop prominent:
 
-- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
-- secondary: `Notifications`, `Chat`, `Settings`, `Preferences`
-- advanced feature-flagged surfaces that can still appear only after explicit toggles: `Activity`, `Ops`, `Access`, `Archive`
+- core destinations: `Home`, `Today`, `Review`, `Boards`, `Inbox`
+- `Search` / `Ctrl+K` is the complete finder for every currently available route
 
-Workbench mode shows all shipped workspace surfaces in the main nav without requiring feature-flag toggles:
+Guided mode keeps designated operator destinations under an explicit `Advanced` disclosure and respects feature flags.
 
-- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`, `Notifications`, `Chat`, `Activity`, `Ops`, `Settings`, `Preferences`, `Access`, `Archive`
+Workbench mode makes the available operator groups visible and bypasses selected presentation flags for shipped surfaces such as `Review`, `Chat`, `Activity`, `Ops`, `Settings`, `Access`, and `Archive`. `Integrations` is part of that operator group.
 
-Agent mode currently ships the same core pages as guided mode, while the later agent-specific surfaces are still staged work:
-
-- primary: `Home`, `Today`, `Review`, `Boards`, `Inbox`
-- secondary: `Notifications`, `Chat`, `Settings`, `Preferences`
-- advanced feature-flagged surfaces that can still appear only after explicit toggles: `Activity`, `Ops`, `Access`, `Archive`
+Agent mode stores the agent-oriented preference while retaining the same review-first core loop. Open `Agents` through `Search` / `Ctrl+K`, then select a profile to reach its nested run history and run detail.
 
 Important truth:
 
 - `Agent` mode exists as a workspace preference today
-- dedicated `Agents`, `Runs`, `Knowledge`, and `Integrations` routes do not ship yet
+- `Agents` ships at `/workspace/agents`, with per-agent `Runs` and run-detail pages reached from each profile
+- `Integrations` ships at `/workspace/integrations`; a standalone `Knowledge` route does not ship yet
 
 ## Surface Reference
 
@@ -317,9 +313,9 @@ This user manual is chaptered under `docs/manual`. The primary chapters are:
 - [manual/05_advanced_automation.md](manual/05_advanced_automation.md)
   - advanced/operator surfaces such as `Chat`, `Queue`, `Ops`, and `Archive`
 - [manual/06_agents.md](manual/06_agents.md)
-  - future `Agents` and `Runs` placeholder guidance
+  - shipped `Agents` and per-agent `Runs` inspection guidance
 - [manual/07_integrations_and_knowledge.md](manual/07_integrations_and_knowledge.md)
-  - future `Integrations` and `Knowledge` placeholder guidance
+  - shipped connector management and the current `Knowledge` boundary
 - [manual/08_recipes.md](manual/08_recipes.md)
   - short repeatable workflows
 - [manual/09_troubleshooting.md](manual/09_troubleshooting.md)
@@ -373,7 +369,7 @@ If `Queue` or `Ops` feels too technical:
 
 ## Current Constraints
 
-- `Agent` mode exists, but dedicated `Agents`, `Runs`, `Knowledge`, and `Integrations` routes are still future work
+- `Agents`, nested `Runs`, and `Integrations` ship; agent profiles and runs are created through APIs or automation triggers, and a standalone `Knowledge` route remains future work
 - some advanced flows still expose more system detail than a novice-ready product should
-- automation parsing remains pattern-based and board-centric
+- board-chat automation parsing remains pattern-based and board-centric; transcript-source capture has a separately gated LLM triage path with deterministic fallback
 - review-first behavior is intentional; destructive autonomy is out of scope

@@ -1,20 +1,21 @@
 # Manual Chapter 06: Agents
 
-This chapter is reserved for future shipped `Agents` and `Runs` surfaces.
+Taskdeck ships an agent-observation surface at `/workspace/agents`. Open it through `Search` / `Ctrl+K`; Guided mode also includes it in the explicit `Advanced` disclosure.
 
-Those pages are not part of the current shipped workspace shell.
+An agent profile records an agent's name, enabled state, workspace or board scope, and template. Profiles are created through the API; this page lists existing profiles rather than configuring new ones.
 
-When agent surfaces land, this chapter should explain:
+Select a profile to open its run history. Each run records an objective, status, timestamps, summary, and any failure reason. Select a run to inspect its ordered event timeline and payloads. If the run produced an automation proposal, **View linked proposal** opens the normal review surface.
 
-- what an agent is
-- what a run is
-- how policy and review thresholds work
-- how to inspect run traces and resulting proposals
+Inspecting a run never approves or executes its proposal. Taskdeck's ordinary review-first boundary still applies: a person reviews the proposal, approves it explicitly, and executes it through the same guarded path used for every other capture source.
 
-Until then, do not treat `Agents` as a missing setup problem.
-It is roadmap work, not a hidden toggle in the normal shell.
+Current boundaries:
+
+- runs are created by API calls or automation triggers, not from this page
+- the timeline is an observation and troubleshooting surface, not an execution console
+- a standalone `Knowledge` page does not ship yet
 
 ## See Also
 
 - [01_start_here.md](01_start_here.md)
+- [04_inbox_and_review.md](04_inbox_and_review.md)
 - [07_integrations_and_knowledge.md](07_integrations_and_knowledge.md)

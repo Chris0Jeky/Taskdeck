@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-01
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
@@ -61,15 +61,15 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 ### Phase 1 — truth + safety before strangers (v0.1)
 | Item | Issue | Notes |
 |---|---|---|
-| Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | verified blocker: `/api/auth/register` is AllowAnonymous with no flag; environment key `Auth__Registration__Mode` |
-| Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | verified: no revert endpoint exists anywhere |
-| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | hours now, impossible-cleanly later |
-| Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | verified: Fraunces/Inter/JetBrains Mono never load |
-| Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | verified: setup modal unreachable from any Paper surface |
-| README revival rewrite + demo GIF + MCP section | REVIVAL-06 | removes archive messaging ×3, fills the GIF slot |
+| Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | **Delivered** by PR `#1334`; issue `#1297` closed |
+| Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | **Delivered** by PR `#1375`; issue `#1298` closed |
+| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | **Delivered** by PR `#1337`; issue `#1299` closed, legal/name residuals moved to `#1482` |
+| Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | **Delivered** by PR `#1329`; issue `#1300` closed |
+| Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | **Delivered** by PR `#1344`; issue `#1301` closed |
+| README revival rewrite + demo GIF + MCP section | REVIVAL-06 | **Delivered** by PR `#1331`; issue `#1302` closed |
 | v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; matches ADR-0044's required image channel |
-| De-stub Today dossier or honest empty states | #1272 (unchanged) | the flagship screen must not lie |
-| Re-point E2E + axe at Paper | #1274 (unchanged) | the default UI is currently the least-tested |
+| De-stub Today dossier or honest empty states | #1272 (unchanged) | **Delivered** by PR `#1333`; issue closed |
+| Re-point E2E + axe at Paper | #1274 (unchanged) | **Delivered** by PR `#1362`; issue closed |
 | CI keep/kill/gate pass | #1275 (unchanged) | zero always-red lanes |
 | Branch protection on main | #1173 (unchanged) | minutes of settings work |
 
@@ -77,7 +77,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Item | Issue | Notes |
 |---|---|---|
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
-| Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | the trust-gate UX no incumbent has |
+| Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
