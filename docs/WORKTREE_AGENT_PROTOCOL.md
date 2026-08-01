@@ -268,7 +268,7 @@ Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
 Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
-After opening the PR, self-review, post findings or explicit no-finding result, fix findings, and report back.
+Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
 
 ## Parallel Runtime Isolation
