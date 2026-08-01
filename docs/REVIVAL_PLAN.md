@@ -114,7 +114,7 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 ## 5. What agents need to know (execution contract)
 
 - Every REVIVAL issue body is a self-contained agent brief: context, acceptance criteria, entry-point files, traps, and verification commands. Do not start work that lacks a tracked issue.
-- Review gate: the global `review-and-ship` skill and global laws 2 and 11 (Taskdeck is T3 — merge on green CI at the head, one comment-triage pass, one independent review pass). The 2026-06 two-tier FULL/LIGHT gate with its aging rule is superseded; #1269 tracks retiring the phrase. Changes touching the capture→proposal→apply loop, auth, or migrations are still the ones to flag for the independent lens.
+- Review and merge disposition come from the live authority declaration, the global laws, and `review-and-ship`; this plan does not restate tier values, reviewer counts, convergence, or post-push eligibility. Exact-head `ci-required.yml` remains Taskdeck's required CI evidence. When the canonical pipeline requests a Taskdeck-specific lens, prioritize changes touching capture→proposal→apply, auth, migrations, retention, or destructive operations. The former local FULL/LIGHT doctrine is superseded; #1269 owns any remaining Taskdeck-specific intake design.
 - **Intake severity bar** (#1269): new issues only for data loss, silent corruption, security exposure real under the deployment model, or dogfooding/beta-user findings. Everything else is fixed in-PR or recorded as dated accepted-risk.
 - Wave membership is the admission ticket. Review-seeded follow-ups go through the severity bar, not straight into the wave.
 - Worktree protocol (`docs/WORKTREE_AGENT_PROTOCOL.md`) for parallel work; one coordinator synthesizes.

@@ -557,7 +557,7 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 
 ### Transcript
 
-User-owned normalized transcript text. This is the sole durable transcript-text home; proposals and source artefacts retain references only.
+User-owned normalized transcript record. It is an independent durable text store, but not yet the only one: the current transcript-capture path also retains input text in `LlmRequest.Payload` until `#1305` links triage to Transcript and establishes the final ownership boundary.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -565,7 +565,7 @@ User-owned normalized transcript text. This is the sole durable transcript-text 
 | UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
 | BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
 | CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
-| Text | `string` | Yes | 1-102,400 chars; normalized LF, valid UTF-16 | Sole durable transcript text |
+| Text | `string` | Yes | 1-102,400 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
 | SegmentsJson | `string` | Yes | Max 1,048,576 chars; at most 5,000 segments | Serialized line-indexed annotations |
 | CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
 | SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
