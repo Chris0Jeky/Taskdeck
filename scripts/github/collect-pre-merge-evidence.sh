@@ -242,6 +242,27 @@ collect_feedback_snapshot() {
     >"$snapshot_dir/canonical.json"
 }
 
+collect_checks_snapshot() {
+  [[ $# -eq 2 ]] || die "checks collector received an invalid argument count"
+  local snapshot_dir="$1"
+  local pr_number="$2"
+  local command_exit=0
+
+  mkdir -p "$snapshot_dir"
+  "$gh_executable" pr checks "$pr_number" \
+    --json name,state,bucket,link,workflow >"$snapshot_dir/entries-raw.json" || command_exit=$?
+  "$jq_executable" -e 'type == "array"' "$snapshot_dir/entries-raw.json" >/dev/null ||
+    die "PR checks returned an invalid payload"
+  "$jq_executable" 'sort_by(.name, .workflow, .link)' "$snapshot_dir/entries-raw.json" \
+    >"$snapshot_dir/entries.json"
+  "$jq_executable" -n \
+    --argjson commandExit "$command_exit" \
+    --slurpfile entries "$snapshot_dir/entries.json" \
+    '{commandExit: $commandExit, entries: $entries[0]}' >"$snapshot_dir/snapshot.json"
+  "$jq_executable" -S -c '.' "$snapshot_dir/snapshot.json" \
+    >"$snapshot_dir/canonical.json"
+}
+
 finish_collection() {
   [[ $# -eq 2 ]] || usage
   [[ -f "$state_file" ]] || die "opening evidence state is missing: $state_file"
@@ -257,11 +278,21 @@ finish_collection() {
   local repo_name
   local pr_number
   local opening_head
+  local opening_head_ref
+  local opening_base
+  local opening_base_ref
   local temp_dir
-  local checks_exit=0
   local required_secret_check_name="Secret Scan / Gitleaks Scan"
+  local required_secret_workflow="CI"
+  local required_secret_workflow_path=".github/workflows/ci-required.yml"
   local secret_count
   local clean_secret_count
+  local secret_link
+  local secret_link_prefix
+  local secret_run_id=""
+  local secret_run_path
+  local secret_run_exit=0
+  local secret_provenance_verified=false
   local secrets_verdict="NOT VERIFIED"
 
   repo_full_name="$("$jq_executable" -r '.repository' "$state_file")"
@@ -270,6 +301,9 @@ finish_collection() {
   repo_name="${repo_full_name#*/}"
   pr_number="$("$jq_executable" -r '.opening.number' "$state_file")"
   opening_head="$("$jq_executable" -r '.opening.headRefOid' "$state_file")"
+  opening_head_ref="$("$jq_executable" -r '.opening.headRefName' "$state_file")"
+  opening_base="$("$jq_executable" -r '.opening.baseRefOid' "$state_file")"
+  opening_base_ref="$("$jq_executable" -r '.opening.baseRefName' "$state_file")"
   assert_clean_exact_checkout "$opening_head"
 
   temp_dir="$(mktemp -d)"
@@ -278,21 +312,56 @@ finish_collection() {
   collect_feedback_snapshot "$temp_dir/feedback-first" \
     "$repo_full_name" "$repo_owner" "$repo_name" "$pr_number"
 
-  "$gh_executable" pr checks "$pr_number" \
-    --json name,state,bucket,link,workflow >"$temp_dir/checks.json" || checks_exit=$?
-  "$jq_executable" -e 'type == "array"' "$temp_dir/checks.json" >/dev/null ||
-    die "PR checks returned an invalid payload"
+  collect_checks_snapshot "$temp_dir/checks-first" "$pr_number"
   "$jq_executable" '[.[] | select(
     ((.name // "") | ascii_downcase | test("secret[ _-]*scan|gitleaks"))
-  )]' "$temp_dir/checks.json" >"$temp_dir/secret-candidates.json"
-  "$jq_executable" --arg requiredName "$required_secret_check_name" \
-    '[.[] | select(.name == $requiredName)]' \
-    "$temp_dir/checks.json" >"$temp_dir/secret-checks.json"
+  )]' "$temp_dir/checks-first/entries.json" >"$temp_dir/secret-candidates.json"
+  "$jq_executable" \
+    --arg requiredName "$required_secret_check_name" \
+    --arg requiredWorkflow "$required_secret_workflow" \
+    '[.[] | select(.name == $requiredName and .workflow == $requiredWorkflow)]' \
+    "$temp_dir/checks-first/entries.json" >"$temp_dir/secret-checks.json"
   secret_count="$("$jq_executable" 'length' "$temp_dir/secret-checks.json")"
-  clean_secret_count="$("$jq_executable" '[.[] | select(.state == "SUCCESS")] | length' \
+  clean_secret_count="$("$jq_executable" \
+    '[.[] | select(.state == "SUCCESS" and .bucket == "pass")] | length' \
     "$temp_dir/secret-checks.json")"
+  printf 'null\n' >"$temp_dir/secret-workflow-run.json"
   if [[ "$secret_count" -eq 1 && "$clean_secret_count" -eq 1 ]]; then
-    secrets_verdict="CLEAN"
+    secret_link="$("$jq_executable" -r '.[0].link' "$temp_dir/secret-checks.json")"
+    secret_link_prefix="https://github.com/$repo_full_name/actions/runs/"
+    secret_run_path="${secret_link#"$secret_link_prefix"}"
+    if [[ "$secret_run_path" != "$secret_link" && \
+          "$secret_run_path" =~ ^([1-9][0-9]+)(/job/[1-9][0-9]+)?$ ]]; then
+      secret_run_id="${BASH_REMATCH[1]}"
+      "$gh_executable" api "repos/$repo_full_name/actions/runs/$secret_run_id" \
+        >"$temp_dir/secret-workflow-run.json" || secret_run_exit=$?
+      if [[ "$secret_run_exit" -eq 0 ]] && "$jq_executable" -e \
+        --argjson runId "$secret_run_id" \
+        --argjson prNumber "$pr_number" \
+        --arg workflowName "$required_secret_workflow" \
+        --arg workflowPath "$required_secret_workflow_path" \
+        --arg headOid "$opening_head" \
+        --arg headRef "$opening_head_ref" \
+        --arg baseOid "$opening_base" \
+        --arg baseRef "$opening_base_ref" '
+          .id == $runId and
+          .name == $workflowName and
+          .path == $workflowPath and
+          .event == "pull_request" and
+          .status == "completed" and
+          .conclusion == "success" and
+          .head_sha == $headOid and
+          .head_branch == $headRef and
+          any(.pull_requests[]?;
+            .number == $prNumber and
+            .head.sha == $headOid and
+            .head.ref == $headRef and
+            .base.sha == $baseOid and
+            .base.ref == $baseRef)
+        ' "$temp_dir/secret-workflow-run.json" >/dev/null; then
+        secret_provenance_verified=true
+      fi
+    fi
   fi
 
   collect_feedback_snapshot "$temp_dir/feedback-second" \
@@ -301,6 +370,14 @@ finish_collection() {
     "$temp_dir/feedback-first/canonical.json" \
     "$temp_dir/feedback-second/canonical.json" ||
     die "PR feedback changed while evidence was collected"
+  collect_checks_snapshot "$temp_dir/checks-second" "$pr_number"
+  "$cmp_executable" -s \
+    "$temp_dir/checks-first/canonical.json" \
+    "$temp_dir/checks-second/canonical.json" ||
+    die "PR checks changed while evidence was collected"
+  if [[ "$secret_provenance_verified" == true ]]; then
+    secrets_verdict="CLEAN"
+  fi
 
   "$gh_executable" pr view "$pr_number" \
     --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,updatedAt,url \
@@ -324,11 +401,14 @@ finish_collection() {
     --slurpfile state "$state_file" \
     --slurpfile closing "$temp_dir/closing.json" \
     --slurpfile feedback "$temp_dir/feedback-second/snapshot.json" \
-    --slurpfile checks "$temp_dir/checks.json" \
+    --slurpfile checks "$temp_dir/checks-second/snapshot.json" \
     --slurpfile secretChecks "$temp_dir/secret-checks.json" \
     --slurpfile secretCandidates "$temp_dir/secret-candidates.json" \
-    --argjson checksCommandExit "$checks_exit" \
+    --slurpfile secretWorkflowRun "$temp_dir/secret-workflow-run.json" \
     --arg requiredSecretCheckName "$required_secret_check_name" \
+    --arg requiredSecretWorkflow "$required_secret_workflow" \
+    --arg requiredSecretWorkflowPath "$required_secret_workflow_path" \
+    --argjson secretProvenanceVerified "$secret_provenance_verified" \
     --arg secretsVerdict "$secrets_verdict" \
     '{
       schemaVersion: 1,
@@ -342,13 +422,14 @@ finish_collection() {
         localHeadOid: $state[0].localHeadOid
       },
       feedback: ($feedback[0] + {stableAcrossTwoSnapshots: true}),
-      checks: {
-        commandExit: $checksCommandExit,
-        entries: $checks[0]
-      },
+      checks: ($checks[0] + {stableAcrossTwoSnapshots: true}),
       secrets: {
         requiredCheckName: $requiredSecretCheckName,
+        requiredWorkflow: $requiredSecretWorkflow,
+        requiredWorkflowPath: $requiredSecretWorkflowPath,
         verdict: $secretsVerdict,
+        provenanceVerified: $secretProvenanceVerified,
+        workflowRun: $secretWorkflowRun[0],
         evidence: $secretChecks[0],
         observedCandidates: $secretCandidates[0]
       },

@@ -102,15 +102,17 @@ printf '%s\n' "$evidence_packet" | jq .
 ```
 
 The finish phase captures cursor-complete review threads and their comments, thread resolution
-state, top-level PR comments, and review summaries twice around check collection. It fails closed
-unless the two normalized feedback snapshots are identical. It then rereads the PR and fails closed
-unless the number, head ref/OID, base ref/OID, mergeability, parent update timestamp, local `HEAD`,
-and clean-worktree state still equal the opening snapshot.
+state, top-level PR comments, review summaries, and check states twice. It fails closed unless both
+pairs of normalized snapshots are identical. It then rereads the PR and fails closed unless the
+number, head ref/OID, base ref/OID, mergeability, parent update timestamp, local `HEAD`, and
+clean-worktree state still equal the opening snapshot.
 
 `secrets.verdict` is `CLEAN` only when exactly one exact-head check named
-`Secret Scan / Gitleaks Scan` exists and is successful. The similarly named CI Extended signal is
-advisory and cannot supply this verdict. Missing, pending, failed, duplicate, or otherwise ambiguous
-enforcing evidence is `NOT VERIFIED`, makes the collector state incomplete, and returns non-zero.
+`Secret Scan / Gitleaks Scan` exists in workflow `CI`, is successful in both check snapshots, and
+its completed successful Actions run binds the PR head/base to `.github/workflows/ci-required.yml`.
+The similarly named CI Extended signal is advisory and cannot supply this verdict. Missing, pending,
+failed, duplicate, wrong-workflow, stale, or otherwise ambiguous enforcing evidence is
+`NOT VERIFIED`, makes the collector state incomplete, and returns non-zero.
 
 Any PR update after the finish phase expires the packet. Restart at Step 1 after a push, base move,
 new or edited feedback, review resolution, or other PR metadata change.
