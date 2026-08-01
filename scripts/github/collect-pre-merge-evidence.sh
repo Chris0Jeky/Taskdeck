@@ -18,6 +18,8 @@ require_executable() {
 gh_executable="${TASKDECK_GH_EXECUTABLE:-gh}"
 jq_executable="${TASKDECK_JQ_EXECUTABLE:-jq}"
 cmp_executable="${TASKDECK_CMP_EXECUTABLE:-cmp}"
+openssl_executable="${TASKDECK_OPENSSL_EXECUTABLE:-openssl}"
+sha256sum_executable="${TASKDECK_SHA256SUM_EXECUTABLE:-sha256sum}"
 if [[ -n "${TASKDECK_GIT_EXECUTABLE:-}" ]]; then
   git_executable="$TASKDECK_GIT_EXECUTABLE"
 elif command -v git.exe >/dev/null 2>&1; then
@@ -30,19 +32,21 @@ require_executable "$gh_executable"
 require_executable "$git_executable"
 require_executable "$jq_executable"
 require_executable "$cmp_executable"
+require_executable "$openssl_executable"
+require_executable "$sha256sum_executable"
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
   collect-pre-merge-evidence.sh start [PR_NUMBER]
-  collect-pre-merge-evidence.sh abort
-  collect-pre-merge-evidence.sh finish
+  collect-pre-merge-evidence.sh abort SESSION_TOKEN
+  collect-pre-merge-evidence.sh finish SESSION_TOKEN
 
 The start phase binds the current clean checkout to an explicit PR number or,
 when PR_NUMBER is omitted/empty, only to the current branch's pull request.
 It records one checkout-local, single-use state file under that worktree's Git
 directory. Run the change-specific checks between phases. The abort phase
-explicitly discards only a validated state belonging to the current checkout.
+explicitly discards only a token-authenticated state belonging to the current checkout.
 The finish phase captures every feedback surface and current check, then fails
 if the opening state, checkout identity, scan definitions, or closing PR
 identity differs.
@@ -72,7 +76,47 @@ resolve_state_path() {
   state_git_dir="$resolved_git_dir"
 }
 
+sha256_text() {
+  [[ $# -eq 1 ]] || die "sha256 helper received an invalid argument count"
+  printf '%s' "$1" | "$sha256sum_executable" | awk '{print $1}'
+}
+
+state_binding() {
+  [[ $# -eq 2 ]] || die "state-binding helper received an invalid argument count"
+  local session_token="$1"
+  local opening_state="$2"
+  local canonical_state
+
+  canonical_state="$("$jq_executable" -S -c 'del(.openingStateBinding)' "$opening_state")" ||
+    die "cannot canonicalize opening evidence state"
+  sha256_text "${session_token}:${canonical_state}"
+}
+
+validate_session_token() {
+  [[ $# -eq 2 ]] || die "session-token validator received an invalid argument count"
+  local session_token="$1"
+  local allow_stale_binding="$2"
+  local token_digest
+  local actual_binding
+  local expected_binding
+
+  [[ "$session_token" =~ ^[0-9a-f]{64}$ ]] ||
+    die "session token must be a 64-character lowercase hexadecimal value"
+  token_digest="$(sha256_text "$session_token")" || die "cannot hash the session token"
+  [[ "$token_digest" == "$("$jq_executable" -r '.sessionTokenDigest' "$state_file")" ]] ||
+    die "session token does not authenticate the opening evidence state"
+  actual_binding="$(state_binding "$session_token" "$state_file")" ||
+    die "cannot bind the opening evidence state to the session token"
+  expected_binding="$("$jq_executable" -r '.openingStateBinding' "$state_file")"
+  if [[ "$actual_binding" != "$expected_binding" && "$allow_stale_binding" != true ]]; then
+    die "opening evidence state was rewritten after start"
+  fi
+}
+
 load_opening_state() {
+  [[ $# -eq 2 ]] || die "opening-state loader received an invalid argument count"
+  local session_token="$1"
+  local allow_stale_binding="$2"
   resolve_state_path
   local -a state_candidates=()
   shopt -s nullglob
@@ -84,6 +128,8 @@ load_opening_state() {
   "$jq_executable" -e '
     .schemaVersion == 2 and
     (.session | type == "string" and length > 0) and
+    (.sessionTokenDigest | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.openingStateBinding | type == "string" and test("^[0-9a-f]{64}$")) and
     (.repository | type == "string") and
     (.localHeadOid | type == "string") and
     (.statePath | type == "string") and
@@ -102,6 +148,7 @@ load_opening_state() {
         (.opening.number | tostring) + "." + .opening.headRefOid + ".json")
     ' "$state_file" >/dev/null ||
     die "opening evidence state does not belong to this checkout"
+  validate_session_token "$session_token" "$allow_stale_binding"
 }
 
 validate_pr_snapshot() {
@@ -143,6 +190,9 @@ start_collection() {
   local merge_base
   local state_tmp
   local state_session
+  local session_token
+  local session_token_digest
+  local opening_state_binding
   local -a pr_args=()
   local snapshot_tmp
 
@@ -192,9 +242,16 @@ start_collection() {
   state_tmp="$(mktemp "${state_file}.tmp.XXXXXX")" ||
     die "cannot create opening evidence state"
   state_session="$(basename "$state_tmp")"
+  session_token="$("$openssl_executable" rand -hex 32)" ||
+    die "cannot generate the operator-carried session token"
+  [[ "$session_token" =~ ^[0-9a-f]{64}$ ]] ||
+    die "generated session token has an invalid shape"
+  session_token_digest="$(sha256_text "$session_token")" ||
+    die "cannot hash the operator-carried session token"
   "$jq_executable" -n \
     --arg schemaVersion "2" \
     --arg session "$state_session" \
+    --arg sessionTokenDigest "$session_token_digest" \
     --arg repository "$repo_full_name" \
     --arg selection "$(if [[ -n "$requested_pr" ]]; then printf explicit; else printf current-branch; fi)" \
     --arg localHeadOid "$selected_head" \
@@ -205,6 +262,7 @@ start_collection() {
     '{
       schemaVersion: ($schemaVersion | tonumber),
       session: $session,
+      sessionTokenDigest: $sessionTokenDigest,
       repository: $repository,
       selection: $selection,
       localHeadOid: $localHeadOid,
@@ -213,6 +271,12 @@ start_collection() {
       gitDirectory: $gitDirectory,
       opening: $opening[0]
     }' >"$state_tmp"
+  opening_state_binding="$(state_binding "$session_token" "$state_tmp")" ||
+    die "cannot bind opening evidence state to the operator-carried session token"
+  "$jq_executable" --arg openingStateBinding "$opening_state_binding" \
+    '. + {openingStateBinding: $openingStateBinding}' "$state_tmp" >"${state_tmp}.bound" ||
+    die "cannot finalize the opening evidence state"
+  mv -f "${state_tmp}.bound" "$state_tmp" || die "cannot finalize the opening evidence state"
   ln "$state_tmp" "$state_file" ||
     die "opening evidence state was created concurrently or replaced: $state_file"
   rm -f "$state_tmp"
@@ -221,11 +285,13 @@ start_collection() {
   rm -f "$snapshot_tmp"
   printf 'Opening evidence bound to PR #%s at %s against %s.\n' \
     "$selected_pr" "$selected_head" "$selected_base" >&2
+  printf '%s\n' "$session_token"
 }
 
 abort_collection() {
-  [[ $# -eq 1 ]] || usage
-  load_opening_state
+  [[ $# -eq 2 ]] || usage
+  local session_token="$2"
+  load_opening_state "$session_token" true
   local aborted_pr
   local aborted_head
   aborted_pr="$("$jq_executable" -r '.opening.number' "$state_file")"
@@ -400,8 +466,9 @@ bind_enforcing_gitleaks_definitions() {
 }
 
 finish_collection() {
-  [[ $# -eq 1 ]] || usage
-  load_opening_state
+  [[ $# -eq 2 ]] || usage
+  local session_token="$2"
+  load_opening_state "$session_token" false
 
   local repo_full_name
   local repo_owner

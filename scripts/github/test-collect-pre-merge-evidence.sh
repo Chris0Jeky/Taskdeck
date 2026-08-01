@@ -370,37 +370,49 @@ run_start() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
+  local token_tmp="$case_root/operator-session-token.tmp"
   shift 3
   prepare_scan_definitions "$scenario" "$case_root"
-  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  if MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" start "$@"
+    "$collector" start "$@" >"$token_tmp"; then
+    mv -f "$token_tmp" "$case_root/operator-session-token"
+  else
+    rm -f "$token_tmp"
+    return 1
+  fi
 }
 
 run_finish() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
+  local token_case_root="${4:-$case_root}"
+  local session_token
+  session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
   MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" finish
+    "$collector" finish "$session_token"
 }
 
 run_abort() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
+  local token_case_root="${4:-$case_root}"
+  local session_token
+  session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
   MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" abort
+    "$collector" abort "$session_token"
 }
 
 case_root="$fixture_root/explicit"
@@ -452,10 +464,10 @@ make_mocks "$case_root"
 mkdir -p "$case_root/checkout/.git/taskdeck-pre-merge-evidence"
 cp "$source_case/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json \
   "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"
-if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+if run_finish happy "$case_root" "$case_root/state.json" "$source_case" >/dev/null 2>&1; then
   fail "opening evidence state from another checkout was accepted"
 fi
-if run_abort happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+if run_abort happy "$case_root" "$case_root/state.json" "$source_case" >/dev/null 2>&1; then
   fail "abort deleted opening evidence state from another checkout"
 fi
 if ! compgen -G "$case_root/checkout/.git/taskdeck-pre-merge-evidence/opening.*.json" >/dev/null; then
@@ -473,6 +485,30 @@ if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
   fail "opening evidence state with a substituted PR number was accepted"
 fi
 pass "substituted PR state fails closed when it no longer matches its state path"
+
+case_root="$fixture_root/mutable-opening-state"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+state_path="$(printf '%s\n' "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+"$real_jq" '
+  .repository = "attacker/repository" |
+  .opening.updatedAt = "2026-08-01T23:59:59Z" |
+  .opening.baseRefName = "attacker-base" |
+  .opening.baseRefOid = "cccccccccccccccccccccccccccccccccccccccc" |
+  .opening.mergeable = "CONFLICTING"
+' "$state_path" >"$state_path.tmp"
+mv -f "$state_path.tmp" "$state_path"
+if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "rewritten opening metadata was accepted with its original filename and path"
+fi
+run_abort happy "$case_root" "$case_root/state.json" >/dev/null ||
+  fail "operator-carried token could not safely discard rewritten opening state"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+run_finish happy "$case_root" "$case_root/state.json" >"$case_root/restarted-packet.json"
+"$real_jq" -e '.collectorState == "COMPLETE" and .pr.number == 42' \
+  "$case_root/restarted-packet.json" >/dev/null ||
+  fail "token-authenticated abort did not permit a clean restart"
+pass "rewritten repository, timestamp, base, and mergeability fail closed with the original path"
 
 case_root="$fixture_root/implicit"
 make_mocks "$case_root"

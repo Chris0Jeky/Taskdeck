@@ -26,13 +26,16 @@ The collector records its single-use opening state under the current worktree's 
 the start and finish blocks may run in genuinely separate Bash processes. Do not supply, copy,
 delete, rename, or reuse a state path: the collector derives it from the current checkout and
 rejects missing, stale, substituted, or cross-worktree state before feedback or checks run.
+`start` writes one opaque session token to stdout. Keep that token outside the checkout and do not
+export it to untrusted checks; it authenticates every field of the opening record at `finish` and
+authorizes `abort`.
 
 ```bash
 # Explicit selection (replace VALIDATED_PR_NUMBER with validated decimal digits only):
-bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER
+evidence_session="$(bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER)"
 
 # Omitted selection (use this instead of the preceding command when $ARGUMENTS is empty):
-# bash scripts/github/collect-pre-merge-evidence.sh start
+# evidence_session="$(bash scripts/github/collect-pre-merge-evidence.sh start)"
 ```
 
 The start phase fails before local checks unless all of these are simultaneously true:
@@ -46,14 +49,17 @@ The start phase fails before local checks unless all of these are simultaneously
 The opening state captures a fresh evidence-session identity, PR number, opening head/base, local
 checkout root, and worktree-specific Git directory. A successful finish consumes it. A failed or
 interrupted session remains invalid and must be investigated rather than silently reused. After
-recording the failure cause, explicitly abandon only that checkout-bound session before restarting:
+recording the failure cause, explicitly abandon only that token-authenticated, checkout-bound
+session before restarting:
 
 ```bash
-bash scripts/github/collect-pre-merge-evidence.sh abort
+bash scripts/github/collect-pre-merge-evidence.sh abort "$evidence_session"
 ```
 
-`abort` validates the state path, worktree, Git directory, PR number, and opening head encoded in
-the filename before removing it. Never delete or rename an opening state manually.
+`abort` validates the operator token plus the state path, worktree, Git directory, PR number, and
+opening head encoded in the filename before removing it. It may discard a token-authenticated state
+whose content was rewritten, but it never treats that state as valid evidence. Never delete or
+rename an opening state manually.
 
 ## Step 2: Run local checks
 
@@ -104,7 +110,7 @@ the current packet expires: commit and push the fix, then restart this skill fro
 Immediately after the checks and diff inspection, collect all feedback and exact-head CI evidence:
 
 ```bash
-if ! evidence_packet="$(bash scripts/github/collect-pre-merge-evidence.sh finish)"; then
+if ! evidence_packet="$(bash scripts/github/collect-pre-merge-evidence.sh finish "$evidence_session")"; then
   printf '%s\n' "$evidence_packet"
   exit 1
 fi
@@ -116,6 +122,9 @@ state, top-level PR comments, review summaries, and check states twice. It fails
 pairs of normalized snapshots are identical. It then rereads the PR and fails closed unless the
 number, head ref/OID, base ref/OID, mergeability, parent update timestamp, local `HEAD`, and
 clean-worktree state still equal the opening snapshot.
+Before reading any opening field, it verifies the complete canonical opening record against the
+operator-carried session token, so repository code cannot rewrite opening metadata in place to
+extend an expired evidence window.
 
 `secrets.verdict` is `CLEAN` only when exactly one exact-head check named
 `Secret Scan / Gitleaks Scan` exists in workflow `CI`, is successful in both check snapshots, and
