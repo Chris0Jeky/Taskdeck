@@ -26,17 +26,23 @@ The collector records its single-use opening state under the current worktree's 
 the start and finish blocks may run in genuinely separate Bash processes. Do not supply, copy,
 delete, rename, or reuse a state path: the collector derives it from the current checkout and
 rejects missing, stale, substituted, or cross-worktree state before feedback or checks run.
-`start` writes one opaque session token to stdout. Keep that token outside the checkout and do not
-export it to untrusted checks; it authenticates every field of the opening record at `finish` and
-authorizes `abort`.
+`start` prints one opaque session token visibly to stdout. Confirm that it is exactly 64 lowercase
+hexadecimal characters, then retain that exact token in coordinator/operator context across tool
+calls. Do not put it in a shell variable, environment variable, checkout file, or Git-directory
+file, and do not expose it to untrusted checks. It authenticates every field of the opening record
+at `finish` and authorizes `abort`.
 
 ```bash
 # Explicit selection (replace VALIDATED_PR_NUMBER with validated decimal digits only):
-evidence_session="$(bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER)"
+bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER
 
 # Omitted selection (use this instead of the preceding command when $ARGUMENTS is empty):
-# evidence_session="$(bash scripts/github/collect-pre-merge-evidence.sh start)"
+# bash scripts/github/collect-pre-merge-evidence.sh start
 ```
+
+Retain the visible token before starting Step 2. In every later command, replace
+`VALIDATED_SESSION_TOKEN` with only those exact 64 validated hexadecimal characters; never paste
+unvalidated output or surrounding text into a command.
 
 The start phase fails before local checks unless all of these are simultaneously true:
 
@@ -53,7 +59,7 @@ recording the failure cause, explicitly abandon only that token-authenticated, c
 session before restarting:
 
 ```bash
-bash scripts/github/collect-pre-merge-evidence.sh abort "$evidence_session"
+bash scripts/github/collect-pre-merge-evidence.sh abort VALIDATED_SESSION_TOKEN
 ```
 
 `abort` validates the operator token plus the state path, worktree, Git directory, PR number, and
@@ -110,7 +116,9 @@ the current packet expires: commit and push the fix, then restart this skill fro
 Immediately after the checks and diff inspection, collect all feedback and exact-head CI evidence:
 
 ```bash
-if ! evidence_packet="$(bash scripts/github/collect-pre-merge-evidence.sh finish "$evidence_session")"; then
+if ! evidence_packet="$(
+  bash scripts/github/collect-pre-merge-evidence.sh finish VALIDATED_SESSION_TOKEN
+)"; then
   printf '%s\n' "$evidence_packet"
   exit 1
 fi

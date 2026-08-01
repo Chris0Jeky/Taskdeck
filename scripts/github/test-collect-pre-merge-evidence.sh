@@ -647,6 +647,17 @@ rg -Fq '# gh pr diff' "$skill_file" ||
   fail "skill does not document current-branch diff inspection for omitted selection"
 pass "diff inspection reuses the validated explicit or current-branch selection"
 
+if rg -q 'evidence_session|\$\([^)]*collect-pre-merge-evidence\.sh start' "$skill_file"; then
+  fail "skill captures the operator token in process-local shell state"
+fi
+rg -Fq 'abort VALIDATED_SESSION_TOKEN' "$skill_file" ||
+  fail "skill does not require an explicit validated session token for abort"
+rg -Fq 'finish VALIDATED_SESSION_TOKEN' "$skill_file" ||
+  fail "skill does not require an explicit validated session token for finish"
+rg -Fq 'coordinator/operator context' "$skill_file" ||
+  fail "skill does not preserve the visible token across separate tool processes"
+pass "visible operator token survives separate finish and abort tool commands"
+
 case_root="$fixture_root/invalid-argument"
 make_mocks "$case_root"
 if run_start happy "$case_root" "$case_root/state.json" '42;echo-no' >/dev/null 2>&1; then
