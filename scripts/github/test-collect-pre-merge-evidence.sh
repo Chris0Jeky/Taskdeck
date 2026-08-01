@@ -46,44 +46,21 @@ case "${1-}" in
       FETCH_HEAD) printf '%s\n' "$base_oid" ;;
       --show-toplevel) printf '%s\n' "$worktree_root" ;;
       --absolute-git-dir) printf '%s\n' "$git_dir" ;;
-      *:.github/workflows/ci-required.yml)
-        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-caller-noop" ]]; then
-          printf '%040d\n' 11
-        else
-          printf '%040d\n' 1
+      *:*)
+        revision=base
+        if [[ "${2%%:*}" == "HEAD" ]]; then
+          revision=head
         fi
-        ;;
-      *:.github/workflows/reusable-gitleaks.yml)
-        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-reusable-noop" ]]; then
-          printf '%040d\n' 12
-        else
-          printf '%040d\n' 2
-        fi
-        ;;
-      *:.gitleaks.toml)
-        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-config-noop" ]]; then
-          printf '%040d\n' 13
-        else
-          printf '%040d\n' 3
-        fi
-        ;;
-      *:.gitleaksignore)
-        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-ignore-noop" ]]; then
-          printf '%040d\n' 14
-        else
-          printf '%040d\n' 4
-        fi
+        fixture_path="$MOCK_ROOT/$revision/${2#*:}"
+        [[ -f "$fixture_path" ]] || exit 2
+        sha1sum "$fixture_path" | awk '{print $1}'
         ;;
       *) exit 2 ;;
     esac
     ;;
   show)
     if [[ "${2-}" == "$base_oid:.github/workflows/ci-required.yml" ]]; then
-      cat <<'CALLER'
-jobs:
-  secret-scan:
-    uses: ./.github/workflows/reusable-gitleaks.yml
-CALLER
+      cat "$MOCK_ROOT/base/.github/workflows/ci-required.yml"
     else
       exit 2
     fi
@@ -336,11 +313,65 @@ MOCK_GH
   : >"$case_root/calls.log"
 }
 
+prepare_scan_definitions() {
+  local scenario="$1"
+  local case_root="$2"
+
+  mkdir -p "$case_root/base/.github/workflows" "$case_root/head/.github/workflows"
+  cat >"$case_root/base/.github/workflows/ci-required.yml" <<'CALLER'
+name: CI
+jobs:
+  secret-scan:
+    uses: ./.github/workflows/reusable-gitleaks.yml
+CALLER
+  cat >"$case_root/base/.github/workflows/reusable-gitleaks.yml" <<'REUSABLE'
+name: Gitleaks Secrets Detection
+jobs:
+  gitleaks:
+    steps:
+      - run: gitleaks protect --config .gitleaks.toml
+REUSABLE
+  printf '%s\n' 'title = "Gitleaks"' >"$case_root/base/.gitleaks.toml"
+  printf '%s\n' '# reviewed ignore list' >"$case_root/base/.gitleaksignore"
+  cp -R "$case_root/base/." "$case_root/head/"
+
+  case "$scenario" in
+    secret-caller-noop)
+      cat >"$case_root/head/.github/workflows/ci-required.yml" <<'CALLER_NOOP'
+name: CI
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+CALLER_NOOP
+      ;;
+    secret-reusable-noop)
+      cat >"$case_root/head/.github/workflows/reusable-gitleaks.yml" <<'REUSABLE_NOOP'
+name: Gitleaks Secrets Detection
+on: workflow_call
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+REUSABLE_NOOP
+      ;;
+    secret-config-noop)
+      printf '%s\n' 'title = "Gitleaks disabled"' >"$case_root/head/.gitleaks.toml"
+      ;;
+    secret-ignore-noop)
+      printf '%s\n' '*' >"$case_root/head/.gitleaksignore"
+      ;;
+  esac
+}
+
 run_start() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
   shift 3
+  prepare_scan_definitions "$scenario" "$case_root"
   MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
@@ -352,6 +383,7 @@ run_finish() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
+  prepare_scan_definitions "$scenario" "$case_root"
   MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
