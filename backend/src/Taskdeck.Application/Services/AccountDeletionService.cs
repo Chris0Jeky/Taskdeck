@@ -29,11 +29,13 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly IActiveUserCache? _activeUserCache;
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
+    private readonly ITranscriptRepository _transcripts;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
+        ITranscriptRepository transcripts,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null)
     {
@@ -42,6 +44,7 @@ public class AccountDeletionService : IAccountDeletionService
         _activeUserCache = activeUserCache;
         _logger = logger;
         _artefacts = artefacts;
+        _transcripts = transcripts;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -119,6 +122,7 @@ public class AccountDeletionService : IAccountDeletionService
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
             var artefactsDeleted = await _artefacts.DeleteByUserIdAsync(userId, cancellationToken);
+            var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions
             var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
@@ -202,7 +206,8 @@ public class AccountDeletionService : IAccountDeletionService
                 ChatSessionsAnonymized: chatSessionsAnonymized,
                 ExternalLoginsDeleted: externalLoginsDeleted,
                 PreferencesDeleted: preferencesDeleted,
-                ArtefactsDeleted: artefactsDeleted));
+                ArtefactsDeleted: artefactsDeleted,
+                TranscriptsDeleted: transcriptsDeleted));
         }
         catch (Exception ex)
         {
