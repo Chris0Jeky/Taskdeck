@@ -41,6 +41,7 @@ public class GdprDataExportRoundTripTests
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly Mock<IArtefactExtractionRepository> _extractionRepoMock;
+    private readonly Mock<ITranscriptRepository> _transcriptRepoMock;
     private readonly DataExportService _service;
 
     public GdprDataExportRoundTripTests()
@@ -61,6 +62,7 @@ public class GdprDataExportRoundTripTests
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
         _extractionRepoMock = new Mock<IArtefactExtractionRepository>();
+        _transcriptRepoMock = new Mock<ITranscriptRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -86,6 +88,10 @@ public class GdprDataExportRoundTripTests
             .ReturnsAsync(Array.Empty<ArtefactExtraction>());
         _extractionRepoMock.Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>());
+        _transcriptRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Transcript>());
+        _transcriptRepoMock.Setup(r => r.GetEstimatedSerializedLengthByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
 
         _historyServiceMock
             .Setup(h => h.LogActionAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<AuditAction>(), It.IsAny<Guid?>(), It.IsAny<string?>()))
@@ -95,7 +101,8 @@ public class GdprDataExportRoundTripTests
             _unitOfWorkMock.Object,
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
-            _extractionRepoMock.Object);
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object);
     }
 
     [Fact]

@@ -19,17 +19,21 @@ public class DataExportService : IDataExportService
     private const string ExportVersion = "1.0";
     private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
     private const int MaxBufferedArtefactRows = 10_000;
+    private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
+    private const int MaxBufferedTranscriptRows = 10_000;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IHistoryService _historyService;
     private readonly ILogger<DataExportService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly IArtefactExtractionRepository _extractions;
+    private readonly ITranscriptRepository _transcripts;
 
     public DataExportService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
         IArtefactExtractionRepository extractions,
+        ITranscriptRepository transcripts,
         ILogger<DataExportService>? logger = null)
     {
         _unitOfWork = unitOfWork;
@@ -37,6 +41,7 @@ public class DataExportService : IDataExportService
         _logger = logger;
         _artefacts = artefacts;
         _extractions = extractions;
+        _transcripts = transcripts;
     }
 
     public async Task<Result<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -54,12 +59,21 @@ public class DataExportService : IDataExportService
             var extractionBytes = await _extractions.GetEstimatedSerializedBytesByUserAsync(
                 userId,
                 cancellationToken);
+            var transcriptSerializedCharacters = await _transcripts.GetEstimatedSerializedLengthByUserAsync(
+                userId,
+                cancellationToken);
             if (artefactBytes > MaxBufferedArtefactBytes ||
                 extractionBytes > MaxBufferedArtefactBytes - artefactBytes)
             {
                 return Result.Failure<UserDataExportDto>(
                     ErrorCodes.PayloadTooLarge,
                     "This export contains too much artefact or extraction content to buffer; use the streaming export endpoint");
+            }
+            if (transcriptSerializedCharacters > MaxBufferedTranscriptSerializedCharacters)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too much transcript content to buffer; use the streaming export endpoint");
             }
 
             var artefactMetadata = await GetBufferedArtefactMetadataAsync(userId, cancellationToken);
@@ -68,6 +82,13 @@ public class DataExportService : IDataExportService
                 return Result.Failure<UserDataExportDto>(
                     ErrorCodes.PayloadTooLarge,
                     "This export contains too many artefacts to buffer; use the streaming export endpoint");
+            }
+            var transcriptMetadata = await GetBufferedTranscriptMetadataAsync(userId, cancellationToken);
+            if (transcriptMetadata.Count > MaxBufferedTranscriptRows)
+            {
+                return Result.Failure<UserDataExportDto>(
+                    ErrorCodes.PayloadTooLarge,
+                    "This export contains too many transcripts to buffer; use the streaming export endpoint");
             }
 
             // Gather all user-scoped data in parallel where safe
@@ -186,6 +207,8 @@ public class DataExportService : IDataExportService
                 f.Reason.ToString(),
                 f.ReportedAt)).ToList();
 
+            var exportTranscripts = transcriptMetadata.Select(MapTranscriptForExport).ToList();
+
             var exportArtefacts = new List<UserDataExportArtefactDto>(artefactMetadata.Count);
             // #1355: batch the blob loads in bounded chunks instead of one round-trip per artefact.
             // The chunk size mirrors StreamPageSize so each IN-clause stays well within SQLite's
@@ -238,7 +261,8 @@ public class DataExportService : IDataExportService
                 exportPreferences,
                 exportNotificationPrefs,
                 exportFeedback,
-                exportArtefacts);
+                exportArtefacts,
+                exportTranscripts);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -458,6 +482,46 @@ public class DataExportService : IDataExportService
                 writer.WriteNull("notificationPreferences");
             }
 
+            writer.WriteStartArray("transcripts");
+            await foreach (var transcript in StreamTranscriptsAsync(userId, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                writer.WriteStartObject();
+                writer.WriteString("id", transcript.Id);
+                if (transcript.BoardId.HasValue)
+                    writer.WriteString("boardId", transcript.BoardId.Value);
+                else
+                    writer.WriteNull("boardId");
+                writer.WriteString("captureSource", transcript.CaptureSource.ToString());
+                writer.WriteString("text", transcript.Text);
+                writer.WriteStartArray("segments");
+                foreach (var segment in transcript.Segments)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("startLine", segment.StartLine);
+                    writer.WriteNumber("endLine", segment.EndLine);
+                    writer.WriteString("speaker", segment.Speaker);
+                    if (segment.TimestampMilliseconds.HasValue)
+                        writer.WriteNumber("timestampMilliseconds", segment.TimestampMilliseconds.Value);
+                    else
+                        writer.WriteNull("timestampMilliseconds");
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+                if (transcript.CreatedFromCaptureId.HasValue)
+                    writer.WriteString("createdFromCaptureId", transcript.CreatedFromCaptureId.Value);
+                else
+                    writer.WriteNull("createdFromCaptureId");
+                if (transcript.SourceArtefactId.HasValue)
+                    writer.WriteString("sourceArtefactId", transcript.SourceArtefactId.Value);
+                else
+                    writer.WriteNull("sourceArtefactId");
+                writer.WriteString("createdAt", transcript.CreatedAt);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
             // Artefact content is the only export value that can exceed
             // Utf8JsonWriter's single-token Base64 limit. Flush and end this
             // writer segment while the data/root objects remain open; the
@@ -619,6 +683,27 @@ public class DataExportService : IDataExportService
         return all;
     }
 
+    private async Task<IReadOnlyList<Domain.Entities.Transcript>> GetBufferedTranscriptMetadataAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var all = new List<Domain.Entities.Transcript>(MaxBufferedTranscriptRows + 1);
+        while (all.Count <= MaxBufferedTranscriptRows)
+        {
+            var remaining = MaxBufferedTranscriptRows + 1 - all.Count;
+            var page = await _transcripts.GetByUserAsync(
+                userId,
+                Math.Min(StreamPageSize, remaining),
+                all.Count,
+                cancellationToken);
+            all.AddRange(page);
+            if (page.Count < StreamPageSize)
+                return all;
+        }
+
+        return all;
+    }
+
     private static UserDataExportArtefactDto MapArtefactForExport(
         Domain.Entities.SourceArtefact artefact,
         byte[] content,
@@ -637,6 +722,22 @@ public class DataExportService : IDataExportService
             artefact.CreatedAt,
             Convert.ToBase64String(content),
             extractions);
+
+    private static UserDataExportTranscriptDto MapTranscriptForExport(
+        Domain.Entities.Transcript transcript)
+        => new(
+            transcript.Id,
+            transcript.BoardId,
+            transcript.CaptureSource.ToString(),
+            transcript.Text,
+            transcript.Segments.Select(segment => new UserDataExportTranscriptSegmentDto(
+                segment.StartLine,
+                segment.EndLine,
+                segment.Speaker,
+                segment.TimestampMilliseconds)).ToList(),
+            transcript.CreatedFromCaptureId,
+            transcript.SourceArtefactId,
+            transcript.CreatedAt);
 
     private async Task WriteExtractionHistoryAsync(
         Guid artefactId,
@@ -718,6 +819,28 @@ public class DataExportService : IDataExportService
                 yield break;
 
             offset += rows.Count;
+        }
+    }
+
+    private async IAsyncEnumerable<Domain.Entities.Transcript> StreamTranscriptsAsync(
+        Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var offset = 0;
+        while (true)
+        {
+            var page = await _transcripts.GetByUserAsync(
+                userId,
+                StreamPageSize,
+                offset,
+                cancellationToken);
+            foreach (var transcript in page)
+                yield return transcript;
+
+            if (page.Count < StreamPageSize)
+                yield break;
+
+            offset += page.Count;
         }
     }
 

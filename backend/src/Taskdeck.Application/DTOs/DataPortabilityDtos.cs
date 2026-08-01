@@ -27,7 +27,28 @@ public record UserDataExportContentDto(
     UserDataExportPreferencesDto? Preferences,
     UserDataExportNotificationPreferencesDto? NotificationPreferences,
     IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback,
-    IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null);
+    IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null,
+    IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null);
+
+/// <summary>
+/// A portable normalized transcript. <see cref="Text"/> remains the only
+/// transcript-text payload; source artefacts are referenced by identity only.
+/// </summary>
+public record UserDataExportTranscriptDto(
+    Guid Id,
+    Guid? BoardId,
+    string CaptureSource,
+    string Text,
+    IReadOnlyList<UserDataExportTranscriptSegmentDto> Segments,
+    Guid? CreatedFromCaptureId,
+    Guid? SourceArtefactId,
+    DateTimeOffset CreatedAt);
+
+public record UserDataExportTranscriptSegmentDto(
+    int StartLine,
+    int EndLine,
+    string? Speaker,
+    long? TimestampMilliseconds);
 
 public record UserDataExportBoardDto(
     Guid BoardId,
@@ -114,4 +135,5 @@ public record AccountDeletionResultDto(
     int ChatSessionsAnonymized,
     int ExternalLoginsDeleted,
     int PreferencesDeleted,
-    int ArtefactsDeleted = 0);
+    int ArtefactsDeleted = 0,
+    int TranscriptsDeleted = 0);
