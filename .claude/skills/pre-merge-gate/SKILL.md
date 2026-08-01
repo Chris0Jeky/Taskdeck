@@ -22,25 +22,17 @@ text into a command.
 
 ## Step 1: Bind the exact PR, head, and base
 
-Run the whole gate in one Git Bash session so the temporary state and fail-fast trap survive all
-steps:
+The collector records its single-use opening state under the current worktree's Git directory, so
+the start and finish blocks may run in genuinely separate Bash processes. Do not supply, copy,
+delete, rename, or reuse a state path: the collector derives it from the current checkout and
+rejects missing, stale, substituted, or cross-worktree state before feedback or checks run.
 
 ```bash
-set -euo pipefail
-
-evidence_state="$(mktemp "${TMPDIR:-/tmp}/taskdeck-pre-merge.XXXXXX.json")"
-cleanup_pre_merge_state() {
-  rm -f "$evidence_state"
-}
-trap cleanup_pre_merge_state EXIT
-
 # Explicit selection (replace VALIDATED_PR_NUMBER with validated decimal digits only):
-bash scripts/github/collect-pre-merge-evidence.sh start "$evidence_state" VALIDATED_PR_NUMBER
+bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER
 
 # Omitted selection (use this instead of the preceding command when $ARGUMENTS is empty):
-# bash scripts/github/collect-pre-merge-evidence.sh start "$evidence_state"
-
-pr_number="$(jq -r '.opening.number' "$evidence_state" | tr -d '\r')"
+# bash scripts/github/collect-pre-merge-evidence.sh start
 ```
 
 The start phase fails before local checks unless all of these are simultaneously true:
@@ -51,7 +43,9 @@ The start phase fails before local checks unless all of these are simultaneously
 - the merge base equals that exact base OID; and
 - GitHub reports the PR as mergeable.
 
-Do not hand-edit or reuse the state file. A failed or interrupted phase invalidates it.
+The opening state captures a fresh evidence-session identity, PR number, opening head/base, local
+checkout root, and worktree-specific Git directory. A successful finish consumes it; a failed or
+interrupted session remains invalid and must be investigated rather than silently reused.
 
 ## Step 2: Run local checks
 
@@ -92,9 +86,7 @@ the current packet expires: commit and push the fix, then restart this skill fro
 Immediately after the checks and diff inspection, collect all feedback and exact-head CI evidence:
 
 ```bash
-if ! evidence_packet="$(
-  bash scripts/github/collect-pre-merge-evidence.sh finish "$evidence_state"
-)"; then
+if ! evidence_packet="$(bash scripts/github/collect-pre-merge-evidence.sh finish)"; then
   printf '%s\n' "$evidence_packet"
   exit 1
 fi
@@ -110,8 +102,10 @@ clean-worktree state still equal the opening snapshot.
 `secrets.verdict` is `CLEAN` only when exactly one exact-head check named
 `Secret Scan / Gitleaks Scan` exists in workflow `CI`, is successful in both check snapshots, and
 its completed successful Actions run binds the PR head/base to `.github/workflows/ci-required.yml`.
+The collector also requires byte-for-byte opening-base equality for the enforcing caller, the
+reusable Gitleaks workflow selected by that caller, `.gitleaks.toml`, and `.gitleaksignore`.
 The similarly named CI Extended signal is advisory and cannot supply this verdict. Missing, pending,
-failed, duplicate, wrong-workflow, stale, or otherwise ambiguous enforcing evidence is
+failed, duplicate, wrong-workflow, stale, changed-definition, or otherwise ambiguous enforcing evidence is
 `NOT VERIFIED`, makes the collector state incomplete, and returns non-zero.
 
 Any PR update after the finish phase expires the packet. Restart at Step 1 after a push, base move,

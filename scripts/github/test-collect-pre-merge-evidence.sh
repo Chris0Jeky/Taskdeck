@@ -33,6 +33,8 @@ printf '\n' >>"$MOCK_ROOT/calls.log"
 
 head_oid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 base_oid=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+worktree_root="${MOCK_WORKTREE_ROOT:-/mock/checkouts/current}"
+git_dir="$worktree_root/.git"
 if [[ "$MOCK_SCENARIO" == "wrong-checkout" ]]; then
   head_oid=dddddddddddddddddddddddddddddddddddddddd
 fi
@@ -42,8 +44,49 @@ case "${1-}" in
     case "${2-}" in
       HEAD) printf '%s\n' "$head_oid" ;;
       FETCH_HEAD) printf '%s\n' "$base_oid" ;;
+      --show-toplevel) printf '%s\n' "$worktree_root" ;;
+      --absolute-git-dir) printf '%s\n' "$git_dir" ;;
+      *:.github/workflows/ci-required.yml)
+        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-caller-noop" ]]; then
+          printf '%040d\n' 11
+        else
+          printf '%040d\n' 1
+        fi
+        ;;
+      *:.github/workflows/reusable-gitleaks.yml)
+        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-reusable-noop" ]]; then
+          printf '%040d\n' 12
+        else
+          printf '%040d\n' 2
+        fi
+        ;;
+      *:.gitleaks.toml)
+        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-config-noop" ]]; then
+          printf '%040d\n' 13
+        else
+          printf '%040d\n' 3
+        fi
+        ;;
+      *:.gitleaksignore)
+        if [[ "${2%%:*}" == "HEAD" && "$MOCK_SCENARIO" == "secret-ignore-noop" ]]; then
+          printf '%040d\n' 14
+        else
+          printf '%040d\n' 4
+        fi
+        ;;
       *) exit 2 ;;
     esac
+    ;;
+  show)
+    if [[ "${2-}" == "$base_oid:.github/workflows/ci-required.yml" ]]; then
+      cat <<'CALLER'
+jobs:
+  secret-scan:
+    uses: ./.github/workflows/reusable-gitleaks.yml
+CALLER
+    else
+      exit 2
+    fi
     ;;
   status)
     ;;
@@ -298,22 +341,22 @@ run_start() {
   local case_root="$2"
   local state_file="$3"
   shift 3
-  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" start "$state_file" "$@"
+    "$collector" start "$@"
 }
 
 run_finish() {
   local scenario="$1"
   local case_root="$2"
   local state_file="$3"
-  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" finish "$state_file"
+    "$collector" finish
 }
 
 case_root="$fixture_root/explicit"
@@ -334,10 +377,52 @@ run_finish happy "$case_root" "$case_root/state.json" >"$case_root/packet.json"
   .secrets.requiredWorkflow == "CI" and
   .secrets.requiredWorkflowPath == ".github/workflows/ci-required.yml" and
   .secrets.provenanceVerified == true and
+  .secrets.definitionsVerified == true and
+  (.secrets.definitionBindings | length) == 4 and
+  ([.secrets.definitionBindings[].matchesOpeningBase] | all) and
   .secrets.workflowRun.path == ".github/workflows/ci-required.yml" and
   .secrets.verdict == "CLEAN" and .collectorState == "COMPLETE"
 ' "$case_root/packet.json" >/dev/null || fail "explicit PR packet was incomplete"
-pass "explicit PR selection returns cursor-complete feedback and exact-head scan evidence"
+if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "a completed evidence session was reused"
+fi
+pass "separate processes preserve the explicit PR and consume the checkout-bound evidence session"
+
+case_root="$fixture_root/missing-state"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+rm -f "$case_root/checkout/.git/taskdeck-pre-merge-evidence/opening."*.json
+if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "deleted opening evidence state was accepted"
+fi
+if [[ -s "$case_root/calls.log" ]] && rg -q 'gh (api|pr checks)' "$case_root/calls.log"; then
+  fail "deleted opening evidence state reached feedback or checks"
+fi
+pass "deleted opening state fails closed before feedback and checks"
+
+source_case="$fixture_root/substituted-state-source"
+make_mocks "$source_case"
+run_start happy "$source_case" "$source_case/state.json" 42 >/dev/null
+case_root="$fixture_root/substituted-state-target"
+make_mocks "$case_root"
+mkdir -p "$case_root/checkout/.git/taskdeck-pre-merge-evidence"
+cp "$source_case/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json \
+  "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"
+if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "opening evidence state from another checkout was accepted"
+fi
+pass "substituted opening state fails closed when its checkout binding differs"
+
+case_root="$fixture_root/substituted-pr-state"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+state_path="$(printf '%s\n' "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+"$real_jq" '.opening.number = 99' "$state_path" >"$state_path.tmp"
+mv -f "$state_path.tmp" "$state_path"
+if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "opening evidence state with a substituted PR number was accepted"
+fi
+pass "substituted PR state fails closed when it no longer matches its state path"
 
 case_root="$fixture_root/implicit"
 make_mocks "$case_root"
@@ -395,7 +480,8 @@ fi
 pass "incomplete review-thread pagination fails closed"
 
 for scenario in secret-missing secret-advisory-only secret-forged-workflow \
-  secret-wrong-provenance secret-duplicate secret-pending secret-failed; do
+  secret-wrong-provenance secret-duplicate secret-pending secret-failed \
+  secret-caller-noop secret-reusable-noop secret-config-noop secret-ignore-noop; do
   case_root="$fixture_root/$scenario"
   make_mocks "$case_root"
   run_start "$scenario" "$case_root" "$case_root/state.json" 42 >/dev/null
@@ -420,6 +506,17 @@ done
 ' "$fixture_root/secret-wrong-provenance/packet.json" >/dev/null ||
   fail "wrong workflow-run provenance was not retained and rejected"
 pass "forged, advisory, wrong-provenance, missing, duplicate, pending, and failed scans cannot emit CLEAN"
+for scenario in secret-caller-noop secret-reusable-noop secret-config-noop secret-ignore-noop; do
+  "$real_jq" -e '
+    .secrets.provenanceVerified == true and
+    .secrets.definitionsVerified == false and
+    .secrets.verdict == "NOT VERIFIED" and
+    .collectorState == "INCOMPLETE" and
+    ([.secrets.definitionBindings[].matchesOpeningBase] | any(. == false))
+  ' "$fixture_root/$scenario/packet.json" >/dev/null ||
+    fail "$scenario did not retain the changed scan-definition evidence"
+done
+pass "same-name no-op caller, reusable workflow, and scan configuration cannot emit CLEAN"
 
 if rg -q '^[[:space:]]*-[[:space:]]+\[[[:space:]]\][[:space:]]+Secrets scan:[[:space:]]+CLEAN[[:space:]]*$' \
   "$skill_file"; then

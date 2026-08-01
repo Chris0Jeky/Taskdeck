@@ -34,20 +34,40 @@ require_executable "$cmp_executable"
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  collect-pre-merge-evidence.sh start STATE_FILE [PR_NUMBER]
-  collect-pre-merge-evidence.sh finish STATE_FILE
+  collect-pre-merge-evidence.sh start [PR_NUMBER]
+  collect-pre-merge-evidence.sh finish
 
 The start phase binds the current clean checkout to an explicit PR number or,
 when PR_NUMBER is omitted/empty, only to the current branch's pull request.
-Run the change-specific checks between phases. The finish phase captures every
-feedback surface and current check, then fails if the closing PR identity differs.
+It records one checkout-local, single-use state file under that worktree's Git
+directory. Run the change-specific checks between phases. The finish phase
+captures every feedback surface and current check, then fails if the opening
+state, checkout identity, scan definitions, or closing PR identity differs.
 EOF
   exit 2
 }
 
-[[ $# -ge 2 ]] || usage
+[[ $# -ge 1 ]] || usage
 mode="$1"
-state_file="$2"
+
+resolve_state_path() {
+  local resolved_top_level
+  local resolved_git_dir
+  local resolved_state_dir
+
+  resolved_top_level="$("$git_executable" rev-parse --show-toplevel)" ||
+    die "cannot resolve the checkout root"
+  resolved_git_dir="$("$git_executable" rev-parse --absolute-git-dir)" ||
+    die "cannot resolve the checkout Git directory"
+  [[ -n "$resolved_top_level" && -n "$resolved_git_dir" ]] ||
+    die "checkout identity is incomplete"
+  resolved_state_dir="$resolved_git_dir/taskdeck-pre-merge-evidence"
+
+  state_directory="$resolved_state_dir"
+  state_file=""
+  state_worktree="$resolved_top_level"
+  state_git_dir="$resolved_git_dir"
+}
 
 validate_pr_snapshot() {
   local snapshot_file="$1"
@@ -78,8 +98,8 @@ assert_clean_exact_checkout() {
 }
 
 start_collection() {
-  [[ $# -le 3 ]] || usage
-  local requested_pr="${3-}"
+  [[ $# -le 2 ]] || usage
+  local requested_pr="${2-}"
   local repo_full_name
   local selected_pr
   local selected_head
@@ -87,6 +107,7 @@ start_collection() {
   local fetched_base
   local merge_base
   local state_tmp
+  local state_session
   local -a pr_args=()
   local snapshot_tmp
 
@@ -99,6 +120,12 @@ start_collection() {
     die "cannot identify the current GitHub repository"
   [[ "$repo_full_name" =~ ^[^/]+/[^/]+$ ]] || die "repository identity is invalid"
 
+  resolve_state_path
+  mkdir -p "$state_directory" || die "cannot create the checkout evidence directory"
+  if compgen -G "$state_directory/opening.*.json" >/dev/null; then
+    die "an unfinished pre-merge evidence session already exists for this checkout: $state_directory"
+  fi
+  umask 077
   snapshot_tmp="$(mktemp)"
   trap 'rm -f "${snapshot_tmp:-}" "${state_tmp:-}"' EXIT
   "$gh_executable" pr view "${pr_args[@]}" \
@@ -116,6 +143,7 @@ start_collection() {
   [[ "$("$jq_executable" -r '.mergeable' "$snapshot_tmp")" == "MERGEABLE" ]] ||
     die "selected PR is not currently mergeable"
   assert_clean_exact_checkout "$selected_head"
+  state_file="$state_directory/opening.${selected_pr}.${selected_head}.json"
 
   "$git_executable" fetch --no-tags origin "$("$jq_executable" -r '.baseRefName' "$snapshot_tmp")" ||
     die "cannot fetch the selected PR base"
@@ -126,21 +154,33 @@ start_collection() {
   [[ "$merge_base" == "$selected_base" ]] ||
     die "PR head does not incorporate exact base $selected_base (merge base: $merge_base)"
 
-  state_tmp="$(mktemp "${state_file}.tmp.XXXXXX")"
+  state_tmp="$(mktemp "${state_file}.tmp.XXXXXX")" ||
+    die "cannot create opening evidence state"
+  state_session="$(basename "$state_tmp")"
   "$jq_executable" -n \
-    --arg schemaVersion "1" \
+    --arg schemaVersion "2" \
+    --arg session "$state_session" \
     --arg repository "$repo_full_name" \
     --arg selection "$(if [[ -n "$requested_pr" ]]; then printf explicit; else printf current-branch; fi)" \
     --arg localHeadOid "$selected_head" \
+    --arg statePath "$state_file" \
+    --arg worktree "$state_worktree" \
+    --arg gitDirectory "$state_git_dir" \
     --slurpfile opening "$snapshot_tmp" \
     '{
       schemaVersion: ($schemaVersion | tonumber),
+      session: $session,
       repository: $repository,
       selection: $selection,
       localHeadOid: $localHeadOid,
+      statePath: $statePath,
+      worktree: $worktree,
+      gitDirectory: $gitDirectory,
       opening: $opening[0]
     }' >"$state_tmp"
-  mv -f "$state_tmp" "$state_file"
+  ln "$state_tmp" "$state_file" ||
+    die "opening evidence state was created concurrently or replaced: $state_file"
+  rm -f "$state_tmp"
   state_tmp=""
   trap - EXIT
   rm -f "$snapshot_tmp"
@@ -263,15 +303,86 @@ collect_checks_snapshot() {
     >"$snapshot_dir/canonical.json"
 }
 
+bind_enforcing_gitleaks_definitions() {
+  [[ $# -eq 3 ]] || return 1
+  local opening_base="$1"
+  local caller_path="$2"
+  local binding_file="$3"
+  local caller_body
+  local reusable_path
+  local path
+  local head_blob
+  local base_blob
+  local -a definition_paths=()
+
+  caller_body="$("$git_executable" show "$opening_base:$caller_path")" || return 1
+  reusable_path="$(printf '%s\n' "$caller_body" | awk '
+    /^  secret-scan:/ { in_secret_scan = 1; next }
+    in_secret_scan && /^  [^[:space:]][^:]*:/ { in_secret_scan = 0 }
+    in_secret_scan && /^[[:space:]]+uses:[[:space:]]+\.\/\.github\/workflows\/reusable-gitleaks\.yml[[:space:]]*$/ {
+      sub(/^[[:space:]]+uses:[[:space:]]+\.\//, "")
+      print
+      exit
+    }
+  ' )"
+  [[ "$reusable_path" == ".github/workflows/reusable-gitleaks.yml" ]] || return 1
+
+  definition_paths=(
+    "$caller_path"
+    "$reusable_path"
+    ".gitleaks.toml"
+    ".gitleaksignore"
+  )
+  : >"$binding_file"
+  local definitions_match=true
+  for path in "${definition_paths[@]}"; do
+    base_blob="$("$git_executable" rev-parse "$opening_base:$path")" || return 1
+    head_blob="$("$git_executable" rev-parse "HEAD:$path")" || return 1
+    if [[ "$head_blob" != "$base_blob" ]]; then
+      definitions_match=false
+    fi
+    "$jq_executable" -n \
+      --arg path "$path" --arg baseBlob "$base_blob" --arg headBlob "$head_blob" \
+      --argjson matches "$([[ "$head_blob" == "$base_blob" ]] && printf true || printf false)" \
+      '{path: $path, openingBaseBlob: $baseBlob, localHeadBlob: $headBlob, matchesOpeningBase: $matches}' \
+      >>"$binding_file" || return 1
+  done
+  "$jq_executable" -s '.' "$binding_file" >"${binding_file}.json" || return 1
+  mv -f "${binding_file}.json" "$binding_file" || return 1
+  [[ "$definitions_match" == true ]]
+}
+
 finish_collection() {
-  [[ $# -eq 2 ]] || usage
-  [[ -f "$state_file" ]] || die "opening evidence state is missing: $state_file"
+  [[ $# -eq 1 ]] || usage
+  resolve_state_path
+  local -a state_candidates=()
+  shopt -s nullglob
+  state_candidates=("$state_directory"/opening.*.json)
+  shopt -u nullglob
+  [[ "${#state_candidates[@]}" -eq 1 ]] ||
+    die "opening evidence state is missing, ambiguous, or already consumed: $state_directory"
+  state_file="${state_candidates[0]}"
   "$jq_executable" -e '
-    .schemaVersion == 1 and
+    .schemaVersion == 2 and
+    (.session | type == "string" and length > 0) and
     (.repository | type == "string") and
     (.localHeadOid | type == "string") and
+    (.statePath | type == "string") and
+    (.worktree | type == "string") and
+    (.gitDirectory | type == "string") and
     (.opening | type == "object")
   ' "$state_file" >/dev/null || die "opening evidence state is invalid"
+  "$jq_executable" -e \
+    --arg statePath "$state_file" \
+    --arg worktree "$state_worktree" \
+    --arg gitDirectory "$state_git_dir" '
+      .statePath == $statePath and
+      .worktree == $worktree and
+      .gitDirectory == $gitDirectory and
+      .statePath == ($gitDirectory + "/taskdeck-pre-merge-evidence/opening." +
+        (.opening.number | tostring) + "." + .opening.headRefOid + ".json")
+    ' "$state_file" >/dev/null ||
+    die "opening evidence state does not belong to this checkout"
 
   local repo_full_name
   local repo_owner
@@ -293,6 +404,7 @@ finish_collection() {
   local secret_run_path
   local secret_run_exit=0
   local secret_provenance_verified=false
+  local secret_definitions_verified=false
   local secrets_verdict="NOT VERIFIED"
 
   repo_full_name="$("$jq_executable" -r '.repository' "$state_file")"
@@ -308,6 +420,7 @@ finish_collection() {
 
   temp_dir="$(mktemp -d)"
   trap 'rm -rf "${temp_dir:-}"' EXIT
+  printf '[]\n' >"$temp_dir/secret-definition-bindings.jsonl"
 
   collect_feedback_snapshot "$temp_dir/feedback-first" \
     "$repo_full_name" "$repo_owner" "$repo_name" "$pr_number"
@@ -363,6 +476,13 @@ finish_collection() {
       fi
     fi
   fi
+  if [[ "$secret_provenance_verified" == true ]]; then
+    if bind_enforcing_gitleaks_definitions "$opening_base" \
+      "$required_secret_workflow_path" \
+      "$temp_dir/secret-definition-bindings.jsonl"; then
+      secret_definitions_verified=true
+    fi
+  fi
 
   collect_feedback_snapshot "$temp_dir/feedback-second" \
     "$repo_full_name" "$repo_owner" "$repo_name" "$pr_number"
@@ -375,7 +495,7 @@ finish_collection() {
     "$temp_dir/checks-first/canonical.json" \
     "$temp_dir/checks-second/canonical.json" ||
     die "PR checks changed while evidence was collected"
-  if [[ "$secret_provenance_verified" == true ]]; then
+  if [[ "$secret_provenance_verified" == true && "$secret_definitions_verified" == true ]]; then
     secrets_verdict="CLEAN"
   fi
 
@@ -405,13 +525,17 @@ finish_collection() {
     --slurpfile secretChecks "$temp_dir/secret-checks.json" \
     --slurpfile secretCandidates "$temp_dir/secret-candidates.json" \
     --slurpfile secretWorkflowRun "$temp_dir/secret-workflow-run.json" \
+    --slurpfile secretDefinitionBindings "$temp_dir/secret-definition-bindings.jsonl" \
+    --arg stateSession "$("$jq_executable" -r '.session' "$state_file")" \
     --arg requiredSecretCheckName "$required_secret_check_name" \
     --arg requiredSecretWorkflow "$required_secret_workflow" \
     --arg requiredSecretWorkflowPath "$required_secret_workflow_path" \
     --argjson secretProvenanceVerified "$secret_provenance_verified" \
+    --argjson secretDefinitionsVerified "$secret_definitions_verified" \
     --arg secretsVerdict "$secrets_verdict" \
     '{
-      schemaVersion: 1,
+      schemaVersion: 2,
+      evidenceSession: $stateSession,
       repository: $state[0].repository,
       selection: $state[0].selection,
       pr: {
@@ -429,6 +553,8 @@ finish_collection() {
         requiredWorkflowPath: $requiredSecretWorkflowPath,
         verdict: $secretsVerdict,
         provenanceVerified: $secretProvenanceVerified,
+        definitionsVerified: $secretDefinitionsVerified,
+        definitionBindings: $secretDefinitionBindings[0],
         workflowRun: $secretWorkflowRun[0],
         evidence: $secretChecks[0],
         observedCandidates: $secretCandidates[0]
@@ -436,8 +562,10 @@ finish_collection() {
       collectorState: (if $secretsVerdict == "CLEAN" then "COMPLETE" else "INCOMPLETE" end)
     }'
 
-  [[ "$secrets_verdict" == "CLEAN" ]] ||
-    die "exact-head secret-scan evidence is missing, pending, failed, or ambiguous"
+  if [[ "$secrets_verdict" != "CLEAN" ]]; then
+    die "exact-head secret-scan evidence or enforcing definition binding is missing, changed, pending, failed, or ambiguous"
+  fi
+  rm -f "$state_file" || die "cannot consume the completed opening evidence state"
 }
 
 case "$mode" in
