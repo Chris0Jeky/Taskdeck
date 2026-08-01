@@ -44,8 +44,16 @@ The start phase fails before local checks unless all of these are simultaneously
 - GitHub reports the PR as mergeable.
 
 The opening state captures a fresh evidence-session identity, PR number, opening head/base, local
-checkout root, and worktree-specific Git directory. A successful finish consumes it; a failed or
-interrupted session remains invalid and must be investigated rather than silently reused.
+checkout root, and worktree-specific Git directory. A successful finish consumes it. A failed or
+interrupted session remains invalid and must be investigated rather than silently reused. After
+recording the failure cause, explicitly abandon only that checkout-bound session before restarting:
+
+```bash
+bash scripts/github/collect-pre-merge-evidence.sh abort
+```
+
+`abort` validates the state path, worktree, Git directory, PR number, and opening head encoded in
+the filename before removing it. Never delete or rename an opening state manually.
 
 ## Step 2: Run local checks
 
@@ -66,7 +74,17 @@ Report any failure immediately and do not mark the local evidence packet complet
 
 ## Step 3: Taskdeck diff inspection
 
-Read the full diff with `gh pr diff "$pr_number"` and check for:
+Read the full diff using the same validated selection as Step 1:
+
+```bash
+# Explicit selection (replace VALIDATED_PR_NUMBER with the same validated decimal digits):
+gh pr diff VALIDATED_PR_NUMBER
+
+# Omitted selection (use this instead when $ARGUMENTS was empty):
+# gh pr diff
+```
+
+Check the diff for:
 
 - Secrets accidentally committed (.env, tokens, keys, connection strings)
 - Debug code left in (console.log, Console.WriteLine used for debugging, breakpoints)

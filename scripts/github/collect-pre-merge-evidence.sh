@@ -35,14 +35,17 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   collect-pre-merge-evidence.sh start [PR_NUMBER]
+  collect-pre-merge-evidence.sh abort
   collect-pre-merge-evidence.sh finish
 
 The start phase binds the current clean checkout to an explicit PR number or,
 when PR_NUMBER is omitted/empty, only to the current branch's pull request.
 It records one checkout-local, single-use state file under that worktree's Git
-directory. Run the change-specific checks between phases. The finish phase
-captures every feedback surface and current check, then fails if the opening
-state, checkout identity, scan definitions, or closing PR identity differs.
+directory. Run the change-specific checks between phases. The abort phase
+explicitly discards only a validated state belonging to the current checkout.
+The finish phase captures every feedback surface and current check, then fails
+if the opening state, checkout identity, scan definitions, or closing PR
+identity differs.
 EOF
   exit 2
 }
@@ -67,6 +70,38 @@ resolve_state_path() {
   state_file=""
   state_worktree="$resolved_top_level"
   state_git_dir="$resolved_git_dir"
+}
+
+load_opening_state() {
+  resolve_state_path
+  local -a state_candidates=()
+  shopt -s nullglob
+  state_candidates=("$state_directory"/opening.*.json)
+  shopt -u nullglob
+  [[ "${#state_candidates[@]}" -eq 1 ]] ||
+    die "opening evidence state is missing, ambiguous, or already consumed: $state_directory"
+  state_file="${state_candidates[0]}"
+  "$jq_executable" -e '
+    .schemaVersion == 2 and
+    (.session | type == "string" and length > 0) and
+    (.repository | type == "string") and
+    (.localHeadOid | type == "string") and
+    (.statePath | type == "string") and
+    (.worktree | type == "string") and
+    (.gitDirectory | type == "string") and
+    (.opening | type == "object")
+  ' "$state_file" >/dev/null || die "opening evidence state is invalid"
+  "$jq_executable" -e \
+    --arg statePath "$state_file" \
+    --arg worktree "$state_worktree" \
+    --arg gitDirectory "$state_git_dir" '
+      .statePath == $statePath and
+      .worktree == $worktree and
+      .gitDirectory == $gitDirectory and
+      .statePath == ($gitDirectory + "/taskdeck-pre-merge-evidence/opening." +
+        (.opening.number | tostring) + "." + .opening.headRefOid + ".json")
+    ' "$state_file" >/dev/null ||
+    die "opening evidence state does not belong to this checkout"
 }
 
 validate_pr_snapshot() {
@@ -123,7 +158,7 @@ start_collection() {
   resolve_state_path
   mkdir -p "$state_directory" || die "cannot create the checkout evidence directory"
   if compgen -G "$state_directory/opening.*.json" >/dev/null; then
-    die "an unfinished pre-merge evidence session already exists for this checkout: $state_directory"
+    die "an unfinished pre-merge evidence session already exists for this checkout; investigate it, then run abort before restarting: $state_directory"
   fi
   umask 077
   snapshot_tmp="$(mktemp)"
@@ -186,6 +221,18 @@ start_collection() {
   rm -f "$snapshot_tmp"
   printf 'Opening evidence bound to PR #%s at %s against %s.\n' \
     "$selected_pr" "$selected_head" "$selected_base" >&2
+}
+
+abort_collection() {
+  [[ $# -eq 1 ]] || usage
+  load_opening_state
+  local aborted_pr
+  local aborted_head
+  aborted_pr="$("$jq_executable" -r '.opening.number' "$state_file")"
+  aborted_head="$("$jq_executable" -r '.opening.headRefOid' "$state_file")"
+  rm -f -- "$state_file" || die "cannot abort the opening evidence state"
+  printf 'Aborted pre-merge evidence session for PR #%s at %s.\n' \
+    "$aborted_pr" "$aborted_head" >&2
 }
 
 collect_feedback_snapshot() {
@@ -354,35 +401,7 @@ bind_enforcing_gitleaks_definitions() {
 
 finish_collection() {
   [[ $# -eq 1 ]] || usage
-  resolve_state_path
-  local -a state_candidates=()
-  shopt -s nullglob
-  state_candidates=("$state_directory"/opening.*.json)
-  shopt -u nullglob
-  [[ "${#state_candidates[@]}" -eq 1 ]] ||
-    die "opening evidence state is missing, ambiguous, or already consumed: $state_directory"
-  state_file="${state_candidates[0]}"
-  "$jq_executable" -e '
-    .schemaVersion == 2 and
-    (.session | type == "string" and length > 0) and
-    (.repository | type == "string") and
-    (.localHeadOid | type == "string") and
-    (.statePath | type == "string") and
-    (.worktree | type == "string") and
-    (.gitDirectory | type == "string") and
-    (.opening | type == "object")
-  ' "$state_file" >/dev/null || die "opening evidence state is invalid"
-  "$jq_executable" -e \
-    --arg statePath "$state_file" \
-    --arg worktree "$state_worktree" \
-    --arg gitDirectory "$state_git_dir" '
-      .statePath == $statePath and
-      .worktree == $worktree and
-      .gitDirectory == $gitDirectory and
-      .statePath == ($gitDirectory + "/taskdeck-pre-merge-evidence/opening." +
-        (.opening.number | tostring) + "." + .opening.headRefOid + ".json")
-    ' "$state_file" >/dev/null ||
-    die "opening evidence state does not belong to this checkout"
+  load_opening_state
 
   local repo_full_name
   local repo_owner
@@ -571,6 +590,9 @@ finish_collection() {
 case "$mode" in
   start)
     start_collection "$@"
+    ;;
+  abort)
+    abort_collection "$@"
     ;;
   finish)
     finish_collection "$@"

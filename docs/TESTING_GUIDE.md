@@ -144,7 +144,8 @@ When `pre-merge-gate` or its evidence collector changes, run its Git Bash syntax
 boundary canaries as well. The canaries cover explicit and omitted PR selection, genuinely
 separate start/finish processes, missing/consumed/substituted checkout state, cursor-complete
 review feedback, independent thread-resolution drift, same-head check drift, closing identity
-drift, enforcing-workflow provenance, exact opening-base scan-definition equality, and
+drift, explicit validated abort/restart after an expired session, process-independent diff target
+selection, enforcing-workflow provenance, exact opening-base scan-definition equality, and
 fail-closed secret-scan verdicts:
 
 ```powershell

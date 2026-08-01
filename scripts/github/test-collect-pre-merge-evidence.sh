@@ -391,6 +391,18 @@ run_finish() {
     "$collector" finish
 }
 
+run_abort() {
+  local scenario="$1"
+  local case_root="$2"
+  local state_file="$3"
+  prepare_scan_definitions "$scenario" "$case_root"
+  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
+    TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+    TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    "$collector" abort
+}
+
 case_root="$fixture_root/explicit"
 make_mocks "$case_root"
 run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
@@ -443,7 +455,13 @@ cp "$source_case/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json \
 if run_finish happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
   fail "opening evidence state from another checkout was accepted"
 fi
-pass "substituted opening state fails closed when its checkout binding differs"
+if run_abort happy "$case_root" "$case_root/state.json" >/dev/null 2>&1; then
+  fail "abort deleted opening evidence state from another checkout"
+fi
+if ! compgen -G "$case_root/checkout/.git/taskdeck-pre-merge-evidence/opening.*.json" >/dev/null; then
+  fail "rejected abort did not preserve the substituted state for inspection"
+fi
+pass "substituted opening state cannot be finished or explicitly aborted from another checkout"
 
 case_root="$fixture_root/substituted-pr-state"
 make_mocks "$case_root"
@@ -483,6 +501,26 @@ for scenario in oid-drift base-oid-drift feedback-drift mergeability-drift; do
   fi
 done
 pass "closing head, base, feedback, and mergeability drift invalidate the packet"
+
+case_root="$fixture_root/expired-session-restart"
+make_mocks "$case_root"
+run_start oid-drift "$case_root" "$case_root/state.json" 42 >/dev/null
+if run_finish oid-drift "$case_root" "$case_root/state.json" \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "expired-session fixture unexpectedly completed"
+fi
+if run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null 2>&1; then
+  fail "an unfinished session was silently replaced"
+fi
+run_abort happy "$case_root" "$case_root/state.json" >/dev/null
+if compgen -G "$case_root/checkout/.git/taskdeck-pre-merge-evidence/opening.*.json" >/dev/null; then
+  fail "explicit abort retained the validated checkout-bound state"
+fi
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+run_finish happy "$case_root" "$case_root/state.json" >"$case_root/restarted-packet.json"
+"$real_jq" -e '.pr.number == 42 and .collectorState == "COMPLETE"' \
+  "$case_root/restarted-packet.json" >/dev/null || fail "restarted session was incomplete"
+pass "expired sessions require explicit validated abort and can then restart cleanly"
 
 case_root="$fixture_root/thread-resolution-drift"
 make_mocks "$case_root"
@@ -563,6 +601,15 @@ if rg -Fq '${ARGUMENTS' "$skill_file"; then
 fi
 rg -Fq '$ARGUMENTS' "$skill_file" || fail "skill omits Claude's literal argument placeholder"
 pass "skill uses Claude's literal argument placeholder instead of Bash expansion"
+
+if rg -Fq 'gh pr diff "$pr_number"' "$skill_file"; then
+  fail "skill relies on a process-local PR variable that start cannot preserve"
+fi
+rg -Fq 'gh pr diff VALIDATED_PR_NUMBER' "$skill_file" ||
+  fail "skill does not reuse the validated explicit PR for diff inspection"
+rg -Fq '# gh pr diff' "$skill_file" ||
+  fail "skill does not document current-branch diff inspection for omitted selection"
+pass "diff inspection reuses the validated explicit or current-branch selection"
 
 case_root="$fixture_root/invalid-argument"
 make_mocks "$case_root"
