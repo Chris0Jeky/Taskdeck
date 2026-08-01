@@ -131,6 +131,15 @@ if [[ "$command_name" == "pr" && "${1-}" == "view" ]]; then
 fi
 
 if [[ "$command_name" == "pr" && "${1-}" == "checks" ]]; then
+  checks_count_file="$MOCK_ROOT/checks-count"
+  checks_count=0
+  if [[ -f "$checks_count_file" ]]; then
+    checks_count="$(<"$checks_count_file")"
+  fi
+  checks_count=$((checks_count + 1))
+  printf '%s' "$checks_count" >"$checks_count_file"
+  printf '%s' "${2-}" >"$MOCK_ROOT/selected-pr-number"
+
   checks_exit=0
   case "$MOCK_SCENARIO" in
     secret-missing)
@@ -139,19 +148,30 @@ if [[ "$command_name" == "pr" && "${1-}" == "checks" ]]; then
     secret-advisory-only)
       printf '[{"name":"Secrets Detection (Gitleaks) / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/advisory-secret","workflow":"CI Extended"}]\n'
       ;;
+    secret-forged-workflow)
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI Extended"}]\n'
+      ;;
     secret-duplicate)
-      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret-1","workflow":"CI"},{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret-2","workflow":"CI"}]\n'
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"},{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://github.com/owner/repo/actions/runs/9002/job/8002","workflow":"CI"}]\n'
       ;;
     secret-pending)
-      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"PENDING","bucket":"pending","link":"https://checks/secret","workflow":"CI"}]\n'
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"PENDING","bucket":"pending","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"}]\n'
       checks_exit=8
       ;;
     secret-failed)
-      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"FAILURE","bucket":"fail","link":"https://checks/secret","workflow":"CI"}]\n'
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"FAILURE","bucket":"fail","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"}]\n'
       checks_exit=1
       ;;
+    check-state-drift)
+      if [[ "$checks_count" -gt 1 ]]; then
+        printf '[{"name":"Secret Scan / Gitleaks Scan","state":"FAILURE","bucket":"fail","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"}]\n'
+        checks_exit=1
+      else
+        printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"}]\n'
+      fi
+      ;;
     *)
-      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret","workflow":"CI"},{"name":"Docs Governance","state":"SUCCESS","bucket":"pass","link":"https://checks/docs","workflow":"CI"}]\n'
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://github.com/owner/repo/actions/runs/9001/job/8001","workflow":"CI"},{"name":"Docs Governance","state":"SUCCESS","bucket":"pass","link":"https://checks/docs","workflow":"CI"}]\n'
       ;;
   esac
   exit "$checks_exit"
@@ -238,6 +258,32 @@ JSON
     printf '[[{"id":2,"state":"COMMENTED","body":"review summary","html_url":"https://reviews/2","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]]\n'
     exit 0
   fi
+  if [[ "$endpoint" == "repos/owner/repo/actions/runs/9001" ]]; then
+    workflow_path=.github/workflows/ci-required.yml
+    if [[ "$MOCK_SCENARIO" == "secret-wrong-provenance" ]]; then
+      workflow_path=.github/workflows/ci-extended.yml
+    fi
+    selected_pr="$(<"$MOCK_ROOT/selected-pr-number")"
+    jq -n \
+      --argjson number "$selected_pr" \
+      --arg path "$workflow_path" \
+      '{
+        id: 9001,
+        name: "CI",
+        path: $path,
+        event: "pull_request",
+        status: "completed",
+        conclusion: "success",
+        head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        head_branch: "issue-1547/atomic-evidence",
+        pull_requests: [{
+          number: $number,
+          head: {sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",ref:"issue-1547/atomic-evidence"},
+          base: {sha:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",ref:"main"}
+        }]
+      }'
+    exit 0
+  fi
 fi
 
 exit 2
@@ -283,6 +329,12 @@ run_finish happy "$case_root" "$case_root/state.json" >"$case_root/packet.json"
   (.feedback.reviewThreads[0].comments | length) == 2 and
   .feedback.reviewThreads[0].isResolved == false and
   .feedback.reviewThreads[1].isResolved == true and
+  .feedback.stableAcrossTwoSnapshots == true and
+  .checks.stableAcrossTwoSnapshots == true and
+  .secrets.requiredWorkflow == "CI" and
+  .secrets.requiredWorkflowPath == ".github/workflows/ci-required.yml" and
+  .secrets.provenanceVerified == true and
+  .secrets.workflowRun.path == ".github/workflows/ci-required.yml" and
   .secrets.verdict == "CLEAN" and .collectorState == "COMPLETE"
 ' "$case_root/packet.json" >/dev/null || fail "explicit PR packet was incomplete"
 pass "explicit PR selection returns cursor-complete feedback and exact-head scan evidence"
@@ -324,6 +376,15 @@ if run_finish thread-resolution-drift "$case_root" "$case_root/state.json" \
 fi
 pass "a second complete feedback snapshot rejects independent thread-resolution drift"
 
+case_root="$fixture_root/check-state-drift"
+make_mocks "$case_root"
+run_start check-state-drift "$case_root" "$case_root/state.json" 42 >/dev/null
+if run_finish check-state-drift "$case_root" "$case_root/state.json" \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "same-head check-state drift was accepted"
+fi
+pass "a second normalized checks snapshot rejects same-head CI drift"
+
 case_root="$fixture_root/incomplete-pagination"
 make_mocks "$case_root"
 run_start incomplete-pagination "$case_root" "$case_root/state.json" 42 >/dev/null
@@ -333,7 +394,8 @@ if run_finish incomplete-pagination "$case_root" "$case_root/state.json" \
 fi
 pass "incomplete review-thread pagination fails closed"
 
-for scenario in secret-missing secret-advisory-only secret-duplicate secret-pending secret-failed; do
+for scenario in secret-missing secret-advisory-only secret-forged-workflow \
+  secret-wrong-provenance secret-duplicate secret-pending secret-failed; do
   case_root="$fixture_root/$scenario"
   make_mocks "$case_root"
   run_start "$scenario" "$case_root" "$case_root/state.json" 42 >/dev/null
@@ -351,7 +413,13 @@ done
   (.secrets.observedCandidates | length) == 1
 ' "$fixture_root/secret-advisory-only/packet.json" >/dev/null ||
   fail "advisory-only evidence was not distinguished from the enforcing check"
-pass "advisory-only, missing, duplicate, pending, and failed secret scans cannot emit CLEAN"
+"$real_jq" -e '
+  (.secrets.evidence | length) == 1 and
+  .secrets.provenanceVerified == false and
+  .secrets.workflowRun.path == ".github/workflows/ci-extended.yml"
+' "$fixture_root/secret-wrong-provenance/packet.json" >/dev/null ||
+  fail "wrong workflow-run provenance was not retained and rejected"
+pass "forged, advisory, wrong-provenance, missing, duplicate, pending, and failed scans cannot emit CLEAN"
 
 if rg -q '^[[:space:]]*-[[:space:]]+\[[[:space:]]\][[:space:]]+Secrets scan:[[:space:]]+CLEAN[[:space:]]*$' \
   "$skill_file"; then

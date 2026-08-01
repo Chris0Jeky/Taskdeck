@@ -143,7 +143,8 @@ node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $L
 When `pre-merge-gate` or its evidence collector changes, run its Git Bash syntax and mocked
 boundary canaries as well. The canaries cover explicit and omitted PR selection, wrong-checkout
 rejection before checks, cursor-complete review feedback, independent thread-resolution drift,
-closing identity drift, and fail-closed secret-scan verdicts:
+same-head check drift, closing identity drift, enforcing-workflow provenance, and fail-closed
+secret-scan verdicts:
 
 ```powershell
 $gitBash = "C:\Program Files\Git\bin\bash.exe"
