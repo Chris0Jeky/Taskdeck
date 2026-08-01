@@ -730,7 +730,12 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 
 Current project count: 35 tests — 28 PostgreSQL-backed cases covering Board CRUD, Card operations, proposal lifecycle, cross-class isolation, parallel execution, and repository parity; plus 7 Docker-independent fixture/native checks. Guide at `docs/testing/TESTCONTAINERS_GUIDE.md`.
 
-CI: `reusable-container-integration.yml` in extended CI (testing label). A positive PostgreSQL result has zero skips; a green run with all 28 container cases skipped proves only graceful Dockerless gating.
+CI: `reusable-container-integration.yml` in extended CI (testing label). The hosted lane sets
+`TASKDECK_REQUIRE_DOCKER=true`, first forces Docker unavailable as a negative control, and requires
+the resulting TRX to contain the explicit Docker-required failure. Its real run then verifies the
+TRX has zero skipped tests and at least 28 passing PostgreSQL-backed results. A normal local green
+run with all 28 container cases skipped proves only graceful Dockerless gating; do not set the
+required-mode flag for that local contract.
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
