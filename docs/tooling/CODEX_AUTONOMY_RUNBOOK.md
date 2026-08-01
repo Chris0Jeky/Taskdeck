@@ -1,12 +1,12 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-01
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
 
 ## Core Rule
 
-Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, and docs reconciliation. It must not silently defer work, silently skip tests, merge PRs, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
+Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, permitted merges, and docs reconciliation. It must not silently defer work, silently skip tests, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety. Merge only when the repository's declared authority and the canonical `review-and-ship` gate permit it; otherwise park with exact-head evidence.
 
 Spawned subagents are optional execution machinery, not a default assumption. Use them without asking for extra permission when they are efficient or effective for safely parallelizable work with clear ownership and a coordinator-owned synthesis path. When subagents are unavailable or do not fit the work, use normal local execution, explicit git worktrees, or separate agent sessions as appropriate and state what actually happened.
 
@@ -16,7 +16,7 @@ Use these skills:
 
 - Many issues / batch execution: `taskdeck-issue-batch-orchestrator`
 - One issue in an isolated branch/worktree: `taskdeck-worktree-issue-worker`
-- PR self-review or fresh adversarial review: `taskdeck-pr-review-loop`
+- Canonical PR review and disposition: global `review-and-ship`; add `taskdeck-pr-review-loop` for Taskdeck-specific lenses
 - Failing CI, comments, conflicts, stale branches: `taskdeck-ci-conflict-recovery`
 - Backend implementation: `taskdeck-backend-slice`
 - Frontend implementation: `taskdeck-frontend-workspace-slice`
@@ -177,26 +177,16 @@ Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.
 Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
-Open a PR with Closes #NNN, test evidence, docs impact, and risks.
-After opening the PR, perform a self-review, post findings or explicit no-finding result, fix findings, and report back.
+Open a ready PR with Closes #NNN, test evidence, docs impact, and risks.
+Return the exact head, proving-check results, and residual risks to the coordinator, which enters the PR into the canonical review pipeline.
 ```
 
-## PR Review Loop
+## Canonical PR Review Pipeline
 
-Every PR needs a self-review. Sensitive PRs need a fresh adversarial review.
-
-Sensitive means:
-
-- auth, session, token, or cross-user policy
-- security, SSRF, secret handling, logging redaction
-- migrations, data deletion, retention, import/export
-- capture, inbox, proposal review, execute, provenance
-- MCP or external-agent write surfaces
-- CI workflows, project automation, scripts
-- broad route/store/frontend shell behavior
-- flaky or failing CI
-
-Reviewers should post findings as PR comments or a summary comment. A no-finding review must still mention residual risk and test gaps.
+Route every ready PR through the global `review-and-ship` skill. It owns reviewer selection,
+feedback triage, convergence limits, and merge or park disposition under the repository's declared
+tier and authority. Use `taskdeck-pr-review-loop` only for Taskdeck-specific review lenses; do not
+create a separate worker self-review gate or copy global review policy into this runbook.
 
 ## CI, Comments, And Conflicts
 

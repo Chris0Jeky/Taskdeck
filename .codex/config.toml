@@ -16,7 +16,7 @@ max_depth = 2
 job_max_runtime_seconds = 8000
 
 [agents.issue_worker]
-description = "Implement one Taskdeck issue in an isolated worktree. Use taskdeck-worktree-issue-worker, keep ownership narrow, commit small, test, open a PR, and self-review."
+description = "Implement one Taskdeck issue in an isolated worktree. Use taskdeck-worktree-issue-worker, keep ownership narrow, commit small, test, open a ready PR, and return exact-head evidence to the coordinator."
 nickname_candidates = ["IssueWorker", "WorktreeWorker", "PatchWorker"]
 
 [agents.pr_reviewer]
