@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-01
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -140,7 +140,20 @@ node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTE
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-On POSIX, use `python3 -B` for the manual utilities and fail fast:
+When `pre-merge-gate` or its evidence collector changes, run its Git Bash syntax and mocked
+boundary canaries as well. The canaries cover explicit and omitted PR selection, wrong-checkout
+rejection before checks, cursor-complete review feedback, independent thread-resolution drift,
+closing identity drift, and fail-closed secret-scan verdicts:
+
+```powershell
+$gitBash = "C:\Program Files\Git\bin\bash.exe"
+& $gitBash --noprofile --norc -n scripts/github/collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $gitBash --noprofile --norc -n scripts/github/test-collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $gitBash --noprofile --norc scripts/github/test-collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+On POSIX, use `python3 -B` for the manual utilities and fail fast. The final three Bash commands
+apply only when the pre-merge skill or collector changed:
 
 ```sh
 set -eu
@@ -159,6 +172,9 @@ python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_l
 node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
 node scripts/check-github-ops-governance.mjs
+bash -n scripts/github/collect-pre-merge-evidence.sh
+bash -n scripts/github/test-collect-pre-merge-evidence.sh
+bash scripts/github/test-collect-pre-merge-evidence.sh
 ```
 
 The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
