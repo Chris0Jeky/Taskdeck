@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+collector="$script_dir/collect-pre-merge-evidence.sh"
+skill_file="$script_dir/../../.claude/skills/pre-merge-gate/SKILL.md"
+real_jq="$(command -v jq)"
+fixture_root="$(mktemp -d)"
+trap 'rm -rf "$fixture_root"' EXIT
+
+passed=0
+
+fail() {
+  printf 'not ok - %s\n' "$*" >&2
+  exit 1
+}
+
+pass() {
+  passed=$((passed + 1))
+  printf 'ok %d - %s\n' "$passed" "$1"
+}
+
+make_mocks() {
+  local case_root="$1"
+  mkdir -p "$case_root/bin"
+
+  cat >"$case_root/bin/git" <<'MOCK_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'git' >>"$MOCK_ROOT/calls.log"
+printf ' %q' "$@" >>"$MOCK_ROOT/calls.log"
+printf '\n' >>"$MOCK_ROOT/calls.log"
+
+head_oid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+base_oid=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+if [[ "$MOCK_SCENARIO" == "wrong-checkout" ]]; then
+  head_oid=dddddddddddddddddddddddddddddddddddddddd
+fi
+
+case "${1-}" in
+  rev-parse)
+    case "${2-}" in
+      HEAD) printf '%s\n' "$head_oid" ;;
+      FETCH_HEAD) printf '%s\n' "$base_oid" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  status)
+    ;;
+  fetch)
+    ;;
+  merge-base)
+    printf '%s\n' "$base_oid"
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+MOCK_GIT
+
+  cat >"$case_root/bin/gh" <<'MOCK_GH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'gh' >>"$MOCK_ROOT/calls.log"
+printf ' %q' "$@" >>"$MOCK_ROOT/calls.log"
+printf '\n' >>"$MOCK_ROOT/calls.log"
+
+command_name="${1-}"
+shift || true
+
+if [[ "$command_name" == "repo" && "${1-}" == "view" ]]; then
+  printf 'owner/repo\n'
+  exit 0
+fi
+
+if [[ "$command_name" == "pr" && "${1-}" == "view" ]]; then
+  shift
+  number=""
+  for argument in "$@"; do
+    if [[ "$argument" =~ ^[1-9][0-9]*$ ]]; then
+      number="$argument"
+      break
+    fi
+  done
+  if [[ -z "$number" ]]; then
+    number=77
+  fi
+
+  view_count_file="$MOCK_ROOT/pr-view-count"
+  view_count=0
+  if [[ -f "$view_count_file" ]]; then
+    view_count="$(<"$view_count_file")"
+  fi
+  view_count=$((view_count + 1))
+  printf '%s' "$view_count" >"$view_count_file"
+
+  head_oid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  base_oid=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  mergeable=MERGEABLE
+  updated_at=2026-08-01T12:00:00Z
+  if [[ "$MOCK_SCENARIO" == "oid-drift" && "$view_count" -gt 1 ]]; then
+    head_oid=cccccccccccccccccccccccccccccccccccccccc
+  fi
+  if [[ "$MOCK_SCENARIO" == "base-oid-drift" && "$view_count" -gt 1 ]]; then
+    base_oid=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  fi
+  if [[ "$MOCK_SCENARIO" == "feedback-drift" && "$view_count" -gt 1 ]]; then
+    updated_at=2026-08-01T12:00:01Z
+  fi
+  if [[ "$MOCK_SCENARIO" == "mergeability-drift" && "$view_count" -gt 1 ]]; then
+    mergeable=CONFLICTING
+  fi
+
+  jq -n \
+    --argjson number "$number" \
+    --arg head "$head_oid" \
+    --arg base "$base_oid" \
+    --arg mergeable "$mergeable" \
+    --arg updated "$updated_at" \
+    '{
+      number: $number,
+      headRefName: "issue-1547/atomic-evidence",
+      headRefOid: $head,
+      baseRefName: "main",
+      baseRefOid: $base,
+      mergeable: $mergeable,
+      updatedAt: $updated,
+      url: ("https://github.com/owner/repo/pull/" + ($number | tostring))
+    }'
+  exit 0
+fi
+
+if [[ "$command_name" == "pr" && "${1-}" == "checks" ]]; then
+  checks_exit=0
+  case "$MOCK_SCENARIO" in
+    secret-missing)
+      printf '[{"name":"Docs Governance","state":"SUCCESS","bucket":"pass","link":"https://checks/docs","workflow":"CI"}]\n'
+      ;;
+    secret-advisory-only)
+      printf '[{"name":"Secrets Detection (Gitleaks) / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/advisory-secret","workflow":"CI Extended"}]\n'
+      ;;
+    secret-duplicate)
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret-1","workflow":"CI"},{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret-2","workflow":"CI"}]\n'
+      ;;
+    secret-pending)
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"PENDING","bucket":"pending","link":"https://checks/secret","workflow":"CI"}]\n'
+      checks_exit=8
+      ;;
+    secret-failed)
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"FAILURE","bucket":"fail","link":"https://checks/secret","workflow":"CI"}]\n'
+      checks_exit=1
+      ;;
+    *)
+      printf '[{"name":"Secret Scan / Gitleaks Scan","state":"SUCCESS","bucket":"pass","link":"https://checks/secret","workflow":"CI"},{"name":"Docs Governance","state":"SUCCESS","bucket":"pass","link":"https://checks/docs","workflow":"CI"}]\n'
+      ;;
+  esac
+  exit "$checks_exit"
+fi
+
+if [[ "$command_name" == "api" ]]; then
+  if [[ "${1-}" == "graphql" ]]; then
+    query=""
+    thread_id=""
+    for argument in "$@"; do
+      case "$argument" in
+        query=*) query="${argument#query=}" ;;
+        threadId=*) thread_id="${argument#threadId=}" ;;
+      esac
+    done
+
+    if [[ "$query" == *'reviewThreads(first:100'* ]]; then
+      snapshot_count_file="$MOCK_ROOT/feedback-snapshot-count"
+      snapshot_count=0
+      if [[ -f "$snapshot_count_file" ]]; then
+        snapshot_count="$(<"$snapshot_count_file")"
+      fi
+      snapshot_count=$((snapshot_count + 1))
+      printf '%s' "$snapshot_count" >"$snapshot_count_file"
+
+      final_has_next=false
+      thread_one_resolved=false
+      if [[ "$MOCK_SCENARIO" == "incomplete-pagination" ]]; then
+        final_has_next=true
+      fi
+      if [[ "$MOCK_SCENARIO" == "thread-resolution-drift" && "$snapshot_count" -gt 1 ]]; then
+        thread_one_resolved=true
+      fi
+      jq -n \
+        --argjson finalHasNext "$final_has_next" \
+        --argjson threadOneResolved "$thread_one_resolved" '[
+        {data:{repository:{pullRequest:{reviewThreads:{
+          nodes:[{id:"THREAD_1",isResolved:$threadOneResolved,isOutdated:false,path:"one.cs",line:10,originalLine:10}],
+          pageInfo:{hasNextPage:true,endCursor:"cursor-1"}
+        }}}}},
+        {data:{repository:{pullRequest:{reviewThreads:{
+          nodes:[{id:"THREAD_2",isResolved:true,isOutdated:false,path:"two.cs",line:20,originalLine:20}],
+          pageInfo:{hasNextPage:$finalHasNext,endCursor:null}
+        }}}}}
+      ]'
+      exit 0
+    fi
+
+    if [[ "$thread_id" == "THREAD_1" ]]; then
+      thread_one_resolved=false
+      if [[ "$MOCK_SCENARIO" == "thread-resolution-drift" && \
+            "$(<"$MOCK_ROOT/feedback-snapshot-count")" -gt 1 ]]; then
+        thread_one_resolved=true
+      fi
+      jq -n --argjson threadOneResolved "$thread_one_resolved" '[
+        {data:{node:{id:"THREAD_1",isResolved:$threadOneResolved,isOutdated:false,path:"one.cs",line:10,originalLine:10,comments:{nodes:[{author:{login:"reviewer"},body:"first page",createdAt:"2026-08-01T12:01:00Z",lastEditedAt:null,url:"https://comments/1",path:"one.cs",line:10,originalLine:10,diffHunk:"@@"}],pageInfo:{hasNextPage:true,endCursor:"comment-1"}}}}},
+        {data:{node:{id:"THREAD_1",isResolved:$threadOneResolved,isOutdated:false,path:"one.cs",line:10,originalLine:10,comments:{nodes:[{author:{login:"author"},body:"second page",createdAt:"2026-08-01T12:02:00Z",lastEditedAt:null,url:"https://comments/2",path:"one.cs",line:10,originalLine:10,diffHunk:"@@"}],pageInfo:{hasNextPage:false,endCursor:null}}}}}
+      ]'
+      exit 0
+    fi
+
+    if [[ "$thread_id" == "THREAD_2" ]]; then
+      cat <<'JSON'
+[
+  {"data":{"node":{"id":"THREAD_2","isResolved":true,"isOutdated":false,"path":"two.cs","line":20,"originalLine":20,"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"resolved body","createdAt":"2026-08-01T12:03:00Z","lastEditedAt":null,"url":"https://comments/3","path":"two.cs","line":20,"originalLine":20,"diffHunk":"@@"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}
+]
+JSON
+      exit 0
+    fi
+    exit 2
+  fi
+
+  endpoint=""
+  for argument in "$@"; do
+    if [[ "$argument" == repos/* ]]; then
+      endpoint="$argument"
+    fi
+  done
+  if [[ "$endpoint" == *'/issues/'*'/comments?'* ]]; then
+    printf '[[{"id":1,"body":"top-level comment","html_url":"https://comments/top"}]]\n'
+    exit 0
+  fi
+  if [[ "$endpoint" == *'/pulls/'*'/reviews?'* ]]; then
+    printf '[[{"id":2,"state":"COMMENTED","body":"review summary","html_url":"https://reviews/2","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]]\n'
+    exit 0
+  fi
+fi
+
+exit 2
+MOCK_GH
+
+  chmod +x "$case_root/bin/git" "$case_root/bin/gh"
+  : >"$case_root/calls.log"
+}
+
+run_start() {
+  local scenario="$1"
+  local case_root="$2"
+  local state_file="$3"
+  shift 3
+  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" \
+    TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+    TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    "$collector" start "$state_file" "$@"
+}
+
+run_finish() {
+  local scenario="$1"
+  local case_root="$2"
+  local state_file="$3"
+  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" \
+    TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+    TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    "$collector" finish "$state_file"
+}
+
+case_root="$fixture_root/explicit"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+run_finish happy "$case_root" "$case_root/state.json" >"$case_root/packet.json"
+"$real_jq" -e '
+  .selection == "explicit" and .pr.number == 42 and
+  .pr.opening.headRefOid == .pr.closing.headRefOid and
+  (.feedback.issueComments | length) == 1 and
+  (.feedback.reviewSummaries | length) == 1 and
+  (.feedback.reviewThreads | length) == 2 and
+  (.feedback.reviewThreads[0].comments | length) == 2 and
+  .feedback.reviewThreads[0].isResolved == false and
+  .feedback.reviewThreads[1].isResolved == true and
+  .secrets.verdict == "CLEAN" and .collectorState == "COMPLETE"
+' "$case_root/packet.json" >/dev/null || fail "explicit PR packet was incomplete"
+pass "explicit PR selection returns cursor-complete feedback and exact-head scan evidence"
+
+case_root="$fixture_root/implicit"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" >/dev/null
+run_finish happy "$case_root" "$case_root/state.json" >"$case_root/packet.json"
+"$real_jq" -e '.selection == "current-branch" and .pr.number == 77' \
+  "$case_root/packet.json" >/dev/null || fail "empty argument did not select the current branch PR"
+pass "omitted argument selects only the current branch PR"
+
+case_root="$fixture_root/wrong-checkout"
+make_mocks "$case_root"
+if run_start wrong-checkout "$case_root" "$case_root/state.json" 42 >/dev/null 2>&1; then
+  fail "wrong checkout was accepted"
+fi
+if rg -q 'gh (api|pr checks)' "$case_root/calls.log"; then
+  fail "wrong checkout reached feedback or check collection"
+fi
+pass "wrong checkout and explicit PR pairing fails before checks"
+
+for scenario in oid-drift base-oid-drift feedback-drift mergeability-drift; do
+  case_root="$fixture_root/$scenario"
+  make_mocks "$case_root"
+  run_start "$scenario" "$case_root" "$case_root/state.json" 42 >/dev/null
+  if run_finish "$scenario" "$case_root" "$case_root/state.json" >"$case_root/packet.json" 2>/dev/null; then
+    fail "$scenario was accepted"
+  fi
+done
+pass "closing head, base, feedback, and mergeability drift invalidate the packet"
+
+case_root="$fixture_root/thread-resolution-drift"
+make_mocks "$case_root"
+run_start thread-resolution-drift "$case_root" "$case_root/state.json" 42 >/dev/null
+if run_finish thread-resolution-drift "$case_root" "$case_root/state.json" \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "review-thread resolution drift was accepted without parent PR metadata drift"
+fi
+pass "a second complete feedback snapshot rejects independent thread-resolution drift"
+
+case_root="$fixture_root/incomplete-pagination"
+make_mocks "$case_root"
+run_start incomplete-pagination "$case_root" "$case_root/state.json" 42 >/dev/null
+if run_finish incomplete-pagination "$case_root" "$case_root/state.json" \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "incomplete review-thread pagination was accepted"
+fi
+pass "incomplete review-thread pagination fails closed"
+
+for scenario in secret-missing secret-advisory-only secret-duplicate secret-pending secret-failed; do
+  case_root="$fixture_root/$scenario"
+  make_mocks "$case_root"
+  run_start "$scenario" "$case_root" "$case_root/state.json" 42 >/dev/null
+  if run_finish "$scenario" "$case_root" "$case_root/state.json" \
+    >"$case_root/packet.json" 2>/dev/null; then
+    fail "$scenario secret evidence was accepted"
+  fi
+  "$real_jq" -e \
+    '.secrets.verdict == "NOT VERIFIED" and .collectorState == "INCOMPLETE"' \
+    "$case_root/packet.json" >/dev/null || fail "$scenario emitted a false clean verdict"
+done
+"$real_jq" -e '
+  .secrets.requiredCheckName == "Secret Scan / Gitleaks Scan" and
+  (.secrets.evidence | length) == 0 and
+  (.secrets.observedCandidates | length) == 1
+' "$fixture_root/secret-advisory-only/packet.json" >/dev/null ||
+  fail "advisory-only evidence was not distinguished from the enforcing check"
+pass "advisory-only, missing, duplicate, pending, and failed secret scans cannot emit CLEAN"
+
+if rg -q '^[[:space:]]*-[[:space:]]+\[[[:space:]]\][[:space:]]+Secrets scan:[[:space:]]+CLEAN[[:space:]]*$' \
+  "$skill_file"; then
+  fail "skill contains an unconditional CLEAN secrets verdict"
+fi
+rg -q 'Secrets scan: CLEAN/NOT VERIFIED' "$skill_file" ||
+  fail "skill does not expose the evidence-backed secrets verdict states"
+pass "skill report cannot unconditionally attest that the secrets scan is clean"
+
+if rg -Fq '${ARGUMENTS' "$skill_file"; then
+  fail "skill uses Bash parameter expansion instead of Claude's literal argument placeholder"
+fi
+rg -Fq '$ARGUMENTS' "$skill_file" || fail "skill omits Claude's literal argument placeholder"
+pass "skill uses Claude's literal argument placeholder instead of Bash expansion"
+
+case_root="$fixture_root/invalid-argument"
+make_mocks "$case_root"
+if run_start happy "$case_root" "$case_root/state.json" '42;echo-no' >/dev/null 2>&1; then
+  fail "invalid PR argument was accepted"
+fi
+if [[ -s "$case_root/calls.log" ]]; then
+  fail "invalid PR argument reached GitHub or Git"
+fi
+pass "non-numeric explicit PR arguments fail before external commands"
+
+printf 'PASS: %d pre-merge evidence canaries passed.\n' "$passed"
