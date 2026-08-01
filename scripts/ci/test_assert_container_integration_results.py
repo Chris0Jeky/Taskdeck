@@ -36,6 +36,26 @@ class ContainerIntegrationResultTests(unittest.TestCase):
                 minimum_postgres_results=1,
             )
 
+    def test_positive_contract_does_not_count_host_native_sqlite_results(self) -> None:
+        results = [
+            {
+                "name": "Taskdeck.Integration.Tests.BoardCrudIntegrationTests.CreateBoard",
+                "outcome": "Passed",
+                "message": "",
+            }
+            for _ in range(27)
+        ]
+        results.append(
+            {
+                "name": "Taskdeck.Integration.Tests.SQLiteNativeVersionTests.MeetsSecurityFloor",
+                "outcome": "Passed",
+                "message": "",
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "found 27"):
+            assert_positive(results, minimum_postgres_results=28)
+
     def test_negative_contract_requires_the_docker_required_failure(self) -> None:
         assert_negative(
             [

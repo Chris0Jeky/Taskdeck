@@ -10,7 +10,10 @@ from pathlib import Path
 
 
 POSTGRES_TEST_NAMESPACE = "Taskdeck.Integration.Tests."
-FIXTURE_TEST_NAMESPACE = "Taskdeck.Integration.Tests.Fixtures."
+NON_POSTGRES_TEST_PREFIXES = (
+    "Taskdeck.Integration.Tests.Fixtures.",
+    "Taskdeck.Integration.Tests.SQLiteNativeVersionTests.",
+)
 
 
 def _local_name(tag: str) -> str:
@@ -46,7 +49,10 @@ def assert_positive(results: list[dict[str, str]], minimum_postgres_results: int
         result
         for result in results
         if result["name"].startswith(POSTGRES_TEST_NAMESPACE)
-        and not result["name"].startswith(FIXTURE_TEST_NAMESPACE)
+        and not any(
+            result["name"].startswith(prefix)
+            for prefix in NON_POSTGRES_TEST_PREFIXES
+        )
     ]
     non_passing_postgres = [result for result in postgres_results if result["outcome"] != "Passed"]
 
