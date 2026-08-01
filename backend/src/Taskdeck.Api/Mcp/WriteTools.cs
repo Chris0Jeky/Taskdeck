@@ -21,17 +21,34 @@ public class WriteTools
     private readonly IUserContextProvider _userContext;
     private readonly ICaptureService _captureService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuthorizationService _authorizationService;
 
     public WriteTools(
         IAutomationProposalService proposalService,
         IUserContextProvider userContext,
         ICaptureService captureService,
         IUnitOfWork unitOfWork)
+        : this(
+            proposalService,
+            userContext,
+            captureService,
+            unitOfWork,
+            new AuthorizationService(unitOfWork))
+    {
+    }
+
+    public WriteTools(
+        IAutomationProposalService proposalService,
+        IUserContextProvider userContext,
+        ICaptureService captureService,
+        IUnitOfWork unitOfWork,
+        IAuthorizationService authorizationService)
     {
         _proposalService = proposalService;
         _userContext = userContext;
         _captureService = captureService;
         _unitOfWork = unitOfWork;
+        _authorizationService = authorizationService;
     }
 
     /// <summary>
@@ -83,18 +100,37 @@ public class WriteTools
         if (!Guid.TryParse(board_id, out var boardGuid))
             return Error("Invalid board_id format");
 
+        var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWrite.IsSuccess)
+            return Error(canWrite.ErrorMessage);
+        if (!canWrite.Value)
+            return Error("Not authorized to create cards on this board");
+
+        Guid? requestedColumnId = null;
+        if (!string.IsNullOrWhiteSpace(column_id))
+        {
+            if (!Guid.TryParse(column_id, out var parsedColumnId))
+                return Error("Invalid column_id format");
+            requestedColumnId = parsedColumnId;
+        }
+
+        var columns = await _unitOfWork.Columns.GetByBoardIdAsync(boardGuid);
+        var column = requestedColumnId.HasValue
+            ? columns.SingleOrDefault(candidate => candidate.Id == requestedColumnId.Value)
+            : columns.OrderBy(candidate => candidate.Position).ThenBy(candidate => candidate.Id).FirstOrDefault();
+        if (column is null)
+        {
+            return string.IsNullOrWhiteSpace(column_id)
+                ? Error("No columns found in board")
+                : Error("column_id not found on board");
+        }
+
         var parameters = new Dictionary<string, object?>
         {
             ["boardId"] = boardGuid,
-            ["title"] = title
+            ["title"] = title,
+            ["columnId"] = column.Id
         };
-
-        if (!string.IsNullOrWhiteSpace(column_id))
-        {
-            if (!Guid.TryParse(column_id, out var columnGuid))
-                return Error("Invalid column_id format");
-            parameters["columnId"] = columnGuid;
-        }
 
         if (!string.IsNullOrWhiteSpace(description))
             parameters["description"] = description;

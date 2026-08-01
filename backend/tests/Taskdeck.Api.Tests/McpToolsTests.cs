@@ -195,6 +195,95 @@ public class McpToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateCard_OmittedColumn_ResolvesFirstColumnPreviewsAndExecutes()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, firstColumnId) = await SetupBoardAsync(scope);
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Done", null, null));
+        var tools = CreateWriteTools(scope, user.Id);
+
+        var json = await tools.CreateCard(boardId.ToString(), "First-column MCP card");
+
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var proposal = await proposalService.GetProposalByIdAsync(proposalId);
+        proposal.IsSuccess.Should().BeTrue(proposal.ErrorMessage);
+        using (var parameters = JsonDocument.Parse(proposal.Value.Operations.Single().Parameters))
+            parameters.RootElement.GetProperty("columnId").GetGuid().Should().Be(firstColumnId);
+
+        (await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByBoardIdAsync(boardId))
+            .Should().BeEmpty("creating an MCP card must remain review-first");
+        var diff = await proposalService.GetProposalDiffAsync(proposalId);
+        diff.IsSuccess.Should().BeTrue(diff.ErrorMessage);
+
+        await ApproveAndExecuteAsync(scope, user.Id, proposalId);
+
+        var created = (await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().Cards.GetByBoardIdAsync(boardId))
+            .Should().ContainSingle(card => card.Title == "First-column MCP card").Subject;
+        created.ColumnId.Should().Be(firstColumnId);
+    }
+
+    [Fact]
+    public async Task CreateCard_ExplicitColumnFromAnotherBoard_ReturnsErrorAndCreatesNoProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, _) = await SetupBoardAsync(scope);
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var otherBoard = await boardService.CreateBoardAsync(new CreateBoardDto("Other board", null), user.Id);
+        var otherColumn = await columnService.CreateColumnAsync(
+            new CreateColumnDto(otherBoard.Value.Id, "Other column", null, null));
+
+        var json = await CreateWriteTools(scope, user.Id)
+            .CreateCard(boardId.ToString(), "Wrong board column", otherColumn.Value.Id.ToString());
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("column_id not found on board");
+        (await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().AutomationProposals.GetByBoardIdAsync(boardId))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateCard_BoardWithoutColumns_ReturnsErrorAndCreatesNoProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, _, _) = await SetupBoardAsync(scope);
+        var board = await scope.ServiceProvider.GetRequiredService<BoardService>()
+            .CreateBoardAsync(new CreateBoardDto("Columnless board", null), user.Id);
+
+        var json = await CreateWriteTools(scope, user.Id).CreateCard(board.Value.Id.ToString(), "No destination");
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("No columns found in board");
+        (await scope.ServiceProvider.GetRequiredService<IUnitOfWork>()
+            .AutomationProposals.GetByBoardIdAsync(board.Value.Id)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateCard_InaccessibleBoard_ReturnsErrorAndCreatesNoProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (caller, _, _) = await SetupBoardAsync(scope);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var boardService = scope.ServiceProvider.GetRequiredService<BoardService>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        var owner = new User($"owner-{Guid.NewGuid():N}", $"owner-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unitOfWork.Users.AddAsync(owner);
+        await unitOfWork.SaveChangesAsync();
+        var privateBoard = await boardService.CreateBoardAsync(new CreateBoardDto("Private board", null), owner.Id);
+        await columnService.CreateColumnAsync(new CreateColumnDto(privateBoard.Value.Id, "Private", null, null));
+
+        var json = await CreateWriteTools(scope, caller.Id)
+            .CreateCard(privateBoard.Value.Id.ToString(), "Unauthorized card");
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        (await unitOfWork.AutomationProposals.GetByBoardIdAsync(privateBoard.Value.Id)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CreateCard_InvalidBoardId_ReturnsError()
     {
         using var scope = _serviceProvider.CreateScope();
