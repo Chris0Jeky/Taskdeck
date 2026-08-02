@@ -112,8 +112,8 @@ function getStatusClass(status: AgentRunStatus): string {
     >
       <p class="td-agent-runs__empty-title">No runs yet</p>
       <p class="td-agent-runs__empty-body">
-        This agent has not been triggered. Runs are created when the agent is invoked
-        via the API or an automation trigger.
+        This agent has not been invoked. Runs are currently created through the API.
+        Automation-trigger execution is planned for a future release.
       </p>
     </div>
 

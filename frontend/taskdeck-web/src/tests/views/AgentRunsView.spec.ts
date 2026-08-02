@@ -105,6 +105,9 @@ describe('AgentRunsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('No runs yet')
+    expect(wrapper.text()).toContain('Runs are currently created through the API.')
+    expect(wrapper.text()).toContain('Automation-trigger execution is planned for a future release.')
+    expect(wrapper.text()).not.toContain('via the API or an automation trigger')
   })
 
   it('renders run cards with objective and status', async () => {
