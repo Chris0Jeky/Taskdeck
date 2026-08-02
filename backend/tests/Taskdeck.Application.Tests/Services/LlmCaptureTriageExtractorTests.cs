@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -68,10 +69,46 @@ public class LlmCaptureTriageExtractorTests
                 DegradedReason: degradedReason));
     }
 
-    [Fact]
-    public async Task ExtractAsync_ShouldReturnSanitizedContractValidOutput_WhenCompletionIsValidJson()
+    private void SetupCompletionForRequest(
+        Func<ChatCompletionRequest, string> contentFactory,
+        int tokensUsed = 250)
     {
-        SetupCompletion("""{"tasks":[{"title":"Send the report","evidence":"Alice: I'll send the report by Friday."}]}""");
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) => new LlmCompletionResult(
+                contentFactory(request),
+                tokensUsed,
+                IsActionable: false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
+    }
+
+    private static string ExactQuoteFromRequest(ChatCompletionRequest request)
+    {
+        var content = request.Messages.Single().Content;
+        return content.First(character => !char.IsWhiteSpace(character)).ToString();
+    }
+
+    private static string V2Completion(params (string Title, string EvidenceQuote)[] tasks)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            tasks = tasks.Select(task => new
+            {
+                title = task.Title,
+                type = "action",
+                assigneeHint = (string?)null,
+                dueDateHint = (string?)null,
+                confidence = 0.9m,
+                evidenceQuote = task.EvidenceQuote
+            }).ToArray()
+        });
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReturnStrictV2ContractOutput_WhenCompletionIsValidJson()
+    {
+        SetupCompletion("""{"tasks":[{"title":"Send the report","type":"action","assigneeHint":"Alice","dueDateHint":null,"confidence":0.95,"evidenceQuote":"Alice: I'll send the report by Friday."}]}""");
         var extractor = BuildExtractor();
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
@@ -81,27 +118,34 @@ public class LlmCaptureTriageExtractorTests
         result.Provider.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
         result.Output.Should().NotBeNull();
-        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
-        result.Output.Version.Should().Be(CaptureTriageOutputContract.SchemaVersion);
+        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Output.Version.Should().Be(CaptureTriageOutputContract.SchemaVersionV2);
         result.Output.Tasks.Should().ContainSingle()
             .Which.Title.Should().Be("Send the report");
+        result.Output.Tasks[0].Type.Should().Be("action");
+        result.Output.Tasks[0].AssigneeHint.Should().Be("Alice");
+        result.Output.Tasks[0].Confidence.Should().Be(0.95m);
+        result.Output.Tasks[0].EvidenceQuote.Should().Be("Alice: I'll send the report by Friday.");
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldTolerateCodeFencesAndExtraJsonFields()
+    public async Task ExtractAsync_ShouldTolerateCodeFences_WhenJsonUsesTheExactV2Shape()
     {
         SetupCompletion("""
             Here is the extraction you asked for:
             ```json
-            {"reasoning":"two commitments found","tasks":[
-              {"title":"Send the report","evidence":"I'll send the report by Friday.","confidence":0.9},
-              {"title":"Book the venue","evidence":"Bob: I can book the venue."}
+            {"tasks":[
+              {"title":"Send the report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"I'll send the report by Friday."},
+              {"title":"Book the venue","type":"action","assigneeHint":"Bob","dueDateHint":null,"confidence":0.8,"evidenceQuote":"Bob: I can book the venue."}
             ]}
             ```
             """);
         var extractor = BuildExtractor();
 
-        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload("Alice: I'll send the report by Friday.\nBob: I can book the venue."));
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         result.Output!.Tasks.Should().HaveCount(2);
@@ -109,33 +153,46 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldTruncateOverlongTitlesAndEvidence_InsteadOfRejecting()
+    public async Task ExtractAsync_ShouldRejectOverlongFields_InsteadOfChangingModelOutput()
     {
         var longTitle = new string('t', 400);
         var longEvidence = new string('e', 600);
-        SetupCompletion($$"""{"tasks":[{"title":"{{longTitle}}","evidence":"{{longEvidence}}"}]}""");
+        SetupCompletion($$"""{"tasks":[{"title":"{{longTitle}}","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"{{longEvidence}}"}]}""");
         var extractor = BuildExtractor();
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
-        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks[0].Title.Length.Should().Be(CaptureTriageOutputContract.MaxTaskTitleLength);
-        result.Output.Tasks[0].Evidence.Length.Should().Be(CaptureTriageOutputContract.MaxTaskEvidenceLength);
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldDedupeTitlesAndCapAtMaxTasks()
+    public async Task ExtractAsync_ShouldRejectMoreThanTheV2TaskCap_InsteadOfTruncating()
     {
         var tasks = string.Join(",", Enumerable.Range(0, 30).Select(i =>
-            $$"""{"title":"Task {{i % 25}}","evidence":"evidence {{i}}"}"""));
+            $$"""{"title":"Task {{i % 25}}","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice:"}"""));
         SetupCompletion($$"""{"tasks":[{{tasks}}]}""");
         var extractor = BuildExtractor();
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldDedupeOverlapTitlesWithoutChangingTheFirstV2Task()
+    {
+        SetupCompletion("""{"tasks":[{"title":"Send the report","type":"action","assigneeHint":"Alice","dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."},{"title":"send the report","type":"decision","assigneeHint":null,"dueDateHint":null,"confidence":0.4,"evidenceQuote":"I'll send the report by Friday."}]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
-        result.Output!.Tasks.Should().HaveCount(CaptureTriageOutputContract.MaxTasks);
-        result.Output.Tasks.Select(t => t.Title).Should().OnlyHaveUniqueItems();
+        result.Output!.Tasks.Should().ContainSingle();
+        result.Output.Tasks[0].Type.Should().Be("action");
+        result.Output.Tasks[0].AssigneeHint.Should().Be("Alice");
+        result.Output.Tasks[0].Confidence.Should().Be(0.9m);
     }
 
     [Fact]
@@ -143,7 +200,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        SetupCompletionForRequest(request => V2Completion(("Send the launch notes", ExactQuoteFromRequest(request))));
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
             8));
@@ -169,7 +226,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        SetupCompletionForRequest(request => V2Completion(("Send the launch notes", ExactQuoteFromRequest(request))));
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
             8));
@@ -209,7 +266,7 @@ public class LlmCaptureTriageExtractorTests
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
         _settings.MaxOutputTokens = 512;
-        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"a"}]}""");
         var transcript = string.Join(' ', Enumerable.Repeat("a", 256));
         var chunks = TranscriptTriageChunker.Chunk(
             transcript,
@@ -240,7 +297,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletion("""{"tasks":[{"title":"Discard me","evidence":"Alice: discard me."}]}""");
+        SetupCompletionForRequest(request => V2Completion(("Discard me", ExactQuoteFromRequest(request))));
         _quotaMock
             .SetupSequence(quota => quota.ReserveAsync(
                 _userId,
@@ -264,19 +321,19 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldIncludeLaterChunkTask_WhenEarlyChunkAlreadyUsesTheV1TaskCap()
+    public async Task ExtractAsync_ShouldIncludeLaterChunkTask_WhenEarlyChunkAlreadyUsesTheV2TaskCap()
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        var earlyTasks = string.Join(",", Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks).Select(index =>
-            $$"""{"title":"Early task {{index}}","evidence":"Alice: early evidence {{index}}."}"""));
         var call = 0;
         _providerMock
             .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new LlmCompletionResult(
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) => new LlmCompletionResult(
                 call++ == 0
-                    ? $$"""{"tasks":[{{earlyTasks}}]}"""
-                    : """{"tasks":[{"title":"Later follow-up","evidence":"Zoe: later meeting commitment."}]}""",
+                    ? V2Completion(Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks)
+                        .Select(index => ($"Early task {index}", ExactQuoteFromRequest(request)))
+                        .ToArray())
+                    : V2Completion(("Later follow-up", ExactQuoteFromRequest(request))),
                 100,
                 IsActionable: false,
                 Provider: "OpenAI",
@@ -326,22 +383,30 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
+        var call = 0;
         _providerMock
-            .SetupSequence(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new LlmCompletionResult(
-                """{"tasks":[{"title":"Discard me","evidence":"Alice: discard me."}]}""",
-                100,
-                IsActionable: false,
-                Provider: "OpenAI",
-                Model: "gpt-4o-mini"))
-            .ReturnsAsync(new LlmCompletionResult(
-                string.Empty,
-                100,
-                IsActionable: false,
-                Provider: "OpenAI",
-                Model: "gpt-4o-mini",
-                IsDegraded: true,
-                DegradedReason: "provider timeout"));
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                if (call++ == 0)
+                {
+                    return new LlmCompletionResult(
+                        V2Completion(("Discard me", ExactQuoteFromRequest(request))),
+                        100,
+                        IsActionable: false,
+                        Provider: "OpenAI",
+                        Model: "gpt-4o-mini");
+                }
+
+                return new LlmCompletionResult(
+                    string.Empty,
+                    100,
+                    IsActionable: false,
+                    Provider: "OpenAI",
+                    Model: "gpt-4o-mini",
+                    IsDegraded: true,
+                    DegradedReason: "provider timeout");
+            });
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: This long transcript has more content than one map chunk.",
             8));
@@ -550,15 +615,71 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReturnInvalidOutput_WhenAllEntriesFailSanitization()
+    public async Task ExtractAsync_ShouldRejectTheWholeCompletion_WhenAnyV2TaskIsMalformed()
     {
-        SetupCompletion("""{"tasks":[{"title":"   ","evidence":"x"},{"title":"ok","evidence":"  "}]}""");
+        SetupCompletion("""{"tasks":[{"title":"Send the report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."},{"title":"Malformed casing","type":"Action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."}]}""");
         var extractor = BuildExtractor();
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
 
         // Entries were returned but none survived — malformed output (fallback), not an empty verdict.
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("alice: I'll send the report by Friday.")]
+    [InlineData("Alice:  I'll send the report by Friday.")]
+    [InlineData("Alice: I'll send the report by Friday. ")]
+    public async Task ExtractAsync_ShouldRejectEvidenceQuote_WhenItIsNotAnExactOrdinalSubstring(string evidenceQuote)
+    {
+        SetupCompletion($$"""{"tasks":[{"title":"Send the report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"{{evidenceQuote}}"}]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRequireExactCrLfAndUnicodeEvidenceQuote()
+    {
+        const string transcript = "Åsa: Принято — ship it.\r\nBob: Done.";
+        SetupCompletion("""{"tasks":[{"title":"Ship it","type":"decision","assigneeHint":"Åsa","dueDateHint":null,"confidence":1,"evidenceQuote":"Åsa: Принято — ship it."}]}""");
+        var extractor = BuildExtractor();
+
+        var exactResult = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        exactResult.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        exactResult.Output!.Tasks[0].EvidenceQuote.Should().Be("Åsa: Принято — ship it.");
+
+        SetupCompletion("""{"tasks":[{"title":"Ship it","type":"decision","assigneeHint":"Åsa","dueDateHint":null,"confidence":1,"evidenceQuote":"ship it.\nBob"}]}""");
+
+        var lineEndingChangedResult = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        lineEndingChangedResult.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        lineEndingChangedResult.Output.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRejectAnEvidenceQuoteThatOnlyExistsAcrossMapChunks()
+    {
+        _settings.MaxInputTokensPerChunk = 8;
+        _settings.ChunkOverlapTokens = 0;
+        var transcript = string.Join(' ', Enumerable.Range(1, 20).Select(index => $"word{index}"));
+        var crossChunkQuote = string.Join(' ', Enumerable.Range(1, 12).Select(index => $"word{index}"));
+        SetupCompletion($$"""{"tasks":[{"title":"Cross chunk task","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"{{crossChunkQuote}}"}]}""");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Output.Should().BeNull();
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once(),
+            "the first map leg must reject a quote that only spans multiple chunks");
     }
 
     [Fact]
@@ -569,7 +690,7 @@ public class LlmCaptureTriageExtractorTests
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
             .Callback<ChatCompletionRequest, CancellationToken>((req, _) => sent = req)
             .ReturnsAsync(new LlmCompletionResult(
-                """{"tasks":[{"title":"T","evidence":"E"}]}""",
+                """{"tasks":[{"title":"T","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"the transcript body"}]}""",
                 100,
                 IsActionable: false,
                 Provider: "OpenAI",
@@ -595,7 +716,7 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldWorkWithoutOptionalGuardrailServices()
     {
-        SetupCompletion("""{"tasks":[{"title":"T","evidence":"E"}]}""");
+        SetupCompletion("""{"tasks":[{"title":"T","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."}]}""");
         var extractor = new LlmCaptureTriageExtractor(_providerMock.Object, _settings);
 
         var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
