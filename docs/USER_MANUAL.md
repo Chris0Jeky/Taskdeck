@@ -369,7 +369,7 @@ If `Queue` or `Ops` feels too technical:
 
 ## Current Constraints
 
-- `Agents`, nested `Runs`, and `Integrations` ship; agent profiles and runs are created through APIs or automation triggers, and a standalone `Knowledge` route remains future work
+- `Agents`, nested `Runs`, and `Integrations` ship; agent profiles and runs are API-created today, while automation-trigger execution remains future work until a trigger is wired and tested; a standalone `Knowledge` route remains future work
 - some advanced flows still expose more system detail than a novice-ready product should
 - board-chat automation parsing remains pattern-based and board-centric; transcript-source capture has a separately gated LLM triage path with deterministic fallback
 - review-first behavior is intentional; destructive autonomy is out of scope

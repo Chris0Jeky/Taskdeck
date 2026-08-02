@@ -10,7 +10,7 @@ Inspecting a run never approves or executes its proposal. Taskdeck's ordinary re
 
 Current boundaries:
 
-- runs are created by API calls or automation triggers, not from this page
+- runs are currently created through the authenticated `POST /api/agents/{agentId}/runs` API, not from this page; automation-trigger execution is future work until a trigger is wired and tested
 - the timeline is an observation and troubleshooting surface, not an execution console
 - a standalone `Knowledge` page does not ship yet
 
