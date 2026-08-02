@@ -221,7 +221,8 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function pollTriageCompletion(itemId: string): () => void {
     const POLL_INTERVAL_MS = 2_000
-    const MAX_POLLS = 15
+    // Bound polling to the default 24 map chunks x 30s provider timeout plus a 3m queue/reduce margin.
+    const MAX_POLLS = 450
     let pollCount = 0
     let stopped = false
     let timerId: ReturnType<typeof setTimeout> | null = null
