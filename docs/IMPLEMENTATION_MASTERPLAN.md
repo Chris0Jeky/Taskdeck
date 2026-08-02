@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-02
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -1195,7 +1195,7 @@ Focus _(all delivered — see STATUS.md; retained as the original pre-delivery p
 - ~~add local-first knowledge documents/notes and SQLite FTS-backed search~~ (delivered, `#339`/KNW: `KnowledgeDocument`/`KnowledgeChunk` + `KnowledgeFtsSearchService` FTS5)
 - ~~add note/transcript/clip-style intake paths that feed capture or knowledge flows~~ (delivered, INT-05 `#334` `NoteImportService`)
 - ~~add integrations registry/management view so imports and webhooks have a coherent home~~ (delivered, INT-06 `#340`: `IntegrationConnector` + `IntegrationRegistryService` + `IntegrationsView` at `/workspace/integrations`)
-- keep connector behavior capture-first and review-safe by default (held — inbound connectors route through capture per GP-06)
+- keep any future connector runtime capture-first and review-safe by default (registry-only boundary clarified: registered inbound connector records do not execute ingestion yet; any future inbound runtime must route through capture per GP-06)
 
 Exit Criteria:
 - durable searchable context exists without external vector infrastructure

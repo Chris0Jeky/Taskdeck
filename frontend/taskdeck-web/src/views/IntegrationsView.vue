@@ -157,8 +157,8 @@ onMounted(() => {
         <span class="td-int__eyebrow">Platform</span>
         <h1 class="td-page-title">Integrations</h1>
         <p class="td-int__subtitle">
-          Manage connector instances that feed data into your workspace.
-          All inbound connectors route through the capture pipeline for review-first safety.
+          Register and manage connector definitions for future integrations.
+          Registration, enablement, and configuration do not yet ingest external content.
         </p>
       </div>
       <button
@@ -249,8 +249,8 @@ onMounted(() => {
     <div v-else-if="!loading && !connectors.length" class="td-int__empty">
       <p class="td-int__empty-title">No connectors configured</p>
       <p class="td-int__empty-desc">
-        Add a connector to start ingesting data from external sources into your workspace.
-        Inbound connectors route through the capture pipeline so nothing changes without your review.
+        Register a connector definition to manage its type, direction, and configuration.
+        Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.
       </p>
       <button
         v-if="!showAddForm"

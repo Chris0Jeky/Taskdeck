@@ -1,6 +1,6 @@
 # Integrations Registry Architecture
 
-Last Updated: 2026-04-15
+Last Updated: 2026-08-02
 
 ## Overview
 
@@ -12,26 +12,26 @@ The integrations registry provides a foundation for managing external data conne
 
 | Direction | Purpose | Trust Boundary |
 |-----------|---------|----------------|
-| **Inbound** | Captures external data into the workspace | Must route through capture pipeline (GP-06) |
-| **Context** | Provides knowledge/reference documents | Routes through knowledge service, read-only |
-| **Outbound** | Sends events/notifications to external systems | Existing outbound webhook infrastructure |
+| **Inbound** | Intended to capture external data into the workspace | A future runtime must route through capture pipeline (GP-06) |
+| **Context** | Intended to provide knowledge/reference documents | A future runtime must use the knowledge service read-only |
+| **Outbound** | Intended to send events/notifications to external systems | A future runtime may integrate with outbound webhook infrastructure |
 
 ### Connector Types
 
 | Type | Direction | Description |
 |------|-----------|-------------|
-| `BrowserClipper` | Inbound | Browser extension that clips web content into captures |
-| `MarkdownImport` | Inbound/Context | Imports markdown files as captures or knowledge docs |
-| `WebClip` | Inbound | Saves web page snapshots as captures |
-| `GitHubIssueIntake` | Inbound | Syncs GitHub issues into the capture pipeline |
-| `WebhookInbound` | Inbound | Generic webhook receiver for external events |
-| `Custom` | Any | User-defined connector with custom configuration |
+| `BrowserClipper` | Inbound | Registered type reserved for a future browser-clipper runtime |
+| `MarkdownImport` | Inbound/Context | Registered type reserved for a future connector runtime; standalone note import is separate |
+| `WebClip` | Inbound | Registered type reserved for a future connector runtime; standalone web-clip capture is separate |
+| `GitHubIssueIntake` | Inbound | Registered type reserved for a future GitHub intake runtime |
+| `WebhookInbound` | Inbound | Registered type reserved for a future webhook receiver runtime |
+| `Custom` | Any | User-defined registry entry with custom configuration |
 
 ## Trust Boundaries (GP-06 Compliance)
 
 ### Inbound Connectors
 
-All inbound connectors MUST route data through the capture pipeline. This means:
+No connector runtime currently consumes registered definitions. When an inbound runtime is implemented, it MUST route data through the capture pipeline. This means:
 
 1. External data arrives via the connector
 2. Data is converted into a capture (inbox item)
@@ -42,11 +42,11 @@ Inbound connectors NEVER directly mutate boards, cards, or columns. This preserv
 
 ### Context Connectors
 
-Context connectors feed into the knowledge service (`KnowledgeDocument` / `KnowledgeChunk`). They provide reference material that LLM tools can use for board-context prompting, but they do not create captures or proposals.
+Future context connectors must feed into the knowledge service (`KnowledgeDocument` / `KnowledgeChunk`). They may provide reference material that LLM tools can use for board-context prompting, but they must not create captures or proposals.
 
 ### Outbound Connectors
 
-Outbound connectors extend the existing `OutboundWebhookSubscription` system. They receive board mutation events and forward them to external endpoints. The existing outbound webhook infrastructure (signing, delivery retries, event filtering) applies.
+Future outbound connector runtimes may extend the existing `OutboundWebhookSubscription` system. Registry entries do not currently receive board mutation events or forward them to external endpoints.
 
 ## Data Model
 
@@ -101,8 +101,8 @@ To implement a new connector type:
 
 | Issue | Relationship |
 |-------|-------------|
-| #75 (Import) | MarkdownImport connector type wraps existing import infrastructure |
-| #76 (Webhooks) | WebhookInbound connector type extends inbound webhook handling |
+| #75 (Import) | Standalone Markdown import is separate from the registered `MarkdownImport` connector type |
+| #76 (Webhooks) | A future `WebhookInbound` connector runtime may build on inbound webhook handling |
 | #219 (Voice capture) | Future voice connector type could be added to the registry |
-| #618 (LLM tool-calling) | Connectors can trigger tool calls via the capture pipeline |
+| #618 (LLM tool-calling) | A future connector runtime may trigger tool calls through the capture pipeline |
 | #619 (MCP server) | MCP resources could expose connector status to external tools |
