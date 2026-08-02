@@ -170,6 +170,22 @@ onMounted(() => {
       </button>
     </header>
 
+    <section class="td-int__capture-callout" aria-label="Standalone content capture">
+      <div>
+        <h2 class="td-int__capture-title">Capture content without a connector</h2>
+        <p class="td-int__capture-desc">
+          Use Markdown import or web clip capture in Settings → Export &amp; Import.
+          Connector registry entries manage metadata and lifecycle only; they do not ingest content.
+        </p>
+      </div>
+      <a
+        class="td-int__btn td-int__btn--primary td-int__capture-link"
+        href="/workspace/settings/export-import"
+      >
+        Open Markdown import and web clip capture
+      </a>
+    </section>
+
     <!-- Add connector form -->
     <section
       v-if="showAddForm"
@@ -420,6 +436,37 @@ onMounted(() => {
 .td-int__add-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.td-int__capture-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--td-border, #e5e7eb);
+  border-radius: 0.5rem;
+  background: var(--td-surface, #f9fafb);
+}
+
+.td-int__capture-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: var(--td-text-primary, #111827);
+}
+
+.td-int__capture-desc {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--td-text-secondary, #6b7280);
+}
+
+.td-int__capture-link {
+  flex-shrink: 0;
+  text-decoration: none;
 }
 
 /* Form */

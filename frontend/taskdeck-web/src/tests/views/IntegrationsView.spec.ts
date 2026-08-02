@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { reactive } from 'vue'
 import IntegrationsView from '../../views/IntegrationsView.vue'
+import type { IntegrationConnector } from '../../types/integration'
 
 const mockIntegrationStore = reactive({
-  connectors: [],
+  connectors: [] as IntegrationConnector[],
   selectedConnector: null,
   loading: false,
   error: null,
@@ -43,5 +44,27 @@ describe('IntegrationsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.')
+    expect(wrapper.get('.td-int__capture-link').attributes('href')).toBe('/workspace/settings/export-import')
+    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+  })
+
+  it('keeps standalone content capture actionable when connectors are registered', async () => {
+    mockIntegrationStore.connectors = [{
+      id: 'connector-1',
+      name: 'Example connector',
+      connectorType: 'Custom',
+      direction: 'Inbound',
+      status: 'Active',
+      configuration: null,
+      createdAt: '2026-08-02T00:00:00.000Z',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+    }]
+
+    const wrapper = mount(IntegrationsView)
+    await flushPromises()
+
+    expect(wrapper.find('.td-int__empty').exists()).toBe(false)
+    expect(wrapper.get('.td-int__capture-link').attributes('href')).toBe('/workspace/settings/export-import')
+    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
   })
 })
