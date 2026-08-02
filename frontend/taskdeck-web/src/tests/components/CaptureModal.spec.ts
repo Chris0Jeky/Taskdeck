@@ -326,8 +326,8 @@ describe('CaptureModal', () => {
       await transcriptTab.trigger('click')
       await waitForUi()
 
-      // Create a file larger than the 600,000-byte UTF-8 transport limit.
-      const bigContent = 'x'.repeat(600_001)
+      // Create a non-BOM file larger than the 600,003-byte UTF-8 transport limit.
+      const bigContent = 'x'.repeat(600_004)
       const bigFile = new File([bigContent], 'big.txt', { type: 'text/plain' })
       const fileInput = wrapper.find('input[type="file"]')
       Object.defineProperty(fileInput.element, 'files', {
@@ -337,7 +337,7 @@ describe('CaptureModal', () => {
       await fileInput.trigger('change')
       await waitForUi()
 
-      expect(wrapper.text()).toContain('File is too large. Maximum file size is 600,000 bytes.')
+      expect(wrapper.text()).toContain('File is too large. Maximum file size is 600,003 bytes.')
       expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
     })
 
@@ -382,6 +382,57 @@ describe('CaptureModal', () => {
         expect((wrapper.get('.td-capture-modal__input--transcript').element as HTMLTextAreaElement).value).toBe(cjkContent)
         expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(true)
         expect(wrapper.text()).not.toContain('File is too large')
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
+    })
+
+    it('accepts a UTF-8 BOM with 200,000 CJK characters at the raw byte boundary', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: FileReader | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: ((event: ProgressEvent) => void) | null = null
+        onerror: ((event: ProgressEvent) => void) | null = null
+        readAsText() {
+          capturedReader = this as unknown as FileReader
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const cjkContent = '界'.repeat(200_000)
+        const bomFile = new File([
+          new Uint8Array([0xef, 0xbb, 0xbf]),
+          cjkContent,
+        ], 'bom-cjk-transcript.txt', { type: 'text/plain' })
+        expect(bomFile.size).toBe(600_003)
+
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [bomFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        expect(capturedReader).not.toBeNull()
+        const reader = capturedReader as unknown as { result: string; onload: () => void }
+        // FileReader strips the UTF-8 BOM during text decoding; decoded validation remains 200,000 units.
+        reader.result = cjkContent
+        reader.onload?.()
+        await waitForUi()
+
+        expect((wrapper.get('.td-capture-modal__input--transcript').element as HTMLTextAreaElement).value).toBe(cjkContent)
+        expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(true)
+        expect(wrapper.text()).not.toContain('File is too large')
+        expect(wrapper.text()).not.toContain('Transcript text is too long')
       } finally {
         globalThis.FileReader = OriginalFileReader
       }
