@@ -33,7 +33,11 @@ public class LlmCaptureTriageExtractorTests
             .ReturnsAsync(false);
         // Atomic quota reservation succeeds by default (issue #1313); individual tests override.
         _quotaMock
-            .Setup(q => q.ReserveAsync(It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.ReserveAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<LlmSurface>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60));
     }
 
@@ -128,6 +132,215 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldMapReduceLongTranscriptAndDedupeAcrossChunks()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: I will send the launch notes after this meeting.",
+            8));
+        var expectedChunkCount = TranscriptTriageChunker.Chunk(
+            transcript,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens).Count;
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        expectedChunkCount.Should().BeGreaterThan(1);
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        result.Output!.Tasks.Should().ContainSingle();
+        result.Output.Tasks[0].Title.Should().Be("Send the launch notes");
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(expectedChunkCount));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReserveEachMapChunkWithItsConservativeRequestEstimate()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxOutputTokens = 512;
+        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: I will send the launch notes after this meeting.",
+            8));
+        var chunks = TranscriptTriageChunker.Chunk(
+            transcript,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens);
+        var reservationEstimates = new List<int>();
+        _quotaMock
+            .Setup(quota => quota.ReserveAsync(
+                _userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<Guid, LlmSurface, int, CancellationToken>((_, _, estimate, _) => reservationEstimates.Add(estimate))
+            .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        reservationEstimates.Should().Equal(chunks.Select(chunk =>
+            TranscriptTokenEstimator.EstimateTokens(LlmCaptureTriagePrompt.SystemPrompt) +
+            chunk.EstimatedTokens +
+            _settings.MaxOutputTokens));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldDiscardMappedOutput_WhenALaterChunkCannotReserveQuota()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        SetupCompletion("""{"tasks":[{"title":"Discard me","evidence":"Alice: discard me."}]}""");
+        _quotaMock
+            .SetupSequence(quota => quota.ReserveAsync(
+                _userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60))
+            .ReturnsAsync(new QuotaReservationDto(false, "Daily token budget exhausted", null, 0, 0));
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: This transcript has enough content to require another bounded map chunk.",
+            8));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.QuotaExceeded);
+        result.Output.Should().BeNull("a later map-leg quota denial must not emit partial output");
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldIncludeLaterChunkTask_WhenEarlyChunkAlreadyUsesTheV1TaskCap()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        var earlyTasks = string.Join(",", Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks).Select(index =>
+            $$"""{"title":"Early task {{index}}","evidence":"Alice: early evidence {{index}}."}"""));
+        var call = 0;
+        _providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new LlmCompletionResult(
+                call++ == 0
+                    ? $$"""{"tasks":[{{earlyTasks}}]}"""
+                    : """{"tasks":[{"title":"Later follow-up","evidence":"Zoe: later meeting commitment."}]}""",
+                100,
+                IsActionable: false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: This transcript has enough content to require more than one map chunk.",
+            8));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        result.Output!.Tasks.Should().HaveCount(CaptureTriageOutputContract.MaxTasks);
+        result.Output.Tasks.Select(task => task.Title).Should().Contain("Later follow-up",
+            "the deterministic reduce must retain coverage outside the first map chunk");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldPreserveNoActionVerdict_WhenEveryChunkIsEmpty()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        SetupCompletion("""{"tasks":[]}""");
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: We discussed the weather and exchanged greetings.",
+            8));
+        var expectedChunkCount = TranscriptTriageChunker.Chunk(
+            transcript,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens).Count;
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        expectedChunkCount.Should().BeGreaterThan(1);
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.EmptyExtraction);
+        result.Provider.Should().Be("OpenAI");
+        result.Model.Should().Be("gpt-4o-mini");
+        result.Output.Should().BeNull();
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(expectedChunkCount));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldDiscardMappedTasks_WhenALaterChunkDegrades()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        _providerMock
+            .SetupSequence(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[{"title":"Discard me","evidence":"Alice: discard me."}]}""",
+                100,
+                IsActionable: false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"))
+            .ReturnsAsync(new LlmCompletionResult(
+                string.Empty,
+                100,
+                IsActionable: false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "provider timeout"));
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: This long transcript has more content than one map chunk.",
+            8));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderDegraded);
+        result.Output.Should().BeNull("partial map output must never become a proposal candidate");
+        result.Provider.Should().BeNull("discarded mapped output must not be stamped as LLM provenance");
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldDeclineBeforeQuotaReservation_WhenMapChunkCallBudgetWouldBeExceeded()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 0;
+        _settings.MaxChunkCount = 1;
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: This transcript requires more than one bounded map chunk.",
+            8));
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.InvalidOutput);
+        result.Detail.Should().Contain("map-chunk call budget");
+        _providerMock.Verify(
+            provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _quotaMock.Verify(
+            quota => quota.ReserveAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<LlmSurface>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReturnDisabled_WithoutTouchingProviderOrGuardrails()
     {
         _settings.Enabled = false;
@@ -189,7 +402,11 @@ public class LlmCaptureTriageExtractorTests
     public async Task ExtractAsync_ShouldReturnQuotaExceeded_WithoutCallingProvider()
     {
         _quotaMock
-            .Setup(q => q.ReserveAsync(_userId, LlmSurface.CaptureTriage, It.IsAny<CancellationToken>()))
+            .Setup(q => q.ReserveAsync(
+                _userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new QuotaReservationDto(false, "Daily token budget exhausted", null, 0, 0));
         var extractor = BuildExtractor();
 

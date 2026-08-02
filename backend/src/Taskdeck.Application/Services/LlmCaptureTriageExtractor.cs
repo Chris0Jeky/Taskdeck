@@ -40,6 +40,108 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         CapturePayloadV1 payload,
         CancellationToken cancellationToken = default)
     {
+        var chunks = TranscriptTriageChunker.Chunk(
+            payload.Text,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens);
+
+        if (chunks.Count <= 1)
+        {
+            return await ExtractChunkAsync(userId, boardId, payload, cancellationToken);
+        }
+
+        if (chunks.Count > _settings.MaxChunkCount)
+        {
+            _logger?.LogWarning(
+                "Transcript triage requires {ChunkCount} map chunks, exceeding configured maximum {MaxChunkCount}; using deterministic fallback without provider calls.",
+                chunks.Count,
+                _settings.MaxChunkCount);
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.InvalidOutput,
+                Detail: "Transcript exceeds the configured map-chunk call budget.");
+        }
+
+        var mappedTasks = new List<IReadOnlyList<CaptureTriageTaskV1>>(chunks.Count);
+        string? provider = null;
+        string? model = null;
+
+        foreach (var chunk in chunks)
+        {
+            var chunkPayload = payload with { Text = chunk.Text };
+            var extraction = await ExtractChunkAsync(userId, boardId, chunkPayload, cancellationToken);
+
+            if (extraction.Succeeded)
+            {
+                if (!TrySetProviderIdentity(extraction, ref provider, ref model))
+                {
+                    return new LlmCaptureTriageExtraction(
+                        LlmCaptureTriageOutcome.InvalidOutput,
+                        Detail: "Chunked transcript extraction returned inconsistent provider provenance.");
+                }
+
+                mappedTasks.Add(extraction.Output!.Tasks);
+                continue;
+            }
+
+            if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
+            {
+                if (!TrySetProviderIdentity(extraction, ref provider, ref model))
+                {
+                    return new LlmCaptureTriageExtraction(
+                        LlmCaptureTriageOutcome.InvalidOutput,
+                        Detail: "Chunked transcript extraction returned inconsistent provider provenance.");
+                }
+
+                continue;
+            }
+
+            // Fail safe: a proposal based on only successful map legs would silently omit the failed
+            // transcript range. Discard every mapped result and let CaptureTriageService take its M1
+            // deterministic fallback, which retains its existing honest provenance behavior.
+            _logger?.LogWarning(
+                "Chunked transcript triage failed at chunk {ChunkIndex}; discarding {MappedTaskCount} mapped tasks for deterministic fallback. Outcome: {Outcome}",
+                chunk.Index,
+                mappedTasks.Sum(tasks => tasks.Count),
+                extraction.Outcome);
+            return new LlmCaptureTriageExtraction(extraction.Outcome, Detail: extraction.Detail);
+        }
+
+        if (mappedTasks.Count == 0)
+        {
+            // Every chunk returned the model's explicit no-action verdict. This remains a successful
+            // no-proposal terminal state, rather than falling back to the deterministic whole-text
+            // extractor (which would fabricate one card from unactionable transcript text).
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.EmptyExtraction,
+                Provider: provider,
+                Model: model);
+        }
+
+        var output = new CaptureTriageOutputV1(
+            CaptureTriageOutputContract.SchemaVersion,
+            CaptureTriageOutputContract.PromptVersionLlmV1,
+            ReduceMappedTasks(mappedTasks));
+        var validation = CaptureTriageOutputContract.Validate(output);
+        if (!validation.IsSuccess)
+        {
+            return new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.InvalidOutput,
+                Detail: validation.ErrorMessage);
+        }
+
+        return new LlmCaptureTriageExtraction(
+            LlmCaptureTriageOutcome.Succeeded,
+            validation.Value,
+            provider,
+            model);
+    }
+
+    private async Task<LlmCaptureTriageExtraction> ExtractChunkAsync(
+        Guid userId,
+        Guid? boardId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_settings.Enabled)
@@ -75,7 +177,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         Guid? quotaReservationId = null;
         if (_quotaService is not null)
         {
-            var reservation = await _quotaService.ReserveAsync(userId, LlmSurface.CaptureTriage, cancellationToken);
+            var reservationEstimate = EstimateReservationTokens(payload.Text);
+            var reservation = await _quotaService.ReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                reservationEstimate,
+                cancellationToken);
             if (!reservation.Allowed)
             {
                 return new LlmCaptureTriageExtraction(
@@ -233,6 +340,96 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             validation.Value,
             result.Provider,
             result.Model);
+    }
+
+    private static bool TrySetProviderIdentity(
+        LlmCaptureTriageExtraction extraction,
+        ref string? provider,
+        ref string? model)
+    {
+        if (string.IsNullOrWhiteSpace(extraction.Provider) || string.IsNullOrWhiteSpace(extraction.Model))
+        {
+            return false;
+        }
+
+        if (provider is null && model is null)
+        {
+            provider = extraction.Provider;
+            model = extraction.Model;
+            return true;
+        }
+
+        return string.Equals(provider, extraction.Provider, StringComparison.Ordinal) &&
+               string.Equals(model, extraction.Model, StringComparison.Ordinal);
+    }
+
+    private int EstimateReservationTokens(string text)
+    {
+        // The provider receives both the extraction system prompt and this map chunk. Reserve the
+        // whole bounded request plus its configured output allowance before the call so concurrent
+        // long-transcript triage cannot reopen the quota-budget race fixed by #1313.
+        var estimate = (long)TranscriptTokenEstimator.EstimateTokens(LlmCaptureTriagePrompt.SystemPrompt) +
+                       TranscriptTokenEstimator.EstimateTokens(text) +
+                       _settings.MaxOutputTokens;
+        return (int)Math.Clamp(estimate, 1L, int.MaxValue);
+    }
+
+    private static List<CaptureTriageTaskV1> ReduceMappedTasks(
+        IReadOnlyList<IReadOnlyList<CaptureTriageTaskV1>> mappedTasks)
+    {
+        // A transcript can yield more than the v1 contract's 20 cards. Do not let an early chunk
+        // consume every output slot: take one task from evenly spaced source chunks first, then
+        // fill remaining slots in stable chunk/task order. This makes the lossy v1 reduction
+        // deterministic while preserving coverage of both the beginning and end of a long meeting.
+        var sanitizedByChunk = mappedTasks
+            .Select(SanitizeTasks)
+            .ToList();
+        var reduced = new List<CaptureTriageTaskV1>();
+        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddIfUnique(CaptureTriageTaskV1 task)
+        {
+            if (reduced.Count < CaptureTriageOutputContract.MaxTasks && seenTitles.Add(task.Title))
+            {
+                reduced.Add(task);
+            }
+        }
+
+        var coverageCount = Math.Min(sanitizedByChunk.Count, CaptureTriageOutputContract.MaxTasks);
+        if (coverageCount > 0)
+        {
+            for (var slot = 0; slot < coverageCount; slot++)
+            {
+                var chunkIndex = coverageCount == 1
+                    ? 0
+                    : (int)((long)slot * (sanitizedByChunk.Count - 1) / (coverageCount - 1));
+                if (sanitizedByChunk[chunkIndex].Count > 0)
+                {
+                    AddIfUnique(sanitizedByChunk[chunkIndex][0]);
+                }
+            }
+        }
+
+        for (var taskIndex = 0;
+             reduced.Count < CaptureTriageOutputContract.MaxTasks &&
+             sanitizedByChunk.Any(tasks => taskIndex < tasks.Count);
+             taskIndex++)
+        {
+            foreach (var tasks in sanitizedByChunk)
+            {
+                if (taskIndex < tasks.Count)
+                {
+                    AddIfUnique(tasks[taskIndex]);
+                }
+
+                if (reduced.Count >= CaptureTriageOutputContract.MaxTasks)
+                {
+                    break;
+                }
+            }
+        }
+
+        return reduced;
     }
 
     /// <summary>

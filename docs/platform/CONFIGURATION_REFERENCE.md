@@ -299,6 +299,9 @@ class defaults apply.
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxInputTokensPerChunk` | `int` | `12000` | Conservative input-token budget for one transcript map chunk (range 1024-32768). The estimator accounts separately for word runs, whitespace, punctuation, and non-ASCII text; it does not depend on a provider tokenizer. | No |
+| `CaptureTriageLlm:ChunkOverlapTokens` | `int` | `256` | Context retained between map chunks (range 0-4096). The planner caps it at one quarter of the input budget, splits at speaker turns or blank lines when possible, and hard-splits only unstructured text. If any map leg fails, all mapped results are discarded and the existing deterministic fallback handles the full capture. | No |
+| `CaptureTriageLlm:MaxChunkCount` | `int` | `24` | Maximum LLM map calls per transcript triage run (range 1-128). If a configured chunk budget would require more calls, no provider or quota reservation is attempted and the complete capture uses the existing deterministic fallback. | No |
 | `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
 | `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
