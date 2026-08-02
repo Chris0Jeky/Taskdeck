@@ -319,15 +319,15 @@ describe('CaptureModal', () => {
       expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
     })
 
-    it('rejects file exceeding size limit and shows error', async () => {
+    it('rejects file exceeding the raw byte limit and shows error', async () => {
       const wrapper = mount(CaptureModal)
 
       const transcriptTab = wrapper.findAll('[role="tab"]')[1]
       await transcriptTab.trigger('click')
       await waitForUi()
 
-      // Create a file larger than MAX_TRANSCRIPT_LENGTH (200,000 bytes)
-      const bigContent = 'x'.repeat(200_001)
+      // Create a file larger than the 600,000-byte UTF-8 transport limit.
+      const bigContent = 'x'.repeat(600_001)
       const bigFile = new File([bigContent], 'big.txt', { type: 'text/plain' })
       const fileInput = wrapper.find('input[type="file"]')
       Object.defineProperty(fileInput.element, 'files', {
@@ -337,8 +337,54 @@ describe('CaptureModal', () => {
       await fileInput.trigger('change')
       await waitForUi()
 
-      expect(wrapper.text()).toContain('File is too large. Maximum size is 200,000 bytes.')
+      expect(wrapper.text()).toContain('File is too large. Maximum file size is 600,000 bytes.')
       expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
+    })
+
+    it('reads a 200,000-character CJK file at the UTF-8 byte limit', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      let capturedReader: FileReader | null = null
+      const OriginalFileReader = globalThis.FileReader
+      class MockFileReader extends EventTarget {
+        result: string | null = null
+        onload: ((event: ProgressEvent) => void) | null = null
+        onerror: ((event: ProgressEvent) => void) | null = null
+        readAsText() {
+          capturedReader = this as unknown as FileReader
+        }
+      }
+      globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+
+      try {
+        const cjkContent = '界'.repeat(200_000)
+        const cjkFile = new File([cjkContent], 'cjk-transcript.txt', { type: 'text/plain' })
+        expect(cjkFile.size).toBe(600_000)
+
+        const fileInput = wrapper.find('input[type="file"]')
+        Object.defineProperty(fileInput.element, 'files', {
+          value: [cjkFile],
+          configurable: true,
+        })
+        await fileInput.trigger('change')
+        await waitForUi()
+
+        expect(capturedReader).not.toBeNull()
+        const reader = capturedReader as unknown as { result: string; onload: () => void }
+        reader.result = cjkContent
+        reader.onload?.()
+        await waitForUi()
+
+        expect((wrapper.get('.td-capture-modal__input--transcript').element as HTMLTextAreaElement).value).toBe(cjkContent)
+        expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(true)
+        expect(wrapper.text()).not.toContain('File is too large')
+      } finally {
+        globalThis.FileReader = OriginalFileReader
+      }
     })
 
     it('loads .txt file content via FileReader and shows file name', async () => {
