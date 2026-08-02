@@ -690,7 +690,7 @@ public class CaptureTriageServiceTests
         createdProposal.Operations[1].Parameters.Should().Contain("Update docs");
     }
 
-    #region LLM transcript triage strategy (REVIVAL-08 M1)
+    #region LLM transcript triage strategy (REVIVAL-08 M3)
 
     private CaptureTriageService BuildServiceWithExtractor(Mock<ILlmCaptureTriageExtractor> extractorMock)
     {
@@ -716,12 +716,18 @@ public class CaptureTriageServiceTests
     private static CapturePayloadV1 TranscriptPayload(string text = "Alice: I'll send the report.\nBob: Sounds good.")
         => new(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.TranscriptPaste, text);
 
-    private static LlmCaptureTriageExtraction SuccessfulExtraction(params (string Title, string Evidence)[] tasks)
+    private static LlmCaptureTriageExtraction SuccessfulExtraction(params (string Title, string EvidenceQuote)[] tasks)
     {
-        var output = new CaptureTriageOutputV1(
-            CaptureTriageOutputContract.SchemaVersion,
-            CaptureTriageOutputContract.PromptVersionLlmV1,
-            tasks.Select(t => new CaptureTriageTaskV1(t.Title, t.Evidence)).ToList());
+        var output = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            tasks.Select(t => new CaptureTriageTaskV2(
+                t.Title,
+                "action",
+                AssigneeHint: null,
+                DueDateHint: null,
+                Confidence: 0.9m,
+                EvidenceQuote: t.EvidenceQuote)).ToList());
         return new LlmCaptureTriageExtraction(
             LlmCaptureTriageOutcome.Succeeded,
             output,
@@ -830,12 +836,54 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(2);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         createdProposal.Should().NotBeNull();
         createdProposal!.Operations.Should().HaveCount(2);
         createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
         // Evidence rides in the card description so the review rail can show the verbatim quote.
         createdProposal.Operations[0].Parameters.Should().Contain("Alice: I will send the report.");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldKeepV2MetadataOutOfExecutableOperationParameters()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        var output = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            [new CaptureTriageTaskV2(
+                "Record the launch decision",
+                "decision",
+                "Alice",
+                "2026-08-07",
+                0.98m,
+                "Alice: we decided to launch on August 7.")]);
+        extractorMock
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                output,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Should().ContainSingle();
+        var parameters = createdProposal.Operations[0].Parameters;
+        parameters.Should().Contain("Alice: we decided to launch on August 7.");
+        parameters.Should().NotContain("\"type\"");
+        parameters.Should().NotContain("assigneeHint");
+        parameters.Should().NotContain("dueDateHint");
+        parameters.Should().NotContain("confidence");
     }
 
     [Fact]
@@ -924,7 +972,7 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(0);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -1079,7 +1127,7 @@ public class CaptureTriageServiceTests
         var stampedPayload = CaptureRequestContract.WithProvenance(
             TranscriptPayload(),
             captureId,
-            promptVersion: CaptureTriageOutputContract.PromptVersionLlmV1,
+            promptVersion: CaptureTriageOutputContract.PromptVersionLlmV2,
             provider: "OpenAI",
             model: "gpt-4o-mini");
 
@@ -1088,7 +1136,7 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
     #endregion

@@ -47,8 +47,25 @@ npm run typecheck
 ```
 
 The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
-capture, never persists a partial automatic board write. `#1304` M3 schema-v2 and `#1305` evidence
-linkage are not covered by this checkpoint.
+capture, never persists a partial automatic board write. The M3 contract has its own checkpoint
+below; `#1305` evidence linkage remains outside both checkpoints.
+
+## 2026-08-02 REVIVAL-08 M3 Contract Checkpoint (`#1304`)
+
+When changing the strict LLM schema-v2 contract, prompt/parser, exact evidence quote boundary, or
+the v2-to-proposal mapping, run:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests"
+```
+
+The application seam must reject missing, unknown, wrongly typed, noncanonical, over-limit, or
+non-verbatim model fields as a complete fallback; it must not normalize or retain a partial map leg.
+It also pins that model classification, assignee, due-date, and confidence metadata never enter
+executable operation parameters. The API golden path proves a valid exact quote remains reviewable
+in the proposed card description. `#1305` durable evidence spans/provenance/API/UI linkage remains
+outside this contract-only checkpoint.
 
 ## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
 

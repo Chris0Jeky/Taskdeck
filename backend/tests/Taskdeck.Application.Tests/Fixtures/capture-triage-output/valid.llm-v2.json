@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "promptVersion": "llm-triage.v2",
+  "tasks": [
+    {
+      "title": "Send the revised budget to finance",
+      "type": "action",
+      "assigneeHint": "Alice",
+      "dueDateHint": "2026-08-07",
+      "confidence": 0.95,
+      "evidenceQuote": "I'll send the revised budget over to finance by Friday"
+    },
+    {
+      "title": "Schedule the follow-up review meeting",
+      "type": "decision",
+      "assigneeHint": null,
+      "dueDateHint": null,
+      "confidence": 0.8,
+      "evidenceQuote": "let's get the follow-up review on the calendar next week"
+    }
+  ]
+}

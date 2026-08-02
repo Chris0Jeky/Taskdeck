@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -7,9 +6,9 @@ using Taskdeck.Domain.Enums;
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// LLM-backed transcript task extraction (REVIVAL-08 M1). Runs the guardrail chain the chat surface
+/// LLM-backed transcript task extraction (REVIVAL-08 M3). Runs the guardrail chain the chat surface
 /// established (kill switch → provider health → quota → completion → usage recording), then parses
-/// and sanitizes the completion into a contract-valid <see cref="CaptureTriageOutputV1"/>.
+/// and sanitizes the completion into a contract-valid <see cref="CaptureTriageOutputV2"/>.
 /// Every failure mode is returned as an outcome, never thrown, so <see cref="CaptureTriageService"/>
 /// can degrade to the deterministic extractor. Provider/model are reported only on success (#1273).
 /// </summary>
@@ -65,7 +64,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Detail: "Transcript exceeds the configured map-chunk call budget.");
         }
 
-        var mappedTasks = new List<IReadOnlyList<CaptureTriageTaskV1>>(chunks.Count);
+        var mappedTasks = new List<IReadOnlyList<CaptureTriageTaskV2>>(chunks.Count);
         string? provider = null;
         string? model = null;
 
@@ -121,9 +120,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Model: model);
         }
 
-        var output = new CaptureTriageOutputV1(
-            CaptureTriageOutputContract.SchemaVersion,
-            CaptureTriageOutputContract.PromptVersionLlmV1,
+        var output = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
             ReduceMappedTasks(mappedTasks));
         var validation = CaptureTriageOutputContract.Validate(output);
         if (!validation.IsSuccess)
@@ -323,7 +322,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Model: result.Model);
         }
 
-        var sanitized = SanitizeTasks(rawTasks);
+        var sanitized = SanitizeTasks(rawTasks, payload.Text);
         if (sanitized.Count == 0)
         {
             // The model returned entries but none survived sanitization — treat as malformed
@@ -331,9 +330,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.InvalidOutput);
         }
 
-        var output = new CaptureTriageOutputV1(
-            CaptureTriageOutputContract.SchemaVersion,
-            CaptureTriageOutputContract.PromptVersionLlmV1,
+        var output = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
             sanitized);
 
         var validation = CaptureTriageOutputContract.Validate(output);
@@ -397,20 +396,20 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         return (int)Math.Clamp(estimate, 1L, int.MaxValue);
     }
 
-    private static List<CaptureTriageTaskV1> ReduceMappedTasks(
-        IReadOnlyList<IReadOnlyList<CaptureTriageTaskV1>> mappedTasks)
+    private static List<CaptureTriageTaskV2> ReduceMappedTasks(
+        IReadOnlyList<IReadOnlyList<CaptureTriageTaskV2>> mappedTasks)
     {
-        // A transcript can yield more than the v1 contract's 20 cards. Do not let an early chunk
+        // A transcript can yield more than the schema-v2 contract's 20 cards. Do not let an early chunk
         // consume every output slot: take one task from evenly spaced source chunks first, then
-        // fill remaining slots in stable chunk/task order. This makes the lossy v1 reduction
+        // fill remaining slots in stable chunk/task order. This makes the lossy reduction
         // deterministic while preserving coverage of both the beginning and end of a long meeting.
         var sanitizedByChunk = mappedTasks
-            .Select(SanitizeTasks)
+            .Select(tasks => tasks.ToList())
             .ToList();
-        var reduced = new List<CaptureTriageTaskV1>();
+        var reduced = new List<CaptureTriageTaskV2>();
         var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        void AddIfUnique(CaptureTriageTaskV1 task)
+        void AddIfUnique(CaptureTriageTaskV2 task)
         {
             if (reduced.Count < CaptureTriageOutputContract.MaxTasks && seenTitles.Add(task.Title))
             {
@@ -456,39 +455,43 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
     }
 
     /// <summary>
-    /// Enforces the v1 contract caps on model output instead of rejecting near-valid responses:
-    /// whitespace-normalized titles truncated to the title cap, evidence trimmed to the evidence cap
-    /// (a truncated verbatim quote is still a verbatim prefix, so span recovery stays possible),
-    /// duplicate titles dropped (mirroring the deterministic extractor's dedupe), capped at MaxTasks.
+    /// Enforces schema-v2 limits on model output. The extractor only preserves model items whose
+    /// quote is an exact substring of the source chunk: without that boundary, later span linking
+    /// could turn a model hallucination into misleading provenance. Assignee/due-date hints stay
+    /// descriptive values here; no identity resolution or date mutation happens in this layer.
     /// </summary>
-    private static List<CaptureTriageTaskV1> SanitizeTasks(IReadOnlyList<CaptureTriageTaskV1> rawTasks)
+    private static List<CaptureTriageTaskV2> SanitizeTasks(
+        IReadOnlyList<CaptureTriageTaskV2> rawTasks,
+        string transcriptText)
     {
-        var sanitized = new List<CaptureTriageTaskV1>();
+        // Do not repair model output here. A completion that misses the v2 contract cannot safely
+        // retain a subset of its metadata, and truncating or normalizing a claimed verbatim quote
+        // would make later evidence linkage misleading. A malformed map leg therefore makes the
+        // whole extraction fall back rather than silently omitting or changing evidence.
+        var validation = CaptureTriageOutputContract.Validate(new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            rawTasks));
+        if (!validation.IsSuccess)
+        {
+            return [];
+        }
+
+        var sanitized = new List<CaptureTriageTaskV2>();
         var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var task in rawTasks)
+        foreach (var task in validation.Value.Tasks)
         {
-            var title = Regex.Replace(task.Title.Trim(), @"\s+", " ");
-            if (title.Length > CaptureTriageOutputContract.MaxTaskTitleLength)
+            if (!transcriptText.Contains(task.EvidenceQuote, StringComparison.Ordinal))
             {
-                title = title[..CaptureTriageOutputContract.MaxTaskTitleLength].TrimEnd();
+                return [];
             }
 
-            var evidence = task.Evidence.Trim();
-            if (evidence.Length > CaptureTriageOutputContract.MaxTaskEvidenceLength)
+            // Overlap can yield the same proposed card from adjacent map chunks. Preserve the
+            // first complete v2 item deterministically; do not select using model confidence.
+            if (seenTitles.Add(task.Title))
             {
-                evidence = evidence[..CaptureTriageOutputContract.MaxTaskEvidenceLength].TrimEnd();
-            }
-
-            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(evidence) || !seenTitles.Add(title))
-            {
-                continue;
-            }
-
-            sanitized.Add(new CaptureTriageTaskV1(title, evidence));
-            if (sanitized.Count >= CaptureTriageOutputContract.MaxTasks)
-            {
-                break;
+                sanitized.Add(task);
             }
         }
 
