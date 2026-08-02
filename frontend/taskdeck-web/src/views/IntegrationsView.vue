@@ -178,12 +178,12 @@ onMounted(() => {
           Connector registry entries manage metadata and lifecycle only; they do not ingest content.
         </p>
       </div>
-      <a
+      <router-link
         class="td-int__btn td-int__btn--primary td-int__capture-link"
-        href="/workspace/settings/export-import"
+        :to="{ name: 'workspace-settings-export-import' }"
       >
         Open Markdown import and web clip capture
-      </a>
+      </router-link>
     </section>
 
     <!-- Add connector form -->
@@ -467,6 +467,19 @@ onMounted(() => {
 .td-int__capture-link {
   flex-shrink: 0;
   text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .td-int__capture-callout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .td-int__capture-link {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+  }
 }
 
 /* Form */
