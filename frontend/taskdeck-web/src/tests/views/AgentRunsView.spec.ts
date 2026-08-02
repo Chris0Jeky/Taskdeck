@@ -121,6 +121,23 @@ describe('AgentRunsView', () => {
     expect(wrapper.text()).toContain('Proposal linked')
   })
 
+  it('explains that queued API-created runs have not started', async () => {
+    mockAgentStore.runs = [{
+      ...MOCK_RUN,
+      status: 'Queued',
+      stepsExecuted: 0,
+      summary: null,
+      proposalId: null,
+      completedAt: null,
+    }]
+    const wrapper = mount(AgentRunsView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
+    expect(wrapper.text()).toContain('Requested:')
+    expect(wrapper.text()).not.toContain('Started:')
+  })
+
   it('shows failure reason for failed runs', async () => {
     mockAgentStore.runs = [{
       ...MOCK_RUN,

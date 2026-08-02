@@ -244,6 +244,23 @@ describe('AgentRunDetailView', () => {
     expect(indicator.text()).toContain('Run is in progress')
   })
 
+  it('does not present a queued API-created run as in progress', async () => {
+    mockAgentStore.runDetail = {
+      ...MOCK_RUN_DETAIL,
+      status: 'Queued',
+      events: [],
+      summary: null,
+      proposalId: null,
+      completedAt: null,
+    }
+    const wrapper = mount(AgentRunDetailView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
+    expect(wrapper.text()).toContain('Requested:')
+    expect(wrapper.find('.td-run-detail__live-indicator').exists()).toBe(false)
+  })
+
   it('navigates back to runs list when back button is clicked', async () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
