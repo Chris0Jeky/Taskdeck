@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
@@ -65,7 +66,8 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         transcriptMax.GetDouble().Should().BeGreaterThan(queueMax);
         var expectedTranscriptMax = HealthController.CalculateTranscriptWorkerMaxStaleness(
             _factory.Services.GetRequiredService<WorkerSettings>(),
-            _factory.Services.GetRequiredService<LlmProviderSettings>());
+            _factory.Services.GetRequiredService<LlmProviderSettings>(),
+            _factory.Services.GetRequiredService<IWebHostEnvironment>().EnvironmentName);
         transcriptMax.GetDouble().Should().Be(expectedTranscriptMax.TotalSeconds);
     }
 
@@ -79,24 +81,33 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         };
         var providerSettings = new LlmProviderSettings
         {
+            EnableLiveProviders = true,
             Provider = "OpenAi",
-            OpenAi = new OpenAiProviderSettings { TimeoutSeconds = 30 },
-            Gemini = new GeminiProviderSettings { TimeoutSeconds = 300 },
+            OpenAi = new OpenAiProviderSettings { ApiKey = "test-key", TimeoutSeconds = 30 },
+            Gemini = new GeminiProviderSettings { ApiKey = "test-key", TimeoutSeconds = 300 },
             Ollama = new OllamaProviderSettings { TimeoutSeconds = 600 }
         };
 
-        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Production")
             .TotalSeconds.Should().Be(60);
 
         providerSettings.Provider = "ollama";
+        providerSettings.AllowLiveProvidersInDevelopment = true;
+        providerSettings.Ollama.AllowLocalhostEndpoints = true;
         providerSettings.Ollama.TimeoutSeconds = 120;
-        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Development")
             .TotalSeconds.Should().Be(150);
 
         providerSettings.Provider = "Gemini";
         providerSettings.Gemini.TimeoutSeconds = 77;
-        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Production")
             .TotalSeconds.Should().Be(107);
+
+        providerSettings.Provider = "Ollama";
+        providerSettings.EnableLiveProviders = false;
+        providerSettings.Ollama.TimeoutSeconds = 600;
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Production")
+            .TotalSeconds.Should().Be(60);
     }
 
     [Fact]

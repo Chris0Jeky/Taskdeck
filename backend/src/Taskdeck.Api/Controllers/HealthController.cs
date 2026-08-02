@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
@@ -18,6 +19,7 @@ public class HealthController : ControllerBase
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerSettings _workerSettings;
     private readonly LlmProviderSettings _llmProviderSettings;
+    private readonly IWebHostEnvironment _environment;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
     private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
@@ -27,6 +29,7 @@ public class HealthController : ControllerBase
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
         LlmProviderSettings llmProviderSettings,
+        IWebHostEnvironment environment,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         RedisBackplaneHealthCheck redisHealthCheck,
         CircuitBreakerStateTracker circuitBreakerTracker,
@@ -35,6 +38,7 @@ public class HealthController : ControllerBase
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
         _llmProviderSettings = llmProviderSettings;
+        _environment = environment;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
         _circuitBreakerTracker = circuitBreakerTracker;
@@ -181,7 +185,8 @@ public class HealthController : ControllerBase
             var transcriptWorkerLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(TranscriptTriageWorker));
             var maxTranscriptWorkerStaleness = CalculateTranscriptWorkerMaxStaleness(
                 _workerSettings,
-                _llmProviderSettings);
+                _llmProviderSettings,
+                _environment.EnvironmentName);
             var transcriptWorkerNow = DateTimeOffset.UtcNow;
             var transcriptWorkerStaleness = transcriptWorkerLastHeartbeat.HasValue
                 ? transcriptWorkerNow - transcriptWorkerLastHeartbeat.Value
@@ -303,13 +308,15 @@ public class HealthController : ControllerBase
 
     internal static TimeSpan CalculateTranscriptWorkerMaxStaleness(
         WorkerSettings workerSettings,
-        LlmProviderSettings llmProviderSettings)
+        LlmProviderSettings llmProviderSettings,
+        string? environmentName)
     {
         ArgumentNullException.ThrowIfNull(workerSettings);
         ArgumentNullException.ThrowIfNull(llmProviderSettings);
 
         var pollAllowanceSeconds = Math.Max((long)workerSettings.QueuePollIntervalSeconds * 3, 30L);
-        return TimeSpan.FromSeconds(pollAllowanceSeconds + GetSelectedProviderTimeoutSeconds(llmProviderSettings));
+        return TimeSpan.FromSeconds(
+            pollAllowanceSeconds + GetSelectedProviderTimeoutSeconds(llmProviderSettings, environmentName));
     }
 
     internal static bool IsWorkerHeartbeatHealthy(
@@ -323,14 +330,18 @@ public class HealthController : ControllerBase
                || (!lastHeartbeat.HasValue && withinStartupGrace);
     }
 
-    private static int GetSelectedProviderTimeoutSeconds(LlmProviderSettings settings)
+    private static int GetSelectedProviderTimeoutSeconds(
+        LlmProviderSettings settings,
+        string? environmentName)
     {
-        return settings.Provider?.Trim().ToUpperInvariant() switch
+        // Readiness must reflect the provider selected at runtime, not merely the requested name:
+        // disabled live providers, development policy, or invalid settings all resolve to Mock.
+        return LlmProviderSelectionPolicy.Evaluate(settings, environmentName).ProviderKind switch
         {
-            "OPENAI" => settings.OpenAi?.TimeoutSeconds is > 0 ? settings.OpenAi.TimeoutSeconds : 30,
-            "GEMINI" => settings.Gemini?.TimeoutSeconds is > 0 ? settings.Gemini.TimeoutSeconds : 30,
-            "OLLAMA" => settings.Ollama?.TimeoutSeconds is > 0 ? settings.Ollama.TimeoutSeconds : 120,
-            _ => 30 // Mock and disabled-provider modes perform no live completion.
+            LlmProviderKind.OpenAi => settings.OpenAi?.TimeoutSeconds is > 0 ? settings.OpenAi.TimeoutSeconds : 30,
+            LlmProviderKind.Gemini => settings.Gemini?.TimeoutSeconds is > 0 ? settings.Gemini.TimeoutSeconds : 30,
+            LlmProviderKind.Ollama => settings.Ollama?.TimeoutSeconds is > 0 ? settings.Ollama.TimeoutSeconds : 120,
+            _ => 30 // Mock and policy-disabled modes perform no live completion.
         };
     }
 }
