@@ -2,18 +2,23 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
     public HealthApiTests(TestWebApplicationFactory factory)
     {
+        _factory = factory;
         _client = factory.CreateClient();
     }
 
@@ -58,6 +63,57 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         transcriptWorker.TryGetProperty("maxStalenessSeconds", out var transcriptMax).Should().BeTrue();
         var queueMax = queueWorker.GetProperty("maxStalenessSeconds").GetDouble();
         transcriptMax.GetDouble().Should().BeGreaterThan(queueMax);
+        var expectedTranscriptMax = HealthController.CalculateTranscriptWorkerMaxStaleness(
+            _factory.Services.GetRequiredService<WorkerSettings>(),
+            _factory.Services.GetRequiredService<LlmProviderSettings>());
+        transcriptMax.GetDouble().Should().Be(expectedTranscriptMax.TotalSeconds);
+    }
+
+    [Fact]
+    public void CalculateTranscriptWorkerMaxStaleness_ShouldUseOnlyTheSelectedProviderTimeout()
+    {
+        var workerSettings = new WorkerSettings
+        {
+            QueuePollIntervalSeconds = 5,
+            MaxBatchSize = 100
+        };
+        var providerSettings = new LlmProviderSettings
+        {
+            Provider = "OpenAi",
+            OpenAi = new OpenAiProviderSettings { TimeoutSeconds = 30 },
+            Gemini = new GeminiProviderSettings { TimeoutSeconds = 300 },
+            Ollama = new OllamaProviderSettings { TimeoutSeconds = 600 }
+        };
+
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+            .TotalSeconds.Should().Be(60);
+
+        providerSettings.Provider = "ollama";
+        providerSettings.Ollama.TimeoutSeconds = 120;
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+            .TotalSeconds.Should().Be(150);
+
+        providerSettings.Provider = "Gemini";
+        providerSettings.Gemini.TimeoutSeconds = 77;
+        HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings)
+            .TotalSeconds.Should().Be(107);
+    }
+
+    [Fact]
+    public void IsWorkerHeartbeatHealthy_ShouldHonorTheExactTranscriptBudgetBoundary()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var maxStaleness = TimeSpan.FromSeconds(150);
+        var startupTime = now - TimeSpan.FromMinutes(1);
+
+        HealthController.IsWorkerHeartbeatHealthy(now - maxStaleness, startupTime, maxStaleness, now)
+            .Should().BeTrue();
+        HealthController.IsWorkerHeartbeatHealthy(
+                now - maxStaleness - TimeSpan.FromTicks(1),
+                startupTime,
+                maxStaleness,
+                now)
+            .Should().BeFalse();
     }
 
     [Fact]

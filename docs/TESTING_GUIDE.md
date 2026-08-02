@@ -33,11 +33,11 @@ Verification note:
 
 Long-transcript triage needs both the chunk-planning contract and the existing proposal-first golden
 path. Run the focused checks below when changing transcript map-reduce, quota reservation estimates,
-or the transcript input cap:
+the transcript input cap, or its readiness-progress boundary:
 
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageChunkingTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~LlmQuotaServiceTests"
-dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~LlmQuotaReservationConcurrencyTests|FullyQualifiedName~PdfPigArtefactExtractionTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~LlmQuotaReservationConcurrencyTests|FullyQualifiedName~PdfPigArtefactExtractionTests|FullyQualifiedName~HealthApiTests"
 ```
 
 ```powershell

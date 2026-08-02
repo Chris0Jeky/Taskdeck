@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.Services;
@@ -19,19 +20,22 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
     private readonly ILlmKillSwitchService? _killSwitchService;
     private readonly ILlmQuotaService? _quotaService;
     private readonly ILogger<LlmCaptureTriageExtractor>? _logger;
+    private readonly ILlmCaptureTriageProgressReporter? _progressReporter;
 
     public LlmCaptureTriageExtractor(
         ILlmProvider llmProvider,
         LlmCaptureTriageSettings settings,
         ILlmKillSwitchService? killSwitchService = null,
         ILlmQuotaService? quotaService = null,
-        ILogger<LlmCaptureTriageExtractor>? logger = null)
+        ILogger<LlmCaptureTriageExtractor>? logger = null,
+        ILlmCaptureTriageProgressReporter? progressReporter = null)
     {
         _llmProvider = llmProvider;
         _settings = settings;
         _killSwitchService = killSwitchService;
         _quotaService = quotaService;
         _logger = logger;
+        _progressReporter = progressReporter;
     }
 
     public async Task<LlmCaptureTriageExtraction> ExtractAsync(
@@ -210,6 +214,10 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         var quotaSettled = quotaReservationId is null;
         try
         {
+            // A map-reduce run can span many legal provider calls. Pulse at each call boundary so
+            // the worker-health budget covers one configured provider timeout, rather than the
+            // whole bounded run. This is best-effort telemetry; it must never affect triage.
+            ReportProviderProgress();
             result = await _llmProvider.CompleteAsync(request, cancellationToken);
             completed = result;
 
@@ -243,6 +251,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
         finally
         {
+            // Covers success, provider failure, and cancellation after the provider boundary.
+            ReportProviderProgress();
+
             // Mirrors ChatService (#1427 review): SETTLE an unfinalized reservation. If the provider
             // completed with billed tokens (the in-try commit itself failed on a DB fault), COMMIT them —
             // releasing would erase real usage; a provider throw or zero-token result releases so the
@@ -340,6 +351,18 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             validation.Value,
             result.Provider,
             result.Model);
+    }
+
+    private void ReportProviderProgress()
+    {
+        try
+        {
+            _progressReporter?.ReportProgress();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Transcript triage progress reporting failed; continuing extraction");
+        }
     }
 
     private static bool TrySetProviderIdentity(

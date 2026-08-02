@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Enums;
 using Xunit;
@@ -41,8 +42,13 @@ public class LlmCaptureTriageExtractorTests
             .ReturnsAsync(new QuotaReservationDto(true, null, _reservationId, 100_000, 60));
     }
 
-    private LlmCaptureTriageExtractor BuildExtractor()
-        => new(_providerMock.Object, _settings, _killSwitchMock.Object, _quotaMock.Object);
+    private LlmCaptureTriageExtractor BuildExtractor(ILlmCaptureTriageProgressReporter? progressReporter = null)
+        => new(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            progressReporter: progressReporter);
 
     private static CapturePayloadV1 TranscriptPayload(string text = "Alice: I'll send the report by Friday.")
         => new(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.TranscriptPaste, text);
@@ -155,6 +161,45 @@ public class LlmCaptureTriageExtractorTests
         _providerMock.Verify(
             provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(expectedChunkCount));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReportProgressBeforeAndAfterEachMapCompletion()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 8;
+        SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
+        var transcript = string.Join("\n\n", Enumerable.Repeat(
+            "Alice: I will send the launch notes after this meeting.",
+            8));
+        var expectedChunkCount = TranscriptTriageChunker.Chunk(
+            transcript,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens).Count;
+        var progressReporter = new Mock<ILlmCaptureTriageProgressReporter>();
+        var extractor = BuildExtractor(progressReporter.Object);
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        progressReporter.Verify(
+            reporter => reporter.ReportProgress(),
+            Times.Exactly(expectedChunkCount * 2));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldReportProgressAfterProviderFailure()
+    {
+        _providerMock
+            .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("provider failed"));
+        var progressReporter = new Mock<ILlmCaptureTriageProgressReporter>();
+        var extractor = BuildExtractor(progressReporter.Object);
+
+        var act = () => extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        progressReporter.Verify(reporter => reporter.ReportProgress(), Times.Exactly(2));
     }
 
     [Fact]
