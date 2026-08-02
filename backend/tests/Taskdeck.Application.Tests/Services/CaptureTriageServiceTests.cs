@@ -41,6 +41,11 @@ public class CaptureTriageServiceTests
             .ReturnsAsync((AutomationProposal?)null);
         _policyEngineMock.Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
             .Returns(RiskLevel.Low);
+        _policyEngineMock.Setup(p => p.ValidateBoardAccessAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
         _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
@@ -725,6 +730,84 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRejectRevokedBoardAccessBeforeLlmExtraction()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        _policyEngineMock.Setup(p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "User does not have access to board"));
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _policyEngineMock.Verify(
+            p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        extractorMock.Verify(
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _boardsMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _columnsMock.Verify(r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _policyEngineMock.Verify(
+            p => p.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldKeepFinalPermissionGateAfterLlmExtraction()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+        _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "Board access was revoked during extraction"));
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SuccessfulExtraction(("Send the report", "Alice: send the report.")));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _policyEngineMock.Verify(
+            p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _policyEngineMock.Verify(
+            p => p.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        extractorMock.Verify(
+            e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldUseLlmOutputAndRecordRealProviderProvenance_WhenExtractionSucceeds()
     {
         var userId = Guid.NewGuid();
@@ -909,6 +992,18 @@ public class CaptureTriageServiceTests
         extractorMock.Verify(
             e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        _policyEngineMock.Verify(
+            p => p.ValidateBoardAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _policyEngineMock.Verify(
+            p => p.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _boardsMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _columnsMock.Verify(r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
