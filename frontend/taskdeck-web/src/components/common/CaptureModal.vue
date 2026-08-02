@@ -4,7 +4,9 @@ import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { usePerformanceMark } from '../../composables/usePerformanceMark'
 
-const MAX_TRANSCRIPT_LENGTH = 51_200
+// Mirrors CaptureRequestContract.MaxTranscriptTextLength. Keep this client-side guard source-specific:
+// quick captures retain the backend's smaller general-text limit.
+const MAX_TRANSCRIPT_LENGTH = 200_000
 
 const props = defineProps<{
   boardId?: string | null
@@ -78,7 +80,7 @@ function handleFileUpload(event: Event) {
   }
 
   if (file.size > MAX_TRANSCRIPT_LENGTH) {
-    inlineError.value = `File is too large. Maximum size is ${Math.floor(MAX_TRANSCRIPT_LENGTH / 1024)}KB.`
+    inlineError.value = `File is too large. Maximum size is ${MAX_TRANSCRIPT_LENGTH.toLocaleString()} bytes.`
     target.value = ''
     return
   }

@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-08-02, REVIVAL-08 M2 long-transcript map-reduce)
+
+- **REVIVAL-08 M2 (`#1304`):** transcript captures now accept up to 200,000 characters and are map-reduced within a conservative per-call token budget. Forced splits prefer speaker/blank-line boundaries with bounded overlap; an input that already fits remains one provider call, avoiding duplicate quota reservation and cost. Every map call uses the existing guarded LLM extraction path, and any failed map leg discards partial output for the honest deterministic fallback. Progress heartbeats at each provider-call boundary keep readiness sized to the selected provider timeout, so valid long work does not look wedged while a genuinely stalled call still does. The proposal-first review boundary is unchanged. This advances the epic through M2 only: M3 schema-v2 item semantics and the REVIVAL-09 transcript/evidence linkage remain separate work.
+
 ## Delivery update (2026-08-01, transcript foundation, MCP contract, and container evidence)
 
 - **REVIVAL-09 persistence foundation (`#1305`, PR `#1556`):** durable user-scoped `Transcript` records now own normalized transcript text and optional line-indexed speaker/timestamp segments, with optional board/capture/`SourceArtefact` identities. The repository is user-scoped and deterministic; buffered and streaming exports plus account deletion include transcripts; the EF migration is reversible and bootstrap-tested. PR head `bfd4e95a` merged as `3182c3ac`. This advances rather than closes `#1305`: triage-to-transcript linkage, evidence spans, additive provenance API reads, and Paper source deep links remain the next bounded slices.

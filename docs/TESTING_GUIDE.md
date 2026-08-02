@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-02
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -28,6 +28,27 @@ Verification note:
 - bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
+
+## 2026-08-02 REVIVAL-08 M2 Checkpoint (`#1304`)
+
+Long-transcript triage needs both the chunk-planning contract and the existing proposal-first golden
+path. Run the focused checks below when changing transcript map-reduce, quota reservation estimates,
+the transcript input cap, or its readiness-progress boundary:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageChunkingTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~LlmQuotaServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~LlmQuotaReservationConcurrencyTests|FullyQualifiedName~PdfPigArtefactExtractionTests|FullyQualifiedName~HealthApiTests"
+```
+
+```powershell
+Set-Location frontend/taskdeck-web
+npm test -- src/tests/components/CaptureModal.spec.ts
+npm run typecheck
+```
+
+The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
+capture, never persists a partial automatic board write. `#1304` M3 schema-v2 and `#1305` evidence
+linkage are not covered by this checkpoint.
 
 ## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
 

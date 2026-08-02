@@ -206,7 +206,7 @@ describe('CaptureModal', () => {
 
       expect(wrapper.find('.td-capture-modal__char-count').exists()).toBe(true)
       expect(wrapper.find('.td-capture-modal__char-count').text()).toContain('20')
-      expect(wrapper.find('.td-capture-modal__char-count').text()).toContain('51,200')
+      expect(wrapper.find('.td-capture-modal__char-count').text()).toContain('200,000')
     })
 
     it('does not show character count in typed mode', () => {
@@ -326,8 +326,8 @@ describe('CaptureModal', () => {
       await transcriptTab.trigger('click')
       await waitForUi()
 
-      // Create a file larger than MAX_TRANSCRIPT_LENGTH (51200 bytes)
-      const bigContent = 'x'.repeat(52_000)
+      // Create a file larger than MAX_TRANSCRIPT_LENGTH (200,000 bytes)
+      const bigContent = 'x'.repeat(200_001)
       const bigFile = new File([bigContent], 'big.txt', { type: 'text/plain' })
       const fileInput = wrapper.find('input[type="file"]')
       Object.defineProperty(fileInput.element, 'files', {
@@ -337,7 +337,7 @@ describe('CaptureModal', () => {
       await fileInput.trigger('change')
       await waitForUi()
 
-      expect(wrapper.text()).toContain('File is too large. Maximum size is 50KB.')
+      expect(wrapper.text()).toContain('File is too large. Maximum size is 200,000 bytes.')
       expect(wrapper.find('.td-capture-modal__file-name').exists()).toBe(false)
     })
 
@@ -467,6 +467,26 @@ describe('CaptureModal', () => {
       }
     })
 
+    it('submits a transcript at the 200,000-character M2 limit', async () => {
+      const wrapper = mount(CaptureModal)
+
+      const transcriptTab = wrapper.findAll('[role="tab"]')[1]
+      await transcriptTab.trigger('click')
+      await waitForUi()
+
+      const acceptedText = 'a'.repeat(200_000)
+      const textarea = wrapper.get('.td-capture-modal__input--transcript')
+      await textarea.setValue(acceptedText)
+      await wrapper.get('button.td-btn--primary').trigger('click')
+      await waitForUi()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+        boardId: null,
+        text: acceptedText,
+        source: 'TranscriptPaste',
+      })
+    })
+
     it('shows error when transcript text is too long on submit', async () => {
       const wrapper = mount(CaptureModal)
 
@@ -474,8 +494,8 @@ describe('CaptureModal', () => {
       await transcriptTab.trigger('click')
       await waitForUi()
 
-      // Set text that is exactly over the 51200 character limit
-      const longText = 'a'.repeat(51_201)
+      // Set text that is exactly over the 200,000 character limit
+      const longText = 'a'.repeat(200_001)
       const textarea = wrapper.get('.td-capture-modal__input--transcript')
       await textarea.setValue(longText)
 

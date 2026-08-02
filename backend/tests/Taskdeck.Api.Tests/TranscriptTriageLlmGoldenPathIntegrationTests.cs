@@ -287,13 +287,81 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         persistedTyped.RequestType.Should().Be(CaptureRequestContract.RequestTypeV1);
     }
 
+    [Fact]
+    public async Task LongTranscript_ShouldMapReduceIntoOnePendingProposalWithoutDirectBoardMutation()
+    {
+        const string mapTaskTitle = "Publish the consolidated meeting notes";
+        const string mapTaskEvidence = "Alice: I will publish the consolidated meeting notes.";
+        var providerStub = new TriageJsonProviderStub(JsonSerializer.Serialize(new
+        {
+            tasks = new[] { new { title = mapTaskTitle, evidence = mapTaskEvidence } }
+        }));
+        var settings = new LlmCaptureTriageSettings
+        {
+            MaxInputTokensPerChunk = 10_000,
+            ChunkOverlapTokens = 256
+        };
+        using var factory = CreateFactoryWithProviderStub(providerStub, settings);
+        using var client = factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(client, "transcript-llm-long-map-reduce");
+        var (board, _) = await CreateBoardWithBacklogColumnAsync(client, "transcript-llm-long-map-reduce-board");
+        var segment = mapTaskEvidence + " We also reviewed the release timeline and risks.\n\n";
+        var repeatedSegments = string.Concat(Enumerable.Repeat(
+            segment,
+            (CaptureRequestContract.MaxTranscriptTextLength / segment.Length) - 1));
+        var longTranscript = repeatedSegments.PadRight(CaptureRequestContract.MaxTranscriptTextLength, 'x');
+        var expectedChunkCount = TranscriptTriageChunker.Chunk(
+            longTranscript,
+            settings.MaxInputTokensPerChunk,
+            settings.ChunkOverlapTokens).Count;
+
+        longTranscript.Length.Should().Be(CaptureRequestContract.MaxTranscriptTextLength);
+        expectedChunkCount.Should().BeGreaterThan(1);
+
+        var captureResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, longTranscript, "TranscriptPaste"));
+        captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var capture = await captureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        capture.Should().NotBeNull();
+
+        var triageResponse = await client.PostAsync($"/api/capture/items/{capture!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var triaged = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.ProposalCreated);
+
+        triaged.Provenance!.ProposalId.Should().NotBeNull();
+        providerStub.CompletionCallCount.Should().Be(expectedChunkCount);
+
+        var proposalResponse = await client.GetAsync($"/api/automation/proposals/{triaged.Provenance.ProposalId}");
+        proposalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposal = await proposalResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal.Should().NotBeNull();
+        proposal!.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.SourceReferenceId.Should().Be(capture.Id.ToString());
+        proposal.Operations.Should().ContainSingle();
+        proposal.Operations[0].Parameters.Should().Contain(mapTaskTitle);
+
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>()).Should().BeEmpty(
+            "map-reduce triage must remain proposal-first until the user explicitly approves and executes");
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.AutomationProposals.CountAsync(proposal => proposal.SourceReferenceId == capture.Id.ToString()))
+            .Should().Be(1, "all mapped chunks reduce into the capture's single idempotent proposal");
+    }
+
     /// <summary>
     /// Derives a factory whose scoped <see cref="ILlmProvider"/> is the given non-mock stub,
     /// mirroring <see cref="ChatApiLiveProviderStubTests"/>. The LLM triage extractor gates on
     /// GetHealthAsync (IsMock/IsAvailable), so the stub reporting IsMock:false is what routes
     /// transcript captures onto the live LLM leg.
     /// </summary>
-    private WebApplicationFactory<Program> CreateFactoryWithProviderStub(ILlmProvider providerStub)
+    private WebApplicationFactory<Program> CreateFactoryWithProviderStub(
+        ILlmProvider providerStub,
+        LlmCaptureTriageSettings? triageSettings = null)
     {
         return _baseFactory.WithWebHostBuilder(builder =>
         {
@@ -302,6 +370,11 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
             {
                 services.RemoveAll<ILlmProvider>();
                 services.AddScoped<ILlmProvider>(_ => providerStub);
+                if (triageSettings is not null)
+                {
+                    services.RemoveAll<LlmCaptureTriageSettings>();
+                    services.AddSingleton(triageSettings);
+                }
             });
         });
     }
