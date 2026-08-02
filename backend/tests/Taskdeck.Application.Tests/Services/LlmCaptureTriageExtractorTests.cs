@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -140,8 +141,8 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldMapReduceLongTranscriptAndDedupeAcrossChunks()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
@@ -166,8 +167,8 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldReportProgressBeforeAndAfterEachMapCompletion()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
@@ -203,15 +204,13 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldReserveEachMapChunkWithItsConservativeRequestEstimate()
+    public async Task ExtractAsync_ShouldReserveEachMapChunkWithItsUtf8ByteRequestBound()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         _settings.MaxOutputTokens = 512;
         SetupCompletion("""{"tasks":[{"title":"Send the launch notes","evidence":"Alice: I will send the launch notes."}]}""");
-        var transcript = string.Join("\n\n", Enumerable.Repeat(
-            "Alice: I will send the launch notes after this meeting.",
-            8));
+        var transcript = string.Join(' ', Enumerable.Repeat("a", 256));
         var chunks = TranscriptTriageChunker.Chunk(
             transcript,
             _settings.MaxInputTokensPerChunk,
@@ -231,16 +230,16 @@ public class LlmCaptureTriageExtractorTests
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
         reservationEstimates.Should().Equal(chunks.Select(chunk =>
-            TranscriptTokenEstimator.EstimateTokens(LlmCaptureTriagePrompt.SystemPrompt) +
-            chunk.EstimatedTokens +
+            Encoding.UTF8.GetByteCount(LlmCaptureTriagePrompt.SystemPrompt) +
+            Encoding.UTF8.GetByteCount(chunk.Text) +
             _settings.MaxOutputTokens));
     }
 
     [Fact]
     public async Task ExtractAsync_ShouldDiscardMappedOutput_WhenALaterChunkCannotReserveQuota()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         SetupCompletion("""{"tasks":[{"title":"Discard me","evidence":"Alice: discard me."}]}""");
         _quotaMock
             .SetupSequence(quota => quota.ReserveAsync(
@@ -267,8 +266,8 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldIncludeLaterChunkTask_WhenEarlyChunkAlreadyUsesTheV1TaskCap()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         var earlyTasks = string.Join(",", Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks).Select(index =>
             $$"""{"title":"Early task {{index}}","evidence":"Alice: early evidence {{index}}."}"""));
         var call = 0;
@@ -298,8 +297,8 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldPreserveNoActionVerdict_WhenEveryChunkIsEmpty()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         SetupCompletion("""{"tasks":[]}""");
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: We discussed the weather and exchanged greetings.",
@@ -325,8 +324,8 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldDiscardMappedTasks_WhenALaterChunkDegrades()
     {
-        _settings.MaxInputTokensPerChunk = 24;
-        _settings.ChunkOverlapTokens = 8;
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 16;
         _providerMock
             .SetupSequence(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCompletionResult(
@@ -361,7 +360,7 @@ public class LlmCaptureTriageExtractorTests
     [Fact]
     public async Task ExtractAsync_ShouldDeclineBeforeQuotaReservation_WhenMapChunkCallBudgetWouldBeExceeded()
     {
-        _settings.MaxInputTokensPerChunk = 24;
+        _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 0;
         _settings.MaxChunkCount = 1;
         var transcript = string.Join("\n\n", Enumerable.Repeat(

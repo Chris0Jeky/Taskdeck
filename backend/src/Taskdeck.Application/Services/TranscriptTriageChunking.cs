@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Taskdeck.Application.Services;
@@ -213,9 +214,11 @@ public static class TranscriptTriageChunker
 }
 
 /// <summary>
-/// Cheap, intentionally conservative transcript token estimate. It distinguishes word runs,
-/// whitespace, punctuation, and non-ASCII characters instead of assuming every four characters is
-/// one token; punctuation-heavy transcripts and non-Latin text therefore do not under-budget calls.
+/// Cheap, deliberately conservative input-token bound for transcript triage. It counts each UTF-8
+/// byte as a token rather than inferring tokens from word runs: one-character words, identifiers,
+/// and encoded data can tokenize much more densely than ordinary prose. The bound intentionally
+/// over-reserves and may select more map chunks, preserving the no-tokenizer-dependency design
+/// without reopening quota admission for those inputs.
 /// </summary>
 public static class TranscriptTokenEstimator
 {
@@ -226,35 +229,7 @@ public static class TranscriptTokenEstimator
             return 0;
         }
 
-        var asciiWordCharacters = 0;
-        var whitespaceCharacters = 0;
-        var punctuationOrSymbolCharacters = 0;
-        var nonAsciiCharacters = 0;
-
-        foreach (var character in text)
-        {
-            if (char.IsWhiteSpace(character))
-            {
-                whitespaceCharacters++;
-            }
-            else if (character <= 0x7f && char.IsLetterOrDigit(character))
-            {
-                asciiWordCharacters++;
-            }
-            else if (character <= 0x7f)
-            {
-                punctuationOrSymbolCharacters++;
-            }
-            else
-            {
-                nonAsciiCharacters++;
-            }
-        }
-
-        return ((asciiWordCharacters + 2) / 3) +
-               ((whitespaceCharacters + 7) / 8) +
-               punctuationOrSymbolCharacters +
-               nonAsciiCharacters;
+        return Encoding.UTF8.GetByteCount(text);
     }
 }
 

@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
@@ -17,13 +18,17 @@ public class TranscriptTriageChunkingTests
             Cara: I will share the decision log.
             """;
 
-        var chunks = TranscriptTriageChunker.Chunk(transcript, maxInputTokens: 100, overlapTokens: 20);
+        var maxInputTokens = Encoding.UTF8.GetByteCount(transcript);
+        var chunks = TranscriptTriageChunker.Chunk(
+            transcript,
+            maxInputTokens,
+            overlapTokens: 20);
 
         chunks.Should().ContainSingle();
         chunks[0].Offset.Should().Be(0);
         chunks[0].Text.Should().Be(transcript);
         chunks[0].EndOffset.Should().Be(transcript.Length);
-        chunks[0].EstimatedTokens.Should().BeLessThanOrEqualTo(100);
+        chunks[0].EstimatedTokens.Should().BeLessThanOrEqualTo(maxInputTokens);
     }
 
     [Fact]
@@ -39,11 +44,15 @@ public class TranscriptTriageChunkingTests
             Cara: We should publish the notes after the meeting.
             """;
 
-        var chunks = TranscriptTriageChunker.Chunk(transcript, maxInputTokens: 40, overlapTokens: 12);
+        var firstSpeakerBoundary = transcript.IndexOf("Bob:", StringComparison.Ordinal);
+        var chunks = TranscriptTriageChunker.Chunk(
+            transcript,
+            maxInputTokens: firstSpeakerBoundary,
+            overlapTokens: 12);
 
         chunks.Should().HaveCountGreaterThan(1);
         chunks[0].EndOffset.Should().Be(transcript.IndexOf("Bob:", StringComparison.Ordinal));
-        chunks.Should().OnlyContain(chunk => chunk.EstimatedTokens <= 40);
+        chunks.Should().OnlyContain(chunk => chunk.EstimatedTokens <= firstSpeakerBoundary);
 
         for (var offset = 0; offset < transcript.Length; offset++)
         {
@@ -67,26 +76,47 @@ public class TranscriptTriageChunkingTests
         var chunks = TranscriptTriageChunker.Chunk(transcript, maxInputTokens: 16, overlapTokens: 4);
 
         chunks.Should().HaveCountGreaterThan(1);
-        chunks[0].EndOffset.Should().Be(48, "three ASCII word characters are conservatively budgeted as one token");
+        chunks[0].EndOffset.Should().Be(16, "each ASCII byte is conservatively budgeted as one token");
         chunks.Should().OnlyContain(chunk => chunk.EstimatedTokens <= 16);
         chunks.Select(chunk => chunk.Text).Should().OnlyContain(text => text.All(character => character == 'a'));
     }
 
     [Fact]
-    public void EstimateTokens_ShouldBeMonotonicAndConservativeForPunctuationAndNonAsciiText()
+    public void EstimateTokens_ShouldUseUtf8ByteBoundForAsciiAndNonAsciiText()
     {
         var plain = "review the launch plan";
         var longer = plain + "! Please confirm by Friday.";
         var ascii = new string('a', 60);
         var nonAscii = new string('\u4e2d', 60);
 
-        TranscriptTokenEstimator.EstimateTokens(longer).Should().BeGreaterThanOrEqualTo(
-            TranscriptTokenEstimator.EstimateTokens(plain));
-        TranscriptTokenEstimator.EstimateTokens(ascii).Should().BeGreaterThan(ascii.Length / 4,
-            "the estimate must not use the under-budgeting text.Length / 4 shortcut");
+        TranscriptTokenEstimator.EstimateTokens(plain).Should().Be(Encoding.UTF8.GetByteCount(plain));
+        TranscriptTokenEstimator.EstimateTokens(longer).Should().Be(Encoding.UTF8.GetByteCount(longer));
+        TranscriptTokenEstimator.EstimateTokens(ascii).Should().Be(Encoding.UTF8.GetByteCount(ascii));
+        TranscriptTokenEstimator.EstimateTokens(nonAscii).Should().Be(Encoding.UTF8.GetByteCount(nonAscii));
         TranscriptTokenEstimator.EstimateTokens(nonAscii).Should().BeGreaterThan(
             TranscriptTokenEstimator.EstimateTokens(ascii),
-            "non-ASCII transcript text needs a safer estimate than ASCII prose");
+            "UTF-8 expansion keeps non-ASCII transcript text within the same conservative bound");
+    }
+
+    [Fact]
+    public void Chunk_ShouldKeepTokenDenseAsciiWithinTheByteBudget()
+    {
+        var inputs = new[]
+        {
+            string.Join(' ', Enumerable.Repeat("a", 96)),
+            Convert.ToBase64String(Enumerable.Range(0, 96).Select(index => (byte)index).ToArray()),
+            Convert.ToHexString(Enumerable.Range(0, 96).Select(index => (byte)index).ToArray()).ToLowerInvariant()
+        };
+
+        foreach (var input in inputs)
+        {
+            TranscriptTokenEstimator.EstimateTokens(input).Should().Be(Encoding.UTF8.GetByteCount(input));
+
+            var chunks = TranscriptTriageChunker.Chunk(input, maxInputTokens: 16, overlapTokens: 0);
+
+            chunks.Should().OnlyContain(chunk => chunk.EstimatedTokens <= 16);
+            string.Concat(chunks.Select(chunk => chunk.Text)).Should().Be(input);
+        }
     }
 
     [Fact]
