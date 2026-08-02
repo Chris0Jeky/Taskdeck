@@ -83,12 +83,14 @@ function goBack() {
 }
 
 function goToProposal() {
-  if (run.value?.proposalId) {
-    void router.push({
-      path: '/workspace/review',
-      query: { proposalId: run.value.proposalId },
-    })
-  }
+  const proposalId = run.value?.proposalId
+  if (!proposalId) return
+
+  void router.push({
+    name: 'workspace-review',
+    query: run.value.boardId ? { boardId: run.value.boardId } : undefined,
+    hash: `#proposal-${encodeURIComponent(proposalId)}`,
+  })
 }
 
 function formatDate(isoDate: string): string {
