@@ -1,5 +1,5 @@
 param(
-    [string]$DefaultServers = 'docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform',
+    [string]$DefaultServers = 'docker,docker-docs,time,jetbrains,filesystem,SQLite',
     [string]$OptionalServers = 'postman,dockerhub',
     [switch]$IncludeOptional,
     [switch]$FailOnOptionalErrors,
@@ -163,7 +163,7 @@ $hadWarnings = $false
 
 try {
     Write-Host '=== Docker MCP Enabled Servers ==='
-    docker mcp server ls
+    docker mcp profile server ls
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to list Docker MCP servers.'
     }
