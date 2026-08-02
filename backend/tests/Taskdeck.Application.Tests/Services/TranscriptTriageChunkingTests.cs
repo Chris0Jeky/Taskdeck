@@ -82,6 +82,43 @@ public class TranscriptTriageChunkingTests
     }
 
     [Fact]
+    public void Chunk_ShouldMakeProgressBeyondCarriedOverlap_WhenPreferredBoundariesAreNearlyAdjacent()
+    {
+        const int targetLength = 200_000;
+        const int lineLength = 11_746;
+        const string speakerPrefix = "Speaker 1:";
+        var fullLine = speakerPrefix + new string('a', lineLength - speakerPrefix.Length - 1) + "\n";
+        var transcript = string.Concat(Enumerable.Repeat(fullLine, 17)) +
+            speakerPrefix + new string('a', targetLength - (fullLine.Length * 17) - speakerPrefix.Length);
+
+        transcript.Should().HaveLength(targetLength);
+
+        const int maxInputTokens = 12_000;
+        const int overlapTokens = 256;
+        var chunks = TranscriptTriageChunker.Chunk(transcript, maxInputTokens, overlapTokens);
+
+        chunks.Should().HaveCountLessThanOrEqualTo(24);
+        chunks.Should().OnlyContain(chunk => chunk.EstimatedTokens <= maxInputTokens);
+
+        for (var offset = 0; offset < transcript.Length; offset++)
+        {
+            chunks.Should().Contain(chunk => chunk.Offset <= offset && chunk.EndOffset > offset,
+                $"source character at {offset} must be included by at least one map chunk");
+        }
+
+        for (var index = 1; index < chunks.Count; index++)
+        {
+            var previous = chunks[index - 1];
+            var current = chunks[index];
+
+            current.Offset.Should().BeGreaterThan(previous.Offset);
+            current.Offset.Should().BeLessThan(previous.EndOffset,
+                "the configured overlap should retain preceding speaker context");
+            (previous.EndOffset - current.Offset).Should().BeLessThanOrEqualTo(overlapTokens);
+        }
+    }
+
+    [Fact]
     public void EstimateTokens_ShouldUseUtf8ByteBoundForAsciiAndNonAsciiText()
     {
         var plain = "review the launch plan";

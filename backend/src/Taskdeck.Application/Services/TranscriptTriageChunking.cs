@@ -44,13 +44,17 @@ public static class TranscriptTriageChunker
         {
             var hardEnd = FindLargestEndWithinBudget(text, start, maxInputTokens);
             // When the next chunk starts inside the previous one for overlap, an earlier preferred
-            // boundary is still inside its input window. Never choose that already-emitted boundary
-            // again: doing so produces tiny repeat chunks and eventually loses overlap altogether.
+            // boundary is still inside its input window. Require meaningful new progress beyond
+            // the carried overlap before choosing a preferred boundary; otherwise a boundary just
+            // past the previous end produces tiny repeat chunks and eventually loses overlap.
             // Preferred boundaries improve forced splits, but must not turn an otherwise
             // under-budget transcript into multiple provider requests.
+            var minimumPreferredEnd = start < previousEnd
+                ? (int)Math.Min(text.Length, (long)previousEnd + (previousEnd - start))
+                : previousEnd;
             var end = hardEnd == text.Length
                 ? hardEnd
-                : FindPreferredEnd(preferredBoundaries, previousEnd, hardEnd) ?? hardEnd;
+                : FindPreferredEnd(preferredBoundaries, minimumPreferredEnd, hardEnd) ?? hardEnd;
             end = AvoidSplittingSurrogatePair(text, start, end);
 
             if (end <= start)
