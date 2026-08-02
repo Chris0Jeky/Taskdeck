@@ -169,23 +169,29 @@ describe('PaperTriageTable', () => {
     expect(wrapper.emitted('reject')).toBeUndefined()
   })
 
-  it('disables every row action while triage polling is active', async () => {
+  it('keeps other mutable rows actionable while triage polling is active', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
     const wrapper = mount(PaperTriageTable, {
       props: {
-        items: makeItems(),
+        items,
         triagePollingItemId: 'capture-1',
       },
     })
+    const firstAcceptBtn = wrapper.findAll('button[data-action="accept"]')[0]
+    const firstRejectBtn = wrapper.findAll('button[data-action="reject"]')[0]
     const secondAcceptBtn = wrapper.findAll('button[data-action="accept"]')[1]
     const secondRejectBtn = wrapper.findAll('button[data-action="reject"]')[1]
 
-    expect(secondAcceptBtn.attributes('disabled')).toBeDefined()
-    expect(secondRejectBtn.attributes('disabled')).toBeDefined()
+    expect(firstAcceptBtn.attributes('disabled')).toBeDefined()
+    expect(firstRejectBtn.attributes('disabled')).toBeDefined()
+    expect(secondAcceptBtn.attributes('disabled')).toBeUndefined()
+    expect(secondRejectBtn.attributes('disabled')).toBeUndefined()
 
     await secondAcceptBtn.trigger('click')
     await secondRejectBtn.trigger('click')
-    expect(wrapper.emitted('accept')).toBeUndefined()
-    expect(wrapper.emitted('reject')).toBeUndefined()
+    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-2'])
+    expect(wrapper.emitted('reject')?.[0]).toEqual(['capture-2'])
   })
 
   it('emits open when an item row excerpt is clicked', async () => {
