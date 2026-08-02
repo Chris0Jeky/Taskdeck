@@ -135,6 +135,21 @@ public class CaptureTriageService : ICaptureTriageService
                 reuseModel));
         }
 
+        // Re-check current board access before service-level board/column reads or transcript extraction. A queued
+        // capture may outlive a membership change; avoid provider/quota work for a requester who
+        // can no longer target this board. The final operation-level validation below remains the
+        // TOCTOU guard immediately before proposal persistence.
+        var boardAccessResult = await _policyEngine.ValidateBoardAccessAsync(
+            userId,
+            boardId,
+            cancellationToken);
+        if (!boardAccessResult.IsSuccess)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                boardAccessResult.ErrorCode,
+                boardAccessResult.ErrorMessage);
+        }
+
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId.Value, cancellationToken);
         if (board == null)
         {
