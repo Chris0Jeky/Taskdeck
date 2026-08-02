@@ -63,6 +63,10 @@ function getStatusLabel(status: AgentRunStatus): string {
 function getStatusClass(status: AgentRunStatus): string {
   return `td-run-status--${runStatusVariant[status] ?? 'neutral'}`
 }
+
+function isQueuedStatus(status: AgentRunStatus): boolean {
+  return status === 'Queued'
+}
 </script>
 
 <template>
@@ -79,7 +83,7 @@ function getStatusClass(status: AgentRunStatus): string {
         <span class="td-agent-runs__eyebrow">Agent Runs</span>
         <h1 class="td-page-title">{{ agentName }}</h1>
         <p class="td-agent-runs__subtitle">
-          Each run represents a single agent execution: its objective, status, and outcome.
+          Each record shows an agent run request and, once execution begins, its status and outcome.
         </p>
       </div>
     </header>
@@ -143,12 +147,16 @@ function getStatusClass(status: AgentRunStatus): string {
           <p v-if="run.failureReason" class="td-agent-runs__failure">
             {{ run.failureReason }}
           </p>
+          <p v-if="isQueuedStatus(run.status)" class="td-agent-runs__queued-note">
+            Queued by the API. Execution has not started.
+          </p>
 
           <div class="td-agent-runs__meta">
             <span>Trigger: {{ run.triggerType }}</span>
             <span>Steps: {{ run.stepsExecuted }}</span>
             <span v-if="run.proposalId">Proposal linked</span>
-            <span>Started: {{ formatDate(run.startedAt) }}</span>
+            <span v-if="isQueuedStatus(run.status)">Requested: {{ formatDate(run.startedAt) }}</span>
+            <span v-else>Started: {{ formatDate(run.startedAt) }}</span>
             <span v-if="run.completedAt">Completed: {{ formatDate(run.completedAt) }}</span>
           </div>
         </button>
@@ -189,6 +197,7 @@ function getStatusClass(status: AgentRunStatus): string {
 .td-agent-runs__objective { font-size: var(--td-font-base); font-weight: 600; color: var(--td-text-primary); flex: 1; }
 .td-agent-runs__summary { font-size: var(--td-font-sm); color: var(--td-text-secondary); line-height: 1.5; }
 .td-agent-runs__failure { font-size: var(--td-font-sm); color: var(--td-color-error); line-height: 1.5; }
+.td-agent-runs__queued-note { font-size: var(--td-font-sm); color: var(--td-text-secondary); line-height: 1.5; }
 .td-agent-runs__meta { display: flex; flex-wrap: wrap; gap: var(--td-space-4); font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
 
 .td-run-status { font-size: var(--td-font-xs); font-weight: 700; padding: var(--td-space-1) var(--td-space-3); border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; flex-shrink: 0; }
