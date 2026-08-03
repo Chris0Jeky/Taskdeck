@@ -30,8 +30,8 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.21.0" />
 
     <!-- ── MCP (Model Context Protocol) ────────────────────────── -->
-    <PackageVersion Include="ModelContextProtocol" Version="1.4.1" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.0.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
 
     <!-- ── Observability ───────────────────────────────────────── -->
     <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.17.0" />
