@@ -1,0 +1,101 @@
+{
+  // Type-checks the unit-test tree (#1468). `tsconfig.app.json` excludes `src/tests/**`, so
+  // before this project existed no gate type-checked a single spec: `vue-tsc -b` skipped them and
+  // vitest transpiles without checking. A spec could reference a property that does not exist and
+  // every gate stayed green.
+  //
+  // Compiler options mirror `tsconfig.app.json` exactly, deliberately:
+  //   - `types` stays ["vite/client", "vite-plugin-pwa/client"]. Adding "node" resolves the
+  //     `process`/`NodeJS` errors in the quarantined specs but breaks production source pulled in
+  //     as a dependency (`PaperHomeView.vue`: `setTimeout` starts returning `NodeJS.Timeout`
+  //     instead of `number`). Measured, not assumed.
+  //   - "vitest/globals" is not needed: 284 of the 285 spec files import their vitest symbols
+  //     explicitly, and the one that does not is quarantined below.
+  //
+  // The `exclude` list is the QUARANTINE, tracked in #1468. Every file listed had type errors when
+  // this project was introduced (415 errors across 64 of 286 files, measured 2026-08-07). The other
+  // 222 files type-check at exit 0 and are gated from now on. New spec files are checked by default
+  // — they are not in this list. The list may only shrink: delete an entry once its file is fixed;
+  // never add one to make a red build green.
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
+    "types": ["vite/client", "vite-plugin-pwa/client"],
+
+    /* Linting — identical bar to tsconfig.app.json */
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src/tests/**/*.ts", "src/tests/**/*.tsx", "src/tests/**/*.vue"],
+  "exclude": [
+    "src/tests/api/http.spec.ts",
+    "src/tests/components/AppShell.paperVariant.spec.ts",
+    "src/tests/components/AppShell.spec.ts",
+    "src/tests/components/BoardCanvas.coverage.spec.ts",
+    "src/tests/components/BoardCanvas.spec.ts",
+    "src/tests/components/BoardDialogHost.spec.ts",
+    "src/tests/components/BoardSettingsModal.spec.ts",
+    "src/tests/components/CaptureModal.spec.ts",
+    "src/tests/components/CardItem.coverage.spec.ts",
+    "src/tests/components/CardModal.spec.ts",
+    "src/tests/components/FilterPanel.spec.ts",
+    "src/tests/components/LabelManagerModal.spec.ts",
+    "src/tests/components/inbox/inboxUtils.spec.ts",
+    "src/tests/components/paper/useInkBleed.spec.ts",
+    "src/tests/components/review/CohortDashboard.spec.ts",
+    "src/tests/composables/useAnalyticsScript.spec.ts",
+    "src/tests/composables/useBoardRealtime.spec.ts",
+    "src/tests/composables/useCaptureQueueSync.spec.ts",
+    "src/tests/composables/useEscapeToClose.spec.ts",
+    "src/tests/composables/useReviewActions.spec.ts",
+    "src/tests/composables/useReviewProposals.spec.ts",
+    "src/tests/composables/useShortcutContext.spec.ts",
+    "src/tests/composables/useStarterPackCatalog.spec.ts",
+    "src/tests/composables/useStarterPackImport.spec.ts",
+    "src/tests/composables/useStarterPackResult.spec.ts",
+    "src/tests/composables/useVirtualList.spec.ts",
+    "src/tests/composables/useVoiceCapture.spec.ts",
+    "src/tests/config/PaperBranding.spec.ts",
+    "src/tests/property/storeResilience.spec.ts",
+    "src/tests/public/shareTargetHandler.spec.ts",
+    "src/tests/store/agentStore.spec.ts",
+    "src/tests/store/auditStore.spec.ts",
+    "src/tests/store/board/boardStoreHelpers.spec.ts",
+    "src/tests/store/board/cardFilterStore.spec.ts",
+    "src/tests/store/boardStore.columnReorder.spec.ts",
+    "src/tests/store/boardStore.integration.spec.ts",
+    "src/tests/store/boardStore.spec.ts",
+    "src/tests/store/captureStore.integration.spec.ts",
+    "src/tests/store/captureStore.spec.ts",
+    "src/tests/store/queueStore.integration.spec.ts",
+    "src/tests/store/queueStore.polling.spec.ts",
+    "src/tests/store/queueStore.spec.ts",
+    "src/tests/store/savedViewStore.spec.ts",
+    "src/tests/store/workspaceStore.spec.ts",
+    "src/tests/theme/authFocusRing.spec.ts",
+    "src/tests/theme/paperEmberContrast.spec.ts",
+    "src/tests/utils/chat.spec.ts",
+    "src/tests/utils/scenarioSchema.spec.ts",
+    "src/tests/utils/traceReplay.spec.ts",
+    "src/tests/views/ActivityView.spec.ts",
+    "src/tests/views/AutomationChatView.spec.ts",
+    "src/tests/views/AutomationQueueView.spec.ts",
+    "src/tests/views/BoardView.spec.ts",
+    "src/tests/views/InboxView.spec.ts",
+    "src/tests/views/MetricsView.coverage.spec.ts",
+    "src/tests/views/NotificationInboxView.spec.ts",
+    "src/tests/views/ReviewView.coverage.spec.ts",
+    "src/tests/views/ReviewView.spec.ts",
+    "src/tests/views/ShareTargetView.spec.ts",
+    "src/tests/views/paper/PaperBoardView.spec.ts",
+    "src/tests/views/paper/inbox/PaperTriageTable.spec.ts",
+    "src/tests/views/paper/review/PaperReviewView.spec.ts",
+    "src/tests/views/paper/review/ReviewKeymap.spec.ts",
+    "src/tests/views/paper/review/ReviewProvenance.spec.ts"
+  ]
+}
