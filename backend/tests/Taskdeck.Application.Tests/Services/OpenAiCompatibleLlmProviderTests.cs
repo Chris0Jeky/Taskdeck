@@ -354,6 +354,76 @@ public class OpenAiCompatibleLlmProviderTests
         tracker.Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
     }
 
+    [Fact]
+    public async Task CompleteAsync_RejectedAboveDispatchTracker_DoesNotChargeTheCircuit()
+    {
+        var innerDispatches = 0;
+        var outerAttempts = 0;
+        var tracker = new CircuitBreakerStateTracker();
+        var circuitSettings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 60 };
+
+        // LlmProviderRegistration wires the telemetry and egress handlers OUTSIDE
+        // LlmDispatchTrackingHandler, so a rejection above the tracker never reaches the
+        // upstream and never marks the request dispatched. CreateProvider puts the tracker
+        // outermost, which cannot reproduce that ordering, so build the pipeline by hand.
+        var inner = new StubHttpMessageHandler(_ =>
+        {
+            innerDispatches++;
+            return JsonResponse("""{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":3}}""");
+        });
+        var provider = new OpenAiCompatibleLlmProvider(
+            new HttpClient(new RejectFirstSendHandler(() => outerAttempts++)
+            {
+                InnerHandler = new LlmDispatchTrackingHandler { InnerHandler = inner }
+            }),
+            BuildSettings(),
+            NullLogger<OpenAiCompatibleLlmProvider>.Instance,
+            tracker,
+            circuitSettings,
+            new LlmProviderRuntimePolicy(
+                AllowGeneralProviderLocalhost: false,
+                AllowOllamaLocalhost: false));
+
+        var rejected = await provider.CompleteAsync(Request());
+        var admitted = await provider.CompleteAsync(Request());
+
+        outerAttempts.Should().Be(2, "both requests must be offered to the outer handler");
+        rejected.ShouldSettleQuotaReservation.Should().BeFalse(
+            "a request that never left the process must not consume its quota reservation");
+        rejected.IsDegraded.Should().BeTrue();
+        innerDispatches.Should().Be(
+            1,
+            "the pre-admission rejection must not open the circuit, so the retry still reaches the upstream");
+        admitted.IsDegraded.Should().BeFalse();
+        tracker.Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
+    }
+
+    /// <summary>
+    /// Stands in for an outer telemetry/egress handler that refuses the first send before the
+    /// dispatch tracker sees it, then admits every later send.
+    /// </summary>
+    private sealed class RejectFirstSendHandler : DelegatingHandler
+    {
+        private readonly Action _onAttempt;
+        private bool _rejected;
+
+        public RejectFirstSendHandler(Action onAttempt) => _onAttempt = onAttempt;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            _onAttempt();
+            if (!_rejected)
+            {
+                _rejected = true;
+                throw new HttpRequestException("outbound telemetry protection refused the request");
+            }
+
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
+
     [Theory]
     [InlineData("""{"choices":[{"message":{"content":null},"finish_reason":"content_filter"}],"usage":{"total_tokens":4}}""", "content filter")]
     [InlineData("""{"choices":[{"message":{"content":null,"refusal":"sensitive vendor refusal detail"},"finish_reason":"stop"}],"usage":{"total_tokens":4}}""", "refused")]
