@@ -5,9 +5,9 @@
   // every gate stayed green.
   //
   // Compiler options mirror `tsconfig.app.json` exactly, deliberately:
-  //   - `types` stays ["vite/client", "vite-plugin-pwa/client"]. Adding "node" resolves the
-  //     `process`/`NodeJS` errors in the quarantined specs but breaks production source pulled in
-  //     here as a dependency. Measured against this exact config: exactly one error,
+  //   - `types` stays ["vite/client", "vite-plugin-pwa/client"]. Adding "node" clears 13 TS2591 in
+  //     the quarantined specs (3 bare `process`, 10 `node:` module imports) but breaks production
+  //     source pulled in here as a dependency. Measured against this exact config: exactly one error,
   //     `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'` —
   //     `greetingTimer` is annotated `ReturnType<typeof window.setInterval>` (:225), which resolves
   //     to node's `Timeout` once node types are in scope, while the call still returns the DOM
@@ -25,13 +25,14 @@
   // masks 2 of them by making two `@ts-expect-error` directives spuriously "used". With this line,
   // the same experiment reports only the spec's own errors. Verified both ways.
   //
-  // SCOPE: `src/tests/**` only. Vitest runs 302 spec files in total — 284 here plus 18 in the
-  // frontend-root `tests/` directory. Those 18 are NOT covered and remain unchecked: they are
+  // SCOPE: the spec tree is `src/tests/**` only (plus the ambient declarations above). Vitest runs
+  // 302 spec files in total — 284 here plus 18 in the frontend-root `tests/` directory. Those 18 are NOT covered and remain unchecked: they are
   // Node-flavoured — they import the `.mjs` scripts under `scripts/` and use `process`/`NodeJS`, so
   // they need `types: ["node"]`, which is precisely the setting that breaks production source in
-  // THIS project. Measured 2026-08-07: 54 errors across 15 of those 18 files, mostly TS7016
-  // (untyped `.mjs` imports), TS7006 and TS2503. Covering them is a separate project with a
-  // separate type environment, tracked in #1607.
+  // THIS project. Measured 2026-08-07 with this project's options: 54 errors in the run — 42 across
+  // 15 of those 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies —
+  // mostly TS7016 (untyped `.mjs` imports), TS7006 and TS2503. Covering them is a separate project
+  // with a separate type environment, tracked in #1607.
   //
   // The `exclude` list is the QUARANTINE, tracked in #1468. Every file listed had type errors when
   // this project was introduced: 415 errors across 64 of the 286 TypeScript files under

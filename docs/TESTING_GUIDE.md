@@ -1232,7 +1232,8 @@ Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
   checking (`--typecheck` is opt-in and applies to `*.test-d.ts`). A spec could reference a property
   that does not exist and every gate stayed green. `#1462` hit exactly that.
 - `tsconfig.vitest.json` mirrors `tsconfig.app.json`'s compiler options exactly. Do **not** add
-  `"node"` to its `types`: it resolves the `process`/`NodeJS` errors in the quarantined specs and
+  `"node"` to its `types`: it clears 13 `TS2591` in the quarantined specs (3 bare `process`, 10
+  `node:` module imports) and
   breaks production source pulled in as a dependency. Measured, exactly one error —
   `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`, because
   `greetingTimer` is annotated `ReturnType<typeof window.setInterval>`, which resolves to node's
@@ -1256,7 +1257,8 @@ Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
   `setup.ts` and a mock that are not specs.) The 18 are Node-flavoured — they import the `.mjs`
   files under `scripts/` and use `process`/`NodeJS` — so they need a Node type environment and
   therefore a fourth, separate project; putting them here would require the one setting that breaks
-  production source. Measured with this project's options: 54 errors across 15 of the 18. Also
+  production source. Measured with this project's options: 54 errors in the run — 42 across 15 of
+  the 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies. Also
   tracked in `#1607`.
 - Type-level assertions are now available in ordinary specs: `expectTypeOf` erases at runtime, so
   the assertion is discharged by `vue-tsc -b` rather than by the vitest run. See

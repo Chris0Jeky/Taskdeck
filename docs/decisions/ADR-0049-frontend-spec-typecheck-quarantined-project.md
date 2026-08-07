@@ -32,8 +32,8 @@ The reason the exclusion existed is real and was measured before this decision, 
 available; the spec type environment has to be decided, not defaulted.
 
 There is also a **second, separate spec tree**: Vitest runs 18 specs from the frontend-root `tests/`
-directory (`demo-*`, `scenario-*`, `playwright.*`) alongside the 284 under `src/tests/` — 302 files
-in a full run, which is exactly what a full run reports. Those 18 are equally unchecked and are
+directory alongside the 284 under `src/tests/` — 302 files in a full run, which is exactly what a
+full run reports. Those 18 are equally unchecked and are
 *not* addressed by this decision; see Alternatives.
 
 ## Decision
@@ -52,9 +52,9 @@ Three parts, each load-bearing:
    real. The separation exists so the *file sets* can differ, not the standards.
 
    The `types` array stays `["vite/client", "vite-plugin-pwa/client"]`. Adding `"node"` is the
-   obvious-looking move — it clears the 13 `TS2591` `process` errors — and it is wrong: the spec
-   project pulls production source in as a dependency, and with node types in scope it emits exactly
-   one error, `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`.
+   obvious-looking move — it clears 13 `TS2591` (3 bare `process`, 10 `node:` module imports) — and
+   it is wrong: the spec project pulls production source in as a dependency, and with node types in
+   scope it emits exactly one error, `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`.
    The direction matters and is easy to state backwards: `greetingTimer` is *annotated*
    `ReturnType<typeof window.setInterval>` (`:225`), which resolves to node's `Timeout` once node
    types are in scope, while the *call* still returns the DOM `number`. `"vitest/globals"` is also
@@ -124,8 +124,10 @@ It erases at runtime, so the assertion is discharged by `vue-tsc -b` rather than
 - **Also cover the frontend-root `tests/` specs.** Deferred, and for a stronger reason than the
   stories: they cannot go in *this* project even if we wanted them there. They import the `.mjs`
   scripts under `scripts/` and use `process`/`NodeJS`, so they need `types: ["node"]` — the exact
-  setting that breaks production source here. Measured 2026-08-07: **54 errors across 15 of the 18
-  files**, dominated by `TS7016` (untyped `.mjs` imports), `TS7006` and `TS2503`. Covering them
+  setting that breaks production source here. Measured 2026-08-07 with this project's options:
+  **54 errors in the run — 42 across 15 of the 18 specs, plus 12 in three `playwright.*.ts` helpers
+  pulled in as dependencies** — dominated by `TS7016` (untyped `.mjs` imports), `TS7006` and
+  `TS2503`. Covering them
   means a fourth project with a Node type environment, and probably `allowJs`/declarations for the
   scripts they import. Tracked in `#1607`.
 
