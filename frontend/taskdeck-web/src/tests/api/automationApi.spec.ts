@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import http from '../../api/http'
 import { automationApi } from '../../api/automationApi'
+import type { Proposal } from '../../types/automation'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -47,18 +48,28 @@ describe('automationApi', () => {
   // body and the caller, on the reads AND on the decide responses (which is where the pin is born).
   //
   // Scope of the guard, stated precisely so it is not mistaken for more than it is:
-  //  - RUNTIME pass-through only. It does NOT pin the interface declaration -- `tsconfig.app.json`
-  //    excludes `src/tests/**`, so `npm run typecheck` never type-checks this file. The declaration is
-  //    held instead by the exported `ProposalApprovedRevisionId` alias in `types/automation.ts`, which
-  //    does live in typechecked source. Reproducible on this tree: delete the interface member and
-  //    typecheck fails at the ALIAS (TS2339), never here; delete the member AND the alias and
-  //    typecheck passes with this spec untouched and green -- which is exactly how far the protection
-  //    in this file reaches. (#1468 tracks the general specs-are-not-type-checked gap.)
+  //  - The `it()` blocks below are RUNTIME pass-through only; they do not pin the interface
+  //    declaration. Since #1468 this file IS type-checked (`tsconfig.vitest.json`), so the
+  //    declaration is now pinned here too -- by the `expectTypeOf` assertions directly beneath this
+  //    comment, not by the runtime tests. The exported `ProposalApprovedRevisionId` alias in
+  //    `types/automation.ts` remains the belt to this braces: it holds the field from inside
+  //    production source, which is what stops a dead-code sweep even if this file were quarantined.
   //  - Not "surviving deserialization": `http` is mocked wholesale, so the wire KEY casing is not
   //    exercised here. A serializer naming-policy flip would break every field and surface elsewhere.
   //  - The realistic regression is not a whitelist mapper -- this codebase's api normalizers are
   //    spread-based (`agentApi.ts`, `integrationsApi.ts`), which preserve unknown fields. What these
   //    catch is a field-by-field rebuild or a `?? undefined` narrowing added to one path only.
+
+  // Type-level pin (#1468 acceptance criterion). `expectTypeOf` erases at runtime -- this `it` block
+  // asserts nothing when vitest runs it; the assertion is discharged by `vue-tsc -b` because this
+  // file is now inside `tsconfig.vitest.json`. Both lines are mutation-verified: deleting the
+  // interface member fails the first (TS2339 on the indexed access), and widening it to `?:` or to
+  // `string` fails the second.
+  it('declares approvedRevisionId as a required, nullable string on Proposal', () => {
+    expectTypeOf<Proposal['approvedRevisionId']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Proposal>().toHaveProperty('approvedRevisionId')
+  })
+
   it('preserves approvedRevisionId on listed proposals', async () => {
     const pinned = 'b3f1c2d4-0000-4000-8000-000000000001'
     vi.mocked(http.get).mockResolvedValue({
