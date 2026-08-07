@@ -227,6 +227,14 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
         LlmCompletionResult RecordFailure(LlmCompletionResult result, string reason)
         {
+            if (!WasAdmittedToTransport(request))
+            {
+                return result with
+                {
+                    ShouldSettleQuotaReservation = false
+                };
+            }
+
             if (participateInCircuit)
                 RecordProviderFailure(reason, lease);
             circuitSettled = true;
@@ -269,7 +277,8 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         }
 
         using var timeout = CreateProviderTimeoutTokenSource(ct);
-        await using var enumerator = StreamCoreAsync(request, timeout.Token).GetAsyncEnumerator(timeout.Token);
+        var progress = new SseStreamProgress();
+        await using var enumerator = StreamCoreAsync(request, progress, timeout.Token).GetAsyncEnumerator(timeout.Token);
         var emittedTerminal = false;
         var circuitSettled = false;
 
@@ -296,6 +305,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     moved = false;
                     failure = TerminalError(
                         "OpenAI-compatible SSE response timed out after headers were received.",
+                        progress.TokensUsed,
                         failureKind: LlmProviderFailureKind.Timeout);
                 }
                 catch (Exception ex)
@@ -316,13 +326,17 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                             : failureKind == LlmProviderFailureKind.ResponseBody
                                 ? "OpenAI-compatible SSE response body failed before completion."
                                 : "OpenAI-compatible SSE transport failed before completion.",
+                        progress.TokensUsed,
                         failureKind: failureKind);
                 }
 
                 if (failure is not null)
                 {
-                    RecordProviderFailure(failure.Error!, lease);
-                    circuitSettled = true;
+                    if (WasAdmittedToTransport(request))
+                    {
+                        RecordProviderFailure(failure.Error!, lease);
+                        circuitSettled = true;
+                    }
                     yield return failure;
                     yield break;
                 }
@@ -331,16 +345,26 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     break;
 
                 var current = enumerator.Current;
+                if (current.TokensUsed is not null)
+                    progress.TokensUsed = current.TokensUsed;
                 if (current.IsComplete)
                 {
                     emittedTerminal = true;
                     if (IsProviderFailure(current))
-                        RecordProviderFailure(
-                            current.Error ?? current.DegradedReason ?? "OpenAI-compatible provider completion failed.",
-                            lease);
+                    {
+                        if (WasAdmittedToTransport(request))
+                        {
+                            RecordProviderFailure(
+                                current.Error ?? current.DegradedReason ?? "OpenAI-compatible provider completion failed.",
+                                lease);
+                            circuitSettled = true;
+                        }
+                    }
                     else
+                    {
                         RecordProviderSuccess(lease);
-                    circuitSettled = true;
+                        circuitSettled = true;
+                    }
                 }
 
                 yield return current;
@@ -350,9 +374,14 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
             if (!emittedTerminal)
             {
-                var failure = TerminalError("OpenAI-compatible SSE stream ended before a completion marker.");
-                RecordProviderFailure(failure.Error!, lease);
-                circuitSettled = true;
+                var failure = TerminalError(
+                    "OpenAI-compatible SSE stream ended before a completion marker.",
+                    progress.TokensUsed);
+                if (WasAdmittedToTransport(request))
+                {
+                    RecordProviderFailure(failure.Error!, lease);
+                    circuitSettled = true;
+                }
                 yield return failure;
             }
         }
@@ -365,6 +394,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
     private async IAsyncEnumerable<LlmTokenEvent> StreamCoreAsync(
         ChatCompletionRequest request,
+        SseStreamProgress progress,
         [EnumeratorCancellation] CancellationToken ct)
     {
         // Streaming chat is conversational text, not the buffered instruction-extraction
@@ -431,7 +461,6 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         var eventBytes = 0;
         var responseBytes = 0;
         string? finishReasonSeen = null;
-        int? tokensUsedSeen = null;
 
         while (true)
         {
@@ -454,12 +483,12 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
                 if (parsed.Error is not null)
                 {
-                    yield return TerminalError(parsed.Error);
+                    yield return TerminalError(parsed.Error, progress.TokensUsed);
                     yield break;
                 }
 
                 if (parsed.TokensUsed is not null)
-                    tokensUsedSeen = parsed.TokensUsed;
+                    progress.TokensUsed = parsed.TokensUsed;
                 if (parsed.FinishReason is not null)
                     finishReasonSeen = parsed.FinishReason;
                 if (!string.IsNullOrEmpty(parsed.Delta))
@@ -467,7 +496,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
                 if (parsed.IsDoneMarker)
                 {
-                    yield return BuildTerminalCompletion(finishReasonSeen, tokensUsedSeen);
+                    yield return BuildTerminalCompletion(finishReasonSeen, progress.TokensUsed);
                     yield break;
                 }
 
@@ -493,25 +522,25 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
             var parsed = TryParseSseEvent(eventData.ToString());
             if (parsed.Error is not null)
             {
-                yield return TerminalError(parsed.Error);
+                yield return TerminalError(parsed.Error, progress.TokensUsed);
                 yield break;
             }
             if (parsed.TokensUsed is not null)
-                tokensUsedSeen = parsed.TokensUsed;
+                progress.TokensUsed = parsed.TokensUsed;
             if (parsed.FinishReason is not null)
                 finishReasonSeen = parsed.FinishReason;
             if (!string.IsNullOrEmpty(parsed.Delta))
                 yield return new LlmTokenEvent(parsed.Delta, false, Provider: ProviderName, Model: GetConfiguredModelOrDefault());
             if (parsed.IsDoneMarker)
             {
-                yield return BuildTerminalCompletion(finishReasonSeen, tokensUsedSeen);
+                yield return BuildTerminalCompletion(finishReasonSeen, progress.TokensUsed);
                 yield break;
             }
         }
 
         yield return TerminalError(
             "OpenAI-compatible SSE stream ended before a completion marker.",
-            tokensUsedSeen);
+            progress.TokensUsed);
     }
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
@@ -855,6 +884,10 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         return timeout;
     }
 
+    private bool WasAdmittedToTransport(ChatCompletionRequest request) =>
+        _circuitBreakerTracker is null ||
+        request.DispatchContext.ReadSnapshot().Phase == LlmDispatchPhase.Dispatched;
+
     private bool TryEnterProviderRequest(out CircuitRequestLease lease, out string? error)
     {
         if (_circuitBreakerTracker is null || _circuitBreakerSettings is null)
@@ -962,6 +995,11 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
             ShouldSettleQuotaReservation = shouldSettleQuotaReservation,
             ProviderFailureKind = failureKind
         };
+    }
+
+    private sealed class SseStreamProgress
+    {
+        public int? TokensUsed { get; set; }
     }
 
     private sealed record SseEventParseResult(

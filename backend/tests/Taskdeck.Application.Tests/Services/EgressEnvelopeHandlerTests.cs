@@ -9,6 +9,17 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class EgressEnvelopeHandlerTests
 {
+    [Fact]
+    public void Constructor_PreservesOriginalThreeParameterBinarySignature()
+    {
+        typeof(EgressEnvelopeHandler).GetConstructor(
+            [
+                typeof(IEgressRegistry),
+                typeof(ILogger<EgressEnvelopeHandler>),
+                typeof(string)
+            ]).Should().NotBeNull();
+    }
+
     private static EgressRegistry CreateRegistry(params string[] hosts)
     {
         var entries = hosts.Select(h => new EgressEntry(h, "test", "test", EgressDataClassification.None));

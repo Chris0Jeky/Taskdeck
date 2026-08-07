@@ -667,30 +667,39 @@ public class ChatService : IChatService
                 if (token.Error == null)
                     providerStreamed = true;
 
-                var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
-                if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
-                {
-                    streamIsDegraded = true;
-                    streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
-                    yield return new LlmTokenEvent(
-                        string.Empty,
-                        true,
-                        Error: streamDegradedReason,
-                        Provider: token.Provider ?? provider,
-                        Model: token.Model ?? model);
-                    break;
-                }
-
-                streamedContentBytes += tokenBytes;
-                contentBuilder.Append(token.Token);
-                // Best-known provider/model: any event may carry them; the final usage event is
-                // authoritative and overwrites earlier values.
+                // Capture terminal attribution and authoritative usage before enforcing the
+                // local persistence cap. An oversized terminal event is still billable, even
+                // though its content must never be appended or stored.
                 if (token.Provider != null)
                     provider = token.Provider;
                 if (token.Model != null)
                     model = token.Model;
                 if (token.IsComplete)
                     tokensUsed = token.TokensUsed;
+
+                var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
+                if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
+                    terminalHadError = true;
+                    persistEmptyTerminalOutcome = true;
+                    yield return new LlmTokenEvent(
+                        string.Empty,
+                        true,
+                        Error: streamDegradedReason,
+                        TokensUsed: tokensUsed,
+                        Provider: provider,
+                        Model: model)
+                    {
+                        IsDegraded = true,
+                        DegradedReason = streamDegradedReason
+                    };
+                    break;
+                }
+
+                streamedContentBytes += tokenBytes;
+                contentBuilder.Append(token.Token);
                 if (token.IsDegraded)
                 {
                     streamIsDegraded = true;

@@ -408,6 +408,54 @@ public class LlmProviderRegistrationTests
             .Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
     }
 
+    [Fact]
+    public async Task CompatibleRegisteredPolicy_PreDispatchPollyRejection_DoesNotPoisonCompanionCircuit()
+    {
+        var services = BuildCompatibleServices(failureThreshold: 1);
+        using var serviceProvider = services.BuildServiceProvider();
+        var pipeline = serviceProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var dispatchHandler = EnumeratePipeline(pipeline)
+            .OfType<DelegatingHandler>()
+            .Single(handler => handler.GetType().Name == "LlmDispatchTrackingHandler");
+        var blockingBody = new SignallingBlockingReadStream();
+        var transport = new SequentialResponseHandler(
+            new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StreamContent(blockingBody)
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"choices":[{"message":{"content":"unexpected transport response"},"finish_reason":"stop"}],"usage":{"total_tokens":9}}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        dispatchHandler.InnerHandler = transport;
+        using var scope = serviceProvider.CreateScope();
+        var compatibleProvider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+        using var cancellation = new CancellationTokenSource();
+        var firstRequest = compatibleProvider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "first request")],
+            SystemPrompt: string.Empty), cancellation.Token);
+        await blockingBody.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => firstRequest);
+        var secondResult = await compatibleProvider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "second request")],
+            SystemPrompt: string.Empty));
+
+        secondResult.IsDegraded.Should().BeTrue();
+        transport.InvocationCount.Should().Be(1,
+            "the open Polly circuit must reject the second request before dispatch");
+        var tracker = serviceProvider.GetRequiredService<CircuitBreakerStateTracker>();
+        tracker.RecordState("OpenAICompatible", CircuitState.Closed);
+        tracker.Get("OpenAICompatible")?.State.Should().Be(CircuitState.Closed,
+            "a pre-dispatch Polly rejection must not open the companion provider circuit");
+    }
+
     [Theory]
     [InlineData("Development", true, true, true)]
     [InlineData("Development", true, false, false)]
@@ -622,6 +670,38 @@ public class LlmProviderRegistrationTests
             InvocationCount++;
             return Task.FromResult(_responses.Dequeue());
         }
+    }
+
+    private sealed class SignallingBlockingReadStream : Stream
+    {
+        private readonly TaskCompletionSource _readStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ReadStarted => _readStarted.Task;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _readStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static IEnumerable<HttpMessageHandler> EnumeratePipeline(HttpMessageHandler root)

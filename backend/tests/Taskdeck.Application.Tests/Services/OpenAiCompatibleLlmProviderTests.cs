@@ -73,6 +73,39 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
+    public async Task StreamAsync_UsageThenErrorEvent_PreservesUsageOnTerminalError()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":5000}}\n\n" +
+            "data: {\"error\":{\"message\":\"secret upstream detail\"}}\n\n")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Contain("upstream error");
+        events[0].Error.Should().NotContain("secret upstream detail");
+        events[0].TokensUsed.Should().Be(5000);
+    }
+
+    [Fact]
+    public async Task StreamAsync_UsageThenReadFailure_PreservesUsageOnTerminalError()
+    {
+        var prefix = Encoding.UTF8.GetBytes(
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":5000}}\n\n");
+        var provider = CreateProvider(new StubHttpMessageHandler(_ =>
+            SseStreamResponse(new PrefixThenThrowingReadStream(prefix))), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Contain("response body failed");
+        events[0].TokensUsed.Should().Be(5000);
+        events[0].ProviderFailureKind.Should().Be(LlmProviderFailureKind.ResponseBody);
+    }
+
+    [Fact]
     public async Task StreamAsync_WhenEndpointRejectsStreaming_EmitsBufferedFallbackMetadata()
     {
         var settings = BuildSettings();
@@ -854,9 +887,19 @@ public class OpenAiCompatibleLlmProviderTests
         LlmProviderSettings settings,
         CircuitBreakerStateTracker? tracker = null,
         CircuitBreakerSettings? circuitSettings = null,
-        bool allowLocalhostEndpoints = false) =>
-        new(
-            new HttpClient(handler),
+        bool allowLocalhostEndpoints = false)
+    {
+        HttpMessageHandler pipeline = handler;
+        if (tracker is not null)
+        {
+            pipeline = new LlmDispatchTrackingHandler
+            {
+                InnerHandler = handler
+            };
+        }
+
+        return new OpenAiCompatibleLlmProvider(
+            new HttpClient(pipeline),
             settings,
             NullLogger<OpenAiCompatibleLlmProvider>.Instance,
             tracker,
@@ -864,6 +907,7 @@ public class OpenAiCompatibleLlmProviderTests
             new LlmProviderRuntimePolicy(
                 AllowGeneralProviderLocalhost: allowLocalhostEndpoints,
                 AllowOllamaLocalhost: allowLocalhostEndpoints));
+    }
 
     private static ChatCompletionRequest Request(LlmRequestAttribution? attribution = null) =>
         new([new ChatCompletionMessage("user", "hello")], Attribution: attribution);
@@ -953,6 +997,25 @@ public class OpenAiCompatibleLlmProviderTests
     {
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
             ValueTask.FromException<int>(new IOException("broken SSE body"));
+    }
+
+    private sealed class PrefixThenThrowingReadStream(byte[] prefix) : TestReadStream
+    {
+        private int _offset;
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_offset >= prefix.Length)
+                return ValueTask.FromException<int>(new IOException("broken SSE body after usage"));
+
+            var length = Math.Min(buffer.Length, prefix.Length - _offset);
+            prefix.AsMemory(_offset, length).CopyTo(buffer);
+            _offset += length;
+            return ValueTask.FromResult(length);
+        }
     }
 
     private sealed class BlockingReadStream : TestReadStream

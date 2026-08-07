@@ -22,8 +22,16 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
     public EgressEnvelopeHandler(
         IEgressRegistry egressRegistry,
         ILogger<EgressEnvelopeHandler>? logger = null,
-        string? sourceComponent = null,
-        bool followRedirects = true)
+        string? sourceComponent = null)
+        : this(egressRegistry, logger, sourceComponent, followRedirects: true)
+    {
+    }
+
+    public EgressEnvelopeHandler(
+        IEgressRegistry egressRegistry,
+        ILogger<EgressEnvelopeHandler>? logger,
+        string? sourceComponent,
+        bool followRedirects)
     {
         _egressRegistry = egressRegistry ?? throw new ArgumentNullException(nameof(egressRegistry));
         _logger = logger;
