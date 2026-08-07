@@ -25,10 +25,16 @@ vitest run passed too.
 remembers to pin by hand. It is not a substitute for checking the specs.
 
 The reason the exclusion existed is real and was measured before this decision, not assumed:
-**415 type errors across 64 of 286 spec files** (repo `types` unchanged, 2026-08-07, reproducing the
-figure recorded on `#1468`). Zero outside `src/tests/`. The count is also sensitive to the `types`
-array — 415 as-is, 399 with `"node"` added, 379 with `"node"` and `"vitest/globals"` — so "just turn
-it on" was never available; the spec type environment has to be decided, not defaulted.
+**415 type errors across 64 of the 286 TypeScript files under `src/tests/`** (284 specs plus
+`setup.ts` and one mock; repo `types` unchanged, 2026-08-07, reproducing the figure recorded on
+`#1468`). Zero outside `src/tests/`. The count is also sensitive to the `types` array — 415 as-is,
+399 with `"node"` added, 379 with `"node"` and `"vitest/globals"` — so "just turn it on" was never
+available; the spec type environment has to be decided, not defaulted.
+
+There is also a **second, separate spec tree**: Vitest runs 18 specs from the frontend-root `tests/`
+directory (`demo-*`, `scenario-*`, `playwright.*`) alongside the 284 under `src/tests/` — 302 files
+in a full run, which is exactly what a full run reports. Those 18 are equally unchecked and are
+*not* addressed by this decision; see Alternatives.
 
 ## Decision
 
@@ -49,8 +55,9 @@ Three parts, each load-bearing:
    obvious-looking move — it clears the 13 `TS2591` `process` errors — and it is wrong: the spec
    project pulls production source in as a dependency, and with node types in scope
    `PaperHomeView.vue` breaks, because `setTimeout` starts returning `NodeJS.Timeout` instead of
-   `number`. `"vitest/globals"` is also declined: 284 of the 285 spec files import their vitest
-   symbols explicitly, so adding the globals would exist to serve one non-conforming file.
+   `number`. `"vitest/globals"` is also declined: 283 of the 284 spec files import their vitest
+   symbols explicitly, so adding the globals would exist to serve one non-conforming file
+   (`config/PaperBranding.spec.ts`, itself quarantined).
 
 2. **The quarantine is a list of files, not a loosened rule.** The 64 files that already failed are
    named individually in `exclude`. The other 222 are gated. Critically, **a new spec file is
@@ -100,12 +107,25 @@ It erases at runtime, so the assertion is discharged by `vue-tsc -b` rather than
   `exclude` line and are equally unchecked, but they are a distinct surface with a distinct type
   environment (ADR-0030). Bundling them would widen this slice for no shared benefit.
 
+- **Also cover the frontend-root `tests/` specs.** Deferred, and for a stronger reason than the
+  stories: they cannot go in *this* project even if we wanted them there. They import the `.mjs`
+  scripts under `scripts/` and use `process`/`NodeJS`, so they need `types: ["node"]` — the exact
+  setting that breaks production source here. Measured 2026-08-07: **54 errors across 15 of the 18
+  files**, dominated by `TS7016` (untyped `.mjs` imports), `TS7006` and `TS2503`. Covering them
+  means a fourth project with a Node type environment, and probably `allowJs`/declarations for the
+  scripts they import. Tracked in `#1607`.
+
 ## Consequences
 
-**Positive.** Type errors in 222 spec files now fail CI on both matrix legs. New spec files are
-gated from the moment they are written. Type-level assertions (`expectTypeOf`) are available and
-already used. The `#1468` gap is closed as a *mechanism*, with the residue explicit and tracked
-rather than implicit and forgotten.
+**Positive.** Type errors in 222 files under `src/tests/` now fail CI on both matrix legs. New spec
+files placed there are gated from the moment they are written. Type-level assertions (`expectTypeOf`)
+are available and already used. The `#1468` gap is closed as a *mechanism*, with the residue explicit
+and tracked rather than implicit and forgotten.
+
+**Scope, stated so it is not overread.** This does not make "the frontend test suite type-checked".
+Of the 302 spec files a full Vitest run executes, this project gates **222**: the 64 quarantined
+files under `src/tests/` and the 18 under the frontend-root `tests/` directory remain unchecked.
+Both residues are named above and tracked in `#1607`.
 
 **Negative / accepted.** `npm run typecheck` does more work: the spec project re-compiles the
 production source its specs import, so the two projects overlap. Measured at ~33 s warm on the
@@ -128,5 +148,6 @@ has not occurred.
   the gate (`TS2322`), confirming new files are checked by default. (c) The `expectTypeOf` pin fires
   on all three mutations of its target: deleting `Proposal.approvedRevisionId` (`TS2339`), making it
   optional (`TS2344`), and dropping its nullability (`TS2344`).
-- `npm run lint` 0 errors / 6 pre-existing warnings; `npx vite build` green;
-  `npx vitest --run --maxWorkers=2 src/tests/api/automationApi.spec.ts` 10/10 passing.
+- `npm run lint` 0 errors / 6 pre-existing warnings; `npx vite build` green; the full
+  `npx vitest --run --maxWorkers=2` **302 files / 3,925 tests passed, 0 failed** (206 s), which is
+  also where the 302-vs-284 file discrepancy that exposed the frontend-root `tests/` tree came from.

@@ -9,14 +9,23 @@
   //     `process`/`NodeJS` errors in the quarantined specs but breaks production source pulled in
   //     as a dependency (`PaperHomeView.vue`: `setTimeout` starts returning `NodeJS.Timeout`
   //     instead of `number`). Measured, not assumed.
-  //   - "vitest/globals" is not needed: 284 of the 285 spec files import their vitest symbols
-  //     explicitly, and the one that does not is quarantined below.
+  //   - "vitest/globals" is not needed: 283 of the 284 spec files import their vitest symbols
+  //     explicitly, and the one that does not (config/PaperBranding.spec.ts) is quarantined below.
+  //
+  // SCOPE: `src/tests/**` only. Vitest also runs 18 specs from the frontend-root `tests/` directory
+  // (demo-*, scenario-*, playwright.*). Those are NOT covered here and remain unchecked: they are
+  // Node-flavoured — they import the `.mjs` scripts under `scripts/` and use `process`/`NodeJS`, so
+  // they need `types: ["node"]`, which is precisely the setting that breaks production source in
+  // THIS project. Measured 2026-08-07: 54 errors across 15 of those 18 files, mostly TS7016
+  // (untyped `.mjs` imports), TS7006 and TS2503. Covering them is a separate project with a
+  // separate type environment, tracked in #1607.
   //
   // The `exclude` list is the QUARANTINE, tracked in #1468. Every file listed had type errors when
-  // this project was introduced (415 errors across 64 of 286 files, measured 2026-08-07). The other
-  // 222 files type-check at exit 0 and are gated from now on. New spec files are checked by default
-  // — they are not in this list. The list may only shrink: delete an entry once its file is fixed;
-  // never add one to make a red build green.
+  // this project was introduced: 415 errors across 64 of the 286 TypeScript files under
+  // `src/tests/` (284 specs plus `setup.ts` and one mock), measured 2026-08-07. The other 222 files
+  // type-check at exit 0 and are gated from now on. New spec files are checked by default — they
+  // are not in this list. The list may only shrink: delete an entry once its file is fixed; never
+  // add one to make a red build green.
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",

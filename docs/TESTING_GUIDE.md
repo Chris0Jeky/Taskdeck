@@ -1236,10 +1236,18 @@ Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
   breaks production source pulled in as a dependency (`PaperHomeView.vue` — `setTimeout` starts
   returning `NodeJS.Timeout` instead of `number`). `"vitest/globals"` is likewise unnecessary; the
   specs import their vitest symbols explicitly.
-- Its `exclude` array is a **quarantine**, not configuration. It listed the 64 spec files carrying
-  the 415 pre-existing errors measured 2026-08-07; the other 222 are gated. **New spec files are
-  checked by default** because they are not in the list. The list may only shrink — delete an entry
-  once its file is fixed, never add one to turn a red build green. Burn-down is tracked in `#1607`.
+- Its `exclude` array is a **quarantine**, not configuration. It listed the 64 files carrying the
+  415 pre-existing errors measured 2026-08-07; the other 222 (of 286 `.ts` files under `src/tests/`)
+  are gated. **New spec files are checked by default** because they are not in the list. The list
+  may only shrink — delete an entry once its file is fixed, never add one to turn a red build green.
+  Burn-down is tracked in `#1607`.
+- **Scope caveat — do not read this as "the test suite is type-checked".** A full Vitest run
+  executes **302** spec files; 222 are gated. The other 80 are the 64 quarantined files plus the
+  **18 specs in the frontend-root `tests/` directory** (`demo-*`, `scenario-*`, `playwright.*`),
+  which no tsconfig includes. Those 18 are Node-flavoured — they import the `.mjs` files under
+  `scripts/` and use `process`/`NodeJS` — so they need `types: ["node"]` and therefore a fourth,
+  separate project; putting them in `tsconfig.vitest.json` would require the one setting that breaks
+  production source. Measured 2026-08-07: 54 errors across 15 of the 18. Also tracked in `#1607`.
 - Type-level assertions are now available in ordinary specs: `expectTypeOf` erases at runtime, so
   the assertion is discharged by `vue-tsc -b` rather than by the vitest run. See
   `src/tests/api/automationApi.spec.ts` for the worked example (it pins
