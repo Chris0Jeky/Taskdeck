@@ -62,9 +62,14 @@ describe('automationApi', () => {
 
   // Type-level pin (#1468 acceptance criterion). `expectTypeOf` erases at runtime -- this `it` block
   // asserts nothing when vitest runs it; the assertion is discharged by `vue-tsc -b` because this
-  // file is now inside `tsconfig.vitest.json`. Both lines are mutation-verified: deleting the
-  // interface member fails the first (TS2339 on the indexed access), and widening it to `?:` or to
-  // `string` fails the second.
+  // file is now inside `tsconfig.vitest.json`. Mutation-verified, and the two lines do NOT
+  // discriminate on the same thing:
+  //  - `toEqualTypeOf` (first line) is the load-bearing one. It fails on all three mutations:
+  //    deleting the member (TS2339 on the indexed access), widening it to `?:` (TS2344,
+  //    `Actual: undefined`), and dropping its nullability (TS2344, `Actual: never`).
+  //  - `toHaveProperty` (second line) fires ONLY on deletion (TS2345). An optional property still
+  //    satisfies it, so it does not catch the `?:` widening. It is kept because it names the
+  //    property explicitly, which is what makes the intent legible at the failure site.
   it('declares approvedRevisionId as a required, nullable string on Proposal', () => {
     expectTypeOf<Proposal['approvedRevisionId']>().toEqualTypeOf<string | null>()
     expectTypeOf<Proposal>().toHaveProperty('approvedRevisionId')

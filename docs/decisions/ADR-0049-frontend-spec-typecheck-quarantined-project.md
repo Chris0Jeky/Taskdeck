@@ -3,7 +3,7 @@
 - Status: Accepted (tooling/verification-contract decision taken under standing autonomy; open to maintainer revision)
 - Date: 2026-08-07
 - Deciders: Overnight coordinator; maintainer may revise
-- Related: `#1468` (the gap), `#1607` (the burn-down this creates), `#1462` (the regression that exposed it), `#1469` (the per-field workaround this supersedes), ADR-0030 (Storybook baseline — `src/stories/**` is excluded on the same line and is out of scope here), `docs/TESTING_GUIDE.md` §Frontend Unit + Build
+- Related: `#1468` (the gap), `#1607` (the burn-down this creates), `#1462` (the regression that exposed it), `#1469` (the per-field workaround this generalises but deliberately retains), ADR-0030 (Storybook baseline — `src/stories/**` is excluded on the same line and is out of scope here), `docs/TESTING_GUIDE.md` §Frontend Unit + Build
 
 ## Context
 
@@ -47,17 +47,29 @@ Three parts, each load-bearing:
 1. **A separate project, not a relaxed one.** `tsconfig.vitest.json` extends the same
    `@vue/tsconfig/tsconfig.dom.json` base and repeats `tsconfig.app.json`'s options verbatim —
    including `noUnusedLocals`, `noUnusedParameters` and `erasableSyntaxOnly`, which together account
-   for 6 of the 415 errors. One strictness bar across the codebase is easier to reason about than
-   two, and the errors those options catch are real. The separation exists so the *file sets* can
-   differ, not the standards.
+   for 4 of the 415 errors (`TS6133` ×4; `erasableSyntaxOnly` contributes none). One strictness bar
+   across the codebase is easier to reason about than two, and the errors those options catch are
+   real. The separation exists so the *file sets* can differ, not the standards.
 
    The `types` array stays `["vite/client", "vite-plugin-pwa/client"]`. Adding `"node"` is the
    obvious-looking move — it clears the 13 `TS2591` `process` errors — and it is wrong: the spec
-   project pulls production source in as a dependency, and with node types in scope
-   `PaperHomeView.vue` breaks, because `setTimeout` starts returning `NodeJS.Timeout` instead of
-   `number`. `"vitest/globals"` is also declined: 283 of the 284 spec files import their vitest
-   symbols explicitly, so adding the globals would exist to serve one non-conforming file
-   (`config/PaperBranding.spec.ts`, itself quarantined).
+   project pulls production source in as a dependency, and with node types in scope it emits exactly
+   one error, `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`.
+   The direction matters and is easy to state backwards: `greetingTimer` is *annotated*
+   `ReturnType<typeof window.setInterval>` (`:225`), which resolves to node's `Timeout` once node
+   types are in scope, while the *call* still returns the DOM `number`. `"vitest/globals"` is also
+   declined: 283 of the 284 spec files import their vitest symbols explicitly, so adding the globals
+   would exist to serve one non-conforming file (`config/PaperBranding.spec.ts`, itself
+   quarantined).
+
+   `include` additionally carries `src/**/*.d.ts`. `src/types/web-speech.d.ts` is an *ambient*
+   declaration file — global scope, imported by nothing — so `tsconfig.app.json` only picks it up
+   because it globs `src/**/*.ts`. A `src/tests/**`-only include would drop it from this program,
+   and production source pulled in as a dependency would compile without those globals. That is not
+   theoretical: un-quarantining `composables/useVoiceCapture.spec.ts` without this line reports 3
+   errors inside untouched production source, and *masks* 2 of the spec's own by making two
+   `@ts-expect-error` directives spuriously "used". With the line, the same experiment reports only
+   the spec's own 4 errors.
 
 2. **The quarantine is a list of files, not a loosened rule.** The 64 files that already failed are
    named individually in `exclude`. The other 222 are gated. Critically, **a new spec file is
@@ -94,8 +106,10 @@ It erases at runtime, so the assertion is discharged by `vue-tsc -b` rather than
   compiler that reads the file. Option 3's actual benefit is therefore obtained by option 1 alone.
 
 - **Relax `noUnusedLocals` (and friends) for specs, as the issue's option 1 sketch suggested.**
-  Rejected: it would clear 6 of 415 errors while permanently splitting the strictness bar. Not a
-  trade worth making.
+  Rejected: it would clear 4 of 415 errors while permanently splitting the strictness bar. Not a
+  trade worth making. (The figure is 4, not the 6 an earlier revision of this ADR carried: the two
+  `TS2578` "unused `@ts-expect-error`" diagnostics are not governed by any of those three options
+  and survive with all three off.)
 
 - **Keep extending the `#1469` derived-alias workaround.** Rejected as a general answer. It is
   per-field, requires foresight about which field will be dropped, and does nothing for wrong-typed
@@ -123,9 +137,12 @@ are available and already used. The `#1468` gap is closed as a *mechanism*, with
 and tracked rather than implicit and forgotten.
 
 **Scope, stated so it is not overread.** This does not make "the frontend test suite type-checked".
-Of the 302 spec files a full Vitest run executes, this project gates **222**: the 64 quarantined
-files under `src/tests/` and the 18 under the frontend-root `tests/` directory remain unchecked.
-Both residues are named above and tracked in `#1607`.
+A full Vitest run executes **302** spec files — 284 under `src/tests/` and 18 under the
+frontend-root `tests/` directory. This project gates **220** of them (284 − 64 quarantined). The
+**82** it does not gate are those 64 plus those 18. Both residues are named above and tracked in
+`#1607`. (Do not subtract 222 from 302: 222 is the number of *files* the project resolves under
+`src/tests/`, which includes `setup.ts` and a mock that are not specs. The two counts have different
+units.)
 
 **Negative / accepted.** `npm run typecheck` does more work: the spec project re-compiles the
 production source its specs import, so the two projects overlap. Measured at ~33 s warm on the
