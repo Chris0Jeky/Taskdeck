@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-02
+Last Updated: 2026-08-07
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -1222,6 +1222,48 @@ npm run test:coverage
 npm run typecheck
 npm run build
 ```
+
+Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
+- `npm run typecheck` is `vue-tsc -b`, which builds every project referenced from
+  `frontend/taskdeck-web/tsconfig.json`. `tsconfig.app.json` covers production source and still
+  excludes `src/tests/**`; `tsconfig.vitest.json` covers the spec tree. No CI workflow change was
+  needed — the existing `Run frontend typecheck` step picks the new project up.
+- Before this, **nothing type-checked a spec**: `vue-tsc` skipped them and vitest transpiles without
+  checking (`--typecheck` is opt-in and applies to `*.test-d.ts`). A spec could reference a property
+  that does not exist and every gate stayed green. `#1462` hit exactly that.
+- `tsconfig.vitest.json` mirrors `tsconfig.app.json`'s compiler options exactly. Do **not** add
+  `"node"` to its `types`: it clears 13 `TS2591` in the quarantined specs (3 bare `process`, 10
+  `node:` module imports) and
+  breaks production source pulled in as a dependency. Measured, exactly one error —
+  `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`, because
+  `greetingTimer` is annotated `ReturnType<typeof window.setInterval>`, which resolves to node's
+  `Timeout` while the call still returns the DOM `number`. `"vitest/globals"` is likewise
+  unnecessary; 283 of the 284 specs import their vitest symbols explicitly.
+- Its `include` carries `src/**/*.d.ts` on purpose. `src/types/web-speech.d.ts` is *ambient* —
+  global scope, imported by nothing — so a `src/tests/**`-only include drops it, and production
+  source pulled in as a dependency then compiles without those globals. Without that line,
+  un-quarantining `composables/useVoiceCapture.spec.ts` reports 3 errors in untouched production
+  source and masks 2 of the spec's own by making two `@ts-expect-error` directives spuriously
+  "used". Keep the line, and add any new ambient declaration under `src/`, not elsewhere.
+- Its `exclude` array is a **quarantine**, not configuration. It listed the 64 files carrying the
+  415 pre-existing errors measured 2026-08-07, over the 286 `.ts` files under `src/tests/` (284
+  specs plus `setup.ts` and a mock). **New spec files are checked by default** because they are not
+  in the list. The list may only shrink — delete an entry once its file is fixed, never add one to
+  turn a red build green. Burn-down is tracked in `#1607`.
+- **Scope caveat — do not read this as "the test suite is type-checked".** A full Vitest run
+  executes **302** spec files: 284 under `src/tests/` and 18 under the frontend-root `tests/`
+  directory. This project gates **220** of them (284 − 64). The **82** it does not gate are those
+  64 plus those 18. (Do not subtract 222 from 302 — 222 counts *files in the project*, including
+  `setup.ts` and a mock that are not specs.) The 18 are Node-flavoured — they import the `.mjs`
+  files under `scripts/` and use `process`/`NodeJS` — so they need a Node type environment and
+  therefore a fourth, separate project; putting them here would require the one setting that breaks
+  production source. Measured with this project's options: 54 errors in the run — 42 across 15 of
+  the 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies. Also
+  tracked in `#1607`.
+- Type-level assertions are now available in ordinary specs: `expectTypeOf` erases at runtime, so
+  the assertion is discharged by `vue-tsc -b` rather than by the vitest run. See
+  `src/tests/api/automationApi.spec.ts` for the worked example (it pins
+  `Proposal.approvedRevisionId`, which its runtime tests structurally could not).
 
 Frontend lint suppression guidance:
 - Prefer fixing lint violations over suppressing them.
