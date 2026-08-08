@@ -35,7 +35,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             var overrideSettings = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(dbPath),
                 // Provide a stable test JWT secret so tests do not depend on
                 // appsettings.Development.json or FirstRunBootstrapper side-effects.
                 ["Jwt:SecretKey"] = "TaskdeckTestsOnlySecretKeyMustBeLongEnough123!",
@@ -70,7 +70,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             // only the connection string differs (isolated per-factory temp file), so
             // the test registration is structurally unable to drift from production (#1282).
             services.AddDbContext<TaskdeckDbContext>(options =>
-                options.UseTaskdeckSqlite($"Data Source={dbPath}", databaseSettings));
+                options.UseTaskdeckSqlite(TestSqlite.ConnectionString(dbPath), databaseSettings));
             services.AddSingleton(new LlmProviderSettings
             {
                 EnableLiveProviders = false,
@@ -99,11 +99,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             return;
         }
 
-        // Drop pooled connections so WAL/SHM sidecar file handles release before the
-        // delete loop (mirrors SqlitePragmaInterceptorTests.Dispose). Without this, a
-        // pooled connection can hold -wal/-shm open, the delete throws IOException,
-        // and the catch below silently leaks the temp files.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // The host's connections use Pooling=False (TestSqlite, #1609), so disposing it above
+        // closes the -wal/-shm handles outright and the delete loop below can succeed. This
+        // previously called the process-global pool-clearing API, which released other test
+        // classes' handles too and raced their concurrent opens.
 
         foreach (var dbPath in _dbPaths)
         {

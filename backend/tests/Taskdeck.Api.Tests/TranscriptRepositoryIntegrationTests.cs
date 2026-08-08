@@ -77,7 +77,7 @@ public sealed class TranscriptRepositoryIntegrationTests
 
     private static DbContextOptions<TaskdeckDbContext> CreateOptions(string dbPath) =>
         new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(dbPath))
             .Options;
 
     private static string CreateDbPath() => Path.Combine(Path.GetTempPath(), $"taskdeck-transcript-{Guid.NewGuid():N}.db");
@@ -101,7 +101,6 @@ public sealed class TranscriptRepositoryIntegrationTests
 
     private static void Cleanup(string dbPath)
     {
-        SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
         {
             var path = dbPath + suffix;
