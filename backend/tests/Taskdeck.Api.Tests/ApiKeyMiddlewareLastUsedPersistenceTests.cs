@@ -98,7 +98,7 @@ public sealed class ApiKeyMiddlewareLastUsedPersistenceTests : IDisposable
     private Task<TaskdeckDbContext> CreateContextAsync()
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .Options;
         return Task.FromResult(new TaskdeckDbContext(options));
     }
@@ -133,7 +133,6 @@ public sealed class ApiKeyMiddlewareLastUsedPersistenceTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
         {
             var path = _dbPath + suffix;

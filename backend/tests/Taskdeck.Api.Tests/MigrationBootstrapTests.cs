@@ -30,7 +30,7 @@ public class MigrationBootstrapTests : IDisposable
             $"taskdeck-migration-test-{Guid.NewGuid():N}.db");
 
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .Options;
 
         _context = new TaskdeckDbContext(options);
