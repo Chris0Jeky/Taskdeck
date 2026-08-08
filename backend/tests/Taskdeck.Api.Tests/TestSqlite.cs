@@ -18,17 +18,37 @@ namespace Taskdeck.Api.Tests;
 /// </para>
 /// <para>
 /// xUnit runs test classes as parallel collections by default and this assembly declares no
-/// parallelism override, so one class's cleanup could dispose a native handle another class had
-/// just taken from the pool and was about to open. The victim failed with
-/// <c>ObjectDisposedException: 'SQLitePCL.sqlite3'</c> inside <c>SqliteConnection.Open()</c> —
-/// typically on the first connection a migration opens, which is why it surfaced as an unrelated
-/// integration test failing at random.
+/// parallelism override, so that call was **shared mutable state reachable from every test class at
+/// once**. A victim failed with <c>ObjectDisposedException: 'SQLitePCL.sqlite3'</c> inside
+/// <c>SqliteConnection.Open()</c> on a migration's first connection, in a PR that changed no backend
+/// code (<c>#1608</c>), and the same shape has been investigated as a one-off three times before
+/// (<c>#1282</c>, <c>#1357</c>, <c>#1512</c>).
 /// </para>
 /// <para>
-/// With pooling disabled the handle closes when the connection is disposed, the files unlock
-/// immediately, cleanup can delete them, and there is no pool to clear — so the shared mutable
+/// **Stated precisely, because the exact window was NOT reproduced:** an adversarial review probed
+/// Microsoft.Data.Sqlite 8.0.29 directly and found that the pool-clearing call does *not* dispose a
+/// connection that is currently checked out, and could not provoke the failure in ~233,000 racing
+/// cycles. So the stack trace is *consistent with* a pooled native handle being disposed under a
+/// concurrent open, and the call was undeniably process-global shared state that no test owned — but
+/// the precise interleaving is inferred, not demonstrated. Do not repeat it downstream as
+/// established mechanism. What is established is that the shared state existed, that the failure was
+/// real and unrelated to the diff that surfaced it, and that removing the state removes the class of
+/// problem.
+/// </para>
+/// <para>
+/// With pooling disabled the handle closes when the connection is disposed, the <c>-wal</c>/<c>-shm</c>
+/// sidecars unlock, cleanup can delete them, and there is no pool to clear — so the shared mutable
 /// state is removed rather than timed. Do not reintroduce the pool-clearing call: it would restore
-/// the race for every SQLite test in this assembly, not only the one that calls it.
+/// the shared state for every SQLite test in this assembly, not only the one that calls it.
+/// </para>
+/// <para>
+/// This does **not** make the assembly leak-free, and the change should not be described as if it
+/// did. Measured on a full-suite run after the change: zero <c>-wal</c>/<c>-shm</c> leaks, but ~199
+/// zero-byte <c>.db.migrate.lock</c> files still accumulate, because
+/// <c>TestWebApplicationFactory.GetDatabaseCleanupTargets</c> enumerates
+/// <c>.db</c>/<c>-wal</c>/<c>-shm</c>/<c>-journal</c> and never <c>.migrate.lock</c> —
+/// a pre-existing gap unrelated to pooling (<c>SerializedMigratorTests</c> and the CLI harness do
+/// clean it). One real <c>.db</c> also survived. Tracked separately; see <c>#1609</c>.
 /// </para>
 /// <para>
 /// In-memory connection strings (<c>Data Source=:memory:</c>) deliberately do not use this helper.
