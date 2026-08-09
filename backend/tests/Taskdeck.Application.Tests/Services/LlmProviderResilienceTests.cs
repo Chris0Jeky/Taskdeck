@@ -17,6 +17,34 @@ namespace Taskdeck.Application.Tests.Services;
 /// </summary>
 public class LlmProviderResilienceTests
 {
+    [Fact]
+    public async Task OpenAiCompatible_CompleteAsync_GarbageResponseBody_ReturnsDegradedResult()
+    {
+        var settings = new LlmProviderSettings
+        {
+            EnableLiveProviders = true,
+            Provider = "OpenAICompatible",
+            OpenAiCompatible = new OpenAiCompatibleProviderSettings
+            {
+                ApiKey = "test-compatible-key",
+                BaseUrl = "https://api.example.test/v1",
+                Model = "vendor/model"
+            }
+        };
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("not a compatible completion", Encoding.UTF8, "text/plain")
+        });
+        var provider = new OpenAiCompatibleLlmProvider(
+            new HttpClient(handler), settings, NullLogger<OpenAiCompatibleLlmProvider>.Instance);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "create a card")]));
+
+        result.IsDegraded.Should().BeTrue();
+        result.Provider.Should().Be("OpenAICompatible");
+    }
+
     // ── OpenAI: Garbage Response (Invalid JSON Body) ─────────────────
 
     [Fact]
