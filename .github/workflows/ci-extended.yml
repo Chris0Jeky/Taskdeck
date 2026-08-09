@@ -35,12 +35,136 @@ jobs:
   workflow-lint:
     name: Workflow Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_ARCHIVE_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      PYFLAKES_VERSION: "3.4.0"
+      PYFLAKES_WHEEL_SHA256: f742a7dbd0d9cb9ea41e9a24a918996e8170c799fa528688d40dd582c8265f4f
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Actionlint toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          archive_name="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          archive_path="${RUNNER_TEMP}/${archive_name}"
+          install_dir="${RUNNER_TEMP}/actionlint-${ACTIONLINT_VERSION}"
+          download_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive_name}"
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --proto '=https' \
+            --tlsv1.2 \
+            --connect-timeout 15 \
+            --max-time 120 \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-max-time 240 \
+            --output "${archive_path}" \
+            "${download_url}"
+          bash scripts/ci/verify-sha256.sh "${ACTIONLINT_ARCHIVE_SHA256}" "${archive_path}"
+
+          mkdir -p "${install_dir}"
+          tar --extract --gzip --file "${archive_path}" --directory "${install_dir}" actionlint
+          actionlint_bin="${install_dir}/actionlint"
+          if [ ! -f "${actionlint_bin}" ] || [ -L "${actionlint_bin}" ]; then
+            echo "::error::Extracted Actionlint must be a regular file and not a symbolic link"
+            exit 1
+          fi
+          chmod 0755 "${actionlint_bin}"
+
+          version_output="$("${actionlint_bin}" -version)"
+          actual_version="${version_output%%$'\n'*}"
+          if [ "${actual_version}" != "${ACTIONLINT_VERSION}" ]; then
+            echo "::error::Expected Actionlint ${ACTIONLINT_VERSION}, got ${actual_version}"
+            exit 1
+          fi
+          printf '%s\n' "${version_output}"
+
+          pyflakes_wheel_name="pyflakes-${PYFLAKES_VERSION}-py2.py3-none-any.whl"
+          pyflakes_wheel_path="${RUNNER_TEMP}/${pyflakes_wheel_name}"
+          pyflakes_download_url="https://files.pythonhosted.org/packages/c2/2f/81d580a0fb83baeb066698975cb14a618bdbed7720678566f1b046a95fe8/${pyflakes_wheel_name}"
+          pyflakes_venv="${RUNNER_TEMP}/pyflakes-${PYFLAKES_VERSION}"
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --proto '=https' \
+            --tlsv1.2 \
+            --connect-timeout 15 \
+            --max-time 120 \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-max-time 240 \
+            --output "${pyflakes_wheel_path}" \
+            "${pyflakes_download_url}"
+          bash scripts/ci/verify-sha256.sh "${PYFLAKES_WHEEL_SHA256}" "${pyflakes_wheel_path}"
+
+          python3 -m venv "${pyflakes_venv}"
+          "${pyflakes_venv}/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-deps \
+            --no-index \
+            "${pyflakes_wheel_path}"
+          pyflakes_bin="${pyflakes_venv}/bin/pyflakes"
+          if [ ! -f "${pyflakes_bin}" ] || [ -L "${pyflakes_bin}" ] || [ ! -x "${pyflakes_bin}" ]; then
+            echo "::error::Installed Pyflakes entry point is not a regular executable file"
+            exit 1
+          fi
+          pyflakes_version_output="$("${pyflakes_bin}" --version)"
+          pyflakes_version="${pyflakes_version_output%% *}"
+          if [ "${pyflakes_version}" != "${PYFLAKES_VERSION}" ]; then
+            echo "::error::Expected Pyflakes ${PYFLAKES_VERSION}, got ${pyflakes_version}"
+            exit 1
+          fi
+          printf '%s\n' "${pyflakes_version_output}"
+
+          if ! shellcheck_bin="$(command -v shellcheck)"; then
+            echo "::error::ShellCheck is missing or not executable"
+            exit 1
+          fi
+          if [ ! -x "${shellcheck_bin}" ]; then
+            echo "::error::ShellCheck is missing or not executable"
+            exit 1
+          fi
+          "${shellcheck_bin}" --version
+
+          {
+            printf 'ACTIONLINT_BIN=%s\n' "${actionlint_bin}"
+            printf 'ACTIONLINT_SHELLCHECK_BIN=%s\n' "${shellcheck_bin}"
+            printf 'ACTIONLINT_PYFLAKES_BIN=%s\n' "${pyflakes_bin}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Test Actionlint bootstrap contract
+        run: node --test scripts/ci/actionlint-bootstrap.test.mjs
 
       - name: Run actionlint
-        uses: rhysd/actionlint@v1.7.12
+        shell: bash
+        run: |
+          set -euo pipefail
+          checkout_head="$(git rev-parse --verify HEAD)"
+          workflow_count="$(find .github/workflows -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) -print | awk 'END { print NR }')"
+          if [ "${workflow_count}" -le 0 ]; then
+            echo "::error::No workflow files found after checkout"
+            exit 1
+          fi
+          printf 'Checked out HEAD: %s\nWorkflow files discovered: %s\n' "${checkout_head}" "${workflow_count}"
+          "${ACTIONLINT_BIN}" \
+            -color \
+            -verbose \
+            -shellcheck "${ACTIONLINT_SHELLCHECK_BIN}" \
+            -pyflakes "${ACTIONLINT_PYFLAKES_BIN}"
 
   dependency-review:
     name: Dependency Review
