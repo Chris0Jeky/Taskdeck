@@ -229,6 +229,9 @@ public class ProtectedOutboundTelemetryHandlerTests
             ["Llm:OpenAi:ApiKey"] = "test-openai-key",
             ["Llm:OpenAi:BaseUrl"] = "http://localhost:12345",
             ["Llm:OpenAi:Model"] = "test-openai-model",
+            ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+            ["Llm:OpenAiCompatible:BaseUrl"] = "http://localhost:12345/openai/v1",
+            ["Llm:OpenAiCompatible:Model"] = "test-compatible-model",
             ["Llm:Ollama:AllowLocalhostEndpoints"] = "true",
             ["OutboundWebhooks:Security:AllowLocalhostEndpoints"] = "true"
         });
@@ -260,6 +263,7 @@ public class ProtectedOutboundTelemetryHandlerTests
             var protectedClientNames = new[]
             {
                 nameof(OpenAiLlmProvider),
+                LlmProviderRegistration.OpenAiCompatibleHttpClientName,
                 nameof(GeminiLlmProvider),
                 nameof(OllamaLlmProvider),
                 "OutboundWebhookDelivery"

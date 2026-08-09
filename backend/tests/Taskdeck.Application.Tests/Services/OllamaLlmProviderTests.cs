@@ -756,6 +756,25 @@ public class OllamaLlmProviderTests
         };
     }
 
+    [Fact]
+    public async Task StreamAsync_PropagatesBufferedCompletionDegradationMetadata()
+    {
+        var settings = BuildSettings();
+        settings.Ollama.Model = string.Empty;
+        var provider = new OllamaLlmProvider(
+            new HttpClient(), settings, NullLogger<OllamaLlmProvider>.Instance);
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "hello")],
+                           SystemPrompt: string.Empty)))
+            events.Add(item);
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].IsDegraded.Should().BeTrue();
+        events[^1].DegradedReason.Should().Contain("configuration");
+    }
+
     /// <summary>
     /// Settings used for selection-policy tests. The Ollama BaseUrl defaults to
     /// http://localhost:11434, which requires <c>allowLocalhostEndpoints: true</c>

@@ -470,6 +470,25 @@ public class GeminiLlmProviderTests
         result.IsActionable.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task StreamAsync_PropagatesBufferedCompletionDegradationMetadata()
+    {
+        var settings = BuildSettings();
+        settings.Gemini.ApiKey = string.Empty;
+        var provider = new GeminiLlmProvider(
+            new HttpClient(), settings, NullLogger<GeminiLlmProvider>.Instance);
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "hello")],
+                           SystemPrompt: string.Empty)))
+            events.Add(item);
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].IsDegraded.Should().BeTrue();
+        events[^1].DegradedReason.Should().Contain("configuration");
+    }
+
     [Theory]
     [InlineData("{\"reply\":\"incomplete", true)]
     [InlineData("{}", false)]

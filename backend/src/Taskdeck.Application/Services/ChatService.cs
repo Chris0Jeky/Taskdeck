@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,10 @@ namespace Taskdeck.Application.Services;
 public class ChatService : IChatService
 {
     private const int MaxPromptLength = 4000;
+    private const int MaxStreamedAssistantBytes = 1_048_576;
     private const int MaxChecklistItemCount = 30;
+    private const string StreamErrorPlaceholder = "The provider could not complete the response.";
+    private const string StreamErrorDegradedReason = "The upstream provider could not complete the response.";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -137,6 +141,8 @@ public class ChatService : IChatService
         string? quotaBilledProvider = null;
         string? quotaBilledModel = null;
         var quotaBilledTokens = 0;
+        var quotaEstimatedTokens = 0;
+        LlmDispatchContext? quotaDispatchContext = null;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -190,6 +196,7 @@ public class ChatService : IChatService
                 if (!reservation.Allowed)
                     return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
                 quotaReservationId = reservation.ReservationId;
+                quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -238,6 +245,7 @@ public class ChatService : IChatService
                         toolChatMessages,
                         Attribution: BuildAttribution(session, userId),
                         SystemPrompt: ToolCallingSystemPrompt.Prompt);
+                    quotaDispatchContext = toolCompletionRequest.DispatchContext;
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
@@ -375,30 +383,35 @@ public class ChatService : IChatService
                             Attribution: BuildAttribution(session, userId),
                             BoardContext: boardContext,
                             SystemPrompt: clarificationPrompt);
+                        quotaDispatchContext = completionRequest.DispatchContext;
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
-                        // Finalize the quota reservation with the actual token count. The provider
-                        // reports a combined TokensUsed total without an input/output split. Record
-                        // the full total as input tokens and 0 for output until providers surface
-                        // separate counts.
-                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
+                        // Finalize with authoritative combined usage when present. If the provider
+                        // omitted usage, commit the reservation estimate so a short output cannot
+                        // undercharge a large input. Record the chosen total as input tokens and 0
+                        // for output until providers surface a reliable split.
+                        var quotaTokens = ResolveQuotaTokens(
+                            llmResult,
+                            quotaEstimatedTokens,
+                            completionRequest.DispatchContext);
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && quotaTokens > 0)
                         {
                             // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             quotaBilledProvider = llmResult.Provider;
                             quotaBilledModel = llmResult.Model;
-                            quotaBilledTokens = llmResult.TokensUsed;
+                            quotaBilledTokens = quotaTokens;
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
-                                llmResult.TokensUsed, 0,
+                                quotaTokens, 0,
                                 CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
 
                     assistantContent = llmResult.Content;
-                    tokenUsage = llmResult.TokensUsed;
+                    tokenUsage = llmResult.HasAuthoritativeTokenUsage ? llmResult.TokensUsed : null;
                     degradedReason = llmResult.DegradedReason;
 
                     if (llmResult.IsDegraded)
@@ -549,7 +562,21 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        var dispatch = quotaDispatchContext?.ReadSnapshot();
+                        if (dispatch is { Phase: LlmDispatchPhase.Dispatched } && quotaEstimatedTokens > 0)
+                        {
+                            await _quotaService.CommitReservationAsync(
+                                rid,
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                dispatch.Value.Provider ?? string.Empty,
+                                dispatch.Value.Model ?? string.Empty,
+                                quotaEstimatedTokens, 0,
+                                CancellationToken.None);
+                        }
+                        else
+                        {
+                            await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception settleEx)
@@ -599,13 +626,19 @@ public class ChatService : IChatService
         // Accumulate streamed content and capture usage from the final token event
         // so we can persist an assistant message and record quota usage after the
         // stream completes.
-        var contentBuilder = new System.Text.StringBuilder();
+        var contentBuilder = new StringBuilder();
+        var streamedContentBytes = 0;
         int? tokensUsed = null;
         string? provider = null;
         string? model = null;
+        var streamIsDegraded = false;
+        string? streamDegradedReason = null;
+        var persistEmptyTerminalOutcome = false;
+        var terminalHadError = false;
         // True once the provider has delivered at least one non-error event: the LLM call was made and
         // tokens flowed, so the reservation is billable even if the final usage event never arrives.
         var providerStreamed = false;
+        LlmDispatchContext? quotaDispatchContext = null;
 
         // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
         // settled if the stream throws or yields no usable tokens. The scope opens immediately after
@@ -625,6 +658,7 @@ public class ChatService : IChatService
                 chatMessages,
                 Attribution: BuildAttribution(session, userId),
                 BoardContext: boardContext);
+            quotaDispatchContext = request.DispatchContext;
 
             await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
@@ -633,9 +667,9 @@ public class ChatService : IChatService
                 if (token.Error == null)
                     providerStreamed = true;
 
-                contentBuilder.Append(token.Token);
-                // Best-known provider/model: any event may carry them; the final usage event is
-                // authoritative and overwrites earlier values.
+                // Capture terminal attribution and authoritative usage before enforcing the
+                // local persistence cap. An oversized terminal event is still billable, even
+                // though its content must never be appended or stored.
                 if (token.Provider != null)
                     provider = token.Provider;
                 if (token.Model != null)
@@ -643,19 +677,64 @@ public class ChatService : IChatService
                 if (token.IsComplete)
                     tokensUsed = token.TokensUsed;
 
+                var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
+                if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
+                    terminalHadError = true;
+                    persistEmptyTerminalOutcome = true;
+                    yield return new LlmTokenEvent(
+                        string.Empty,
+                        true,
+                        Error: streamDegradedReason,
+                        TokensUsed: tokensUsed,
+                        Provider: provider,
+                        Model: model)
+                    {
+                        IsDegraded = true,
+                        DegradedReason = streamDegradedReason
+                    };
+                    break;
+                }
+
+                streamedContentBytes += tokenBytes;
+                contentBuilder.Append(token.Token);
+                if (token.IsDegraded)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = token.DegradedReason ?? "Provider returned a degraded stream.";
+                    if (token.IsComplete)
+                        persistEmptyTerminalOutcome = true;
+                }
+                if (!string.IsNullOrWhiteSpace(token.Error))
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = StreamErrorDegradedReason;
+                    terminalHadError = true;
+                    if (token.IsComplete)
+                        persistEmptyTerminalOutcome = true;
+                }
+
                 yield return token;
             }
 
             // Persist the streamed assistant message with token usage so the streaming
             // path is consistent with the non-streaming SendMessageAsync path.
             var streamedContent = contentBuilder.ToString();
+            if (streamedContent.Length == 0 && persistEmptyTerminalOutcome)
+                streamedContent = terminalHadError
+                    ? StreamErrorPlaceholder
+                    : "The provider ended the response without returning text.";
             if (!string.IsNullOrEmpty(streamedContent))
             {
                 var assistantMessage = new ChatMessage(
                     sessionId,
                     ChatMessageRole.Assistant,
                     streamedContent,
-                    tokenUsage: tokensUsed);
+                    messageType: streamIsDegraded ? "degraded" : "text",
+                    tokenUsage: tokensUsed,
+                    degradedReason: streamIsDegraded ? streamDegradedReason : null);
                 session.AddMessage(assistantMessage);
                 await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -698,22 +777,33 @@ public class ChatService : IChatService
                             tokensUsed.Value, 0,
                             CancellationToken.None);
                     }
-                    else if (providerStreamed)
-                    {
-                        // No final count exists, so the reserved estimate is committed as input tokens
-                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
-                        // the estimate than to let abandonment erase real usage. Unknown provider/model
-                        // fall back to the repository's reservation placeholder.
-                        await _quotaService.CommitReservationAsync(
-                            rid,
-                            userId, Domain.Enums.LlmSurface.Chat,
-                            provider ?? string.Empty, model ?? string.Empty,
-                            quotaEstimatedTokens, 0,
-                            CancellationToken.None);
-                    }
                     else
                     {
-                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        var dispatch = quotaDispatchContext?.ReadSnapshot();
+                        var shouldCommitEstimate = dispatch switch
+                        {
+                            { Phase: LlmDispatchPhase.Dispatched } => true,
+                            { Phase: LlmDispatchPhase.ObservedPreDispatch } => false,
+                            _ => providerStreamed
+                        } && quotaEstimatedTokens > 0;
+                        if (!shouldCommitEstimate)
+                        {
+                            await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        }
+                        else
+                        {
+                            // No final count exists, so the reserved estimate is committed as input tokens
+                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
+                        // the estimate than to let abandonment erase real usage. Unknown provider/model
+                            // fall back to the repository's reservation placeholder.
+                            await _quotaService.CommitReservationAsync(
+                                rid,
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                provider ?? dispatch?.Provider ?? string.Empty,
+                                model ?? dispatch?.Model ?? string.Empty,
+                                quotaEstimatedTokens, 0,
+                                CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception settleEx)
@@ -727,6 +817,26 @@ public class ChatService : IChatService
                 }
             }
         }
+    }
+
+    private static int ResolveQuotaTokens(
+        LlmCompletionResult result,
+        int reservationEstimate,
+        LlmDispatchContext dispatchContext)
+    {
+        var dispatch = dispatchContext.ReadSnapshot();
+        if (dispatch.Phase == LlmDispatchPhase.ObservedPreDispatch)
+            return 0;
+        if (dispatch.Phase == LlmDispatchPhase.Dispatched)
+            return result.HasAuthoritativeTokenUsage && result.TokensUsed > 0
+                ? result.TokensUsed
+                : reservationEstimate;
+
+        return result.HasAuthoritativeTokenUsage
+            ? result.TokensUsed
+            : result.ShouldSettleQuotaReservation
+                ? reservationEstimate
+                : 0;
     }
 
     private static bool ContainsBlockedPromptPattern(string content)
