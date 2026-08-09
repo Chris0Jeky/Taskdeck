@@ -10,6 +10,9 @@ using Taskdeck.Cli.Commands;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Persistence;
 
+var startupTrace = CliStartupTrace.CreateFromTestHarnessEnvironment();
+startupTrace.Record(CliStartupTrace.ManagedEntryPhase);
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // CLI stdout must be clean JSON. Remove all default logging providers so EF Core
@@ -55,16 +58,28 @@ builder.Services.AddScoped<CardsCommandHandler>();
 builder.Services.AddScoped<ApiKeysCommandHandler>();
 builder.Services.AddScoped<InvitesCommandHandler>();
 
-using var host = builder.Build();
-
-using (var startupScope = host.Services.CreateScope())
+startupTrace.Record(CliStartupTrace.HostBuildBeginPhase);
+var exitCode = 1;
+using (var host = builder.Build())
 {
-    var dbContext = startupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-    // Serialize migrations across processes (API/MCP/CLI) via a file lock (#1164).
-    // Pass no logger: CLI stdout must stay clean JSON (the helper never writes to stdout,
-    // but logging is suppressed here regardless).
-    SerializedMigrator.Migrate(dbContext);
+    startupTrace.Record(CliStartupTrace.HostBuildEndPhase);
+
+    startupTrace.Record(CliStartupTrace.MigrationBeginPhase);
+    using (var startupScope = host.Services.CreateScope())
+    {
+        var dbContext = startupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        // Serialize migrations across processes (API/MCP/CLI) via a file lock (#1164).
+        // Pass no logger: CLI stdout must stay clean JSON (the helper never writes to stdout,
+        // but logging is suppressed here regardless).
+        SerializedMigrator.Migrate(dbContext);
+    }
+
+    startupTrace.Record(CliStartupTrace.MigrationEndPhase);
+    var dispatcher = new CommandDispatcher(host.Services);
+    startupTrace.Record(CliStartupTrace.DispatchBeginPhase);
+    exitCode = await dispatcher.DispatchAsync(args);
+    startupTrace.Record(CliStartupTrace.DispatchEndPhase);
 }
 
-var dispatcher = new CommandDispatcher(host.Services);
-return await dispatcher.DispatchAsync(args);
+startupTrace.Record(CliStartupTrace.DisposalEndPhase);
+return exitCode;
