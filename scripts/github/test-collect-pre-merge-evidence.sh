@@ -393,11 +393,11 @@ run_finish() {
   local session_token
   session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
-  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  printf '%s\n' "$session_token" | env MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    printf '%s\n' "$session_token" | "$collector" finish
+    "$collector" finish
 }
 
 run_abort() {
@@ -408,11 +408,11 @@ run_abort() {
   local session_token
   session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
-  MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  printf '%s\n' "$session_token" | env MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    printf '%s\n' "$session_token" | "$collector" abort
+    "$collector" abort
 }
 
 case_root="$fixture_root/explicit"

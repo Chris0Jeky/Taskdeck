@@ -59,7 +59,7 @@ recording the failure cause, explicitly abandon only that token-authenticated, c
 session before restarting:
 
 ```bash
-bash scripts/github/collect-pre-merge-evidence.sh abort VALIDATED_SESSION_TOKEN
+printf '%s\n' VALIDATED_SESSION_TOKEN | bash scripts/github/collect-pre-merge-evidence.sh abort
 ```
 
 `abort` validates the operator token plus the state path, worktree, Git directory, PR number, and
@@ -117,7 +117,7 @@ Immediately after the checks and diff inspection, collect all feedback and exact
 
 ```bash
 if ! evidence_packet="$(
-  bash scripts/github/collect-pre-merge-evidence.sh finish VALIDATED_SESSION_TOKEN
+  printf '%s\n' VALIDATED_SESSION_TOKEN | bash scripts/github/collect-pre-merge-evidence.sh finish
 )"; then
   printf '%s\n' "$evidence_packet"
   exit 1
