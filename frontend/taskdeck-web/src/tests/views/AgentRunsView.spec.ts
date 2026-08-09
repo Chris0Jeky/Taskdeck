@@ -105,6 +105,9 @@ describe('AgentRunsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('No runs yet')
+    expect(wrapper.text()).toContain('Runs are currently created through the API.')
+    expect(wrapper.text()).toContain('Automation-trigger execution is planned for a future release.')
+    expect(wrapper.text()).not.toContain('via the API or an automation trigger')
   })
 
   it('renders run cards with objective and status', async () => {
@@ -116,6 +119,23 @@ describe('AgentRunsView', () => {
     expect(wrapper.text()).toContain('Completed')
     expect(wrapper.text()).toContain('Triaged 5 captures')
     expect(wrapper.text()).toContain('Proposal linked')
+  })
+
+  it('explains that queued API-created runs have not started', async () => {
+    mockAgentStore.runs = [{
+      ...MOCK_RUN,
+      status: 'Queued',
+      stepsExecuted: 0,
+      summary: null,
+      proposalId: null,
+      completedAt: null,
+    }]
+    const wrapper = mount(AgentRunsView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
+    expect(wrapper.text()).toContain('Requested:')
+    expect(wrapper.text()).not.toContain('Started:')
   })
 
   it('shows failure reason for failed runs', async () => {

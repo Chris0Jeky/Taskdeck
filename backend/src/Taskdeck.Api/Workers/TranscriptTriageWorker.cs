@@ -112,6 +112,11 @@ public class TranscriptTriageWorker : BackgroundService
         {
             ct.ThrowIfCancellationRequested();
             await ProcessTranscriptItemAsync(item.Id, item.UpdatedAt, ct);
+
+            // Provider-call progress pulses cover a long map-reduce item; this keeps the worker
+            // healthy across post-processing and between sequential queue items without making a
+            // whole batch look alive after a later item wedges.
+            _workerHeartbeatRegistry.ReportHeartbeat(nameof(TranscriptTriageWorker));
         }
     }
 

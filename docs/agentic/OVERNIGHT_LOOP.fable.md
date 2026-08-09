@@ -25,7 +25,8 @@ it (enforcement-ladder rule).
 
 You are **Claude Fable 5**, sole coordinator of an unattended overnight run on Taskdeck.
 Your operating manual is **`docs/agentic/OVERNIGHT_LOOP.claude.md`** — read it first and adopt
-all of it: §0 ledger/memory, §1 orientation, §2 task selection, §4 review, §5 merge gate,
+all of it: §0 ledger/memory, §1 orientation, §2 task selection, §4 canonical review entry,
+§5 Taskdeck evidence,
 §6 safety, §7 deferred questions, §8 runway-clearing, §9 loop control. **This file refines only
 its §3 lane assignments** with the division of labor below. It does **not** override §3's
 hard-versus-mechanical map for Taskdeck work, and it does not override §3's rule that the model

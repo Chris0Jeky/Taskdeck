@@ -20,7 +20,7 @@ description = "Implement one Taskdeck issue in an isolated worktree. Use taskdec
 nickname_candidates = ["IssueWorker", "WorktreeWorker", "PatchWorker"]
 
 [agents.pr_reviewer]
-description = "Perform a fresh adversarial review of a Taskdeck PR. Use taskdeck-pr-review-loop and focus on bugs, security, missing tests, docs drift, and merge risk."
+description = "Apply Taskdeck-specific PR risk lenses when the canonical review pipeline requests an independent pass. Focus on bugs, security, missing tests, docs drift, and merge risk."
 nickname_candidates = ["Reviewer", "ColdReview", "Adversary"]
 
 [agents.ci_recovery]

@@ -66,7 +66,7 @@ public class StandaloneMcpHostFilteringTests
         WebApplication? runningApp = null;
         try
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", TestSqlite.ConnectionString(dbPath));
             Environment.SetEnvironmentVariable(
                 "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             // The exact #1367 fail-open trigger: separator-only, so IsNullOrWhiteSpace is
@@ -278,7 +278,7 @@ public class StandaloneMcpHostFilteringTests
         WebApplication? runningApp = null;
         try
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", TestSqlite.ConnectionString(dbPath));
             Environment.SetEnvironmentVariable(
                 "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             Environment.SetEnvironmentVariable("AllowedHosts", null);
@@ -376,7 +376,7 @@ public class StandaloneMcpHostFilteringTests
     private static async Task SeedApiKeyAsync(string dbPath, string plaintextKey)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(dbPath))
             .AddInterceptors(new SqlitePragmaConnectionInterceptor(5000))
             .Options;
         await using (var db = new TaskdeckDbContext(options))
@@ -388,8 +388,8 @@ public class StandaloneMcpHostFilteringTests
             await db.SaveChangesAsync();
         }
 
-        // Release the pooled seed connection so the host is never blocked on this file handle.
-        SqliteConnection.ClearAllPools();
+        // The seed connection uses Pooling=False (TestSqlite, #1609), so it is fully closed when
+        // the DbContext above is disposed and the host is never blocked on this file handle.
     }
 
     // Fail-fast proof for the standalone host's RateLimiting validation: the co-hosted API runs
@@ -422,7 +422,7 @@ public class StandaloneMcpHostFilteringTests
         using var capturedError = new StringWriter();
         try
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", TestSqlite.ConnectionString(dbPath));
             Environment.SetEnvironmentVariable(
                 "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             Environment.SetEnvironmentVariable("AllowedHosts", null);
@@ -504,7 +504,7 @@ public class StandaloneMcpHostFilteringTests
         WebApplication? runningApp = null;
         try
         {
-            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", $"Data Source={dbPath}");
+            Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", TestSqlite.ConnectionString(dbPath));
             Environment.SetEnvironmentVariable(
                 "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             // Leave AllowedHosts unset so the standalone guard applies its loopback allowlist; the
@@ -608,8 +608,8 @@ public class StandaloneMcpHostFilteringTests
 
     private static void TryDeleteDatabase(string dbPath)
     {
-        // Release pooled SQLite handles so Windows allows the delete.
-        SqliteConnection.ClearAllPools();
+        // Nothing to release first: Pooling=False (TestSqlite, #1609) means no handle outlives
+        // its connection, so Windows allows the delete.
         foreach (var path in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
         {
             try

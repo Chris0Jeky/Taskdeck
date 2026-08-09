@@ -21,6 +21,6 @@
     "session_baseline_tokens": null
   },
   "human_todo": "OUTSTANDING_TASKS.md",
-  "notes": "Taskdeck-owned runtime hooks and local command-deny rules were retired on 2026-07-31 under #1552. This file remains the T3 authority declaration; user-, organization-, and runtime-level controls are separate effective layers. ci-required.yml is the sole merge gate. Migrated from legacy .claude/tier.json on 2026-07-27.",
-  "last_reviewed": "2026-07-31"
+  "notes": "Taskdeck-owned runtime hooks and local command-deny rules were retired on 2026-07-31 under #1552. This file remains the T3 authority declaration; user-, organization-, and runtime-level controls are separate effective layers. Push and merge are agent-executable within explicit task scope once ci-required.yml and the global review-and-ship gate pass; there is no owner-click reservation. Human legal/release decisions and repository-settings mutations remain separately scoped. Migrated from legacy .claude/tier.json on 2026-07-27.",
+  "last_reviewed": "2026-08-01"
 }

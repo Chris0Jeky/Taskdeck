@@ -19,7 +19,7 @@ namespace Taskdeck.Api.Tests;
 
 /// <summary>
 /// Full-HTTP golden-path integration tests for the LLM-backed transcript triage lane
-/// (REVIVAL-08 M1): transcript capture -> triage -> TranscriptTriageWorker ->
+/// (REVIVAL-08 M3): transcript capture -> triage -> TranscriptTriageWorker ->
 /// ICaptureTriageService -> ILlmCaptureTriageExtractor against a DI-substituted non-mock
 /// ILlmProvider stub -> proposal -> approve/execute -> board cards. Mirrors the flow of
 /// <see cref="CaptureToBoardGoldenPathIntegrationTests"/> and the provider stub substitution
@@ -51,7 +51,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         "We walked through the release timeline and the pilot feedback in detail.\n" +
         "No owners were assigned during the call.";
 
-    private static readonly (string Title, string Evidence)[] StubTasks =
+    private static readonly (string Title, string EvidenceQuote)[] StubTasks =
     [
         ("Send the Q3 budget summary to finance",
             "I will send the Q3 budget summary to finance by Friday."),
@@ -61,10 +61,18 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
             "Someone needs to file the onboarding regression bug today.")
     ];
 
-    /// <summary>The exact {"tasks":[{"title","evidence"}]} shape LlmCaptureTriagePrompt.TryParseTasks expects.</summary>
+    /// <summary>The strict v2 task shape LlmCaptureTriagePrompt.TryParseTasks expects.</summary>
     private static readonly string StubTasksJson = JsonSerializer.Serialize(new
     {
-        tasks = StubTasks.Select(task => new { title = task.Title, evidence = task.Evidence }).ToArray()
+        tasks = StubTasks.Select(task => new
+        {
+            title = task.Title,
+            type = "action",
+            assigneeHint = (string?)null,
+            dueDateHint = (string?)null,
+            confidence = 0.9m,
+            evidenceQuote = task.EvidenceQuote
+        }).ToArray()
     });
 
     private readonly TestWebApplicationFactory _baseFactory;
@@ -107,7 +115,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         // Provenance names the REAL provider/model from the completion result, not the extractor.
         triaged.Provenance.Provider.Should().Be(StubProviderName);
         triaged.Provenance.Model.Should().Be(StubModelName);
-        triaged.Provenance.PromptVersion.Should().Be("llm-triage.v1");
+        triaged.Provenance.PromptVersion.Should().Be("llm-triage.v2");
         var proposalId = triaged.Provenance.ProposalId!.Value;
 
         // The extractor sent the transcript text under the triage system prompt with capture attribution.
@@ -158,7 +166,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         cards.Should().NotBeNull();
         cards!.Should().HaveCount(StubTasks.Length);
         cards!.Select(c => c.Title).Should().BeEquivalentTo(StubTasks.Select(t => t.Title));
-        cards!.Select(c => c.Description).Should().BeEquivalentTo(StubTasks.Select(t => t.Evidence));
+        cards!.Select(c => c.Description).Should().BeEquivalentTo(StubTasks.Select(t => t.EvidenceQuote));
         cards!.Should().OnlyContain(c => c.ColumnId == column.Id, "all cards should be placed in the Backlog column");
 
         // Assert: LLM provenance survives conversion intact
@@ -168,7 +176,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         converted.Provenance.ConvertedAt.Should().NotBeNull();
         converted.Provenance.Provider.Should().Be(StubProviderName);
         converted.Provenance.Model.Should().Be(StubModelName);
-        converted.Provenance.PromptVersion.Should().Be("llm-triage.v1");
+        converted.Provenance.PromptVersion.Should().Be("llm-triage.v2");
 
         // Exactly one LLM call for the whole pipeline (no retries, no re-extraction on conversion).
         providerStub.CompletionCallCount.Should().Be(1);
@@ -287,13 +295,92 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         persistedTyped.RequestType.Should().Be(CaptureRequestContract.RequestTypeV1);
     }
 
+    [Fact]
+    public async Task LongTranscript_ShouldMapReduceIntoOnePendingProposalWithoutDirectBoardMutation()
+    {
+        const string mapTaskTitle = "Publish the consolidated meeting notes";
+        const string mapTaskEvidence = "Alice: I will publish the consolidated meeting notes.";
+        var providerStub = new TriageJsonProviderStub(JsonSerializer.Serialize(new
+        {
+            tasks = new[]
+            {
+                new
+                {
+                    title = mapTaskTitle,
+                    type = "action",
+                    assigneeHint = (string?)null,
+                    dueDateHint = (string?)null,
+                    confidence = 0.9m,
+                    evidenceQuote = mapTaskEvidence
+                }
+            }
+        }));
+        var settings = new LlmCaptureTriageSettings
+        {
+            MaxInputTokensPerChunk = 10_000,
+            ChunkOverlapTokens = 256
+        };
+        using var factory = CreateFactoryWithProviderStub(providerStub, settings);
+        using var client = factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(client, "transcript-llm-long-map-reduce");
+        var (board, _) = await CreateBoardWithBacklogColumnAsync(client, "transcript-llm-long-map-reduce-board");
+        var segment = mapTaskEvidence + " We also reviewed the release timeline and risks.\n\n";
+        var repeatedSegments = string.Concat(Enumerable.Repeat(
+            segment,
+            (CaptureRequestContract.MaxTranscriptTextLength / segment.Length) - 1));
+        var longTranscript = repeatedSegments.PadRight(CaptureRequestContract.MaxTranscriptTextLength, 'x');
+        var expectedChunkCount = TranscriptTriageChunker.Chunk(
+            longTranscript,
+            settings.MaxInputTokensPerChunk,
+            settings.ChunkOverlapTokens).Count;
+
+        longTranscript.Length.Should().Be(CaptureRequestContract.MaxTranscriptTextLength);
+        expectedChunkCount.Should().BeGreaterThan(1);
+
+        var captureResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, longTranscript, "TranscriptPaste"));
+        captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var capture = await captureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        capture.Should().NotBeNull();
+
+        var triageResponse = await client.PostAsync($"/api/capture/items/{capture!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var triaged = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.ProposalCreated);
+
+        triaged.Provenance!.ProposalId.Should().NotBeNull();
+        providerStub.CompletionCallCount.Should().Be(expectedChunkCount);
+
+        var proposalResponse = await client.GetAsync($"/api/automation/proposals/{triaged.Provenance.ProposalId}");
+        proposalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposal = await proposalResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal.Should().NotBeNull();
+        proposal!.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.SourceReferenceId.Should().Be(capture.Id.ToString());
+        proposal.Operations.Should().ContainSingle();
+        proposal.Operations[0].Parameters.Should().Contain(mapTaskTitle);
+
+        var cardsResponse = await client.GetAsync($"/api/boards/{board.Id}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>()).Should().BeEmpty(
+            "map-reduce triage must remain proposal-first until the user explicitly approves and executes");
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.AutomationProposals.CountAsync(proposal => proposal.SourceReferenceId == capture.Id.ToString()))
+            .Should().Be(1, "all mapped chunks reduce into the capture's single idempotent proposal");
+    }
+
     /// <summary>
     /// Derives a factory whose scoped <see cref="ILlmProvider"/> is the given non-mock stub,
     /// mirroring <see cref="ChatApiLiveProviderStubTests"/>. The LLM triage extractor gates on
     /// GetHealthAsync (IsMock/IsAvailable), so the stub reporting IsMock:false is what routes
     /// transcript captures onto the live LLM leg.
     /// </summary>
-    private WebApplicationFactory<Program> CreateFactoryWithProviderStub(ILlmProvider providerStub)
+    private WebApplicationFactory<Program> CreateFactoryWithProviderStub(
+        ILlmProvider providerStub,
+        LlmCaptureTriageSettings? triageSettings = null)
     {
         return _baseFactory.WithWebHostBuilder(builder =>
         {
@@ -302,6 +389,11 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
             {
                 services.RemoveAll<ILlmProvider>();
                 services.AddScoped<ILlmProvider>(_ => providerStub);
+                if (triageSettings is not null)
+                {
+                    services.RemoveAll<LlmCaptureTriageSettings>();
+                    services.AddSingleton(triageSettings);
+                }
             });
         });
     }
@@ -347,8 +439,8 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
     }
 
     /// <summary>
-    /// Non-mock provider stub whose completion is a fixed triage-contract JSON payload
-    /// ({"tasks":[{"title","evidence"}]}). GetHealthAsync reports IsMock:false / IsAvailable:true so
+    /// Non-mock provider stub whose completion is a fixed strict-v2 triage-contract JSON payload.
+    /// GetHealthAsync reports IsMock:false / IsAvailable:true so
     /// <see cref="LlmCaptureTriageExtractor"/> treats it as a resolved live provider.
     /// </summary>
     private sealed class TriageJsonProviderStub : ILlmProvider

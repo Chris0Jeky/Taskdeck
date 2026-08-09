@@ -619,6 +619,28 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task UpdateSuggestion_ShouldAllowTranscriptTextAtSourceSpecificLimit()
+    {
+        await AuthenticateAsAsync("capture-edit-transcript");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "original transcript", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto(
+                new string('t', CaptureRequestContract.MaxTranscriptTextLength)));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+        updated.Should().NotBeNull();
+        updated!.RawText.Should().HaveLength(CaptureRequestContract.MaxTranscriptTextLength);
+    }
+
+    [Fact]
     public async Task UpdateSuggestion_ShouldReturnForbidden_WhenItemBelongsToDifferentUser()
     {
         using var ownerClient = _factory.CreateClient();

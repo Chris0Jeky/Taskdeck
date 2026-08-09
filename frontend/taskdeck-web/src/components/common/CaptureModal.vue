@@ -4,7 +4,12 @@ import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { usePerformanceMark } from '../../composables/usePerformanceMark'
 
-const MAX_TRANSCRIPT_LENGTH = 51_200
+// Mirrors CaptureRequestContract.MaxTranscriptTextLength. Keep this client-side guard source-specific:
+// quick captures retain the backend's smaller general-text limit.
+const MAX_TRANSCRIPT_LENGTH = 200_000
+// UTF-8 transport guard: allow any valid 200,000-code-unit transcript, including three-byte CJK text,
+// plus the optional three-byte UTF-8 BOM at the raw boundary.
+const MAX_TRANSCRIPT_FILE_BYTES = 600_003
 
 const props = defineProps<{
   boardId?: string | null
@@ -77,8 +82,8 @@ function handleFileUpload(event: Event) {
     return
   }
 
-  if (file.size > MAX_TRANSCRIPT_LENGTH) {
-    inlineError.value = `File is too large. Maximum size is ${Math.floor(MAX_TRANSCRIPT_LENGTH / 1024)}KB.`
+  if (file.size > MAX_TRANSCRIPT_FILE_BYTES) {
+    inlineError.value = `File is too large. Maximum file size is ${MAX_TRANSCRIPT_FILE_BYTES.toLocaleString()} bytes.`
     target.value = ''
     return
   }

@@ -2,11 +2,11 @@
 
 Last Updated: 2026-08-01
 
-Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
+Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
 ## Core Rule
 
-Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, permitted merges, and docs reconciliation. It must not silently defer work, silently skip tests, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety. Merge only when the repository's declared authority and the canonical `review-and-ship` gate permit it; otherwise park with exact-head evidence.
+Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, docs reconciliation, and merge/post-merge verification when the declared authority, the global `review-and-ship` pipeline, and the explicit task scope permit it. It must not silently defer work, silently skip tests, merge outside those gates, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
 
 Spawned subagents are optional execution machinery, not a default assumption. Use them without asking for extra permission when they are efficient or effective for safely parallelizable work with clear ownership and a coordinator-owned synthesis path. When subagents are unavailable or do not fit the work, use normal local execution, explicit git worktrees, or separate agent sessions as appropriate and state what actually happened.
 
@@ -16,7 +16,7 @@ Use these skills:
 
 - Many issues / batch execution: `taskdeck-issue-batch-orchestrator`
 - One issue in an isolated branch/worktree: `taskdeck-worktree-issue-worker`
-- Canonical PR review and disposition: global `review-and-ship`; add `taskdeck-pr-review-loop` for Taskdeck-specific lenses
+- Taskdeck-specific PR risk lens when the canonical pipeline requests it: `taskdeck-pr-review-loop`
 - Failing CI, comments, conflicts, stale branches: `taskdeck-ci-conflict-recovery`
 - Backend implementation: `taskdeck-backend-slice`
 - Frontend implementation: `taskdeck-frontend-workspace-slice`
@@ -29,11 +29,12 @@ Use these skills:
 At the start of a high-autonomy session:
 
 1. Read `docs/STATUS.md`, `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
-2. Run `powershell -File scripts/check-git-env.ps1`.
-3. Confirm branch and worktree state:
+2. Read `.agent-harness/tier.json` and any legacy `.claude/tier.json`; the strictest declaration binds.
+3. Run `powershell -File scripts/check-git-env.ps1`.
+4. Confirm branch and worktree state:
    - `git branch --show-current`
    - `git status --short`
-4. Report actual runtime capabilities if they matter:
+5. Report actual runtime capabilities if they matter:
    - subagent tools available or not
    - GitHub MCP or `gh` availability
    - Docker/Playwright MCP availability if needed
@@ -177,16 +178,22 @@ Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.
 Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
-Open a ready PR with Closes #NNN, test evidence, docs impact, and risks.
-Return the exact head, proving-check results, and residual risks to the coordinator, which enters the PR into the canonical review pipeline.
+Open a PR with Closes #NNN, test evidence, docs impact, and risks.
+Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
 
-## Canonical PR Review Pipeline
+## Taskdeck Review Lenses
 
-Route every ready PR through the global `review-and-ship` skill. It owns reviewer selection,
-feedback triage, convergence limits, and merge or park disposition under the repository's declared
-tier and authority. Use `taskdeck-pr-review-loop` only for Taskdeck-specific review lenses; do not
-create a separate worker self-review gate or copy global review policy into this runbook.
+Review count, invocation, severity, convergence, aging, and merge disposition come only from the canonical global laws and `review-and-ship` pipeline. When that pipeline calls for a Taskdeck-specific lens, prioritize:
+
+- auth, session, token, and cross-user policy
+- security, SSRF, secret handling, logging redaction
+- migrations, data deletion, retention, import/export
+- capture, inbox, proposal review, execute, provenance
+- MCP or external-agent write surfaces
+- CI workflows, project automation, scripts
+- broad route/store/frontend shell behavior
+- flaky or failing CI
 
 ## CI, Comments, And Conflicts
 
@@ -287,7 +294,7 @@ Stop and ask for direction when:
 ## User Prompt Examples
 
 ```text
-Take care of as many Priority II issues as you safely can. Use worktrees, open PRs, run adversarial reviews, and stop before merge.
+Take care of as many Priority II issues as you safely can. Use worktrees, open PRs, run adversarial reviews, and ship or park each PR according to the declared authority and global review pipeline.
 ```
 
 ```text
@@ -295,7 +302,7 @@ Check all open PRs. Address review comments, bot comments, conflicts, and failin
 ```
 
 ```text
-Spin fresh adversarial reviewers on the security-sensitive PRs and have them comment findings, then fix what they find.
+Route the security-sensitive PRs through the canonical review pipeline and apply the Taskdeck security lens when requested.
 ```
 
 ```text

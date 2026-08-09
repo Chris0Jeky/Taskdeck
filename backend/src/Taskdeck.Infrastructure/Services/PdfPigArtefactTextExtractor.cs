@@ -18,7 +18,9 @@ public sealed class PdfPigArtefactTextExtractor : IArtefactTextExtractor
 
     public const long MaxInputBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
     public const int MaxPages = 100;
-    public const int MaxExtractedCharacters = CaptureRequestContract.MaxTranscriptTextLength;
+    // PDF artefact extraction has its own Phase-4 persistence and memory budget. It deliberately
+    // does not follow the transcript-capture cap, which may grow independently for M2 map-reduce.
+    public const int MaxExtractedCharacters = 51_200;
     public const int MaxParserStackDepth = 64;
 
     public string ExtractorName => "PdfPig";

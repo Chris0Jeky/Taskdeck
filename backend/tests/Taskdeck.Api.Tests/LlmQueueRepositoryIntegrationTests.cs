@@ -1236,7 +1236,7 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
         try
         {
             var builder = new DbContextOptionsBuilder<TaskdeckDbContext>()
-                .UseSqlite($"Data Source={dbPath}");
+                .UseSqlite(TestSqlite.ConnectionString(dbPath));
             if (interceptor != null)
             {
                 builder.AddInterceptors(interceptor);
@@ -1248,7 +1248,6 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
             {
                 var path = dbPath + suffix;

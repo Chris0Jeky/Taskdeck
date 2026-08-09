@@ -83,12 +83,14 @@ function goBack() {
 }
 
 function goToProposal() {
-  if (run.value?.proposalId) {
-    void router.push({
-      path: '/workspace/review',
-      query: { proposalId: run.value.proposalId },
-    })
-  }
+  const proposalId = run.value?.proposalId
+  if (!proposalId) return
+
+  void router.push({
+    name: 'workspace-review',
+    query: run.value.boardId ? { boardId: run.value.boardId } : undefined,
+    hash: `#proposal-${encodeURIComponent(proposalId)}`,
+  })
 }
 
 function formatDate(isoDate: string): string {
@@ -105,6 +107,10 @@ function getStatusLabel(status: AgentRunStatus): string {
 
 function getStatusClass(status: AgentRunStatus): string {
   return `td-run-status--${runStatusVariant[status] ?? 'neutral'}`
+}
+
+function isQueuedStatus(status: AgentRunStatus): boolean {
+  return status === 'Queued'
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -188,7 +194,10 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
           <span v-if="run.approxCostUsd !== null" class="td-run-detail__meta">
             Cost: ${{ run.approxCostUsd.toFixed(4) }}
           </span>
-          <span class="td-run-detail__meta">Started: {{ formatDate(run.startedAt) }}</span>
+          <span v-if="isQueuedStatus(run.status)" class="td-run-detail__meta">
+            Requested: {{ formatDate(run.startedAt) }}
+          </span>
+          <span v-else class="td-run-detail__meta">Started: {{ formatDate(run.startedAt) }}</span>
           <span v-if="run.completedAt" class="td-run-detail__meta">
             Completed: {{ formatDate(run.completedAt) }}
           </span>
@@ -196,6 +205,13 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 
         <p v-if="run.summary" class="td-run-detail__run-summary">{{ run.summary }}</p>
         <p v-if="run.failureReason" class="td-run-detail__failure">{{ run.failureReason }}</p>
+        <p
+          v-if="isQueuedStatus(run.status)"
+          class="td-run-detail__queued-note"
+          role="status"
+        >
+          Queued by the API. Execution has not started.
+        </p>
 
         <button
           v-if="run.proposalId"
@@ -248,7 +264,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
       </ol>
 
       <div
-        v-if="run && !isTerminalStatus(run.status)"
+        v-if="run && !isQueuedStatus(run.status) && !isTerminalStatus(run.status)"
         class="td-run-detail__live-indicator"
         role="status"
         aria-live="polite"
@@ -278,6 +294,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 .td-run-detail__meta { font-size: var(--td-font-xs); color: var(--td-text-tertiary); white-space: nowrap; }
 .td-run-detail__run-summary { color: var(--td-text-secondary); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
 .td-run-detail__failure { color: var(--td-color-error); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
+.td-run-detail__queued-note { color: var(--td-text-secondary); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
 .td-run-detail__proposal-link { margin-top: var(--td-space-2); }
 
 /* Run status badge - shared with AgentRunsView */

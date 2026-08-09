@@ -765,6 +765,82 @@ public class AutomationPlannerServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
+    // #1523: the planner's general catch used to convert a caller-token
+    // OperationCanceledException into Result.Failure(UnexpectedError). The worker's
+    // IsTransientFailure treats UnexpectedError as retryable, so a host shutdown marked the
+    // queue item Failed and requeued it. Caller cancellation must propagate instead.
+    [Fact]
+    public async Task ParseInstruction_ShouldPropagateCancellation_WhenCallerTokenCanceled()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, cts.Token))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        // Act + Assert. ThrowsAnyAsync, not ThrowsAsync: xUnit's generic overload is
+        // exact-type and a cancelled await can surface the TaskCanceledException subclass.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ParseInstructionAsync("create card 'Test'", userId, boardId, cts.Token));
+
+        // Supporting, not discriminating: the throw aborts before the write either way.
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldPropagateCancellation_WhenCallerTokenCanceled()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, cts.Token))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        // Act + Assert. ThrowsAnyAsync, not ThrowsAsync: xUnit's generic overload is
+        // exact-type and a cancelled await can surface the TaskCanceledException subclass.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ParseBatchInstructionAsync(
+                ["create cards: 'Test A', 'Test B'"], userId, boardId, cts.Token));
+
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // The guard rail for the fix above: an OperationCanceledException whose origin is an
+    // INTERNAL budget/provider timeout, while the caller's token is still live, must keep its
+    // UnexpectedError mapping. This fails if someone writes an unfiltered
+    // `catch (OperationCanceledException) { throw; }`.
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnUnexpectedError_WhenCancellationIsNotCallerRequested()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Test'", userId, boardId, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+    }
+
     #endregion
 
     #region NLP Gap Tests — Documents #570 (Natural Language Parse Failures)

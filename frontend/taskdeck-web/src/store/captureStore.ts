@@ -221,7 +221,8 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function pollTriageCompletion(itemId: string): () => void {
     const POLL_INTERVAL_MS = 2_000
-    const MAX_POLLS = 15
+    // About 15 minutes at the normal cadence; #1585 owns provider-aware elapsed-time policy.
+    const MAX_POLLS = 450
     let pollCount = 0
     let stopped = false
     let timerId: ReturnType<typeof setTimeout> | null = null

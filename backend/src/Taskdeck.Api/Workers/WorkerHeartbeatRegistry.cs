@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
+using Taskdeck.Application.Interfaces;
 
 namespace Taskdeck.Api.Workers;
 
-public sealed class WorkerHeartbeatRegistry
+public sealed class WorkerHeartbeatRegistry : ILlmCaptureTriageProgressReporter
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _heartbeats = new();
     public DateTimeOffset StartupTime { get; } = DateTimeOffset.UtcNow;
@@ -26,4 +27,7 @@ public sealed class WorkerHeartbeatRegistry
 
         return null;
     }
+
+    public void ReportProgress()
+        => ReportHeartbeat(nameof(TranscriptTriageWorker));
 }
