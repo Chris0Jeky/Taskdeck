@@ -41,6 +41,10 @@ Companion Active Docs:
 - **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
 - **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
 
+## Staged runway repair (2026-07-27, maintainer-held)
+
+- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. Seven focused contract checks and two independent design reviews are complete locally. Exact-head-associated hosted Ubuntu proof is green with both checksums, 7/7 contract checks, and zero errors across 32 workflows without a Docker build. The workflow change remains T4-class and unshipped until maintainer merge plus fresh post-merge proof.
+
 ## Delivery update (2026-07-26, agentic governance)
 
 - **Failure-ledger projection gate (`#1492`):** Required Docs Governance pins Python 3.12 and runs the JSONL↔Markdown synchronization unittest before governance, so stale generated Markdown fails without regeneration masking it. Local workflows retain the distinct render-then-test order for deliberately recorded entries.
