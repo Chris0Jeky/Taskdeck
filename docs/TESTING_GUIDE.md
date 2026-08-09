@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-07
+Last Updated: 2026-08-09
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -181,6 +181,29 @@ $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { exit $code }
 ```
+
+## Workflow Lint Bootstrap Checks
+
+CI Extended's `Workflow Lint` job bootstraps checksum-pinned Actionlint and Pyflakes artifacts directly, uses the Ubuntu runner's ShellCheck through an explicit path, runs the focused contract suite, then lints every checked-out workflow verbosely. The hosted job is the authoritative integration proof: its unchanged-head log must show both checksum checks, Actionlint 1.7.12, Pyflakes 3.4.0, the runner ShellCheck version, the checked-out SHA, a positive workflow count, seven passing contract checks, and a zero-error repository lint. A run that fails before checkout or never reads the workflows is not green evidence.
+
+On native Windows, set Git Bash explicitly because bare `bash` can resolve to the Microsoft Store/WSL alias. The static, ordering, and checksum boundary is the portable fast path:
+
+```powershell
+$env:BASH_BIN = 'C:\Program Files\Git\bin\bash.exe'
+node --test --test-name-pattern='pins|bootstrap boundary|checksum verifier' scripts/ci/actionlint-bootstrap.test.mjs
+```
+
+The full seven-check suite additionally requires local Actionlint, ShellCheck, and Pyflakes executables:
+
+```powershell
+$env:BASH_BIN = 'C:\Program Files\Git\bin\bash.exe'
+$env:ACTIONLINT_BIN = '<path-to-actionlint>'
+$env:ACTIONLINT_SHELLCHECK_BIN = '<path-to-shellcheck>'
+$env:ACTIONLINT_PYFLAKES_BIN = '<path-to-pyflakes>'
+node --test scripts/ci/actionlint-bootstrap.test.mjs
+```
+
+Do not infer external-linter coverage from Actionlint alone: Actionlint can skip ShellCheck or Pyflakes when they are unavailable. Keep the explicit tool paths and the fixture assertions for `SC2086` and the Pyflakes undefined-name diagnostic.
 
 ## Agentic Operating Layer Checks
 
