@@ -35,6 +35,17 @@ public interface ILlmQuotaService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Atomically reserves quota using a caller-supplied conservative estimate for one LLM call.
+    /// Callers that know their input size (for example, transcript map chunks) use this overload so
+    /// the reservation check reflects that work; existing callers retain the configured default.
+    /// </summary>
+    Task<QuotaReservationDto> ReserveAsync(
+        Guid userId,
+        LlmSurface surface,
+        int estimatedTokens,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Finalizes a reservation with the actual token counts (Reserved → Committed usage). userId and
     /// surface are required so billed usage can be recovered into a fresh committed row if the
     /// reservation was TTL-swept during a slow LLM call — real usage is never silently dropped.

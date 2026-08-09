@@ -469,7 +469,7 @@ Execution note:
 4. Run required verification commands.
 5. Update docs (`STATUS`/`IMPLEMENTATION_MASTERPLAN`/test docs) if reality changed.
 6. Open PR with linked issue and risk notes.
-7. Perform a deliberate reviewer-style self-review of the PR diff after opening it; capture findings, fixes, or explicit no-finding conclusion before handoff.
+7. Enter the canonical global laws and `review-and-ship` pipeline; this guide adds no local reviewer-count, severity, convergence, or merge rule.
 8. Move project item to `Review`.
 9. After merge, move item to `Done` and post final verification summary.
 
@@ -480,7 +480,7 @@ Execution note:
   - 1 issue in `Now`
   - 1 issue in `Review`
 - If parallel work is needed, split by non-overlapping layers (example: docs-only issue plus one code issue).
-- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; the WIP override must still use isolated worktrees, one coordinator, linked PRs, review loops, and final docs/project-status reconciliation.
+- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; the WIP override must still use isolated worktrees, one coordinator, linked PRs, the canonical review-and-ship pipeline, and final docs/project-status reconciliation.
 
 ## Escalation Rules
 

@@ -1,45 +1,43 @@
-# Claude Code Workspace Guide
+# `.claude/` — Claude Code execution layer
 
-This `.claude/` layer contains Claude Code settings and skills for Taskdeck. It should stay aligned with `AGENTS.md`, `CLAUDE.md`, and the Codex-facing `.codex/` control plane.
+Settings and local skills for Taskdeck. Repo facts and proving checks live in `../CLAUDE.md`;
+the contributor contract in `../AGENTS.md`; review doctrine in the global laws. Nothing is restated here.
 
-## Start Here
+## What is in here
 
-1. Read [../docs/STATUS.md](../docs/STATUS.md).
-2. Read [CLAUDE.md](../CLAUDE.md).
-3. Read [AGENTS.md](../AGENTS.md).
-4. Read [../docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
-5. Read [../autodoc/AGENT_INDEX.md](../autodoc/AGENT_INDEX.md) for fast seam orientation.
-6. Pick the matching skill from [skills/README.md](./skills/README.md).
+| Path | Purpose |
+| --- | --- |
+| `settings.json` | normal development permissions, worktree symlinks, and project MCP enablement; no repo runtime hooks or deny list |
+| `settings.local.json` | machine-local overrides (not a place for `bypassPermissions`) |
+| `skills/` | 16 repo-local workflow skills — **prefer these over plugin equivalents**; routing table in `../AGENTS.md` |
+| `worktrees/` | Claude-managed worktrees — do not read by default |
 
-## Coordination With Codex
+Tier and push/merge authority are declared only in `../.agent-harness/tier.json`; read it live rather than copying its values into routing docs.
 
-- `.codex/README.md` and `.codex/memories/00_ACTIVE.md` are the Codex routing layer.
-- `.claude/settings.json` and `.claude/skills/*` are Claude Code's local execution layer.
-- Both systems use the same canonical Taskdeck docs under `docs/`.
-- `docs/agentic/*`, `autodoc/AGENT_INDEX.md`, and `scripts/agent_hooks/*` are the shared agentic protocol, seam map, and deterministic hook layer.
-- `docs/agentic/AGENT_TOOL_PARITY.md` defines how Claude and Codex stay equally capable while using different native mechanics.
-- If Claude and Codex guidance conflict, prefer `docs/STATUS.md` for current reality and `AGENTS.md` for repo-wide contributor protocol.
+## Orientation order
 
-## Worktree Expectations
+`../autodoc/AGENT_INDEX.md` (seam map) → `../CLAUDE.md` → the relevant section of `../docs/STATUS.md`
+→ `skills/README.md`. Do not bulk-read STATUS or the masterplan.
 
-- Use `docs/WORKTREE_AGENT_PROTOCOL.md` for Claude `isolation: "worktree"` sessions.
+## Worktrees
+
+- Use `../docs/WORKTREE_AGENT_PROTOCOL.md` for Claude `isolation: "worktree"` sessions.
 - Do not pass absolute main-checkout paths into worktree worker prompts.
-- First command in a worktree worker should validate isolation with the repo guard script.
+- For a helper-created detached worktree, the complete printed handoff begins with the exact absolute target `worktree_guard.ps1` command using pinned Git, then invokes the bounded `Initialize-CodexIssueWorktree.ps1` command. The initializer binds the exact detached worktree/base before switching branches and removes a late-collision worktree only when its tracked, untracked, and ignored inventory is empty, otherwise preserving it for inspection. For headless launch, add both exact full-command PowerShell rules printed by the helper (guard plus initializer), including all applicable pinned arguments and no wildcard; no generic relative handoff rule is committed.
+- For headless workers, start `claude -p` in the exact helper-created target; do not add `--worktree`, which creates another checkout. Follow the reviewed effective-permission posture in the protocol: exclude user/local file sources, review committed permissions and explicit rules together, and treat managed policy as an administrator-owned trust boundary. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access, and it installs no runtime hooks; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, then restore the prior host value when the launch returns. The launch allowlist is not the sole authorization boundary, and `acceptEdits` alone does not authorize the wrapper. Use the generic guard first only for worktrees that were not created by the detached-first helper.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
-## Review Policy
+## Coordinating with Codex
 
-Every review (self-review, adversarial, subagent) must follow `AGENTS.md` Review Policy: post findings on the PR, fix everything at every severity, check and address ALL existing PR comments (human, bot, previous reviews), and seed GitHub issues for out-of-scope findings. No "non-blocking" dismissals. Tech debt from reviews must be zero.
+`.codex/README.md` + `.codex/memories/00_ACTIVE.md` are Codex's routing layer; both control planes share
+`docs/`, `docs/agentic/*`, `autodoc/AGENT_INDEX.md`, and the manual failure-ledger tools under
+`scripts/agent_hooks/*`. Neither control plane installs a Taskdeck-owned runtime hook.
+`docs/agentic/AGENT_TOOL_PARITY.md` records how the two stay equally capable.
+On conflict: `docs/STATUS.md` for reality, `AGENTS.md` for protocol.
 
-## Failure And Question Protocols
+## MCP
 
-- Use `docs/agentic/QUESTION_PROTOCOL.md` before asking context-expensive questions.
-- Use `docs/agentic/FAILURE_LEDGER.md` and `taskdeck-failure-capture` for unresolved command/tool/test/CI friction.
-- Promote recurring lessons through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, not by appending ad hoc warnings to root docs.
-
-## Best Tool Baseline
-
-- Use project MCP servers from `.mcp.json` for docs, GitHub, browser, Docker, OpenAPI, and runtime inspection tasks.
-- Use `/mcp` when Claude asks to authenticate remote HTTP MCP servers such as GitHub.
-- Use native `rg` for repository search, Claude Edit/MultiEdit/Write for file edits, and `.claude/settings.json` hooks for guardrails.
-
+`../.mcp.json` declares the project servers (openaiDeveloperDocs, github, context7, playwright,
+chromeDevTools). The **Docker MCP gateway is intentionally absent** — it is declared once at user scope,
+and a project-scope copy starts a second gateway process per session (agent-harness#87). Use `/mcp` to
+authenticate the remote HTTP servers. Repo search is native `rg`, not an MCP.

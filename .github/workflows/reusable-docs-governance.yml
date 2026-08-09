@@ -13,6 +13,17 @@ permissions:
   contents: read
 
 jobs:
+  worktree-helper-windows:
+    name: Worktree Helper (Windows PowerShell)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate detached-first worktree helper
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
+
   docs-governance:
     name: Docs Governance
     runs-on: ubuntu-latest

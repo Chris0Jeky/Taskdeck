@@ -1,4 +1,6 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Extensions;
@@ -20,6 +22,8 @@ public static class WorkerRegistration
             outboundWebhookSecuritySettings.AllowLocalhostEndpoints = true;
         }
         services.AddSingleton(outboundWebhookSecuritySettings);
+        services.TryAddTransient<ProtectedOutboundTelemetryHandler>();
+        services.TryAddSingleton<ProtectedOutboundMeterFactory>();
 
         services.AddHttpClient("OutboundWebhookDelivery", (_, client) =>
         {
@@ -31,13 +35,18 @@ public static class WorkerRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
                         settings.AllowLocalhostEndpoints,
                         cancellationToken)
             };
-        });
+        })
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
 
         var auditRetentionSettings = configuration.GetSection("AuditRetention").Get<AuditRetentionSettings>() ?? new AuditRetentionSettings();
         services.AddSingleton(auditRetentionSettings);
@@ -46,6 +55,8 @@ public static class WorkerRegistration
         services.AddSingleton(embeddingBackfillSettings);
 
         services.AddSingleton<WorkerHeartbeatRegistry>();
+        services.AddSingleton<ILlmCaptureTriageProgressReporter>(serviceProvider =>
+            serviceProvider.GetRequiredService<WorkerHeartbeatRegistry>());
         services.AddHostedService<LlmQueueToProposalWorker>();
         services.AddHostedService<TranscriptTriageWorker>();
         services.AddHostedService<ProposalHousekeepingWorker>();

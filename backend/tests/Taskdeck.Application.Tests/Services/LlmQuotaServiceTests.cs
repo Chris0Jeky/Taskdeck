@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
@@ -120,6 +121,62 @@ public class LlmQuotaServiceTests
         var result = await service.CheckQuotaAsync(userId, LlmSurface.Chat);
 
         result.Allowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReserveAsync_ShouldUseCallerSuppliedEstimateForAtomicBudgetReservation()
+    {
+        var settings = new LlmQuotaSettings
+        {
+            RequestsPerHour = 60,
+            TokensPerDay = 100_000,
+            GlobalBudgetCeilingTokens = 200_000
+        };
+        var service = new LlmQuotaService(_unitOfWorkMock.Object, settings);
+        var userId = Guid.NewGuid();
+        const int estimate = 16_384;
+        var reservationId = Guid.NewGuid();
+        _usageRepoMock
+            .Setup(repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                estimate,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationOutcome(
+                QuotaReservationDecision.Allowed,
+                reservationId,
+                RequestCount: 1,
+                UserTokens: estimate,
+                GlobalTokens: estimate));
+
+        var result = await service.ReserveAsync(userId, LlmSurface.CaptureTriage, estimate);
+
+        result.Allowed.Should().BeTrue();
+        result.ReservationId.Should().Be(reservationId);
+        result.EstimatedTokens.Should().Be(estimate);
+        _usageRepoMock.Verify(
+            repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                estimate,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

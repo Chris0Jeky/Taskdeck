@@ -31,6 +31,16 @@ public class WorkerHeartbeatRegistryTests
     }
 
     [Fact]
+    public void ReportProgress_ShouldRegisterTranscriptTriageHeartbeat()
+    {
+        var registry = new WorkerHeartbeatRegistry();
+
+        registry.ReportProgress();
+
+        registry.GetLastHeartbeat(nameof(TranscriptTriageWorker)).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task ReportHeartbeat_ShouldUpdateExistingWorkerHeartbeat()
     {
         var registry = new WorkerHeartbeatRegistry();

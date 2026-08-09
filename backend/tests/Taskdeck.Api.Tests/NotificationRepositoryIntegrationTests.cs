@@ -376,7 +376,7 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         try
         {
             var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-                .UseSqlite($"Data Source={dbPath}")
+                .UseSqlite(TestSqlite.ConnectionString(dbPath))
                 .AddInterceptors(interceptor)
                 .Options;
 
@@ -417,7 +417,6 @@ public class NotificationRepositoryIntegrationTests : IClassFixture<TestWebAppli
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
             {
                 var path = dbPath + suffix;

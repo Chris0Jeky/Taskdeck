@@ -208,16 +208,16 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini) only run when this is true. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini, Ollama) only run when this is true. | No |
 | `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in the `Development` environment unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, or `Gemini`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
@@ -226,6 +226,30 @@ default and the only one that ships enabled. See
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
 | `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:Ollama:BaseUrl` | `string` | Production: `null`; Development: `http://localhost:11434` | Ollama API base URL. The production configuration intentionally leaves Ollama unconfigured; the development override supplies exact `localhost`, which is accepted only by the development-localhost policy below. | No |
+| `Llm:Ollama:Model` | `string` | `llama3.2` | Model identifier sent to Ollama chat requests. | No |
+| `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
+| `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
+
+**Outbound transport boundary:** the OpenAI, Gemini, and Ollama primary clients
+set `UseProxy = false`. They ignore ambient/system proxy settings so the
+configured provider origin remains the target inspected by
+`OutboundWebhookConnectCallback`. The existing development-localhost opt-ins
+remain unchanged. There is no proxy-aware provider setting: corporate
+proxy-only deployments fail closed. This path does not use
+`EgressEnvelopeHandler`, and its existing no-auto-redirect and audit behavior is
+unchanged. Default `IHttpClientFactory` request logging is removed for these
+protected clients. Their primary handlers disable distributed-trace header
+propagation, and Taskdeck's configured OpenTelemetry pipeline excludes their
+marked HTTP activities and private-scope HTTP metrics (including destination
+dimensions such as `server.address` and `server.port`). This is Taskdeck exporter
+suppression, not a guarantee against an independently installed process-global
+`ActivityListener` or `MeterListener`. Registered provider calls additionally
+mask their configured URI immediately before send so outer .NET HTTP EventSource
+payloads do not receive its path/query; the inner protected handler restores the
+configured URI for transport. Public caller-owned provider clients do not opt in
+and retain ordinary `HttpClient` behavior. Transport-stage host/IP observation is
+outside this guarantee.
 
 ### `LlmToolCalling`
 
@@ -275,6 +299,9 @@ class defaults apply.
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxInputTokensPerChunk` | `int` | `12000` | Conservative input-token budget for one transcript map chunk (range 1024-32768). The estimator reserves one token per UTF-8 byte, deliberately over-reserving dense ASCII and encoded text without a provider-tokenizer dependency. | No |
+| `CaptureTriageLlm:ChunkOverlapTokens` | `int` | `256` | Context retained between map chunks (range 0-4096). The planner caps it at one quarter of the input budget, splits at speaker turns or blank lines when possible, and hard-splits only unstructured text. If any map leg fails, all mapped results are discarded and the existing deterministic fallback handles the full capture. | No |
+| `CaptureTriageLlm:MaxChunkCount` | `int` | `24` | Maximum LLM map calls per transcript triage run (range 1-128). If a configured chunk budget would require more calls, no provider or quota reservation is attempted and the complete capture uses the existing deterministic fallback. | No |
 | `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
 | `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
@@ -324,6 +351,14 @@ webhook testing works without extra config
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `OutboundWebhooks:Security:AllowLocalhostEndpoints` | `bool` | `false` in non-Development; `true` in Development when unset | When false, the outbound webhook HTTP handler refuses to connect to localhost/loopback targets. Defense against SSRF from user-supplied URLs. | No |
+
+The `OutboundWebhookDelivery` primary client is direct-only and sets
+`UseProxy = false`, so ambient/system proxy settings cannot move connect-time
+DNS/IP validation away from the subscription endpoint. Its existing localhost
+policy remains unchanged. There is no proxy-aware webhook setting; deployments
+that require a corporate proxy for outbound delivery fail closed. This client
+continues to use `OutboundWebhookConnectCallback`, not
+`EgressEnvelopeHandler`, with automatic redirects still disabled.
 
 ## CORS and HTTP
 
@@ -505,6 +540,13 @@ Bound to `ObservabilitySettings`. Consumed by `AddTaskdeckObservability`.
 
 Bound to `SentrySettings`. Consumed by `AddTaskdeckSentry`. Defaults mean
 Sentry is fully off until explicitly opted in.
+
+When enabled, Taskdeck keeps Sentry's server-side exception tracking and removes
+Sentry's automatic outbound `IHttpClientFactory` handler only from the registered
+OpenAI, Gemini, Ollama, and `OutboundWebhookDelivery` clients. Those protected
+clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
+or failed-request capture outside their dedicated telemetry boundary. Unrelated
+factory clients retain normal Sentry instrumentation.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |

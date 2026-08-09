@@ -143,12 +143,12 @@ WHERE ({requestsPerHour} <= 0 OR (
         SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) FROM LlmUsageRecords
         WHERE UserId = {userId} AND Surface = {surfaceValue}
           AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
-          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {tokensPerDay})
+          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) + {estimatedTokens} <= {tokensPerDay})
   AND ({globalBudgetCeilingTokens} <= 0 OR (
         SELECT COALESCE(SUM(CAST(InputTokens AS INTEGER) + CAST(OutputTokens AS INTEGER)), 0) FROM LlmUsageRecords
         WHERE Surface = {surfaceValue}
           AND CreatedAt >= {dayStart} AND CreatedAt < {dayEnd}
-          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) < {globalBudgetCeilingTokens})",
+          AND (Status = {StatusCommitted} OR ExpiresAt > {now})) + {estimatedTokens} <= {globalBudgetCeilingTokens})",
                 cancellationToken);
         }, cancellationToken);
 
@@ -197,9 +197,9 @@ WHERE ({requestsPerHour} <= 0 OR (
         // disabled one) so the caller never sees a message for a limit that is off.
         var decision = requestsPerHour > 0 && requestCount >= requestsPerHour
             ? QuotaReservationDecision.RequestsExceeded
-            : tokensPerDay > 0 && userTokens >= tokensPerDay
+            : tokensPerDay > 0 && userTokens > tokensPerDay - estimatedTokens
                 ? QuotaReservationDecision.TokensExceeded
-                : globalBudgetCeilingTokens > 0 && globalTokens >= globalBudgetCeilingTokens
+                : globalBudgetCeilingTokens > 0 && globalTokens > globalBudgetCeilingTokens - estimatedTokens
                     ? QuotaReservationDecision.GlobalExceeded
                     : requestsPerHour > 0
                         ? QuotaReservationDecision.RequestsExceeded
@@ -368,7 +368,7 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
                 .SumAsync(r => (long)r.InputTokens + r.OutputTokens, cancellationToken)
             : 0;
 
-        if (tokensPerDay > 0 && userTokens >= tokensPerDay)
+        if (tokensPerDay > 0 && userTokens > tokensPerDay - estimatedTokens)
             return new QuotaReservationOutcome(QuotaReservationDecision.TokensExceeded, null, requestCount, userTokens, 0);
 
         var globalTokens = globalBudgetCeilingTokens > 0
@@ -379,7 +379,7 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
                 .SumAsync(r => (long)r.InputTokens + r.OutputTokens, cancellationToken)
             : 0;
 
-        if (globalBudgetCeilingTokens > 0 && globalTokens >= globalBudgetCeilingTokens)
+        if (globalBudgetCeilingTokens > 0 && globalTokens > globalBudgetCeilingTokens - estimatedTokens)
             return new QuotaReservationOutcome(QuotaReservationDecision.GlobalExceeded, null, requestCount, userTokens, globalTokens);
 
         var reservation = LlmUsageRecord.CreateReservation(userId, surface, estimatedTokens, expiresAt);
@@ -387,7 +387,11 @@ WHERE NOT EXISTS (SELECT 1 FROM LlmUsageRecords WHERE Id = {reservationId})",
         await _context.SaveChangesAsync(cancellationToken);
 
         return new QuotaReservationOutcome(
-            QuotaReservationDecision.Allowed, reservation.Id, requestCount, userTokens, globalTokens);
+            QuotaReservationDecision.Allowed,
+            reservation.Id,
+            requestCount + 1,
+            userTokens + estimatedTokens,
+            globalTokens + estimatedTokens);
     }
 
     // Non-SQLite finalization (see TryReserveNonSqliteAsync). EF-tracked update/insert instead of the raw

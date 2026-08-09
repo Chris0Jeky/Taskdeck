@@ -4,53 +4,63 @@ using Taskdeck.Application.DTOs;
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// System prompt and response parser for LLM-backed transcript triage (REVIVAL-08 M1).
-/// The prompt demands a minimal JSON object (<c>{"tasks":[{"title","evidence"}]}</c>); the
-/// versioned envelope (<see cref="CaptureTriageOutputContract.PromptVersionLlmV1"/>) is
-/// constructed server-side so the model is never trusted with contract constants.
-/// Evidence must be quoted verbatim from the transcript so evidence spans (REVIVAL-09) can be
-/// recovered later by exact-substring search against the raw text.
+/// System prompt and response parser for LLM-backed transcript triage (REVIVAL-08 M3).
+/// The server stamps the versioned envelope so the model cannot choose contract constants.
+/// Evidence quotes are required to be verbatim so REVIVAL-09 can later link exact spans.
 /// </summary>
 public static class LlmCaptureTriagePrompt
 {
+    private static readonly HashSet<string> AllowedRootProperties = new(StringComparer.Ordinal)
+    {
+        "tasks"
+    };
+
+    private static readonly HashSet<string> AllowedTaskProperties = new(StringComparer.Ordinal)
+    {
+        "title",
+        "type",
+        "assigneeHint",
+        "dueDateHint",
+        "confidence",
+        "evidenceQuote"
+    };
+
     /// <summary>
     /// Bumping the extraction prompt in a way that changes output semantics requires a new
     /// prompt-version constant in <see cref="CaptureTriageOutputContract"/> and a matching schema
     /// file, so recorded provenance stays attributable to the prompt that actually ran.
     /// </summary>
-    public const string PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV1;
+    public const string PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2;
 
     public const string SystemPrompt = """
         You are Taskdeck's transcript triage engine. Extract concrete action items from the transcript in the user message.
 
         Respond with a single JSON object of this exact shape and nothing else:
-        {"tasks":[{"title":"...","evidence":"..."}]}
+        {"tasks":[{"title":"...","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.0,"evidenceQuote":"..."}]}
 
         Rules:
-        - Output raw JSON only: no markdown fences, no commentary, no fields other than "tasks", "title", "evidence".
+        - Output raw JSON only: no markdown fences, no commentary, no fields other than "tasks", "title", "type", "assigneeHint", "dueDateHint", "confidence", "evidenceQuote".
         - Extract between 1 and 20 tasks. Prefer fewer, higher-confidence items over exhaustive lists.
         - "title": the action item rephrased as a short imperative instruction (who should do what), at most 180 characters.
-        - "evidence": a short VERBATIM quote copied character-for-character from the transcript that justifies the task, at most 280 characters. Never paraphrase, translate, or correct the quote.
-        - Only include genuine action items: commitments, assignments, decisions requiring follow-up, or explicit next steps.
+        - "type": exactly one of "action", "decision", or "question". Use "action" for a commitment or next step, "decision" for a decision worth recording, and "question" for an unresolved question that needs follow-up.
+        - "assigneeHint": the explicitly named person responsible, or null when the transcript does not identify one. It is only a hint: never infer a Taskdeck user ID.
+        - "dueDateHint": an explicitly stated unambiguous calendar date in YYYY-MM-DD form, or null. Do not calculate relative dates such as "next Friday".
+        - "confidence": your confidence from 0 through 1 that this item is supported by the evidence quote. It informs later review only and never authorizes a board write.
+        - "evidenceQuote": a short VERBATIM quote copied character-for-character from the transcript that justifies the item, at most 280 characters. Never paraphrase, translate, or correct the quote.
         - Ignore greetings, small talk, status recaps, and general discussion that requires no action.
         - Never invent tasks, names, or dates that the transcript does not support.
         - If the transcript contains no actionable items at all, respond with {"tasks":[]}.
         """;
 
     /// <summary>
-    /// Leniently parses an LLM completion into raw (title, evidence) pairs. Tolerates markdown code
-    /// fences and prose around the object via brace matching (the same shape
-    /// <c>LlmInstructionExtractionPrompt.TryParseStructuredResponse</c> relies on) and ignores any
-    /// extra JSON properties the model added. Returns false when no well-formed <c>tasks</c> array
-    /// is present. EVERY array element yields an entry — malformed elements (non-objects, missing or
-    /// non-string fields) yield blank fields for the caller's sanitization to drop — so a non-empty
-    /// array can never masquerade as the deliberate "no action items" verdict that an
-    /// empty-but-present array represents (the two have different failure semantics downstream:
-    /// fallback vs honest empty).
+    /// Parses a schema-v2 LLM completion while tolerating surrounding prose/fences via brace
+    /// matching. It rejects unknown, missing, and wrongly typed fields rather than silently
+    /// normalizing untrusted model metadata. An empty-but-present array remains the deliberate
+    /// "no action items" verdict; malformed non-empty content instead triggers fallback.
     /// </summary>
-    public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV1> tasks)
+    public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV2> tasks)
     {
-        tasks = new List<CaptureTriageTaskV1>();
+        tasks = new List<CaptureTriageTaskV2>();
 
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -72,6 +82,7 @@ public static class LlmCaptureTriagePrompt
             using var doc = JsonDocument.Parse(trimmed);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
+                !HasExactPropertySet(root, AllowedRootProperties) ||
                 !root.TryGetProperty("tasks", out var tasksElement) ||
                 tasksElement.ValueKind != JsonValueKind.Array)
             {
@@ -80,22 +91,28 @@ public static class LlmCaptureTriagePrompt
 
             foreach (var item in tasksElement.EnumerateArray())
             {
-                var title = string.Empty;
-                var evidence = string.Empty;
-                if (item.ValueKind == JsonValueKind.Object)
+                if (item.ValueKind != JsonValueKind.Object ||
+                    !HasExactPropertySet(item, AllowedTaskProperties) ||
+                    !TryGetRequiredString(item, "title", out var title) ||
+                    !TryGetRequiredString(item, "type", out var type) ||
+                    !TryGetRequiredNullableString(item, "assigneeHint", out var assigneeHint) ||
+                    !TryGetRequiredNullableString(item, "dueDateHint", out var dueDateHint) ||
+                    !item.TryGetProperty("confidence", out var confidenceElement) ||
+                    confidenceElement.ValueKind != JsonValueKind.Number ||
+                    !confidenceElement.TryGetDecimal(out var confidence) ||
+                    !TryGetRequiredString(item, "evidenceQuote", out var evidenceQuote))
                 {
-                    if (item.TryGetProperty("title", out var titleEl) && titleEl.ValueKind == JsonValueKind.String)
-                    {
-                        title = titleEl.GetString() ?? string.Empty;
-                    }
-
-                    if (item.TryGetProperty("evidence", out var evidenceEl) && evidenceEl.ValueKind == JsonValueKind.String)
-                    {
-                        evidence = evidenceEl.GetString() ?? string.Empty;
-                    }
+                    tasks.Clear();
+                    return false;
                 }
 
-                tasks.Add(new CaptureTriageTaskV1(title, evidence));
+                tasks.Add(new CaptureTriageTaskV2(
+                    title,
+                    type,
+                    assigneeHint,
+                    dueDateHint,
+                    confidence,
+                    evidenceQuote));
             }
 
             return true;
@@ -104,5 +121,44 @@ public static class LlmCaptureTriagePrompt
         {
             return false;
         }
+    }
+
+    private static bool HasExactPropertySet(JsonElement item, HashSet<string> expectedProperties)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in item.EnumerateObject())
+        {
+            if (!expectedProperties.Contains(property.Name) || !seen.Add(property.Name))
+            {
+                return false;
+            }
+        }
+
+        return seen.Count == expectedProperties.Count;
+    }
+
+    private static bool TryGetRequiredString(JsonElement item, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!item.TryGetProperty(propertyName, out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = element.GetString() ?? string.Empty;
+        return true;
+    }
+
+    private static bool TryGetRequiredNullableString(JsonElement item, string propertyName, out string? value)
+    {
+        value = null;
+        if (!item.TryGetProperty(propertyName, out var element) ||
+            (element.ValueKind != JsonValueKind.String && element.ValueKind != JsonValueKind.Null))
+        {
+            return false;
+        }
+
+        value = element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+        return true;
     }
 }

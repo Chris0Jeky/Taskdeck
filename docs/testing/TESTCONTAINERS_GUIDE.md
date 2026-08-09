@@ -1,6 +1,6 @@
 # Testcontainers Integration Testing Guide
 
-Last Updated: 2026-07-27
+Last Updated: 2026-08-01
 
 ## Overview
 
@@ -25,7 +25,9 @@ Taskdeck uses [Testcontainers for .NET](https://dotnet.testcontainers.org/) to r
 ### CI Environment
 
 - The CI workflow (`reusable-container-integration.yml`) runs on `ubuntu-latest`, which includes Docker pre-installed.
-- No additional Docker setup is required in CI.
+- The hosted lane sets `TASKDECK_REQUIRE_DOCKER=true`; Docker unavailability is a failure there, not a skip.
+- Before the positive run, CI forces Docker unavailable and requires the expected Docker-required failure in TRX as a negative control.
+- The positive TRX must contain zero skipped PostgreSQL-backed cases and at least 28 passing fully qualified PostgreSQL tests. Host-native tests with the same method name do not count toward that minimum.
 
 ## Project Structure
 
@@ -144,7 +146,9 @@ The container integration tests are available in the CI Extended pipeline:
 - **Trigger**: `testing` label on PRs, or manual dispatch via `ci-extended.yml`
 - **Runner**: `ubuntu-latest` (Docker pre-installed)
 - **Not in merge gate**: These tests are in ci-extended, not ci-required, because they require Docker and have longer startup times than SQLite-based tests.
-- **Evidence rule**: the hosted PostgreSQL result must report zero skips; all 28 container-backed cases skipping is only Dockerless-gate evidence.
+- **Required mode**: `TASKDECK_REQUIRE_DOCKER=true` converts unavailable Docker into a test failure for the hosted lane while ordinary local Dockerless runs keep graceful skips.
+- **Negative control**: the workflow first forces Docker unavailable and verifies the specific required-mode failure through TRX.
+- **Evidence rule**: the hosted positive TRX must report zero skipped PostgreSQL-backed cases and at least 28 passing fully qualified PostgreSQL tests. All 28 container-backed cases skipping is only Dockerless-gate evidence, and host-native same-name tests cannot satisfy the minimum.
 
 ## Troubleshooting
 
