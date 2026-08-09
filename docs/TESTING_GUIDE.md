@@ -1675,11 +1675,18 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 Required workflow: `.github/workflows/ci-required.yml`
 
 - `dco`
-  - Checks every pull-request commit for a DCO `Signed-off-by:` trailer with the
-    SHA-pinned `KineticCafe/actions-dco` action
-  - Active for pull requests and currently **advisory**
-    (`continue-on-error: true`); promotion into branch protection remains
-    maintainer-owned under #1173
+  - Checks the explicit pull-request `base.sha..head.sha` range after a full-history checkout.
+    `scripts/ci/check-dco-signoffs.sh` parses only native Git trailer blocks with
+    `git -c core.commentChar=# interpret-trailers --parse`, checks every submitted commit including
+    multi-parent merges, and requires a nonempty `Signed-off-by: Name <email>` identity matching the
+    commit author or committer case-insensitively. The one repository-established Dependabot mapping
+    (`dependabot[bot]` / GitHub's bot author email to `support@github.com`) remains trailer-required
+    and is not a general bot exemption. Missing objects and Git/range/parser errors fail closed.
+  - The SHA-pinned `KineticCafe/actions-dco` action remains visible as a step-level non-blocking
+    diagnostic. The repository verifier determines the job step result, while the job itself remains
+    **advisory** (`continue-on-error: true`); promotion into branch protection remains maintainer-owned
+    under #1173.
+  - Local contract: `bash scripts/ci/test-check-dco-signoffs.sh`
 - `docs-governance`
   - Ubuntu `Docs Governance` enforces required active docs, failure-ledger synchronization, Golden
     Principles, and GitHub-operations invariants
