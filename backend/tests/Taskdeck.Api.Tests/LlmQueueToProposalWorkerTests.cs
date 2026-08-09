@@ -233,6 +233,32 @@ public class LlmQueueToProposalWorkerTests
         item.Status.Should().Be(RequestStatus.Failed);
     }
 
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneCallerCancellation_PropagatesAndLeavesItemProcessing()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        // Discriminating assertion: without the worker cancellation guard, the generic
+        // failure path resets this item to Pending for retry.
+        item.Status.Should().Be(RequestStatus.Processing);
+    }
+
     #endregion
 
     #region Unhandled exception in planner
@@ -319,6 +345,32 @@ public class LlmQueueToProposalWorkerTests
         // retryAsProcessing: true means item is reset to Processing, not Pending
         item.Status.Should().Be(RequestStatus.Processing);
         item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureLaneCallerCancellation_PropagatesAndLeavesItemProcessing()
+    {
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var cts = new CancellationTokenSource();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        // Discriminating assertion: without the worker cancellation guard, the generic
+        // failure path records a retry before leaving this item in Processing.
+        item.Status.Should().Be(RequestStatus.Processing);
     }
 
     #endregion

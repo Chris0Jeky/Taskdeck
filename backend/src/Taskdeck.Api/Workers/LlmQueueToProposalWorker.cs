@@ -361,6 +361,15 @@ public class LlmQueueToProposalWorker : BackgroundService
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
+        // Shutdown or caller cancellation is not a processing failure. Without this the
+        // planner's rethrow is caught below and converted straight back into an
+        // UnexpectedError, which IsTransientFailure treats as retryable — so the item would be
+        // marked Failed and requeued purely because the host was stopping. Leave it in its
+        // current state and let the claim expire.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -518,6 +527,13 @@ public class LlmQueueToProposalWorker : BackgroundService
             outcome = retryScheduled ? "failed_retry" : "failed_permanent";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+        }
+        // Same discrimination as the proposal lane. CaptureTriageService already rethrows
+        // caller cancellation rather than returning an outcome, so without this guard the
+        // worker converts that rethrow straight back into a retryable UnexpectedError.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
