@@ -39,8 +39,8 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   collect-pre-merge-evidence.sh start [PR_NUMBER]
-  collect-pre-merge-evidence.sh abort SESSION_TOKEN
-  collect-pre-merge-evidence.sh finish SESSION_TOKEN
+  collect-pre-merge-evidence.sh abort < SESSION_TOKEN_FILE
+  collect-pre-merge-evidence.sh finish < SESSION_TOKEN_FILE
 
 The start phase binds the current clean checkout to an explicit PR number or,
 when PR_NUMBER is omitted/empty, only to the current branch's pull request.
@@ -169,10 +169,18 @@ assert_clean_exact_checkout() {
   local expected_head="$1"
   local local_head
   local worktree_status
+  local hidden_index_entries
+  local replacement_refs
 
   local_head="$("$git_executable" rev-parse HEAD)" || die "cannot resolve local HEAD"
   [[ "$local_head" == "$expected_head" ]] ||
     die "local HEAD $local_head is not PR head $expected_head"
+
+  hidden_index_entries="$($git_executable ls-files -v | awk '$1 ~ /^[a-zS]$/ {print; found=1} END {exit found ? 0 : 1}')" || true
+  [[ -z "$hidden_index_entries" ]] ||
+    die "exact-head evidence rejects assume-unchanged or skip-worktree index flags"
+  replacement_refs="$($git_executable for-each-ref --format='%(refname)' refs/replace/ || true)"
+  [[ -z "$replacement_refs" ]] || die "exact-head evidence rejects Git replacement refs"
 
   worktree_status="$("$git_executable" status --porcelain=v1 --untracked-files=all)" ||
     die "cannot inspect worktree status"
@@ -289,8 +297,10 @@ start_collection() {
 }
 
 abort_collection() {
-  [[ $# -eq 2 ]] || usage
-  local session_token="$2"
+  [[ $# -eq 1 ]] || usage
+  local session_token
+  IFS= read -r session_token || die "session token must be supplied through stdin"
+  [[ -n "$session_token" ]] || die "session token must be supplied through stdin"
   load_opening_state "$session_token" true
   local aborted_pr
   local aborted_head
@@ -466,9 +476,18 @@ bind_enforcing_gitleaks_definitions() {
 }
 
 finish_collection() {
-  [[ $# -eq 2 ]] || usage
-  local session_token="$2"
+  [[ $# -eq 1 ]] || usage
+  local session_token
+  local persistent_state_file
+  local state_snapshot
+  IFS= read -r session_token || die "session token must be supplied through stdin"
+  [[ -n "$session_token" ]] || die "session token must be supplied through stdin"
   load_opening_state "$session_token" false
+  persistent_state_file="$state_file"
+  state_snapshot="$(mktemp)" || die "cannot create immutable opening-state snapshot"
+  cp -- "$persistent_state_file" "$state_snapshot" || die "cannot snapshot opening evidence state"
+  state_file="$state_snapshot"
+  trap 'rm -f "${state_snapshot:-}"' EXIT
 
   local repo_full_name
   local repo_owner
@@ -651,7 +670,7 @@ finish_collection() {
   if [[ "$secrets_verdict" != "CLEAN" ]]; then
     die "exact-head secret-scan evidence or enforcing definition binding is missing, changed, pending, failed, or ambiguous"
   fi
-  rm -f "$state_file" || die "cannot consume the completed opening evidence state"
+  rm -f "$persistent_state_file" || die "cannot consume the completed opening evidence state"
 }
 
 case "$mode" in

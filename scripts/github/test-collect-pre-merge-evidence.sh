@@ -397,7 +397,7 @@ run_finish() {
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" finish "$session_token"
+    printf '%s\n' "$session_token" | "$collector" finish
 }
 
 run_abort() {
@@ -412,7 +412,7 @@ run_abort() {
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" abort "$session_token"
+    printf '%s\n' "$session_token" | "$collector" abort
 }
 
 case_root="$fixture_root/explicit"
@@ -657,6 +657,16 @@ rg -Fq 'finish VALIDATED_SESSION_TOKEN' "$skill_file" ||
 rg -Fq 'coordinator/operator context' "$skill_file" ||
   fail "skill does not preserve the visible token across separate tool processes"
 pass "visible operator token survives separate finish and abort tool commands"
+
+rg -Fq 'state_snapshot=' "$collector" || fail "finish does not create an immutable state snapshot"
+rg -Fq 'ls-files -v' "$collector" || fail "clean-check does not inspect hidden index flags"
+rg -Fq 'refs/replace/' "$collector" || fail "clean-check does not reject replacement refs"
+rg -Fq 'session token must be supplied through stdin' "$collector" || fail "token is not protected stdin input"
+rg -Fq 'finish "$session_token"' "$collector" &&
+  fail "finish still accepts the session token through argv"
+rg -Fq 'abort "$session_token"' "$collector" &&
+  fail "abort still accepts the session token through argv"
+pass "state snapshot, hidden-index, replacement-ref, and protected-token guards are present"
 
 case_root="$fixture_root/invalid-argument"
 make_mocks "$case_root"
