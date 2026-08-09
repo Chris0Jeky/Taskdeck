@@ -489,7 +489,11 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
 
                 if (parsed.TokensUsed is not null)
                     progress.TokensUsed = parsed.TokensUsed;
-                if (parsed.FinishReason is not null)
+                if (parsed.IsRefusal)
+                    finishReasonSeen = "refusal";
+                else if (parsed.FinishReason is not null &&
+                         !(string.Equals(parsed.FinishReason, "stop", StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(finishReasonSeen, "refusal", StringComparison.OrdinalIgnoreCase)))
                     finishReasonSeen = parsed.FinishReason;
                 if (!string.IsNullOrEmpty(parsed.Delta))
                     yield return new LlmTokenEvent(parsed.Delta, false, Provider: ProviderName, Model: GetConfiguredModelOrDefault());
@@ -729,6 +733,20 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     else if (contentElement.ValueKind != JsonValueKind.Null)
                         return new SseEventParseResult(Error: "OpenAI-compatible SSE delta content was not text.");
                 }
+                if (deltaElement.TryGetProperty("refusal", out var refusalElement))
+                {
+                    if (refusalElement.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(refusalElement.GetString()))
+                    {
+                        // Refusal text is deliberately not exposed; retain only a degraded
+                        // terminal classification for the eventual finish event.
+                        delta = null;
+                    }
+                    else if (refusalElement.ValueKind != JsonValueKind.Null)
+                    {
+                        return new SseEventParseResult(Error: "OpenAI-compatible SSE refusal was not text or null.");
+                    }
+                }
             }
 
             string? finishReason = null;
@@ -740,7 +758,16 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     return new SseEventParseResult(Error: "OpenAI-compatible SSE finish_reason was not text or null.");
             }
 
-            return new SseEventParseResult(delta, FinishReason: finishReason, TokensUsed: tokensUsed);
+            if (first.TryGetProperty("delta", out var refusalDelta) &&
+                refusalDelta.ValueKind == JsonValueKind.Object &&
+                refusalDelta.TryGetProperty("refusal", out var refusal) &&
+                refusal.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(refusal.GetString()))
+            {
+                finishReason = "refusal";
+            }
+
+            return new SseEventParseResult(delta, FinishReason: finishReason, TokensUsed: tokensUsed, IsRefusal: finishReason == "refusal");
         }
         catch (JsonException)
         {
@@ -1007,7 +1034,8 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         bool IsDoneMarker = false,
         string? FinishReason = null,
         int? TokensUsed = null,
-        string? Error = null);
+        string? Error = null,
+        bool IsRefusal = false);
 
     private sealed record BoundedLine(string? Text, int WireBytes);
 

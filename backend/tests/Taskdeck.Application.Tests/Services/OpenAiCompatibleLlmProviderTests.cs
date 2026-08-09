@@ -334,6 +334,26 @@ public class OpenAiCompatibleLlmProviderTests
     }
 
     [Fact]
+    public async Task StreamAsync_RefusalDelta_IsTerminalDegradedWithoutLeakingText()
+    {
+        var provider = CreateProvider(new StubHttpMessageHandler(_ => SseResponse(
+            "data: {\"choices\":[{\"delta\":{\"refusal\":\"private refusal detail\"},\"finish_reason\":null}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":7}}\n\n" +
+            "data: [DONE]\n\n")), BuildSettings());
+
+        var events = await CollectAsync(provider.StreamAsync(Request()));
+
+        events.Should().ContainSingle(item => item.IsComplete);
+        var terminal = events.Single(item => item.IsComplete);
+        terminal.IsDegraded.Should().BeTrue();
+        terminal.DegradedReason.Should().Contain("refused");
+        terminal.Token.Should().BeEmpty();
+        terminal.DegradedReason.Should().NotContain("private refusal detail");
+        terminal.TokensUsed.Should().Be(7);
+    }
+
+    [Fact]
     public async Task CompleteAsync_ContentFilterFinish_DoesNotCountAsCircuitFailure()
     {
         var dispatches = 0;
