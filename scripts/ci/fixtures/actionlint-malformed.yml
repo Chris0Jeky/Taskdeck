@@ -1,0 +1,9 @@
+name: Actionlint malformed fixture
+
+on:
+  workflow_dispatch:
+
+jobs:
+  malformed:
+    steps:
+      - run: echo "This job deliberately has no runs-on declaration"
