@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Taskdeck.Api" />
     <InternalsVisibleTo Include="Taskdeck.Application.Tests" />
   </ItemGroup>
 

@@ -11,7 +11,7 @@ public sealed class EgressViolation
     /// <summary>The host that was attempted but is not in the egress envelope.</summary>
     public string AttemptedHost { get; }
 
-    /// <summary>The original request URI that triggered the violation.</summary>
+    /// <summary>The sanitized audit origin for the request that triggered the violation.</summary>
     public string RequestUri { get; }
 
     /// <summary>Category of the violation.</summary>
@@ -66,5 +66,8 @@ public enum EgressViolationType
     RedirectToUnknownHost = 1,
 
     /// <summary>The host resolved to a private/internal IP range.</summary>
-    PrivateNetworkAttempt = 2
+    PrivateNetworkAttempt = 2,
+
+    /// <summary>The client policy refuses redirects even when the target host is allowed.</summary>
+    RedirectNotAllowed = 3
 }

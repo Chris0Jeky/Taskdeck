@@ -5,7 +5,7 @@
 # Workflow Topology (see docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md):
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
-#     ├── KineticCafe/actions-dco              DCO sign-off signal (PR-only, advisory)
+#     ├── native Git + KineticCafe/actions-dco DCO sign-off signal (PR-only, advisory)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
@@ -101,8 +101,20 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - name: Check commit sign-offs
+      - name: Checkout DCO range
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run upstream DCO diagnostic
+        continue-on-error: true
         uses: KineticCafe/actions-dco@5f160e3ee086af8fc0fb567b8add0937d074123e # v3.2.0
+
+      - name: Verify DCO sign-offs with native Git
+        env:
+          DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci/check-dco-signoffs.sh "$DCO_BASE_SHA" "$DCO_HEAD_SHA"
 
   docs-governance:
     name: Docs Governance

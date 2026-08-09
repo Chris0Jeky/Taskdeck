@@ -299,7 +299,8 @@ internal static class ProxySafeHttpHandlerTestHarness
 
     internal static async Task AssertBlockedOriginIgnoresProxyAsync(
         HttpMessageHandler pipeline,
-        string blockedOrigin)
+        string blockedOrigin,
+        bool expectStructuredEgressViolation = false)
     {
         AssertProxySafeOriginHandler(pipeline);
         var primaryHandler = GetPrimaryHandler(pipeline);
@@ -315,12 +316,21 @@ internal static class ProxySafeHttpHandlerTestHarness
         request.Content = new StringContent(SensitiveMarker);
         ProtectedOutboundTelemetryHandler.PrepareForSend(request);
 
-        var exception = await Assert.ThrowsAsync<HttpRequestException>(
-            () => invoker.SendAsync(request, cancellationSource.Token));
-
-        exception.Message.Should().Contain(new Uri(blockedOrigin).Host);
-        exception.Message.Should().Contain("is not allowed");
-        exception.Message.Should().NotContain(SensitiveMarker);
+        if (expectStructuredEgressViolation)
+        {
+            var exception = await Assert.ThrowsAsync<EgressViolationException>(
+                () => invoker.SendAsync(request, cancellationSource.Token));
+            exception.Message.Should().Contain(new Uri(blockedOrigin).Host);
+            exception.Message.Should().NotContain(SensitiveMarker);
+        }
+        else
+        {
+            var exception = await Assert.ThrowsAsync<HttpRequestException>(
+                () => invoker.SendAsync(request, cancellationSource.Token));
+            exception.Message.Should().Contain(new Uri(blockedOrigin).Host);
+            exception.Message.Should().Contain("is not allowed");
+            exception.Message.Should().NotContain(SensitiveMarker);
+        }
         request.RequestUri!.AbsoluteUri.Should().NotContain(SensitiveMarker,
             "blocked requests must be remasked after connect-time rejection");
         hostileProxy.InvocationCount.Should().Be(0,
@@ -398,13 +408,15 @@ internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
 
     internal SingleRequestLoopbackServer(
         HttpStatusCode responseStatus = HttpStatusCode.OK,
-        string responseBody = "")
+        string responseBody = "",
+        string responseContentType = "application/json")
     {
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _capturedRequest = ReceiveSingleRequestAsync(
             responseStatus,
             responseBody,
+            responseContentType,
             _cancellationSource.Token);
         ReceivedRequest = SelectRawRequestAsync(_capturedRequest);
         ReceivedBody = SelectBodyAsync(_capturedRequest);
@@ -450,6 +462,7 @@ internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
     private async Task<CapturedRequest> ReceiveSingleRequestAsync(
         HttpStatusCode responseStatus,
         string responseBody,
+        string responseContentType,
         CancellationToken cancellationToken)
     {
         using var client = await _listener.AcceptTcpClientAsync(cancellationToken);
@@ -494,7 +507,12 @@ internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
                     isChunked,
                     out var capturedRequest))
             {
-                await WriteResponseAsync(stream, responseStatus, responseBody, cancellationToken);
+                await WriteResponseAsync(
+                    stream,
+                    responseStatus,
+                    responseBody,
+                    responseContentType,
+                    cancellationToken);
                 return capturedRequest;
             }
         }
@@ -691,6 +709,7 @@ internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
         NetworkStream stream,
         HttpStatusCode status,
         string body,
+        string responseContentType,
         CancellationToken cancellationToken)
     {
         var bodyBytes = Encoding.UTF8.GetBytes(body);
@@ -703,7 +722,7 @@ internal sealed class SingleRequestLoopbackServer : IAsyncDisposable
         var responseHeaders = Encoding.ASCII.GetBytes(
             $"HTTP/1.1 {(int)status} {reason}\r\n" +
             $"Content-Length: {bodyBytes.Length}\r\n" +
-            "Content-Type: application/json\r\n" +
+            $"Content-Type: {responseContentType}\r\n" +
             "Connection: close\r\n\r\n");
 
         await stream.WriteAsync(responseHeaders, cancellationToken);
