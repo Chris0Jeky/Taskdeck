@@ -1197,6 +1197,30 @@ finally {
         Remove-Item -LiteralPath $ignoredCanaryDirectory -Recurse -Force
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $ignoredCollisionWorktree)
 
+        foreach ($hiddenFlag in @("assume-unchanged", "skip-worktree")) {
+            $hiddenIssue = if ($hiddenFlag -eq "assume-unchanged") { "503" } else { "504" }
+            $hiddenResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", $hiddenIssue, "-Slug", "hidden-initializer-collision")
+            Assert-Equal 0 $hiddenResult.ExitCode "Hidden-index initializer fixture creation should succeed for $hiddenFlag.`n$($hiddenResult.Output)"
+            $hiddenWorktree = Join-Path $callerPath ".worktrees/codex-$hiddenIssue-hidden-initializer-collision"
+            $hiddenHead = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("rev-parse", "HEAD")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-$hiddenIssue/hidden-initializer-collision", $hiddenHead)
+            $hiddenTarget = Join-Path $hiddenWorktree "scripts/worktree_guard.ps1"
+            Add-Content -LiteralPath $hiddenTarget -Value "`n# hidden initializer collision $hiddenFlag" -Encoding Ascii
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("update-index", "--$hiddenFlag", "--", "scripts/worktree_guard.ps1")
+            $hiddenCollisionScript = Join-Path $fixtureRoot "initializer-$hiddenFlag-collision.ps1"
+            Set-Content -LiteralPath $hiddenCollisionScript -Value @(Get-PrintedHandoffLines -Output $hiddenResult.Output) -Encoding Ascii
+            $hiddenCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $hiddenCollisionScript) -WorkingDirectory $hiddenWorktree
+            Assert-True ($hiddenCollision.ExitCode -ne 0) "Hidden-index collision must fail for $hiddenFlag."
+            Assert-NormalizedContains $hiddenCollision.Output "index-hidden entries" "Hidden-index collision must explain preservation for $hiddenFlag."
+            Assert-Contains (Get-Content -Raw -LiteralPath $hiddenTarget) "hidden initializer collision $hiddenFlag" "Hidden bytes must survive $hiddenFlag cleanup refusal."
+            Assert-True (Test-Path -LiteralPath $hiddenWorktree -PathType Container) "Hidden worktree must survive $hiddenFlag cleanup refusal."
+            $hiddenRegistration = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-True $hiddenRegistration.Replace('\', '/').Contains($hiddenWorktree.Replace('\', '/')) "Hidden registration must survive $hiddenFlag cleanup refusal."
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("update-index", "--no-$hiddenFlag", "--", "scripts/worktree_guard.ps1")
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $hiddenWorktree)
+        }
+
         $separateGitDirectory = Join-Path $fixtureRoot "separate common git directory"
         $separateGitCaller = Join-Path $fixtureRoot "separate git caller"
         $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @(
