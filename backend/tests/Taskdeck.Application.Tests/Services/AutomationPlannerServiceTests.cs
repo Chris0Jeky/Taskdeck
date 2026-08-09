@@ -793,6 +793,30 @@ public class AutomationPlannerServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldPropagateCancellation_WhenCallerTokenCanceled()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, cts.Token))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        // Act + Assert. ThrowsAnyAsync, not ThrowsAsync: xUnit's generic overload is
+        // exact-type and a cancelled await can surface the TaskCanceledException subclass.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ParseBatchInstructionAsync(
+                ["create cards: 'Test A', 'Test B'"], userId, boardId, cts.Token));
+
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     // The guard rail for the fix above: an OperationCanceledException whose origin is an
     // INTERNAL budget/provider timeout, while the caller's token is still live, must keep its
     // UnexpectedError mapping. This fails if someone writes an unfiltered
