@@ -132,7 +132,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             dbPath,
             $"{dbPath}-wal",
             $"{dbPath}-shm",
-            $"{dbPath}-journal"
+            $"{dbPath}-journal",
+            $"{dbPath}.migrate.lock"
         ];
     }
 }
