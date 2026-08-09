@@ -1225,6 +1225,9 @@ finally {
 
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
         Assert-Equal 0 $initializerResult.ExitCode "Post-collision initializer fixture worktree creation should succeed.`n$($initializerResult.Output)"
+        $initializerSource = Get-Content -Raw -LiteralPath (Join-Path $callerPath "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        Assert-Contains $initializerSource 'ls-files", "-v", "-z' "Initializer must inspect hidden index flags before immediate late-collision cleanup."
+        Assert-Contains $initializerSource 'cleanupHidden' "Delayed late-collision cleanup must inspect hidden index flags before plain removal."
         $initializerWorktree = Join-Path $callerPath ".worktrees/codex-490-initializer-validation-continued"
         $initializerHead = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
 

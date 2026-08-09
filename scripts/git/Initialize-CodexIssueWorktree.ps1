@@ -132,6 +132,13 @@ function Schedule-FailedInitializerWorktreeRemoval {
         [string]$ExpectedHead
     )
 
+    $hiddenIndexResult = Invoke-InitializerGit -Arguments @("ls-files", "-v", "-z")
+    if (-not $hiddenIndexResult.InvocationSucceeded -or $hiddenIndexResult.ExitCode -ne 0) {
+        Exit-WithInitializerError "git switch -c failed and cleanup was refused because Git could not inspect index flags; the helper-created worktree was preserved at '$Worktree'." 2
+    }
+    if (($hiddenIndexResult.Output -split "`0" | Where-Object { $_ -cmatch '^(?:[a-z]|S) ' }).Count -ne 0) {
+        Exit-WithInitializerError "git switch -c failed and cleanup was refused because the helper-created worktree contains index-hidden entries that can hide modified data; the worktree was preserved at '$Worktree'." 1
+    }
     $statusResult = Invoke-InitializerGit -Arguments @(
         "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--"
     )
@@ -182,6 +189,10 @@ if (`$LASTEXITCODE -ne 1) {
 }
 `$cleanupStatus = @(& '$escapedGit' -C '$escapedWorktree' status --porcelain=v1 --untracked-files=all --ignored=matching -- 2>`$null)
 if (`$LASTEXITCODE -ne 0 -or `$cleanupStatus.Count -ne 0) {
+    exit 4
+}
+`$cleanupHidden = @(& '$escapedGit' -C '$escapedWorktree' ls-files -v -z 2>`$null)
+if (`$LASTEXITCODE -ne 0 -or (`$cleanupHidden -join "`0" -split "`0" | Where-Object { `$_ -cmatch '^(?:[a-z]|S) ' }).Count -ne 0) {
     exit 4
 }
 & '$escapedGit' '--git-dir=$escapedCommonGitDirectory' worktree remove '$escapedWorktree'
