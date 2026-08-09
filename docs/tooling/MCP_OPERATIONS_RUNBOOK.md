@@ -11,8 +11,11 @@ This runbook is the operational companion to `docs/MCP_TOOLING_GUIDE.md`.
 
 ## Baseline Topology
 
-Project default Docker MCP gateway server set (from `.codex/config.toml`):
-- `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+The Docker MCP gateway is declared **once, at user scope** — never in `.codex/config.toml` or `.mcp.json`,
+where a second declaration starts a second gateway process per session (agent-harness#87). Setup path:
+- Claude: `mcpServers.MCP_DOCKER` in `~/.claude.json`
+- Codex: `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml`
+- Both run `docker mcp gateway run --watch=false --servers docker,docker-docs,time,jetbrains,filesystem,SQLite --transport stdio`
 
 Optional enabled Docker Marketplace servers (credential/config gated):
 - `postman`
@@ -98,7 +101,7 @@ Pass/fail policy for optional integrations:
 ```powershell
 docker mcp server ls
 docker mcp secret ls
-docker mcp gateway run --dry-run --servers docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform
+docker mcp gateway run --dry-run --servers docker,docker-docs,time,jetbrains,filesystem,SQLite
 docker mcp gateway run --dry-run --servers postman,dockerhub
 ```
 

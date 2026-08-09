@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Extensions;
@@ -54,6 +55,8 @@ public static class WorkerRegistration
         services.AddSingleton(embeddingBackfillSettings);
 
         services.AddSingleton<WorkerHeartbeatRegistry>();
+        services.AddSingleton<ILlmCaptureTriageProgressReporter>(serviceProvider =>
+            serviceProvider.GetRequiredService<WorkerHeartbeatRegistry>());
         services.AddHostedService<LlmQueueToProposalWorker>();
         services.AddHostedService<TranscriptTriageWorker>();
         services.AddHostedService<ProposalHousekeepingWorker>();

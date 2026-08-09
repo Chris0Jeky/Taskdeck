@@ -89,12 +89,15 @@ export interface Proposal {
 
 /**
  * The pinned-revision id as the wire carries it. Exported deliberately, and referenced from
- * production source rather than a spec, because it is the ONLY thing that makes
- * `Proposal.approvedRevisionId` survive a dead-code sweep: `tsconfig.app.json` excludes
- * `src/tests/**`, so `npm run typecheck` never type-checks specs, and the field has no consumer yet
- * (`#1298` forbids a UI claim without a design decision). Deleting the interface member makes this
- * alias fail to compile, which is the gate the field would otherwise lack entirely (`#1462` review;
- * the broader "specs are never type-checked" gap is `#1468`).
+ * production source rather than a spec, so that `Proposal.approvedRevisionId` survives a dead-code
+ * sweep: the field still has no consumer (`#1298` forbids a UI claim without a design decision), so
+ * deleting the interface member is otherwise a silent no-op. Deleting it makes this alias fail to
+ * compile.
+ *
+ * Since `#1468` the spec tree is type-checked too (`tsconfig.vitest.json`), and
+ * `src/tests/api/automationApi.spec.ts` carries an `expectTypeOf` pin on the same member. This alias
+ * is kept as the belt to that braces: it holds from inside production source, so it survives even if
+ * that spec were quarantined, and it is what a dead-code sweep of `src/` actually sees.
  */
 export type ProposalApprovedRevisionId = Proposal['approvedRevisionId']
 

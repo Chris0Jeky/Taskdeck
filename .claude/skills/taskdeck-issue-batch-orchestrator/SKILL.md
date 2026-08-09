@@ -1,6 +1,6 @@
 ---
 name: taskdeck-issue-batch-orchestrator
-description: Coordinate high-autonomy Taskdeck issue batches from selection through worktrees, PRs, review, CI recovery, docs reconciliation, and handoff. Use when asked to take care of many issues, pick next issues, coordinate agents, run review loops, or reconcile GitHub project status.
+description: Coordinate high-autonomy Taskdeck issue batches from selection through worktrees, PRs, canonical review handoff, CI recovery, docs reconciliation, and handoff. Use when asked to take care of many issues, pick next issues, coordinate agents, or reconcile GitHub project status.
 ---
 
 # Taskdeck Issue Batch Orchestrator
@@ -15,7 +15,9 @@ Read as needed: `docs/GITHUB_PROJECT_AUTOMATION.md` (Status/Priority project-boa
 
 ## Coordinator Responsibilities
 
-The coordinator owns issue selection, dependency checks, worktree prompts, conflict resolution, PR quality, project status/priority sync, adversarial review assignment, CI/comment loops, docs rehydration, and final handoff.
+The coordinator owns issue selection, dependency checks, worktree prompts, conflict resolution, PR
+quality, project status/priority sync, canonical review-pipeline evidence handoff, CI/comment
+recovery, docs rehydration, and final handoff.
 
 Do not delegate final synthesis. Do not silently defer work.
 
@@ -26,7 +28,7 @@ Split only by non-overlapping ownership:
 - one backend issue per worker
 - one frontend issue per worker
 - one docs-only issue per worker
-- one reviewer per PR
+- review workers only when the global pipeline requests Taskdeck lenses
 - one CI/conflict worker per failing PR
 
 Avoid concurrent edits to the same view, store, service, migration chain, project file, or canonical doc unless the coordinator controls merge order.
@@ -47,17 +49,19 @@ When editing with structured patches:
 
 For isolated workers:
 
-1. Use Claude `isolation: "worktree"` or the repo worktree script, depending on runtime.
+1. Use Claude `isolation: "worktree"` or the repo worktree script from the main checkout, depending on runtime; the repo helper rejects linked-source invocation.
 2. Do not include absolute main-checkout paths in worker prompts.
-3. Require the first command from `docs/WORKTREE_AGENT_PROTOCOL.md` or `powershell -File scripts/worktree_guard.ps1`.
-4. Assign explicit file/module ownership.
-5. Tell workers they are not alone in the codebase and must not revert others' edits.
-6. Require targeted tests and self-review before handoff.
-7. Require every file-editing worker prompt to restate the structured patch discipline above.
+3. When the repo helper was used, require its complete printed PowerShell handoff block as the first worker commands. Its first command invokes the exact absolute target `worktree_guard.ps1` with pinned Git; the bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows on guard success, binds the detached base, and only then runs `switch -c`. A late collision removes the unused detached worktree only when its tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper validates target guard/initializer bytes against reviewed raw blobs before emitting the block, but same-user replacement after emission remains outside this boundary. When launch authorization requires PowerShell rules, use both exact additive full-command rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard; pass its ordered rule array as two `--allowedTools` argv values, never a generic relative handoff rule. Start `claude -p` in the exact helper-created target without `--worktree`; accept project trust interactively before relying on project settings. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, restore the prior host value when the launch returns, then keep later commands on Git Bash as the documented portable shell. Taskdeck installs no project command-deny hook. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an interactive coordinator launch.
+4. From a Bash worker, launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; never resolve bare `powershell`. Otherwise use the first guard command from `docs/WORKTREE_AGENT_PROTOCOL.md`; never substitute a PATH-first batch shim.
+5. Assign explicit file/module ownership.
+6. Tell workers they are not alone in the codebase and must not revert others' edits.
+7. Require targeted tests and handoff into the canonical review pipeline.
+8. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 
-Review rounds, severity bar, and comment triage: the global `review-and-ship` skill (laws 2 and 11). Flag these surfaces so the coordinator can decide whether an extra independent lens is warranted:
+Enter ready PRs into the global `review-and-ship` pipeline (laws 2 and 11). Supply these surfaces
+as Taskdeck-specific risk context:
 
 - auth, sessions, tokens, security, secrets, redaction
 - migrations, persistence, deletion, import/export
@@ -66,7 +70,9 @@ Review rounds, severity bar, and comment triage: the global `review-and-ship` sk
 - CI, project automation, scripts
 - broad frontend route/store/shell changes
 
-Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for review and recovery work.
+Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for Taskdeck lenses and recovery
+work. Reviewer invocation, counts, severity, convergence, aging, and merge disposition remain in
+the global pipeline.
 
 ## Final Reconciliation
 

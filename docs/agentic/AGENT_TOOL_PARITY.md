@@ -35,10 +35,10 @@ Both agents must preserve:
 | UI reproduction | Playwright MCP | Playwright MCP from `.mcp.json` | local Playwright CLI |
 | Browser protocol debugging | Chrome DevTools MCP | Chrome DevTools MCP from `.mcp.json` | Playwright traces/screenshots |
 | GitHub issues/PRs | GitHub MCP or `scripts/github/*` | GitHub MCP from `.mcp.json` or `gh` | `gh` CLI with explicit notes |
-| Containers/OpenAPI/SQLite docs | Docker MCP gateway | Docker MCP gateway from `.mcp.json` | `docker`/repo scripts |
-| High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills, hooks, worktree sessions | local coordinator flow |
-| Guardrails | system policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | `.claude/settings.json`, hooks, skills, worktree guards | stop and ask for safety blockers |
-| Agent utility Python | `py -3 -B` on native Windows; `python3 -B` on POSIX | same platform launchers; smoke children use the active `sys.executable -B` | stop loudly if the platform launcher is unavailable |
+| Containers/SQLite docs | Docker MCP gateway (user scope) | Docker MCP gateway (user scope) | `docker`/repo scripts |
+| High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills and worktree sessions | local coordinator flow |
+| Guardrails | global/runtime policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | global/runtime policy, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
+| Agent utility Python | `py -3 -B` on native Windows; `python3 -B` on POSIX | same platform launchers for manual ledger tools | stop loudly if the platform launcher is unavailable |
 
 ## Codex Strengths To Use
 
@@ -52,7 +52,7 @@ Both agents must preserve:
 
 - Use project MCP servers from `.mcp.json`; project approval may be required on first use.
 - Use `/mcp` to authenticate remote HTTP MCP servers such as GitHub when the local Claude runtime asks for auth.
-- Use `.claude/settings.json` hooks for dangerous-command prevention, pre-commit checks, PR reminders, and failed-tool capture.
+- Use `.claude/settings.json` for normal development permissions and worktree configuration. Taskdeck installs no project runtime hooks or command-deny list.
 - Use Claude skills and slash-command workflows for review, pre-merge gates, issue-to-PR execution, and docs sweeps.
 - On native Windows, project `.mcp.json` wraps `npx` MCP servers with `cmd /c` so Claude can launch them reliably.
 
@@ -61,22 +61,25 @@ Both agents must preserve:
 Codex MCP configuration lives in `.codex/config.toml`.
 Claude project MCP configuration lives in `.mcp.json`.
 
-Shared baseline servers:
+Shared project baseline servers:
 
 - `openaiDeveloperDocs`
 - `github`
 - `context7`
 - `playwright`
 - `chromeDevTools`
-- `docker` gateway with `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+
+The Docker MCP gateway is not a project server: it is declared once at user scope (`MCP_DOCKER` in
+`~/.claude.json` and `~/.codex/config.toml`) serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`.
+Re-declaring it in `.mcp.json` or `.codex/config.toml` starts a second gateway per session (agent-harness#87).
 
 Known intentional difference:
 
 - Codex currently lists `ripgrep` MCP, but Taskdeck policy still prefers native `rg` on Windows.
-- Claude uses `.claude/settings.json` hooks for guardrails; Codex relies on system policy plus repo guard scripts and skills.
+- Neither runtime installs a Taskdeck-owned hook. User-, organization-, and runtime-level controls can still differ and must be inventoried separately.
 
 ## Verification
 
-For parity-only changes, run the platform-specific, fail-fast **Agentic Operating Layer Smoke Checks** in `docs/TESTING_GUIDE.md`. The full configured-handler `smoke_test.py` is native-Windows-host-only because `.claude/settings.json` declares `shell: powershell`; POSIX verification covers direct utilities with `python3 -B`, not that Windows handler contract. The smoke still submits `Bash` tool payloads, so native PowerShell-tool deny coverage is not implied and remains tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
+For parity-only changes, run the platform-specific, fail-fast **Agentic Operating Layer Checks** in `docs/TESTING_GUIDE.md`: parse settings, verify no project hook adapter exists, run the manual failure-ledger synchronization unittest, and run docs governance. Do not claim that absence of project hooks disables user-, organization-, or runtime-level controls.
 
 Use runtime MCP list commands when available, but do not claim remote MCP connectivity unless the current session actually verified it.

@@ -32,6 +32,17 @@ the entry point. Read only the relevant section of `docs/STATUS.md` (source of t
 - docs drift in `docs/STATUS.md` / `docs/IMPLEMENTATION_MASTERPLAN.md`
 - CI, scripts, or project-automation breakage
 
+## Sensitive-Surface Flag
+
+Flag these surfaces as Taskdeck risk context for the global pipeline:
+
+- security/auth/session/token behavior
+- migrations or data deletion/retention
+- MCP or external agent write surfaces
+- capture/review/proposal execution
+- GitHub workflows/project automation
+- broad frontend route or state flow
+
 ## Targeted Verification
 
 - Backend: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~RelevantTest"`

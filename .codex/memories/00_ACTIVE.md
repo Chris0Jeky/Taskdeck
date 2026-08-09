@@ -1,11 +1,12 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-07-13
+Last updated: 2026-08-01
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
 ## Current Authority
 
+- Tier and push/merge authority: `.agent-harness/tier.json` (re-read live; do not infer authority from this summary)
 - Current shipped state: `docs/STATUS.md`
 - Roadmap and sequencing: `docs/IMPLEMENTATION_MASTERPLAN.md`
 - Stable invariants: `docs/GOLDEN_PRINCIPLES.md`
@@ -19,6 +20,8 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 ## Current Focus Snapshot
 
 **Direction (2026-07-10 revival pivot, ADR-0044; extended 2026-07-13 by ADR-0046):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md` (waves REVIVAL-00..14 `#1297`–`#1311`, `#1311` is the tracker; plus Phase 4 GEN-00..12 `#1315`–`#1327` — **ADR-0046 Accepted 2026-07-13, tracker GEN-00 `#1327`**), and the v0.1 ship gate has top priority. The 2026-06-13 archive pivot is **superseded** and retained only as the traction-checkpoint fallback. ADR-0046 adds generalist reach in the single app — artefact intake beyond transcripts, project dossiers, mode-scoped legibility; the twin generalist app is deferred behind the GEN-12 (`#1326`) evidence gate. Work not on the ratified wave list is not taken. The project thesis remains unchanged:
+
+**Delivery checkpoint (2026-08-01):** PR `#1556` shipped the durable Transcript persistence/export/deletion foundation but intentionally left `#1305` open for linkage, spans, provenance API, and Paper deep links. PRs `#1558` and `#1559` closed `#1354` (MCP create-card column canonicalization) and `#1520` (fail-closed hosted PostgreSQL evidence). Read `docs/STATUS.md` and `docs/REVIVAL_PLAN.md` for the current boundary before selecting the next slice.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved

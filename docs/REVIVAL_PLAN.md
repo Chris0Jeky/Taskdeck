@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-01
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
@@ -61,15 +61,15 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 ### Phase 1 — truth + safety before strangers (v0.1)
 | Item | Issue | Notes |
 |---|---|---|
-| Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | verified blocker: `/api/auth/register` is AllowAnonymous with no flag; environment key `Auth__Registration__Mode` |
-| Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | verified: no revert endpoint exists anywhere |
-| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | hours now, impossible-cleanly later |
-| Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | verified: Fraunces/Inter/JetBrains Mono never load |
-| Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | verified: setup modal unreachable from any Paper surface |
-| README revival rewrite + demo GIF + MCP section | REVIVAL-06 | removes archive messaging ×3, fills the GIF slot |
+| Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | **Delivered** by PR `#1334`; issue `#1297` closed |
+| Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | **Delivered** by PR `#1375`; issue `#1298` closed |
+| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | **Delivered** by PR `#1337`; issue `#1299` closed, legal/name residuals moved to `#1482` |
+| Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | **Delivered** by PR `#1329`; issue `#1300` closed |
+| Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | **Delivered** by PR `#1344`; issue `#1301` closed |
+| README revival rewrite + demo GIF + MCP section | REVIVAL-06 | **Delivered** by PR `#1331`; issue `#1302` closed |
 | v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; matches ADR-0044's required image channel |
-| De-stub Today dossier or honest empty states | #1272 (unchanged) | the flagship screen must not lie |
-| Re-point E2E + axe at Paper | #1274 (unchanged) | the default UI is currently the least-tested |
+| De-stub Today dossier or honest empty states | #1272 (unchanged) | **Delivered** by PR `#1333`; issue closed |
+| Re-point E2E + axe at Paper | #1274 (unchanged) | **Delivered** by PR `#1362`; issue closed |
 | CI keep/kill/gate pass | #1275 (unchanged) | zero always-red lanes |
 | Branch protection on main | #1173 (unchanged) | minutes of settings work |
 
@@ -77,7 +77,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Item | Issue | Notes |
 |---|---|---|
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
-| Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | the trust-gate UX no incumbent has |
+| Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
@@ -92,9 +92,9 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 
 Bounded finish-or-close slices from the archive plan (#1134, #1135, #1128, #1175, #1138, #1222/#1227) continue as capacity allows, unchanged.
 
-### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Proposed**, tracker `#1327`)
+### Phase 4 — every artefact, everyone (v0.4; ADR-0046 **Accepted**, tracker `#1327`)
 
-Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). **Ratification pending on GEN-00 `#1327`** — until the maintainer ratifies ADR-0046, only lane **G-A** foundational work is authorized (per maintainer instruction 2026-07-13); lanes G-B/G-C wait for ratification in addition to their technical dependencies. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe immediately (stays off the transcript-lane files while PR #1312 is open), lane **G-B** waits for REVIVAL-08 M1 (`#1312`) to merge, lane **G-C** follows Phase 1.
+Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend the single app, defer the twin behind the GEN-12 evidence gate). The GEN-00 `#1327` tracker and each lane's technical dependencies remain binding. **Strictly subordinate to the v0.1 ship gate** — lane **G-A** is parallel-safe, lane **G-B** follows REVIVAL-08 M1 (`#1312`), and lane **G-C** follows Phase 1.
 
 | Item | Issue | Lane |
 |---|---|---|
@@ -114,7 +114,7 @@ Seeded 2026-07-13 from the maintainer's twin-app evaluation (decision: extend th
 ## 5. What agents need to know (execution contract)
 
 - Every REVIVAL issue body is a self-contained agent brief: context, acceptance criteria, entry-point files, traps, and verification commands. Do not start work that lacks a tracked issue.
-- Review gate: the global `review-and-ship` skill and global laws 2 and 11 (Taskdeck is T3 — merge on green CI at the head, one comment-triage pass, one independent review pass). The 2026-06 two-tier FULL/LIGHT gate with its aging rule is superseded; #1269 tracks retiring the phrase. Changes touching the capture→proposal→apply loop, auth, or migrations are still the ones to flag for the independent lens.
+- Review and merge disposition come from the live authority declaration, the global laws, and `review-and-ship`; this plan does not restate tier values, reviewer counts, convergence, or post-push eligibility. Exact-head `ci-required.yml` remains Taskdeck's required CI evidence. When the canonical pipeline requests a Taskdeck-specific lens, prioritize changes touching capture→proposal→apply, auth, migrations, retention, or destructive operations. The former local FULL/LIGHT doctrine is superseded; #1269 owns any remaining Taskdeck-specific intake design.
 - **Intake severity bar** (#1269): new issues only for data loss, silent corruption, security exposure real under the deployment model, or dogfooding/beta-user findings. Everything else is fixed in-PR or recorded as dated accepted-risk.
 - Wave membership is the admission ticket. Review-seeded follow-ups go through the severity bar, not straight into the wave.
 - Worktree protocol (`docs/WORKTREE_AGENT_PROTOCOL.md`) for parallel work; one coordinator synthesizes.

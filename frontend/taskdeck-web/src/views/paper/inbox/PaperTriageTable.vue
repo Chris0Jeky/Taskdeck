@@ -29,10 +29,8 @@ const emit = defineEmits<{
 }>()
 
 const hasItems = computed(() => props.items.length > 0)
-const hasActionInFlight = computed(
-  () =>
-    (props.actionBusyItemId !== null && props.actionBusyItemId !== undefined) ||
-    (props.triagePollingItemId !== null && props.triagePollingItemId !== undefined),
+const hasMutationInFlight = computed(
+  () => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined,
 )
 
 function canMutate(item: CaptureItemSummary): boolean {
@@ -40,7 +38,7 @@ function canMutate(item: CaptureItemSummary): boolean {
 }
 
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return hasActionInFlight.value || !canMutate(item)
+  return hasMutationInFlight.value || props.triagePollingItemId === item.id || !canMutate(item)
 }
 
 function onAccept(item: CaptureItemSummary) {

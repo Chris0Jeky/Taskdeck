@@ -30,7 +30,7 @@ public class MigrationBootstrapTests : IDisposable
             $"taskdeck-migration-test-{Guid.NewGuid():N}.db");
 
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .Options;
 
         _context = new TaskdeckDbContext(options);
@@ -77,6 +77,16 @@ public class MigrationBootstrapTests : IDisposable
             tables.Should().Contain(table!,
                 $"migration chain must create the '{table}' table");
         }
+    }
+
+    [Fact]
+    public void TranscriptModel_IsRepresentedByTheFreshMigrationChain()
+    {
+        _context.Database.Migrate();
+
+        _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
+        GetUserTables().Should().Contain("Transcripts");
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
     }
 
     [Fact]

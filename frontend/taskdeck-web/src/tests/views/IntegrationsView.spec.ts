@@ -1,0 +1,85 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+import { reactive } from 'vue'
+import IntegrationsView from '../../views/IntegrationsView.vue'
+import type { IntegrationConnector } from '../../types/integration'
+
+const mockIntegrationStore = reactive({
+  connectors: [] as IntegrationConnector[],
+  selectedConnector: null,
+  loading: false,
+  error: null,
+  fetchConnectors: vi.fn().mockResolvedValue(undefined),
+  fetchConnectorDetail: vi.fn(),
+  registerConnector: vi.fn(),
+  enableConnector: vi.fn(),
+  disableConnector: vi.fn(),
+  deleteConnector: vi.fn(),
+})
+
+const routerLinkStub = {
+  props: ['to'],
+  template: '<a :data-route-name="to.name"><slot /></a>',
+}
+
+vi.mock('../../store/integrationStore', () => ({
+  useIntegrationStore: () => mockIntegrationStore,
+}))
+
+function mountView() {
+  return mount(IntegrationsView, {
+    global: {
+      stubs: {
+        'router-link': routerLinkStub,
+      },
+    },
+  })
+}
+
+describe('IntegrationsView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIntegrationStore.connectors = []
+    mockIntegrationStore.selectedConnector = null
+    mockIntegrationStore.loading = false
+    mockIntegrationStore.error = null
+  })
+
+  it('describes the page as registry management rather than connector ingestion', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Register and manage connector definitions for future integrations.')
+    expect(wrapper.text()).toContain('Registration, enablement, and configuration do not yet ingest external content.')
+    expect(mockIntegrationStore.fetchConnectors).toHaveBeenCalledOnce()
+  })
+
+  it('keeps standalone note import and web clip capture distinct from connector registration', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.')
+    expect(wrapper.get('.td-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+  })
+
+  it('keeps standalone content capture actionable when connectors are registered', async () => {
+    mockIntegrationStore.connectors = [{
+      id: 'connector-1',
+      name: 'Example connector',
+      connectorType: 'Custom',
+      direction: 'Inbound',
+      status: 'Active',
+      configuration: null,
+      createdAt: '2026-08-02T00:00:00.000Z',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+    }]
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.td-int__empty').exists()).toBe(false)
+    expect(wrapper.get('.td-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+  })
+})

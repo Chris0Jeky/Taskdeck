@@ -9,18 +9,19 @@ Deliver one issue cleanly from an isolated worktree.
 
 ## First actions
 
-1. Run `powershell -File scripts/worktree_guard.ps1`.
-2. Read `docs/STATUS.md`.
-3. Read `AGENTS.md`.
-4. Read the assigned issue body and acceptance criteria.
-5. Read the relevant Taskdeck skill:
+1. If the coordinator used `New-CodexIssueWorktree.ps1` from the main checkout (linked-source invocation is rejected), run its complete printed PowerShell handoff block unchanged. Its first command invokes the exact absolute target `worktree_guard.ps1` with pinned Git; only after that guard succeeds does the bounded exact-target `Initialize-CodexIssueWorktree.ps1` verify the helper-created detached base and perform `switch -c`. A late switch collision removes the unused detached worktree only when its tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper byte-checks target guard/initializer files against reviewed raw blobs before emitting this block, but same-user replacement after emission remains outside this boundary. If launch authorization requires PowerShell rules, use both exact additive full-command task rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard; transport its ordered rule array as two `--allowedTools` argv values, never a generic relative handoff rule. From Bash, launch a reviewed absolute PowerShell application in the worktree for this block; never resolve a bare `powershell` command through PATH. For a headless worker, start `claude -p` in the exact helper-created target without `--worktree`; accept project trust interactively before relying on project settings. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, restore the prior host value when the launch returns, then keep later commands on Git Bash as the documented portable shell. Taskdeck installs no project command-deny hook. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an interactive coordinator launch.
+2. Otherwise run `powershell -File scripts/worktree_guard.ps1`. Do not substitute a PATH-first batch shim.
+3. Read `docs/STATUS.md`.
+4. Read `AGENTS.md`.
+5. Read the assigned issue body and acceptance criteria.
+6. Read the relevant Taskdeck skill:
    - backend/API/auth/persistence: `taskdeck-backend-slice`
    - frontend/workspace/UX: `taskdeck-frontend-workspace-slice`
    - capture/inbox/review/proposals: `taskdeck-capture-review-loop`
    - demo/evidence: `taskdeck-demo-regression`
-6. Confirm owned files or module boundaries before editing.
+7. Confirm owned files or module boundaries before editing.
 
-Do not use absolute paths from the main checkout. Derive paths from `$env:WT_PROJECT_DIR` or `git rev-parse --show-toplevel`.
+Do not use absolute paths from the main checkout. Derive paths with the helper-printed native Git executable and `rev-parse --show-toplevel`; a child PowerShell guard cannot export `$env:WT_PROJECT_DIR` back to its parent shell.
 
 ## Implementation rules
 
@@ -81,7 +82,10 @@ PR body must include:
 - risks/follow-ups
 - `Closes #<issue>`
 
-After opening the PR, run a deliberate self-review using `taskdeck-pr-review-loop`. Fix findings before handing back to the coordinator.
+After opening the ready PR, return its exact head/base identity and verification evidence to the
+coordinator. Only the coordinator enters or re-enters `review-and-ship` through
+`taskdeck-pr-review-loop`; resume this worker only for fixes the coordinator returns from that
+pipeline.
 
 ## Handoff
 
@@ -92,5 +96,6 @@ Report:
 - tests added
 - commands run and results
 - docs changed
-- review findings fixed or explicit no-finding result
+- exact PR head/base identity and verification evidence
+- any pipeline-directed fix evidence from a resumed worker turn
 - any deferred follow-up issue numbers or blocked seeding notes
