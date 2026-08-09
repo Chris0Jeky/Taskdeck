@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-02
+Last Updated: 2026-08-09
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -41,9 +41,9 @@ Companion Active Docs:
 - **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
 - **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
 
-## Staged runway repair (2026-07-27, maintainer-held)
+## Staged runway repair (2026-08-09, original PR recovery pending)
 
-- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. Seven focused contract checks and two independent design reviews are complete locally. Exact-head-associated hosted Ubuntu proof is green with both checksums, 7/7 contract checks, and zero errors across 32 workflows without a Docker build. The workflow change remains T4-class and unshipped until maintainer merge plus fresh post-merge proof.
+- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. The original `#1511` history is preserved without a rebase or force-push and now incorporates the DCO-clean `#1616` lineage through a signed merge. Current `main` is its merge base, so the reopened PR should expose only the signed `#1510` range rather than the already-landed historical stack. Fresh exact-head hosted proof, required review, merge, and post-merge proof remain required; the durable failure-ledger row stays open until then.
 
 ## Delivery update (2026-07-26, agentic governance)
 
