@@ -146,10 +146,10 @@ head_sha="$(create_case_commit \
 expect_fail 'malformed sign-off email structure' "$base_sha" "$head_sha"
 
 head_sha="$(create_case_commit \
-  'Alice Example' 'not-an-email' \
+  'Alice Example' 'alice@example.com' \
   'Build Bot' 'bot@example.com' \
-  $'Reject a malformed matching email\n\nSigned-off-by: Alice Example <not-an-email>\n')"
-expect_fail 'malformed bracketed email cannot match the author' "$base_sha" "$head_sha"
+  $'Reject an empty bracketed email\n\nSigned-off-by: Alice Example <>\n')"
+expect_fail 'empty bracketed email cannot match the author' "$base_sha" "$head_sha"
 
 head_sha="$(create_case_commit \
   'Alice Example' 'alice@example.com' \
@@ -188,6 +188,42 @@ head_sha="$(create_case_commit \
 expect_pass 'CRLF commit message' "$base_sha" "$head_sha"
 
 head_sha="$(create_case_commit \
+  'Alice Example' 'alice@localhost' \
+  'Build Bot' 'bot@example.com' \
+  $'Accept a local Git identity\n\nSigned-off-by: Alice Example <alice@localhost>\n')"
+expect_pass 'local email identity matches Git author' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
+  'Alice Example' 'alice@[192.0.2.1]' \
+  'Build Bot' 'bot@example.com' \
+  $'Accept an address-literal Git identity\n\nSigned-off-by: Alice Example <alice@[192.0.2.1]>\n')"
+expect_pass 'address-literal email identity matches Git author' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
+  'Alice Example' 'álîçé@example.com' \
+  'Build Bot' 'bot@example.com' \
+  $'Accept an internationalized Git identity\n\nSigned-off-by: Alice Example <álîçé@example.com>\n')"
+expect_pass 'internationalized email identity matches Git author' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
+  'dependabot[bot]' '49699333+dependabot[bot]@users.noreply.github.com' \
+  'GitHub' 'noreply@github.com' \
+  $'Accept the repository Dependabot identity\n\n---\nupdated-dependencies:\n- dependency-name: example\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\n')"
+expect_pass 'repository Dependabot sign-off alias' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
+  'Other Bot' 'other-bot@users.noreply.github.com' \
+  'GitHub' 'noreply@github.com' \
+  $'Reject a copied Dependabot sign-off\n\n---\nupdated-dependencies:\n- dependency-name: example\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\n')"
+expect_fail 'Dependabot alias is not a general bot exemption' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
+  'Alice Example' 'alice@example.com' \
+  'Build Bot' 'bot@example.com' \
+  $'Reject patch material as a trailer\n\n---\nSigned-off-by: Alice Example <alice@example.com>\n')"
+expect_fail 'sign-off below a patch divider is not a trailer' "$base_sha" "$head_sha"
+
+head_sha="$(create_case_commit \
   'Alice Example' 'alice@example.com' \
   'Build Bot' 'bot@example.com' \
   $'Reject uncommented conflict body text\n\nSigned-off-by: Alice Example <alice@example.com>\n\n# Conflicts:\nbackend/src/Example.cs\n')"
@@ -210,7 +246,17 @@ merge_sha="$(printf '%s' $'Merge fixture branches without a sign-off\n' |
     GIT_COMMITTER_EMAIL='merge-committer@example.com' \
     GIT_COMMITTER_DATE='2000-01-01T00:00:00Z' \
     "$git_executable" -C "$fixture_repo" commit-tree "$tree_sha" -p "$main_sha" -p "$side_sha")"
-expect_pass 'multi-parent merge commit is skipped' "$base_sha" "$merge_sha"
+expect_fail 'unsigned multi-parent merge commit is rejected' "$base_sha" "$merge_sha"
+
+signed_merge_sha="$(printf '%s' $'Merge fixture branches with a sign-off\n\nSigned-off-by: Merge Author <merge-author@example.com>\n' |
+  GIT_AUTHOR_NAME='Merge Author' \
+    GIT_AUTHOR_EMAIL='merge-author@example.com' \
+    GIT_AUTHOR_DATE='2000-01-01T00:00:00Z' \
+    GIT_COMMITTER_NAME='Merge Committer' \
+    GIT_COMMITTER_EMAIL='merge-committer@example.com' \
+    GIT_COMMITTER_DATE='2000-01-01T00:00:00Z' \
+    "$git_executable" -C "$fixture_repo" commit-tree "$tree_sha" -p "$main_sha" -p "$side_sha")"
+expect_pass 'signed multi-parent merge commit is verified' "$base_sha" "$signed_merge_sha"
 
 missing_sha='1111111111111111111111111111111111111111'
 expect_fail 'missing base object fails closed' "$missing_sha" "$base_sha"

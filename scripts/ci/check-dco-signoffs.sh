@@ -15,28 +15,6 @@ trim_whitespace() {
   printf '%s' "$value"
 }
 
-is_valid_email() {
-  local email="$1"
-  local mailbox
-  local domain
-  local label
-  local local_part_pattern="^[A-Za-z0-9.!#\$%&'*+/=?^_\`{|}~-]+$"
-  local domain_pattern='^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
-  local -a labels
-
-  [[ ${#email} -le 254 && "$email" == *@* ]] || return 1
-  mailbox="${email%%@*}"
-  domain="${email#*@}"
-  [[ -n "$mailbox" && ${#mailbox} -le 64 && -n "$domain" && "$domain" != *@* ]] || return 1
-  [[ "$mailbox" != .* && "$mailbox" != *. && "$mailbox" != *..* ]] || return 1
-  [[ "$mailbox" =~ $local_part_pattern && "$domain" =~ $domain_pattern ]] || return 1
-
-  IFS='.' read -r -a labels <<<"$domain"
-  for label in "${labels[@]}"; do
-    [[ -n "$label" && ${#label} -le 63 && "$label" != -* && "$label" != *- ]] || return 1
-  done
-}
-
 if [[ $# -ne 2 ]]; then
   fail 'usage: check-dco-signoffs.sh <base-sha> <head-sha>'
 fi
@@ -66,27 +44,10 @@ fi
 shopt -s nocasematch
 signoff_pattern='^Signed-off-by:[[:space:]]*([^<>]+)[[:space:]]+<([^<>[:space:]]+)>[[:space:]]*$'
 checked_count=0
-skipped_merge_count=0
 failure_count=0
 
 while IFS= read -r commit_sha; do
   [[ -n "$commit_sha" ]] || continue
-
-  if ! parent_line="$("$git_executable" rev-list --parents -n 1 "$commit_sha")"; then
-    fail "cannot inspect parents for commit $commit_sha"
-  fi
-  read -r -a parent_fields <<<"$parent_line"
-  if [[ ${#parent_fields[@]} -lt 1 || "${parent_fields[0]}" != "$commit_sha" ]]; then
-    fail "unexpected parent metadata for commit $commit_sha"
-  fi
-
-  # A commit followed by two or more parent IDs is a merge. DCO applies to all
-  # ordinary commits, including root commits, but merge commits are skipped.
-  if (( ${#parent_fields[@]} > 2 )); then
-    skipped_merge_count=$((skipped_merge_count + 1))
-    printf 'DCO SKIP %s (multi-parent merge commit)\n' "${commit_sha:0:12}"
-    continue
-  fi
 
   if ! identity_block="$("$git_executable" show -s --format='%an%n%ae%n%cn%n%ce' "$commit_sha")"; then
     fail "cannot read author and committer identities for commit $commit_sha"
@@ -102,29 +63,51 @@ while IFS= read -r commit_sha; do
 
   # core.commentChar=# makes native Git ignore the conflict-help comments that
   # `git commit` appends after a valid trailer. --parse restricts the result to
-  # the actual terminal trailer block; arbitrary mentions in the body do not
-  # count. pipefail makes either Git command's error fatal.
+  # the actual terminal trailer block and preserves Git's `---` divider, so
+  # arbitrary body/patch mentions do not count. pipefail makes either Git
+  # command's error fatal.
   if ! parsed_trailers="$("$git_executable" show -s --format='%B' "$commit_sha" |
-    "$git_executable" -c core.commentChar='#' interpret-trailers --parse --no-divider)"; then
+    "$git_executable" -c core.commentChar='#' interpret-trailers --parse)"; then
     fail "cannot parse trailers for commit $commit_sha"
   fi
 
   matching_signoff=false
-  while IFS= read -r trailer_line; do
-    [[ -n "$trailer_line" ]] || continue
-    if [[ "$trailer_line" =~ $signoff_pattern ]]; then
-      signed_name="$(trim_whitespace "${BASH_REMATCH[1]}")"
-      signed_email="${BASH_REMATCH[2]}"
-      [[ -n "$signed_name" ]] || continue
-      is_valid_email "$signed_email" || continue
-
-      if { [[ "$signed_name" == "$author_name" ]] && [[ "$signed_email" == "$author_email" ]]; } ||
-        { [[ "$signed_name" == "$committer_name" ]] && [[ "$signed_email" == "$committer_email" ]]; }; then
+  if [[ "$author_name" == 'dependabot[bot]' ]] &&
+    [[ "$author_email" == '49699333+dependabot[bot]@users.noreply.github.com' ]]; then
+    # GitHub's established Dependabot message puts its stable support@github.com
+    # sign-off after a `---` dependency-metadata divider. Parse through that
+    # divider only for this exact signed bot mapping; human/other-bot commits
+    # retain Git's normal divider boundary and receive no exemption.
+    if ! dependabot_trailers="$("$git_executable" show -s --format='%B' "$commit_sha" |
+      "$git_executable" -c core.commentChar='#' interpret-trailers --parse --no-divider)"; then
+      fail "cannot parse Dependabot trailers for commit $commit_sha"
+    fi
+    while IFS= read -r trailer_line; do
+      if [[ "$trailer_line" =~ $signoff_pattern ]] &&
+        [[ "$(trim_whitespace "${BASH_REMATCH[1]}")" == 'dependabot[bot]' ]] &&
+        [[ "${BASH_REMATCH[2]}" == 'support@github.com' ]]; then
         matching_signoff=true
         break
       fi
-    fi
-  done <<<"$parsed_trailers"
+    done <<<"$dependabot_trailers"
+  fi
+
+  if [[ "$matching_signoff" == false ]]; then
+    while IFS= read -r trailer_line; do
+      [[ -n "$trailer_line" ]] || continue
+      if [[ "$trailer_line" =~ $signoff_pattern ]]; then
+        signed_name="$(trim_whitespace "${BASH_REMATCH[1]}")"
+        signed_email="${BASH_REMATCH[2]}"
+        [[ -n "$signed_name" ]] || continue
+
+        if { [[ "$signed_name" == "$author_name" ]] && [[ "$signed_email" == "$author_email" ]]; } ||
+          { [[ "$signed_name" == "$committer_name" ]] && [[ "$signed_email" == "$committer_email" ]]; }; then
+          matching_signoff=true
+          break
+        fi
+      fi
+    done <<<"$parsed_trailers"
+  fi
 
   checked_count=$((checked_count + 1))
   if [[ "$matching_signoff" == true ]]; then
@@ -140,5 +123,5 @@ if (( failure_count > 0 )); then
   fail "$failure_count ordinary commit(s) failed DCO verification"
 fi
 
-printf 'DCO verification passed: checked=%d skipped_merges=%d range=%s..%s\n' \
-  "$checked_count" "$skipped_merge_count" "$base_sha" "$head_sha"
+printf 'DCO verification passed: checked=%d range=%s..%s\n' \
+  "$checked_count" "$base_sha" "$head_sha"
