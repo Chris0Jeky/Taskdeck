@@ -35,7 +35,7 @@ public class McpBoardResourcesTests : IDisposable
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+                    ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(_dbPath),
                     ["Connectors:EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
                 })
                 .Build());

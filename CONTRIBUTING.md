@@ -293,15 +293,16 @@ See `AGENTS.md` (Commit & Pull Request Guidelines) for the authoritative rules.
    - Commands run (tests, lint, typecheck) and their results.
    - Screenshots or short clips for user-visible UI changes.
 5. **Link the issue** the PR closes or addresses (e.g. `Closes #873`).
-6. **Wait for CI.** The required gate is `ci-required.yml`. PRs touching CI
-   workflows (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`),
-   or project files (`*.csproj`) also trigger CI Extended — that must be green
-   before merging those PRs.
-7. **Self-review the diff** before requesting review. A deliberate
-   reviewer-style pass on your own PR catches most avoidable feedback.
+6. **Publish the PR ready for review and wait for CI and reviewer feedback.**
+   The required gate is `ci-required.yml`. PRs touching CI workflows
+   (`.github/workflows/`), infrastructure (`deploy/`, `scripts/`), or project
+   files (`*.csproj`) also trigger CI Extended; wait for every triggered check.
+7. **Respond to actionable findings** with the smallest focused update and
+   refreshed verification evidence.
 
-The full definition of done, required output format, and review protocol live
-in [AGENTS.md](AGENTS.md). Read it before your first PR.
+The full definition of done and required output format live in
+[AGENTS.md](AGENTS.md). Maintainers and repository automation route ready PRs
+through the internal canonical review pipeline.
 
 ---
 

@@ -164,12 +164,12 @@ does not replace allows from other enabled settings sources. The command-line
 `bypassPermissions`, but it likewise does not erase merged allow rules. The supported unattended
 posture for this repository is:
 
-1. Before relying on project settings, permissions, or hooks, accept this workspace's trust in a
+1. Before relying on project settings or permissions, accept this workspace's trust in a
    prior interactive coordinator session. `-p` is not a trust grant.
 2. Use a Claude Code version that supports `--setting-sources` and launch with
    `--setting-sources project`. This excludes file-backed user and project-local permissions,
    including approvals stored in the main checkout for linked worktrees.
-3. Review the committed `.claude/settings.json` permission and hook rules plus every explicit
+3. Review the committed `.claude/settings.json` permission rules plus every explicit
    launch rule as one effective configuration. Organization-managed settings remain effective and
    are an administrator-owned trust boundary that this flag cannot remove; do not use an
    unattended worker if that boundary is not trusted for the task.
@@ -177,10 +177,10 @@ posture for this repository is:
    full-command guard and initializer rules printed by the helper. Keep all other command execution on the
    repository's Git Bash surface, then use `--permission-mode dontAsk` so
    calls that would otherwise prompt are denied. This mode does not revoke matching allow rules,
-   built-in read-only Bash commands, or applicable hook approvals; those remain part of the
+    built-in read-only Bash commands, or applicable externally managed hook decisions; those remain part of the
    reviewed trust surface.
 
-For an intentionally untrusted launch, do not rely on project-provided permissions, hooks,
+For an intentionally untrusted launch, do not rely on project-provided permissions,
 additional directories, or environment. Pass every required allow rule through CLI argv and
 proceed only if the task does not require ignored project configuration.
 
@@ -211,12 +211,16 @@ PowerShell(<exact absolute initializer command and pinned arguments printed by t
 Do not add `--worktree`: Claude Code would create a second `.claude/worktrees/...` checkout instead
 of staying in the helper-created target, so the exact-worktree guard would reject the handoff. The
 helper handoff requires the PowerShell tool shape, but the repository deliberately does not enable
-that tool or grant PowerShell commands project-wide. Enable it only in the trusted host environment
-for this task-scoped launch, and restore its prior process value after `claude -p` returns.
-When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed, and
-Taskdeck's command deny/failure/pre-commit hooks are currently Bash-only. Therefore the unattended
-posture permits only the exact guard and initializer PowerShell rules; keep other command execution on Git Bash
-until PowerShell hook parity is separately reviewed. Do not present the launch allowlist as the sole
+that tool or grant generic PowerShell access project-wide. Two narrow manual failure-ledger utility
+rules remain effective from committed settings when a trusted host enables the tool. Review those
+two rules together with the exact guard and initializer rules for this task-scoped launch, and
+restore its prior process value after `claude -p` returns.
+When enabled, PowerShell becomes Claude Code's primary shell; on Windows it is not sandboxed. This
+repository installs no project command-deny, failure-capture, or pre-commit hooks on any shell.
+Therefore the unattended posture adds only the exact guard and initializer PowerShell rules; the
+two committed manual utility rules remain part of the effective permission set. Keep other command
+execution on Git Bash. User-, organization-, and runtime-level hooks can still
+apply and must be inventoried separately. Do not present the launch allowlist as the sole
 authorization boundary, and do not present
 `acceptEdits`, disabled trust verification, or `--dangerously-skip-permissions` as authorization
 for the wrapper. If the installed CLI does not support the PowerShell tool enablement or cannot
@@ -278,7 +282,7 @@ Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
 Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
-After opening the PR, self-review, post findings or explicit no-finding result, fix findings, and report back.
+Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
 
 ## Parallel Runtime Isolation

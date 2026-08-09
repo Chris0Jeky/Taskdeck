@@ -24,6 +24,30 @@ public class LlmCaptureTriageSettings
     [Range(256, 32768)]
     public int MaxOutputTokens { get; set; } = 4096;
 
+    /// <summary>
+    /// Conservative input-token budget for one transcript chunk. Long transcript captures are split
+    /// before the existing guarded extraction call, leaving the output budget independent and
+    /// avoiding a provider-specific tokenizer dependency.
+    /// </summary>
+    [Range(1024, 32768)]
+    public int MaxInputTokensPerChunk { get; set; } = 12000;
+
+    /// <summary>
+    /// Context retained at the start of a following chunk. The chunk planner caps this to one quarter
+    /// of <see cref="MaxInputTokensPerChunk"/> so a malformed configuration cannot prevent progress.
+    /// </summary>
+    [Range(0, 4096)]
+    public int ChunkOverlapTokens { get; set; } = 256;
+
+    /// <summary>
+    /// Maximum provider calls permitted for one map-reduce triage run. If the configured token
+    /// budget would require more chunks, the extraction leg declines before reserving quota and
+    /// <see cref="CaptureTriageService"/> uses its existing deterministic fallback for the whole
+    /// capture instead of issuing an unbounded sequence of partial calls.
+    /// </summary>
+    [Range(1, 128)]
+    public int MaxChunkCount { get; set; } = 24;
+
     /// <summary>Sampling temperature for extraction. Low by default: fidelity over creativity.</summary>
     [Range(0.0, 2.0)]
     public double Temperature { get; set; } = 0.1;

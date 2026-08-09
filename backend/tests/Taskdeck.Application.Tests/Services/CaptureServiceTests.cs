@@ -924,6 +924,52 @@ public class CaptureServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
+    [Theory]
+    [InlineData(CaptureSource.TranscriptPaste)]
+    [InlineData(CaptureSource.TranscriptFile)]
+    public async Task UpdateSuggestionAsync_ShouldAllowTranscriptTextAtSourceSpecificLimit(CaptureSource source)
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeTranscriptV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, source, "original transcript")));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var editedText = new string('t', CaptureRequestContract.MaxTranscriptTextLength);
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto(editedText));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.RawText.Should().HaveLength(CaptureRequestContract.MaxTranscriptTextLength);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRetainRawTextLimitForNonTranscriptSource()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "original text")));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto(new string('x', CaptureRequestContract.MaxRawTextLength + 1)));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(CaptureRequestContract.MaxRawTextLength.ToString());
+    }
+
     [Fact]
     public async Task UpdateSuggestionAsync_ShouldRejectEmptyText()
     {

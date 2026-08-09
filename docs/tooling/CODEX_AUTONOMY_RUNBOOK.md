@@ -1,12 +1,12 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-01
 
-Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "spin fresh adversarial reviewers", "fix failing CI", or "reconcile docs after a batch".
+Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
 ## Core Rule
 
-Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, and docs reconciliation. It must not silently defer work, silently skip tests, merge PRs, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
+Codex may automate coordination, worktree setup, implementation, testing, PR creation, review, CI recovery, docs reconciliation, and merge/post-merge verification when the declared authority, the global `review-and-ship` pipeline, and the explicit task scope permit it. It must not silently defer work, silently skip tests, merge outside those gates, change repo settings/secrets/protections, or bypass Taskdeck's review-first automation safety.
 
 Spawned subagents are optional execution machinery, not a default assumption. Use them without asking for extra permission when they are efficient or effective for safely parallelizable work with clear ownership and a coordinator-owned synthesis path. When subagents are unavailable or do not fit the work, use normal local execution, explicit git worktrees, or separate agent sessions as appropriate and state what actually happened.
 
@@ -16,7 +16,7 @@ Use these skills:
 
 - Many issues / batch execution: `taskdeck-issue-batch-orchestrator`
 - One issue in an isolated branch/worktree: `taskdeck-worktree-issue-worker`
-- PR self-review or fresh adversarial review: `taskdeck-pr-review-loop`
+- Taskdeck-specific PR risk lens when the canonical pipeline requests it: `taskdeck-pr-review-loop`
 - Failing CI, comments, conflicts, stale branches: `taskdeck-ci-conflict-recovery`
 - Backend implementation: `taskdeck-backend-slice`
 - Frontend implementation: `taskdeck-frontend-workspace-slice`
@@ -29,11 +29,12 @@ Use these skills:
 At the start of a high-autonomy session:
 
 1. Read `docs/STATUS.md`, `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
-2. Run `powershell -File scripts/check-git-env.ps1`.
-3. Confirm branch and worktree state:
+2. Read `.agent-harness/tier.json` and any legacy `.claude/tier.json`; the strictest declaration binds.
+3. Run `powershell -File scripts/check-git-env.ps1`.
+4. Confirm branch and worktree state:
    - `git branch --show-current`
    - `git status --short`
-4. Report actual runtime capabilities if they matter:
+5. Report actual runtime capabilities if they matter:
    - subagent tools available or not
    - GitHub MCP or `gh` availability
    - Docker/Playwright MCP availability if needed
@@ -144,13 +145,15 @@ Bash workers must launch a reviewed absolute PowerShell application in the workt
 whole printed block. For headless Claude workers, launch `claude -p` from that exact target; do not
 add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follow the reviewed
 effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources,
-review committed permission/hook configuration and explicit rules together, account for built-in
+review committed permission configuration and explicit rules together, account for built-in
 read-only Bash, and treat managed policy as an administrator-owned trust boundary. The repository neither enables
-the progressive Windows PowerShell tool nor grants PowerShell commands project-wide. Set
+the progressive Windows PowerShell tool nor grants generic PowerShell access project-wide; committed
+settings retain two narrow manual failure-ledger utility rules. Set
 `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` only in the trusted host environment for the task-scoped
-guard and initializer launch, then restore its prior process value after `claude -p` returns; PowerShell is
-unsandboxed on Windows and Taskdeck's command hooks are Bash-only, so keep all other commands on Git
-Bash. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
+guard and initializer launch, review the two utility rules together with both exact handoff rules,
+then restore its prior process value after `claude -p` returns; PowerShell is
+unsandboxed on Windows and Taskdeck installs no project command-deny hook, so keep all other commands on Git
+Bash as the documented portable shell. Older or unsupported clients require an interactive coordinator launch. Non-interactive `-p` does not make
 an untrusted workspace trusted; project allows and additional directories remain ignored until
 trust is accepted. `acceptEdits` alone is not command authorization.
 
@@ -185,16 +188,14 @@ Do not revert edits made by others. Keep scope to the issue acceptance criteria.
 Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
 Open a PR with Closes #NNN, test evidence, docs impact, and risks.
-After opening the PR, perform a self-review, post findings or explicit no-finding result, fix findings, and report back.
+Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
 
-## PR Review Loop
+## Taskdeck Review Lenses
 
-Every PR needs a self-review. Sensitive PRs need a fresh adversarial review.
+Review count, invocation, severity, convergence, aging, and merge disposition come only from the canonical global laws and `review-and-ship` pipeline. When that pipeline calls for a Taskdeck-specific lens, prioritize:
 
-Sensitive means:
-
-- auth, session, token, or cross-user policy
+- auth, session, token, and cross-user policy
 - security, SSRF, secret handling, logging redaction
 - migrations, data deletion, retention, import/export
 - capture, inbox, proposal review, execute, provenance
@@ -202,8 +203,6 @@ Sensitive means:
 - CI workflows, project automation, scripts
 - broad route/store/frontend shell behavior
 - flaky or failing CI
-
-Reviewers should post findings as PR comments or a summary comment. A no-finding review must still mention residual risk and test gaps.
 
 ## CI, Comments, And Conflicts
 
@@ -304,7 +303,7 @@ Stop and ask for direction when:
 ## User Prompt Examples
 
 ```text
-Take care of as many Priority II issues as you safely can. Use worktrees, open PRs, run adversarial reviews, and stop before merge.
+Take care of as many Priority II issues as you safely can. Use worktrees, open PRs, run adversarial reviews, and ship or park each PR according to the declared authority and global review pipeline.
 ```
 
 ```text
@@ -312,7 +311,7 @@ Check all open PRs. Address review comments, bot comments, conflicts, and failin
 ```
 
 ```text
-Spin fresh adversarial reviewers on the security-sensitive PRs and have them comment findings, then fix what they find.
+Route the security-sensitive PRs through the canonical review pipeline and apply the Taskdeck security lens when requested.
 ```
 
 ```text

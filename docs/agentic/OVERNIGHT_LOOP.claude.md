@@ -50,9 +50,9 @@ write/update a memory file and its `MEMORY.md` pointer (one fact per file; don't
 the repo/git already records). Update the relevant project memory when the project's state
 materially changes (a wave ships, a decision is made).
 
-**Durable failures** also go in `docs/agentic/failure_ledger.jsonl` (rendered
-`FAILURE_LEDGER.md`) — real ones only; a hook can auto-append a false-positive when a shell
-command times out, so prune noise.
+**Durable failures** also go deliberately in `docs/agentic/failure_ledger.jsonl` (rendered
+`FAILURE_LEDGER.md`) — real ones only. Taskdeck installs no automatic failure-capture hook; do
+not turn routine timeout or tool noise into durable rows.
 
 ---
 
@@ -97,7 +97,8 @@ Undiscoverable-but-needed convention → sane default, record the assumption, pr
 Priority (highest first): **(1)** unblock the substrate — red `main`, broken command, or
 recurring friction from §8; **(2)** correctness & security (data loss, auth, crashes, injection)
 severity-first; **(3)** pre-existing errors (failing/flaky tests, lint/type errors, latent
-bugs); **(4)** ready-to-land open PRs (§5), keep WIP small; **(5)** high-value features, then
+bugs); **(4)** ready open PRs, reconciled through the canonical pipeline with WIP kept small;
+**(5)** high-value features, then
 polish. Respect `REVIVAL_PLAN.md`'s ratified wave list. **Empty queue → generate the queue**
 (analyze for bugs/risks/debt/missing tests/docs drift, seed issues with scope + acceptance
 criteria), never idle. Leave `CODEX-*`-labelled trackers for Codex. The

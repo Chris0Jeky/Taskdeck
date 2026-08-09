@@ -389,10 +389,6 @@ public class CaptureService : ICaptureService
         if (string.IsNullOrWhiteSpace(dto.Text))
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "Text cannot be empty");
 
-        if (dto.Text.Length > CaptureRequestContract.MaxRawTextLength)
-            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
-                $"Text exceeds maximum length of {CaptureRequestContract.MaxRawTextLength} characters");
-
         if (dto.TitleHint != null && dto.TitleHint.Length > CaptureRequestContract.MaxTitleHintLength)
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
                 $"Title hint exceeds maximum length of {CaptureRequestContract.MaxTitleHintLength} characters");
@@ -413,6 +409,13 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureItemDto>(ErrorCodes.Conflict,
                 $"Capture item in status {currentStatus} cannot be edited");
         }
+
+        var maxTextLength = CaptureRequestContract.IsTranscriptSource(currentPayload.Source)
+            ? CaptureRequestContract.MaxTranscriptTextLength
+            : CaptureRequestContract.MaxRawTextLength;
+        if (dto.Text.Length > maxTextLength)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
+                $"Text exceeds maximum length of {maxTextLength} characters");
 
         var updatedPayload = new CapturePayloadV1(
             currentPayload.Version,

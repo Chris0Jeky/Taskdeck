@@ -30,7 +30,7 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` | ~1s, green |
 | `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` | ~1s, green |
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` | ~1s, green |
-| `scripts/agent_hooks/**` (deny floor) | `py -3 -B scripts/agent_hooks/smoke_test.py` | ~10s, green |
+| Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` | ~1s, 11 passed |
 | One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` | Domain: ~30s cold, 1636 passed |
 | Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` | minutes — last resort |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` | — |
@@ -38,7 +38,7 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` | slow; bare `vitest --run` **OOMs on this box** |
 | E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` | needs a running stack |
 
-`ci-required.yml` is the sole merge gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
+`ci-required.yml` is the required CI gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
 `deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
 jobs are label-gated). Read its results, but it does not gate the merge.
 
@@ -78,9 +78,9 @@ LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platfor
   `git merge --signoff --no-gpg-sign <branch>`, `git commit -s --no-gpg-sign --no-edit` after resolving
   conflicts. Never `--no-verify`. GitHub's server-side merge commit is outside the PR commit set — do not
   rewrite shared history to add a trailer to it.
-- **Deny floor is stricter than T3 by design.** `reset --hard`, `clean -f`, `checkout --` are hard-denied
-  by `.claude/settings.json` + `scripts/agent_hooks/pre_tool_use.py` after the 2026-05/06 main-leak
-  incidents. A deny is final. Deny-floor changes are T4-class.
+- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or local command-deny
+  list, and the root has no `.codex/hooks.json`. Declared authority, global laws, CI, and worktree guards still
+  apply; user-, organization-, and runtime-level hooks are separate effective layers.
 - **PowerShell:** no `&&` chaining; use `;` and check `$LASTEXITCODE`.
 - **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run
   `bash scripts/check-git-env.sh` (or `powershell -File scripts/check-git-env.ps1`); it also clears a
@@ -103,8 +103,9 @@ contributor — technology, data model, security posture, automation safety boun
 
 ## Authority
 
-T3 workshop per `.agent-harness/tier.json` — push free, merge free once `ci-required` is green at the head
-and the global law-2 gate is satisfied. Human-action file: `OUTSTANDING_TASKS.md`.
+Read `.agent-harness/tier.json` live for tier and push/merge authority; do not mirror those values here.
+`ci-required` is Taskdeck's repository evidence gate, while review/merge disposition comes from the
+canonical global laws and `review-and-ship` pipeline. Human-action file: `OUTSTANDING_TASKS.md`.
 
 ## Key docs
 

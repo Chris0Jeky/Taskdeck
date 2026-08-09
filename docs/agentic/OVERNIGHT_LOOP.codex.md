@@ -1,7 +1,7 @@
 # Taskdeck — Autonomous Overnight Orchestrator (Codex)
 
 Paste this as the opening instruction for an unattended Codex run. It is written for **this
-repo's real conventions** (self-enforced merge gate, SQLite/no-Docker tests, Windows quirks,
+repo's real conventions** (repository-specific proving checks, SQLite/no-Docker tests, Windows quirks,
 stacked PRs, docs-governance). Higher-authority project docs override this prompt where they
 conflict — follow them and record the conflict.
 
@@ -46,10 +46,10 @@ terse and factual. It must hold:
   the fix or workaround. This is what §8 acts on.
 - **Checkpoint** after every merge and every cycle: 2–4 factual lines.
 
-Also record durable, cross-session failures in the repo's **`docs/agentic/failure_ledger.jsonl`**
-(rendered `FAILURE_LEDGER.md`) per its format — but only *real* failures. Note: a hook may
-auto-append a false-positive when a shell command merely times out; prune those so the ledger
-stays signal.
+Also record durable, cross-session failures deliberately in the repo's
+**`docs/agentic/failure_ledger.jsonl`** (rendered `FAILURE_LEDGER.md`) per its format — but only
+*real* failures. Taskdeck installs no automatic failure-capture hook; do not turn routine timeout
+or tool noise into durable rows.
 
 ---
 
@@ -115,7 +115,7 @@ Priority order (highest first):
    from your Friction ledger (§8). Fix these *before* feature work.
 2. **Correctness & security** — data loss, auth, crashes, money, injection. Severity first.
 3. **Pre-existing errors** — failing/flaky tests, lint/type errors, latent bugs.
-4. **Ready-to-land open PRs** (see §5) — keep WIP small; don't hoard.
+4. **Ready open PRs** — reconcile them through the canonical pipeline; keep WIP small and don't hoard.
 5. **High-value features/improvements**, then lower-severity polish.
 
 Prefer unblocked tasks. Respect `REVIVAL_PLAN.md` — do not take work off its ratified wave

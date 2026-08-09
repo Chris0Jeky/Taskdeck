@@ -15,7 +15,7 @@ namespace Taskdeck.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.28");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.29");
 
             modelBuilder.Entity("Taskdeck.Domain.Agents.McpToolHash", b =>
                 {
@@ -2187,6 +2187,53 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("TomorrowNotes", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Transcript", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("BoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CaptureSource")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedFromCaptureId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SegmentsJson")
+                        .IsRequired()
+                        .HasMaxLength(1048576)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SourceArtefactId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(102400)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId");
+
+                    b.HasIndex("SourceArtefactId");
+
+                    b.HasIndex("UserId", "Id");
+
+                    b.ToTable("Transcripts", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2692,6 +2739,25 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasOne("Taskdeck.Domain.Entities.Board", null)
                         .WithMany()
                         .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Transcript", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Taskdeck.Domain.Entities.SourceArtefact", null)
+                        .WithMany()
+                        .HasForeignKey("SourceArtefactId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Taskdeck.Domain.Entities.User", null)

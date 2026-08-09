@@ -33,6 +33,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly Func<Process, CancellationToken, Task<string>> _readStandardOutputAsync;
     private readonly TaskCompletionSource<int>? _processStartedSignal;
     private int _lastStartedProcessId;
+    private CliStartupTraceSnapshot? _lastStartupTraceSnapshot;
 
     /// <param name="provisionEncryptionKey">
     /// When true (default) the harness injects a test connector encryption key via
@@ -87,6 +88,8 @@ internal sealed class CliTestHarness : IAsyncDisposable
             return processId == 0 ? null : processId;
         }
     }
+
+    internal CliStartupTraceSnapshot? LastStartupTraceSnapshot => _lastStartupTraceSnapshot;
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -162,6 +165,10 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 }
             }
 
+            var traceCorrelationId = Guid.NewGuid().ToString("N");
+            var tracePath = CliStartupTrace.TryGetTracePath(_dataDirectory, traceCorrelationId);
+            startInfo.Environment[CliStartupTrace.CorrelationEnvironmentVariable] = traceCorrelationId;
+
             using var process = new Process { StartInfo = startInfo };
             using var timeoutCts = new CancellationTokenSource(_processTimeout);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -189,13 +196,21 @@ internal sealed class CliTestHarness : IAsyncDisposable
                     standardErrorTask,
                     processExitTask);
 
-                return new CliCommandResult(
+                var result = new CliCommandResult(
                     process.ExitCode,
                     standardOutputTask.Result.Trim(),
                     standardErrorTask.Result.Trim());
+                _lastStartupTraceSnapshot = CliStartupTrace.ReadSnapshot(tracePath, traceCorrelationId);
+                return result;
             }
             catch (Exception executionFailure)
             {
+                var commandShape = DescribeCommandShape(arguments);
+                var isTimeout = executionFailure is OperationCanceledException;
+                var preCancellationSnapshot = isTimeout
+                    ? CaptureTimeoutSnapshot(process, standardOutputTask, standardErrorTask, processExitTask, tracePath, traceCorrelationId)
+                    : null;
+
                 // A drain failure can arrive while the child is still blocked. Cancel
                 // the remaining observations immediately, then reap before retaining
                 // the selected original failure. Waiting for Task.WhenAll here would
@@ -223,6 +238,10 @@ internal sealed class CliTestHarness : IAsyncDisposable
                     _processLaunchGate.Poison(cleanupFailure);
                 }
 
+                var postCleanupSnapshot = isTimeout
+                    ? CaptureTimeoutSnapshot(process, standardOutputTask, standardErrorTask, processExitTask, tracePath, traceCorrelationId)
+                    : null;
+
                 await SettleProcessTasksAsync(
                     standardOutputTask,
                     standardErrorTask,
@@ -230,7 +249,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
                 if (cleanupFailure is not null)
                 {
-                    if (executionFailure is OperationCanceledException && cleanupFailure is TimeoutException)
+                    if (isTimeout && cleanupFailure is TimeoutException)
                     {
                         var timeoutFailures = new[]
                             {
@@ -241,9 +260,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
                             .Where(failure => failure is not null)
                             .Cast<Exception>();
                         throw new TimeoutException(
-                            $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
-                            $"could not prove that every tracked process exited. Args: {arguments}. " +
-                            cleanupFailure.Message,
+                            BuildTimeoutMessage(commandShape, preCancellationSnapshot!, postCleanupSnapshot!, "failed"),
                             new AggregateException(timeoutFailures));
                     }
 
@@ -256,25 +273,24 @@ internal sealed class CliTestHarness : IAsyncDisposable
                         .Where(failure => failure is not null)
                         .Cast<Exception>();
                     throw new AggregateException(
-                        $"CLI process failed after launch and cleanup also failed. Args: {arguments}. " +
-                        cleanupFailure.Message,
+                        $"CLI process failed after launch and cleanup also failed. Command: {commandShape}.",
                         combinedFailures);
+                }
+
+                if (isTimeout)
+                {
+                    throw new TimeoutException(
+                        BuildTimeoutMessage(commandShape, preCancellationSnapshot!, postCleanupSnapshot!, "reaped"),
+                        executionFailure);
                 }
 
                 if (observationCancellationFailure is not null)
                 {
                     throw new AggregateException(
                         $"CLI process failed after launch and cancellation of remaining process " +
-                        $"observations also failed. Args: {arguments}.",
+                        $"observations also failed. Command: {commandShape}.",
                         executionFailure,
                         observationCancellationFailure);
-                }
-
-                if (executionFailure is OperationCanceledException timeoutCancellation)
-                {
-                    throw new TimeoutException(
-                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
-                        timeoutCancellation);
                 }
 
                 ExceptionDispatchInfo.Capture(executionFailure).Throw();
@@ -286,6 +302,81 @@ internal sealed class CliTestHarness : IAsyncDisposable
             _processLaunchGate.Release();
         }
     }
+
+    internal static string DescribeCommandShape(string arguments)
+    {
+        var tokens = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length < 2)
+        {
+            return "other";
+        }
+
+        var group = tokens[0].ToLowerInvariant();
+        var command = tokens[1].ToLowerInvariant();
+        return (group, command) switch
+        {
+            ("boards", "create" or "list" or "delete") => $"boards/{command}",
+            ("columns", "create" or "list" or "delete") => $"columns/{command}",
+            ("cards", "add" or "list" or "move" or "delete") => $"cards/{command}",
+            ("api-key", "create" or "list" or "revoke") => $"api-key/{command}",
+            ("invites", "create" or "list" or "revoke") => $"invites/{command}",
+            _ => "other"
+        };
+    }
+
+    internal static string BuildTimeoutMessage(
+        string commandShape,
+        CliTimeoutSnapshot preCancellation,
+        CliTimeoutSnapshot postCleanup,
+        string cleanupOutcome) =>
+        ("CLI process did not exit within timeout" +
+        (cleanupOutcome == "failed" ? " and cleanup could not prove that every tracked process exited" : string.Empty) +
+        $". command={commandShape}; pre={preCancellation}; post={postCleanup}; cleanup={cleanupOutcome}.");
+
+    private static CliTimeoutSnapshot CaptureTimeoutSnapshot(
+        Process process,
+        Task? standardOutputTask,
+        Task? standardErrorTask,
+        Task? processExitTask,
+        string? tracePath,
+        string traceCorrelationId)
+    {
+        var processState = "unavailable";
+        int? exitCode = null;
+        try
+        {
+            if (process.HasExited)
+            {
+                processState = "exited";
+                exitCode = process.ExitCode;
+            }
+            else
+            {
+                processState = "live";
+            }
+        }
+        catch (Exception)
+        {
+            // A race while inspecting an owned process is diagnostic-only.
+        }
+
+        return new CliTimeoutSnapshot(
+            processState,
+            exitCode,
+            DescribeTaskStatus(standardOutputTask),
+            DescribeTaskStatus(standardErrorTask),
+            DescribeTaskStatus(processExitTask),
+            CliStartupTrace.ReadSnapshot(tracePath, traceCorrelationId));
+    }
+
+    private static string DescribeTaskStatus(Task? task) => task switch
+    {
+        null => "not-started",
+        { IsCompletedSuccessfully: true } => "completed",
+        { IsFaulted: true } => "faulted",
+        { IsCanceled: true } => "canceled",
+        _ => "pending"
+    };
 
     private static async Task ObserveProcessTasksAsync(params Task[] orderedTasks)
     {
@@ -579,3 +670,17 @@ internal sealed class CliProcessLaunchGate : IDisposable
 /// Result of a CLI subprocess invocation.
 /// </summary>
 internal sealed record CliCommandResult(int ExitCode, string StdOut, string StdErr);
+
+internal sealed record CliTimeoutSnapshot(
+    string ProcessState,
+    int? ExitCode,
+    string StandardOutputTaskState,
+    string StandardErrorTaskState,
+    string ProcessExitTaskState,
+    CliStartupTraceSnapshot Trace)
+{
+    public override string ToString() =>
+        $"process={ProcessState};exit={ExitCode?.ToString() ?? "none"};" +
+        $"stdout={StandardOutputTaskState};stderr={StandardErrorTaskState};" +
+        $"wait={ProcessExitTaskState};{Trace.ToDiagnosticString()}";
+}

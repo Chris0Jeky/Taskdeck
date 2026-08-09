@@ -92,7 +92,7 @@ public class ConnectorEncryptionKeyFailFastTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(dbPath),
                 ["Connectors:EncryptionKey"] = validKey,
                 ["Database:BusyTimeoutMilliseconds"] = "5000",
             })
@@ -128,7 +128,6 @@ public class ConnectorEncryptionKeyFailFastTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm" })
             {
                 var path = dbPath + suffix;
@@ -156,7 +155,7 @@ public class ConnectorEncryptionKeyFailFastTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(dbPath),
                 ["Connectors:EncryptionKey"] = validKey,
             })
             .Build();
@@ -186,7 +185,6 @@ public class ConnectorEncryptionKeyFailFastTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm" })
             {
                 var path = dbPath + suffix;

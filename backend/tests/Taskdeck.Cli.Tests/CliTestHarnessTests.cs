@@ -17,6 +17,7 @@ public sealed class CliTestHarnessTests
     [Fact]
     public async Task RunAsync_WhenChildExceedsDeadline_ReapsTheChildBeforeReturning()
     {
+        const string sentinel = "TOP_SECRET_SENTINEL";
         await using var harness = new CliTestHarness(
             "cli-timeout",
             processTimeout: TimeSpan.FromMilliseconds(500));
@@ -26,12 +27,46 @@ public sealed class CliTestHarnessTests
             FileAccess.ReadWrite,
             FileShare.None);
 
-        Func<Task> action = async () => await harness.RunAsync("help");
+        Func<Task> action = async () => await harness.RunAsync($"boards create {sentinel} --json");
 
-        await action.Should().ThrowAsync<TimeoutException>();
+        var timeout = await action.Should().ThrowAsync<TimeoutException>();
 
         harness.LastStartedProcessId.Should().HaveValue();
         ProcessHasExited(harness.LastStartedProcessId!.Value).Should().BeTrue();
+        timeout.Which.Message.Should().Contain("command=boards/create")
+            .And.NotContain(sentinel)
+            .And.Contain("pre=process=live")
+            .And.Contain("post=process=exited")
+            .And.Contain("last=migration-begin")
+            .And.Contain("cleanup=reaped");
+    }
+
+    [Theory]
+    [InlineData("api-key create --name TOP_SECRET_SENTINEL", "api-key/create")]
+    [InlineData("boards create TOP_SECRET_SENTINEL --json", "boards/create")]
+    [InlineData("unknown TOP_SECRET_SENTINEL", "other")]
+    public void DescribeCommandShape_UsesOnlyAllowlistedTokens(string arguments, string expectedShape)
+    {
+        var shape = CliTestHarness.DescribeCommandShape(arguments);
+
+        shape.Should().Be(expectedShape);
+        shape.Should().NotContain("TOP_SECRET_SENTINEL");
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCommandCompletes_RecordsFullStartupLifecycle()
+    {
+        await using var harness = new CliTestHarness("cli-startup-trace");
+
+        var result = await harness.RunAsync("help");
+
+        result.ExitCode.Should().Be(0);
+        var snapshot = harness.LastStartupTraceSnapshot;
+        snapshot.Should().NotBeNull();
+        snapshot!.State.Should().Be("available");
+        snapshot.RecordCount.Should().Be(8);
+        snapshot.MalformedRecordCount.Should().Be(0);
+        snapshot.LastPhase.Should().Be(CliStartupTrace.DisposalEndPhase);
     }
 
     [Fact]

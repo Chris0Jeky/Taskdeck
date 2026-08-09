@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-07
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -18,7 +18,7 @@ Companion Active Docs:
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
   - CLI contract (**newer than this dated aggregate**): 112 passed / 0 skipped / 0 failed on Windows at `#1533`; hosted exact-head Windows recertification remains required
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
-  - Integration project (**newer than this dated aggregate**): 35 tests at #1518 — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute.
+  - Integration project (**newer than this dated aggregate**): 35 tests at `#1520` — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute and pass the hosted TRX identity contract.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
 - Frontend E2E (smoke + automation/ops + capture loop + starter-pack fixtures + concurrency harness + error recovery/multi-board/edge journeys + cross-browser matrix + onboarding/review/capture/keyboard/dark-mode + validation slices C/D/E + integrated verification): default required lane passing
 - Combined automated total: **~9,881+ passing** (backend 6,614 + frontend unit 3,267 + E2E)
@@ -28,6 +28,81 @@ Verification note:
 - bulk merge wave (2026-05-16): security fixes (3 PRs), test coverage (2), RFAI features (5), PAPER frontend (2), dependency updates (3)
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
+
+## 2026-08-02 REVIVAL-08 M2 Checkpoint (`#1304`)
+
+Long-transcript triage needs both the chunk-planning contract and the existing proposal-first golden
+path. Run the focused checks below when changing transcript map-reduce, quota reservation estimates,
+the transcript input cap, or its readiness-progress boundary:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageChunkingTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~LlmQuotaServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~LlmQuotaReservationConcurrencyTests|FullyQualifiedName~PdfPigArtefactExtractionTests|FullyQualifiedName~HealthApiTests"
+```
+
+```powershell
+Set-Location frontend/taskdeck-web
+npm test -- src/tests/components/CaptureModal.spec.ts
+npm run typecheck
+```
+
+The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
+capture, never persists a partial automatic board write. The M3 contract has its own checkpoint
+below; `#1305` evidence linkage remains outside both checkpoints.
+
+## 2026-08-02 REVIVAL-08 M3 Contract Checkpoint (`#1304`)
+
+When changing the strict LLM schema-v2 contract, prompt/parser, exact evidence quote boundary, or
+the v2-to-proposal mapping, run:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~CaptureTriageOutputContractTests|FullyQualifiedName~LlmCaptureTriagePromptTests|FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests"
+```
+
+The application seam must reject missing, unknown, wrongly typed, noncanonical, over-limit, or
+non-verbatim model fields as a complete fallback; it must not normalize or retain a partial map leg.
+It also pins that model classification, assignee, due-date, and confidence metadata never enter
+executable operation parameters. The API golden path proves a valid exact quote remains reviewable
+in the proposed card description. `#1305` durable evidence spans/provenance/API/UI linkage remains
+outside this contract-only checkpoint.
+
+## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
+
+The durable Transcript foundation is covered directly by its domain, portability/deletion, repository,
+and migration/bootstrap seams:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~DataExportServiceTests|FullyQualifiedName~AccountDeletionServiceTests|FullyQualifiedName~GdprDataExportRoundTripTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
+```
+
+Current-main result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
+skips. This proves persistence, export/deletion, and migration/bootstrap behavior only; `#1305`
+remains open for triage linkage, evidence spans, provenance API reads, and Paper deep links.
+
+The MCP create-card column contract is exercised through the real write tool and SQLite-backed
+proposal lifecycle:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~McpToolsTests"
+```
+
+Current-main result: **33 passed / 0 failed / 0 skipped**. The cases pin omitted-column
+canonicalization and the inaccessible-board, wrong-board-column, and columnless-board failures.
+
+The container result parser and normal Dockerless contract are independently reproducible:
+
+```powershell
+py -3 -B -m unittest scripts.ci.test_assert_container_integration_results
+dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release
+```
+
+Current-main result: **5/5 parser tests passed** and the local Dockerless project reported
+**7 passed / 28 skipped / 0 failed**. That second result proves graceful gating only. Positive
+PostgreSQL evidence comes from the hosted required-mode lane described below, whose TRX must contain
+zero skipped PostgreSQL-backed cases and at least 28 passing fully qualified PostgreSQL tests.
 
 ## Proxy-Safe Direct Egress Checkpoint (`#1513`)
 
@@ -107,9 +182,9 @@ Pop-Location
 if ($code -ne 0) { exit $code }
 ```
 
-## Agentic Operating Layer Smoke Checks
+## Agentic Operating Layer Checks
 
-For docs/skill/hook-only agentic changes, use targeted checks rather than the full product suite unless product runtime files changed. These local update-and-verify sequences render the failure ledger before testing synchronization so a valid hook-appended JSONL entry can become visible. Required CI deliberately does not render and keeps its test-before-governance order, so an unprojected JSONL change fails instead of being masked. On Windows PowerShell, use the verified Python launcher and compile hook sources in memory so verification does not leave `__pycache__` output:
+For docs/skill/agent-tooling changes, use targeted checks rather than the full product suite unless product runtime files changed. Taskdeck installs no project runtime hooks. The local sequence renders deliberately recorded JSONL entries before testing synchronization; Required CI does not render and keeps its test-before-governance order, so an unprojected JSONL change fails instead of being masked. On Windows PowerShell, use the verified Python launcher:
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -117,7 +192,11 @@ try {
     Get-Command py -ErrorAction Stop | Out-Null
     Get-Command node -ErrorAction Stop | Out-Null
     Get-Content -Raw .mcp.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
-    Get-Content -Raw .claude\settings.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+    $claudeSettings = Get-Content -Raw .claude\settings.json | ConvertFrom-Json -ErrorAction Stop
+    Get-Content -Raw .agent-harness\tier.json | ConvertFrom-Json -ErrorAction Stop | Out-Null
+    if ($null -ne $claudeSettings.PSObject.Properties['hooks']) { throw 'Taskdeck project hooks must remain absent.' }
+    if ($null -ne $claudeSettings.permissions.PSObject.Properties['deny']) { throw 'Taskdeck project deny rules must remain absent.' }
+    if (Test-Path -LiteralPath .codex\hooks.json) { throw 'Taskdeck Codex project hooks must remain absent.' }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1
@@ -128,8 +207,6 @@ py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_val
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-question-batch; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-failure-capture; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .claude\skills\taskdeck-interface-map; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Get-ChildItem scripts\agent_hooks -Filter *.py | ForEach-Object { py -3 -B -c "import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding='utf-8'), str(source), 'exec')" $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
-py -3 -B scripts/agent_hooks/smoke_test.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B scripts/agent_hooks/render_failure_ledger.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -138,19 +215,20 @@ node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTE
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-On POSIX, use `python3 -B` for direct utilities and fail fast. Do not run the full configured-handler smoke there: `.claude/settings.json` declares those handlers with `shell: powershell`, so `smoke_test.py` is native-Windows-host proof until that shell contract is redesigned.
+On POSIX, use `python3 -B` for the manual utilities and fail fast:
 
 ```sh
 set -eu
 python3 -B -m json.tool .mcp.json >/dev/null
 python3 -B -m json.tool .claude/settings.json >/dev/null
+python3 -B -m json.tool .agent-harness/tier.json >/dev/null
+python3 -B -c 'import json, pathlib; settings = json.loads(pathlib.Path(".claude/settings.json").read_text()); assert "hooks" not in settings; assert "deny" not in settings["permissions"]; assert not pathlib.Path(".codex/hooks.json").exists()'
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-question-batch
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-failure-capture
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .codex/skills/taskdeck-interface-map
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-question-batch
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-failure-capture
 python3 -B "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" .claude/skills/taskdeck-interface-map
-for file in scripts/agent_hooks/*.py; do python3 -B -c 'import pathlib, sys; source = pathlib.Path(sys.argv[1]); compile(source.read_text(encoding="utf-8"), str(source), "exec")' "$file" || exit $?; done
 python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 node scripts/check-docs-governance.mjs
@@ -158,11 +236,11 @@ node scripts/check-golden-principles.mjs
 node scripts/check-github-ops-governance.mjs
 ```
 
-The native-Windows hook smoke test executes the configured `.claude/settings.json` command handlers with `CLAUDE_PROJECT_DIR` set, including PowerShell-hosted handlers, representative dangerous Bash-command denials, missing-launcher and missing-policy fail-closed probes, failure-ledger redaction, and pre-commit no-op behavior. Its payloads identify the `Bash` tool; it does not prove native PowerShell-tool interception. That T4 policy gap is tracked by [#1497](https://github.com/Chris0Jeky/Taskdeck/issues/1497).
+The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
 
 When MCP availability itself is part of the change, also run the active runtime's MCP listing/auth command if available. Do not claim remote MCP connectivity unless the current session actually verified it.
 
-When `.claude/settings.json` changes outside the agentic smoke path, also parse it with PowerShell:
+When `.claude/settings.json` changes outside this path, also parse it with PowerShell:
 
 ```powershell
 Get-Content -Raw .claude\settings.json | ConvertFrom-Json | Out-Null
@@ -517,7 +595,7 @@ CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes an
 | `CliJsonContractTests.cs` | 4 |
 | `CommandDispatcherTests.cs` | 3 |
 
-Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk; invalid timeouts are rejected before temporary-directory allocation; every child receives an isolated harness working directory; active subprocess launches are capped at half the available processors (minimum 1, maximum 4); stdout, stderr, and exit are observed concurrently; and the unchanged 30-second process deadline kills the tree, falls back to a direct root kill when tree termination reports an expected platform error, and polls every explicitly tracked PID for up to five seconds before returning. Every failure after a successful process start, including output-drain failures, takes that termination/reap path before the launch slot is released. The first fault is observed without awaiting sibling tasks; remaining observations are canceled and explicitly settled after cleanup. A throwing cancellation callback cannot bypass reap and is preserved as an additional cause. Successful cleanup otherwise preserves the selected original failure, while cleanup failure preserves all causes and poisons the shared launch gate. Poisoning wakes queued callers with an error while retaining the failed root's capacity so no later child is admitted beside it; bounded reap expiry additionally reports the exact live-PID set. Deterministic process-start, queue, cancellation, output-drain fault, cancellation-callback failure, and reaper-barrier signals prove both two-root overlap and one-slot serialization/reap ordering without fixed-delay scheduler assumptions. The lifecycle stress collection disables parallelization so its fixed two-root probe never adds load beside other CLI test classes. `[Collection("Console Tests")]` on `ConsoleOutputTests` preserves `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
+Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk; invalid timeouts are rejected before temporary-directory allocation; every child receives an isolated harness working directory; ordinary real-process launches are serialized while lifecycle tests inject a wider gate only for deterministic cleanup coverage; stdout, stderr, and exit are observed concurrently; and the unchanged 30-second process deadline kills the tree, falls back to a direct root kill when tree termination reports an expected platform error, and polls every explicitly tracked PID for up to five seconds before returning. Every failure after a successful process start, including output-drain failures, takes that termination/reap path before the launch slot is released. The first fault is observed without awaiting sibling tasks; remaining observations are canceled and explicitly settled after cleanup. A throwing cancellation callback cannot bypass reap and is preserved as an additional cause. Successful cleanup otherwise preserves the selected original failure, while cleanup failure preserves all causes and poisons the shared launch gate. Poisoning wakes queued callers with an error while retaining the failed root's capacity so no later child is admitted beside it; bounded reap expiry additionally reports the exact live-PID set. When the test harness supplies its allow-listed correlation, the CLI derives a fixed-format trace filename inside its own working directory; normal invocations receive no correlation. Timeout output is redacted to command shape plus fixed process/task/phase state, and tracing failure is fail-open. Deterministic process-start, queue, cancellation, output-drain fault, cancellation-callback failure, and reaper-barrier signals prove both two-root overlap and one-slot serialization/reap ordering without fixed-delay scheduler assumptions. The lifecycle stress collection disables parallelization so its fixed two-root probe never adds load beside other CLI test classes. `[Collection("Console Tests")]` on `ConsoleOutputTests` preserves `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
 
 Run:
 ```bash
@@ -727,7 +805,12 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 
 Current project count: 35 tests — 28 PostgreSQL-backed cases covering Board CRUD, Card operations, proposal lifecycle, cross-class isolation, parallel execution, and repository parity; plus 7 Docker-independent fixture/native checks. Guide at `docs/testing/TESTCONTAINERS_GUIDE.md`.
 
-CI: `reusable-container-integration.yml` in extended CI (testing label). A positive PostgreSQL result has zero skips; a green run with all 28 container cases skipped proves only graceful Dockerless gating.
+CI: `reusable-container-integration.yml` in extended CI (testing label). The hosted lane sets
+`TASKDECK_REQUIRE_DOCKER=true`, first forces Docker unavailable as a negative control, and requires
+the resulting TRX to contain the explicit Docker-required failure. Its real run then verifies the
+TRX has zero skipped tests and at least 28 passing PostgreSQL-backed results. A normal local green
+run with all 28 container cases skipped proves only graceful Dockerless gating; do not set the
+required-mode flag for that local contract.
 
 ## Product-Coherence Testing Priorities (2026-03-07)
 
@@ -1139,6 +1222,48 @@ npm run test:coverage
 npm run typecheck
 npm run build
 ```
+
+Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
+- `npm run typecheck` is `vue-tsc -b`, which builds every project referenced from
+  `frontend/taskdeck-web/tsconfig.json`. `tsconfig.app.json` covers production source and still
+  excludes `src/tests/**`; `tsconfig.vitest.json` covers the spec tree. No CI workflow change was
+  needed — the existing `Run frontend typecheck` step picks the new project up.
+- Before this, **nothing type-checked a spec**: `vue-tsc` skipped them and vitest transpiles without
+  checking (`--typecheck` is opt-in and applies to `*.test-d.ts`). A spec could reference a property
+  that does not exist and every gate stayed green. `#1462` hit exactly that.
+- `tsconfig.vitest.json` mirrors `tsconfig.app.json`'s compiler options exactly. Do **not** add
+  `"node"` to its `types`: it clears 13 `TS2591` in the quarantined specs (3 bare `process`, 10
+  `node:` module imports) and
+  breaks production source pulled in as a dependency. Measured, exactly one error —
+  `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`, because
+  `greetingTimer` is annotated `ReturnType<typeof window.setInterval>`, which resolves to node's
+  `Timeout` while the call still returns the DOM `number`. `"vitest/globals"` is likewise
+  unnecessary; 283 of the 284 specs import their vitest symbols explicitly.
+- Its `include` carries `src/**/*.d.ts` on purpose. `src/types/web-speech.d.ts` is *ambient* —
+  global scope, imported by nothing — so a `src/tests/**`-only include drops it, and production
+  source pulled in as a dependency then compiles without those globals. Without that line,
+  un-quarantining `composables/useVoiceCapture.spec.ts` reports 3 errors in untouched production
+  source and masks 2 of the spec's own by making two `@ts-expect-error` directives spuriously
+  "used". Keep the line, and add any new ambient declaration under `src/`, not elsewhere.
+- Its `exclude` array is a **quarantine**, not configuration. It listed the 64 files carrying the
+  415 pre-existing errors measured 2026-08-07, over the 286 `.ts` files under `src/tests/` (284
+  specs plus `setup.ts` and a mock). **New spec files are checked by default** because they are not
+  in the list. The list may only shrink — delete an entry once its file is fixed, never add one to
+  turn a red build green. Burn-down is tracked in `#1607`.
+- **Scope caveat — do not read this as "the test suite is type-checked".** A full Vitest run
+  executes **302** spec files: 284 under `src/tests/` and 18 under the frontend-root `tests/`
+  directory. This project gates **220** of them (284 − 64). The **82** it does not gate are those
+  64 plus those 18. (Do not subtract 222 from 302 — 222 counts *files in the project*, including
+  `setup.ts` and a mock that are not specs.) The 18 are Node-flavoured — they import the `.mjs`
+  files under `scripts/` and use `process`/`NodeJS` — so they need a Node type environment and
+  therefore a fourth, separate project; putting them here would require the one setting that breaks
+  production source. Measured with this project's options: 54 errors in the run — 42 across 15 of
+  the 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies. Also
+  tracked in `#1607`.
+- Type-level assertions are now available in ordinary specs: `expectTypeOf` erases at runtime, so
+  the assertion is discharged by `vue-tsc -b` rather than by the vitest run. See
+  `src/tests/api/automationApi.spec.ts` for the worked example (it pins
+  `Proposal.approvedRevisionId`, which its runtime tests structurally could not).
 
 Frontend lint suppression guidance:
 - Prefer fixing lint violations over suppressing them.
@@ -1933,7 +2058,7 @@ New test coverage (~390+ new tests total):
 - **MEDIUM**: Key-existence oracle + modulo bias in API key generation (`#792`), capture DTO round-trip test (`#789`), history window denominator (`#790`), CancellationToken forwarding (`#787`)
 - Fixed test quality issues: misleading doc comments, weak assertions, non-thread-safe variables, redundant ARIA roles, missing screen reader announcements
 
-Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-04-25) for latest recertified counts.
+Backend suite total after this wave: **~3,460+ passing** (estimated at time of wave). Frontend suite total: **~1,891 passing** (estimated at time of wave). Combined: **~5,370+** (estimated at time of wave). See [Current Verified Totals](#current-verified-totals-2026-05-16) for latest recertified counts.
 
 ### Test expansion wave (`#721`) completion
 

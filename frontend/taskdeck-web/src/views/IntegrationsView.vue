@@ -157,8 +157,8 @@ onMounted(() => {
         <span class="td-int__eyebrow">Platform</span>
         <h1 class="td-page-title">Integrations</h1>
         <p class="td-int__subtitle">
-          Manage connector instances that feed data into your workspace.
-          All inbound connectors route through the capture pipeline for review-first safety.
+          Register and manage connector definitions for future integrations.
+          Registration, enablement, and configuration do not yet ingest external content.
         </p>
       </div>
       <button
@@ -169,6 +169,22 @@ onMounted(() => {
         + Add Connector
       </button>
     </header>
+
+    <section class="td-int__capture-callout" aria-label="Standalone content capture">
+      <div>
+        <h2 class="td-int__capture-title">Capture content without a connector</h2>
+        <p class="td-int__capture-desc">
+          Use Markdown import or web clip capture in Settings → Export &amp; Import.
+          Connector registry entries manage metadata and lifecycle only; they do not ingest content.
+        </p>
+      </div>
+      <router-link
+        class="td-int__btn td-int__btn--primary td-int__capture-link"
+        :to="{ name: 'workspace-settings-export-import' }"
+      >
+        Open Markdown import and web clip capture
+      </router-link>
+    </section>
 
     <!-- Add connector form -->
     <section
@@ -249,8 +265,8 @@ onMounted(() => {
     <div v-else-if="!loading && !connectors.length" class="td-int__empty">
       <p class="td-int__empty-title">No connectors configured</p>
       <p class="td-int__empty-desc">
-        Add a connector to start ingesting data from external sources into your workspace.
-        Inbound connectors route through the capture pipeline so nothing changes without your review.
+        Register a connector definition to manage its type, direction, and configuration.
+        Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.
       </p>
       <button
         v-if="!showAddForm"
@@ -420,6 +436,50 @@ onMounted(() => {
 .td-int__add-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.td-int__capture-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--td-border, #e5e7eb);
+  border-radius: 0.5rem;
+  background: var(--td-surface, #f9fafb);
+}
+
+.td-int__capture-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: var(--td-text-primary, #111827);
+}
+
+.td-int__capture-desc {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--td-text-secondary, #6b7280);
+}
+
+.td-int__capture-link {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .td-int__capture-callout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .td-int__capture-link {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+  }
 }
 
 /* Form */

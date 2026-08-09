@@ -60,7 +60,8 @@ public class TestWebApplicationFactoryTests
             "C:\\temp\\taskdeck-api-tests.db",
             "C:\\temp\\taskdeck-api-tests.db-wal",
             "C:\\temp\\taskdeck-api-tests.db-shm",
-            "C:\\temp\\taskdeck-api-tests.db-journal");
+            "C:\\temp\\taskdeck-api-tests.db-journal",
+            "C:\\temp\\taskdeck-api-tests.db.migrate.lock");
     }
 
     [Fact]
