@@ -10,6 +10,12 @@ namespace Taskdeck.Integration.Tests.Fixtures;
 /// </summary>
 public static class DockerAvailableCheck
 {
+    public const string RequireDockerEnvironmentVariable = "TASKDECK_REQUIRE_DOCKER";
+    public const string ForceDockerUnavailableEnvironmentVariable = "TASKDECK_FORCE_DOCKER_UNAVAILABLE";
+    public const string RequiredDockerFailureMessage =
+        "Docker is required for this test run but is unavailable. " +
+        "Clear TASKDECK_REQUIRE_DOCKER for ordinary Dockerless local runs.";
+
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReapTimeout = TimeSpan.FromSeconds(2);
     private static readonly Lazy<bool> IsAvailableLazy = new(CheckDocker);
@@ -18,12 +24,38 @@ public static class DockerAvailableCheck
     /// Returns true if Docker is available and responsive on the host.
     /// The result is cached for the lifetime of the process.
     /// </summary>
-    public static bool IsAvailable => IsAvailableLazy.Value;
+    public static bool IsAvailable =>
+        IsEnvironmentFlagEnabled(Environment.GetEnvironmentVariable(ForceDockerUnavailableEnvironmentVariable))
+            ? false
+            : IsAvailableLazy.Value;
+
+    /// <summary>
+    /// Whether the caller explicitly requires Docker-backed coverage instead of the
+    /// ordinary local graceful-skip contract.
+    /// </summary>
+    internal static bool IsDockerRequired =>
+        IsEnvironmentFlagEnabled(Environment.GetEnvironmentVariable(RequireDockerEnvironmentVariable));
 
     /// <summary>
     /// Skip message for use with xUnit's Skip property.
     /// </summary>
     public const string SkipReason = "Docker is not available on this machine";
+
+    /// <summary>
+    /// Turns an unavailable Docker probe into a test failure when the caller has
+    /// explicitly requested Docker-backed verification.
+    /// </summary>
+    internal static void EnsureRequiredDockerIsAvailable(bool isAvailable, bool dockerRequired)
+    {
+        if (dockerRequired && !isAvailable)
+        {
+            throw new InvalidOperationException(RequiredDockerFailureMessage);
+        }
+    }
+
+    internal static bool IsEnvironmentFlagEnabled(string? value) =>
+        string.Equals(value, "1", StringComparison.Ordinal) ||
+        bool.TryParse(value, out var enabled) && enabled;
 
     private static bool CheckDocker()
     {

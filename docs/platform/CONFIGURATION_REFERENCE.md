@@ -208,24 +208,57 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `OpenAiCompatible`, `Gemini`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini) only run when this is true. | No |
-| `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in the `Development` environment unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, or `Gemini`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Gemini, Ollama) only run when this is true. | No |
+| `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in `Development`, `Test`, or `Testing` unless this is also true. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
-| `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
+| `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Use `OpenAiCompatible` for third-party compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
 | `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:OpenAiCompatible:ApiKey` | `string` | `""` | API key for the configured OpenAI-compatible endpoint. Store as a secret. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. Public HTTPS is required except when the host is exactly `localhost`, the environment is `Development`, `Test`, or `Testing`, and `Llm:AllowLiveProvidersInDevelopment=true`; numeric loopback addresses such as `127.0.0.1` and `[::1]`, and all other private/link-local hosts, remain blocked. The URL may contain a path but not user information, a query, or a fragment, and passes private-network, metadata-host, egress-envelope, and DNS connection-time SSRF controls. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:Model` | `string` | `""` | Required model identifier supplied by the compatible vendor. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `int` | `30` | Full compatible-provider response deadline, including response-body/SSE reads after headers. Valid range: 1--300; invalid values select Mock. | No |
+| `Llm:OpenAiCompatible:MaxResponseBytes` | `int` | `1048576` | Maximum UTF-8 bytes accepted from a buffered response or aggregate SSE response. Valid range: 1024--4194304. | No |
+| `Llm:OpenAiCompatible:MaxSseLineBytes` | `int` | `65536` | Maximum UTF-8 bytes in one SSE line. Valid range: 256--262144. | No |
+| `Llm:OpenAiCompatible:MaxSseEventBytes` | `int` | `131072` | Maximum UTF-8 bytes in one assembled SSE event. Valid range: 512--524288 and cannot exceed `MaxResponseBytes`. | No |
+| `Llm:OpenAiCompatible:ExtraHeaders:<HeaderName>` | `object` (map) | `{}` | Optional non-secret gateway headers, for example `HTTP-Referer` and `X-Title` for OpenRouter. Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and `x-taskdeck-*` headers are reserved; values with line breaks are rejected. | No |
 | `Llm:Gemini:ApiKey` | `string` | `""` | Gemini API key. Required to use the Gemini provider. Store as a secret. | Only for `Llm:Provider = Gemini` |
 | `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
 | `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
 | `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:Ollama:BaseUrl` | `string` | Production: `null`; Development: `http://localhost:11434` | Ollama API base URL. The production configuration intentionally leaves Ollama unconfigured; the development override supplies exact `localhost`, which is accepted only by the development-localhost policy below. | No |
+| `Llm:Ollama:Model` | `string` | `llama3.2` | Model identifier sent to Ollama chat requests. | No |
+| `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
+| `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
+
+**Outbound transport boundary:** the OpenAI, OpenAICompatible, Gemini, and
+Ollama primary clients set `UseProxy = false`. They ignore ambient/system proxy
+settings so the configured provider origin remains the target inspected by
+`OutboundWebhookConnectCallback`. The existing development-localhost opt-ins
+remain unchanged. There is no proxy-aware provider setting: corporate
+proxy-only deployments fail closed. OpenAI, Gemini, and Ollama retain the
+dedicated connect-callback boundary without `EgressEnvelopeHandler`;
+OpenAICompatible additionally uses a fixed-origin `EgressEnvelopeHandler` and
+rejects all redirects. Default `IHttpClientFactory` request logging is removed
+for these protected clients. Their primary handlers disable distributed-trace header
+propagation, and Taskdeck's configured OpenTelemetry pipeline excludes their
+marked HTTP activities and private-scope HTTP metrics (including destination
+dimensions such as `server.address` and `server.port`). This is Taskdeck exporter
+suppression, not a guarantee against an independently installed process-global
+`ActivityListener` or `MeterListener`. Registered provider calls additionally
+mask their configured URI immediately before send so outer .NET HTTP EventSource
+payloads do not receive its path/query; the inner protected handler restores the
+configured URI for transport. Public caller-owned provider clients do not opt in
+and retain ordinary `HttpClient` behavior. Transport-stage host/IP observation is
+outside this guarantee.
 
 ### `LlmToolCalling`
 
@@ -275,6 +308,9 @@ class defaults apply.
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `CaptureTriageLlm:Enabled` | `bool` | `true` | Master switch for LLM transcript triage. When false, transcript captures triage through the deterministic extractor exactly as before REVIVAL-08. | No |
+| `CaptureTriageLlm:MaxInputTokensPerChunk` | `int` | `12000` | Conservative input-token budget for one transcript map chunk (range 1024-32768). The estimator reserves one token per UTF-8 byte, deliberately over-reserving dense ASCII and encoded text without a provider-tokenizer dependency. | No |
+| `CaptureTriageLlm:ChunkOverlapTokens` | `int` | `256` | Context retained between map chunks (range 0-4096). The planner caps it at one quarter of the input budget, splits at speaker turns or blank lines when possible, and hard-splits only unstructured text. If any map leg fails, all mapped results are discarded and the existing deterministic fallback handles the full capture. | No |
+| `CaptureTriageLlm:MaxChunkCount` | `int` | `24` | Maximum LLM map calls per transcript triage run (range 1-128). If a configured chunk budget would require more calls, no provider or quota reservation is attempted and the complete capture uses the existing deterministic fallback. | No |
 | `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
 | `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
@@ -324,6 +360,14 @@ webhook testing works without extra config
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `OutboundWebhooks:Security:AllowLocalhostEndpoints` | `bool` | `false` in non-Development; `true` in Development when unset | When false, the outbound webhook HTTP handler refuses to connect to localhost/loopback targets. Defense against SSRF from user-supplied URLs. | No |
+
+The `OutboundWebhookDelivery` primary client is direct-only and sets
+`UseProxy = false`, so ambient/system proxy settings cannot move connect-time
+DNS/IP validation away from the subscription endpoint. Its existing localhost
+policy remains unchanged. There is no proxy-aware webhook setting; deployments
+that require a corporate proxy for outbound delivery fail closed. This client
+continues to use `OutboundWebhookConnectCallback`, not
+`EgressEnvelopeHandler`, with automatic redirects still disabled.
 
 ## CORS and HTTP
 
@@ -426,7 +470,7 @@ Bound to `CircuitBreakerSettings`. Consumed by
 `Taskdeck.Api.Extensions.LlmProviderRegistration.AddLlmProviders` and
 `Taskdeck.Api.Extensions.AuthenticationRegistration.AddTaskdeckAuthentication`.
 Polly circuit breaker policies are applied to LLM provider HTTP clients
-(OpenAI, Gemini) and OAuth/OIDC backchannel handlers.
+(OpenAI, OpenAICompatible, Gemini, and Ollama) and OAuth/OIDC backchannel handlers.
 
 | Key | Type | Default | Env override | Description | Restart required? |
 |-----|------|---------|--------------|-------------|-------------------|
@@ -505,6 +549,13 @@ Bound to `ObservabilitySettings`. Consumed by `AddTaskdeckObservability`.
 
 Bound to `SentrySettings`. Consumed by `AddTaskdeckSentry`. Defaults mean
 Sentry is fully off until explicitly opted in.
+
+When enabled, Taskdeck keeps Sentry's server-side exception tracking and removes
+Sentry's automatic outbound `IHttpClientFactory` handler only from the registered
+OpenAI, OpenAICompatible, Gemini, Ollama, and `OutboundWebhookDelivery` clients. Those protected
+clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
+or failed-request capture outside their dedicated telemetry boundary. Unrelated
+factory clients retain normal Sentry instrumentation.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
@@ -717,6 +768,15 @@ Examples:
 | `Jwt:SecretKey` | `Jwt__SecretKey` |
 | `Auth:Registration:Mode` | `Auth__Registration__Mode` |
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
+| `Llm:OpenAiCompatible:ApiKey` | `Llm__OpenAiCompatible__ApiKey` |
+| `Llm:OpenAiCompatible:BaseUrl` | `Llm__OpenAiCompatible__BaseUrl` |
+| `Llm:OpenAiCompatible:Model` | `Llm__OpenAiCompatible__Model` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `Llm__OpenAiCompatible__TimeoutSeconds` |
+| `Llm:OpenAiCompatible:MaxResponseBytes` | `Llm__OpenAiCompatible__MaxResponseBytes` |
+| `Llm:OpenAiCompatible:MaxSseLineBytes` | `Llm__OpenAiCompatible__MaxSseLineBytes` |
+| `Llm:OpenAiCompatible:MaxSseEventBytes` | `Llm__OpenAiCompatible__MaxSseEventBytes` |
+| `Llm:OpenAiCompatible:ExtraHeaders:HTTP-Referer` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` |
+| `Llm:OpenAiCompatible:ExtraHeaders:X-Title` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
 | `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
@@ -740,6 +800,15 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
 | `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
 | `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY` | `Llm__OpenAiCompatible__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAICompatible`; keep in a secret store |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_BASE_URL` | `Llm__OpenAiCompatible__BaseUrl` | `""` | Required public HTTPS base URL in the Production compose profile |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MODEL` | `Llm__OpenAiCompatible__Model` | `""` | Required compatible model identifier |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_TIMEOUT_SECONDS` | `Llm__OpenAiCompatible__TimeoutSeconds` | `30` | Full response deadline, including body/SSE reads |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_RESPONSE_BYTES` | `Llm__OpenAiCompatible__MaxResponseBytes` | `1048576` | Buffered or aggregate SSE response budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_LINE_BYTES` | `Llm__OpenAiCompatible__MaxSseLineBytes` | `65536` | Per-line SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_EVENT_BYTES` | `Llm__OpenAiCompatible__MaxSseEventBytes` | `131072` | Per-event SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_HTTP_REFERER` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` | `""` | Optional non-secret OpenRouter attribution header |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_X_TITLE` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` | `""` | Optional non-secret OpenRouter application title |
 | `TASKDECK_LLM_GEMINI_API_KEY` | `Llm__Gemini__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=Gemini` |
 | `TASKDECK_PROXY_PORT` | Host port mapped to the nginx reverse proxy | `8080` | No |
 | `TASKDECK_VITE_API_BASE_URL` | Build-time `VITE_API_BASE_URL` for the web image | `/api` | No |

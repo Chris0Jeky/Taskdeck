@@ -82,6 +82,95 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void ParseAndValidateV2_ShouldPass_ForLlmGoldenFixture()
+    {
+        var json = ReadFixture("valid.llm-v2.json");
+
+        var result = CaptureTriageOutputContract.ParseAndValidateV2(json);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Version.Should().Be(CaptureTriageOutputContract.SchemaVersionV2);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Value.Tasks.Should().HaveCount(2);
+        result.Value.Tasks[0].Type.Should().Be("action");
+        result.Value.Tasks[0].AssigneeHint.Should().Be("Alice");
+        result.Value.Tasks[0].DueDateHint.Should().Be("2026-08-07");
+        result.Value.Tasks[0].EvidenceQuote.Should().Contain("revised budget");
+    }
+
+    [Fact]
+    public void ParseAndValidateV2_ShouldRejectMissingRequiredMetadata()
+    {
+        const string json = """
+                            {
+                              "version": 2,
+                              "promptVersion": "llm-triage.v2",
+                              "tasks": [
+                                {
+                                  "title": "Follow up with QA",
+                                  "type": "action",
+                                  "assigneeHint": null,
+                                  "dueDateHint": null,
+                                  "evidenceQuote": "I will follow up with QA tomorrow"
+                                }
+                              ]
+                            }
+                            """;
+
+        var result = CaptureTriageOutputContract.ParseAndValidateV2(json);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("JSON is invalid");
+    }
+
+    [Fact]
+    public void ValidateV2_ShouldRejectInvalidMetadataWithoutNormalizingIt()
+    {
+        var validTask = new CaptureTriageTaskV2(
+            "Follow up with QA",
+            "action",
+            "Alice",
+            "2026-08-07",
+            0.9m,
+            "Alice: I will follow up with QA tomorrow.");
+        var invalidTasks = new[]
+        {
+            validTask with { Type = "Action" },
+            validTask with { AssigneeHint = "   " },
+            validTask with { DueDateHint = "next Friday" },
+            validTask with { DueDateHint = "2026-02-30" },
+            validTask with { Confidence = -0.01m },
+            validTask with { Confidence = 1.01m },
+            validTask with { EvidenceQuote = "  " }
+        };
+
+        foreach (var invalidTask in invalidTasks)
+        {
+            var result = CaptureTriageOutputContract.Validate(new CaptureTriageOutputV2(
+                CaptureTriageOutputContract.SchemaVersionV2,
+                CaptureTriageOutputContract.PromptVersionLlmV2,
+                [invalidTask]));
+
+            result.IsSuccess.Should().BeFalse(invalidTask.ToString());
+        }
+    }
+
+    [Fact]
+    public void ValidateV2_ShouldRejectV1PromptVersion()
+    {
+        var output = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV1,
+            [new CaptureTriageTaskV2("Follow up with QA", "action", null, null, 0.9m, "I will follow up with QA")]);
+
+        var result = CaptureTriageOutputContract.Validate(output);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV2);
+    }
+
+    [Fact]
     public void Validate_ShouldPass_WhenPromptVersionIsLlmV1()
     {
         var output = new CaptureTriageOutputV1(
@@ -144,6 +233,25 @@ public class CaptureTriageOutputContractTests
         var schema = File.ReadAllText(schemaPath);
         schema.Should().Contain("\"const\": \"llm-triage.v1\"");
         schema.Should().Contain("\"additionalProperties\": false");
+    }
+
+    [Fact]
+    public void LlmV2TriageSchemaFile_ShouldDeclareRequiredMetadataAndStrictness()
+    {
+        var schemaPath = Path.Combine(
+            FindRepositoryRoot(),
+            "backend",
+            "src",
+            "Taskdeck.Application",
+            "Schemas",
+            "capture-triage-output.llm-v2.schema.json");
+
+        File.Exists(schemaPath).Should().BeTrue();
+        var schema = File.ReadAllText(schemaPath);
+        schema.Should().Contain("\"const\": \"llm-triage.v2\"");
+        schema.Should().Contain("\"evidenceQuote\"");
+        schema.Should().Contain("\"additionalProperties\": false");
+        schema.Should().Contain("\"required\"");
     }
 
     private static string ReadFixture(string fixtureName)

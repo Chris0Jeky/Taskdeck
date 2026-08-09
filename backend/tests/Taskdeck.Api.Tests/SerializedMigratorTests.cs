@@ -38,7 +38,7 @@ public sealed class SerializedMigratorTests : IDisposable
     private static TaskdeckDbContext NewFileContext(string dbPath)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(dbPath))
             // Mirror production: WAL + busy_timeout (#1130) on every connection.
             .AddInterceptors(new SqlitePragmaConnectionInterceptor(BusyTimeoutMs))
             .Options;
@@ -390,7 +390,7 @@ public sealed class SerializedMigratorTests : IDisposable
     /// </summary>
     private static void PreSetWalJournalMode(string dbPath)
     {
-        using var setup = new SqliteConnection($"Data Source={dbPath}");
+        using var setup = new SqliteConnection(TestSqlite.ConnectionString(dbPath));
         setup.Open();
         using var cmd = setup.CreateCommand();
         cmd.CommandText = "PRAGMA journal_mode=WAL";
@@ -400,7 +400,7 @@ public sealed class SerializedMigratorTests : IDisposable
     private static int? WaitForMidChainHistory(
         string dbPath, Task migrator, int releaseWindowMax, TimeSpan timeout)
     {
-        using var pollConnection = new SqliteConnection($"Data Source={dbPath}");
+        using var pollConnection = new SqliteConnection(TestSqlite.ConnectionString(dbPath));
         pollConnection.Open();
 
         // Robust reads under write contention: without this, a transient BUSY would surface as
@@ -621,8 +621,8 @@ public sealed class SerializedMigratorTests : IDisposable
 
     private static void CleanupDbFiles(string dbPath)
     {
-        // Drop pooled connections so file handles release before cleanup.
-        SqliteConnection.ClearAllPools();
+        // No pool to drop: these connections are opened with Pooling=False (TestSqlite, #1609),
+        // so the handles are already released by the time cleanup runs.
         foreach (var suffix in new[] { "", "-wal", "-shm", ".migrate.lock" })
         {
             var path = dbPath + suffix;

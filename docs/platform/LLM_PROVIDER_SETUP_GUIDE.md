@@ -1,12 +1,12 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-04-22
+Last Updated: 2026-07-27
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
 
 Taskdeck keeps application services provider-agnostic through `ILlmProvider`, while retaining a safe default posture.
-This guide defines what is now shipped and how to run OpenAI/Gemini demos without code changes.
+This guide defines what is now shipped and how to run configured LLM demos without code changes.
 
 ## Current Shipped State
 
@@ -14,7 +14,9 @@ Backend provider runtime now supports:
 
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated)
+- `OpenAICompatible` provider (config-gated; OpenRouter, Groq, and DeepSeek-compatible chat endpoints)
 - `Gemini` provider (config-gated)
+- `Ollama` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
   - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
   - provider adapters receive standardized attribution headers (`x-taskdeck-*`)
@@ -23,26 +25,35 @@ Backend provider runtime now supports:
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- to use live providers (`OpenAI`/`Gemini`), live providers must be enabled (`EnableLiveProviders=true`)
-- to use live providers in development-like environments, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
-- provider mode may be explicitly set to `Mock`, `OpenAI`, or `Gemini`; this guide's config example intentionally uses `Mock` as the safe default
+- to use live providers (`OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
+- to use live providers in `Development`, `Test`, or `Testing`, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
+- provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
-- selected provider config must pass validation (`ApiKey`, `BaseUrl`, `Model`, `TimeoutSeconds`)
-- `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected; the selection policy falls back to Mock when validation fails
-- `HttpClient`s for OpenAI and Gemini use `OutboundWebhookConnectCallback` for DNS-level SSRF protection (defense against DNS rebinding where a hostname resolves to a private IP at connect time) and set `AllowAutoRedirect = false` to prevent redirect-based bypass
+- selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
+- `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
+- the OpenAI, OpenAICompatible, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
+
+These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. OpenAI, Gemini, and Ollama retain their dedicated connect-callback boundary without `EgressEnvelopeHandler`; OpenAICompatible additionally passes through a fixed-origin `EgressEnvelopeHandler` immediately inside the protected telemetry handler and rejects every observed 3xx response rather than following an allowlisted redirect. Registered protected clients mask their configured URI immediately before send, then the protected inner handler restores it for validation and transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
 
 If any live-provider condition fails, runtime degrades safely to `Mock`.
 
 ### Development-mode localhost bypass (Ollama / LM Studio)
 
-To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the SSRF
-validator allows `localhost`/`127.0.0.1` `BaseUrl` values **only** when
+To support local LLM workflows (Ollama, LM Studio, LocalAI, etc.), the effective
+connect-time exception is scoped to the exact `localhost` hostname **only** when
 both of the following are true:
 
-- the environment is `Development` (or a development-like host name)
+- the environment is exactly `Development`, `Test`, or `Testing`
 - `Llm:AllowLiveProvidersInDevelopment = true` is set explicitly
 
-Under this bypass, HTTPS is also not required for `localhost` endpoints.
+Ollama additionally requires `Llm:Ollama:AllowLocalhostEndpoints = true`.
+Literal loopback and other private/link-local addresses remain blocked by the
+connect callback; use the exact `localhost` hostname for an opted-in local provider.
+
+Plain HTTP is accepted only when the URI host is exactly `localhost`, the
+environment is `Development`, `Test`, or `Testing`, and
+`Llm:AllowLiveProvidersInDevelopment=true`. Numeric loopback addresses such as
+`127.0.0.1` and `[::1]`, and all other private/link-local hosts, remain blocked.
 This exception is intentionally narrow: Staging/Production deployments can
 never reach `localhost` LLM endpoints even if the configuration is cloned.
 All other private IP ranges and cloud metadata hostnames stay blocked even
@@ -62,11 +73,27 @@ in Development.
       "Model": "gpt-4o-mini",
       "TimeoutSeconds": 30
     },
+    "OpenAiCompatible": {
+      "ApiKey": "",
+      "BaseUrl": "",
+      "Model": "",
+      "TimeoutSeconds": 30,
+      "MaxResponseBytes": 1048576,
+      "MaxSseLineBytes": 65536,
+      "MaxSseEventBytes": 131072,
+      "ExtraHeaders": {}
+    },
     "Gemini": {
       "ApiKey": "",
       "BaseUrl": "https://generativelanguage.googleapis.com/v1beta",
       "Model": "gemini-2.5-flash",
       "TimeoutSeconds": 30
+    },
+    "Ollama": {
+      "BaseUrl": "http://localhost:11434",
+      "Model": "llama3.2",
+      "TimeoutSeconds": 120,
+      "AllowLocalhostEndpoints": false
     }
   }
 }
@@ -101,6 +128,103 @@ Optional:
 - `Llm__Gemini__Model=<model_name>`
 - `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
 - `Llm__Gemini__TimeoutSeconds=30`
+
+## Demo Setup (Ollama)
+
+Set:
+
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true`
+- `Llm__Provider=Ollama`
+- `Llm__Ollama__AllowLocalhostEndpoints=true`
+
+Optional:
+
+- `Llm__Ollama__Model=llama3.2`
+- `Llm__Ollama__BaseUrl=http://localhost:11434`
+- `Llm__Ollama__TimeoutSeconds=120`
+
+The Ollama localhost exception is effective only in Development/Test/Testing and
+only for the exact `localhost` hostname. Production, literal loopback addresses,
+and other private/link-local origins remain blocked.
+
+## OpenAI-Compatible Providers (OpenRouter, Groq, DeepSeek)
+
+`OpenAICompatible` is the named provider for public HTTPS endpoints using the
+OpenAI Chat Completions wire format. It is distinct from `OpenAI`: OpenAI keeps
+its `api.openai.com` defaults, while compatible endpoints require an explicit
+base URL and model. The provider sends real upstream SSE requests (`stream:true`)
+for chat streams and forwards delta events as they arrive.
+
+Set the common safety gates and provider name:
+
+- `Llm__EnableLiveProviders=true`
+- `Llm__AllowLiveProvidersInDevelopment=true` (only for `Development`, `Test`, or `Testing`)
+- `Llm__Provider=OpenAICompatible`
+
+Production and other non-development endpoints must be public HTTPS and pass
+the same URL and DNS-level SSRF checks as OpenAI. Plain HTTP is accepted only
+when the URI host is exactly `localhost`, the environment is `Development`,
+`Test`, or `Testing`, and `Llm:AllowLiveProvidersInDevelopment=true`. Numeric
+loopback addresses such as `127.0.0.1` and `[::1]`, and all other private or
+link-local hosts, remain blocked. Keep keys in a secret store;
+never commit them. Compatible
+gateways may require optional non-secret headers such as `HTTP-Referer` or
+`X-Title`; use `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` for those.
+Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and
+`x-taskdeck-*` headers are reserved and cannot be overridden. The base URL may
+contain a path but not user information, a query, or a fragment.
+
+The complete environment-variable surface is:
+
+- required: `Llm__OpenAiCompatible__ApiKey`,
+  `Llm__OpenAiCompatible__BaseUrl`, and `Llm__OpenAiCompatible__Model`
+- response controls: `Llm__OpenAiCompatible__TimeoutSeconds`,
+  `Llm__OpenAiCompatible__MaxResponseBytes`,
+  `Llm__OpenAiCompatible__MaxSseLineBytes`, and
+  `Llm__OpenAiCompatible__MaxSseEventBytes`
+- optional gateway headers:
+  `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>`; for example,
+  `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` and
+  `Llm__OpenAiCompatible__ExtraHeaders__X-Title`
+
+Compatible requests fail closed on every HTTP redirect, including redirects
+back to the configured host. Configure the final API base URL directly.
+
+### OpenRouter
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<openrouter_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://openrouter.ai/api/v1'
+$env:Llm__OpenAiCompatible__Model = 'openai/gpt-4o-mini'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer' -Value 'https://your-app.example'
+Set-Item -Path 'Env:Llm__OpenAiCompatible__ExtraHeaders__X-Title' -Value 'Taskdeck'
+```
+
+### Groq
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<groq_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.groq.com/openai/v1'
+$env:Llm__OpenAiCompatible__Model = 'llama-3.1-8b-instant'
+```
+
+### DeepSeek
+
+```powershell
+$env:Llm__OpenAiCompatible__ApiKey = '<deepseek_key>'
+$env:Llm__OpenAiCompatible__BaseUrl = 'https://api.deepseek.com/v1'
+$env:Llm__OpenAiCompatible__Model = 'deepseek-chat'
+```
+
+If a gateway rejects SSE, Taskdeck retries as a normal completion and emits one
+final event with explicit `IsDegraded`/`DegradedReason` metadata rather than
+pretending the buffered response was incremental. Some compatible gateways also
+reject `response_format: { type: json_object }`; non-streaming extraction retries
+without that field while retaining the JSON-only instruction prompt and robust
+response parsing. `TimeoutSeconds` is a full response deadline, including stream
+body reads after headers. `MaxResponseBytes`, `MaxSseLineBytes`, and
+`MaxSseEventBytes` bound buffered bodies and streaming parser memory.
 
 ## Playwright Demo Auto-Enable
 
@@ -157,7 +281,7 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Behavior Guarantees
 
-- LLM-consuming application services remain provider-agnostic (`ChatService` depends on `ILlmProvider` only). Capture triage does not depend on `ILlmProvider` at all — it is a deterministic, offline extractor.
+- LLM-consuming application services remain provider-agnostic (`ChatService` and `LlmCaptureTriageExtractor` depend on `ILlmProvider`, not a concrete adapter).
 - invalid/missing live-provider configuration does not crash requests
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
@@ -168,10 +292,12 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Test Coverage Expectations (Implemented)
 
-- selection-policy unit coverage for `Mock`/`OpenAI`/`Gemini` and invalid-config fallback
+- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini`/`Ollama` and invalid-config fallback
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
+  - OpenAICompatible: true SSE delta parsing, strict UTF-8 byte ceilings, malformed/mid-stream error, cancellation, zero/known usage, content-filter/refusal handling, fixed-origin egress, registered transport, and explicit buffered-fallback metadata
   - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
+  - Ollama: success/failure/streaming/structured extraction + localhost-policy checks
 - API integration coverage:
   - capture triage provenance includes provider/model
   - chat flow validated using a non-mock provider stub with attribution assertions

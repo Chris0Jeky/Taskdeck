@@ -14,7 +14,7 @@ MD = ROOT / "docs" / "agentic" / "FAILURE_LEDGER.md"
 HEADER = """# Agent Failure Ledger
 
 This is the human-readable view of recurring agent, tool, test, CI, and workflow failures.
-Machine-appended raw entries live in `docs/agentic/failure_ledger.jsonl`.
+Deliberately recorded raw entries live in `docs/agentic/failure_ledger.jsonl`.
 Rows sharing a surface and first tracking issue in `future_fix` show only their latest state here; the JSONL retains append-only history.
 
 ## Entries

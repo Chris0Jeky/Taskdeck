@@ -38,8 +38,8 @@ The coordinator must own:
 - final conflict resolution
 - PR body quality and linked issues
 - GitHub project status/priority sync
-- adversarial-review assignment
-- CI/comment/conflict loops
+- canonical review-pipeline evidence handoff
+- CI/comment/conflict recovery
 - docs and testing-guide rehydration
 - final handoff
 
@@ -52,7 +52,7 @@ Split only when file ownership or concerns do not overlap. Good splits:
 - one backend issue per worker
 - one frontend issue per worker
 - one docs-only issue per worker
-- one reviewer worker per PR
+- review workers only when the global pipeline requests Taskdeck lenses
 - one CI/conflict worker per failing PR
 
 Avoid parallel workers on the same view, store, service, migration chain, project file, or canonical doc unless the coordinator plans the merge order.
@@ -73,39 +73,38 @@ When editing with structured patches:
 
 For each issue:
 
-1. Create a worktree with `scripts/git/New-CodexIssueWorktree.ps1`.
+1. Create a detached worktree with `scripts/git/New-CodexIssueWorktree.ps1` from the main checkout; linked-source invocation is rejected. Preserve source-checkout state and retain its printed planned branch.
 2. In the worker prompt, forbid absolute paths to the main checkout.
-3. Require first command: `powershell -File scripts/worktree_guard.ps1`.
-4. Tell the worker which files or module it owns.
-5. Tell the worker it is not alone in the codebase and must not revert others' edits.
-6. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
-7. Require targeted tests before PR.
-8. Require every file-editing worker prompt to restate the structured patch discipline above.
+3. Require the helper's complete printed PowerShell handoff block as the first worker commands. Its first command is the exact absolute target `worktree_guard.ps1` with pinned Git; the bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows only on guard success, binds the detached base, and then runs `switch -c`. A late collision removes the unused detached worktree only when its tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper byte-checks target handoff files against reviewed raw blobs before it emits the block, but same-user replacement after emission remains outside this boundary. When launch authorization requires PowerShell rules, use both exact additive full-command rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard; pass its ordered rule array as two `--allowedTools` argv values, never a generic relative handoff rule. Start `claude -p` in the exact helper-created target without `--worktree`; accept project trust interactively before relying on project settings. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, restore the prior host value when the launch returns, then keep later commands on Git Bash as the documented portable shell. Taskdeck installs no project command-deny hook. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an interactive coordinator launch.
+4. If the worker entered through Bash, require it to launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; do not resolve bare `powershell`, substitute a PATH-first batch shim, or translate only the switch command.
+5. Tell the worker which files or module it owns.
+6. Tell the worker it is not alone in the codebase and must not revert others' edits.
+7. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
+8. Require targeted tests before PR.
+9. Require every file-editing worker prompt to restate the structured patch discipline above.
 
 Use `taskdeck-worktree-issue-worker` for implementation workers.
 
-## Review loop
+## Review pipeline handoff
 
-Every PR needs:
+Enter every ready PR into the global `review-and-ship` pipeline. This skill contributes only the
+Taskdeck handoff packet: the coordinator checks the PR body, linked issue, test evidence, docs
+impact, and these repo-specific risk surfaces before entry:
 
-1. Worker self-review after opening the PR.
-2. Coordinator review of PR body, linked issue, test evidence, and docs impact.
-3. Fresh adversarial review for sensitive or risky PRs:
-   - auth/authz/security
-   - migrations/persistence
-   - capture/review/proposal execution
-   - CI/workflows/project automation
-   - broad frontend flow changes
-   - flaky or failing tests
-4. Posted review findings or explicit no-finding comment.
-5. Fix commits for findings.
-6. Re-review after fixes.
+- auth/authz/security
+- migrations/persistence
+- capture/review/proposal execution
+- CI/workflows/project automation
+- broad frontend flow changes
+- flaky or failing tests
 
-Use `taskdeck-pr-review-loop` for review workers.
+Use `taskdeck-pr-review-loop` for Taskdeck lenses and record the state returned by the global
+pipeline. Reviewer invocation, counts, severity, fix/re-review convergence, aging, and merge
+disposition are not defined here.
 
 ## CI and comments
 
-After PR creation and after every fix push:
+After PR creation and after any pipeline-directed fix push:
 
 - inspect CI status
 - inspect review comments and bot comments

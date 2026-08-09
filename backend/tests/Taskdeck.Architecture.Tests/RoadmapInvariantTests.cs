@@ -376,6 +376,7 @@ public class RoadmapInvariantTests
         var expectedSites = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "OpenAiLlmProvider",
+            "OpenAiCompatibleLlmProvider",
             "GeminiLlmProvider",
             "OllamaLlmProvider",
             "OutboundWebhookDeliveryWorker",

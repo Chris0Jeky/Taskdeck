@@ -10,13 +10,18 @@ public class LlmCaptureTriagePromptTests
     [Fact]
     public void PromptVersion_ShouldMatchContractConstant()
     {
-        LlmCaptureTriagePrompt.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV1);
+        LlmCaptureTriagePrompt.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
     }
 
     [Fact]
-    public void SystemPrompt_ShouldPinTasksShapeAndLengthLimits()
+    public void SystemPrompt_ShouldPinStrictV2TasksShapeAndLengthLimits()
     {
         LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"tasks\"");
+        LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"type\"");
+        LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"assigneeHint\"");
+        LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"dueDateHint\"");
+        LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"confidence\"");
+        LlmCaptureTriagePrompt.SystemPrompt.Should().Contain("\"evidenceQuote\"");
         LlmCaptureTriagePrompt.SystemPrompt.Should().Contain(
             CaptureTriageOutputContract.MaxTaskTitleLength.ToString());
         LlmCaptureTriagePrompt.SystemPrompt.Should().Contain(
@@ -24,13 +29,27 @@ public class LlmCaptureTriagePromptTests
     }
 
     [Fact]
-    public void TryParseTasks_ShouldParseTasks_ForPlainJsonObject()
+    public void TryParseTasks_ShouldParseStrictV2Tasks_ForPlainJsonObject()
     {
         var content = """
                       {
                         "tasks": [
-                          { "title": "Send the budget to finance", "evidence": "I'll send the budget over by Friday" },
-                          { "title": "Schedule the review meeting", "evidence": "let's get the review on the calendar" }
+                          {
+                            "title": "Send the budget to finance",
+                            "type": "action",
+                            "assigneeHint": "Bob",
+                            "dueDateHint": "2026-08-07",
+                            "confidence": 0.95,
+                            "evidenceQuote": "Bob: I will send the budget over by Friday"
+                          },
+                          {
+                            "title": "Schedule the review meeting",
+                            "type": "decision",
+                            "assigneeHint": null,
+                            "dueDateHint": null,
+                            "confidence": 0.8,
+                            "evidenceQuote": "let's get the review on the calendar"
+                          }
                         ]
                       }
                       """;
@@ -40,13 +59,17 @@ public class LlmCaptureTriagePromptTests
         parsed.Should().BeTrue();
         tasks.Should().HaveCount(2);
         tasks[0].Title.Should().Be("Send the budget to finance");
-        tasks[0].Evidence.Should().Be("I'll send the budget over by Friday");
-        tasks[1].Title.Should().Be("Schedule the review meeting");
-        tasks[1].Evidence.Should().Be("let's get the review on the calendar");
+        tasks[0].Type.Should().Be("action");
+        tasks[0].AssigneeHint.Should().Be("Bob");
+        tasks[0].DueDateHint.Should().Be("2026-08-07");
+        tasks[0].Confidence.Should().Be(0.95m);
+        tasks[0].EvidenceQuote.Should().Be("Bob: I will send the budget over by Friday");
+        tasks[1].AssigneeHint.Should().BeNull();
+        tasks[1].DueDateHint.Should().BeNull();
     }
 
     [Fact]
-    public void TryParseTasks_ShouldParseTasks_WhenJsonIsFencedWithSurroundingProse()
+    public void TryParseTasks_ShouldParseStrictV2Tasks_WhenJsonIsFencedWithSurroundingProse()
     {
         var content = """
                       Sure! Here are the action items I found:
@@ -54,7 +77,14 @@ public class LlmCaptureTriagePromptTests
                       ```json
                       {
                         "tasks": [
-                          { "title": "Follow up with QA", "evidence": "I will follow up with QA tomorrow" }
+                          {
+                            "title": "Follow up with QA",
+                            "type": "action",
+                            "assigneeHint": null,
+                            "dueDateHint": null,
+                            "confidence": 0.92,
+                            "evidenceQuote": "I will follow up with QA tomorrow"
+                          }
                         ]
                       }
                       ```
@@ -65,33 +95,32 @@ public class LlmCaptureTriagePromptTests
         var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
 
         parsed.Should().BeTrue();
-        tasks.Should().HaveCount(1);
+        tasks.Should().ContainSingle();
         tasks[0].Title.Should().Be("Follow up with QA");
-        tasks[0].Evidence.Should().Be("I will follow up with QA tomorrow");
+        tasks[0].EvidenceQuote.Should().Be("I will follow up with QA tomorrow");
     }
 
     [Fact]
-    public void TryParseTasks_ShouldIgnoreExtraJsonFields_OnObjectAndEntries()
+    public void TryParseTasks_ShouldRejectUnknownMissingDuplicateAndWronglyTypedFields()
     {
-        var content = """
-                      {
-                        "reasoning": "two commitments were made",
-                        "tasks": [
-                          {
-                            "title": "Follow up with QA",
-                            "evidence": "I will follow up with QA tomorrow",
-                            "confidence": 0.92
-                          }
-                        ]
-                      }
-                      """;
+        var invalidContents = new[]
+        {
+            """{"reasoning":"extra root field","tasks":[]}""",
+            """{"tasks":[{"title":"Follow up","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"quote","extra":"no"}]}""",
+            """{"tasks":[{"title":"Follow up","type":"action","assigneeHint":null,"dueDateHint":null,"evidenceQuote":"quote"}]}""",
+            """{"tasks":[{"title":"Follow up","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":"high","evidenceQuote":"quote"}]}""",
+            """{"tasks":[{"title":"Follow up","type":"action","assigneeHint":false,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"quote"}]}""",
+            """{"tasks":["not an object"]}""",
+            """{"tasks":[],"tasks":[]}"""
+        };
 
-        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
+        foreach (var content in invalidContents)
+        {
+            var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
 
-        parsed.Should().BeTrue();
-        tasks.Should().HaveCount(1);
-        tasks[0].Title.Should().Be("Follow up with QA");
-        tasks[0].Evidence.Should().Be("I will follow up with QA tomorrow");
+            parsed.Should().BeFalse(content);
+            tasks.Should().BeEmpty(content);
+        }
     }
 
     [Fact]
@@ -103,39 +132,6 @@ public class LlmCaptureTriagePromptTests
         tasks.Should().BeEmpty();
     }
 
-    [Fact]
-    public void TryParseTasks_ShouldPreserveMalformedEntriesWithBlankFields_ForCallerSanitization()
-    {
-        // Every array element yields an entry (malformed ones with blank fields) so a non-empty
-        // tasks array can never masquerade as the deliberate "no action items" empty verdict -
-        // the two have different downstream semantics (deterministic fallback vs honest failure).
-        // Dropping blank entries is the extractor's sanitization job, not the parser's.
-        var content = """
-                      {
-                        "tasks": [
-                          { "title": "Valid task", "evidence": "a valid verbatim quote" },
-                          { "evidence": "entry with no title" },
-                          { "title": "   ", "evidence": "entry with blank title" },
-                          { "title": "entry with no evidence" },
-                          { "title": "entry with blank evidence", "evidence": "" },
-                          "not even an object"
-                        ]
-                      }
-                      """;
-
-        var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
-
-        parsed.Should().BeTrue();
-        tasks.Should().HaveCount(6);
-        tasks[0].Title.Should().Be("Valid task");
-        tasks[0].Evidence.Should().Be("a valid verbatim quote");
-        tasks[1].Title.Should().BeEmpty();
-        tasks[2].Title.Should().Be("   ");
-        tasks[3].Evidence.Should().BeEmpty();
-        tasks[5].Title.Should().BeEmpty();
-        tasks[5].Evidence.Should().BeEmpty();
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -145,7 +141,8 @@ public class LlmCaptureTriagePromptTests
     [InlineData("{\"answer\": 42}")]
     [InlineData("{\"tasks\": \"not an array\"}")]
     [InlineData("{\"tasks\": {\"title\": \"object, not array\"}}")]
-    [InlineData("[{\"title\": \"t\", \"evidence\": \"e\"}]")]
+    [InlineData("[{\"title\": \"t\", \"evidenceQuote\": \"e\"}]")]
+    [InlineData("{\"tasks\":[{\"title\":\"t\",\"evidence\":\"e\"}]}")]
     public void TryParseTasks_ShouldReturnFalse_ForUnusableContent(string? content)
     {
         var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
@@ -155,14 +152,21 @@ public class LlmCaptureTriagePromptTests
     }
 
     [Fact]
-    public void TryParseTasks_ShouldPreserveBracesInsideStrings_WhenObjectClosesTheContent()
+    public void TryParseTasks_ShouldPreserveBracesInsideEvidenceQuote_WhenObjectClosesTheContent()
     {
         // The parser slices from the first '{' to the LAST '}' in the content. Braces inside
         // string values are safe as long as the object's own closing brace is the final '}'.
         var content = """
                       {
                         "tasks": [
-                          { "title": "Fix the parser", "evidence": "the config { \"mode\": \"strict\" } broke parsing" }
+                          {
+                            "title": "Fix the parser",
+                            "type": "question",
+                            "assigneeHint": null,
+                            "dueDateHint": null,
+                            "confidence": 0.7,
+                            "evidenceQuote": "the config { \"mode\": \"strict\" } broke parsing"
+                          }
                         ]
                       }
                       """;
@@ -170,8 +174,8 @@ public class LlmCaptureTriagePromptTests
         var parsed = LlmCaptureTriagePrompt.TryParseTasks(content, out var tasks);
 
         parsed.Should().BeTrue();
-        tasks.Should().HaveCount(1);
-        tasks[0].Evidence.Should().Be("the config { \"mode\": \"strict\" } broke parsing");
+        tasks.Should().ContainSingle();
+        tasks[0].EvidenceQuote.Should().Be("the config { \"mode\": \"strict\" } broke parsing");
     }
 
     [Fact]
@@ -180,7 +184,7 @@ public class LlmCaptureTriagePromptTests
         // Documents the known limit of the first-{/last-} slice: a '}' in prose AFTER the JSON
         // object drags the slice past the object's real end, so the parse fails closed.
         var content = """
-                      {"tasks":[{"title":"Fix the parser","evidence":"a verbatim quote"}]}
+                      {"tasks":[{"title":"Fix the parser","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"a verbatim quote"}]}
                       Note: watch out for the stray } character in the config file.
                       """;
 

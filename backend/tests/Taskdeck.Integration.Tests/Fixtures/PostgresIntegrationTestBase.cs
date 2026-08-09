@@ -91,6 +91,10 @@ public abstract class PostgresIntegrationTestBase : IAsyncLifetime
     /// </summary>
     protected static void SkipIfDockerUnavailable()
     {
-        Skip.If(!DockerAvailableCheck.IsAvailable, DockerAvailableCheck.SkipReason);
+        var isDockerAvailable = DockerAvailableCheck.IsAvailable;
+        DockerAvailableCheck.EnsureRequiredDockerIsAvailable(
+            isDockerAvailable,
+            DockerAvailableCheck.IsDockerRequired);
+        Skip.If(!isDockerAvailable, DockerAvailableCheck.SkipReason);
     }
 }

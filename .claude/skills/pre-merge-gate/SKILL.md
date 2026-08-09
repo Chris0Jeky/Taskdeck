@@ -1,24 +1,60 @@
 ---
 name: pre-merge-gate
-description: "Final validation gate before merging a PR: tests, lint, type-check, build, self-review, CI green check. Use before merging."
+description: "Collect Taskdeck-local readiness evidence for the canonical review pipeline: tests, lint, type-check, build, diff inspection, comments, and exact-head CI."
 user-invocable: true
 ---
 
 # Pre-Merge Gate
 
-Run all validation checks before a PR can be merged. Execute as one atomic operation.
+Collect the Taskdeck-local validation packet that the global `review-and-ship` pipeline consumes.
+Execute the local checks as one atomic operation; this skill does not decide review or merge policy.
 
 ## Arguments
 
 `$ARGUMENTS` is a PR number or empty (current branch's PR).
 
-## Step 1: Identify PR and branch
+## Step 1: Prove the exact PR head and base
 
 ```bash
-gh pr view $ARGUMENTS --json number,headRefName,baseRefName,mergeable,statusCheckRollup
+set -euo pipefail
+
+pr_args=()
+if [[ -n "${ARGUMENTS:-}" ]]; then
+  pr_args=("$ARGUMENTS")
+fi
+
+pr_fields="$(gh pr view "${pr_args[@]}" \
+  --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable \
+  --jq '[.number,.headRefName,.headRefOid,.baseRefName,.baseRefOid,.mergeable] | @tsv')"
+IFS=$'\t' read -r pr_number pr_head_ref pr_head_oid pr_base_ref pr_base_oid pr_mergeable \
+  <<<"$pr_fields"
+
+local_head_oid="$(git rev-parse HEAD)"
+if [[ "$local_head_oid" != "$pr_head_oid" ]]; then
+  echo "BLOCKED: local HEAD $local_head_oid is not PR head $pr_head_oid" >&2
+  exit 1
+fi
+if [[ -n "$(git status --porcelain=v1)" ]]; then
+  echo "BLOCKED: exact-head evidence requires a clean worktree" >&2
+  exit 1
+fi
+
+git fetch --no-tags origin "$pr_base_ref"
+fetched_base_oid="$(git rev-parse FETCH_HEAD)"
+if [[ "$fetched_base_oid" != "$pr_base_oid" ]]; then
+  echo "BLOCKED: fetched base $fetched_base_oid is not PR base $pr_base_oid" >&2
+  exit 1
+fi
+
+merge_base_oid="$(git merge-base HEAD FETCH_HEAD)"
+if [[ "$merge_base_oid" != "$pr_base_oid" ]]; then
+  echo "BLOCKED: PR head does not incorporate exact base $pr_base_oid (merge base: $merge_base_oid)" >&2
+  exit 1
+fi
 ```
 
-If mergeable is "CONFLICTING", stop and report — do not auto-resolve.
+Any lookup, fetch, or identity mismatch stops the gate before tests. Run this skill only from the
+PR's exact-head worktree. If `pr_mergeable` is `CONFLICTING`, stop and report; do not auto-resolve.
 
 ## Step 2: Check bot comments
 
@@ -36,7 +72,8 @@ Check for unaddressed findings from any source:
 - CI bot failure messages
 - Previous adversarial review comments not yet resolved
 
-If actionable comments exist, fix them before proceeding.
+Return the comment bodies and resolution state to the global pipeline for triage. If that pipeline
+directs a fix, rerun the checks affected by the fix before returning the updated packet.
 
 ## Step 3: Run local checks
 
@@ -48,9 +85,9 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
 ```
 
-Report any failures immediately — do not proceed to merge.
+Report any failures immediately and do not mark the local evidence packet complete.
 
-## Step 4: Self-review
+## Step 4: Taskdeck diff inspection
 
 Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 
@@ -64,7 +101,8 @@ Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
 - HTTP semantics violations (wrong status codes)
 - Unused `using` statements or dead code
 
-If any issues found, fix them, commit, and push before proceeding.
+Return any issues as Taskdeck-lens findings to the global pipeline. If it directs a fix, commit and
+push the fix, then rerun the affected local checks before returning the updated packet.
 
 ## Step 5: CI status
 
@@ -72,33 +110,35 @@ If any issues found, fix them, commit, and push before proceeding.
 gh pr checks $ARGUMENTS
 ```
 
-All checks must be green. If any are failing, diagnose and fix.
+Report the exact-head state of every check. A red required check makes the local packet incomplete;
+route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
 
 ## Step 6: Report
 
-Output a merge-readiness summary:
+Output a Taskdeck evidence summary:
 
 ```
-## Merge Readiness: PR #XXX
+## Taskdeck Evidence: PR #XXX
 
+- [ ] Local HEAD equals remote PR head OID: PASS/FAIL
+- [ ] Exact-head worktree is clean: PASS/FAIL
+- [ ] Fetched base equals remote PR base OID: PASS/FAIL
+- [ ] Merge base equals current remote base OID: PASS/FAIL
 - [ ] Backend build: PASS/FAIL
 - [ ] Backend tests: PASS/FAIL (N passed, M failed)
 - [ ] Frontend build: PASS/FAIL
 - [ ] Frontend tests: PASS/FAIL
 - [ ] CI checks: GREEN/RED
-- [ ] Self-review: CLEAN/ISSUES FIXED
-- [ ] Bot comments: ADDRESSED/NONE
+- [ ] Diff inspection: CLEAN/FINDINGS RETURNED
+- [ ] PR feedback surfaces: CAPTURED
 - [ ] Secrets scan: CLEAN
 
-**Verdict**: READY TO MERGE / BLOCKED (reason)
+**Evidence state**: COMPLETE / INCOMPLETE (reason)
+**Canonical pipeline state**: <state returned by `review-and-ship`, or NOT YET RUN>
 ```
 
 ## Rules
 
-- Do NOT merge the PR — only validate and report readiness
-- Fix ALL self-review issues found at every severity (commit + push) — no "non-blocking" dismissals
-- If CI is red, attempt to fix — only report "blocked" if the fix is non-trivial
-- Always check and address ALL PR comments (human reviews, bot comments, previous review threads)
-- Address every unaddressed comment: fix, invalidate with evidence, or seed a GitHub issue
-- Out-of-scope findings must be seeded as GitHub issues, never silently dropped
-- Post findings as a PR comment unless the user explicitly says otherwise
+- This skill only collects local evidence; it never decides review or merge disposition.
+- Finding severity, comment triage, reviewer invocation, convergence, and merge disposition belong
+  only to the global `review-and-ship` skill and global laws 2 and 11.

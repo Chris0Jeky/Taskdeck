@@ -5,13 +5,20 @@ public enum LlmProviderKind
     Mock = 0,
     OpenAi = 1,
     Gemini = 2,
-    Ollama = 3
+    Ollama = 3,
+    OpenAiCompatible = 4
 }
 
 public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
 
 public static class LlmProviderSelectionPolicy
 {
+    private static readonly HashSet<string> ForbiddenCompatibleHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Host", "Connection", "Transfer-Encoding", "Cookie", "Cookie2", "Keep-Alive",
+        "TE", "Trailer", "Upgrade", "Via", "Forwarded", "Content-Length", "HTTP2-Settings"
+    };
+
     public static LlmProviderDecision Evaluate(LlmProviderSettings settings, string? environmentName)
     {
         var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
@@ -74,6 +81,20 @@ public static class LlmProviderSelectionPolicy
             return new LlmProviderDecision(
                 LlmProviderKind.Gemini,
                 "Gemini provider selected.");
+        }
+
+        if (requestedProvider.Value == LlmProviderKind.OpenAiCompatible)
+        {
+            if (!TryValidateOpenAiCompatibleSettings(settings, out var compatibleValidationError, allowDevelopmentLocalhostEndpoints))
+            {
+                return new LlmProviderDecision(
+                    LlmProviderKind.Mock,
+                    $"OpenAI-compatible configuration is invalid: {compatibleValidationError}");
+            }
+
+            return new LlmProviderDecision(
+                LlmProviderKind.OpenAiCompatible,
+                "OpenAI-compatible provider selected.");
         }
 
         var allowOllamaLocalhostEndpoints =
@@ -196,6 +217,139 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
+    public static bool TryValidateOpenAiCompatibleSettings(
+        LlmProviderSettings settings,
+        out string error,
+        bool allowLocalhostEndpoints = false)
+    {
+        if (settings.OpenAiCompatible is null)
+        {
+            error = "OpenAI-compatible settings are required.";
+            return false;
+        }
+
+        var compatible = settings.OpenAiCompatible;
+        if (string.IsNullOrWhiteSpace(compatible.ApiKey))
+        {
+            error = "ApiKey is required.";
+            return false;
+        }
+
+        if (compatible.ApiKey.Contains('\r') || compatible.ApiKey.Contains('\n'))
+        {
+            error = "ApiKey must not contain line breaks.";
+            return false;
+        }
+
+        try
+        {
+            _ = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", compatible.ApiKey.Trim());
+        }
+        catch (FormatException)
+        {
+            error = "ApiKey cannot be serialized as a Bearer credential.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(compatible.Model))
+        {
+            error = "Model is required.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(compatible.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
+        {
+            error = "BaseUrl must be an absolute HTTP(S) URI.";
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo))
+        {
+            error = "BaseUrl must not contain user information, a query, or a fragment.";
+            return false;
+        }
+
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(compatible.BaseUrl, allowLocalhostEndpoints);
+        if (!ssrfResult.IsAllowed)
+        {
+            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
+            return false;
+        }
+
+        if (Uri.CheckHostName(baseUri.Host) != UriHostNameType.Dns)
+        {
+            error = "BaseUrl host must be a DNS name so it can be disclosed and enforced by the egress registry.";
+            return false;
+        }
+
+        if (compatible.TimeoutSeconds is < 1 or > 300)
+        {
+            error = "TimeoutSeconds must be between 1 and 300.";
+            return false;
+        }
+
+        if (compatible.MaxResponseBytes is < 1024 or > 4_194_304 ||
+            compatible.MaxSseLineBytes is < 256 or > 262_144 ||
+            compatible.MaxSseEventBytes is < 512 or > 524_288 ||
+            compatible.MaxSseEventBytes > compatible.MaxResponseBytes)
+        {
+            error = "OpenAI-compatible response budgets are invalid or inconsistent.";
+            return false;
+        }
+
+        if (compatible.ExtraHeaders is null)
+        {
+            error = "ExtraHeaders must be a header map when configured.";
+            return false;
+        }
+
+        foreach (var (name, value) in compatible.ExtraHeaders)
+        {
+            if (string.IsNullOrWhiteSpace(name) ||
+                name.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authenticate", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("X-Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Auth-Token", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Proxy-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Taskdeck-", StringComparison.OrdinalIgnoreCase) ||
+                ForbiddenCompatibleHeaders.Contains(name))
+            {
+                error = $"ExtraHeaders contains dangerous or reserved request header '{name}'.";
+                return false;
+            }
+
+            if (value is null || value.Contains('\r') || value.Contains('\n'))
+            {
+                error = "ExtraHeaders values must not contain line breaks.";
+                return false;
+            }
+
+            // Use the framework's request-header parser so malformed and
+            // content-only/restricted names select the deterministic Mock
+            // provider instead of throwing when the client constructs a request.
+            using var headerProbe = new HttpRequestMessage();
+            try
+            {
+                headerProbe.Headers.Add(name, value);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+            {
+                error = $"ExtraHeaders contains an invalid or restricted request header '{name}'.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     public static bool TryValidateOllamaSettings(
         LlmProviderSettings settings,
         out string error,
@@ -256,6 +410,11 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.OpenAi;
+        }
+
+        if (normalized.Equals("OpenAICompatible", StringComparison.OrdinalIgnoreCase))
+        {
+            return LlmProviderKind.OpenAiCompatible;
         }
 
         if (normalized.Equals("Gemini", StringComparison.OrdinalIgnoreCase))

@@ -456,6 +456,15 @@ public class AutomationPlannerService : IAutomationPlannerService
 
             return Result.Success(result.Value);
         }
+        // Caller-requested cancellation is not a planning failure. Rethrow so the worker can
+        // leave the queue item alone instead of marking it Failed and burning a retry. The
+        // `when` filter is load-bearing: an OperationCanceledException raised by an INTERNAL
+        // budget or provider timeout, where the caller's token is still live, falls through to
+        // the general handler below and keeps its UnexpectedError mapping.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, $"Failed to parse instruction: {ex.Message}");
@@ -575,6 +584,12 @@ public class AutomationPlannerService : IAutomationPlannerService
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
 
             return Result.Success(result.Value);
+        }
+        // Same discrimination as the single-instruction path above: caller cancellation
+        // propagates, internal cancellation stays an UnexpectedError.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

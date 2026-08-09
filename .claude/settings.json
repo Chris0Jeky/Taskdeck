@@ -11,8 +11,6 @@
       "Bash(source scripts/worktree_guard.sh:*)",
       "Bash(bash scripts/worktree_guard.sh:*)",
       "Bash(powershell -File scripts/git/New-CodexIssueWorktree.ps1:*)",
-      "PowerShell(powershell -File scripts/worktree_guard.ps1:*)",
-      "PowerShell(powershell -File scripts/git/New-CodexIssueWorktree.ps1:*)",
       "Bash(dotnet --version)",
       "Bash(dotnet --version:*)",
       "Bash(dotnet clean:*)",
@@ -36,17 +34,9 @@
       "Bash(npx playwright:*)",
       "Bash(npx vue-tsc:*)",
       "Bash(npx eslint:*)",
-      "PowerShell(py -3 -B scripts/agent_hooks/pre_tool_use.py:*)",
-      "PowerShell(py -3 -B scripts/agent_hooks/post_tool_use.py:*)",
-      "PowerShell(py -3 -B scripts/agent_hooks/post_tool_failure.py:*)",
       "PowerShell(py -3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
-      "PowerShell(py -3 -B scripts/agent_hooks/smoke_test.py:*)",
       "PowerShell(py -3 -B -m unittest discover -s scripts/agent_hooks -p \"test_render_failure_ledger.py\":*)",
-      "Bash(python3 -B scripts/agent_hooks/pre_tool_use.py:*)",
-      "Bash(python3 -B scripts/agent_hooks/post_tool_use.py:*)",
-      "Bash(python3 -B scripts/agent_hooks/post_tool_failure.py:*)",
       "Bash(python3 -B scripts/agent_hooks/render_failure_ledger.py:*)",
-      "Bash(python3 -B scripts/agent_hooks/smoke_test.py:*)",
       "Bash(python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py':*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
@@ -70,98 +60,6 @@
       "Bash(docker ps:*)",
       "Bash(docker :*)",
       "Bash(taskkill:*)"
-    ],
-    "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push --force-with-lease:*)",
-      "Bash(git clean -fd:*)",
-      "Bash(git checkout --:*)",
-      "Bash(rm -rf /:*)",
-      "Bash(rm -rf *:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(sudo *)",
-      "Bash(chmod -R 777 *)",
-      "Bash(curl * | sh*)",
-      "Bash(wget * | sh*)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "powershell",
-            "command": "$ErrorActionPreference = 'Stop'; try { & py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\pre_tool_use.py\"; if ($LASTEXITCODE -ne 0) { [Console]::Error.WriteLine('Taskdeck PreToolUse policy process failed; blocking command.'); exit 2 }; exit 0 } catch { [Console]::Error.WriteLine('Taskdeck PreToolUse handler launch failed; blocking command.'); exit 2 }",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git commit*)",
-            "shell": "powershell",
-            "command": "& \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\pre-commit.ps1\"",
-            "timeout": 120,
-            "statusMessage": "Running pre-commit checks..."
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "powershell",
-            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(gh pr create*)",
-            "shell": "powershell",
-            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_use.py\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "Bash|Edit|Write|MultiEdit|mcp__.*",
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "powershell",
-            "command": "py -3 -B \"$env:CLAUDE_PROJECT_DIR\\scripts\\agent_hooks\\post_tool_failure.py\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "shell": "powershell",
-            "command": "Write-Output 'Taskdeck repo. Read CLAUDE.md for context. Read docs/STATUS.md for current state before making changes. Check OUTSTANDING_TASKS.md and surface its open items in summaries.'",
-            "timeout": 5
-          }
-        ]
-      }
     ]
   }
 }

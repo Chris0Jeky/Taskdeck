@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Taskdeck.Application.Services;
 
@@ -30,7 +31,16 @@ public record ChatCompletionRequest(
     LlmRequestAttribution? Attribution = null,
     string? SystemPrompt = null,
     string? BoardContext = null
-);
+)
+{
+    /// <summary>
+    /// Per-request transport participation state. Providers that support the
+    /// dispatch boundary observe this context before validation and mark it only
+    /// when the request reaches the innermost HTTP transport handler.
+    /// </summary>
+    [JsonIgnore]
+    internal LlmDispatchContext DispatchContext { get; init; } = new();
+}
 
 public record ChatCompletionMessage(string Role, string Content);
 
@@ -63,7 +73,28 @@ public record LlmCompletionResult(
     string? DegradedReason = null,
     List<string>? Instructions = null,
     bool IsClarificationRequest = false
-);
+)
+{
+    /// <summary>
+    /// True only when <see cref="TokensUsed"/> came from authoritative upstream
+    /// usage metadata. A false value tells quota consumers to settle the reserved
+    /// estimate instead of treating a local output-only estimate as total usage.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasAuthoritativeTokenUsage { get; init; } = true;
+
+    // Internal billing/circuit metadata must not become part of the API wire shape.
+    // Providers set this false when selection/configuration rejected a request before
+    // any upstream dispatch, so quota callers can release rather than charge.
+    [JsonIgnore]
+    internal bool ShouldSettleQuotaReservation { get; init; } = true;
+
+    [JsonIgnore]
+    internal LlmProviderFailureKind ProviderFailureKind { get; init; }
+
+    [JsonIgnore]
+    internal bool CountsAsProviderFailure => ProviderFailureKind != LlmProviderFailureKind.None;
+}
 
 public record LlmTokenEvent(
     string Token,
@@ -71,7 +102,87 @@ public record LlmTokenEvent(
     string? Error = null,
     int? TokensUsed = null,
     string? Provider = null,
-    string? Model = null);
+    string? Model = null)
+{
+    // Keep these out of the positional constructor. LlmTokenEvent is part of the
+    // public Application contract, so extending its existing constructor would
+    // break already-compiled consumers even though in-tree source still builds.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsDegraded { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DegradedReason { get; init; }
+
+    [JsonIgnore]
+    internal LlmProviderFailureKind ProviderFailureKind { get; init; }
+
+    [JsonIgnore]
+    internal bool CountsAsProviderFailure => ProviderFailureKind != LlmProviderFailureKind.None;
+}
+
+internal enum LlmProviderFailureKind
+{
+    None = 0,
+    Transport = 1,
+    ResponseBody = 2,
+    Protocol = 3,
+    Timeout = 4,
+    ResponseLimit = 5
+}
+
+internal enum LlmDispatchPhase
+{
+    Unobserved = 0,
+    ObservedPreDispatch = 1,
+    Dispatched = 2
+}
+
+internal readonly record struct LlmDispatchSnapshot(
+    LlmDispatchPhase Phase,
+    string? Provider,
+    string? Model);
+
+/// <summary>
+/// Monotonic request-scoped state shared by the quota owner and HTTP pipeline.
+/// A lock keeps provider/model identity and the phase visible as one snapshot.
+/// </summary>
+internal sealed class LlmDispatchContext
+{
+    private readonly object _gate = new();
+    private LlmDispatchPhase _phase;
+    private string? _provider;
+    private string? _model;
+
+    public void Observe(string provider, string model)
+    {
+        lock (_gate)
+        {
+            if (_phase != LlmDispatchPhase.Unobserved)
+                return;
+
+            _provider = provider;
+            _model = model;
+            _phase = LlmDispatchPhase.ObservedPreDispatch;
+        }
+    }
+
+    public void MarkDispatched()
+    {
+        lock (_gate)
+        {
+            if (_phase == LlmDispatchPhase.ObservedPreDispatch)
+                _phase = LlmDispatchPhase.Dispatched;
+        }
+    }
+
+    public LlmDispatchSnapshot ReadSnapshot()
+    {
+        lock (_gate)
+        {
+            return new LlmDispatchSnapshot(_phase, _provider, _model);
+        }
+    }
+}
 
 public record LlmHealthStatus(
     bool IsAvailable,

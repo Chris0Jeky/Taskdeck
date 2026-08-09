@@ -10,15 +10,20 @@ public class GeminiLlmProvider : ILlmProvider
     private readonly HttpClient _httpClient;
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<GeminiLlmProvider> _logger;
+    private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     public GeminiLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
-        ILogger<GeminiLlmProvider> logger)
+        ILogger<GeminiLlmProvider> logger,
+        LlmProviderRuntimePolicy? runtimePolicy = null)
     {
         _httpClient = httpClient;
         _settings = settings;
         _logger = logger;
+        _allowLocalhostEndpoints = runtimePolicy?.AllowGeneralProviderLocalhost ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -27,7 +32,10 @@ public class GeminiLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("Gemini provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Live provider configuration is invalid.", GetConfiguredModelOrDefault());
@@ -70,6 +78,10 @@ public class GeminiLlmProvider : ILlmProvider
                     generationConfig
                 });
 
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -165,7 +177,10 @@ public class GeminiLlmProvider : ILlmProvider
         IReadOnlyList<ToolCallResult>? previousToolResults = null,
         CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("Gemini provider configuration invalid for tool call: {Error}", validationError);
             return new LlmToolCompletionResult(
@@ -182,6 +197,10 @@ public class GeminiLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(httpMessage, request.Attribution);
             httpMessage.Content = JsonContent.Create(BuildToolCallingPayload(request, tools, previousToolResults));
 
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(httpMessage);
+            }
             using var response = await _httpClient.SendAsync(httpMessage, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -425,13 +444,20 @@ public class GeminiLlmProvider : ILlmProvider
             var isLast = i == tokens.Length - 1;
             yield return isLast
                 ? new LlmTokenEvent(token, true, TokensUsed: result.TokensUsed, Provider: result.Provider, Model: result.Model)
+                {
+                    IsDegraded = result.IsDegraded,
+                    DegradedReason = result.DegradedReason
+                }
                 : new LlmTokenEvent(token, false);
         }
     }
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var error))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(
+                _settings,
+                out var error,
+                _allowLocalhostEndpoints))
         {
             return Task.FromResult(new LlmHealthStatus(false, "Gemini", error, GetConfiguredModelOrDefault()));
         }
@@ -443,7 +469,10 @@ public class GeminiLlmProvider : ILlmProvider
     {
         var model = GetConfiguredModelOrDefault();
 
-        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(_settings, out var validationError))
+        if (!LlmProviderSelectionPolicy.TryValidateGeminiSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             return new LlmHealthStatus(false, "Gemini", validationError, model, IsProbed: true);
         }

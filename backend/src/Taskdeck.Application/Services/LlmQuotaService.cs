@@ -117,6 +117,15 @@ public class LlmQuotaService : ILlmQuotaService
         LlmSurface surface,
         CancellationToken ct = default)
     {
+        return await ReserveAsync(userId, surface, _settings.ReservationEstimatedTokens, ct);
+    }
+
+    public async Task<QuotaReservationDto> ReserveAsync(
+        Guid userId,
+        LlmSurface surface,
+        int estimatedTokens,
+        CancellationToken ct = default)
+    {
         var now = DateTimeOffset.UtcNow;
         var hourStart = now.AddHours(-1);
         var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
@@ -124,7 +133,7 @@ public class LlmQuotaService : ILlmQuotaService
         var expiresAt = now.AddSeconds(Math.Max(1, _settings.ReservationTtlSeconds));
         // Floor of 1: an estimate of 0 would make reserved rows contribute nothing to the token/global
         // SUM subqueries, silently reopening the concurrent token-budget TOCTOU this fix closes.
-        var estimatedTokens = Math.Max(1, _settings.ReservationEstimatedTokens);
+        estimatedTokens = Math.Max(1, estimatedTokens);
 
         var outcome = await _unitOfWork.LlmUsageRecords.TryReserveAsync(
             userId,

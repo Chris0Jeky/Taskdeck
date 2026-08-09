@@ -3,7 +3,7 @@ using Taskdeck.Application.DTOs;
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// LLM-backed task extraction for transcript-source captures (REVIVAL-08 M1). Implementations
+/// LLM-backed schema-v2 task extraction for transcript-source captures (REVIVAL-08 M3). Implementations
 /// never throw for provider/config/parse problems — every non-success is reported as a
 /// <see cref="LlmCaptureTriageOutcome"/> so the caller (<see cref="CaptureTriageService"/>) can
 /// degrade to the deterministic extractor with honest provenance instead of failing the capture.
@@ -62,7 +62,7 @@ public enum LlmCaptureTriageOutcome
 /// </summary>
 public sealed record LlmCaptureTriageExtraction(
     LlmCaptureTriageOutcome Outcome,
-    CaptureTriageOutputV1? Output = null,
+    CaptureTriageOutputV2? Output = null,
     string? Provider = null,
     string? Model = null,
     string? Detail = null)

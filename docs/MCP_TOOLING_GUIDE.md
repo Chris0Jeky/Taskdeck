@@ -22,7 +22,7 @@ Operational companion:
 ### 0.1) Codex and Claude configuration parity
 - Codex project MCP servers live in `.codex/config.toml`.
 - Claude project MCP servers live in `.mcp.json`, with project approval and `/mcp` authentication where required.
-- Keep the shared baseline aligned: `openaiDeveloperDocs`, `github`, `context7`, `playwright`, `chromeDevTools`, and the Docker MCP gateway.
+- Keep the shared project baseline aligned: `openaiDeveloperDocs`, `github`, `context7`, `playwright`, `chromeDevTools`. The Docker MCP gateway is user-scope only (see "Need container/runtime deployment checks") and belongs in neither project file.
 - Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/hooks/worktree sessions and MCP auth flow.
 
 ### 1) Prefer the right tool over guessing
@@ -113,7 +113,7 @@ For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the h
 1. Use `docker` MCP for container/image lifecycle inspection.
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
-4. Project default Docker MCP gateway servers are in `.codex/config.toml` under `[mcp_servers.docker]` and mirrored for Claude-compatible project MCP loading in `.mcp.json`.
+4. The Docker MCP gateway is **not** a project server. It is declared once at user scope — `MCP_DOCKER` in `~/.claude.json` (Claude) and `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml` (Codex) — serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`. Never re-declare it in `.codex/config.toml` or `.mcp.json`: a second declaration starts a second gateway process per session (agent-harness#87).
 
 ---
 

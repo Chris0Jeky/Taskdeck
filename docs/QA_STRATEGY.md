@@ -1,6 +1,7 @@
 # Taskdeck QA Strategy
 
 **Date:** 2026-04-16
+**Last Updated:** 2026-08-01
 **Scope:** Comprehensive quality assurance plan covering the full test pyramid, regression strategy, release gating, and continuous quality improvement
 **Companion:** `docs/AUDIT.md`, `docs/TESTING_GUIDE.md`, `docs/HARDENING_AND_PERFORMANCE.md`
 
@@ -19,7 +20,7 @@
 | Load tests | k6 advisory | Needs gating |
 | Manual validation scenarios | 95+ across 3 slices | Excellent |
 | Cross-browser matrix | 5 projects | Good (nightly only) |
-| Test quality process | 2 rounds adversarial review per PR | Excellent |
+| Test quality process | Canonical global review pipeline + Taskdeck test-quality lens | Established |
 
 **Overall QA maturity: 8/10** — Strong automated foundation with gaps in performance gating, visual regression breadth, and some test discovery issues.
 
@@ -248,12 +249,9 @@ Every test PR must demonstrate:
 5. **Isolation** — No test depends on another test's side effects
 6. **Cleanup** — No leaked timers, listeners, or DOM elements
 
-### Adversarial Review Process
+### Test Review Lens
 
-For test expansion PRs:
-1. **Self-review** — Author verifies all assertions are meaningful
-2. **Independent cold review** — Second reviewer without prior context
-3. **Focus areas**: Tautological assertions, false-positive tests, missing preconditions, weak matchers, resource leaks
+Review count, reviewer invocation, convergence, and merge disposition come from the canonical global laws and `review-and-ship` pipeline. For Taskdeck test-expansion PRs, apply this repository-specific lens: tautological assertions, false-positive tests, missing preconditions, weak matchers, resource leaks, and checks that never exercise the changed seam.
 
 Historical evidence: This process caught 47 review-fix commits in a single wave, including false-positive tests, timer leaks, inverted assertions, and weak type bypasses.
 

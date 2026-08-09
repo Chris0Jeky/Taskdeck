@@ -1,0 +1,130 @@
+{
+  // Type-checks the unit-test tree (#1468). `tsconfig.app.json` excludes `src/tests/**`, so
+  // before this project existed no gate type-checked a single spec: `vue-tsc -b` skipped them and
+  // vitest transpiles without checking. A spec could reference a property that does not exist and
+  // every gate stayed green.
+  //
+  // Compiler options mirror `tsconfig.app.json` exactly, deliberately:
+  //   - `types` stays ["vite/client", "vite-plugin-pwa/client"]. Adding "node" clears 13 TS2591 in
+  //     the quarantined specs (3 bare `process`, 10 `node:` module imports) but breaks production
+  //     source pulled in here as a dependency. Measured against this exact config: exactly one error,
+  //     `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'` —
+  //     `greetingTimer` is annotated `ReturnType<typeof window.setInterval>` (:225), which resolves
+  //     to node's `Timeout` once node types are in scope, while the call still returns the DOM
+  //     `number`.
+  //   - "vitest/globals" is not needed: 283 of the 284 spec files import their vitest symbols
+  //     explicitly, and the one that does not (config/PaperBranding.spec.ts) is quarantined below.
+  //
+  // `include` carries `src/**/*.d.ts` for a non-obvious reason: `src/types/web-speech.d.ts` is an
+  // AMBIENT declaration file (no imports/exports, global scope). `tsconfig.app.json` picks it up as
+  // a root via `src/**/*.ts`, but nothing imports it, so a `src/tests/**`-only include would leave
+  // it out of this program entirely — and production source pulled in as a dependency would then
+  // compile without those globals. Concretely, un-quarantining `composables/useVoiceCapture.spec.ts`
+  // without this line reports 3 errors inside untouched production source
+  // (`useVoiceCapture.ts` — TS2304/TS2551 on `SpeechRecognition`) on top of that spec's own 4, and
+  // masks 2 of them by making two `@ts-expect-error` directives spuriously "used". With this line,
+  // the same experiment reports only the spec's own errors. Verified both ways.
+  //
+  // SCOPE: the spec tree is `src/tests/**` only (plus the ambient declarations above). Vitest runs
+  // 302 spec files in total — 284 here plus 18 in the frontend-root `tests/` directory. Those 18 are NOT covered and remain unchecked: they are
+  // Node-flavoured — they import the `.mjs` scripts under `scripts/` and use `process`/`NodeJS`, so
+  // they need `types: ["node"]`, which is precisely the setting that breaks production source in
+  // THIS project. Measured 2026-08-07 with this project's options: 54 errors in the run — 42 across
+  // 15 of those 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies —
+  // mostly TS7016 (untyped `.mjs` imports), TS7006 and TS2503. Covering them is a separate project
+  // with a separate type environment, tracked in #1607.
+  //
+  // The `exclude` list is the QUARANTINE, tracked in #1468. Every file listed had type errors when
+  // this project was introduced: 415 errors across 64 of the 286 TypeScript files under
+  // `src/tests/` (284 specs plus `setup.ts` and one mock), measured 2026-08-07. That leaves **220
+  // of the 302 spec files Vitest runs** type-checked; the 82 that are not are these 64 plus the 18
+  // in the frontend-root `tests/` directory. New spec files under `src/tests/` are checked by
+  // default — they are not in this list. The list may only shrink: delete an entry once its file is
+  // fixed; never add one to make a red build green.
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
+    "types": ["vite/client", "vite-plugin-pwa/client"],
+
+    /* Linting — identical bar to tsconfig.app.json */
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "src/tests/**/*.ts",
+    "src/tests/**/*.tsx",
+    "src/tests/**/*.vue",
+    "src/**/*.d.ts"
+  ],
+  "exclude": [
+    "src/tests/api/http.spec.ts",
+    "src/tests/components/AppShell.paperVariant.spec.ts",
+    "src/tests/components/AppShell.spec.ts",
+    "src/tests/components/BoardCanvas.coverage.spec.ts",
+    "src/tests/components/BoardCanvas.spec.ts",
+    "src/tests/components/BoardDialogHost.spec.ts",
+    "src/tests/components/BoardSettingsModal.spec.ts",
+    "src/tests/components/CaptureModal.spec.ts",
+    "src/tests/components/CardItem.coverage.spec.ts",
+    "src/tests/components/CardModal.spec.ts",
+    "src/tests/components/FilterPanel.spec.ts",
+    "src/tests/components/LabelManagerModal.spec.ts",
+    "src/tests/components/inbox/inboxUtils.spec.ts",
+    "src/tests/components/paper/useInkBleed.spec.ts",
+    "src/tests/components/review/CohortDashboard.spec.ts",
+    "src/tests/composables/useAnalyticsScript.spec.ts",
+    "src/tests/composables/useBoardRealtime.spec.ts",
+    "src/tests/composables/useCaptureQueueSync.spec.ts",
+    "src/tests/composables/useEscapeToClose.spec.ts",
+    "src/tests/composables/useReviewActions.spec.ts",
+    "src/tests/composables/useReviewProposals.spec.ts",
+    "src/tests/composables/useShortcutContext.spec.ts",
+    "src/tests/composables/useStarterPackCatalog.spec.ts",
+    "src/tests/composables/useStarterPackImport.spec.ts",
+    "src/tests/composables/useStarterPackResult.spec.ts",
+    "src/tests/composables/useVirtualList.spec.ts",
+    "src/tests/composables/useVoiceCapture.spec.ts",
+    "src/tests/config/PaperBranding.spec.ts",
+    "src/tests/property/storeResilience.spec.ts",
+    "src/tests/public/shareTargetHandler.spec.ts",
+    "src/tests/store/agentStore.spec.ts",
+    "src/tests/store/auditStore.spec.ts",
+    "src/tests/store/board/boardStoreHelpers.spec.ts",
+    "src/tests/store/board/cardFilterStore.spec.ts",
+    "src/tests/store/boardStore.columnReorder.spec.ts",
+    "src/tests/store/boardStore.integration.spec.ts",
+    "src/tests/store/boardStore.spec.ts",
+    "src/tests/store/captureStore.integration.spec.ts",
+    "src/tests/store/captureStore.spec.ts",
+    "src/tests/store/queueStore.integration.spec.ts",
+    "src/tests/store/queueStore.polling.spec.ts",
+    "src/tests/store/queueStore.spec.ts",
+    "src/tests/store/savedViewStore.spec.ts",
+    "src/tests/store/workspaceStore.spec.ts",
+    "src/tests/theme/authFocusRing.spec.ts",
+    "src/tests/theme/paperEmberContrast.spec.ts",
+    "src/tests/utils/chat.spec.ts",
+    "src/tests/utils/scenarioSchema.spec.ts",
+    "src/tests/utils/traceReplay.spec.ts",
+    "src/tests/views/ActivityView.spec.ts",
+    "src/tests/views/AutomationChatView.spec.ts",
+    "src/tests/views/AutomationQueueView.spec.ts",
+    "src/tests/views/BoardView.spec.ts",
+    "src/tests/views/InboxView.spec.ts",
+    "src/tests/views/MetricsView.coverage.spec.ts",
+    "src/tests/views/NotificationInboxView.spec.ts",
+    "src/tests/views/ReviewView.coverage.spec.ts",
+    "src/tests/views/ReviewView.spec.ts",
+    "src/tests/views/ShareTargetView.spec.ts",
+    "src/tests/views/paper/PaperBoardView.spec.ts",
+    "src/tests/views/paper/inbox/PaperTriageTable.spec.ts",
+    "src/tests/views/paper/review/PaperReviewView.spec.ts",
+    "src/tests/views/paper/review/ReviewKeymap.spec.ts",
+    "src/tests/views/paper/review/ReviewProvenance.spec.ts"
+  ]
+}

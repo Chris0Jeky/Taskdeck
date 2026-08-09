@@ -10,15 +10,21 @@ public class OllamaLlmProvider : ILlmProvider
     private readonly HttpClient _httpClient;
     private readonly LlmProviderSettings _settings;
     private readonly ILogger<OllamaLlmProvider> _logger;
+    private readonly bool _allowLocalhostEndpoints;
+    private readonly bool _protectOutboundTelemetry;
 
     public OllamaLlmProvider(
         HttpClient httpClient,
         LlmProviderSettings settings,
-        ILogger<OllamaLlmProvider> logger)
+        ILogger<OllamaLlmProvider> logger,
+        LlmProviderRuntimePolicy? runtimePolicy = null)
     {
         _httpClient = httpClient;
         _settings = settings;
         _logger = logger;
+        _allowLocalhostEndpoints = runtimePolicy?.AllowOllamaLocalhost ??
+            _settings.Ollama?.AllowLocalhostEndpoints ?? false;
+        _protectOutboundTelemetry = runtimePolicy?.ProtectOutboundTelemetry ?? false;
     }
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
@@ -27,7 +33,10 @@ public class OllamaLlmProvider : ILlmProvider
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             _logger.LogWarning("Ollama provider configuration invalid: {Error}", validationError);
             return BuildFallbackResult(lastUserMessage, "Local provider configuration is invalid.", GetConfiguredModelOrDefault());
@@ -39,6 +48,10 @@ public class OllamaLlmProvider : ILlmProvider
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
 
+            if (_protectOutboundTelemetry)
+            {
+                ProtectedOutboundTelemetryHandler.PrepareForSend(message);
+            }
             using var response = await _httpClient.SendAsync(message, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
@@ -135,13 +148,20 @@ public class OllamaLlmProvider : ILlmProvider
             var isLast = i == tokens.Length - 1;
             yield return isLast
                 ? new LlmTokenEvent(token, true, TokensUsed: result.TokensUsed, Provider: result.Provider, Model: result.Model)
+                {
+                    IsDegraded = result.IsDegraded,
+                    DegradedReason = result.DegradedReason
+                }
                 : new LlmTokenEvent(token, false);
         }
     }
 
     public Task<LlmHealthStatus> GetHealthAsync(CancellationToken ct = default)
     {
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var error, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var error,
+                _allowLocalhostEndpoints))
         {
             return Task.FromResult(new LlmHealthStatus(false, "Ollama", error, GetConfiguredModelOrDefault()));
         }
@@ -153,7 +173,10 @@ public class OllamaLlmProvider : ILlmProvider
     {
         var model = GetConfiguredModelOrDefault();
 
-        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(_settings, out var validationError, allowLocalhostEndpoints: _settings.Ollama?.AllowLocalhostEndpoints ?? false))
+        if (!LlmProviderSelectionPolicy.TryValidateOllamaSettings(
+                _settings,
+                out var validationError,
+                _allowLocalhostEndpoints))
         {
             return new LlmHealthStatus(false, "Ollama", validationError, model, IsProbed: true);
         }

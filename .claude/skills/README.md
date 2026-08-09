@@ -8,7 +8,7 @@ Claude Code skills live here and mirror the Taskdeck workflows exposed to Codex 
 | --- | --- |
 | `taskdeck-issue-batch-orchestrator` | many issues, worker/worktree coordination, PR/review/CI batches, docs reconciliation |
 | `taskdeck-worktree-issue-worker` | one issue in an isolated worktree |
-| `taskdeck-pr-review-loop` | self-review, fresh adversarial review, review/bot comments |
+| `taskdeck-pr-review-loop` | Taskdeck review lenses (pipeline: global `review-and-ship`) |
 | `taskdeck-ci-conflict-recovery` | failing CI, stale branches, merge conflicts, blocked PRs |
 | `issue-to-pr` | simple one-issue-to-PR flow |
 

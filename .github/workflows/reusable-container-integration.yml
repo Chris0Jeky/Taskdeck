@@ -40,13 +40,40 @@ jobs:
       - name: Verify Docker is available
         run: docker info
 
+      - name: Verify Docker-required contract fails closed
+        shell: bash
+        run: |
+          set +e
+          TASKDECK_REQUIRE_DOCKER=true TASKDECK_FORCE_DOCKER_UNAVAILABLE=true \
+            dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj \
+              --configuration Release --no-restore \
+              --filter "FullyQualifiedName~BoardCrudIntegrationTests" \
+              --logger "trx;LogFileName=container-integration-negative.trx" \
+              --results-directory "backend/TestResults/container-integration-negative"
+          test_exit=$?
+          set -e
+
+          if [ "$test_exit" -eq 0 ]; then
+            echo "Forced Docker-unavailable contract unexpectedly passed."
+            exit 1
+          fi
+
+          python3 scripts/ci/assert_container_integration_results.py \
+            --trx "backend/TestResults/container-integration-negative/container-integration-negative.trx" \
+            --mode negative
+
       - name: Run container-backed integration tests
+        env:
+          TASKDECK_REQUIRE_DOCKER: "true"
         run: dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=container-integration.trx" --results-directory "backend/TestResults/container-integration"
+
+      - name: Verify PostgreSQL integration results
+        run: python3 scripts/ci/assert_container_integration_results.py --trx "backend/TestResults/container-integration/container-integration.trx" --mode positive --minimum-postgres-results 28
 
       - name: Upload container integration test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: container-integration-trx
-          path: backend/TestResults/container-integration
+          path: backend/TestResults/container-integration*
           if-no-files-found: ignore

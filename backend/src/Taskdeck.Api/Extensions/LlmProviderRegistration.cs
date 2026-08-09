@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
 using Polly.Extensions.Http;
 using Taskdeck.Api.Workers;
@@ -10,6 +12,8 @@ namespace Taskdeck.Api.Extensions;
 
 public static class LlmProviderRegistration
 {
+    internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+
     public static IServiceCollection AddLlmProviders(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -77,10 +81,20 @@ public static class LlmProviderRegistration
             circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
+        var openAiCompatibleCircuitBreakerPolicy = BuildOpenAiCompatibleCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAICompatible", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
         var localhostPolicy = ResolveLocalhostPolicy(services, configuration);
+        services.AddSingleton(localhostPolicy);
+        services.TryAddTransient<ProtectedOutboundTelemetryHandler>();
+        services.TryAddSingleton<ProtectedOutboundMeterFactory>();
+        var egressRegistry = GetOrCreateEgressRegistry(services);
+        RegisterOpenAiCompatibleEgress(
+            egressRegistry,
+            llmProviderSettings,
+            localhostPolicy.AllowGeneralProviderLocalhost);
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -88,7 +102,7 @@ public static class LlmProviderRegistration
             var timeoutSeconds = settings.OpenAi?.TimeoutSeconds > 0 ? settings.OpenAi.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
@@ -97,6 +111,9 @@ public static class LlmProviderRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -104,14 +121,46 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(openAiCircuitBreakerPolicy);
+        .AddPolicyHandler(openAiCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        services.AddHttpClient(OpenAiCompatibleHttpClientName, (sp, client) =>
+        {
+            var settings = sp.GetRequiredService<LlmProviderSettings>();
+            var timeoutSeconds = settings.OpenAiCompatible?.TimeoutSeconds > 0 ? settings.OpenAiCompatible.TimeoutSeconds : 30;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        })
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+        {
+            return new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
+                ConnectCallback = (context, cancellationToken) =>
+                    OutboundWebhookConnectCallback.ConnectAsync(
+                        context,
+                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
+                        cancellationToken)
+            };
+        })
+        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(sp => new EgressEnvelopeHandler(
+            sp.GetRequiredService<IEgressRegistry>(),
+            sp.GetRequiredService<ILogger<EgressEnvelopeHandler>>(),
+            nameof(OpenAiCompatibleLlmProvider),
+            followRedirects: false))
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
         services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             // SSRF protection: DNS-level check prevents connections to private/internal IPs
             // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
@@ -119,6 +168,9 @@ public static class LlmProviderRegistration
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -126,18 +178,23 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(geminiCircuitBreakerPolicy);
+        .AddPolicyHandler(geminiCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
         services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
             var timeoutSeconds = settings.Ollama?.TimeoutSeconds > 0 ? settings.Ollama.TimeoutSeconds : 120;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
-        .ConfigurePrimaryHttpMessageHandler(_ =>
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
+                UseProxy = false,
+                ActivityHeadersPropagator = null,
+                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
                 ConnectCallback = (context, cancellationToken) =>
                     OutboundWebhookConnectCallback.ConnectAsync(
                         context,
@@ -145,7 +202,9 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(ollamaCircuitBreakerPolicy);
+        .AddPolicyHandler(ollamaCircuitBreakerPolicy)
+        .RemoveAllLoggers()
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
 
         services.AddScoped<MockLlmProvider>();
         services.AddScoped<ILlmProvider>(sp =>
@@ -163,6 +222,12 @@ public static class LlmProviderRegistration
             return decision.ProviderKind switch
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
+                LlmProviderKind.OpenAiCompatible => CreateOpenAiCompatibleProvider(
+                    sp,
+                    settings,
+                    circuitBreakerTracker,
+                    circuitBreakerSettings,
+                    localhostPolicy),
                 LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
@@ -170,6 +235,62 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
+        IServiceProvider services,
+        LlmProviderSettings settings,
+        CircuitBreakerStateTracker circuitBreakerTracker,
+        CircuitBreakerSettings circuitBreakerSettings,
+        LlmProviderRuntimePolicy runtimePolicy)
+    {
+        RegisterOpenAiCompatibleEgress(
+            services.GetRequiredService<IEgressRegistry>(),
+            settings,
+            runtimePolicy.AllowGeneralProviderLocalhost);
+        return new OpenAiCompatibleLlmProvider(
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAiCompatibleHttpClientName),
+            settings,
+            services.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>(),
+            circuitBreakerTracker,
+            circuitBreakerSettings,
+            runtimePolicy);
+    }
+
+    private static IEgressRegistry GetOrCreateEgressRegistry(IServiceCollection services)
+    {
+        var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IEgressRegistry));
+        if (existing?.ImplementationInstance is IEgressRegistry registry)
+            return registry;
+
+        var created = new EgressRegistry();
+        if (existing is null)
+            services.AddSingleton<IEgressRegistry>(created);
+        return created;
+    }
+
+    internal static void RegisterOpenAiCompatibleEgress(
+        IEgressRegistry registry,
+        LlmProviderSettings settings,
+        bool allowLocalhostEndpoints)
+    {
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(
+                settings,
+                out _,
+                allowLocalhostEndpoints) ||
+            !Uri.TryCreate(settings.OpenAiCompatible.BaseUrl, UriKind.Absolute, out var endpoint))
+            return;
+
+        if (registry.GetAllEntries().Any(entry =>
+                string.Equals(entry.Host.TrimEnd('.'), endpoint.Host.TrimEnd('.'), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.ToolOrAgentName, nameof(OpenAiCompatibleLlmProvider), StringComparison.Ordinal)))
+            return;
+
+        registry.Register(new EgressEntry(
+            endpoint.Host,
+            "LLM prompt with board context and user input",
+            nameof(OpenAiCompatibleLlmProvider),
+            EgressDataClassification.UserContent));
     }
 
     /// <summary>
@@ -211,19 +332,48 @@ public static class LlmProviderRegistration
     }
 
     /// <summary>
+    /// Builds the compatible-provider policy. HTTP 501 is intentionally excluded:
+    /// the provider recognizes it as an SSE capability rejection and performs a
+    /// buffered retry, which must remain reachable even at a threshold of one.
+    /// </summary>
+    internal static IAsyncPolicy<HttpResponseMessage> BuildOpenAiCompatibleCircuitBreakerPolicy(
+        CircuitBreakerStateTracker tracker,
+        string circuitName,
+        CircuitBreakerSettings settings)
+    {
+        return Policy<HttpResponseMessage>
+            .Handle<HttpRequestException>()
+            .OrResult(response =>
+                response.StatusCode == HttpStatusCode.RequestTimeout ||
+                ((int)response.StatusCode >= 500 &&
+                 response.StatusCode != HttpStatusCode.NotImplemented))
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: settings.FailureThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
+                onBreak: (outcome, breakDuration) =>
+                {
+                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    tracker.RecordState(circuitName, CircuitState.Open, reason);
+                },
+                onReset: () => tracker.RecordState(circuitName, CircuitState.Closed),
+                onHalfOpen: () => tracker.RecordState(circuitName, CircuitState.HalfOpen));
+    }
+
+    /// <summary>
     /// Determines whether localhost LLM endpoints should be permitted based on the
     /// hosting environment and LLM provider configuration. Returns true only in
     /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
     /// enabling developers to use local LLM gateways (Ollama, LM Studio, etc.).
     /// </summary>
-    internal static LlmProviderLocalhostPolicy ResolveLocalhostPolicy(
+    internal static LlmProviderRuntimePolicy ResolveLocalhostPolicy(
         IServiceCollection services,
         IConfiguration configuration)
     {
         var allowGeneralProviderLocalhost = IsLocalhostLlmAllowed(services, configuration);
-        return new LlmProviderLocalhostPolicy(
+        return new LlmProviderRuntimePolicy(
             AllowGeneralProviderLocalhost: allowGeneralProviderLocalhost,
-            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost));
+            AllowOllamaLocalhost: IsOllamaLocalhostLlmAllowed(configuration, allowGeneralProviderLocalhost),
+            ProtectOutboundTelemetry: true);
     }
 
     private static bool IsLocalhostLlmAllowed(
@@ -260,7 +410,3 @@ public static class LlmProviderRegistration
                allowGeneralProviderLocalhost;
     }
 }
-
-internal readonly record struct LlmProviderLocalhostPolicy(
-    bool AllowGeneralProviderLocalhost,
-    bool AllowOllamaLocalhost);

@@ -221,7 +221,7 @@ public sealed class ArtefactExtractionRepositoryBatchIntegrationTests
         var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-extraction-batch-{Guid.NewGuid():N}.db");
         var interceptor = new CapturingCommandInterceptor();
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(dbPath))
             .AddInterceptors(interceptor)
             .Options;
         return (options, interceptor, dbPath);
@@ -263,7 +263,6 @@ public sealed class ArtefactExtractionRepositoryBatchIntegrationTests
 
     private static void Cleanup(string dbPath)
     {
-        SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
         {
             var path = dbPath + suffix;

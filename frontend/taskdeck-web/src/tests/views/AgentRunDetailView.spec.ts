@@ -33,7 +33,7 @@ const MOCK_RUN_DETAIL: AgentRunDetail = {
   id: 'run-1',
   agentProfileId: 'profile-1',
   userId: 'user-1',
-  boardId: null,
+  boardId: 'board-1',
   triggerType: 'manual',
   objective: 'Triage inbox captures',
   status: 'Completed',
@@ -186,8 +186,23 @@ describe('AgentRunDetailView', () => {
 
     await wrapper.find('.td-run-detail__proposal-link').trigger('click')
     expect(mockPush).toHaveBeenCalledWith({
-      path: '/workspace/review',
-      query: { proposalId: 'proposal-1' },
+      name: 'workspace-review',
+      query: { boardId: 'board-1' },
+      hash: '#proposal-proposal-1',
+    })
+  })
+
+  it('preserves a boardless proposal deep link without adding board context', async () => {
+    mockAgentStore.runDetail = { ...MOCK_RUN_DETAIL, boardId: null }
+    const wrapper = mount(AgentRunDetailView)
+    await waitForUi()
+
+    await wrapper.find('.td-run-detail__proposal-link').trigger('click')
+
+    expect(mockPush).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: undefined,
+      hash: '#proposal-proposal-1',
     })
   })
 
@@ -227,6 +242,23 @@ describe('AgentRunDetailView', () => {
     const indicator = wrapper.find('.td-run-detail__live-indicator')
     expect(indicator.exists()).toBe(true)
     expect(indicator.text()).toContain('Run is in progress')
+  })
+
+  it('does not present a queued API-created run as in progress', async () => {
+    mockAgentStore.runDetail = {
+      ...MOCK_RUN_DETAIL,
+      status: 'Queued',
+      events: [],
+      summary: null,
+      proposalId: null,
+      completedAt: null,
+    }
+    const wrapper = mount(AgentRunDetailView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
+    expect(wrapper.text()).toContain('Requested:')
+    expect(wrapper.find('.td-run-detail__live-indicator').exists()).toBe(false)
   })
 
   it('navigates back to runs list when back button is clicked', async () => {
