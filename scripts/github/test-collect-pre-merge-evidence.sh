@@ -387,13 +387,17 @@ run_start() {
   local case_root="$2"
   local state_file="$3"
   local token_tmp="$case_root/operator-session-token.tmp"
-  shift 3
+  local requested_pr="${4-}"
+  local git_executable="${5:-$case_root/bin/git}"
+  local -a start_args=()
+  [[ -n "$git_executable" ]] || git_executable="$case_root/bin/git"
+  [[ -n "$requested_pr" ]] && start_args=("$requested_pr")
   prepare_scan_definitions "$scenario" "$case_root"
   if MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
-    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+    TASKDECK_GIT_EXECUTABLE="$git_executable" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
-    "$collector" start "$@" >"$token_tmp"; then
+    "$collector" start "${start_args[@]}" >"$token_tmp"; then
     mv -f "$token_tmp" "$case_root/operator-session-token"
   else
     rm -f "$token_tmp"
@@ -406,12 +410,13 @@ run_finish() {
   local case_root="$2"
   local state_file="$3"
   local token_case_root="${4:-$case_root}"
+  local git_executable="${5:-$case_root/bin/git}"
   local session_token
   session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
   printf '%s\n' "$session_token" | env MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
-    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+    TASKDECK_GIT_EXECUTABLE="$git_executable" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
     "$collector" finish
 }
@@ -563,6 +568,19 @@ for scenario in index-inspection-failure replacement-ref-inspection-failure; do
   fi
 done
 pass "index and replacement-ref inspection failures fail closed"
+
+case_root="$fixture_root/git-path-with-spaces"
+make_mocks "$case_root"
+spaced_git="$case_root/git executable/git"
+mkdir -p "$(dirname "$spaced_git")"
+cp "$case_root/bin/git" "$spaced_git"
+chmod +x "$spaced_git"
+run_start happy "$case_root" "$case_root/state.json" 42 "$spaced_git" >/dev/null
+run_finish happy "$case_root" "$case_root/state.json" "$case_root" "$spaced_git" \
+  >"$case_root/packet.json"
+"$real_jq" -e '.collectorState == "COMPLETE"' "$case_root/packet.json" >/dev/null ||
+  fail "Git executable path containing spaces did not complete evidence collection"
+pass "Git executable paths containing spaces cover hidden-index and replacement-ref probes"
 
 case_root="$fixture_root/expired-session-restart"
 make_mocks "$case_root"

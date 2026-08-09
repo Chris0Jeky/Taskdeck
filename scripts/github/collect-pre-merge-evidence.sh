@@ -176,13 +176,13 @@ assert_clean_exact_checkout() {
   [[ "$local_head" == "$expected_head" ]] ||
     die "local HEAD $local_head is not PR head $expected_head"
 
-  if ! hidden_index_entries="$($git_executable ls-files -v)"; then
+  if ! hidden_index_entries="$("$git_executable" ls-files -v)"; then
     die "cannot inspect tracked index flags"
   fi
   hidden_index_entries="$(printf '%s\n' "$hidden_index_entries" | awk '$1 ~ /^[a-zS]$/ {print; found=1} END {exit found ? 0 : 1}')" || true
   [[ -z "$hidden_index_entries" ]] ||
     die "exact-head evidence rejects assume-unchanged or skip-worktree index flags"
-  if ! replacement_refs="$($git_executable for-each-ref --format='%(refname)' refs/replace/)"; then
+  if ! replacement_refs="$("$git_executable" for-each-ref --format='%(refname)' refs/replace/)"; then
     die "cannot inspect Git replacement refs"
   fi
   [[ -z "$replacement_refs" ]] || die "exact-head evidence rejects Git replacement refs"
