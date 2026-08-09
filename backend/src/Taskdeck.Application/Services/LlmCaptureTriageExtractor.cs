@@ -178,6 +178,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
         // actual tokens or release. This serializes concurrent triage/chat calls at the boundary.
         Guid? quotaReservationId = null;
+        var quotaEstimatedTokens = 0;
         if (_quotaService is not null)
         {
             var reservationEstimate = EstimateReservationTokens(payload.Text);
@@ -193,6 +194,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                     Detail: reservation.DeniedReason);
             }
             quotaReservationId = reservation.ReservationId;
+            quotaEstimatedTokens = reservation.EstimatedTokens;
         }
 
         var request = new ChatCompletionRequest(
@@ -220,13 +222,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             result = await _llmProvider.CompleteAsync(request, cancellationToken);
             completed = result;
 
-            // Settle the reservation. Tokens are consumed whether or not the content is usable
-            // (truncation is the clearest case: degraded AND billed), so a call that used tokens commits
-            // before any quality checks; a zero-token call releases (mirrors the prior "record only if
-            // > 0" behavior).
+            // Settle before quality checks because degraded output can still be billed. Use
+            // authoritative combined usage when present; otherwise commit the reservation estimate
+            // for a dispatched call so short output cannot undercharge a large transcript.
             if (quotaReservationId is Guid reservationId)
             {
-                if (result.TokensUsed > 0)
+                var quotaTokens = ResolveQuotaTokens(result, quotaEstimatedTokens, request.DispatchContext);
+                if (quotaTokens > 0)
                 {
                     // CancellationToken.None (M1, #1427 review): tokens are already billed at this
                     // point, so finalization must not be cancellable — a cancelled commit would trip
@@ -237,7 +239,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         LlmSurface.CaptureTriage,
                         result.Provider,
                         result.Model,
-                        result.TokensUsed,
+                        quotaTokens,
                         0,
                         CancellationToken.None);
                 }
@@ -262,15 +264,23 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             {
                 try
                 {
-                    if (completed is { TokensUsed: > 0 } billed)
+                    var dispatch = request.DispatchContext.ReadSnapshot();
+                    var quotaTokens = completed is null
+                        ? dispatch.Phase == LlmDispatchPhase.Dispatched
+                            ? quotaEstimatedTokens
+                            : 0
+                        : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext);
+                    var billedProvider = completed?.Provider ?? dispatch.Provider;
+                    var billedModel = completed?.Model ?? dispatch.Model;
+                    if (quotaTokens > 0 && billedProvider is not null && billedModel is not null)
                     {
                         await _quotaService!.CommitReservationAsync(
                             unsettledId,
                             userId,
                             LlmSurface.CaptureTriage,
-                            billed.Provider,
-                            billed.Model,
-                            billed.TokensUsed,
+                            billedProvider,
+                            billedModel,
+                            quotaTokens,
                             0,
                             CancellationToken.None);
                     }
@@ -286,7 +296,11 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         "Quota reservation {ReservationId} settle failed in transcript triage (billed tokens: {Tokens}); " +
                         "the row stays Reserved until the TTL sweep.",
                         unsettledId,
-                        completed?.TokensUsed ?? 0);
+                        completed is null
+                            ? request.DispatchContext.ReadSnapshot().Phase == LlmDispatchPhase.Dispatched
+                                ? quotaEstimatedTokens
+                                : 0
+                            : ResolveQuotaTokens(completed, quotaEstimatedTokens, request.DispatchContext));
                 }
             }
         }
@@ -496,5 +510,25 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         }
 
         return sanitized;
+    }
+
+    private static int ResolveQuotaTokens(
+        LlmCompletionResult result,
+        int reservationEstimate,
+        LlmDispatchContext dispatchContext)
+    {
+        var dispatch = dispatchContext.ReadSnapshot();
+        if (dispatch.Phase == LlmDispatchPhase.ObservedPreDispatch)
+            return 0;
+        if (dispatch.Phase == LlmDispatchPhase.Dispatched)
+            return result.HasAuthoritativeTokenUsage && result.TokensUsed > 0
+                ? result.TokensUsed
+                : reservationEstimate;
+
+        return result.HasAuthoritativeTokenUsage
+            ? result.TokensUsed
+            : result.ShouldSettleQuotaReservation
+                ? reservationEstimate
+                : 0;
     }
 }

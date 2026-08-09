@@ -221,8 +221,16 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `Llm__EnableLiveProviders` | `false` | Enable live LLM API calls |
-| `Llm__Provider` | `Mock` | LLM provider: `Mock`, `OpenAI`, or `Gemini` |
+| `Llm__Provider` | `Mock` | LLM provider: `Mock`, `OpenAI`, `OpenAICompatible`, or `Gemini` |
 | `Llm__OpenAi__ApiKey` | (empty) | OpenAI API key |
+| `Llm__OpenAiCompatible__ApiKey` | (empty) | Compatible-provider API key; store as a platform secret |
+| `Llm__OpenAiCompatible__BaseUrl` | (empty) | Required public HTTPS API base URL; cloud Production does not permit local HTTP |
+| `Llm__OpenAiCompatible__Model` | (empty) | Required compatible model identifier |
+| `Llm__OpenAiCompatible__TimeoutSeconds` | `30` | Full response deadline, including body/SSE reads |
+| `Llm__OpenAiCompatible__MaxResponseBytes` | `1048576` | Buffered or aggregate SSE response byte budget |
+| `Llm__OpenAiCompatible__MaxSseLineBytes` | `65536` | Per-line SSE byte budget |
+| `Llm__OpenAiCompatible__MaxSseEventBytes` | `131072` | Per-event SSE byte budget |
+| `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` | (empty) | Optional non-secret gateway header; `HTTP-Referer` and `X-Title` are common |
 | `Llm__Gemini__ApiKey` | (empty) | Gemini API key |
 | `GitHubOAuth__ClientId` | (empty) | GitHub OAuth app client ID |
 | `GitHubOAuth__ClientSecret` | (empty) | GitHub OAuth app secret |
