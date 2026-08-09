@@ -47,7 +47,7 @@ python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 ```
 
-Claude Code hook failures may append raw entries to `docs/agentic/failure_ledger.jsonl`; render first, then run the synchronization test before handoff when those entries should become visible. The Required CI gate deliberately keeps the opposite fail-before-render order so an unrendered JSONL change cannot be masked.
+Taskdeck does not append failures automatically. Add only a deliberate, redacted JSONL record for a real durable failure, then render and run the synchronization test before handoff. The Required CI gate deliberately keeps the opposite fail-before-render order so an unrendered JSONL change cannot be masked.
 
 ## Do Not
 

@@ -135,6 +135,21 @@ public class CaptureTriageService : ICaptureTriageService
                 reuseModel));
         }
 
+        // Re-check current board access before service-level board/column reads or transcript extraction. A queued
+        // capture may outlive a membership change; avoid provider/quota work for a requester who
+        // can no longer target this board. The final operation-level validation below remains the
+        // TOCTOU guard immediately before proposal persistence.
+        var boardAccessResult = await _policyEngine.ValidateBoardAccessAsync(
+            userId,
+            boardId,
+            cancellationToken);
+        if (!boardAccessResult.IsSuccess)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                boardAccessResult.ErrorCode,
+                boardAccessResult.ErrorMessage);
+        }
+
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId.Value, cancellationToken);
         if (board == null)
         {
@@ -154,20 +169,39 @@ public class CaptureTriageService : ICaptureTriageService
                 "No columns found in board");
         }
 
-        CaptureTriageOutputV1? outputModel = null;
+        IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
+        var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
         var triageModel = TriageModelName;
 
         if (llmIsCandidate)
         {
             var extraction = await RunLlmExtractionLegAsync(captureItemId, userId, boardId, payload, cancellationToken);
-            if (extraction.Succeeded)
+            if (extraction.Succeeded && extraction.Output is not null)
             {
-                outputModel = extraction.Output;
-                triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
-                    extraction.Provider, CaptureRequestContract.MaxProviderLength);
-                triageModel = CaptureRequestContract.SanitizeProvenanceMetadata(
-                    extraction.Model, CaptureRequestContract.MaxModelLength);
+                var outputValidation = CaptureTriageOutputContract.Validate(extraction.Output);
+                if (outputValidation.IsSuccess)
+                {
+                    // Schema-v2's evidence quote remains visible in the proposed card description.
+                    // Its classification, assignee, due-date, and confidence metadata are deliberately
+                    // non-mutating at this boundary: REVIVAL-09/-11 own durable spans/provenance and
+                    // review presentation before any later consumer can act on those model hints.
+                    proposalTasks = outputValidation.Value.Tasks
+                        .Select(task => new CaptureTriageTaskV1(task.Title, task.EvidenceQuote))
+                        .ToList();
+                    triagePromptVersion = outputValidation.Value.PromptVersion;
+                    triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Provider, CaptureRequestContract.MaxProviderLength);
+                    triageModel = CaptureRequestContract.SanitizeProvenanceMetadata(
+                        extraction.Model, CaptureRequestContract.MaxModelLength);
+                }
+                else
+                {
+                    _logger?.LogWarning(
+                        "LLM transcript triage returned a succeeded but invalid schema-v2 output for capture {CaptureItemId}; using deterministic extractor. {Error}",
+                        captureItemId,
+                        outputValidation.ErrorMessage ?? string.Empty);
+                }
             }
             else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
             {
@@ -184,7 +218,7 @@ public class CaptureTriageService : ICaptureTriageService
                     Guid.NewGuid(),
                     ProposalId: null,
                     OperationCount: 0,
-                    CaptureTriageOutputContract.PromptVersionLlmV1,
+                    CaptureTriageOutputContract.PromptVersionLlmV2,
                     CaptureRequestContract.SanitizeProvenanceMetadata(
                         extraction.Provider, CaptureRequestContract.MaxProviderLength),
                     CaptureRequestContract.SanitizeProvenanceMetadata(
@@ -200,7 +234,7 @@ public class CaptureTriageService : ICaptureTriageService
             }
         }
 
-        if (outputModel is null)
+        if (proposalTasks is null)
         {
             var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
             if (taskCandidates.Count == 0)
@@ -210,18 +244,19 @@ public class CaptureTriageService : ICaptureTriageService
                     "Capture text did not produce actionable triage items");
             }
 
-            outputModel = BuildOutputModel(taskCandidates, contextHint);
+            var outputValidation = CaptureTriageOutputContract.Validate(BuildOutputModel(taskCandidates, contextHint));
+            if (!outputValidation.IsSuccess)
+            {
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    outputValidation.ErrorCode,
+                    outputValidation.ErrorMessage);
+            }
+
+            proposalTasks = outputValidation.Value.Tasks;
+            triagePromptVersion = outputValidation.Value.PromptVersion;
         }
 
-        var outputValidation = CaptureTriageOutputContract.Validate(outputModel);
-        if (!outputValidation.IsSuccess)
-        {
-            return Result.Failure<CaptureTriageProposalResultDto>(
-                outputValidation.ErrorCode,
-                outputValidation.ErrorMessage);
-        }
-
-        var operations = outputValidation.Value.Tasks
+        var operations = proposalTasks
             .Select((task, sequence) => BuildCreateCardOperation(
                 captureItemId,
                 boardId.Value,
@@ -245,7 +280,7 @@ public class CaptureTriageService : ICaptureTriageService
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
         var triageRunId = Guid.NewGuid();
-        var summary = BuildSummary(outputValidation.Value.Tasks);
+        var summary = BuildSummary(proposalTasks);
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
             userId,
             boardId,
@@ -282,7 +317,7 @@ public class CaptureTriageService : ICaptureTriageService
             triageRunId,
             createProposalResult.Value.Id,
             operations.Count,
-            outputValidation.Value.PromptVersion,
+            triagePromptVersion,
             triageProvider,
             triageModel));
     }

@@ -77,12 +77,13 @@ public class TranscriptTriageWorkerTests
 
     private static TranscriptTriageWorker CreateWorker(
         IServiceScopeFactory scopeFactory,
-        WorkerSettings? settings = null)
+        WorkerSettings? settings = null,
+        WorkerHeartbeatRegistry? heartbeatRegistry = null)
     {
         return new TranscriptTriageWorker(
             scopeFactory,
             settings ?? DefaultSettings(),
-            new WorkerHeartbeatRegistry(),
+            heartbeatRegistry ?? new WorkerHeartbeatRegistry(),
             NullLogger<TranscriptTriageWorker>.Instance);
     }
 
@@ -144,6 +145,22 @@ public class TranscriptTriageWorkerTests
         triageService.LastCaptureItemId.Should().Be(item.Id);
         triageService.LastUserId.Should().Be(item.UserId);
         triageService.LastBoardId.Should().Be(boardId);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CompletedItem_ReportsTranscriptHeartbeat()
+    {
+        var item = CreateTranscriptTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        using var sp = BuildServiceProvider(queueRepo);
+        var heartbeatRegistry = new WorkerHeartbeatRegistry();
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            heartbeatRegistry: heartbeatRegistry);
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        heartbeatRegistry.GetLastHeartbeat(nameof(TranscriptTriageWorker)).Should().NotBeNull();
     }
 
     [Fact]

@@ -46,7 +46,9 @@ public static class CaptureRequestContract
     public const string RequestTypeTranscriptV1 = "inbox.capture.transcript.v1";
     public const int CurrentSchemaVersion = 1;
     public const int MaxRawTextLength = 20_000;
-    public const int MaxTranscriptTextLength = 51_200;
+    // Transcript input has its own bounded limit. Non-transcript captures retain MaxRawTextLength;
+    // longer transcripts are map-reduced by the LLM triage seam before any provider call.
+    public const int MaxTranscriptTextLength = 200_000;
     public const int MaxTitleHintLength = 240;
     public const int MaxExternalRefLength = 2_048;
     public const int MaxPromptVersionLength = 64;

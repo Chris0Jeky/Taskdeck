@@ -635,7 +635,7 @@ describe('captureStore', () => {
       vi.useRealTimers()
     })
 
-    it('stops after max polls without terminal status', async () => {
+    it('continues past the old 30-second boundary and stops after the bounded window', async () => {
       vi.useFakeTimers()
       const store = useCaptureStore()
 
@@ -654,8 +654,15 @@ describe('captureStore', () => {
 
       store.pollTriageCompletion('poll-3')
 
-      // Advance through all 15 polls (15 * 2s = 30s)
+      // The old 15-poll/30-second boundary must not stop the live triage poll.
       for (let i = 0; i < 15; i++) {
+        await vi.advanceTimersByTimeAsync(2_000)
+      }
+      expect(vi.mocked(captureApi.getItem)).toHaveBeenCalledTimes(15)
+      expect(store.triagePollingItemId).toBe('poll-3')
+
+      // The bounded window is 450 polls (15 minutes at a 2-second cadence).
+      for (let i = 15; i < 450; i++) {
         await vi.advanceTimersByTimeAsync(2_000)
       }
       expect(store.triagePollingItemId).toBeNull()

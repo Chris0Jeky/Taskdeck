@@ -1,0 +1,19 @@
+name: Actionlint external linter fixture
+
+on:
+  workflow_dispatch:
+
+jobs:
+  external-linters:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ShellCheck
+        shell: bash
+        run: |
+          value="two words"
+          echo $value
+
+      - name: Trigger Pyflakes
+        shell: python
+        run: |
+          print(undefined_name)

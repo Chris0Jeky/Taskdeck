@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
@@ -17,6 +18,8 @@ public class HealthController : ControllerBase
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerSettings _workerSettings;
+    private readonly LlmProviderSettings _llmProviderSettings;
+    private readonly IWebHostEnvironment _environment;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
     private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
@@ -25,6 +28,8 @@ public class HealthController : ControllerBase
     public HealthController(
         IServiceProvider serviceProvider,
         WorkerSettings workerSettings,
+        LlmProviderSettings llmProviderSettings,
+        IWebHostEnvironment environment,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         RedisBackplaneHealthCheck redisHealthCheck,
         CircuitBreakerStateTracker circuitBreakerTracker,
@@ -32,6 +37,8 @@ public class HealthController : ControllerBase
     {
         _serviceProvider = serviceProvider;
         _workerSettings = workerSettings;
+        _llmProviderSettings = llmProviderSettings;
+        _environment = environment;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
         _circuitBreakerTracker = circuitBreakerTracker;
@@ -171,23 +178,24 @@ public class HealthController : ControllerBase
                 isReady = false;
             }
 
-            // Transcript lane (REVIVAL-08): the heartbeat only beats between ticks, and one tick
-            // legitimately blocks for minutes — it processes up to MaxBatchSize LLM-backed triages
-            // SEQUENTIALLY, each bounded by the provider HTTP timeout (worst shipped default:
-            // Ollama 120s). The fast worker's pollInterval*3 staleness model would false-alarm
-            // here, so the threshold budgets 180s per batch slot on top of the poll allowance
-            // (defaults: ~15.5 min). A heartbeat stale beyond even that bound means the worker is
-            // genuinely wedged — transcripts silently stop triaging — so it degrades readiness.
+            // Transcript map-reduce pulses the shared heartbeat immediately before and after each
+            // provider completion, and again between sequential queue items. Readiness therefore
+            // needs to tolerate one selected-provider timeout plus normal poll allowance - never
+            // the whole MaxChunkCount/MaxBatchSize run, which would mask a first-call wedge.
             var transcriptWorkerLastHeartbeat = _workerHeartbeatRegistry.GetLastHeartbeat(nameof(TranscriptTriageWorker));
-            var maxTranscriptWorkerStaleness = TimeSpan.FromSeconds(
-                Math.Max(_workerSettings.QueuePollIntervalSeconds * 3, 30) +
-                (long)Math.Max(1, _workerSettings.MaxBatchSize) * 180);
+            var maxTranscriptWorkerStaleness = CalculateTranscriptWorkerMaxStaleness(
+                _workerSettings,
+                _llmProviderSettings,
+                _environment.EnvironmentName);
+            var transcriptWorkerNow = DateTimeOffset.UtcNow;
             var transcriptWorkerStaleness = transcriptWorkerLastHeartbeat.HasValue
-                ? DateTimeOffset.UtcNow - transcriptWorkerLastHeartbeat.Value
+                ? transcriptWorkerNow - transcriptWorkerLastHeartbeat.Value
                 : (TimeSpan?)null;
-            var transcriptWorkerHealthy = (transcriptWorkerLastHeartbeat.HasValue &&
-                                           transcriptWorkerStaleness <= maxTranscriptWorkerStaleness)
-                                          || (!transcriptWorkerLastHeartbeat.HasValue && withinStartupGrace);
+            var transcriptWorkerHealthy = IsWorkerHeartbeatHealthy(
+                transcriptWorkerLastHeartbeat,
+                _workerHeartbeatRegistry.StartupTime,
+                maxTranscriptWorkerStaleness,
+                transcriptWorkerNow);
 
             if (transcriptWorkerStaleness.HasValue)
             {
@@ -296,5 +304,44 @@ public class HealthController : ControllerBase
             timestamp = DateTimeOffset.UtcNow,
             checks
         });
+    }
+
+    internal static TimeSpan CalculateTranscriptWorkerMaxStaleness(
+        WorkerSettings workerSettings,
+        LlmProviderSettings llmProviderSettings,
+        string? environmentName)
+    {
+        ArgumentNullException.ThrowIfNull(workerSettings);
+        ArgumentNullException.ThrowIfNull(llmProviderSettings);
+
+        var pollAllowanceSeconds = Math.Max((long)workerSettings.QueuePollIntervalSeconds * 3, 30L);
+        return TimeSpan.FromSeconds(
+            pollAllowanceSeconds + GetSelectedProviderTimeoutSeconds(llmProviderSettings, environmentName));
+    }
+
+    internal static bool IsWorkerHeartbeatHealthy(
+        DateTimeOffset? lastHeartbeat,
+        DateTimeOffset startupTime,
+        TimeSpan maxStaleness,
+        DateTimeOffset now)
+    {
+        var withinStartupGrace = now - startupTime <= TimeSpan.FromSeconds(30);
+        return (lastHeartbeat.HasValue && now - lastHeartbeat.Value <= maxStaleness)
+               || (!lastHeartbeat.HasValue && withinStartupGrace);
+    }
+
+    private static int GetSelectedProviderTimeoutSeconds(
+        LlmProviderSettings settings,
+        string? environmentName)
+    {
+        // Readiness must reflect the provider selected at runtime, not merely the requested name:
+        // disabled live providers, development policy, or invalid settings all resolve to Mock.
+        return LlmProviderSelectionPolicy.Evaluate(settings, environmentName).ProviderKind switch
+        {
+            LlmProviderKind.OpenAi => settings.OpenAi?.TimeoutSeconds is > 0 ? settings.OpenAi.TimeoutSeconds : 30,
+            LlmProviderKind.Gemini => settings.Gemini?.TimeoutSeconds is > 0 ? settings.Gemini.TimeoutSeconds : 30,
+            LlmProviderKind.Ollama => settings.Ollama?.TimeoutSeconds is > 0 ? settings.Ollama.TimeoutSeconds : 120,
+            _ => 30 // Mock and policy-disabled modes perform no live completion.
+        };
     }
 }

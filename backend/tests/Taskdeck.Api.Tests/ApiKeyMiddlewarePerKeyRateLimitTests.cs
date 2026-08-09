@@ -338,7 +338,7 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
     private async Task<TaskdeckDbContext> CreateSeededContextAsync()
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .AddInterceptors(_interceptor)
             .Options;
         var db = new TaskdeckDbContext(options);
@@ -389,7 +389,6 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
         {
             var path = _dbPath + suffix;

@@ -27,7 +27,7 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
     private TaskdeckDbContext NewContext(int busyTimeoutMs)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMs))
             .Options;
         return new TaskdeckDbContext(options);
@@ -96,7 +96,7 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
         }
 
         // Hold an exclusive write lock on a separate raw connection.
-        await using var lockConnection = new SqliteConnection($"Data Source={_dbPath}");
+        await using var lockConnection = new SqliteConnection(TestSqlite.ConnectionString(_dbPath));
         await lockConnection.OpenAsync();
         await using (var begin = lockConnection.CreateCommand())
         {
@@ -119,8 +119,8 @@ public sealed class SqlitePragmaInterceptorTests : IDisposable
 
     public void Dispose()
     {
-        // Drop pooled connections so the file handles release before cleanup.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // No pool to drop: these connections are opened with Pooling=False (TestSqlite, #1609),
+        // so the handles are already released by the time cleanup runs.
         foreach (var suffix in new[] { "", "-wal", "-shm" })
         {
             var path = _dbPath + suffix;

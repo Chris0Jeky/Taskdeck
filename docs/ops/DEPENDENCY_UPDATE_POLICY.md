@@ -29,7 +29,7 @@ Taskdeck uses **GitHub Dependabot** for automated dependency update PRs across t
 
 - Grouped into single PRs per ecosystem to reduce noise.
 - Expected to pass CI without intervention in most cases.
-- Maintainer review is required before merge; no auto-merge is enabled.
+- Maintainer review is required; no unattended auto-merge is enabled. After that review, merge execution follows the repository authority and canonical global pipeline.
 - If CI passes and the changelog shows no breaking changes, merge promptly.
 
 ### Major version updates
@@ -113,7 +113,7 @@ For each security advisory or Dependabot security PR:
 
 ### What this policy does NOT cover
 
-- Auto-merge: all dependency PRs require human review. Auto-merge may be considered in the future for patch-only grouped updates with passing CI, but is not enabled now.
+- Unattended auto-merge: all dependency PRs require human review. Unattended auto-merge may be considered in the future for patch-only grouped updates with passing CI, but is not enabled now; an authorized agent may execute the merge after that review and every normal gate.
 - Renovate: the project uses Dependabot only. Renovate may be evaluated if Dependabot proves insufficient.
 - SBOM generation: tracked separately in `#103`.
 - Stricter required-PR blocking for vulnerability findings: tracked as a follow-up in the vulnerability policy doc.

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/capture-triage-output.llm-v2.schema.json",
+  "title": "Taskdeck Capture Triage Output llm-v2",
+  "description": "Output of the schema-v2 LLM-backed transcript triage engine (REVIVAL-08). Hints and confidence are model-reported descriptive metadata only; board changes remain proposal-first and later provenance/evidence milestones own their persistence and presentation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "promptVersion",
+    "tasks"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2
+    },
+    "promptVersion": {
+      "type": "string",
+      "const": "llm-triage.v2"
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "type",
+          "assigneeHint",
+          "dueDateHint",
+          "confidence",
+          "evidenceQuote"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 180
+          },
+          "type": {
+            "type": "string",
+            "enum": ["action", "decision", "question"]
+          },
+          "assigneeHint": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "dueDateHint": {
+            "type": ["string", "null"],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "evidenceQuote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          }
+        }
+      }
+    }
+  }
+}

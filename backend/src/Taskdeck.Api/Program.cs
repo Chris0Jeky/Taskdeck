@@ -126,8 +126,13 @@ if (args.Contains("--mcp"))
         mcpHttpBuilder.Services.AddMcpTelemetry();
 
         // MCP server: HTTP transport + all resources and tools.
+        // Stateless is pinned explicitly rather than left to the library default:
+        // ModelContextProtocol 2.0.0 flipped that default from false to true, which drops
+        // Mcp-Session-Id, standalone SSE GET/DELETE, and server-to-client requests. Taskdeck's
+        // session-bound contract depends on those, so keep it false until a deliberate,
+        // ADR-recorded decision says otherwise.
         mcpHttpBuilder.Services.AddMcpServer()
-            .WithHttpTransport()
+            .WithHttpTransport(options => options.Stateless = false)
             .AddMcpResourcesAndTools();
 
         var mcpHttpApp = mcpHttpBuilder.Build();
@@ -370,8 +375,10 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
 builder.Services.AddMcpTelemetry();
+// Stateless is pinned explicitly — see the standalone MCP host above for why the
+// ModelContextProtocol 2.0.0 default flip must not be inherited silently.
 builder.Services.AddMcpServer()
-    .WithHttpTransport()
+    .WithHttpTransport(options => options.Stateless = false)
     .AddMcpResourcesAndTools();
 
 // Add JWT Authentication (with optional GitHub OAuth and OIDC providers, circuit-breaker-protected backchannel)

@@ -29,6 +29,7 @@ public class DataExportServiceTests
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly Mock<IArtefactExtractionRepository> _extractionRepoMock;
+    private readonly Mock<ITranscriptRepository> _transcriptRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -52,6 +53,7 @@ public class DataExportServiceTests
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
         _extractionRepoMock = new Mock<IArtefactExtractionRepository>();
+        _transcriptRepoMock = new Mock<ITranscriptRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -77,6 +79,10 @@ public class DataExportServiceTests
             .ReturnsAsync(Array.Empty<ArtefactExtraction>());
         _extractionRepoMock.Setup(r => r.GetByArtefactsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyDictionary<Guid, IReadOnlyList<ArtefactExtraction>>)new Dictionary<Guid, IReadOnlyList<ArtefactExtraction>>());
+        _transcriptRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Transcript>());
+        _transcriptRepoMock.Setup(r => r.GetEstimatedSerializedLengthByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(0L);
 
         _testUser = new User("testuser", "test@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -88,7 +94,8 @@ public class DataExportServiceTests
             _unitOfWorkMock.Object,
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
-            _extractionRepoMock.Object);
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object);
     }
 
     [Fact]
@@ -108,6 +115,30 @@ public class DataExportServiceTests
         result.Value.Profile.Username.Should().Be("testuser");
         result.Value.Profile.Email.Should().Be("test@example.com");
         result.Value.ExportedAt.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_IncludesNormalizedTranscriptWithoutDuplicatingTextElsewhere()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var transcript = new Transcript(
+            _userId,
+            CaptureSource.TranscriptPaste,
+            "Åsa: hello\r\nMina: done",
+            [new TranscriptSegment(0, 1, "Åsa", 200)]);
+        _transcriptRepoMock.Setup(r => r.GetEstimatedSerializedLengthByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(transcript.Text.Length);
+        _transcriptRepoMock.Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) => new[] { transcript }.Skip(offset).Take(limit).ToList());
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Data.Transcripts.Should().ContainSingle();
+        result.Value.Data.Transcripts![0].Text.Should().Be("Åsa: hello\nMina: done");
+        result.Value.Data.Transcripts[0].Segments.Should().ContainSingle()
+            .Which.TimestampMilliseconds.Should().Be(200);
     }
 
     [Fact]
@@ -574,6 +605,7 @@ public class DataExportServiceTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
             loggerMock.Object);
 
         var result = await serviceWithLogger.ExportUserDataAsync(_userId);
@@ -812,6 +844,7 @@ public class DataExportServiceTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
+            _transcriptRepoMock.Object,
             loggerMock.Object);
 
         var expectedException = new InvalidOperationException("Database connection lost");
@@ -903,6 +936,7 @@ public class DataExportServiceStreamingTests
     private readonly Mock<IProposalFeedbackRepository> _feedbackRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly Mock<IArtefactExtractionRepository> _extractionRepoMock;
+    private readonly Mock<ITranscriptRepository> _transcriptRepoMock;
     private readonly DataExportService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -926,6 +960,7 @@ public class DataExportServiceStreamingTests
         _feedbackRepoMock = new Mock<IProposalFeedbackRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
         _extractionRepoMock = new Mock<IArtefactExtractionRepository>();
+        _transcriptRepoMock = new Mock<ITranscriptRepository>();
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
@@ -945,6 +980,8 @@ public class DataExportServiceStreamingTests
             .ReturnsAsync(Array.Empty<SourceArtefact>());
         _extractionRepoMock.Setup(r => r.GetByArtefactForUserAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Array.Empty<ArtefactExtraction>());
+        _transcriptRepoMock.Setup(r => r.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Transcript>());
 
         _testUser = new User("streamuser", "stream@example.com", BCrypt.Net.BCrypt.HashPassword("password123"));
 
@@ -956,7 +993,8 @@ public class DataExportServiceStreamingTests
             _unitOfWorkMock.Object,
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
-            _extractionRepoMock.Object);
+            _extractionRepoMock.Object,
+            _transcriptRepoMock.Object);
     }
 
     [Fact]
@@ -1029,6 +1067,31 @@ public class DataExportServiceStreamingTests
         dataProp.TryGetProperty("proposals", out _).Should().BeTrue();
         dataProp.TryGetProperty("chatSessions", out _).Should().BeTrue();
         dataProp.TryGetProperty("auditTrail", out _).Should().BeTrue();
+        dataProp.TryGetProperty("transcripts", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StreamUserDataExportAsync_IncludesTranscriptAndSegments()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var transcript = new Transcript(
+            _userId,
+            CaptureSource.TranscriptFile,
+            "Zoë\r\n✅",
+            [new TranscriptSegment(1, 1, "Zoë", 600)]);
+        _transcriptRepoMock.Setup(r => r.GetByUserAsync(_userId, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, int limit, int offset, CancellationToken _) => new[] { transcript }.Skip(offset).Take(limit).ToList());
+
+        using var stream = new MemoryStream();
+        var result = await _service.StreamUserDataExportAsync(_userId, stream);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        stream.Position = 0;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+        var exported = doc.RootElement.GetProperty("data").GetProperty("transcripts").EnumerateArray().Single();
+        exported.GetProperty("text").GetString().Should().Be("Zoë\n✅");
+        exported.GetProperty("segments")[0].GetProperty("timestampMilliseconds").GetInt64().Should().Be(600);
     }
 
     [Fact]
