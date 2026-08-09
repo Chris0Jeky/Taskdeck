@@ -67,6 +67,22 @@ case "${1-}" in
     ;;
   status)
     ;;
+  ls-files)
+    if [[ "$MOCK_SCENARIO" == "index-inspection-failure" ]]; then
+      count_file="$MOCK_ROOT/index-inspection-count"
+      count=0; [[ -f "$count_file" ]] && count="$(<"$count_file")"
+      count=$((count + 1)); printf '%s' "$count" >"$count_file"
+      [[ "$count" -le 1 ]] || exit 9
+    fi
+    ;;
+  for-each-ref)
+    if [[ "$MOCK_SCENARIO" == "replacement-ref-inspection-failure" ]]; then
+      count_file="$MOCK_ROOT/replacement-ref-inspection-count"
+      count=0; [[ -f "$count_file" ]] && count="$(<"$count_file")"
+      count=$((count + 1)); printf '%s' "$count" >"$count_file"
+      [[ "$count" -le 1 ]] || exit 9
+    fi
+    ;;
   fetch)
     ;;
   merge-base)
@@ -538,6 +554,16 @@ for scenario in oid-drift base-oid-drift feedback-drift mergeability-drift; do
 done
 pass "closing head, base, feedback, and mergeability drift invalidate the packet"
 
+for scenario in index-inspection-failure replacement-ref-inspection-failure; do
+  case_root="$fixture_root/$scenario"
+  make_mocks "$case_root"
+  run_start "$scenario" "$case_root" "$case_root/state.json" 42 >/dev/null
+  if run_finish "$scenario" "$case_root" "$case_root/state.json" >"$case_root/packet.json" 2>/dev/null; then
+    fail "$scenario was accepted"
+  fi
+done
+pass "index and replacement-ref inspection failures fail closed"
+
 case_root="$fixture_root/expired-session-restart"
 make_mocks "$case_root"
 run_start oid-drift "$case_root" "$case_root/state.json" 42 >/dev/null
@@ -650,9 +676,9 @@ pass "diff inspection reuses the validated explicit or current-branch selection"
 if rg -q 'evidence_session|\$\([^)]*collect-pre-merge-evidence\.sh start' "$skill_file"; then
   fail "skill captures the operator token in process-local shell state"
 fi
-rg -Fq 'abort VALIDATED_SESSION_TOKEN' "$skill_file" ||
+rg -Fq 'collect-pre-merge-evidence.sh abort' "$skill_file" ||
   fail "skill does not require an explicit validated session token for abort"
-rg -Fq 'finish VALIDATED_SESSION_TOKEN' "$skill_file" ||
+rg -Fq 'collect-pre-merge-evidence.sh finish' "$skill_file" ||
   fail "skill does not require an explicit validated session token for finish"
 rg -Fq 'coordinator/operator context' "$skill_file" ||
   fail "skill does not preserve the visible token across separate tool processes"
