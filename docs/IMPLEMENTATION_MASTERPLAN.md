@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-09
+Last Updated: 2026-08-10
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -10,11 +10,11 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Active delivery checkpoint (2026-07-27, OpenAI-compatible provider replacement)
+## Delivery update (2026-08-10, OpenAI-compatible provider replacement)
 
-- **REVIVAL-10 / `#1306` replacement branch:** add a distinct, config-gated `OpenAICompatible` adapter for public OpenAI Chat Completions endpoints while preserving `Mock` as the safe default. The provider supports buffered chat, structured instruction extraction, bounded board context, real upstream SSE, provider-specific non-secret headers, and an explicit buffered degradation path when a gateway rejects streaming or `response_format`.
+- **REVIVAL-10 / `#1306` guarded implementation:** PR `#1537` shipped a distinct, config-gated `OpenAICompatible` adapter for public OpenAI Chat Completions endpoints while preserving `Mock` as the safe default. The provider supports buffered chat, structured instruction extraction, bounded board context, real upstream SSE, provider-specific non-secret headers, and an explicit buffered degradation path when a gateway rejects streaming or `response_format`.
 - **Security and accounting boundary:** validate the configured public origin and connect-time DNS, allow plain HTTP only for exact `localhost` under the explicit `Development`/`Test`/`Testing` live-provider gate, disable proxies and redirects, and run the registered client through protected telemetry → fixed-origin egress → dispatch tracking → direct sockets. Quota settlement distinguishes proven pre-dispatch failures from dispatched requests; compatible Polly state and companion provider circuit state remain independent and generation-safe; response and SSE limits are enforced over strict UTF-8 bytes; provider error detail is not persisted.
-- **Evidence and remaining gate:** current-main integration passes 157/157 focused Application tests and 81/81 focused API tests, including schema-v2 triage and dispatch-aware quota settlement. The earlier provider tree passed the full serialized backend with 7,660 tests, five intentional skips, and no failures (Domain 1,636; Application 3,678; API 2,189 + 4 skips; CLI 100; Architecture 22 + 1 skip; Integration 35), and its docs/governance gates were green. The streamed-refusal repair has a clean independent review; exact merged-head hosted CI, DCO publication, and final integration review remain pending. Before issue closure or a claim of real-provider UX readiness, the maintainer must supply a compatible-provider key and verify a visibly incremental stream in the real UI; deterministic loopback coverage does not satisfy that human gate.
+- **Evidence and remaining gate:** PR `#1537` merged as `0b0c9c70` after exact-head hosted CI completed with 26 successes / 11 intentional skips / 0 failures. Local exact-head evidence passed 157/157 focused Application tests, 81/81 focused API tests, 22/22 Architecture tests with one intentional skip, and Actionlint across all 32 workflows; the earlier provider tree passed the full serialized backend with 7,660 tests, five intentional skips, and no failures. Issue `#1306` remains open until a maintainer supplies a compatible-provider key and verifies a visibly incremental stream in the real UI. Six nonblocking MEDIUM compatibility/readiness follow-ups are recorded on `#1306`; MEDIUM `#1617` separately owns the buffered-refusal consumer defect, and LOW `#1618` owns the stale status clause corrected by this docs-only slice.
 
 
 ## Delivery update (2026-08-02, REVIVAL-08 M2 long-transcript map-reduce)
