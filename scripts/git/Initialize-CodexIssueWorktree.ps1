@@ -140,7 +140,7 @@ function Schedule-FailedInitializerWorktreeRemoval {
         Exit-WithInitializerError "git switch -c failed and cleanup was refused because the helper-created worktree contains index-hidden entries that can hide modified data; the worktree was preserved at '$Worktree'." 1
     }
     $statusResult = Invoke-InitializerGit -Arguments @(
-        "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--"
+        "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching", "--"
     )
     if (-not $statusResult.InvocationSucceeded -or $statusResult.ExitCode -ne 0) {
         Exit-WithInitializerError "git switch -c failed and cleanup was refused because Git could not inventory tracked, untracked, and ignored worktree content; the helper-created worktree was preserved at '$Worktree'." 2
@@ -187,7 +187,7 @@ if (`$LASTEXITCODE -ne 0 -or `$cleanupHead.Count -ne 1 -or
 if (`$LASTEXITCODE -ne 1) {
     exit 3
 }
-`$cleanupStatus = @(& '$escapedGit' -C '$escapedWorktree' status --porcelain=v1 --untracked-files=all --ignored=matching -- 2>`$null)
+`$cleanupStatus = @(& '$escapedGit' -c core.fsmonitor=false -C '$escapedWorktree' status --porcelain=v1 --untracked-files=all --ignored=matching -- 2>`$null)
 if (`$LASTEXITCODE -ne 0 -or `$cleanupStatus.Count -ne 0) {
     exit 4
 }

@@ -656,7 +656,8 @@ function Get-WorktreeStatusLines {
     )
 
     $statusResult = Invoke-GitCommand -Arguments @(
-        "-C", $Worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"
+        "-c", "core.fsmonitor=false", "-C", $Worktree,
+        "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching"
     )
     if ($statusResult.ExitCode -ne 0) {
         throw "Could not inspect helper-created worktree '$Worktree' before cleanup.$(Format-GitContext $statusResult.Output)"

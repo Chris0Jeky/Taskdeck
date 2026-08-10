@@ -1221,6 +1221,96 @@ finally {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $hiddenWorktree)
         }
 
+        $delayedHiddenScenarios = @(
+            [pscustomobject]@{ Flag = "assume-unchanged"; Issue = "505"; ExpectedTag = "lowercase" },
+            [pscustomobject]@{ Flag = "skip-worktree"; Issue = "506"; ExpectedTag = "S" }
+        )
+        foreach ($scenario in $delayedHiddenScenarios) {
+            $delayedResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", $scenario.Issue,
+                "-Slug", "delayed-hidden-initializer-collision"
+            )
+            Assert-Equal 0 $delayedResult.ExitCode "Delayed hidden-index fixture creation should succeed for $($scenario.Flag).`n$($delayedResult.Output)"
+            $delayedWorktree = Join-Path $callerPath ".worktrees/codex-$($scenario.Issue)-delayed-hidden-initializer-collision"
+            $delayedHead = Invoke-Git -WorkingDirectory $delayedWorktree -Arguments @("rev-parse", "HEAD")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @(
+                "branch", "issue-$($scenario.Issue)/delayed-hidden-initializer-collision", $delayedHead
+            )
+            $delayedTarget = Join-Path $delayedWorktree "scripts/worktree_guard.ps1"
+            $originalDelayedBytes = [System.IO.File]::ReadAllBytes($delayedTarget)
+            $expectedDelayedBytes = [Text.Encoding]::UTF8.GetBytes(
+                "delayed hidden initializer collision $($scenario.Flag)`n"
+            )
+            $expectedDelayedBase64 = [Convert]::ToBase64String($expectedDelayedBytes)
+            $delayedRegistrationBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $delayedChildIdentityPath = Join-Path $fixtureRoot "initializer-$($scenario.Flag)-delayed-child.txt"
+            $escapedDelayedChildIdentityPath = $delayedChildIdentityPath.Replace("'", "''")
+            $escapedDelayedWorktree = $delayedWorktree.Replace("'", "''")
+            $escapedDelayedTarget = $delayedTarget.Replace("'", "''")
+            $escapedGitExecutable = $gitExecutable.Replace("'", "''")
+            $delayedHandoffLines = @(Get-PrintedHandoffLines -Output $delayedResult.Output)
+            $delayedCollisionScript = Join-Path $fixtureRoot "initializer-$($scenario.Flag)-delayed-collision.ps1"
+            Set-Content -LiteralPath $delayedCollisionScript -Encoding Ascii -Value @(
+                $delayedHandoffLines[0],
+                $delayedHandoffLines[1],
+                $delayedHandoffLines[2],
+                $delayedHandoffLines[3],
+                $delayedHandoffLines[4],
+                '$cleanupChildren = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $PID" | Where-Object { $_.Name -match ''^powershell(?:\.exe)?$'' })',
+                'if ($cleanupChildren.Count -ne 1) { exit 92 }',
+                '$cleanupProcess = Get-Process -Id $cleanupChildren[0].ProcessId -ErrorAction Stop',
+                "[System.IO.File]::WriteAllText('$escapedDelayedChildIdentityPath', (`$cleanupProcess.Id.ToString() + '|' + `$cleanupProcess.StartTime.ToUniversalTime().Ticks.ToString()))",
+                "& '$escapedGitExecutable' -C '$escapedDelayedWorktree' update-index --$($scenario.Flag) -- scripts/worktree_guard.ps1",
+                'if ($LASTEXITCODE -ne 0) { exit 93 }',
+                "[System.IO.File]::WriteAllBytes('$escapedDelayedTarget', [Convert]::FromBase64String('$expectedDelayedBase64'))",
+                $delayedHandoffLines[5]
+            )
+
+            try {
+                $delayedCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @(
+                    "-NoLogo", "-NoProfile", "-NonInteractive", "-File", $delayedCollisionScript
+                ) -WorkingDirectory $delayedWorktree
+                Assert-True ($delayedCollision.ExitCode -ne 0) "Delayed hidden-index collision must retain the initializer failure for $($scenario.Flag)."
+                Assert-NormalizedContains $delayedCollision.Output "removal of the unused helper-created worktree was scheduled" "Delayed hidden-index fixture did not schedule cleanup for $($scenario.Flag)."
+                Assert-True (Test-Path -LiteralPath $delayedChildIdentityPath -PathType Leaf) "Delayed cleanup child identity was not captured for $($scenario.Flag)."
+                $delayedChildIdentity = ([System.IO.File]::ReadAllText($delayedChildIdentityPath)).Split('|')
+                Assert-Equal 2 $delayedChildIdentity.Count "Delayed cleanup child identity was malformed for $($scenario.Flag)."
+                $delayedChildId = [int]$delayedChildIdentity[0]
+                $delayedChildStartTicks = [long]$delayedChildIdentity[1]
+                for ($attempt = 0; $attempt -lt 100; $attempt++) {
+                    $liveDelayedChild = Get-Process -Id $delayedChildId -ErrorAction SilentlyContinue
+                    if ($null -eq $liveDelayedChild) {
+                        break
+                    }
+                    Assert-Equal $delayedChildStartTicks $liveDelayedChild.StartTime.ToUniversalTime().Ticks "Delayed cleanup child PID was recycled for $($scenario.Flag)."
+                    Start-Sleep -Milliseconds 100
+                }
+                $remainingDelayedChild = Get-Process -Id $delayedChildId -ErrorAction SilentlyContinue
+                Assert-True ($null -eq $remainingDelayedChild) "Delayed cleanup child did not exit for $($scenario.Flag)."
+                Assert-True (Test-Path -LiteralPath $delayedWorktree -PathType Container) "Delayed cleanup deleted the worktree for $($scenario.Flag)."
+                $actualDelayedBase64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($delayedTarget))
+                Assert-Equal $expectedDelayedBase64 $actualDelayedBase64 "Delayed cleanup changed or deleted exact hidden bytes for $($scenario.Flag)."
+                $delayedRegistrationAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+                Assert-Equal $delayedRegistrationBefore $delayedRegistrationAfter "Delayed cleanup changed the exact worktree registration for $($scenario.Flag)."
+                $delayedFlagEntry = Invoke-Git -WorkingDirectory $delayedWorktree -Arguments @("ls-files", "-v", "--", "scripts/worktree_guard.ps1")
+                if ($scenario.ExpectedTag -eq "S") {
+                    Assert-True $delayedFlagEntry.StartsWith("S ") "Delayed cleanup did not preserve skip-worktree registration."
+                }
+                else {
+                    Assert-True ($delayedFlagEntry -cmatch '^[a-z] ') "Delayed cleanup did not preserve assume-unchanged registration."
+                }
+            }
+            finally {
+                if (Test-Path -LiteralPath $delayedWorktree -PathType Container) {
+                    $null = Invoke-Git -WorkingDirectory $delayedWorktree -Arguments @(
+                        "update-index", "--no-$($scenario.Flag)", "--", "scripts/worktree_guard.ps1"
+                    )
+                    [System.IO.File]::WriteAllBytes($delayedTarget, $originalDelayedBytes)
+                    $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $delayedWorktree)
+                }
+            }
+        }
+
         $separateGitDirectory = Join-Path $fixtureRoot "separate common git directory"
         $separateGitCaller = Join-Path $fixtureRoot "separate git caller"
         $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @(
@@ -1921,11 +2011,25 @@ if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "skip" ]; then
     "__GIT_EXECUTABLE__" update-index --skip-worktree -- scripts/worktree_guard.ps1
     printf '\n# hidden timeout hook canary skip\n' >> scripts/worktree_guard.ps1
 fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "fsmonitor" ]; then
+    "__GIT_EXECUTABLE__" update-index --fsmonitor-valid -- scripts/worktree_guard.ps1 || exit 91
+    fsmonitor_entry=$("__GIT_EXECUTABLE__" ls-files -f -- scripts/worktree_guard.ps1) || exit 92
+    case "$fsmonitor_entry" in
+        [a-z]' '*) ;;
+        *) exit 93 ;;
+    esac
+    printf '\n# hidden timeout hook canary fsmonitor\n' >> scripts/worktree_guard.ps1
+fi
 sleep 30
 '@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
         [System.IO.File]::WriteAllText(
             $timeoutHookPath,
             $timeoutHookContent,
+            [System.Text.UTF8Encoding]::new($false))
+        $fsmonitorHookPath = Join-Path $timeoutHookDirectory "fsmonitor-watchmanv2"
+        [System.IO.File]::WriteAllText(
+            $fsmonitorHookPath,
+            "#!/bin/sh`nprintf 'taskdeck-test-token\0'`n",
             [System.Text.UTF8Encoding]::new($false))
         $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
         $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -1985,10 +2089,13 @@ sleep 30
 
         $previousHiddenTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", "Process")
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorHookPath.Replace('\', '/'))
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitorHookVersion", "2")
         try {
             $hiddenTimeoutScenarios = @(
-                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged" },
-                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree" }
+                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged"; Diagnostic = "index contains assume-unchanged or skip-worktree entries that can hide modified data" },
+                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree"; Diagnostic = "index contains assume-unchanged or skip-worktree entries that can hide modified data" },
+                [pscustomobject]@{ Flag = "fsmonitor"; Issue = "507"; Slug = "fsmonitor-hidden-git-add-timeout"; ClearArgument = "--no-fsmonitor-valid"; Diagnostic = "Refusing to remove partially created worktree" }
             )
             foreach ($scenario in $hiddenTimeoutScenarios) {
                 $hiddenTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-$($scenario.Issue)-$($scenario.Slug)"
@@ -2004,7 +2111,7 @@ sleep 30
                         "-GitCommandTimeoutSeconds", "5"
                     )
                     Assert-True ($hiddenTimedOutAdd.ExitCode -ne 0) "An index-hidden dirty timed-out git worktree add must fail closed."
-                    Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged or skip-worktree entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
+                    Assert-NormalizedContains $hiddenTimedOutAdd.Output $scenario.Diagnostic "Index-hidden partial-registration cleanup did not explain its preservation decision."
                     Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Index-hidden timeout fixture did not start."
                     Assert-True (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) "Index-hidden partial-registration cleanup deleted the populated target."
                     $hiddenGuardPath = Join-Path $hiddenTimedOutWorktree "scripts/worktree_guard.ps1"
@@ -2026,6 +2133,8 @@ sleep 30
         }
         finally {
             [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $previousHiddenTimeoutHook, "Process")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.fsmonitorHookVersion")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.fsmonitor")
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
         }
 
