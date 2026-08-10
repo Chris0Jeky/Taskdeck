@@ -342,6 +342,25 @@ public class OpenAiLlmProviderTests
         result.DegradedReason.Should().Be("Response was truncated");
     }
 
+    [Fact]
+    public async Task StreamAsync_PropagatesBufferedCompletionDegradationMetadata()
+    {
+        var settings = BuildSettings();
+        settings.OpenAi.ApiKey = string.Empty;
+        var provider = new OpenAiLlmProvider(
+            new HttpClient(), settings, NullLogger<OpenAiLlmProvider>.Instance);
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "hello")],
+                           SystemPrompt: string.Empty)))
+            events.Add(item);
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].IsDegraded.Should().BeTrue();
+        events[^1].DegradedReason.Should().Contain("configuration");
+    }
+
     [Theory]
     [InlineData("{\"reply\":\"incomplete", true)]
     [InlineData("{}", false)]

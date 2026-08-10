@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-09
+Last Updated: 2026-08-10
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,13 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-08-10, OpenAI-compatible provider replacement)
+
+- **REVIVAL-10 / `#1306` guarded implementation:** PR `#1537` shipped a distinct, config-gated `OpenAICompatible` adapter for public OpenAI Chat Completions endpoints while preserving `Mock` as the safe default. The provider supports buffered chat, structured instruction extraction, bounded board context, real upstream SSE, provider-specific non-secret headers, and an explicit buffered degradation path when a gateway rejects streaming or `response_format`.
+- **Security and accounting boundary:** validate the configured public origin and connect-time DNS, allow plain HTTP only for exact `localhost` under the explicit `Development`/`Test`/`Testing` live-provider gate, disable proxies and redirects, and run the registered client through protected telemetry → fixed-origin egress → dispatch tracking → direct sockets. Quota settlement distinguishes proven pre-dispatch failures from dispatched requests; compatible Polly state and companion provider circuit state remain independent and generation-safe; response and SSE limits are enforced over strict UTF-8 bytes; provider error detail is not persisted.
+- **Evidence and remaining gate:** PR `#1537` merged as `0b0c9c70` after exact-head hosted CI completed with 26 successes / 11 intentional skips / 0 failures. Local exact-head evidence passed 157/157 focused Application tests, 81/81 focused API tests, 22/22 Architecture tests with one intentional skip, and Actionlint across all 32 workflows; the earlier provider tree passed the full serialized backend with 7,660 tests, five intentional skips, and no failures. Issue `#1306` remains open until a maintainer supplies a compatible-provider key and verifies a visibly incremental stream in the real UI. Six nonblocking MEDIUM compatibility/readiness follow-ups are recorded on `#1306`; MEDIUM `#1617` separately owns the buffered-refusal consumer defect, and LOW `#1618` owns the stale status clause corrected by this docs-only slice.
+
 
 ## Delivery update (2026-08-02, REVIVAL-08 M2 long-transcript map-reduce)
 
@@ -41,9 +48,9 @@ Companion Active Docs:
 - **Post-`#1373` diagnostic successor (`#1512`):** structured, bounded correlation plus outer/last-inspected exception type, explicit truncation, aggregate-branch, and SQLite-code evidence is now available when the concurrent-card assertion fails. Normal middleware logs are metadata-only, the client still receives the generic GP-03 500, and no request/user/credential/exception-message content enters the diagnostic sink. Pre/post exact stress, the five-case historical/current concurrency matrix, and five CI-equivalent API runs stayed green and did not reproduce the original 500; therefore no causal exception, `SQLITE_BUSY` classification, retry, quarantine, or product fix is claimed.
 - **Still open:** retain `#1512` until a real recurrence identifies the cause and the narrow repair passes the full serialized backend suite plus exact-head Windows/Ubuntu CI.
 
-## Staged runway repair (2026-08-09, original PR recovery pending)
+## Delivery update (2026-08-09, recovered workflow-lint runway)
 
-- **Workflow Lint bootstrap (`#1510`):** replace the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, with a fail-closed direct bootstrap. Pin and checksum Actionlint 1.7.12 plus the Pyflakes 3.4.0 wheel, retain runner ShellCheck through an explicit path, install Pyflakes offline, bound downloads and the job, and log the exact checkout/tool/workflow inventory before verbose linting. The original `#1511` history is preserved without a rebase or force-push and now incorporates the DCO-clean `#1616` lineage through a signed merge. Current `main` is its merge base, so the reopened PR should expose only the signed `#1510` range rather than the already-landed historical stack. Fresh exact-head hosted proof, required review, merge, and post-merge proof remain required; the durable failure-ledger row stays open until then.
+- **Workflow Lint bootstrap (`#1510`):** the Docker Actionlint action, whose pre-checkout Docker Hub manifest fetch timed out in two exact-code CI Extended runs, is replaced by a fail-closed direct bootstrap. Actionlint 1.7.12 and the Pyflakes 3.4.0 wheel are checksum-pinned, runner ShellCheck is passed through an explicit path, Pyflakes installs offline, downloads and the job are bounded, and the checkout/tool/32-workflow inventory is logged before verbose linting. The original `#1511` ancestry and DCO-clean `#1616` lineage were preserved through signed merges without rebase, force-push, squash, or discarded commits. Merge `e989e3e0` closed `#1510`; exact-head CI `31333250323`, CI Extended `31333250401`, and CodeQL `31333249613` passed, followed by terminal descendant-main CI `31335719120` at 19 successes / 2 intentional skips / 0 failures. Runner-provided ShellCheck version drift remains the bounded residual.
 
 ## Delivery update (2026-07-26, agentic governance)
 
@@ -52,7 +59,7 @@ Companion Active Docs:
 
 ## Delivery update (2026-07-26, security runway)
 
-- **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12 and make Infrastructure's dependency direct, which moves the matched bundle/core/provider/native family from 2.1.6 to 2.1.12 without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (2.1.12 loads 3.53.3); the NuGet vulnerability audit is clean, EF reports no pending model changes after a fresh update, and a self-contained `win-x64` binary reaches `/health/ready` with SQLite loaded.
+- **SQLite native security floor (`#1345`):** centrally pin `SQLitePCLRaw.bundle_e_sqlite3` 3.0.5 and make Infrastructure's dependency direct, keeping the matched bundle/config/core/provider/native family coherent without enabling global transitive pinning. A runtime regression enforces SQLite >= 3.50.2 (3.0.5 loads 3.53.4); the refreshed dependency passed restore, vulnerability audit, Release build, native verification, and exact-head hosted CI before merge `d1ac680b`. The original 2.1.12 security-floor delivery separately proved a fresh EF update and self-contained `win-x64` `/health/ready` smoke; those platform-specific checks were not repeated specifically for 3.0.5.
 - **Project priority completeness (`#1458`, delivered by PR #1488):** the helper now replaces the capped ProjectV2 sample with cursor-complete stable snapshots and fail-closed checks for saturation, identity, nested truncation, source/plan drift, invalid Issue labels, typed references, option drift, partial writes, and stale post-state reporting. External Issue references remain visible but non-authoritative: their labels never rank, external-only PRs derive `Priority V`, and an external closing Issue permits same-repository body fallback. The authentication-free 64-check suite runs in Required CI. All 130 formerly unlabeled Taskdeck Issues were classified and verified; the reviewed Apply then succeeded 141/141. Its built-in audit, two fresh pre-merge audits, and the final post-merge handoff audit each proved 1,472/1,472 items, 12 ignored external references, and zero remaining drift. Issue #1458 and both project items are `Done / Priority I`.
 
 ## Delivery update (2026-07-25, PR-queue clearing wave)
