@@ -126,6 +126,27 @@ public class LlmRequest : Entity
         Touch();
     }
 
+    /// <summary>
+    /// Returns a claimed (Processing) request to Pending WITHOUT charging the retry budget, for a
+    /// claim abandoned by a graceful shutdown rather than by a failure (#1605). Deliberately distinct
+    /// from <see cref="MarkAsFailed"/> + <see cref="ResetForRetry"/>, which increments
+    /// <see cref="RetryCount"/> and is the failure/crash path: nothing about this attempt failed, so
+    /// charging it would let enough restarts exhaust a healthy request's budget. Mirrors
+    /// <c>OutboundWebhookDelivery.ReturnToPending</c>, which the webhook worker uses for the same
+    /// shutdown case. ErrorMessage/ProcessedAt are left untouched: a Processing row was claimed from
+    /// Pending, where ResetForRetry has already cleared both.
+    /// </summary>
+    public void ReleaseClaim()
+    {
+        if (Status != RequestStatus.Processing)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Can only release the claim on a processing request");
+
+        Status = RequestStatus.Pending;
+        Touch();
+    }
+
     public void UpdatePayload(string payload)
     {
         if (string.IsNullOrWhiteSpace(payload))

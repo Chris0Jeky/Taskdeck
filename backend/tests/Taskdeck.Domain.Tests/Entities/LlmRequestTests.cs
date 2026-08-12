@@ -145,6 +145,65 @@ public class LlmRequestTests
     }
 
     [Fact]
+    public void ReleaseClaim_ShouldReturnToPending_WithoutChargingRetryBudget()
+    {
+        // #1605: a claim abandoned by a graceful shutdown is not a failed attempt, so the request goes
+        // back on the queue with its retry budget intact -- unlike MarkAsFailed + ResetForRetry.
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        request.ReleaseClaim();
+
+        request.Status.Should().Be(RequestStatus.Pending);
+        request.RetryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void ReleaseClaim_ShouldPreserveAnAlreadyConsumedRetryBudget()
+    {
+        // A request on its second attempt keeps the retry it already spent: releasing a claim neither
+        // charges nor refunds.
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsFailed("Temporary error");
+        request.ResetForRetry();
+        request.MarkAsProcessing();
+
+        request.ReleaseClaim();
+
+        request.Status.Should().Be(RequestStatus.Pending);
+        request.RetryCount.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(RequestStatus.Pending)]
+    [InlineData(RequestStatus.Completed)]
+    [InlineData(RequestStatus.Failed)]
+    public void ReleaseClaim_ShouldThrow_WhenRequestIsNotProcessing(RequestStatus status)
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        switch (status)
+        {
+            case RequestStatus.Completed:
+                request.MarkAsProcessing();
+                request.MarkAsCompleted();
+                break;
+            case RequestStatus.Failed:
+                request.MarkAsProcessing();
+                request.MarkAsFailed("error");
+                break;
+        }
+
+        request.Status.Should().Be(status);
+
+        var act = () => request.ReleaseClaim();
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Can only release the claim on a processing request")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void MarkAsFailed_ShouldThrow_WhenRequestIsCompleted()
     {
         // Arrange
