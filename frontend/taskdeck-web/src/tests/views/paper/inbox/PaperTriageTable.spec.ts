@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
-import type { CaptureItemSummary } from '../../../../types/capture'
+import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
 
 function makeItems(): CaptureItemSummary[] {
   const createdAt = new Date('2026-04-25T09:42:00Z').toISOString()
@@ -59,7 +59,10 @@ describe('PaperTriageTable', () => {
 
   it('prioritizes failed/error status tone over triage wording', () => {
     const items = makeItems()
-    items[0] = { ...items[0], status: 'Triage Failed' }
+    // Deliberately outside the CaptureStatus union: this asserts statusTone()'s ordering
+    // (failed/error wins over triage wording) for an unrecognised status string from the server.
+    const outOfContractStatus = 'Triage Failed' as unknown as CaptureStatusValue
+    items[0] = { ...items[0], status: outOfContractStatus }
     const wrapper = mount(PaperTriageTable, { props: { items } })
 
     expect(wrapper.find('.tagstamp').attributes('data-tone')).toBe('overdue')

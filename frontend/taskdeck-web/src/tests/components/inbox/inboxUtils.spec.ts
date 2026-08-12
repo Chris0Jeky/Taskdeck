@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { sourceLabel } from '../../../components/inbox/inboxUtils'
+import type { CaptureSourceValue } from '../../../types/capture'
 
 describe('inboxUtils', () => {
-  it.each([
+  it.each<[CaptureSourceValue, string]>([
     ['MarkdownImport', 'Markdown'],
     ['WebClip', 'Web Clip'],
     ['ShareTarget', 'Share Target'],

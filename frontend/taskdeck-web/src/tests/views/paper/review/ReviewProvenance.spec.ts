@@ -15,7 +15,7 @@ const rows: ProvenanceRow[] = [
 describe('ReviewProvenance', () => {
   it('describes provenance honestly for both deterministic captures and LLM chat automation (#1273)', () => {
     const wrapper = mount(ReviewProvenance, {
-      props: { rows },
+      props: { rows, proposalId: 'proposal-001' },
     })
 
     const text = wrapper.text()
