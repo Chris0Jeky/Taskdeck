@@ -5,6 +5,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 collector="$script_dir/collect-pre-merge-evidence.sh"
 skill_file="$script_dir/../../.claude/skills/pre-merge-gate/SKILL.md"
 real_jq="$(command -v jq)"
+if ! real_git="$(command -v git.exe 2>/dev/null)"; then
+  real_git="$(command -v git)"
+fi
 fixture_root="$(mktemp -d)"
 trap 'rm -rf "$fixture_root"' EXIT
 
@@ -46,9 +49,14 @@ case "${1-}" in
       FETCH_HEAD) printf '%s\n' "$base_oid" ;;
       --show-toplevel) printf '%s\n' "$worktree_root" ;;
       --absolute-git-dir) printf '%s\n' "$git_dir" ;;
+      --git-common-dir) printf '%s\n' "$git_dir" ;;
       *:*)
         revision=base
         if [[ "${2%%:*}" == "HEAD" ]]; then
+          printf 'mock git: definition reads must bind to the authenticated head OID, not HEAD\n' >&2
+          exit 3
+        fi
+        if [[ "${2%%:*}" == "$head_oid" ]]; then
           revision=head
         fi
         fixture_path="$MOCK_ROOT/$revision/${2#*:}"
@@ -104,6 +112,54 @@ printf '\n' >>"$MOCK_ROOT/calls.log"
 command_name="${1-}"
 shift || true
 
+head_oid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+base_oid=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+if [[ -f "$MOCK_ROOT/head-oid" ]]; then
+  head_oid="$(<"$MOCK_ROOT/head-oid")"
+fi
+if [[ -f "$MOCK_ROOT/base-oid" ]]; then
+  base_oid="$(<"$MOCK_ROOT/base-oid")"
+fi
+
+# Install or remove a transient attack against a real Git checkout at exactly the point the
+# collector reads the enforcing scan definitions: between the opening and closing
+# clean-checkout assertions, where boundary checks cannot see it.
+run_race_hook() {
+  local phase="$1"
+  local definition_path=.gitleaks.toml
+  [[ -n "${MOCK_REAL_REPO:-}" && -n "${MOCK_REAL_GIT:-}" ]] || return 0
+  case "$MOCK_SCENARIO" in
+    replacement-ref-race)
+      if [[ "$phase" == install ]]; then
+        env -u GIT_NO_REPLACE_OBJECTS "$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" \
+          replace --force "$head_oid" "$base_oid" >/dev/null || exit 91
+        {
+          printf 'redirected %s\n' "$(env -u GIT_NO_REPLACE_OBJECTS "$MOCK_REAL_GIT" \
+            -C "$MOCK_REAL_REPO" rev-parse "$head_oid:$definition_path")"
+          printf 'authentic %s\n' "$(env GIT_NO_REPLACE_OBJECTS=1 "$MOCK_REAL_GIT" \
+            -C "$MOCK_REAL_REPO" rev-parse "$head_oid:$definition_path")"
+        } >"$MOCK_ROOT/race-probe"
+      else
+        env -u GIT_NO_REPLACE_OBJECTS "$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" \
+          replace -d "$head_oid" >/dev/null || exit 92
+      fi
+      ;;
+    head-ref-race)
+      if [[ "$phase" == install ]]; then
+        "$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" update-ref refs/heads/main "$base_oid" || exit 93
+        {
+          printf 'redirected %s\n' "$("$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" \
+            rev-parse "HEAD:$definition_path")"
+          printf 'authentic %s\n' "$("$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" \
+            rev-parse "$head_oid:$definition_path")"
+        } >"$MOCK_ROOT/race-probe"
+      else
+        "$MOCK_REAL_GIT" -C "$MOCK_REAL_REPO" update-ref refs/heads/main "$head_oid" || exit 94
+      fi
+      ;;
+  esac
+}
+
 if [[ "$command_name" == "repo" && "${1-}" == "view" ]]; then
   printf 'owner/repo\n'
   exit 0
@@ -130,8 +186,6 @@ if [[ "$command_name" == "pr" && "${1-}" == "view" ]]; then
   view_count=$((view_count + 1))
   printf '%s' "$view_count" >"$view_count_file"
 
-  head_oid=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  base_oid=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   mergeable=MERGEABLE
   updated_at=2026-08-01T12:00:00Z
   if [[ "$MOCK_SCENARIO" == "oid-drift" && "$view_count" -gt 1 ]]; then
@@ -232,6 +286,9 @@ if [[ "$command_name" == "api" ]]; then
       fi
       snapshot_count=$((snapshot_count + 1))
       printf '%s' "$snapshot_count" >"$snapshot_count_file"
+      if [[ "$snapshot_count" -gt 1 ]]; then
+        run_race_hook remove
+      fi
 
       final_has_next=false
       thread_one_resolved=false
@@ -299,10 +356,15 @@ JSON
     if [[ "$MOCK_SCENARIO" == "secret-wrong-provenance" ]]; then
       workflow_path=.github/workflows/ci-extended.yml
     fi
+    # The collector reads the scan definitions immediately after this call and takes its
+    # closing clean-checkout snapshot well after it.
+    run_race_hook install
     selected_pr="$(<"$MOCK_ROOT/selected-pr-number")"
     jq -n \
       --argjson number "$selected_pr" \
       --arg path "$workflow_path" \
+      --arg head "$head_oid" \
+      --arg base "$base_oid" \
       '{
         id: 9001,
         name: "CI",
@@ -310,12 +372,12 @@ JSON
         event: "pull_request",
         status: "completed",
         conclusion: "success",
-        head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        head_sha: $head,
         head_branch: "issue-1547/atomic-evidence",
         pull_requests: [{
           number: $number,
-          head: {sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",ref:"issue-1547/atomic-evidence"},
-          base: {sha:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",ref:"main"}
+          head: {sha:$head,ref:"issue-1547/atomic-evidence"},
+          base: {sha:$base,ref:"main"}
         }]
       }'
     exit 0
@@ -411,13 +473,15 @@ run_finish() {
   local state_file="$3"
   local token_case_root="${4:-$case_root}"
   local git_executable="${5:-$case_root/bin/git}"
+  local jq_executable="${6:-$real_jq}"
   local session_token
   session_token="$(tr -d '\r\n' <"$token_case_root/operator-session-token")"
   prepare_scan_definitions "$scenario" "$case_root"
   printf '%s\n' "$session_token" | env MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario" MOCK_WORKTREE_ROOT="$case_root/checkout" \
+    REAL_JQ="$real_jq" \
     TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
     TASKDECK_GIT_EXECUTABLE="$git_executable" \
-    TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    TASKDECK_JQ_EXECUTABLE="$jq_executable" \
     "$collector" finish
 }
 
@@ -434,6 +498,122 @@ run_abort() {
     TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
     TASKDECK_JQ_EXECUTABLE="$real_jq" \
     "$collector" abort
+}
+
+# A jq wrapper that rewrites the persistent opening state at the exact moment the collector
+# has finished authenticating it and is about to copy it, which is the only window in which
+# the copied bytes can differ from the authenticated ones.
+make_state_tampering_jq() {
+  local case_root="$1"
+  cat >"$case_root/bin/jq" <<'TAMPER_JQ'
+#!/usr/bin/env bash
+tamper=false
+for argument in "$@"; do
+  if [[ "$argument" == ".openingStateBinding" ]]; then
+    tamper=true
+  fi
+done
+"$REAL_JQ" "$@"
+status=$?
+if [[ "$tamper" == true && ! -f "$MOCK_ROOT/tampered" ]]; then
+  state_path="$(printf '%s\n' "$MOCK_ROOT/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+  if [[ -f "$state_path" ]]; then
+    "$REAL_JQ" '.selection = "forged-selection"' "$state_path" >"$state_path.tamper" &&
+      mv -f "$state_path.tamper" "$state_path" &&
+      : >"$MOCK_ROOT/tampered"
+  fi
+fi
+exit "$status"
+TAMPER_JQ
+  chmod +x "$case_root/bin/jq"
+}
+
+# A real Git checkout whose PR head carries the requested change to an enforcing Gitleaks
+# definition, so definition binding has something real to hide or reveal.
+make_real_checkout() {
+  local case_root="$1"
+  local weakened_definition="$2"
+  local repo="$case_root/checkout"
+  local origin="$case_root/origin.git"
+
+  "$real_git" init -q --bare -b main "$origin"
+  "$real_git" init -q -b main "$repo"
+  "$real_git" -C "$repo" config user.name "Evidence Canary"
+  "$real_git" -C "$repo" config user.email "evidence-canary@example.invalid"
+  "$real_git" -C "$repo" config commit.gpgsign false
+  mkdir -p "$repo/.github/workflows"
+  cat >"$repo/.github/workflows/ci-required.yml" <<'CALLER'
+name: CI
+jobs:
+  secret-scan:
+    uses: ./.github/workflows/reusable-gitleaks.yml
+CALLER
+  cat >"$repo/.github/workflows/reusable-gitleaks.yml" <<'REUSABLE'
+name: Gitleaks Secrets Detection
+jobs:
+  gitleaks:
+    steps:
+      - run: gitleaks protect --config .gitleaks.toml
+REUSABLE
+  printf '%s\n' 'title = "Gitleaks"' >"$repo/.gitleaks.toml"
+  printf '%s\n' '# reviewed ignore list' >"$repo/.gitleaksignore"
+  "$real_git" -C "$repo" add -A
+  "$real_git" -C "$repo" commit -q -m "opening base"
+  "$real_git" -C "$repo" rev-parse HEAD >"$case_root/base-oid"
+  "$real_git" -C "$repo" remote add origin "$origin"
+  "$real_git" -C "$repo" push -q origin main
+  if [[ "$weakened_definition" == true ]]; then
+    printf '%s\n' 'title = "Gitleaks disabled"' >"$repo/.gitleaks.toml"
+  else
+    printf '%s\n' 'unrelated head change' >"$repo/README.md"
+  fi
+  "$real_git" -C "$repo" add -A
+  "$real_git" -C "$repo" commit -q -m "pull request head"
+  "$real_git" -C "$repo" rev-parse HEAD >"$case_root/head-oid"
+  printf '%s\n' "$repo"
+}
+
+run_real() {
+  local scenario="$1"
+  local case_root="$2"
+  local repo="$3"
+  local phase="$4"
+  local collector_path="${5:-$collector}"
+  (
+    cd "$repo" || exit 1
+    export MOCK_ROOT="$case_root" MOCK_SCENARIO="$scenario"
+    export MOCK_REAL_REPO="$repo" MOCK_REAL_GIT="$real_git"
+    export TASKDECK_GH_EXECUTABLE="$case_root/bin/gh"
+    export TASKDECK_GIT_EXECUTABLE="$real_git"
+    export TASKDECK_JQ_EXECUTABLE="$real_jq"
+    if [[ "$phase" == start ]]; then
+      "$collector_path" start 42
+    else
+      "$collector_path" finish <"$case_root/operator-session-token"
+    fi
+  )
+}
+
+# A copy of the collector with one hardening removed, used to prove that a canary actually
+# fails when the defect it targets is present.
+make_defective_collector() {
+  local case_root="$1"
+  local name="$2"
+  shift 2
+  local variant_root="$case_root/defective-$name"
+  local variant="$variant_root/scripts/github/collect-pre-merge-evidence.sh"
+  local expression
+  mkdir -p "$variant_root/scripts/github"
+  cp "$collector" "$variant"
+  for expression in "$@"; do
+    sed -i "$expression" "$variant"
+  done
+  chmod +x "$variant"
+  if cmp -s "$collector" "$variant"; then
+    fail "defective collector variant $name is identical to the collector"
+  fi
+  bash -n "$variant" || fail "defective collector variant $name does not parse"
+  printf '%s\n' "$variant"
 }
 
 case_root="$fixture_root/explicit"
@@ -702,9 +882,9 @@ rg -Fq 'coordinator/operator context' "$skill_file" ||
   fail "skill does not preserve the visible token across separate tool processes"
 pass "visible operator token survives separate finish and abort tool commands"
 
-rg -Fq 'state_snapshot=' "$collector" || fail "finish does not create an immutable state snapshot"
+# The immutable-snapshot and replacement-ref guards were presence checks here; both are now
+# proven at runtime by the state-tampering, replacement-ref, and head-ref canaries below.
 rg -Fq 'ls-files -v' "$collector" || fail "clean-check does not inspect hidden index flags"
-rg -Fq 'refs/replace/' "$collector" || fail "clean-check does not reject replacement refs"
 rg -Fq 'session token must be supplied through stdin' "$collector" || fail "token is not protected stdin input"
 rg -Fq 'finish "$session_token"' "$collector" &&
   fail "finish still accepts the session token through argv"
@@ -721,5 +901,243 @@ if [[ -s "$case_root/calls.log" ]]; then
   fail "invalid PR argument reached GitHub or Git"
 fi
 pass "non-numeric explicit PR arguments fail before external commands"
+
+case_root="$fixture_root/untrusted-path-tool"
+make_mocks "$case_root"
+planted_root="$case_root/planted-checkout"
+mkdir -p "$planted_root/scripts/github" "$planted_root/.runtime-codex/bin"
+cp "$collector" "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+chmod +x "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+cp "$case_root/bin/gh" "$planted_root/.runtime-codex/bin/gh"
+chmod +x "$planted_root/.runtime-codex/bin/gh"
+prepare_scan_definitions happy "$case_root"
+: >"$case_root/calls.log"
+if PATH="$planted_root/.runtime-codex/bin:$PATH" \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$planted_root/scripts/github/collect-pre-merge-evidence.sh" start 42 \
+  >"$case_root/planted-path.out" 2>"$case_root/planted-path.err"; then
+  fail "an evidence tool planted on PATH inside the checkout was accepted"
+fi
+rg -Fq 'refusing an evidence tool resolved inside the collector checkout' \
+  "$case_root/planted-path.err" ||
+  fail "checkout-local PATH resolution was not rejected for the stated reason"
+if rg -q '^gh ' "$case_root/calls.log"; then
+  fail "the planted PATH gh executable was invoked"
+fi
+: >"$case_root/calls.log"
+if MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$planted_root/.runtime-codex/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$planted_root/scripts/github/collect-pre-merge-evidence.sh" start 42 \
+  >"$case_root/planted-override.out" 2>"$case_root/planted-override.err"; then
+  fail "a TASKDECK_GH_EXECUTABLE override inside the checkout was accepted"
+fi
+rg -Fq 'refusing an evidence tool resolved inside the collector checkout' \
+  "$case_root/planted-override.err" ||
+  fail "the checkout-local executable override was not rejected for the stated reason"
+if rg -q '^gh ' "$case_root/calls.log"; then
+  fail "the planted override gh executable was invoked"
+fi
+: >"$case_root/calls.log"
+defective_collector="$(make_defective_collector "$case_root" trusted-tools \
+  's|if path_is_inside_tree "$candidate_directory" "$collector_repo_root"; then|if false; then|')"
+mkdir -p "$(dirname "$defective_collector")/../../.runtime-codex/bin"
+cp "$case_root/bin/gh" "$(dirname "$defective_collector")/../../.runtime-codex/bin/gh"
+chmod +x "$(dirname "$defective_collector")/../../.runtime-codex/bin/gh"
+MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$(dirname "$defective_collector")/../../.runtime-codex/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$defective_collector" start 42 >/dev/null 2>&1 || true
+rg -q '^gh ' "$case_root/calls.log" ||
+  fail "the trusted-tool canary passes even without the checkout-local rejection"
+pass "checkout-local PATH entries and executable overrides cannot supply evidence tools"
+
+case_root="$fixture_root/untrusted-worktree-tool"
+make_mocks "$case_root"
+mkdir -p "$case_root/checkout/.runtime-codex/bin"
+cp "$case_root/bin/gh" "$case_root/checkout/.runtime-codex/bin/gh"
+chmod +x "$case_root/checkout/.runtime-codex/bin/gh"
+prepare_scan_definitions happy "$case_root"
+: >"$case_root/calls.log"
+if MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/checkout/.runtime-codex/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$collector" start 42 >/dev/null 2>"$case_root/measured.err"; then
+  fail "an evidence tool inside the measured checkout was accepted"
+fi
+rg -Fq 'refusing an evidence tool resolved inside the measured checkout' "$case_root/measured.err" ||
+  fail "the measured-checkout executable was not rejected for the stated reason"
+if rg -q '^gh ' "$case_root/calls.log"; then
+  fail "the evidence tool inside the measured checkout was invoked"
+fi
+pass "evidence tools inside the measured checkout are rejected before any GitHub query"
+
+case_root="$fixture_root/snapshot-tamper"
+make_mocks "$case_root"
+run_start snapshot-tamper "$case_root" "$case_root/state.json" 42 >/dev/null
+make_state_tampering_jq "$case_root"
+if run_finish snapshot-tamper "$case_root" "$case_root/state.json" \
+  "$case_root" "$case_root/bin/git" "$case_root/bin/jq" \
+  >"$case_root/packet.json" 2>"$case_root/finish.err"; then
+  fail "an opening state rewritten between authentication and copy was accepted"
+fi
+[[ -f "$case_root/tampered" ]] ||
+  fail "the state-tampering canary never rewrote the opening state"
+rg -Fq 'forged-selection' \
+  "$(printf '%s\n' "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)" ||
+  fail "the state-tampering canary did not land its rewrite on the persistent state"
+rg -Fq 'opening evidence state was rewritten after start' "$case_root/finish.err" ||
+  fail "the copied opening state was not rejected for the stated reason"
+tamper_case="$fixture_root/snapshot-tamper-control"
+make_mocks "$tamper_case"
+run_start snapshot-tamper "$tamper_case" "$tamper_case/state.json" 42 >/dev/null
+make_state_tampering_jq "$tamper_case"
+defective_collector="$(make_defective_collector "$tamper_case" snapshot-auth \
+  's|"$session_token" false "$persistent_state_file" "$snapshot_state_document"|"$session_token" true "$persistent_state_file" "$snapshot_state_document"|')"
+prepare_scan_definitions snapshot-tamper "$tamper_case"
+printf '%s\n' "$(tr -d '\r\n' <"$tamper_case/operator-session-token")" |
+  env MOCK_ROOT="$tamper_case" MOCK_SCENARIO=snapshot-tamper \
+    MOCK_WORKTREE_ROOT="$tamper_case/checkout" REAL_JQ="$real_jq" \
+    TASKDECK_GH_EXECUTABLE="$tamper_case/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$tamper_case/bin/git" \
+    TASKDECK_JQ_EXECUTABLE="$tamper_case/bin/jq" \
+    "$defective_collector" finish >"$tamper_case/packet.json" 2>/dev/null ||
+  fail "the state-tampering canary passes even without authenticating the copy"
+"$real_jq" -e '.selection == "forged-selection" and .collectorState == "COMPLETE"' \
+  "$tamper_case/packet.json" >/dev/null ||
+  fail "the state-tampering canary does not distinguish an unauthenticated copy"
+pass "the copied opening-state snapshot is authenticated before any field is read"
+
+case_root="$fixture_root/real-git-clean"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" false)"
+run_real happy "$case_root" "$real_repo" start >"$case_root/operator-session-token"
+run_real happy "$case_root" "$real_repo" finish >"$case_root/packet.json"
+"$real_jq" -e '
+  .secrets.definitionsVerified == true and
+  .secrets.verdict == "CLEAN" and
+  .collectorState == "COMPLETE" and
+  ([.secrets.definitionBindings[].matchesOpeningBase] | all)
+' "$case_root/packet.json" >/dev/null ||
+  fail "an unmodified real checkout did not produce a complete packet"
+pass "a real Git checkout with unchanged scan definitions completes the evidence packet"
+
+case_root="$fixture_root/replacement-ref-race"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" true)"
+run_real replacement-ref-race "$case_root" "$real_repo" start \
+  >"$case_root/operator-session-token"
+if run_real replacement-ref-race "$case_root" "$real_repo" finish \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "a transient replacement ref produced a complete packet"
+fi
+[[ -f "$case_root/race-probe" ]] ||
+  fail "the replacement-ref canary never installed its transient ref"
+[[ "$(awk '$1 == "redirected" {print $2}' "$case_root/race-probe")" != \
+   "$(awk '$1 == "authentic" {print $2}' "$case_root/race-probe")" ]] ||
+  fail "the replacement-ref canary installed a ref that redirected nothing"
+"$real_jq" -e --arg authentic "$(awk '$1 == "authentic" {print $2}' "$case_root/race-probe")" '
+  .secrets.definitionsVerified == false and
+  .secrets.verdict == "NOT VERIFIED" and
+  .collectorState == "INCOMPLETE" and
+  (.secrets.definitionBindings[] | select(.path == ".gitleaks.toml") |
+    .matchesOpeningBase == false and .localHeadBlob == $authentic)
+' "$case_root/packet.json" >/dev/null ||
+  fail "definition binding followed a transient replacement ref"
+[[ -z "$(env -u GIT_NO_REPLACE_OBJECTS "$real_git" -C "$real_repo" \
+  for-each-ref --format='%(refname)' refs/replace/)" ]] ||
+  fail "the replacement-ref canary left its transient ref installed"
+defective_collector="$(make_defective_collector "$case_root" replacement-refs \
+  '/^export GIT_NO_REPLACE_OBJECTS=1$/d')"
+rm -f "$case_root/race-probe" "$case_root/feedback-snapshot-count" \
+  "$case_root/pr-view-count" "$case_root/checks-count"
+rm -f "$real_repo/.git/taskdeck-pre-merge-evidence/"opening.*.json
+run_real replacement-ref-race "$case_root" "$real_repo" start \
+  >"$case_root/operator-session-token"
+run_real replacement-ref-race "$case_root" "$real_repo" finish "$defective_collector" \
+  >"$case_root/defective-packet.json" 2>/dev/null ||
+  fail "the replacement-ref canary passes even without disabled replacement objects"
+"$real_jq" -e '.secrets.verdict == "CLEAN" and .collectorState == "COMPLETE"' \
+  "$case_root/defective-packet.json" >/dev/null ||
+  fail "the replacement-ref canary does not distinguish enabled replacement objects"
+pass "a transient replacement ref cannot make changed scan definitions bind as unchanged"
+
+case_root="$fixture_root/head-ref-race"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" true)"
+run_real head-ref-race "$case_root" "$real_repo" start >"$case_root/operator-session-token"
+if run_real head-ref-race "$case_root" "$real_repo" finish \
+  >"$case_root/packet.json" 2>/dev/null; then
+  fail "a transient branch-ref move produced a complete packet"
+fi
+[[ -f "$case_root/race-probe" ]] ||
+  fail "the head-ref canary never moved the branch ref"
+[[ "$(awk '$1 == "redirected" {print $2}' "$case_root/race-probe")" != \
+   "$(awk '$1 == "authentic" {print $2}' "$case_root/race-probe")" ]] ||
+  fail "the head-ref canary moved the branch ref without changing what HEAD resolves"
+"$real_jq" -e --arg authentic "$(awk '$1 == "authentic" {print $2}' "$case_root/race-probe")" '
+  .secrets.definitionsVerified == false and
+  .secrets.verdict == "NOT VERIFIED" and
+  .collectorState == "INCOMPLETE" and
+  (.secrets.definitionBindings[] | select(.path == ".gitleaks.toml") |
+    .matchesOpeningBase == false and .localHeadBlob == $authentic)
+' "$case_root/packet.json" >/dev/null ||
+  fail "definition binding followed the mutable HEAD ref"
+defective_collector="$(make_defective_collector "$case_root" head-ref \
+  's|rev-parse "$opening_head:$path"|rev-parse "HEAD:$path"|')"
+rm -f "$case_root/race-probe" "$case_root/feedback-snapshot-count" \
+  "$case_root/pr-view-count" "$case_root/checks-count"
+rm -f "$real_repo/.git/taskdeck-pre-merge-evidence/"opening.*.json
+run_real head-ref-race "$case_root" "$real_repo" start >"$case_root/operator-session-token"
+run_real head-ref-race "$case_root" "$real_repo" finish "$defective_collector" \
+  >"$case_root/defective-packet.json" 2>/dev/null ||
+  fail "the head-ref canary passes even when definitions read the mutable HEAD ref"
+"$real_jq" -e '.secrets.verdict == "CLEAN" and .collectorState == "COMPLETE"' \
+  "$case_root/defective-packet.json" >/dev/null ||
+  fail "the head-ref canary does not distinguish a mutable HEAD definition read"
+pass "definition binding resolves from the authenticated head OID, not the mutable HEAD ref"
+
+case_root="$fixture_root/persistent-replacement-ref"
+make_mocks "$case_root"
+real_repo="$(make_real_checkout "$case_root" false)"
+env -u GIT_NO_REPLACE_OBJECTS "$real_git" -C "$real_repo" replace --force \
+  "$(<"$case_root/head-oid")" "$(<"$case_root/base-oid")" >/dev/null
+if run_real happy "$case_root" "$real_repo" start >/dev/null 2>"$case_root/start.err"; then
+  fail "a checkout carrying a replacement ref opened an evidence session"
+fi
+rg -Fq 'rejects Git replacement refs' "$case_root/start.err" ||
+  fail "a persistent replacement ref was not rejected for the stated reason"
+pass "a checkout carrying a replacement ref cannot open an evidence session"
+
+case_root="$fixture_root/token-file-channel"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+mkdir -p "$case_root/private"
+(umask 077; tr -d '\r\n' <"$case_root/operator-session-token" >"$case_root/private/token")
+printf '\n' >>"$case_root/private/token"
+prepare_scan_definitions happy "$case_root"
+env MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" \
+  TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$collector" finish <"$case_root/private/token" >"$case_root/packet.json" ||
+  fail "the documented token-file channel did not complete evidence collection"
+"$real_jq" -e '.collectorState == "COMPLETE" and .pr.number == 42' \
+  "$case_root/packet.json" >/dev/null ||
+  fail "the documented token-file channel produced an incomplete packet"
+if rg -Fq 'VALIDATED_SESSION_TOKEN' "$skill_file"; then
+  fail "skill still substitutes the session token literal into command text"
+fi
+if rg -q 'printf[^|]*\|[^|]*collect-pre-merge-evidence\.sh (abort|finish)' "$skill_file"; then
+  fail "skill still pipes the session token from parent command text into the collector"
+fi
+rg -Fq 'collect-pre-merge-evidence.sh abort <SESSION_TOKEN_FILE' "$skill_file" ||
+  fail "skill does not document a redirected token file for abort"
+rg -Fq 'collect-pre-merge-evidence.sh finish <SESSION_TOKEN_FILE' "$skill_file" ||
+  fail "skill does not document a redirected token file for finish"
+rg -Fq 'It does not hide the token from a process already running as the operator' "$skill_file" ||
+  fail "skill does not state the limits of the token-file channel"
+pass "the session token reaches abort and finish through a redirected file, never command text"
 
 printf 'PASS: %d pre-merge evidence canaries passed.\n' "$passed"
