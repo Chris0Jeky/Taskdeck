@@ -5,6 +5,11 @@
 - Deciders: Maintainer (Chris)
 - Related: ADR-0038 (Paper canonical), ADR-0041 (desktop key auto-generation), `docs/REVIVAL_PLAN.md`, `docs/analysis/2026-07-10_revival_assessment.md`, tracker `#1278` (archive exit criteria — repurposed), REVIVAL-00 tracker
 
+> **Supersession note (2026-08-12):** Decision 3 below and its MIT-forever
+> commitment are superseded by [ADR-0050](ADR-0050-gplv3-copyleft-core.md).
+> Copies already received under MIT keep those grants; the current core is
+> GPL-3.0-only.
+
 ## Context
 
 On 2026-06-13 the maintainer decided to finish Taskdeck for personal use and archive it (masterplan Direction section; closeout wave #1269–#1278). On 2026-07-10 the maintainer reopened that decision after successfully prototyping a WhisperX transcription + cheap-LLM pipeline outside the repo, and commissioned a two-track analysis (seven code-grounded dimension reviews with ~25 adversarially verified claims, plus market deep-research with live-verified competitor traction data — see `docs/analysis/2026-07-10_revival_assessment.md`).
