@@ -133,6 +133,20 @@ Optional:
   - `node scripts/check-docs-governance.mjs`
   - `node scripts/check-github-ops-governance.mjs`
 
+## Stable Project Snapshot Contract
+
+The priority audit must collect a complete ProjectV2 item snapshot before it reports a result or
+writes a field. Every page must preserve the initial `totalCount` and `updatedAt`; duplicate IDs,
+cursor faults, truncated nested connections, malformed responses, limit ceilings, and policy
+defects remain immediate non-retryable failures.
+
+When pagination observes only a recognized `totalCount` or `updatedAt` drift, the helper may make at
+most two whole-snapshot restarts. Each restart begins with `after = null` and discards every partial
+item, cursor, ID, and snapshot value from the failed attempt. Exhaustion exits nonzero with
+deterministic diagnostics, emits no `complete: true` result, and performs no project writes.
+`-Apply` retains its pre-write snapshot/plan drift guard and complete post-Apply audit; a restart
+does not weaken either boundary.
+
 ## Verification Checklist
 
 After setup changes:

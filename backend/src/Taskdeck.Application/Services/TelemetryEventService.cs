@@ -55,9 +55,9 @@ public sealed class TelemetryEventService : ITelemetryEventService
 
         _logger.LogInformation(
             "Telemetry event recorded: {EventName} session={SessionId} mode={WorkspaceMode}",
-            telemetryEvent.Event,
-            telemetryEvent.SessionId,
-            telemetryEvent.WorkspaceMode);
+            LogValueSanitizer.Sanitize(telemetryEvent.Event),
+            LogValueSanitizer.Sanitize(telemetryEvent.SessionId),
+            LogValueSanitizer.Sanitize(telemetryEvent.WorkspaceMode));
 
         return true;
     }
@@ -109,13 +109,15 @@ public sealed class TelemetryEventService : ITelemetryEventService
         {
             _logger.LogWarning(
                 "Telemetry event rejected: invalid event name format '{EventName}' (expected noun.verb)",
-                telemetryEvent.Event);
+                LogValueSanitizer.Sanitize(telemetryEvent.Event));
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(telemetryEvent.SessionId))
         {
-            _logger.LogWarning("Telemetry event rejected: empty session ID for event {EventName}", telemetryEvent.Event);
+            _logger.LogWarning(
+                "Telemetry event rejected: empty session ID for event {EventName}",
+                LogValueSanitizer.Sanitize(telemetryEvent.Event));
             return false;
         }
 
@@ -127,7 +129,9 @@ public sealed class TelemetryEventService : ITelemetryEventService
             {
                 _logger.LogWarning(
                     "Telemetry event {EventName}: properties truncated from {Count} to {Max}",
-                    telemetryEvent.Event, telemetryEvent.Properties.Count, MaxPropertyCount);
+                    LogValueSanitizer.Sanitize(telemetryEvent.Event),
+                    telemetryEvent.Properties.Count,
+                    MaxPropertyCount);
             }
 
             var sanitized = new Dictionary<string, object>();
@@ -139,7 +143,8 @@ public sealed class TelemetryEventService : ITelemetryEventService
                 {
                     _logger.LogDebug(
                         "Telemetry event {EventName}: stripped disallowed property key '{Key}'",
-                        telemetryEvent.Event, kvp.Key);
+                        LogValueSanitizer.Sanitize(telemetryEvent.Event),
+                        LogValueSanitizer.Sanitize(kvp.Key));
                     continue;
                 }
 

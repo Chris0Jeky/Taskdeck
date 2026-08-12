@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Xunit;
 
@@ -37,8 +38,68 @@ public sealed class CliTestHarnessTests
             .And.NotContain(sentinel)
             .And.Contain("pre=process=live")
             .And.Contain("post=process=exited")
-            .And.Contain("last=migration-begin")
             .And.Contain("cleanup=reaped");
+
+        // The deliberately short deadline may interrupt any startup phase on a
+        // loaded Windows host. Exact trace ordering is covered separately; this
+        // regression owns redaction plus the terminate-and-reap guarantee.
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCanceledAfterMigrationBegins_ReapsTheChildBeforeReturning()
+    {
+        const string sentinel = "TOP_SECRET_SENTINEL";
+        using var processCancellation = new CancellationTokenSource();
+        await using var harness = new CliTestHarness(
+            "cli-migration-cancellation",
+            processCancellationToken: processCancellation.Token);
+        await using var migrationLock = new FileStream(
+            $"{harness.DatabasePath}.migrate.lock",
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        Task<CliCommandResult>? runTask = null;
+        try
+        {
+            runTask = harness.RunAsync($"boards create {sentinel} --json");
+            await WaitForStartupPhaseAsync(
+                harness.DataDirectory,
+                CliStartupTrace.MigrationBeginPhase,
+                TimeSpan.FromSeconds(10));
+
+            harness.LastStartedProcessId.Should().HaveValue();
+            ProcessHasExited(harness.LastStartedProcessId!.Value).Should().BeFalse();
+            processCancellation.Cancel();
+
+            Func<Task> action = async () => await runTask;
+            var timeout = await action.Should().ThrowAsync<TimeoutException>();
+
+            ProcessHasExited(harness.LastStartedProcessId.Value).Should().BeTrue();
+            timeout.Which.Message.Should().Contain("command=boards/create")
+                .And.NotContain(sentinel)
+                .And.Contain("pre=process=live")
+                .And.Contain("post=process=exited")
+                .And.Contain("last=migration-begin")
+                .And.Contain("cleanup=reaped");
+        }
+        finally
+        {
+            processCancellation.Cancel();
+            if (runTask is not null)
+            {
+                try
+                {
+                    await runTask;
+                }
+                catch (Exception)
+                {
+                    // The assertions above own the expected failure. If phase
+                    // readiness fails first, still observe the canceled run so
+                    // no child or task escapes the test.
+                }
+            }
+        }
     }
 
     [Theory]
@@ -51,6 +112,29 @@ public sealed class CliTestHarnessTests
 
         shape.Should().Be(expectedShape);
         shape.Should().NotContain("TOP_SECRET_SENTINEL");
+    }
+
+    [Fact]
+    public void CliTestProject_ProcessLaunchesStayBehindSharedHarness()
+    {
+        var sourceDirectory = GetSourceDirectory();
+        var directLaunchTokens = new[]
+        {
+            $"new {nameof(ProcessStartInfo)}",
+            $"new {nameof(Process)} {{",
+            $"{nameof(Process)}.Start("
+        };
+
+        var directLaunchFiles = Directory
+            .EnumerateFiles(sourceDirectory, "*.cs", SearchOption.TopDirectoryOnly)
+            .Where(path => directLaunchTokens.Any(token =>
+                File.ReadAllText(path).Contains(token, StringComparison.Ordinal)))
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        directLaunchFiles.Should().Equal(["CliTestHarness.cs"],
+            "every real CLI root must share the bounded launch, timeout, and reap policy");
     }
 
     [Fact]
@@ -558,6 +642,44 @@ public sealed class CliTestHarnessTests
         catch (Exception exception)
         {
             return exception;
+        }
+    }
+
+    private static string GetSourceDirectory([CallerFilePath] string sourceFilePath = "") =>
+        Path.GetDirectoryName(sourceFilePath)
+        ?? throw new InvalidOperationException("Could not resolve the CLI test source directory.");
+
+    private static async Task WaitForStartupPhaseAsync(
+        string dataDirectory,
+        string expectedPhase,
+        TimeSpan timeout)
+    {
+        using var timeoutCancellation = new CancellationTokenSource(timeout);
+        try
+        {
+            while (true)
+            {
+                foreach (var tracePath in Directory.EnumerateFiles(
+                    dataDirectory,
+                    "startup-*.trace",
+                    SearchOption.TopDirectoryOnly))
+                {
+                    var fileName = Path.GetFileNameWithoutExtension(tracePath);
+                    var correlationId = fileName["startup-".Length..];
+                    var snapshot = CliStartupTrace.ReadSnapshot(tracePath, correlationId);
+                    if (string.Equals(snapshot.LastPhase, expectedPhase, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(10), timeoutCancellation.Token);
+            }
+        }
+        catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"CLI startup trace did not reach the expected phase within {timeout.TotalSeconds}s.");
         }
     }
 
