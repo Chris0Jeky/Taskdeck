@@ -20,7 +20,7 @@ supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
 ## Delivery update (2026-08-12, correctness and dependency wave)
 
 - **Correctness repairs landed in PRs `#1627`, `#1630`, `#1631`, and `#1629`.** Buffered provider refusals now persist as sanitized degraded chat history; standalone MCP HTTP hosts satisfy their endpoint middleware contract; shutdown-abandoned queue claims release without consuming retry budget; and `DATA_MODEL.md` is recertified against the EF model and snapshot. `#1629` closes the GitHub issue, while the maintainer-owned record checkbox remains open.
-- **Dependency and tracking hygiene landed in PRs `#1622`, `#1623`, and `#1624`.** The npm and .NET minor update groups are merged, and the human-action document's section labels now follow reading order. The current MCP package pin is 2.1.0.
+- **Dependency and tracking hygiene landed in PRs `#1622`, `#1623`, and `#1624`.** The npm minor-patch group (`#1622`) is merged; the NuGet/.NET minor-patch group (`#1623`) updates `ModelContextProtocol` and `ModelContextProtocol.AspNetCore` from 2.0.0 to 2.1.0; and the human-action document's section labels now follow reading order. The current MCP package pin is 2.1.0.
 - **Frontend typecheck burn-down advanced in PR `#1634`:** the 24 one-error specs were fixed, leaving 40 quarantined files and 391 errors; the active project now gates 244 of the 302 Vitest-run specs, with 58 outside this gate. `#1607` remains the burn-down tracker.
 
 ## Delivery update (2026-08-12, log sanitization)
