@@ -133,6 +133,7 @@ jobs:
         run: |
           mkdir -p publish/${{ matrix.rid }}/wwwroot
           cp -r frontend-dist/* publish/${{ matrix.rid }}/wwwroot/
+          cp LICENSE publish/${{ matrix.rid }}/LICENSE
 
       - name: Verify frontend assets present
         shell: bash
@@ -142,6 +143,16 @@ jobs:
             exit 1
           fi
           echo "Frontend assets verified ($(find publish/${{ matrix.rid }}/wwwroot -type f | wc -l) files)"
+
+      - name: Verify GPL licence present
+        shell: bash
+        run: |
+          LICENCE="publish/${{ matrix.rid }}/LICENSE"
+          if [ ! -f "$LICENCE" ] || ! grep -q "GNU GENERAL PUBLIC LICENSE" "$LICENCE"; then
+            echo "::error::GPLv3 licence missing from the desktop distribution"
+            exit 1
+          fi
+          echo "GPLv3 licence verified in the desktop distribution"
 
       # -----------------------------------------------------------------------
       # Post-publish smoke test (#1123 AC2)

@@ -22,6 +22,7 @@ WORKDIR /usr/share/nginx/html
 # config file override and the built static assets.
 COPY --chown=nginx:nginx deploy/nginx/frontend.conf /etc/nginx/conf.d/default.conf
 COPY --from=build --chown=nginx:nginx /app/dist ./
+COPY --chown=nginx:nginx LICENSE ./LICENSE
 
 EXPOSE 8080
 

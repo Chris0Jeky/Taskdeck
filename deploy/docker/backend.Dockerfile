@@ -42,6 +42,7 @@ RUN groupadd --system --gid 10001 appuser \
 
 COPY --from=build --chown=appuser:appuser /app/publish ./
 COPY --from=build --chown=appuser:appuser /app/cli ./cli/
+COPY --chown=appuser:appuser LICENSE /app/LICENSE
 
 # Entrypoint handles upgrade-time volume ownership and drops to appuser via
 # setpriv. We keep the container starting as root so the entrypoint can chown
