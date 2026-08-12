@@ -5,8 +5,9 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// DelegatingHandler that enforces the egress envelope for all outbound HTTP requests.
-/// Rejects requests to hosts not in the EgressRegistry and blocks redirects to
-/// out-of-envelope destinations.
+/// Rejects requests to hosts not in the EgressRegistry, blocks redirects to
+/// out-of-envelope destinations, and can fail closed on every redirect for
+/// clients whose destination must remain fixed.
 /// GP-10: EgressViolations are loud, structured, and never swallowed.
 /// </summary>
 public sealed class EgressEnvelopeHandler : DelegatingHandler
@@ -16,15 +17,26 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
     private readonly IEgressRegistry _egressRegistry;
     private readonly ILogger<EgressEnvelopeHandler>? _logger;
     private readonly string? _sourceComponent;
+    private readonly bool _followRedirects;
 
     public EgressEnvelopeHandler(
         IEgressRegistry egressRegistry,
         ILogger<EgressEnvelopeHandler>? logger = null,
         string? sourceComponent = null)
+        : this(egressRegistry, logger, sourceComponent, followRedirects: true)
+    {
+    }
+
+    public EgressEnvelopeHandler(
+        IEgressRegistry egressRegistry,
+        ILogger<EgressEnvelopeHandler>? logger,
+        string? sourceComponent,
+        bool followRedirects)
     {
         _egressRegistry = egressRegistry ?? throw new ArgumentNullException(nameof(egressRegistry));
         _logger = logger;
         _sourceComponent = sourceComponent;
+        _followRedirects = followRedirects;
     }
 
     /// <summary>Maximum number of redirects to follow manually.</summary>
@@ -48,32 +60,48 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         var currentRequest = request;
         var response = await base.SendAsync(currentRequest, cancellationToken);
 
+        if (!_followRedirects && IsRedirect(response))
+        {
+            var redirectUri = response.Headers.Location;
+            var resolvedRedirectUri = redirectUri is null
+                ? null
+                : TryResolveRedirectUri(currentRequest.RequestUri, redirectUri);
+            response.Dispose();
+            ThrowRedirectViolation(
+                currentRequest.RequestUri,
+                resolvedRedirectUri,
+                EgressViolationType.RedirectNotAllowed,
+                "Redirects are disabled for this outbound client. Redirect blocked.");
+        }
+
         // Manually follow redirects, validating each target against the egress envelope
         var redirectCount = 0;
         while (IsRedirect(response) && response.Headers.Location is { } redirectUri && redirectCount < MaxRedirects)
         {
             redirectCount++;
 
-            var resolvedRedirectUri = redirectUri.IsAbsoluteUri
-                ? redirectUri
-                : new Uri(currentRequest.RequestUri!, redirectUri);
+            var resolvedRedirectUri = TryResolveRedirectUri(currentRequest.RequestUri, redirectUri);
+
+            if (resolvedRedirectUri is null)
+            {
+                response.Dispose();
+                ThrowRedirectViolation(
+                    currentRequest.RequestUri,
+                    null,
+                    EgressViolationType.RedirectToUnknownHost,
+                    "Redirect target was not a valid absolute or relative URI. Redirect blocked.");
+            }
 
             var redirectHost = resolvedRedirectUri.Host;
 
             if (string.IsNullOrWhiteSpace(redirectHost) || !_egressRegistry.IsHostAllowed(redirectHost))
             {
-                var violation = new EgressViolation(
-                    attemptedHost: redirectHost ?? "(empty)",
-                    requestUri: resolvedRedirectUri.ToString(),
-                    violationType: EgressViolationType.RedirectToUnknownHost,
-                    reason: $"Redirect to host '{redirectHost}' is not in the egress envelope. Redirect blocked.",
-                    sourceComponent: _sourceComponent);
-
-                _logger?.LogError(
-                    "EgressViolation: redirect to '{Host}' not in egress envelope. OriginalURI={OriginalUri}, RedirectURI={RedirectUri}, Source={Source}",
-                    redirectHost, currentRequest.RequestUri, resolvedRedirectUri, _sourceComponent);
-
-                throw new EgressViolationException(violation);
+                response.Dispose();
+                ThrowRedirectViolation(
+                    currentRequest.RequestUri,
+                    resolvedRedirectUri,
+                    EgressViolationType.RedirectToUnknownHost,
+                    $"Redirect to host '{redirectHost}' is not in the egress envelope. Redirect blocked.");
             }
 
             // Follow the redirect: create a new request preserving the method for 307/308
@@ -129,32 +157,34 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
         var host = requestUri?.Host;
         if (string.IsNullOrWhiteSpace(host))
         {
+            var sanitizedUri = SanitizeUriForAudit(requestUri);
             var violation = new EgressViolation(
                 attemptedHost: "(empty)",
-                requestUri: requestUri?.ToString() ?? "(null)",
+                requestUri: sanitizedUri,
                 violationType: EgressViolationType.UnknownHost,
                 reason: "Request has no host specified.",
                 sourceComponent: _sourceComponent);
 
             _logger?.LogError(
                 "EgressViolation: request with no host. URI={Uri}, Source={Source}",
-                requestUri, _sourceComponent);
+                sanitizedUri, _sourceComponent);
 
             throw new EgressViolationException(violation);
         }
 
         if (!_egressRegistry.IsHostAllowed(host))
         {
+            var sanitizedUri = SanitizeUriForAudit(requestUri);
             var violation = new EgressViolation(
                 attemptedHost: host,
-                requestUri: requestUri!.ToString(),
+                requestUri: sanitizedUri,
                 violationType: EgressViolationType.UnknownHost,
                 reason: $"Host '{host}' is not in the egress envelope. Request blocked.",
                 sourceComponent: _sourceComponent);
 
             _logger?.LogError(
                 "EgressViolation: host '{Host}' not in egress envelope. URI={Uri}, Source={Source}",
-                host, requestUri, _sourceComponent);
+                host, sanitizedUri, _sourceComponent);
 
             throw new EgressViolationException(violation);
         }
@@ -164,6 +194,55 @@ public sealed class EgressEnvelopeHandler : DelegatingHandler
     {
         var statusCode = (int)response.StatusCode;
         return statusCode is >= 300 and < 400;
+    }
+
+    private static Uri? TryResolveRedirectUri(Uri? currentUri, Uri redirectUri)
+    {
+        if (redirectUri.IsAbsoluteUri)
+            return redirectUri;
+
+        return currentUri is not null && Uri.TryCreate(currentUri, redirectUri, out var resolved)
+            ? resolved
+            : null;
+    }
+
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private void ThrowRedirectViolation(
+        Uri? originalUri,
+        Uri? redirectUri,
+        EgressViolationType violationType,
+        string reason)
+    {
+        var redirectHost = redirectUri?.Host;
+        var sanitizedOriginalUri = SanitizeUriForAudit(originalUri);
+        var sanitizedRedirectUri = SanitizeUriForAudit(redirectUri);
+        var violation = new EgressViolation(
+            attemptedHost: string.IsNullOrWhiteSpace(redirectHost) ? "(empty)" : redirectHost,
+            requestUri: sanitizedRedirectUri,
+            violationType: violationType,
+            reason: reason,
+            sourceComponent: _sourceComponent);
+
+        _logger?.LogError(
+            "EgressViolation: redirect blocked. Host={Host}, OriginalOrigin={OriginalOrigin}, RedirectOrigin={RedirectOrigin}, Source={Source}",
+            redirectHost ?? "(empty)",
+            sanitizedOriginalUri,
+            sanitizedRedirectUri,
+            _sourceComponent);
+
+        throw new EgressViolationException(violation);
+    }
+
+    private static string SanitizeUriForAudit(Uri? uri)
+    {
+        if (uri is null)
+            return "(null)";
+        if (!uri.IsAbsoluteUri || string.IsNullOrWhiteSpace(uri.Host))
+            return "(invalid-origin)";
+
+        return new UriBuilder(uri.Scheme, uri.Host, uri.IsDefaultPort ? -1 : uri.Port)
+            .Uri
+            .GetLeftPart(UriPartial.Authority);
     }
 
     private static async Task<ReplayableContent?> PrepareReplayableContentAsync(

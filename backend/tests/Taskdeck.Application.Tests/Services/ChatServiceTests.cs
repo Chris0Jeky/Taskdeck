@@ -1948,6 +1948,92 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_CancelledAfterDispatch_CommitsReservationEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Buffered dispatch cancellation");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                request.DispatchContext.MarkDispatched();
+                return Task.FromException<LlmCompletionResult>(new OperationCanceledException());
+            });
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        var act = () => service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("hello"),
+            default);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ObservedPreDispatch_ReleasesReservation()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Buffered pre-dispatch rejection");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                return new LlmCompletionResult(
+                    "configuration rejected",
+                    0,
+                    false,
+                    Provider: "OpenAICompatible",
+                    Model: "vendor/model",
+                    IsDegraded: true)
+                {
+                    HasAuthoritativeTokenUsage = false,
+                    ShouldSettleQuotaReservation = true
+                };
+            });
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("hello"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        quotaMock.Verify(q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task StreamResponseAsync_ProviderYieldsOnlyErrorEvent_ShouldReleaseNotCommit()
     {
         // Boundary of the billable-once-started rule: an error event carries no delivered tokens
@@ -1987,9 +2073,477 @@ public class ChatServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_PostDispatchErrorOnly_CommitsEstimateAndPersistsSanitizedPlaceholder()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched error-only stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) => DispatchedErrorOnlyStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        await foreach (var _ in service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.DegradedReason.Should().Be("The upstream provider could not complete the response.");
+        persisted.Content.Should().NotContain("secret-upstream-detail");
+        persisted.DegradedReason.Should().NotContain("secret-upstream-detail");
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_PostDispatchErrorWithUsage_CommitsActualAndPersistsSanitizedPlaceholder()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched error with usage");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+                DispatchedErrorWithUsageStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        await foreach (var _ in service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("The upstream provider could not complete the response.");
+        persisted.TokenUsage.Should().Be(5000);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            5000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_OversizedTerminal_PersistsPlaceholderAndCommitsAuthoritativeUsage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Oversized terminal stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+                OversizedTerminalStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+        var events = new List<LlmTokenEvent>();
+
+        await foreach (var item in service.StreamResponseAsync(session.Id, userId, default))
+            events.Add(item);
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Be("Streamed assistant response exceeded the safety limit.");
+        events[0].TokensUsed.Should().Be(100000);
+        events[0].Provider.Should().Be("OpenAICompatible");
+        events[0].Model.Should().Be("vendor/model");
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.Content.Length.Should().BeLessThan(1_048_577);
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("Streamed assistant response exceeded the safety limit.");
+        persisted.TokenUsage.Should().Be(100000);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            100000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_CancelledAfterDispatchBeforeFirstEvent_CommitsEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Cancelled dispatched stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken token) =>
+                DispatchedBlockingStream(request, token));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        var act = async () =>
+        {
+            await foreach (var _ in service.StreamResponseAsync(session.Id, userId, cancellation.Token)) { }
+        };
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_UnknownCompatibleUsage_CommitsReservationEstimateForLargePrompt()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Unknown usage quota test");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "short reply",
+                0,
+                false,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                HasAuthoritativeTokenUsage = false
+            });
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 4000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        var result = await serviceWithQuota.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(new string('x', 4000)),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TokenUsage.Should().BeNull("upstream did not report authoritative usage");
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            4000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false, "Response was stopped by the upstream content filter.", "Response was stopped by the upstream content filter.")]
+    [InlineData(true, "secret-upstream-detail", "The upstream provider could not complete the response.")]
+    public async Task StreamResponseAsync_TerminalDegradedOrError_PersistsPartialHistoryAsDegraded(
+        bool terminalError,
+        string terminalReason,
+        string expectedReason)
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream terminal state persistence");
+        ChatMessage? persisted = null;
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) =>
+            {
+                persisted = message;
+                return message;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(TerminalStateStream(terminalError, terminalReason));
+
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        persisted.Should().NotBeNull();
+        persisted!.Content.Should().Be("partial response");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be(expectedReason);
+        if (terminalError)
+            persisted.DegradedReason.Should().NotContain(terminalReason);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_EmptyDegradedTerminal_PersistsSanitizedReloadableHistoryAndUsage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Empty degraded terminal persistence");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(EmptyDegradedTerminalStream());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+        var reloaded = await serviceWithQuota.GetSessionAsync(session.Id, userId, default);
+
+        reloaded.IsSuccess.Should().BeTrue();
+        reloaded.Value.RecentMessages.Should().ContainSingle();
+        var persisted = reloaded.Value.RecentMessages.Single();
+        persisted.Content.Should().Be("The provider ended the response without returning text.");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("Response was stopped by the upstream content filter.");
+        persisted.TokenUsage.Should().Be(7);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            7,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_UsageAbsent_CommitsReservationEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream missing usage quota");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamWithoutUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> ErrorOnlyStream()
     {
         yield return new LlmTokenEvent(string.Empty, true, Error: "provider unavailable");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedErrorOnlyStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Error: "secret-upstream-detail",
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedErrorWithUsageStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Error: "secret-upstream-detail",
+            TokensUsed: 5000,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> OversizedTerminalStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            new string('x', 1_048_577),
+            true,
+            TokensUsed: 100000,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedBlockingStream(
+        ChatCompletionRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        yield break;
+    }
+
+    private ChatService CreateServiceWithQuota(ILlmQuotaService quotaService) => new(
+        _unitOfWorkMock.Object,
+        _llmProviderMock.Object,
+        _plannerMock.Object,
+        _proposalServiceMock.Object,
+        _policyEngineMock.Object,
+        _notificationServiceMock.Object,
+        _authorizationServiceMock.Object,
+        quotaService: quotaService);
+
+    private static async IAsyncEnumerable<LlmTokenEvent> TerminalStateStream(
+        bool terminalError,
+        string reason)
+    {
+        yield return new LlmTokenEvent(
+            "partial response",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        if (terminalError)
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                Error: reason,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model");
+        }
+        else
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                TokensUsed: 7,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                IsDegraded = true,
+                DegradedReason = reason
+            };
+        }
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> StreamWithoutUsage()
+    {
+        yield return new LlmTokenEvent(
+            "hello",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> EmptyDegradedTerminalStream()
+    {
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            TokensUsed: 7,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model")
+        {
+            IsDegraded = true,
+            DegradedReason = "Response was stopped by the upstream content filter."
+        };
         await Task.CompletedTask;
     }
 

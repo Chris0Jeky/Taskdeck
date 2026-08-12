@@ -14,6 +14,7 @@ internal sealed class ProtectedOutboundSentryHttpMessageHandlerFilter : IHttpMes
     private static readonly HashSet<string> ProtectedClientNames = new(StringComparer.Ordinal)
     {
         nameof(OpenAiLlmProvider),
+        LlmProviderRegistration.OpenAiCompatibleHttpClientName,
         nameof(GeminiLlmProvider),
         nameof(OllamaLlmProvider),
         "OutboundWebhookDelivery"

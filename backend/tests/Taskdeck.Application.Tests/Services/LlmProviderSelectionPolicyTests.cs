@@ -89,6 +89,186 @@ public class LlmProviderSelectionPolicyTests
     }
 
     [Fact]
+    public void Evaluate_ShouldSelectOpenAiCompatible_WhenProductionAndConfigurationIsValid()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { ["X-Title"] = "Taskdeck" }
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAiCompatible);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleBaseUrlTargetsPrivateHost()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://127.0.0.1/v1",
+            Model = "local-model"
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("SSRF");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeadersIsNull()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = null!
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("ExtraHeaders");
+    }
+
+    [Theory]
+    [InlineData("Content-Type")]
+    [InlineData("X Invalid")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeaderIsInvalidOrRestricted(string headerName)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { [headerName] = "value" }
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("invalid or restricted");
+    }
+
+    [Theory]
+    [InlineData("Host")]
+    [InlineData("Proxy-Authorization")]
+    [InlineData("Connection")]
+    [InlineData("Transfer-Encoding")]
+    [InlineData("Cookie")]
+    [InlineData("Set-Cookie")]
+    [InlineData("X-Authorization")]
+    [InlineData("Authentication-Info")]
+    [InlineData("WWW-Authenticate")]
+    [InlineData("X-Api-Key")]
+    [InlineData("X-Auth-Token")]
+    [InlineData("X-Forwarded-Host")]
+    [InlineData("X-Taskdeck-Correlation-Id")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeaderIsDangerous(string headerName)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { [headerName] = "value" }
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("dangerous or reserved");
+    }
+
+    [Theory]
+    [InlineData("test\r\nX-Evil: yes", "ApiKey", null)]
+    [InlineData("test-compatible-key", "BaseUrl", "https://api.groq.com/openai/v1?target=other")]
+    [InlineData("test-compatible-key", "BaseUrl", "https://api.groq.com/openai/v1#fragment")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleCredentialOrBaseUrlIsAmbiguous(
+        string apiKey,
+        string expectedReason,
+        string? baseUrl = null)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = apiKey,
+            BaseUrl = baseUrl ?? "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant"
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain(expectedReason);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleTimeoutExceedsDeclaredMaximum()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            TimeoutSeconds = 301
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("between 1 and 300");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleResponseBudgetsAreInconsistent()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            MaxResponseBytes = 1024,
+            MaxSseLineBytes = 512,
+            MaxSseEventBytes = 2048
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("budgets");
+    }
+
+    [Fact]
     public void Evaluate_ShouldSelectMock_WhenGeminiConfigurationIsInvalid()
     {
         var settings = BuildValidSettings();

@@ -38,6 +38,15 @@ services:
       Llm__EnableLiveProviders: ${TASKDECK_LLM_ENABLE_LIVE_PROVIDERS:-false}
       Llm__Provider: ${TASKDECK_LLM_PROVIDER:-Mock}
       Llm__OpenAi__ApiKey: ${TASKDECK_LLM_OPENAI_API_KEY:-}
+      Llm__OpenAiCompatible__ApiKey: ${TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY:-}
+      Llm__OpenAiCompatible__BaseUrl: ${TASKDECK_LLM_OPENAI_COMPATIBLE_BASE_URL:-}
+      Llm__OpenAiCompatible__Model: ${TASKDECK_LLM_OPENAI_COMPATIBLE_MODEL:-}
+      Llm__OpenAiCompatible__TimeoutSeconds: ${TASKDECK_LLM_OPENAI_COMPATIBLE_TIMEOUT_SECONDS:-30}
+      Llm__OpenAiCompatible__MaxResponseBytes: ${TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_RESPONSE_BYTES:-1048576}
+      Llm__OpenAiCompatible__MaxSseLineBytes: ${TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_LINE_BYTES:-65536}
+      Llm__OpenAiCompatible__MaxSseEventBytes: ${TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_EVENT_BYTES:-131072}
+      Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer: ${TASKDECK_LLM_OPENAI_COMPATIBLE_HTTP_REFERER:-}
+      Llm__OpenAiCompatible__ExtraHeaders__X-Title: ${TASKDECK_LLM_OPENAI_COMPATIBLE_X_TITLE:-}
       Llm__Gemini__ApiKey: ${TASKDECK_LLM_GEMINI_API_KEY:-}
       Connectors__EncryptionKey: ${TASKDECK_CONNECTORS_ENCRYPTION_KEY:?TASKDECK_CONNECTORS_ENCRYPTION_KEY must be set to a base64-encoded 256-bit key (openssl rand -base64 32)}
       DevelopmentSandbox__Enabled: "false"
