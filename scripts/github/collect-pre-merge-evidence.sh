@@ -37,7 +37,9 @@ path_is_inside_tree() {
   [[ -n "$current" && -n "$tree_root" && -d "$tree_root" ]] || return 1
   while :; do
     [[ -e "$current" ]] || return 1
-    [[ "$current" -ef "$tree_root" ]] && return 0
+    if [[ "$current" -ef "$tree_root" ]]; then
+      return 0
+    fi
     parent="${current%/*}"
     [[ -n "$parent" ]] || parent="/"
     [[ "$parent" != "$current" ]] || return 1

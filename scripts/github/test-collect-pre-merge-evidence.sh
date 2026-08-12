@@ -890,7 +890,7 @@ rg -Fq 'finish "$session_token"' "$collector" &&
   fail "finish still accepts the session token through argv"
 rg -Fq 'abort "$session_token"' "$collector" &&
   fail "abort still accepts the session token through argv"
-pass "state snapshot, hidden-index, replacement-ref, and protected-token guards are present"
+pass "hidden-index inspection and the stdin-only session token are still declared"
 
 case_root="$fixture_root/invalid-argument"
 make_mocks "$case_root"
