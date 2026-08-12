@@ -92,4 +92,25 @@ public class UnhandledExceptionMiddlewareTests
         entry.Message.Should().NotContain("ordinary board title");
         entry.Message.Should().NotContain("arbitrary user content");
     }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldStripLineBreaksFromRequestMetadata()
+    {
+        var logger = new InMemoryLogger<UnhandledExceptionMiddleware>();
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        context.Request.Method = "POST\r\nforged-method";
+        context.Request.Path = "/api/capture/items";
+        context.TraceIdentifier = "trace\nforged-trace";
+
+        RequestDelegate next = _ => throw new InvalidOperationException("ignored content");
+        var middleware = new UnhandledExceptionMiddleware(next, logger);
+
+        await middleware.InvokeAsync(context);
+
+        var message = logger.Entries.Single(entry => entry.Level == LogLevel.Error).Message;
+        message.Should().NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("POSTforged-method");
+        message.Should().Contain("traceforged-trace");
+    }
 }

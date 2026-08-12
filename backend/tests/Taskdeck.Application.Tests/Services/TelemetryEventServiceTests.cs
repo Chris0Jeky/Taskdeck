@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.Services;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -177,5 +178,22 @@ public class TelemetryEventServiceTests
 
         var result = service.RecordEvent(evt);
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RecordEvent_ShouldStripLineBreaksFromLoggedValues()
+    {
+        var logger = new InMemoryLogger<TelemetryEventService>();
+        var service = new TelemetryEventService(_settings, logger);
+        var evt = CreateValidEvent();
+        evt.SessionId = "session\r\nforged-entry";
+        evt.WorkspaceMode = "guided\nforged-mode";
+
+        service.RecordEvent(evt).Should().BeTrue();
+
+        var message = logger.Entries.Single().Message;
+        message.Should().NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("sessionforged-entry");
+        message.Should().Contain("guidedforged-mode");
     }
 }
