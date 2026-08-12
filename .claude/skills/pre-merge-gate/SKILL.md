@@ -154,13 +154,37 @@ authenticated bytes, so repository code cannot rewrite opening metadata in place
 authentication and the copy — to extend an expired evidence window.
 
 Three collector properties back the rest of that claim, and each is worth knowing when a run fails
-closed. Evidence tools (`gh`, `git`, `jq`, `cmp`, `openssl`, `sha256sum`, and any
-`TASKDECK_*_EXECUTABLE` override) are resolved to absolute paths and rejected when they resolve
-inside the measured checkout or the primary checkout sharing its Git directory, because
-`.codex/config.toml` prepends the gitignored, writable `.runtime-codex/bin` directory to `PATH`.
-Git replacement refs are disabled for every Git invocation, so a transient `refs/replace/` ref
-cannot redirect the scan-definition reads between the two clean-checkout boundaries. Those
-definition reads resolve from the authenticated opening head OID rather than the mutable `HEAD`
+closed.
+
+**Evidence tools cannot come from a checkout.** `.codex/config.toml` prepends the gitignored,
+writable `.runtime-codex/bin` directory to `PATH`, so the collector treats every external program
+it runs as an evidence tool — `gh`, `git`, `jq`, `cmp`, `openssl`, `sha256sum`, `awk`, `readlink`,
+`cp`, `mv`, `rm`, `ln`, `mkdir`, `mktemp`, `tr`, and any `TASKDECK_*_EXECUTABLE` override. The
+order matters and is the whole mechanism:
+
+1. Before any external program runs, the collector discovers its checkout roots with bash alone —
+   walking up for `.git`, and parsing a linked worktree's `gitdir:` line textually to reach the
+   primary checkout that owns the shared Git directory. Git is not consulted, because a forged
+   `git` is exactly what this step exists to keep from running.
+2. Every `PATH` entry inside one of those roots, every relative entry, and every `.runtime-codex`
+   directory is dropped, and the sanitized `PATH` is exported. A checkout-local forgery is
+   therefore never a resolution candidate rather than something rejected after it has already run.
+3. Only then are the tools resolved, to absolute paths, with symlinks followed so a link in a
+   trusted directory cannot point into a checkout. Anything landing inside a discovered root is
+   refused by name.
+4. Once Git reports the measured checkout — which can differ from the collector's own — every
+   resolved tool is re-checked against it and against its primary checkout.
+
+So a forged tool in the collector's own checkout family never executes at all; a forged tool in a
+*measured* checkout that the collector does not live in is rejected immediately after Git's
+read-only identity probe and before any GitHub query. `sha256_text`, the primitive that
+authenticates the opening state, additionally splits the digest with bash rather than piping
+through `awk`, so no external program stands between `sha256sum` and the comparison.
+
+**Git replacement refs are disabled** for every Git invocation, so a transient `refs/replace/` ref
+cannot redirect the scan-definition reads between the two clean-checkout boundaries.
+
+**Definition reads resolve from the authenticated opening head OID** rather than the mutable `HEAD`
 ref, so moving a branch ref during collection cannot make changed definitions compare equal.
 
 `secrets.verdict` is `CLEAN` only when exactly one exact-head check named

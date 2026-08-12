@@ -5,6 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 collector="$script_dir/collect-pre-merge-evidence.sh"
 skill_file="$script_dir/../../.claude/skills/pre-merge-gate/SKILL.md"
 real_jq="$(command -v jq)"
+real_awk="$(command -v awk)"
 if ! real_git="$(command -v git.exe 2>/dev/null)"; then
   real_git="$(command -v git)"
 fi
@@ -902,6 +903,11 @@ if [[ -s "$case_root/calls.log" ]]; then
 fi
 pass "non-numeric explicit PR arguments fail before external commands"
 
+# The PATH-resolution half of this canary moved to the checkout-local PATH sanitization
+# canary below: a checkout-local directory is now dropped from PATH before any tool is
+# resolved, so a forged tool planted there is never a candidate and there is no rejection
+# message to assert. What remains here is the explicit override, which names its program
+# directly and is therefore still caught by the resolver's containment test.
 case_root="$fixture_root/untrusted-path-tool"
 make_mocks "$case_root"
 planted_root="$case_root/planted-checkout"
@@ -911,20 +917,6 @@ chmod +x "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
 cp "$case_root/bin/gh" "$planted_root/.runtime-codex/bin/gh"
 chmod +x "$planted_root/.runtime-codex/bin/gh"
 prepare_scan_definitions happy "$case_root"
-: >"$case_root/calls.log"
-if PATH="$planted_root/.runtime-codex/bin:$PATH" \
-  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
-  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
-  "$planted_root/scripts/github/collect-pre-merge-evidence.sh" start 42 \
-  >"$case_root/planted-path.out" 2>"$case_root/planted-path.err"; then
-  fail "an evidence tool planted on PATH inside the checkout was accepted"
-fi
-rg -Fq 'refusing an evidence tool resolved inside the collector checkout' \
-  "$case_root/planted-path.err" ||
-  fail "checkout-local PATH resolution was not rejected for the stated reason"
-if rg -q '^gh ' "$case_root/calls.log"; then
-  fail "the planted PATH gh executable was invoked"
-fi
 : >"$case_root/calls.log"
 if MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
   TASKDECK_GH_EXECUTABLE="$planted_root/.runtime-codex/bin/gh" \
@@ -940,8 +932,12 @@ if rg -q '^gh ' "$case_root/calls.log"; then
   fail "the planted override gh executable was invoked"
 fi
 : >"$case_root/calls.log"
+# The control removes both refusals that stand in this tool's way -- containment against the
+# collector checkout and the runtime-directory name rule -- because the planted tool sits in a
+# directory covered by each. With neither, the forged gh runs and answers for GitHub.
 defective_collector="$(make_defective_collector "$case_root" trusted-tools \
-  's|if path_is_inside_tree "$candidate_directory" "$collector_repo_root"; then|if false; then|')"
+  's@die "refusing an evidence tool resolved inside the collector checkout: $label ($resolved)"@:@' \
+  's@^path_is_untrusted_tool_directory() {@path_is_untrusted_tool_directory() { return 1;@')"
 mkdir -p "$(dirname "$defective_collector")/../../.runtime-codex/bin"
 cp "$case_root/bin/gh" "$(dirname "$defective_collector")/../../.runtime-codex/bin/gh"
 chmod +x "$(dirname "$defective_collector")/../../.runtime-codex/bin/gh"
@@ -951,17 +947,20 @@ MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checko
   "$defective_collector" start 42 >/dev/null 2>&1 || true
 rg -q '^gh ' "$case_root/calls.log" ||
   fail "the trusted-tool canary passes even without the checkout-local rejection"
-pass "checkout-local PATH entries and executable overrides cannot supply evidence tools"
+pass "checkout-local executable overrides cannot supply evidence tools"
 
+# The planted directory is deliberately NOT named `.runtime-codex`: that name is refused
+# outright, which would short-circuit the containment layer this canary exists to prove. Any
+# PR-writable directory inside the measured checkout works as the vehicle.
 case_root="$fixture_root/untrusted-worktree-tool"
 make_mocks "$case_root"
-mkdir -p "$case_root/checkout/.runtime-codex/bin"
-cp "$case_root/bin/gh" "$case_root/checkout/.runtime-codex/bin/gh"
-chmod +x "$case_root/checkout/.runtime-codex/bin/gh"
+mkdir -p "$case_root/checkout/tools/bin"
+cp "$case_root/bin/gh" "$case_root/checkout/tools/bin/gh"
+chmod +x "$case_root/checkout/tools/bin/gh"
 prepare_scan_definitions happy "$case_root"
 : >"$case_root/calls.log"
 if MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
-  TASKDECK_GH_EXECUTABLE="$case_root/checkout/.runtime-codex/bin/gh" \
+  TASKDECK_GH_EXECUTABLE="$case_root/checkout/tools/bin/gh" \
   TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
   "$collector" start 42 >/dev/null 2>"$case_root/measured.err"; then
   fail "an evidence tool inside the measured checkout was accepted"
@@ -971,7 +970,15 @@ rg -Fq 'refusing an evidence tool resolved inside the measured checkout' "$case_
 if rg -q '^gh ' "$case_root/calls.log"; then
   fail "the evidence tool inside the measured checkout was invoked"
 fi
-pass "evidence tools inside the measured checkout are rejected before any GitHub query"
+# Watching gh alone left this canary blind to Git ordering. The measured checkout is only
+# knowable by asking Git, so Git does run here -- but it must run exactly the three read-only
+# identity queries and nothing else before the rejection. Any evidence-gathering Git command
+# appearing in this log would mean the rejection had drifted later than the identity probe.
+[[ "$(rg -c '^git ' "$case_root/calls.log" || true)" == "3" ]] ||
+  fail "the measured-checkout rejection did not fire immediately after the Git identity probe"
+[[ "$(rg -c '^git rev-parse --' "$case_root/calls.log" || true)" == "3" ]] ||
+  fail "a Git command other than the checkout identity probe ran before the rejection"
+pass "evidence tools inside the measured checkout are rejected after the Git identity probe and before any GitHub query"
 
 case_root="$fixture_root/snapshot-tamper"
 make_mocks "$case_root"
@@ -1139,5 +1146,245 @@ rg -Fq 'collect-pre-merge-evidence.sh finish <SESSION_TOKEN_FILE' "$skill_file" 
 rg -Fq 'It does not hide the token from a process already running as the operator' "$skill_file" ||
   fail "skill does not state the limits of the token-file channel"
 pass "the session token reaches abort and finish through a redirected file, never command text"
+
+# A forged tool that records every invocation and, for the collector's digest pipeline, echoes
+# back whatever the opening state already claims. Planting one of these is the whole of the
+# awk bypass: `sha256_text` used to pipe sha256sum through a PATH-resolved awk, so a forged awk
+# could return the recorded digest and the recorded binding in turn and authenticate an
+# arbitrarily rewritten opening state.
+make_forged_awk() {
+  local destination="$1"
+  local marker="$2"
+  mkdir -p "$(dirname "$destination")"
+  cat >"$destination" <<FORGED_AWK
+#!/usr/bin/env bash
+printf 'awk %q\n' "\${1-}" >>"$marker"
+if [[ "\${1-}" == '{print \$1}' ]]; then
+  IFS= read -r line
+  first="\${line%% *}"
+  if [[ "\$first" =~ ^[0-9a-f]{64}\$ ]]; then
+    state="\$(printf '%s\n' "\$MOCK_ROOT/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+    counter="\$MOCK_ROOT/forged-awk-count"
+    n=0
+    [[ -f "\$counter" ]] && n="\$(<"\$counter")"
+    n=\$((n + 1))
+    printf '%s' "\$n" >"\$counter"
+    if (( n % 2 == 1 )); then
+      "$real_jq" -r '.sessionTokenDigest' "\$state"
+    else
+      "$real_jq" -r '.openingStateBinding' "\$state"
+    fi
+    exit 0
+  fi
+  printf '%s\n' "\$first"
+  while IFS= read -r line; do printf '%s\n' "\${line%% *}"; done
+  exit 0
+fi
+exec "$real_awk" "\$@"
+FORGED_AWK
+  chmod +x "$destination"
+}
+
+case_root="$fixture_root/path-sanitization"
+make_mocks "$case_root"
+planted_root="$case_root/planted-checkout"
+mkdir -p "$planted_root/scripts/github" "$planted_root/.runtime-codex/bin"
+cp "$collector" "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+chmod +x "$planted_root/scripts/github/collect-pre-merge-evidence.sh"
+make_forged_awk "$planted_root/.runtime-codex/bin/awk" "$case_root/forged-awk-calls"
+prepare_scan_definitions happy "$case_root"
+: >"$case_root/forged-awk-calls"
+# `.codex/config.toml` really does prepend this directory to PATH, so the guarded run uses the
+# same PATH shape a Codex session would. Every evidence tool that talks to GitHub is pinned to
+# a trusted mock, so the only thing PATH decides here is where awk comes from.
+if ! PATH="$planted_root/.runtime-codex/bin:$PATH" \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$planted_root/scripts/github/collect-pre-merge-evidence.sh" start 42 \
+  >"$case_root/operator-session-token" 2>"$case_root/sanitized.err"; then
+  fail "checkout-local PATH sanitization broke an otherwise clean start: $(cat "$case_root/sanitized.err")"
+fi
+if [[ -s "$case_root/forged-awk-calls" ]]; then
+  fail "the forged awk planted on PATH inside the collector checkout was invoked"
+fi
+sanitize_control="$(make_defective_collector "$case_root" path-sanitization \
+  's@^sanitize_path_against_repository_roots$@:@')"
+mkdir -p "$(dirname "$sanitize_control")/../../.runtime-codex/bin"
+make_forged_awk "$(dirname "$sanitize_control")/../../.runtime-codex/bin/awk" \
+  "$case_root/forged-awk-calls"
+rm -f "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json
+PATH="$(dirname "$sanitize_control")/../../.runtime-codex/bin:$PATH" \
+  MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+  TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+  TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+  "$sanitize_control" start 42 >/dev/null 2>"$case_root/control.err" || true
+rg -Fq 'refusing an evidence tool resolved inside the collector checkout' \
+  "$case_root/control.err" ||
+  fail "the PATH sanitization canary passes even without dropping checkout-local PATH entries"
+pass "a checkout-local PATH entry is dropped before any evidence tool is resolved"
+
+# The reviewed bypass, reproduced end to end: rewrite the persistent opening state after start,
+# then plant a forged awk inside the MEASURED checkout so the digest pipeline authenticates the
+# rewrite. awk is now a trusted evidence tool like gh and git, so the measured-checkout
+# containment test rejects it before it can run. As in the measured-checkout canary above, the
+# planted directory avoids the `.runtime-codex` name so the containment layer is what fires.
+case_root="$fixture_root/forged-awk-measured"
+make_mocks "$case_root"
+run_start happy "$case_root" "$case_root/state.json" 42 >/dev/null
+state_path="$(printf '%s\n' "$case_root/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+"$real_jq" '.selection = "forged-selection"' "$state_path" >"$state_path.tmp"
+mv -f "$state_path.tmp" "$state_path"
+make_forged_awk "$case_root/checkout/tools/bin/awk" "$case_root/forged-awk-calls"
+: >"$case_root/forged-awk-calls"
+prepare_scan_definitions happy "$case_root"
+if printf '%s\n' "$(tr -d '\r\n' <"$case_root/operator-session-token")" |
+  env PATH="$case_root/checkout/tools/bin:$PATH" \
+    MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/checkout" \
+    TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$case_root/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    "$collector" finish >"$case_root/packet.json" 2>"$case_root/forged-awk.err"; then
+  fail "a forged awk inside the measured checkout produced a packet"
+fi
+rg -Fq 'refusing an evidence tool resolved inside the measured checkout: awk' \
+  "$case_root/forged-awk.err" ||
+  fail "the forged awk inside the measured checkout was not rejected for the stated reason"
+if [[ -s "$case_root/forged-awk-calls" ]]; then
+  fail "the forged awk inside the measured checkout was invoked"
+fi
+if [[ -s "$case_root/packet.json" ]]; then
+  fail "a rejected forged awk still emitted packet content"
+fi
+# The control restores exactly the two lines this fix changed: awk absent from the trusted set,
+# and sha256_text splitting the digest through a PATH-resolved awk. That is the collector as
+# reviewed, and under it the forgery authenticates a rewritten state end to end.
+awk_control_case="$fixture_root/forged-awk-control"
+make_mocks "$awk_control_case"
+run_start happy "$awk_control_case" "$awk_control_case/state.json" 42 >/dev/null
+state_path="$(printf '%s\n' "$awk_control_case/checkout/.git/taskdeck-pre-merge-evidence/"opening.*.json)"
+"$real_jq" '.selection = "forged-selection"' "$state_path" >"$state_path.tmp"
+mv -f "$state_path.tmp" "$state_path"
+make_forged_awk "$awk_control_case/checkout/tools/bin/awk" \
+  "$awk_control_case/forged-awk-calls"
+: >"$awk_control_case/forged-awk-calls"
+awk_control="$(make_defective_collector "$awk_control_case" untrusted-awk \
+  's@^register_trusted_executable awk .*@:@' \
+  's@^awk_executable=.*@awk_executable=awk@' \
+  's@^  digest="${digest_line%% \*}"@  digest="$(printf "%s" "$digest_line" | awk "{print \\$1}")"@')"
+prepare_scan_definitions happy "$awk_control_case"
+printf '%s\n' "$(tr -d '\r\n' <"$awk_control_case/operator-session-token")" |
+  env PATH="$awk_control_case/checkout/tools/bin:$PATH" \
+    MOCK_ROOT="$awk_control_case" MOCK_SCENARIO=happy \
+    MOCK_WORKTREE_ROOT="$awk_control_case/checkout" \
+    TASKDECK_GH_EXECUTABLE="$awk_control_case/bin/gh" \
+    TASKDECK_GIT_EXECUTABLE="$awk_control_case/bin/git" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+    "$awk_control" finish >"$awk_control_case/packet.json" 2>/dev/null ||
+  fail "the forged-awk canary passes even with awk outside the trusted set"
+"$real_jq" -e '
+  .selection == "forged-selection" and
+  .secrets.verdict == "CLEAN" and
+  .collectorState == "COMPLETE"
+' "$awk_control_case/packet.json" >/dev/null ||
+  fail "the forged-awk canary does not distinguish an untrusted hashing awk"
+pass "a forged awk cannot authenticate a rewritten opening state"
+
+# The reviewed ordering bypass: the collector runs from a LINKED WORKTREE while the writable
+# PATH entry lives in the PRIMARY checkout that owns the shared Git directory. Git used to
+# resolve the checkout roots that the rejection was then measured against, so a forged git in
+# the primary tree executed first and named a decoy root that contained nothing. The primary
+# checkout is now found by reading the worktree's `.git` file with bash, before any program
+# runs. Note that the decoy root the mock reports never exists on disk, exactly as in the
+# reported reproduction -- the rejection cannot depend on it.
+case_root="$fixture_root/primary-checkout-git"
+make_mocks "$case_root"
+primary_root="$case_root/primary"
+linked_worktree="$case_root/wt-issue-1547"
+mkdir -p "$primary_root/tools/bin" "$primary_root/.runtime-codex/bin" \
+  "$primary_root/.git/worktrees/wt-issue-1547" "$linked_worktree/scripts/github"
+printf 'gitdir: %s\n' "$primary_root/.git/worktrees/wt-issue-1547" >"$linked_worktree/.git"
+printf '%s\n' '../..' >"$primary_root/.git/worktrees/wt-issue-1547/commondir"
+cp "$collector" "$linked_worktree/scripts/github/collect-pre-merge-evidence.sh"
+chmod +x "$linked_worktree/scripts/github/collect-pre-merge-evidence.sh"
+for forged_git_directory in "$primary_root/tools/bin" "$primary_root/.runtime-codex/bin"; do
+  cp "$case_root/bin/git" "$forged_git_directory/git.exe"
+  cp "$case_root/bin/git" "$forged_git_directory/git"
+  chmod +x "$forged_git_directory/git.exe" "$forged_git_directory/git"
+done
+prepare_scan_definitions happy "$case_root"
+# Without this the canary would silently stop being an attack: the forged git has to be what
+# an unsanitized PATH would actually select.
+[[ "$(PATH="$primary_root/tools/bin:$PATH" command -v git.exe)" == \
+   "$primary_root/tools/bin/git.exe" ]] ||
+  fail "the primary-checkout git canary does not shadow the real Git executable"
+# Both runs execute from inside the linked worktree, the way an operator would, so the working
+# directory is part of the fixture rather than whatever directory the suite happened to start
+# in. That also keeps a real Git away from any real checkout.
+run_primary_git_case() {
+  local collector_path="$1"
+  local worktree_path="$2"
+  local forged_directory="$3"
+  (
+    cd "$worktree_path" || exit 1
+    PATH="$forged_directory:$PATH" \
+      MOCK_ROOT="$case_root" MOCK_SCENARIO=happy MOCK_WORKTREE_ROOT="$case_root/decoy" \
+      TASKDECK_GH_EXECUTABLE="$case_root/bin/gh" TASKDECK_JQ_EXECUTABLE="$real_jq" \
+      "$collector_path" start 42
+  )
+}
+# Sub-case A isolates the discovery layer: the forged Git sits in an ordinary directory of the
+# primary checkout, so only the `.git`-file linkage can identify it as untrusted. Sub-case B
+# below covers the `.runtime-codex` placement, which the name rule catches even unlinked.
+: >"$case_root/calls.log"
+if run_primary_git_case "$linked_worktree/scripts/github/collect-pre-merge-evidence.sh" \
+  "$linked_worktree" "$primary_root/tools/bin" \
+  >"$case_root/primary-git.out" 2>"$case_root/primary-git.err"; then
+  fail "a forged git in the primary checkout opened an evidence session"
+fi
+if rg -q '^git ' "$case_root/calls.log"; then
+  fail "the forged git in the primary checkout was invoked before the rejection"
+fi
+if rg -q '^gh ' "$case_root/calls.log"; then
+  fail "a forged primary-checkout git reached GitHub"
+fi
+git_control="$(make_defective_collector "$case_root" primary-checkout-git \
+  's@^sanitize_path_against_repository_roots$@:@' \
+  's@^discover_repository_roots .*@:@')"
+control_worktree="$case_root/defective-primary-checkout-git"
+printf 'gitdir: %s\n' "$primary_root/.git/worktrees/wt-issue-1547" >"$control_worktree/.git"
+: >"$case_root/calls.log"
+run_primary_git_case "$git_control" "$control_worktree" "$primary_root/tools/bin" \
+  >"$case_root/primary-git-control.out" 2>"$case_root/primary-git-control.err" ||
+  fail "the primary-checkout git canary passes even without bash-only root discovery"
+rg -q '^git rev-parse --show-toplevel' "$case_root/calls.log" ||
+  fail "the primary-checkout git control never reached the forged Git executable"
+rg -q '^[0-9a-f]{64}$' "$case_root/primary-git-control.out" ||
+  fail "the primary-checkout git canary does not distinguish a Git-discovered checkout root"
+# Same forgery, but in a sibling tree carrying no `.git` marker at all, so no root discovery
+# can tie it to the collector's checkout. Containment cannot reach it; the `.runtime-codex`
+# name rule is what refuses it. Removing the linkage is the difference between the two halves
+# of this canary, which is why the name rule is defence in depth rather than the main control.
+rm -f "$linked_worktree/.git"
+: >"$case_root/calls.log"
+if run_primary_git_case "$linked_worktree/scripts/github/collect-pre-merge-evidence.sh" \
+  "$linked_worktree" "$primary_root/.runtime-codex/bin" \
+  >/dev/null 2>"$case_root/unlinked-git.err"; then
+  fail "a forged git in an unlinked runtime directory opened an evidence session"
+fi
+rg -Fq 'refusing an evidence tool resolved inside a PR-writable runtime directory' \
+  "$case_root/unlinked-git.err" ||
+  fail "the unlinked runtime directory was not refused for the stated reason"
+if rg -q '^git ' "$case_root/calls.log"; then
+  fail "the forged git in an unlinked runtime directory was invoked"
+fi
+name_control="$(make_defective_collector "$case_root" runtime-directory-name \
+  's@^path_is_untrusted_tool_directory() {@path_is_untrusted_tool_directory() { return 1;@' \
+  's@^sanitize_path_against_repository_roots$@:@' \
+  's@^discover_repository_roots .*@:@')"
+: >"$case_root/calls.log"
+run_primary_git_case "$name_control" "$case_root/defective-runtime-directory-name" \
+  "$primary_root/.runtime-codex/bin" >"$case_root/unlinked-control.out" 2>/dev/null || true
+rg -q '^git rev-parse --show-toplevel' "$case_root/calls.log" ||
+  fail "the unlinked runtime directory canary passes even without the runtime-directory rule"
+pass "a forged git in the primary checkout never executes, so it cannot supply the roots its own rejection is measured against"
 
 printf 'PASS: %d pre-merge evidence canaries passed.\n' "$passed"

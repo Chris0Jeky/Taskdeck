@@ -280,11 +280,14 @@ separate start/finish processes, missing/consumed/substituted checkout state, cu
 review feedback, independent thread-resolution drift, same-head check drift, closing identity
 drift, explicit validated abort/restart after an expired session, process-independent diff target
 selection, enforcing-workflow provenance, exact opening-base scan-definition equality, and
-fail-closed secret-scan verdicts. They also run against a real Git checkout to cover rejection of
-evidence tools resolved inside the measured or collector checkout, authentication of the copied
-opening-state snapshot, transient replacement-ref and branch-ref races against definition binding,
-and the redirected token-file channel. Four of those cases first assert that a deliberately
-defective copy of the collector fails them, so the canary cannot pass by accident:
+fail-closed secret-scan verdicts. Further cases cover evidence-tool trust — rejection of tools
+resolved inside the measured or collector checkout, checkout-local `PATH` entries dropped before
+any tool is resolved, a forged `awk` aimed at the state-authenticating digest, and a forged `git`
+in the primary checkout of a linked-worktree layout — plus authentication of the copied
+opening-state snapshot and the redirected token-file channel. Transient replacement-ref and
+branch-ref races against definition binding run against a real Git checkout. Seven of those cases
+first assert that a deliberately defective copy of the collector fails them (eight defective
+variants in all), so the canary cannot pass by accident:
 
 ```powershell
 $gitBash = "C:\Program Files\Git\bin\bash.exe"
