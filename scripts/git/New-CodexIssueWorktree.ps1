@@ -674,7 +674,11 @@ function Get-WorktreeHiddenIndexEntries {
         [string]$Worktree
     )
 
-    $indexFlagsResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "ls-files", "-v", "-z")
+    # -v lowercases assume-unchanged entries; -f lowercases fsmonitor-valid entries. Both are
+    # needed: an fsmonitor-valid path that is then modified is invisible to `git status`, so
+    # without -f the shared lowercase-tag regex below would not see it and cleanup would delete
+    # hidden bytes.
+    $indexFlagsResult = Invoke-GitCommand -Arguments @("-C", $Worktree, "ls-files", "-v", "-f", "-z")
     if ($indexFlagsResult.ExitCode -ne 0) {
         throw "Could not inspect helper-created worktree index flags '$Worktree' before cleanup.$(Format-GitContext $indexFlagsResult.Output)"
     }
@@ -797,7 +801,7 @@ function Remove-HelperCreatedWorktree {
     $registration = Get-HelperCreatedWorktreeRegistration -Worktree $Worktree
     $hiddenIndexEntries = @(Get-WorktreeHiddenIndexEntries -Worktree $Worktree)
     if ($hiddenIndexEntries.Count -ne 0) {
-        throw "Refusing to remove helper-created worktree '$Worktree' because its index contains assume-unchanged or skip-worktree entries that can hide modified data."
+        throw "Refusing to remove helper-created worktree '$Worktree' because its index contains assume-unchanged, skip-worktree, or fsmonitor-valid entries that can hide modified data."
     }
     $statusLines = @(Get-WorktreeStatusLines -Worktree $Worktree)
     if ($RequireCleanWorktree -and $statusLines.Count -ne 0) {

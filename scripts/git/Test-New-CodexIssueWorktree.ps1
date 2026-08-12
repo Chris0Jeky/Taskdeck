@@ -1250,8 +1250,14 @@ finally {
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
         Assert-Equal 0 $initializerResult.ExitCode "Post-collision initializer fixture worktree creation should succeed.`n$($initializerResult.Output)"
         $initializerSource = Get-Content -Raw -LiteralPath (Join-Path $callerPath "scripts/git/Initialize-CodexIssueWorktree.ps1")
-        Assert-Contains $initializerSource 'ls-files", "-v", "-z' "Initializer must inspect hidden index flags before immediate late-collision cleanup."
+        # -v alone only lowercases assume-unchanged entries; fsmonitor-valid entries need -f.
+        # All three hidden-index predicates must pass both flags or an fsmonitor-valid path with
+        # modified bytes stays invisible to the predicate and to git status.
+        Assert-Contains $initializerSource 'ls-files", "-v", "-f", "-z' "Initializer must inspect assume-unchanged and fsmonitor-valid index flags before immediate late-collision cleanup."
         Assert-Contains $initializerSource 'cleanupHidden' "Delayed late-collision cleanup must inspect hidden index flags before plain removal."
+        Assert-Contains $initializerSource 'ls-files -v -f -z' "Delayed late-collision cleanup must inspect assume-unchanged and fsmonitor-valid index flags before plain removal."
+        $helperSource = Get-Content -Raw -LiteralPath (Join-Path $callerPath "scripts/git/New-CodexIssueWorktree.ps1")
+        Assert-Contains $helperSource 'ls-files", "-v", "-f", "-z' "Helper cleanup must inspect assume-unchanged and fsmonitor-valid index flags before removal."
         $initializerWorktree = Join-Path $callerPath ".worktrees/codex-490-initializer-validation-continued"
         $initializerHead = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
 
@@ -1921,12 +1927,28 @@ if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "skip" ]; then
     "__GIT_EXECUTABLE__" update-index --skip-worktree -- scripts/worktree_guard.ps1
     printf '\n# hidden timeout hook canary skip\n' >> scripts/worktree_guard.ps1
 fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "fsmonitor" ]; then
+    "__GIT_EXECUTABLE__" update-index --fsmonitor-valid -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary fsmonitor\n' >> scripts/worktree_guard.ps1
+fi
 sleep 30
 '@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
         [System.IO.File]::WriteAllText(
             $timeoutHookPath,
             $timeoutHookContent,
             [System.Text.UTF8Encoding]::new($false))
+
+        # core.fsmonitor query hook (interface v2): emit a non-empty update token followed by an
+        # empty changed-path list so Git keeps the CE_FSMONITOR_VALID bits the fixture sets. An
+        # empty token or a failed query makes Git invalidate every entry, which would silently
+        # dissolve the fsmonitor scenario below into a no-op.
+        $fsmonitorQueryHookPath = Join-Path $timeoutHookDirectory "fsmonitor-query.sh"
+        $fsmonitorQueryHookArgument = $fsmonitorQueryHookPath.Replace('\', '/')
+        [System.IO.File]::WriteAllText(
+            $fsmonitorQueryHookPath,
+            "#!/bin/sh`nprintf 'taskdeck-fsmonitor-fixture\000'`nexit 0`n",
+            [System.Text.UTF8Encoding]::new($false))
+
         $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
         $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
@@ -1987,13 +2009,19 @@ sleep 30
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
         try {
             $hiddenTimeoutScenarios = @(
-                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged" },
-                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree" }
+                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged"; RequiresFsmonitor = $false },
+                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree"; RequiresFsmonitor = $false },
+                [pscustomobject]@{ Flag = "fsmonitor"; Issue = "505"; Slug = "fsmonitor-hidden-git-add-timeout"; ClearArgument = "--no-fsmonitor-valid"; RequiresFsmonitor = $true }
             )
             foreach ($scenario in $hiddenTimeoutScenarios) {
                 $hiddenTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-$($scenario.Issue)-$($scenario.Slug)"
                 $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
                 [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
+                if ($scenario.RequiresFsmonitor) {
+                    # CE_FSMONITOR_VALID bits are stripped from the index on every read while
+                    # core.fsmonitor is disabled, so the scenario only exists with it enabled.
+                    $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorQueryHookArgument)
+                }
                 if (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) {
                     Remove-Item -LiteralPath $timeoutHookStartedPath -Force
                 }
@@ -2004,11 +2032,22 @@ sleep 30
                         "-GitCommandTimeoutSeconds", "5"
                     )
                     Assert-True ($hiddenTimedOutAdd.ExitCode -ne 0) "An index-hidden dirty timed-out git worktree add must fail closed."
-                    Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged or skip-worktree entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
+                    Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged, skip-worktree, or fsmonitor-valid entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
                     Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Index-hidden timeout fixture did not start."
                     Assert-True (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) "Index-hidden partial-registration cleanup deleted the populated target."
                     $hiddenGuardPath = Join-Path $hiddenTimedOutWorktree "scripts/worktree_guard.ps1"
                     Assert-NormalizedContains (Get-Content -Raw -LiteralPath $hiddenGuardPath) "hidden timeout hook canary $($scenario.Flag)" "Index-hidden timeout hook did not preserve its modified bytes."
+                    if ($scenario.RequiresFsmonitor) {
+                        # Prove the fixture actually built the fsmonitor-valid state, and that the
+                        # pre-fix `ls-files -v` predicate could not have seen it. Without these the
+                        # scenario could pass while testing nothing.
+                        $fsmonitorTaggedFlags = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("ls-files", "-v", "-f", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ($fsmonitorTaggedFlags.StartsWith("h ", [System.StringComparison]::Ordinal)) "fsmonitor fixture did not mark the guard entry fsmonitor-valid; ls-files -v -f reported '$fsmonitorTaggedFlags'."
+                        $fsmonitorUntaggedFlags = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("ls-files", "-v", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ($fsmonitorUntaggedFlags.StartsWith("H ", [System.StringComparison]::Ordinal)) "ls-files -v alone must not lowercase an fsmonitor-valid entry, otherwise this scenario would not cover the missing -f; it reported '$fsmonitorUntaggedFlags'."
+                        $fsmonitorHiddenStatus = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("status", "--porcelain=v1", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ([string]::IsNullOrWhiteSpace($fsmonitorHiddenStatus)) "fsmonitor fixture did not hide the modified guard from git status; it reported '$fsmonitorHiddenStatus'."
+                    }
                     $hiddenTimedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
                     Assert-True ($hiddenTimedOutRegistrationsAfter -cne $hiddenTimedOutRegistrationsBefore) "Index-hidden partial-registration cleanup removed the worktree registration."
                     Assert-NormalizedContains $hiddenTimedOutRegistrationsAfter ($hiddenTimedOutWorktree.Replace('\', '/')) "Index-hidden partial-registration cleanup did not preserve the exact registration."
@@ -2020,6 +2059,9 @@ sleep 30
                         $null = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "unlock", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
                         $hiddenCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
                         Assert-Equal 0 $hiddenCleanup.ExitCode "Index-hidden timeout fixture cleanup failed after its preservation proof.`n$($hiddenCleanup.Output)"
+                    }
+                    if ($scenario.RequiresFsmonitor) {
+                        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.fsmonitor")
                     }
                 }
             }

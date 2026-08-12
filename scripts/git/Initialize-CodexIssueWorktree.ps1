@@ -132,7 +132,11 @@ function Schedule-FailedInitializerWorktreeRemoval {
         [string]$ExpectedHead
     )
 
-    $hiddenIndexResult = Invoke-InitializerGit -Arguments @("ls-files", "-v", "-z")
+    # -v lowercases assume-unchanged entries; -f lowercases fsmonitor-valid entries. Both are
+    # needed: an fsmonitor-valid path that is then modified is invisible to `git status`, so
+    # without -f the shared lowercase-tag regex below would not see it and cleanup would delete
+    # hidden bytes.
+    $hiddenIndexResult = Invoke-InitializerGit -Arguments @("ls-files", "-v", "-f", "-z")
     if (-not $hiddenIndexResult.InvocationSucceeded -or $hiddenIndexResult.ExitCode -ne 0) {
         Exit-WithInitializerError "git switch -c failed and cleanup was refused because Git could not inspect index flags; the helper-created worktree was preserved at '$Worktree'." 2
     }
@@ -191,7 +195,9 @@ if (`$LASTEXITCODE -ne 1) {
 if (`$LASTEXITCODE -ne 0 -or `$cleanupStatus.Count -ne 0) {
     exit 4
 }
-`$cleanupHidden = @(& '$escapedGit' -C '$escapedWorktree' ls-files -v -z 2>`$null)
+# -v lowercases assume-unchanged entries, -f lowercases fsmonitor-valid entries; both are needed
+# because either mark hides a modified path from git status.
+`$cleanupHidden = @(& '$escapedGit' -C '$escapedWorktree' ls-files -v -f -z 2>`$null)
 if (`$LASTEXITCODE -ne 0 -or (`$cleanupHidden -join "`0" -split "`0" | Where-Object { `$_ -cmatch '^(?:[a-z]|S) ' }).Count -ne 0) {
     exit 4
 }
