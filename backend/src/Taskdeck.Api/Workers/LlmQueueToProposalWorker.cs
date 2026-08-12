@@ -364,10 +364,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         // Shutdown or caller cancellation is not a processing failure. Without this the
         // planner's rethrow is caught below and converted straight back into an
         // UnexpectedError, which IsTransientFailure treats as retryable — so the item would be
-        // marked Failed and requeued purely because the host was stopping. Leave it in its
-        // current state and let the claim expire.
+        // marked Failed and requeued purely because the host was stopping.
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            await ReleaseClaimOnShutdownAsync(unitOfWork, item);
             throw;
         }
         catch (Exception ex)
@@ -386,6 +386,55 @@ public class LlmQueueToProposalWorker : BackgroundService
             outcome = scheduledForRetry ? "failed_retry" : "failed_unhandled";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+        }
+    }
+
+    /// <summary>
+    /// Returns a claim abandoned by a graceful shutdown to Pending so the stop does not cost the request
+    /// a retry (#1605). Left in Processing, the row is indistinguishable from a crashed attempt: the next
+    /// run's <see cref="RecoverStuckProcessingItemsAsync"/> finds no proposal for it and charges the
+    /// budget (MarkAsFailed, RetryCount++), so enough restarts fail a healthy request permanently at
+    /// MaxRetries — and it waits out the processing lease before retrying either way. Releasing it
+    /// charges nothing and makes it eligible again on the very next tick. A genuine crash never reaches
+    /// this path, so the sweep's retry accounting (the poison-pill guard) is untouched.
+    /// </summary>
+    /// <remarks>
+    /// Non-capture (proposal) lane only. Capture-triage and transcript rows are READ from Processing, so
+    /// Processing already is their queued state and returning one to Pending would drop it back to
+    /// "untriaged in the inbox" — the wrong state, and one no worker drains.
+    /// </remarks>
+    private async Task ReleaseClaimOnShutdownAsync(IUnitOfWork unitOfWork, LlmRequest item)
+    {
+        // The failure path may already have moved the row on (Failed, or Pending/Processing once
+        // HandleFailureWithRetryAsync completed its own interrupted transition); only a still-claimed row
+        // is ours to release.
+        if (item.Status != RequestStatus.Processing)
+        {
+            return;
+        }
+
+        try
+        {
+            item.ReleaseClaim();
+            // CancellationToken.None: ct is already cancelled, and forwarding it would throw before the
+            // release could commit — leaving exactly the stale-Processing row this exists to avoid. Same
+            // deliberate shutdown-write idiom as AgentRuntime and OutboundWebhookDeliveryWorker's own
+            // ReturnToPending. It is one single-row UPDATE on an open connection (SQLite, local file,
+            // busy_timeout pragma bounds lock waits), so it cannot meaningfully delay shutdown.
+            await unitOfWork.SaveChangesAsync(CancellationToken.None);
+            _logger.LogInformation(
+                "Queue item {ItemId} released back to Pending during shutdown; no retry charged",
+                item.Id);
+        }
+        catch (Exception ex)
+        {
+            // Never let the release write mask the cancellation: log and return so the
+            // OperationCanceledException still propagates and the worker still stops promptly. The row
+            // then simply stays Processing and the recovery sweep handles it as it did before #1605.
+            _logger.LogWarning(
+                "Failed to release queue item {ItemId} during shutdown; it stays Processing for the recovery sweep. {ExceptionSummary}",
+                item.Id,
+                SensitiveDataRedactor.SummarizeException(ex));
         }
     }
 
@@ -531,6 +580,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         // Same discrimination as the proposal lane. CaptureTriageService already rethrows
         // caller cancellation rather than returning an outcome, so without this guard the
         // worker converts that rethrow straight back into a retryable UnexpectedError.
+        // No ReleaseClaimOnShutdownAsync here, deliberately: capture rows are read from
+        // Processing, so an abandoned capture claim is already in its queued state and the next
+        // tick re-claims it with no retry charged. Returning it to Pending would instead mean
+        // "untriaged in the inbox", which no worker drains (see that method's remarks).
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
