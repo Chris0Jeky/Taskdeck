@@ -125,6 +125,17 @@ if (args.Contains("--mcp"))
         // MCP telemetry (operation logger, etc.).
         mcpHttpBuilder.Services.AddMcpTelemetry();
 
+        // CORS services with NO policies registered at all -- deliberately not AddTaskdeckCors (#1602).
+        // MapTaskdeckMcpEndpoint stamps the endpoint with DisableCorsAttribute, which is ICorsMetadata,
+        // and ASP.NET Core's EndpointMiddleware refuses to execute an endpoint carrying CORS metadata
+        // unless the CORS middleware ran first -- so without this pair (AddCors here, UseCors below) the
+        // standalone host threw InvalidOperationException and returned a bare 500 on EVERY authenticated
+        // request. Registering the services with an empty policy map satisfies that contract and adds no
+        // cross-origin capability: there is no default policy to resolve, so CorsMiddleware never emits
+        // an Access-Control-* header, and the endpoint's DisableCorsAttribute suppresses CORS handling
+        // for it regardless. Browser-origin MCP clients stay unsupported here by construction.
+        mcpHttpBuilder.Services.AddCors();
+
         // MCP server: HTTP transport + all resources and tools.
         // Stateless is pinned explicitly rather than left to the library default:
         // ModelContextProtocol 2.0.0 flipped that default from false to true, which drops
@@ -163,6 +174,14 @@ if (args.Contains("--mcp"))
         {
             mcpHttpApp.UseForwardedHeaders(mcpForwardedHeadersOptions);
         }
+
+        // CORS middleware with no named policy: required so EndpointMiddleware will execute the MCP
+        // endpoint, which carries DisableCorsAttribute (ICorsMetadata) -- see AddCors above (#1602).
+        // Deny-by-default: no policy is registered, so this emits no Access-Control-* headers and
+        // grants no cross-origin access; it exists purely to satisfy the endpoint's metadata contract.
+        // Positioned to mirror the co-hosted pipeline (forwarded headers -> CORS -> correlation ID),
+        // and after the auto-inserted UseRouting so an endpoint is selected when it runs.
+        mcpHttpApp.UseCors();
 
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();

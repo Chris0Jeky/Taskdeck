@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Data.Sqlite;
@@ -248,12 +249,101 @@ public class StandaloneMcpHostFilteringTests
     // spent) and the second — the same key, now over quota — is rejected with the per-key 429 by
     // ApiKeyMiddleware, before the endpoint. The pre-auth IP budget is raised out of the way so only
     // the per-key budget can reject (a valid key never spends the IP failure budget anyway).
+    //
+    // The first request is a well-formed `initialize` asserted to SUCCEED (#1602). Asserting only
+    // NotBe(401)/NotBe(429) let a bare 500 satisfy both, which is exactly how the missing-CORS-
+    // middleware defect stayed invisible in this class.
     [Fact]
     public async Task StandaloneMcpHttpHost_PerKeyBudget_RejectsOverQuotaValidKey()
     {
-        const string plaintextKey = "tdsk_standalone_perkey_000000000000000000";
+        await RunSeededApiKeyHostAsync(
+            "tdsk_standalone_perkey_000000000000000000",
+            perKeyPermitLimit: 1,
+            async client =>
+            {
+                using (var first = await PostMcpInitializeAsync(client))
+                {
+                    var firstBody = await first.Content.ReadAsStringAsync();
+                    first.StatusCode.Should().Be(HttpStatusCode.OK,
+                        "the first request is inside the per-key budget and must be SERVED by the MCP " +
+                        $"endpoint, not merely not-401/not-429; body was: {firstBody}");
+                }
+
+                using (var second = await client.PostAsync("/mcp", new StringContent("{}")))
+                {
+                    second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+                        "the same key is now over its per-key budget and rejected by ApiKeyMiddleware");
+                    second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
+                        .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
+                    second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
+                }
+            });
+    }
+
+    // Regression proof for #1602: the standalone MCP HTTP host must be able to SERVE an MCP request,
+    // not only to reject the wrong ones. Every other test in this class stops at a middleware
+    // rejection (400/401/429) or a fail-fast exit, so none of them can observe endpoint execution --
+    // and the host 500'd on EVERY authenticated request because the mapped MCP endpoint carries CORS
+    // metadata (DisableCorsAttribute, McpEndpointMapping.cs) while the standalone pipeline registered
+    // no CORS middleware, so EndpointMiddleware threw before the endpoint ever ran.
+    //
+    // Discriminating by construction: it asserts 200 + a non-empty Mcp-Session-Id + an initialize
+    // RESULT in the body. Removing the UseCors/AddCors registration from the standalone branch in
+    // Program.cs turns this into a 500 with an empty body (verified in both directions).
+    [Fact]
+    public async Task StandaloneMcpHttpHost_ValidKey_ServesSuccessfulInitialize()
+    {
+        await RunSeededApiKeyHostAsync(
+            "tdsk_standalone_initialize_00000000000000",
+            // Well clear of the budget: this test must be able to fail only on endpoint execution.
+            perKeyPermitLimit: 1000,
+            async client =>
+            {
+                using var response = await PostMcpInitializeAsync(client);
+                var body = await response.Content.ReadAsStringAsync();
+
+                response.StatusCode.Should().Be(HttpStatusCode.OK,
+                    "an authenticated, well-formed initialize must be served by the standalone MCP " +
+                    $"host's endpoint (#1602); body was: {body}");
+                response.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue(
+                    "the standalone host pins Stateless=false, so initialize must mint a session id");
+                sessionValues!.Single().Should().NotBeNullOrWhiteSpace();
+                body.Should().Contain("\"protocolVersion\"",
+                    "the body must carry the MCP initialize RESULT, not an empty 500 body");
+
+                // The CORS middleware added for #1602 must grant NO cross-origin access. Same request
+                // with a hostile Origin: it is served (the endpoint runs) but carries no
+                // Access-Control-* headers, so a browser cannot read the response. What this assertion
+                // actually guards is the DisableCorsAttribute latch on the MCP endpoint --
+                // CorsMiddleware sees IDisableCorsAttribute and never evaluates ANY policy, permissive
+                // or not (the co-hosted host behaves identically for an ALLOWED origin, see
+                // McpHttpTransportApiKeyTests). It would fail if a RequireCors/EnableCors were ever
+                // stamped after the latch. The empty policy map is a second, independent latch that
+                // this assertion cannot see through the first one.
+                using var crossOrigin = await PostMcpInitializeAsync(client, origin: "https://evil.example");
+
+                crossOrigin.StatusCode.Should().Be(HttpStatusCode.OK,
+                    "an Origin header must not change server-side handling");
+                crossOrigin.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse(
+                    "the MCP endpoint carries DisableCorsAttribute, so no origin may ever be allowed");
+                crossOrigin.Headers.Contains("Access-Control-Allow-Credentials").Should().BeFalse(
+                    "no cross-origin credentials may be authorized on the MCP surface");
+            });
+    }
+
+    /// <summary>
+    /// Boots the real standalone MCP HTTP entry point with a per-key budget of
+    /// <paramref name="perKeyPermitLimit"/> permits / 300s, seeds <paramref name="plaintextKey"/>
+    /// into the host's database, runs <paramref name="assertions"/> against a single-connection
+    /// client presenting that key, then shuts the host down cleanly and restores the environment.
+    /// </summary>
+    private static async Task RunSeededApiKeyHostAsync(
+        string plaintextKey,
+        int perKeyPermitLimit,
+        Func<HttpClient, Task> assertions)
+    {
         var port = ReserveFreeLoopbackPort();
-        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-perkey-{Guid.NewGuid():N}.db");
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-mcp-seededkey-{Guid.NewGuid():N}.db");
         var envKeys = new[]
         {
             "ConnectionStrings__DefaultConnection",
@@ -283,8 +373,9 @@ public class StandaloneMcpHostFilteringTests
                 "Connectors__EncryptionKey", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             Environment.SetEnvironmentVariable("AllowedHosts", null);
             Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
-            // One request per key, long window: the second request from the same key is over quota.
-            Environment.SetEnvironmentVariable("RateLimiting__McpPerApiKey__PermitLimit", "1");
+            // Caller-chosen per-key budget, long window so it cannot replenish mid-test.
+            Environment.SetEnvironmentVariable(
+                "RateLimiting__McpPerApiKey__PermitLimit", perKeyPermitLimit.ToString());
             Environment.SetEnvironmentVariable("RateLimiting__McpPerApiKey__WindowSeconds", "300");
             // Raise the pre-auth IP failure budget out of the way — only the per-key budget must reject.
             Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__PermitLimit", "1000");
@@ -323,26 +414,11 @@ public class StandaloneMcpHostFilteringTests
             // (same PRAGMAs the host uses) let this second connection write while the host is running.
             await SeedApiKeyAsync(dbPath, plaintextKey);
 
+            // Single client => single reused HTTP/1.1 connection => server-side request serialization.
             using (var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") })
             {
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", plaintextKey);
-
-                using (var first = await client.PostAsync("/mcp", new StringContent("{}")))
-                {
-                    first.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
-                        "a valid key must pass API-key authentication");
-                    first.StatusCode.Should().NotBe(HttpStatusCode.TooManyRequests,
-                        "the first request is within the per-key budget");
-                }
-
-                using (var second = await client.PostAsync("/mcp", new StringContent("{}")))
-                {
-                    second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
-                        "the same key is now over its per-key budget and rejected by ApiKeyMiddleware");
-                    second.Headers.GetValues("X-RateLimit-Policy").Should().ContainSingle()
-                        .Which.Should().Be(RateLimitingPolicyNames.McpPerApiKey);
-                    second.Headers.TryGetValues("Retry-After", out _).Should().BeTrue();
-                }
+                await assertions(client);
             }
 
             await app.StopAsync();
@@ -583,6 +659,33 @@ public class StandaloneMcpHostFilteringTests
     {
         await task;
         return 0;
+    }
+
+    /// <summary>
+    /// POSTs a well-formed JSON-RPC <c>initialize</c> to <c>/mcp</c> with the Accept pair the
+    /// Streamable HTTP transport requires (<c>application/json</c> + <c>text/event-stream</c>),
+    /// mirroring the co-hosted handshake in <c>McpHttpTransportApiKeyTests</c>. The caller supplies
+    /// the Authorization header on the client. An <paramref name="origin"/> makes it a cross-origin
+    /// request, which is the branch where CORS middleware evaluates a policy.
+    /// </summary>
+    private static async Task<HttpResponseMessage> PostMcpInitializeAsync(HttpClient client, string? origin = null)
+    {
+        const string initializeRequest = """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"Taskdeck.Api.Tests","version":"1.0"}}}
+            """;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent(initializeRequest, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        if (origin is not null)
+        {
+            request.Headers.Add("Origin", origin);
+        }
+
+        return await client.SendAsync(request);
     }
 
     private static async Task<HttpResponseMessage> SendForwardedMcpAsync(HttpClient client, string forwardedFor)
