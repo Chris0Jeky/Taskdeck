@@ -260,7 +260,7 @@ describe('BoardView', () => {
     await addCard?.trigger('click')
     await waitForUi()
 
-    expect(wrapper.get('input[placeholder="Column name"]').exists()).toBe(true)
+    expect(wrapper.find('input[placeholder="Column name"]').exists()).toBe(true)
   })
 
   it('reuses the existing add-card affordance when columns are present', async () => {
