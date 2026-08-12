@@ -29,10 +29,16 @@ This document describes entities in the Taskdeck data model, their fields, const
 > Measured on this document 2026-08-12: 51 mapped entities, 53 headings; checks 1 and 3 empty,
 > check 2 exactly `AbuseActor` and `AbuseEvent`.
 >
-> Column-level ground truth is `backend/src/Taskdeck.Domain/Entities/*.cs` (validation rules) plus
+> Column-level ground truth is `backend/src/Taskdeck.Domain/**/*.cs` (validation rules) plus
 > `backend/src/Taskdeck.Infrastructure/Migrations/TaskdeckDbContextModelSnapshot.cs` (persisted
 > columns, widths, indexes, delete behavior). Where the two differ -- the domain often validates
 > tighter than the column allows -- both numbers are given.
+>
+> The glob is `Domain/**` on purpose, not `Domain/Entities/*.cs`: 50 of the 51 mapped entities live
+> under `Domain/Entities/`, but `McpToolHash` is defined at
+> `backend/src/Taskdeck.Domain/Agents/McpToolHash.cs`, so an `Entities/`-only sweep silently skips
+> its validation rules. Re-check that exception rather than assuming it, by intersecting the `DbSet`
+> names above with the basenames under `Domain/Entities/`.
 
 > **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with Cascade, Restrict, or SetNull behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
 
@@ -42,7 +48,7 @@ This document describes entities in the Taskdeck data model, their fields, const
 
 ## Entity Relationship Diagram
 
-> **Diagram legend:** Solid lines represent enforced FK constraints in the database. Lines marked "(logical)" represent application-level associations with no database FK constraint. The ERD maps *relationships*, so mapped tables that stand alone -- `OAuthAuthCode`, `RegistrationBootstrap`, and `RegistrationInvite` -- have no line here and appear only as blocks below.
+> **Diagram legend:** Solid lines represent enforced FK constraints in the database. Lines marked "(logical)" represent application-level associations with no database FK constraint. The ERD maps *relationships*, so mapped tables that stand alone -- `RegistrationBootstrap` and `RegistrationInvite` -- have no line here and appear only as blocks below.
 
 ```mermaid
 erDiagram
@@ -70,6 +76,7 @@ erDiagram
     User ||--o{ DailySnapshot : "seals (logical)"
     User ||--o{ TomorrowNote : "writes (logical)"
     User ||--o{ McpToolHash : "approves (logical)"
+    User ||--o{ OAuthAuthCode : "issued to (logical)"
 
     Board ||--o{ Column : "contains (FK)"
     Board ||--o{ Card : "contains (FK)"
@@ -438,7 +445,13 @@ Under *simultaneous* distinct reasons the unique `(ProposalId, ReportedByUserId)
 ### ProposalProvenance
 
 The head of a proposal's provenance chain: which model produced it, under which correlation, and at
-what token cost. Exactly one row per proposal.
+what token cost. At most one row per proposal, and possibly none. The unique index on `ProposalId`
+forbids a second row, but nothing requires a first: `AutomationProposalService` writes provenance
+only when the optional `IProposalProvenanceRepository` constructor argument was supplied
+(`if (_provenanceRepository is not null)`), the repository lookup returns `ProposalProvenance?`, and
+the FK migration `20260425232031_AddProposalProvenanceForeignKey` added the constraint without
+backfilling existing proposals. Consumers must handle absence --
+`ProvenanceQueryService.GetProvenanceRowsAsync` returns an empty list, not an error.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -669,7 +682,7 @@ Short-lived authorization code for OAuth login/linking flows.
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | Code | `string` | Yes | 1-512 chars | Authorization code |
-| UserId | `Guid` | Yes | Non-empty | Authenticated user (login) or initiating user (link) |
+| UserId | `Guid` | Yes | References User (no FK); non-empty | Authenticated user (login) or initiating user (link) |
 | Token | `string` | Yes | | Legacy field, no longer stores JWTs |
 | Purpose | `string` | Yes | `"login"` or `"link"` | Flow type |
 | ProviderData | `string?` | No | | JSON provider identity for linking |
@@ -1126,13 +1139,26 @@ One row per user per calendar day, marking whether that day has been sealed.
 
 ### TomorrowNote
 
-A short note written on day X for display on day X+1's morning open. At most one per user per date.
+A short free-text note, at most one per user per date.
+
+**`Date` is the authoring day, not the display day.** The shipped flow is same-day on both sides:
+Paper Today saves with `saveDate = formatLocalDossierDate(dossier.value.date)`
+(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue:50`) and re-reads the *same* key on load
+(`useTodayDossier.ts:374-381` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`).
+A note written on day X therefore persists as `Date = X` and is read back on day X; at the local day
+rollover the composable clears the field and day X+1 queries key X+1, which returns 204. Neither the
+backend service nor the API applies a one-day shift.
+
+The "tomorrow" framing is *product intent that no code path implements*: the UI copy ("A note your
+tomorrow-self will see at first open") and the XML doc on `TodayController.GetTomorrowNote` ("written
+the previous day and is displayed on the specified date's morning open") both still describe an
+X -> X+1 handoff. Persist under the current dossier date, not tomorrow's.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | References User (no FK) | Owning user |
-| Date | `DateOnly` | Yes | Required | Date the note is filed under |
+| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the authoring/dossier day (see above) |
 | Text | `string` | Yes | Max 500 chars; empty allowed, null rejected | Note body |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -1284,6 +1310,7 @@ Immutable audit record for abuse detection events and state transitions.
 | User -> DailySnapshot | One-to-many | Logical | One snapshot per user per day |
 | User -> TomorrowNote | One-to-many | Logical | One note per user per date |
 | User -> McpToolHash | One-to-many | Logical | Per-user MCP tool approvals |
+| User -> OAuthAuthCode | One-to-many | Logical | Ownership binding: `UserId` is the authenticated user (login) or the initiating user (link); enforced in code, no FK |
 | KnowledgeDocument -> KnowledgeChunk | One-to-many | FK (Cascade) | A document is split into chunks |
 | OutboundWebhookSubscription -> OutboundWebhookDelivery | One-to-many | FK (Cascade) | A subscription has many deliveries |
 | AgentProfile -> AgentRun | One-to-many | FK (Cascade) | A profile executes many runs |
@@ -1316,8 +1343,11 @@ Immutable audit record for abuse detection events and state transitions.
 - **Key format:** Most primary keys are `Guid` values. `CardLabel` has a composite key, `RegistrationBootstrap` uses the fixed string key `registration`, and `ArtefactBlob` reuses `SourceArtefactId` as its primary key. API keys use a `tdsk_` prefix with a SHA-256 hash at rest.
 - **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. `ChatSession`,
   `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`,
-  `CommandRun`, `DailySnapshot`, `TomorrowNote`, and `McpToolHash` use logical references only --
-  referential integrity is maintained by application code. The
+  `CommandRun`, `DailySnapshot`, `TomorrowNote`, `McpToolHash`, and `OAuthAuthCode` use logical
+  references only -- referential integrity is maintained by application code. `OAuthAuthCode` is the
+  security-relevant one: the exchange endpoints compare the stored `UserId` against the caller
+  (`AuthController.cs:437`, the link-flow CSRF guard), so the binding is real even though the
+  database will not enforce it. The
   [Relationship Summary](#relationship-summary) lists every FK relationship in the model snapshot
   plus the notable logical ones; re-derive it from the `HasForeignKey` calls in
   `TaskdeckDbContextModelSnapshot.cs` rather than trusting this table after a migration.
