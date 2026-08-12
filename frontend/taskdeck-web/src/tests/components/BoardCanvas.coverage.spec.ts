@@ -10,6 +10,7 @@ function makeColumn(overrides: Partial<Column> = {}): Column {
     name: 'Todo',
     position: 0,
     wipLimit: null,
+    cardCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,

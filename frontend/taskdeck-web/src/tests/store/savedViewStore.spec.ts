@@ -228,7 +228,8 @@ describe('savedViewStore', () => {
     })
 
     it('should not persist default views', () => {
-      const _store = useSavedViewStore()
+      // Instantiated for its side effects only: the store hydrates from localStorage on create.
+      useSavedViewStore()
 
       const raw = localStorage.getItem('taskdeck_saved_views')
       // Defaults are not persisted unless a custom view triggers persist()

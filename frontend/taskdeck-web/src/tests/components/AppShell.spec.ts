@@ -28,7 +28,7 @@ const mockFeatureFlags = {
     newAutomation: true,
     newArchive: true,
   },
-  isEnabled: vi.fn(() => true),
+  isEnabled: vi.fn((_flag: keyof FeatureFlags) => true),
 }
 
 const mockWorkspace = reactive({
@@ -127,7 +127,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.homeLoading = false
     mockWorkspace.preferenceLoading = false
     mockWorkspace.preferencesHydrated = false
-    mockFeatureFlags.isEnabled = vi.fn(() => true)
+    mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => true)
   })
 
   afterEach(() => {
@@ -166,7 +166,7 @@ describe('AppShell workspace navigation and command palette', () => {
 
   it('shows sidebarPrimary items with workbenchBypassesFlag in workbench mode even when flags are off', async () => {
     mockWorkspace.mode = 'workbench'
-    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => false)
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
     const navHrefs = getRenderedNavHrefs(wrapper)

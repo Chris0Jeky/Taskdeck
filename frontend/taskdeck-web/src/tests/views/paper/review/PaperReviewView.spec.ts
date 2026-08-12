@@ -785,7 +785,7 @@ describe('PaperReviewView', () => {
             targetId: 'card-1',
             parameters: '{"columnId":"done"}',
             idempotencyKey: 'k-2',
-            expectedVersion: 7,
+            expectedVersion: '7',
           },
           {
             id: 'op-2',

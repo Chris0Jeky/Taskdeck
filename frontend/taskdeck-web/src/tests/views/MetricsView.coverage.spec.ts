@@ -22,7 +22,10 @@ const MOCK_METRICS: BoardMetricsResponse = {
 const MOCK_FORECAST: BoardForecastResponse = {
   boardId: 'board-1',
   remainingCards: 12,
+  completedCards: 30,
   averageThroughputPerDay: 1.5,
+  throughputStdDev: 0.4,
+  averageCycleTimeDays: 2.5,
   estimatedCompletionDate: '2026-04-20T00:00:00Z',
   historyDaysUsed: 30,
   dataPointCount: 28,

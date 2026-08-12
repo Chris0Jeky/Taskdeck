@@ -113,7 +113,7 @@ describe('AutomationQueueView', () => {
 
     expect(wrapper.text()).toContain('Board-scoped instructions')
     expect(wrapper.text()).toContain('Inbox -> Start Triage')
-    expect(wrapper.get('input[aria-label="Board for queue request"]').exists()).toBe(true)
+    expect(wrapper.find('input[aria-label="Board for queue request"]').exists()).toBe(true)
   })
 
   it('submits board id selected via board picker with queue request', async () => {

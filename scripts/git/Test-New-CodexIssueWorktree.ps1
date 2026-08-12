@@ -545,7 +545,147 @@ try {
         finally {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "ORIGIN")
         }
-        Complete-Test "complete remote names are case-canonicalized, option-delimited, refreshed, and resolved without local-ref shadowing"
+
+        $timeoutProbeDirectory = Join-Path $testRoot "timeout-probe"
+        New-Item -ItemType Directory -Path $timeoutProbeDirectory | Out-Null
+        $timeoutRemoteScript = Join-Path $timeoutProbeDirectory "remote-helper.ps1"
+        $timeoutRootPidPath = Join-Path $timeoutProbeDirectory "root.pid"
+        $timeoutRootStartPath = Join-Path $timeoutProbeDirectory "root.start"
+        $timeoutChildPidPath = Join-Path $timeoutProbeDirectory "child.pid"
+        $timeoutChildStartPath = Join-Path $timeoutProbeDirectory "child.start"
+        Set-Content -LiteralPath $timeoutRemoteScript -Encoding Ascii -Value @'
+$ErrorActionPreference = "Stop"
+$self = Get-Process -Id $PID
+[System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_ROOT_PID, [string]$PID)
+[System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_ROOT_START, [string]$self.StartTime.ToUniversalTime().Ticks)
+$childStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+$childStartInfo.FileName = $self.Path
+$childStartInfo.UseShellExecute = $false
+$childStartInfo.CreateNoWindow = $true
+$childArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 30")
+if ($null -ne $childStartInfo.PSObject.Properties['ArgumentList']) {
+    foreach ($argument in $childArguments) {
+        $childStartInfo.ArgumentList.Add($argument)
+    }
+}
+else {
+    $childStartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -Command "Start-Sleep -Seconds 30"'
+}
+$child = [System.Diagnostics.Process]::new()
+try {
+    $child.StartInfo = $childStartInfo
+    if (-not $child.Start()) {
+        throw "Timeout-probe child process did not start."
+    }
+    [System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_CHILD_PID, [string]$child.Id)
+    [System.IO.File]::WriteAllText($env:TASKDECK_TIMEOUT_CHILD_START, [string]$child.StartTime.ToUniversalTime().Ticks)
+    $child.WaitForExit()
+}
+finally {
+    $child.Dispose()
+}
+'@
+
+        $timeoutRootPid = $null
+        $timeoutRootStart = $null
+        $timeoutChildPid = $null
+        $timeoutChildStart = $null
+        $timeoutEnvironment = @{
+            TASKDECK_TIMEOUT_ROOT_PID = $timeoutRootPidPath
+            TASKDECK_TIMEOUT_ROOT_START = $timeoutRootStartPath
+            TASKDECK_TIMEOUT_CHILD_PID = $timeoutChildPidPath
+            TASKDECK_TIMEOUT_CHILD_START = $timeoutChildStartPath
+        }
+        $previousTimeoutEnvironment = @{}
+        foreach ($environmentName in $timeoutEnvironment.Keys) {
+            $previousTimeoutEnvironment[$environmentName] = [System.Environment]::GetEnvironmentVariable($environmentName, "Process")
+            [System.Environment]::SetEnvironmentVariable($environmentName, $timeoutEnvironment[$environmentName], "Process")
+        }
+        $timeoutPowerShellArgument = $powerShellExecutable.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $timeoutScriptArgument = $timeoutRemoteScript.Replace('\', '/').Replace('%', '%%').Replace(' ', '% ')
+        $timeoutRemoteUrl = "ext::$timeoutPowerShellArgument -NoLogo -NoProfile -NonInteractive -File $timeoutScriptArgument"
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "protocol.ext.allow", "always")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "add", "timeout-probe", $timeoutRemoteUrl)
+        try {
+            $timeoutTarget = Join-Path $callerPath ".worktrees/codex-498-git-timeout"
+            $timeoutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $timeoutRefsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            $timeoutStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            $timeoutResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "498",
+                "-Slug", "git-timeout",
+                "-BaseBranch", "timeout-probe/main",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            $timeoutStopwatch.Stop()
+
+            Assert-True ($timeoutResult.ExitCode -ne 0) "A non-responsive remote helper must fail closed."
+            Assert-NormalizedContains $timeoutResult.Output "Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped." "Timeout diagnostic did not confirm bounded tree cleanup."
+            Assert-True ($timeoutStopwatch.Elapsed.TotalSeconds -lt 20) "Timed-out Git command returned too slowly: $($timeoutStopwatch.Elapsed.TotalSeconds) seconds."
+            Assert-True (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) "Timeout fixture did not record its root process."
+            Assert-True (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) "Timeout fixture did not record its child process."
+            $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
+            $timeoutRootStart = [long](Get-Content -Raw -LiteralPath $timeoutRootStartPath)
+            $timeoutChildPid = [int](Get-Content -Raw -LiteralPath $timeoutChildPidPath)
+            $timeoutChildStart = [long](Get-Content -Raw -LiteralPath $timeoutChildStartPath)
+            $liveTimeoutRoot = Get-Process -Id $timeoutRootPid -ErrorAction SilentlyContinue
+            $liveTimeoutChild = Get-Process -Id $timeoutChildPid -ErrorAction SilentlyContinue
+            $sameTimeoutRoot = $null -ne $liveTimeoutRoot -and $liveTimeoutRoot.StartTime.ToUniversalTime().Ticks -eq $timeoutRootStart
+            $sameTimeoutChild = $null -ne $liveTimeoutChild -and $liveTimeoutChild.StartTime.ToUniversalTime().Ticks -eq $timeoutChildStart
+            Assert-True (-not $sameTimeoutRoot) "Timed-out Git command returned while its exact remote-helper root was still alive."
+            Assert-True (-not $sameTimeoutChild) "Timed-out Git command returned while its exact remote-helper child was still alive."
+            Assert-True (-not (Test-Path -LiteralPath $timeoutTarget)) "Timed-out remote lookup created a worktree target."
+            $timeoutBranch = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("show-ref", "--verify", "--quiet", "refs/heads/issue-498/git-timeout") -WorkingDirectory $callerPath
+            Assert-Equal 1 $timeoutBranch.ExitCode "Timed-out remote lookup created its planned branch."
+            $timeoutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $timeoutRefsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("for-each-ref", "--format=%(refname):%(objectname)")
+            Assert-Equal $timeoutRegistrationsBefore $timeoutRegistrationsAfter "Timed-out remote lookup changed worktree registrations."
+            Assert-Equal $timeoutRefsBefore $timeoutRefsAfter "Timed-out remote lookup changed Git refs."
+        }
+        finally {
+            foreach ($environmentName in $timeoutEnvironment.Keys) {
+                [System.Environment]::SetEnvironmentVariable($environmentName, $previousTimeoutEnvironment[$environmentName], "Process")
+            }
+            if ($null -eq $timeoutRootPid -and
+                (Test-Path -LiteralPath $timeoutRootPidPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $timeoutRootStartPath -PathType Leaf)) {
+                $timeoutRootPid = [int](Get-Content -Raw -LiteralPath $timeoutRootPidPath)
+                $timeoutRootStart = [long](Get-Content -Raw -LiteralPath $timeoutRootStartPath)
+            }
+            if ($null -eq $timeoutChildPid -and
+                (Test-Path -LiteralPath $timeoutChildPidPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $timeoutChildStartPath -PathType Leaf)) {
+                $timeoutChildPid = [int](Get-Content -Raw -LiteralPath $timeoutChildPidPath)
+                $timeoutChildStart = [long](Get-Content -Raw -LiteralPath $timeoutChildStartPath)
+            }
+            foreach ($processIdentity in @(
+                [pscustomobject]@{ Id = $timeoutChildPid; Start = $timeoutChildStart },
+                [pscustomobject]@{ Id = $timeoutRootPid; Start = $timeoutRootStart }
+            )) {
+                if ($null -eq $processIdentity.Id -or $null -eq $processIdentity.Start) {
+                    continue
+                }
+                $recordedProcess = Get-Process -Id $processIdentity.Id -ErrorAction SilentlyContinue
+                if ($null -ne $recordedProcess -and
+                    $recordedProcess.StartTime.ToUniversalTime().Ticks -eq $processIdentity.Start) {
+                    try {
+                        if (-not $recordedProcess.HasExited) {
+                            $recordedProcess.Kill()
+                            if (-not $recordedProcess.WaitForExit(5000)) {
+                                throw "Timeout fixture process $($recordedProcess.Id) did not exit during test cleanup."
+                            }
+                            $recordedProcess.WaitForExit()
+                        }
+                    }
+                    finally {
+                        $recordedProcess.Dispose()
+                    }
+                }
+            }
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "timeout-probe")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "protocol.ext.allow")
+        }
+        Complete-Test "complete remote names are safely refreshed and non-responsive Git process trees are bounded and reaped"
     }
 
     if (Test-CaseSelected "remote-default-head") {
@@ -1057,6 +1197,30 @@ try {
         Remove-Item -LiteralPath $ignoredCanaryDirectory -Recurse -Force
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $ignoredCollisionWorktree)
 
+        foreach ($hiddenFlag in @("assume-unchanged", "skip-worktree")) {
+            $hiddenIssue = if ($hiddenFlag -eq "assume-unchanged") { "503" } else { "504" }
+            $hiddenResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", $hiddenIssue, "-Slug", "hidden-initializer-collision")
+            Assert-Equal 0 $hiddenResult.ExitCode "Hidden-index initializer fixture creation should succeed for $hiddenFlag.`n$($hiddenResult.Output)"
+            $hiddenWorktree = Join-Path $callerPath ".worktrees/codex-$hiddenIssue-hidden-initializer-collision"
+            $hiddenHead = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("rev-parse", "HEAD")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("branch", "issue-$hiddenIssue/hidden-initializer-collision", $hiddenHead)
+            $hiddenTarget = Join-Path $hiddenWorktree "scripts/worktree_guard.ps1"
+            Add-Content -LiteralPath $hiddenTarget -Value "`n# hidden initializer collision $hiddenFlag" -Encoding Ascii
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("update-index", "--$hiddenFlag", "--", "scripts/worktree_guard.ps1")
+            $hiddenCollisionScript = Join-Path $fixtureRoot "initializer-$hiddenFlag-collision.ps1"
+            Set-Content -LiteralPath $hiddenCollisionScript -Value @(Get-PrintedHandoffLines -Output $hiddenResult.Output) -Encoding Ascii
+            $hiddenCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $hiddenCollisionScript) -WorkingDirectory $hiddenWorktree
+            Assert-True ($hiddenCollision.ExitCode -ne 0) "Hidden-index collision must fail for $hiddenFlag."
+            Assert-NormalizedContains $hiddenCollision.Output "index-hidden entries" "Hidden-index collision must explain preservation for $hiddenFlag."
+            Assert-Contains (Get-Content -Raw -LiteralPath $hiddenTarget) "hidden initializer collision $hiddenFlag" "Hidden bytes must survive $hiddenFlag cleanup refusal."
+            Assert-True (Test-Path -LiteralPath $hiddenWorktree -PathType Container) "Hidden worktree must survive $hiddenFlag cleanup refusal."
+            $hiddenRegistration = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-True $hiddenRegistration.Replace('\', '/').Contains($hiddenWorktree.Replace('\', '/')) "Hidden registration must survive $hiddenFlag cleanup refusal."
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("update-index", "--no-$hiddenFlag", "--", "scripts/worktree_guard.ps1")
+            $null = Invoke-Git -WorkingDirectory $hiddenWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "remove", $hiddenWorktree)
+        }
+
         $separateGitDirectory = Join-Path $fixtureRoot "separate common git directory"
         $separateGitCaller = Join-Path $fixtureRoot "separate git caller"
         $null = Invoke-Git -WorkingDirectory $fixtureRoot -Arguments @(
@@ -1085,6 +1249,15 @@ try {
 
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
         Assert-Equal 0 $initializerResult.ExitCode "Post-collision initializer fixture worktree creation should succeed.`n$($initializerResult.Output)"
+        $initializerSource = Get-Content -Raw -LiteralPath (Join-Path $callerPath "scripts/git/Initialize-CodexIssueWorktree.ps1")
+        # -v alone only lowercases assume-unchanged entries; fsmonitor-valid entries need -f.
+        # All three hidden-index predicates must pass both flags or an fsmonitor-valid path with
+        # modified bytes stays invisible to the predicate and to git status.
+        Assert-Contains $initializerSource 'ls-files", "-v", "-f", "-z' "Initializer must inspect assume-unchanged and fsmonitor-valid index flags before immediate late-collision cleanup."
+        Assert-Contains $initializerSource 'cleanupHidden' "Delayed late-collision cleanup must inspect hidden index flags before plain removal."
+        Assert-Contains $initializerSource 'ls-files -v -f -z' "Delayed late-collision cleanup must inspect assume-unchanged and fsmonitor-valid index flags before plain removal."
+        $helperSource = Get-Content -Raw -LiteralPath (Join-Path $callerPath "scripts/git/New-CodexIssueWorktree.ps1")
+        Assert-Contains $helperSource 'ls-files", "-v", "-f", "-z' "Helper cleanup must inspect assume-unchanged and fsmonitor-valid index flags before removal."
         $initializerWorktree = Join-Path $callerPath ".worktrees/codex-490-initializer-validation-continued"
         $initializerHead = Invoke-Git -WorkingDirectory $initializerWorktree -Arguments @("rev-parse", "HEAD")
 
@@ -1734,6 +1907,170 @@ try {
     }
 
     if (Test-CaseSelected "git-add-failure") {
+        $timeoutHookDirectory = Join-Path $testRoot "worktree-add-timeout-hook"
+        New-Item -ItemType Directory -Path $timeoutHookDirectory | Out-Null
+        $timeoutHookPath = Join-Path $timeoutHookDirectory "post-checkout"
+        $timeoutHookStartedPath = Join-Path $timeoutHookDirectory "started.txt"
+        $timeoutHookStartedArgument = $timeoutHookStartedPath.Replace('\', '/')
+        $timeoutGitArgument = $gitExecutable.Replace('\', '/')
+        $timeoutHookContent = @'
+#!/bin/sh
+printf started > "__STARTED_PATH__"
+if [ "$TASKDECK_DIRTY_TIMEOUT_HOOK" = "1" ]; then
+    printf '\n# dirty timeout hook canary\n' >> scripts/worktree_guard.ps1
+fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "assume" ]; then
+    "__GIT_EXECUTABLE__" update-index --assume-unchanged -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary assume\n' >> scripts/worktree_guard.ps1
+fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "skip" ]; then
+    "__GIT_EXECUTABLE__" update-index --skip-worktree -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary skip\n' >> scripts/worktree_guard.ps1
+fi
+if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "fsmonitor" ]; then
+    "__GIT_EXECUTABLE__" update-index --fsmonitor-valid -- scripts/worktree_guard.ps1
+    printf '\n# hidden timeout hook canary fsmonitor\n' >> scripts/worktree_guard.ps1
+fi
+sleep 30
+'@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
+        [System.IO.File]::WriteAllText(
+            $timeoutHookPath,
+            $timeoutHookContent,
+            [System.Text.UTF8Encoding]::new($false))
+
+        # core.fsmonitor query hook (interface v2): emit a non-empty update token followed by an
+        # empty changed-path list so Git keeps the CE_FSMONITOR_VALID bits the fixture sets. An
+        # empty token or a failed query makes Git invalidate every entry, which would silently
+        # dissolve the fsmonitor scenario below into a no-op.
+        $fsmonitorQueryHookPath = Join-Path $timeoutHookDirectory "fsmonitor-query.sh"
+        $fsmonitorQueryHookArgument = $fsmonitorQueryHookPath.Replace('\', '/')
+        [System.IO.File]::WriteAllText(
+            $fsmonitorQueryHookPath,
+            "#!/bin/sh`nprintf 'taskdeck-fsmonitor-fixture\000'`nexit 0`n",
+            [System.Text.UTF8Encoding]::new($false))
+
+        $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
+        $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $timedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "499",
+                "-Slug", "git-add-timeout",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True ($timedOutAdd.ExitCode -ne 0) "A timed-out git worktree add must fail closed."
+            Assert-NormalizedContains $timedOutAdd.Output "git worktree add failed for" "Timed-out worktree-add diagnostic omitted the failed operation."
+            $normalizedTimedOutAdd = $timedOutAdd.Output -replace '\s+', ' '
+            $reportedBoundedTermination =
+                $normalizedTimedOutAdd.Contains("Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped.") -or
+                $normalizedTimedOutAdd.Contains("Git stderr drain did not finish within 5000 ms after its process exited.")
+            Assert-True $reportedBoundedTermination "Timed-out worktree-add diagnostic omitted its bounded termination result."
+            Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Post-checkout timeout fixture did not start."
+            Assert-True (-not (Test-Path -LiteralPath $timedOutWorktree)) "Timed-out worktree add left its populated target behind."
+            $timedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-Equal $timedOutRegistrationsBefore $timedOutRegistrationsAfter "Timed-out worktree add left stale registration metadata."
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+        }
+
+        $dirtyTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-500-dirty-git-add-timeout"
+        $dirtyTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        $previousDirtyTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "Process")
+        [System.Environment]::SetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "1", "Process")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $dirtyTimedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                "-IssueNumber", "500",
+                "-Slug", "dirty-git-add-timeout",
+                "-GitCommandTimeoutSeconds", "5"
+            )
+            Assert-True ($dirtyTimedOutAdd.ExitCode -ne 0) "A dirty timed-out git worktree add must fail closed."
+            Assert-NormalizedContains $dirtyTimedOutAdd.Output "Refusing to remove partially created worktree" "Dirty partial-registration cleanup did not explain its preservation decision."
+            Assert-True (Test-Path -LiteralPath $dirtyTimedOutWorktree -PathType Container) "Dirty partial-registration cleanup deleted the populated target."
+            $dirtyGuardPath = Join-Path $dirtyTimedOutWorktree "scripts/worktree_guard.ps1"
+            Assert-NormalizedContains (Get-Content -Raw -LiteralPath $dirtyGuardPath) "dirty timeout hook canary" "Dirty timeout hook did not modify the preservation canary."
+            $dirtyTimedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            Assert-True ($dirtyTimedOutRegistrationsAfter -cne $dirtyTimedOutRegistrationsBefore) "Dirty partial-registration cleanup removed the worktree registration."
+            Assert-NormalizedContains $dirtyTimedOutRegistrationsAfter ($dirtyTimedOutWorktree.Replace('\', '/')) "Dirty partial-registration cleanup did not preserve the exact registration."
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", $previousDirtyTimeoutHook, "Process")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+            if (Test-Path -LiteralPath $dirtyTimedOutWorktree -PathType Container) {
+                $null = Invoke-Git -WorkingDirectory $dirtyTimedOutWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+                $null = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "unlock", $dirtyTimedOutWorktree) -WorkingDirectory $callerPath
+                $dirtyCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $dirtyTimedOutWorktree) -WorkingDirectory $callerPath
+                Assert-Equal 0 $dirtyCleanup.ExitCode "Dirty timeout fixture cleanup failed after its preservation proof.`n$($dirtyCleanup.Output)"
+            }
+        }
+
+        $previousHiddenTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", "Process")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        try {
+            $hiddenTimeoutScenarios = @(
+                [pscustomobject]@{ Flag = "assume"; Issue = "501"; Slug = "assume-hidden-git-add-timeout"; ClearArgument = "--no-assume-unchanged"; RequiresFsmonitor = $false },
+                [pscustomobject]@{ Flag = "skip"; Issue = "502"; Slug = "skip-hidden-git-add-timeout"; ClearArgument = "--no-skip-worktree"; RequiresFsmonitor = $false },
+                [pscustomobject]@{ Flag = "fsmonitor"; Issue = "505"; Slug = "fsmonitor-hidden-git-add-timeout"; ClearArgument = "--no-fsmonitor-valid"; RequiresFsmonitor = $true }
+            )
+            foreach ($scenario in $hiddenTimeoutScenarios) {
+                $hiddenTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-$($scenario.Issue)-$($scenario.Slug)"
+                $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+                [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
+                if ($scenario.RequiresFsmonitor) {
+                    # CE_FSMONITOR_VALID bits are stripped from the index on every read while
+                    # core.fsmonitor is disabled, so the scenario only exists with it enabled.
+                    $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorQueryHookArgument)
+                }
+                if (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $timeoutHookStartedPath -Force
+                }
+                try {
+                    $hiddenTimedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                        "-IssueNumber", $scenario.Issue,
+                        "-Slug", $scenario.Slug,
+                        "-GitCommandTimeoutSeconds", "5"
+                    )
+                    Assert-True ($hiddenTimedOutAdd.ExitCode -ne 0) "An index-hidden dirty timed-out git worktree add must fail closed."
+                    Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged, skip-worktree, or fsmonitor-valid entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
+                    Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Index-hidden timeout fixture did not start."
+                    Assert-True (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) "Index-hidden partial-registration cleanup deleted the populated target."
+                    $hiddenGuardPath = Join-Path $hiddenTimedOutWorktree "scripts/worktree_guard.ps1"
+                    Assert-NormalizedContains (Get-Content -Raw -LiteralPath $hiddenGuardPath) "hidden timeout hook canary $($scenario.Flag)" "Index-hidden timeout hook did not preserve its modified bytes."
+                    if ($scenario.RequiresFsmonitor) {
+                        # Prove the fixture actually built the fsmonitor-valid state, and that the
+                        # pre-fix `ls-files -v` predicate could not have seen it. Without these the
+                        # scenario could pass while testing nothing.
+                        $fsmonitorTaggedFlags = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("ls-files", "-v", "-f", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ($fsmonitorTaggedFlags.StartsWith("h ", [System.StringComparison]::Ordinal)) "fsmonitor fixture did not mark the guard entry fsmonitor-valid; ls-files -v -f reported '$fsmonitorTaggedFlags'."
+                        $fsmonitorUntaggedFlags = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("ls-files", "-v", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ($fsmonitorUntaggedFlags.StartsWith("H ", [System.StringComparison]::Ordinal)) "ls-files -v alone must not lowercase an fsmonitor-valid entry, otherwise this scenario would not cover the missing -f; it reported '$fsmonitorUntaggedFlags'."
+                        $fsmonitorHiddenStatus = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("status", "--porcelain=v1", "--", "scripts/worktree_guard.ps1")
+                        Assert-True ([string]::IsNullOrWhiteSpace($fsmonitorHiddenStatus)) "fsmonitor fixture did not hide the modified guard from git status; it reported '$fsmonitorHiddenStatus'."
+                    }
+                    $hiddenTimedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+                    Assert-True ($hiddenTimedOutRegistrationsAfter -cne $hiddenTimedOutRegistrationsBefore) "Index-hidden partial-registration cleanup removed the worktree registration."
+                    Assert-NormalizedContains $hiddenTimedOutRegistrationsAfter ($hiddenTimedOutWorktree.Replace('\', '/')) "Index-hidden partial-registration cleanup did not preserve the exact registration."
+                }
+                finally {
+                    if (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) {
+                        $null = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("update-index", $scenario.ClearArgument, "--", "scripts/worktree_guard.ps1")
+                        $null = Invoke-Git -WorkingDirectory $hiddenTimedOutWorktree -Arguments @("restore", "--worktree", "--", "scripts/worktree_guard.ps1")
+                        $null = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "unlock", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
+                        $hiddenCleanup = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("worktree", "remove", $hiddenTimedOutWorktree) -WorkingDirectory $callerPath
+                        Assert-Equal 0 $hiddenCleanup.ExitCode "Index-hidden timeout fixture cleanup failed after its preservation proof.`n$($hiddenCleanup.Output)"
+                    }
+                    if ($scenario.RequiresFsmonitor) {
+                        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.fsmonitor")
+                    }
+                }
+            }
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $previousHiddenTimeoutHook, "Process")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+        }
+
         $gitFailureTarget = Join-Path $callerPath ".worktrees/codex-431-git-failure"
         $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "add", "--detach", $gitFailureTarget, "refs/remotes/origin/main")
         $parkedGitFailureTarget = Join-Path $callerPath ".worktrees/parked-git-failure"
@@ -1744,7 +2081,7 @@ try {
         Assert-NormalizedContains $gitFailure.Output "is a missing but already registered worktree" "Git stderr context should be preserved."
         Assert-NormalizedContains $gitFailure.Output "(exit code 128)" "Git failure diagnostic omitted the native exit code."
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-431-git-failure"))) "Failed git worktree add should not leave a target worktree."
-        Complete-Test "native git failure propagates with a clear diagnostic"
+        Complete-Test "native git failures and post-registration timeouts clean up safely with clear diagnostics"
     }
 
     Write-Host "PASS: $passed/$($selectedCases.Count) selected worktree helper regression checks"
