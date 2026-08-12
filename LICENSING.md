@@ -1,38 +1,50 @@
-# Taskdeck Licensing Commitment
+# Taskdeck licensing policy
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-12
 
-Taskdeck's open-source core is licensed under the [MIT License](LICENSE). This
-document records the project's long-term licensing boundary; it does not
-replace or narrow the rights already granted by that license.
+Taskdeck's open-source core is distributed under the GNU General Public
+License version 3 only (`GPL-3.0-only`). The complete terms are in
+[LICENSE](LICENSE). This policy implements the maintainer decision recorded in
+[ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
 
-## MIT Forever
+## Effective date and prior releases
 
-Everything published in this repository under the MIT License remains MIT
-licensed permanently. Taskdeck will not retroactively relicense that code,
-withdraw the MIT grant, or put an existing MIT-licensed capability behind a
-different license. Released versions remain usable, modifiable, and
-redistributable under the MIT terms that accompanied them.
+The GPL-3.0-only policy applies to the repository state released on and after
+12 August 2026 and to new contributions accepted after that date.
 
-Contributions to the MIT-licensed core are accepted under the same MIT terms
-(inbound equals outbound). Taskdeck uses the Developer Certificate of Origin
-rather than a contributor license agreement; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Versions and copies previously released under the MIT License keep the rights
+already granted to their recipients. Those grants are not withdrawn. The
+former MIT text and copyright notice are retained in
+[LICENSES/MIT.txt](LICENSES/MIT.txt) for attribution and licence-compliance
+purposes. Their retention does not offer the current Taskdeck project as a
+whole under MIT as an alternative to GPL-3.0-only.
 
-## Additive Commercial Modules
+## Copyleft core
 
-Future commercial capabilities, if any, will be additive and separately
+Modified distributions of the GPL-covered Taskdeck core must remain under
+GPLv3 and provide corresponding source as the licence requires. Contributions
+to the core are accepted under the same GPL-3.0-only terms (inbound equals
+outbound). Taskdeck continues to use the Developer Certificate of Origin
+rather than a contributor licence agreement; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+Third-party components, assets, and code originally received under compatible
+permissive licences retain their own copyright notices and licence terms.
+
+## Separately licensed modules
+
+Future commercial capabilities, if any, may be additive and separately
 licensed. They may live under the reserved [`ee/`](ee/) path or in a separate
-repository, and each such module will carry its own explicit license terms.
-Commercial development will not be implemented by relicensing or re-gating an
-existing MIT-licensed feature.
+repository, and each such module must carry explicit licence terms before
+distribution.
 
-The `ee/` directory currently contains only a license placeholder. It contains
-no commercial product code and is outside the root MIT grant.
+The `ee/` directory currently contains only a licence placeholder. It contains
+no commercial product code and is outside the root GPL grant.
 
-## Free Boundary
+## Free boundary
 
-The following capabilities are part of Taskdeck's permanent free boundary and
-will never be gated behind a commercial license:
+The following capabilities remain part of Taskdeck's free and open-source
+boundary:
 
 - the core capture -> proposal -> review -> apply loop;
 - data export and portability;
@@ -40,15 +52,15 @@ will never be gated behind a commercial license:
 - single-user self-hosting.
 
 Capabilities already shipped free, including MFA, OIDC, and board sharing,
-also remain free. A future paid offering may add separately licensed modules or
-managed services, but it will not subtract from this boundary.
+also remain in the open-source core. A future paid offering may add separately
+licensed modules or managed services, but it will not remove those capabilities
+from the GPL-covered core.
 
-## Name and Logo
+## Name and logo
 
-The MIT license covers the software and documentation identified by the root
-license. It does not grant permission to use the Taskdeck name, logo, or other
-brand identifiers as trademarks, or to imply endorsement by the Taskdeck
-project. Descriptive references to the project remain permitted as applicable
-law allows.
+The software licence does not grant permission to use the Taskdeck name, logo,
+or other brand identifiers as trademarks, or to imply endorsement by the
+Taskdeck project. Descriptive references remain permitted as applicable law
+allows.
 
 No trademark registration or availability claim is made in this document.

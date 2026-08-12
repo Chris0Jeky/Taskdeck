@@ -328,7 +328,7 @@ builder.Services.AddSwaggerGen(options =>
         },
         License = new OpenApiLicense
         {
-            Name = "MIT"
+            Name = "GPL-3.0-only"
         }
     });
 

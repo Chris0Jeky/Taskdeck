@@ -21,7 +21,7 @@ A same-day capability recon (11 questions, file-level verification) established 
 - **The generalist scaffold already exists**: workspace modes (`guided | workbench | agent`), a first-run onboarding model, and the Paper shell's calm language. What reads as "developer product" is the default navigation (Ops CLI, Endpoints, Logs, Dev Tools, API Keys, Agents, Metrics) and jargon — a **visibility + language problem, not an architecture problem**.
 - The review-first proposal machinery, provenance chain, import dry-run/apply pattern, egress disclosure, and quota/kill-switch controls are all reusable as-is.
 
-The governing constraints: ADR-0044's finite-work discipline (a ratified wave list is the admission ticket; scope regrowth is the named failure mode), solo-maintainer capacity, the MIT/local-first commitments, and the ~8-week revival checkpoint.
+The governing constraints: ADR-0044's finite-work discipline (a ratified wave list is the admission ticket; scope regrowth is the named failure mode), solo-maintainer capacity, the local-first commitment, and the ~8-week revival checkpoint. ADR-0050 superseded this ADR's original MIT constraint on 2026-08-12; the current core is GPL-3.0-only.
 
 ## Decision
 
