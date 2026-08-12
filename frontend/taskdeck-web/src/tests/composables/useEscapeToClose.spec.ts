@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 
 function pressKey(key: string) {
