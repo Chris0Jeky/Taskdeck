@@ -255,7 +255,7 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | Testing guide | 9/10 | Comprehensive totals, category breakdown, commands |
 | Security docs | 8/10 | OWASP, secrets, rate limiting, redaction, incidents |
 | Configuration reference | 4/10 | No appsettings.json schema, no env var docs |
-| ~~Data model reference~~ | ~~3/10~~ 9/10 | ~~No entity docs, no ERD~~ RESOLVED: `docs/architecture/DATA_MODEL.md` (855 lines, 37 entities, Mermaid ERD) (DOC-08 `#875`/PR `#917`) |
+| ~~Data model reference~~ | ~~3/10~~ 9/10 | ~~No entity docs, no ERD~~ RESOLVED: `docs/architecture/DATA_MODEL.md` — Mermaid ERD plus per-entity field tables (DOC-08 `#875`/PR `#917`). See the document for its current shape; the as-delivered line/entity counts were dropped in `#1470` as a silently-rotting figure |
 | Contributor guide | 7.5/10 | Split across AGENTS.md, CLAUDE.md; no CONTRIBUTING.md |
 | **Overall** | **8.5/10** | Strong governance, targeted gaps |
 
