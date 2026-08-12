@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-12
 - **Decision owner:** Maintainer
-- **Supersedes:** ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03
+- **Supersedes:** ADR-0044 Decision 3, ADR-0046's MIT constraint, and the
+  MIT-forever portion of REVIVAL-03
 
 ## Context
 
@@ -59,4 +60,5 @@ preserved where applicable.
 - `LICENSES/MIT.txt`
 - `LICENSING.md`
 - ADR-0044
+- ADR-0046
 - REVIVAL-03 / issue #1299

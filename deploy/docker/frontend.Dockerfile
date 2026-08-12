@@ -23,6 +23,8 @@ WORKDIR /usr/share/nginx/html
 COPY --chown=nginx:nginx deploy/nginx/frontend.conf /etc/nginx/conf.d/default.conf
 COPY --from=build --chown=nginx:nginx /app/dist ./
 COPY --chown=nginx:nginx LICENSE ./LICENSE
+COPY --chown=nginx:nginx RELICENSING.md ./RELICENSING.md
+COPY --chown=nginx:nginx LICENSES ./LICENSES
 
 EXPOSE 8080
 
