@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -7,6 +8,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -364,6 +366,99 @@ public class ChatServiceResilienceTests
         _llmProviderMock.Verify(
             p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    // -----------------------------------------------------------------------
+    // Blank final content + a real proposal (#1617 review)
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task SendMessageAsync_WhenToolCallingCreatesProposalButFinalContentIsBlank_KeepsProposalReference()
+    {
+        // Board-scoped tool calling can create a proposal and then return no closing text.
+        // Substituting the empty-content placeholder must not reclassify that message: the
+        // client renders the "Open in Review" action only for messageType "proposal-reference"
+        // paired with a proposalId, so clobbering the type strands a live proposal.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Textless proposal session", boardId);
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var persistedMessages = new List<ChatMessage>();
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) =>
+            {
+                persistedMessages.Add(message);
+                return message;
+            });
+
+        // Round 1: the LLM invokes a write tool. Round 2: it completes with no assistant text.
+        var toolArgs = JsonDocument.Parse("""{"title":"Ship the release"}""").RootElement.Clone();
+        var round = 0;
+        _llmProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                round++;
+                if (round == 1)
+                {
+                    return new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 20,
+                        Provider: "Test",
+                        Model: "test-v1",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "propose_create_card", toolArgs) },
+                        IsComplete: false);
+                }
+
+                return new LlmToolCompletionResult(
+                    Content: "   ",
+                    TokensUsed: 10,
+                    Provider: "Test",
+                    Model: "test-v1",
+                    ToolCalls: null,
+                    IsComplete: true);
+            });
+
+        var toolResultJson = $$"""{"status":"created","full_proposal_id":"{{proposalId}}"}""";
+        var executorMock = new Mock<IToolExecutor>();
+        executorMock.SetupGet(e => e.ToolName).Returns("propose_create_card");
+        executorMock
+            .Setup(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(toolResultJson);
+        executorMock
+            .Setup(e => e.ExecuteAsync(It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(toolResultJson);
+
+        var orchestrator = new ToolCallingChatOrchestrator(
+            _llmProviderMock.Object,
+            new ToolExecutorRegistry(new[] { executorMock.Object }),
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        var service = BuildService(orchestrator: orchestrator);
+        var result = await service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("Create a card for the release"), default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference",
+            "a textless completion must not strip the classification the client keys the review action off");
+        result.Value.ProposalId.Should().Be(proposalId);
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+
+        var assistantMessage = persistedMessages.Should()
+            .ContainSingle(m => m.Role == ChatMessageRole.Assistant).Subject;
+        assistantMessage.MessageType.Should().Be("proposal-reference");
+        assistantMessage.ProposalId.Should().Be(proposalId);
+        assistantMessage.Content.Should().Be("The provider ended the response without returning text.",
+            "the placeholder still has to replace the blank content so ChatMessage accepts it");
     }
 
     // -----------------------------------------------------------------------

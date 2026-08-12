@@ -524,7 +524,18 @@ public class ChatService : IChatService
             if (string.IsNullOrWhiteSpace(assistantContent))
             {
                 assistantContent = EmptyAssistantContentPlaceholder;
-                messageType = "degraded";
+
+                // Substituting the placeholder must not destroy a real artifact reference. When a
+                // proposal was actually created (board-scoped tool calling can return a proposal id
+                // with no closing text), the message stays "proposal-reference": the client renders
+                // the "Open in Review" action only for that type paired with a proposalId, so
+                // reclassifying here would strand a live proposal with no way to reach it.
+                // "clarification" deliberately gets no such guard — a clarification with no question
+                // text has nothing for the user to answer and no attached artifact, so "degraded" is
+                // the honest classification for it.
+                if (proposalId == null)
+                    messageType = "degraded";
+
                 if (string.IsNullOrWhiteSpace(degradedReason))
                     degradedReason = EmptyAssistantContentDegradedReason;
             }
