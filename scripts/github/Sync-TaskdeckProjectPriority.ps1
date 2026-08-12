@@ -457,29 +457,15 @@ function Get-CompleteProjectSnapshot {
         if ($pageTotalCount -lt 0) {
             throw "ProjectV2 page $pageCount returned a negative totalCount."
         }
+        if ($ItemLimit -gt 0 -and $pageTotalCount -gt $ItemLimit) {
+            throw "Project contains $pageTotalCount items, exceeding -Limit $ItemLimit. Completeness cannot be established within the configured ceiling."
+        }
 
         if ($null -eq $expectedTotalCount) {
             $expectedTotalCount = $pageTotalCount
             $expectedUpdatedAt = $pageUpdatedAt
             $projectTitle = [string]$projectNode.title
             $projectNumberFromGraphQl = [int]$projectNode.number
-
-            if ($ItemLimit -gt 0 -and $expectedTotalCount -gt $ItemLimit) {
-                throw "Project contains $expectedTotalCount items, exceeding -Limit $ItemLimit. Completeness cannot be established within the configured ceiling."
-            }
-        } else {
-            if ($pageTotalCount -ne $expectedTotalCount) {
-                throw [ProjectSnapshotDriftException]::new(
-                    "Project totalCount drifted during pagination: expected $expectedTotalCount, page $pageCount reported $pageTotalCount.",
-                    "totalCount",
-                    $pageCount)
-            }
-            if ($pageUpdatedAt -ne $expectedUpdatedAt) {
-                throw [ProjectSnapshotDriftException]::new(
-                    "Project updatedAt drifted during pagination: expected '$expectedUpdatedAt', page $pageCount reported '$pageUpdatedAt'.",
-                    "updatedAt",
-                    $pageCount)
-            }
         }
 
         foreach ($item in @($projectNode.items.nodes)) {
@@ -498,21 +484,40 @@ function Get-CompleteProjectSnapshot {
                 -StatusFieldId $StatusFieldId)) | Out-Null
         }
 
+        $hasNextPage = [bool]$projectNode.items.pageInfo.hasNextPage
+        $endCursor = $null
+        if ($hasNextPage) {
+            $endCursor = [string]$projectNode.items.pageInfo.endCursor
+            if ([string]::IsNullOrWhiteSpace($endCursor)) {
+                throw "ProjectV2 page $pageCount reported hasNextPage without an endCursor."
+            }
+            if ([string]::Equals($endCursor, $after, [System.StringComparison]::Ordinal) -or $seenCursors.Contains($endCursor)) {
+                throw "ProjectV2 pagination cursor did not advance at page $pageCount ('$endCursor')."
+            }
+        }
+
+        # Intrinsic page-integrity faults above are never retryable, even when the
+        # same page also reports a changed snapshot stamp or count.
+        if ($pageCount -gt 1) {
+            if ($pageTotalCount -ne $expectedTotalCount) {
+                throw [ProjectSnapshotDriftException]::new(
+                    "Project totalCount drifted during pagination: expected $expectedTotalCount, page $pageCount reported $pageTotalCount.",
+                    "totalCount",
+                    $pageCount)
+            }
+            if ($pageUpdatedAt -ne $expectedUpdatedAt) {
+                throw [ProjectSnapshotDriftException]::new(
+                    "Project updatedAt drifted during pagination: expected '$expectedUpdatedAt', page $pageCount reported '$pageUpdatedAt'.",
+                    "updatedAt",
+                    $pageCount)
+            }
+        }
+
         if ($normalizedItems.Count -gt $expectedTotalCount) {
             throw "ProjectV2 pagination returned more items ($($normalizedItems.Count)) than totalCount ($expectedTotalCount)."
         }
-
-        $hasNextPage = [bool]$projectNode.items.pageInfo.hasNextPage
         if (-not $hasNextPage) {
             break
-        }
-
-        $endCursor = [string]$projectNode.items.pageInfo.endCursor
-        if ([string]::IsNullOrWhiteSpace($endCursor)) {
-            throw "ProjectV2 page $pageCount reported hasNextPage without an endCursor."
-        }
-        if ([string]::Equals($endCursor, $after, [System.StringComparison]::Ordinal) -or $seenCursors.Contains($endCursor)) {
-            throw "ProjectV2 pagination cursor did not advance at page $pageCount ('$endCursor')."
         }
 
         $seenCursors.Add($endCursor) | Out-Null
@@ -546,7 +551,7 @@ function Get-CompleteProjectSnapshotWithRestart {
         [string]$PriorityFieldId,
         [Parameter(Mandatory = $true)]
         [string]$StatusFieldId,
-        [ValidateRange(0, 10)]
+        [ValidateRange(0, [int]::MaxValue)]
         [int]$ItemLimit = 0,
         [Parameter(Mandatory = $true)]
         [scriptblock]$PageProvider,
@@ -826,6 +831,7 @@ function Invoke-SelfTest {
         param(
             [Parameter(Mandatory = $true)]
             [scriptblock]$PageProvider,
+            [int]$TestLimit = 0,
             [int]$MaxRestarts = 2
         )
 
@@ -833,6 +839,7 @@ function Invoke-SelfTest {
             -ProjectId $projectId `
             -PriorityFieldId $priorityFieldId `
             -StatusFieldId $statusFieldId `
+            -ItemLimit $TestLimit `
             -MaxRestarts $MaxRestarts `
             -PageProvider $PageProvider
     }
@@ -989,6 +996,18 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest -Condition ($largeSnapshot.items[0].content.type -eq "PullRequest" -and $largeSnapshot.items[0].content.body -eq "Closes #42") -Message "content shape normalization should preserve PR type and body"
     $checks += Assert-SelfTest -Condition ($largeSnapshot.items[0].priority -eq "Priority II" -and $largeSnapshot.items[0].status -eq "Review") -Message "field normalization should use exact Priority and Status field ids"
     $checks += Assert-SelfTest -Condition (@($largeSnapshot.items[0].labels).Count -eq 2 -and $largeSnapshot.items[0].labels[1] -eq "Priority II") -Message "label normalization should preserve the complete label set"
+    $largeRestartProvider = {
+        param($requestedProjectId, $after)
+        $key = if ([string]::IsNullOrWhiteSpace([string]$after)) { "<start>" } else { [string]$after }
+        $largePages[$key]
+    }
+    $largeRestartSnapshot = Get-SelfTestSnapshotWithRestart `
+        -PageProvider $largeRestartProvider `
+        -TestLimit 1001 `
+        -MaxRestarts 0
+    $checks += Assert-SelfTest `
+        -Condition ($largeRestartSnapshot.complete -and $largeRestartSnapshot.items.Count -eq 1001) `
+        -Message "restart wrapper must preserve the CLI ItemLimit range above ten"
 
     $itemA = New-SelfTestItem -Id "item-a"
     $itemB = New-SelfTestItem -Id "item-b" -Number 2
@@ -1032,6 +1051,101 @@ function Invoke-SelfTest {
         "stamp-next" = New-SelfTestResponse -TotalCount 2 -Nodes @($itemB) -HasNextPage $false -EndCursor $null -UpdatedAt "2026-07-26T00:00:01Z"
     }
     $checks += Assert-SelfTestThrows -Action { Get-SelfTestSnapshot -Pages $stampDriftPages } -MessagePattern "updatedAt drifted"
+
+    $mixedDuplicateState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedDuplicateProvider = {
+        param($requestedProjectId, $after)
+        $mixedDuplicateState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedDuplicateState.starts++
+            if ($mixedDuplicateState.starts -eq 1) {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-duplicate")
+            }
+            return (New-SelfTestResponse -TotalCount 1 -Nodes @($itemB) -HasNextPage $false -EndCursor $null)
+        }
+        New-SelfTestResponse -TotalCount 3 -Nodes @($itemA) -HasNextPage $false -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedDuplicateProvider -MaxRestarts 2
+    } -MessagePattern "duplicate item id"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedDuplicateState.calls -eq 2 -and $mixedDuplicateState.starts -eq 1) `
+        -Message "duplicate identity faults must not retry when the same page also reports drift"
+
+    $mixedCursorState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedCursorProvider = {
+        param($requestedProjectId, $after)
+        $mixedCursorState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedCursorState.starts++
+            if ($mixedCursorState.starts -eq 1) {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-cursor")
+            }
+            return (New-SelfTestResponse -TotalCount 1 -Nodes @($itemB) -HasNextPage $false -EndCursor $null)
+        }
+        New-SelfTestResponse `
+            -TotalCount 2 `
+            -Nodes @($itemB) `
+            -HasNextPage $true `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedCursorProvider -MaxRestarts 2
+    } -MessagePattern "hasNextPage without an endCursor"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedCursorState.calls -eq 2 -and $mixedCursorState.starts -eq 1) `
+        -Message "cursor faults must not retry when the same page also reports drift"
+
+    $mixedTruncatedItem = New-SelfTestItem `
+        -Id "mixed-truncated" `
+        -Labels @("Priority I") `
+        -LabelTotalCount 2 `
+        -LabelsHasNextPage $true
+    $mixedTruncatedState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedTruncatedProvider = {
+        param($requestedProjectId, $after)
+        $mixedTruncatedState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedTruncatedState.starts++
+            if ($mixedTruncatedState.starts -eq 1) {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-truncated")
+            }
+            return (New-SelfTestResponse -TotalCount 1 -Nodes @($itemB) -HasNextPage $false -EndCursor $null)
+        }
+        New-SelfTestResponse `
+            -TotalCount 2 `
+            -Nodes @($mixedTruncatedItem) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedTruncatedProvider -MaxRestarts 2
+    } -MessagePattern "labels was truncated"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedTruncatedState.calls -eq 2 -and $mixedTruncatedState.starts -eq 1) `
+        -Message "nested-connection faults must not retry when the same page also reports drift"
+
+    $mixedLimitState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedLimitProvider = {
+        param($requestedProjectId, $after)
+        $mixedLimitState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedLimitState.starts++
+            if ($mixedLimitState.starts -eq 1) {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-limit")
+            }
+            return (New-SelfTestResponse -TotalCount 1 -Nodes @($itemB) -HasNextPage $false -EndCursor $null)
+        }
+        New-SelfTestResponse -TotalCount 3 -Nodes @($itemB) -HasNextPage $false -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedLimitProvider -TestLimit 2 -MaxRestarts 2
+    } -MessagePattern "exceeding -Limit 2"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedLimitState.calls -eq 2 -and $mixedLimitState.starts -eq 1) `
+        -Message "limit faults must not retry when the same page also reports drift"
 
     $restartState = [pscustomobject]@{
         starts = 0
@@ -1090,20 +1204,6 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest `
         -Condition ($nonDriftState.starts -eq 2) `
         -Message "non-drift completeness faults must not trigger a restart"
-
-    $exhaustionApplyState = [pscustomobject]@{ writes = 0 }
-    $checks += Assert-SelfTestThrows -Action {
-        $snapshot = Get-SelfTestSnapshotWithRestart -PageProvider $exhaustionProvider -MaxRestarts 0
-        Invoke-PriorityApplyWithAudit `
-            -InitialState ([pscustomobject]@{ updates = @(); guardFingerprint = "unused" }) `
-            -OptionMap $testOptionMap `
-            -CurrentStateProvider { throw "snapshot unexpectedly completed" } `
-            -ItemWriter { $exhaustionApplyState.writes++ } `
-            -PostAuditProvider { throw "snapshot unexpectedly completed" }
-    } -MessagePattern "restart bound exhausted"
-    $checks += Assert-SelfTest `
-        -Condition ($exhaustionApplyState.writes -eq 0) `
-        -Message "Apply must perform zero writes when the pre-write snapshot exhausts restarts"
 
     $cursorPages = @{
         "<start>" = New-SelfTestResponse -TotalCount 3 -Nodes @($itemA) -HasNextPage $true -EndCursor "same-cursor"
@@ -1755,6 +1855,50 @@ function Invoke-SelfTest {
         audit = @()
         snapshot = [pscustomobject]@{ projectUpdatedAt = "before-partial"; items = @() }
     }
+    $exhaustionApplyState = [pscustomobject]@{
+        starts = 0
+        calls = 0
+        currentChecks = 0
+        writes = 0
+        postAudits = 0
+    }
+    $exhaustionApplyProvider = {
+        param($requestedProjectId, $after)
+        $exhaustionApplyState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $exhaustionApplyState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "apply-exhaustion")
+        }
+        New-SelfTestResponse -TotalCount 3 -Nodes @($itemB) -HasNextPage $false -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider {
+                $exhaustionApplyState.currentChecks++
+                Get-SelfTestSnapshotWithRestart `
+                    -PageProvider $exhaustionApplyProvider `
+                    -MaxRestarts 0 | Out-Null
+                throw "snapshot unexpectedly completed"
+            } `
+            -ItemWriter {
+                param($update, $optionId)
+                $exhaustionApplyState.writes++
+            } `
+            -PostAuditProvider {
+                $exhaustionApplyState.postAudits++
+                throw "post-audit unexpectedly reached"
+            }
+    } -MessagePattern "restart bound exhausted"
+    $checks += Assert-SelfTest `
+        -Condition ($exhaustionApplyState.currentChecks -eq 1 -and
+            $exhaustionApplyState.starts -eq 1 -and
+            $exhaustionApplyState.calls -eq 2 -and
+            $exhaustionApplyState.writes -eq 0 -and
+            $exhaustionApplyState.postAudits -eq 0) `
+        -Message "Apply must perform zero writes when its pre-write snapshot exhausts restarts"
+
     $partialPostState = [pscustomobject]@{
         guardFingerprint = "post-partial-guard"
         updates = @([pscustomobject]@{ itemId = "partial-second"; expectedPriority = "Priority II" })
