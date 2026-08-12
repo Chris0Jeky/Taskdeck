@@ -509,6 +509,13 @@ function Get-CompleteProjectSnapshot {
 
         # Intrinsic page-integrity faults above are never retryable, even when the
         # same page also reports a changed snapshot stamp or count.
+        if ($normalizedItems.Count -gt $expectedTotalCount) {
+            throw "ProjectV2 pagination returned more items ($($normalizedItems.Count)) than totalCount ($expectedTotalCount)."
+        }
+        if (-not $hasNextPage -and $normalizedItems.Count -ne $expectedTotalCount) {
+            throw "ProjectV2 pagination ended prematurely: received $($normalizedItems.Count) of $expectedTotalCount items."
+        }
+
         if ($pageCount -gt 1) {
             if ($pageTotalCount -ne $expectedTotalCount) {
                 throw [ProjectSnapshotDriftException]::new(
@@ -524,9 +531,6 @@ function Get-CompleteProjectSnapshot {
             }
         }
 
-        if ($normalizedItems.Count -gt $expectedTotalCount) {
-            throw "ProjectV2 pagination returned more items ($($normalizedItems.Count)) than totalCount ($expectedTotalCount)."
-        }
         if (-not $hasNextPage) {
             break
         }
@@ -1022,6 +1026,7 @@ function Invoke-SelfTest {
 
     $itemA = New-SelfTestItem -Id "item-a"
     $itemB = New-SelfTestItem -Id "item-b" -Number 2
+    $itemC = New-SelfTestItem -Id "item-c" -Number 3
 
     $caseDistinctPages = @{
         "<start>" = New-SelfTestResponse `
@@ -1175,6 +1180,50 @@ function Invoke-SelfTest {
         "stamp-next" = New-SelfTestResponse -TotalCount 2 -Nodes @($itemB) -HasNextPage $false -EndCursor $null -UpdatedAt "2026-07-26T00:00:01Z"
     }
     $checks += Assert-SelfTestThrows -Action { Get-SelfTestSnapshot -Pages $stampDriftPages } -MessagePattern "updatedAt drifted"
+
+    $overflowWithDriftState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $overflowWithDriftProvider = {
+        param($requestedProjectId, $after)
+        $overflowWithDriftState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $overflowWithDriftState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA, $itemB) -HasNextPage $true -EndCursor "overflow-with-drift")
+        }
+        New-SelfTestResponse `
+            -TotalCount 4 `
+            -Nodes @($itemC) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $overflowWithDriftProvider -MaxRestarts 2
+    } -MessagePattern "more items \(3\) than totalCount \(2\)"
+    $checks += Assert-SelfTest `
+        -Condition ($overflowWithDriftState.calls -eq 2 -and $overflowWithDriftState.starts -eq 1) `
+        -Message "overflow must not retry when the terminal page also reports count and stamp drift"
+
+    $prematureWithDriftState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $prematureWithDriftProvider = {
+        param($requestedProjectId, $after)
+        $prematureWithDriftState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $prematureWithDriftState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "premature-with-drift")
+        }
+        New-SelfTestResponse `
+            -TotalCount 3 `
+            -Nodes ([object[]]@()) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $prematureWithDriftProvider -MaxRestarts 2
+    } -MessagePattern "ended prematurely: received 1 of 2 items"
+    $checks += Assert-SelfTest `
+        -Condition ($prematureWithDriftState.calls -eq 2 -and $prematureWithDriftState.starts -eq 1) `
+        -Message "terminal premature counts must not retry when the page also reports count and stamp drift"
 
     $mixedDuplicateState = [pscustomobject]@{ starts = 0; calls = 0 }
     $mixedDuplicateProvider = {
@@ -2071,6 +2120,101 @@ function Invoke-SelfTest {
             $malformedApplyState.writes -eq 0 -and
             $malformedApplyState.postAudits -eq 0) `
         -Message "Apply must perform zero writes and no restart when malformed pagination metadata is mixed with drift"
+
+    $intrinsicApplyState = [pscustomobject]@{
+        mode = "overflow"
+        starts = 0
+        calls = 0
+        currentChecks = 0
+        writes = 0
+        postAudits = 0
+    }
+    $intrinsicApplyProvider = {
+        param($requestedProjectId, $after)
+        $intrinsicApplyState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $intrinsicApplyState.starts++
+            if ($intrinsicApplyState.mode -ceq "overflow") {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA, $itemB) -HasNextPage $true -EndCursor "apply-overflow")
+            }
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "apply-premature")
+        }
+        if ($intrinsicApplyState.mode -ceq "overflow") {
+            return (New-SelfTestResponse `
+                -TotalCount 4 `
+                -Nodes @($itemC) `
+                -HasNextPage $false `
+                -EndCursor $null `
+                -UpdatedAt "2026-07-26T00:00:01Z")
+        }
+        New-SelfTestResponse `
+            -TotalCount 3 `
+            -Nodes ([object[]]@()) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider {
+                $intrinsicApplyState.currentChecks++
+                Get-SelfTestSnapshotWithRestart `
+                    -PageProvider $intrinsicApplyProvider `
+                    -MaxRestarts 2 | Out-Null
+                throw "snapshot unexpectedly completed"
+            } `
+            -ItemWriter {
+                param($update, $optionId)
+                $intrinsicApplyState.writes++
+            } `
+            -PostAuditProvider {
+                $intrinsicApplyState.postAudits++
+                throw "post-audit unexpectedly reached"
+            }
+    } -MessagePattern "more items \(3\) than totalCount \(2\)"
+    $checks += Assert-SelfTest `
+        -Condition ($intrinsicApplyState.currentChecks -eq 1 -and
+            $intrinsicApplyState.starts -eq 1 -and
+            $intrinsicApplyState.calls -eq 2 -and
+            $intrinsicApplyState.writes -eq 0 -and
+            $intrinsicApplyState.postAudits -eq 0) `
+        -Message "Apply must perform zero writes and no restart when overflow is mixed with drift"
+
+    $intrinsicApplyState.mode = "premature"
+    $intrinsicApplyState.starts = 0
+    $intrinsicApplyState.calls = 0
+    $intrinsicApplyState.currentChecks = 0
+    $intrinsicApplyState.writes = 0
+    $intrinsicApplyState.postAudits = 0
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider {
+                $intrinsicApplyState.currentChecks++
+                Get-SelfTestSnapshotWithRestart `
+                    -PageProvider $intrinsicApplyProvider `
+                    -MaxRestarts 2 | Out-Null
+                throw "snapshot unexpectedly completed"
+            } `
+            -ItemWriter {
+                param($update, $optionId)
+                $intrinsicApplyState.writes++
+            } `
+            -PostAuditProvider {
+                $intrinsicApplyState.postAudits++
+                throw "post-audit unexpectedly reached"
+            }
+    } -MessagePattern "ended prematurely: received 1 of 2 items"
+    $checks += Assert-SelfTest `
+        -Condition ($intrinsicApplyState.currentChecks -eq 1 -and
+            $intrinsicApplyState.starts -eq 1 -and
+            $intrinsicApplyState.calls -eq 2 -and
+            $intrinsicApplyState.writes -eq 0 -and
+            $intrinsicApplyState.postAudits -eq 0) `
+        -Message "Apply must perform zero writes and no restart when premature counts are mixed with drift"
 
     $partialPostState = [pscustomobject]@{
         guardFingerprint = "post-partial-guard"
