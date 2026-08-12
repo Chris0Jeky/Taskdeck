@@ -7,14 +7,27 @@ This document describes entities in the Taskdeck data model, their fields, const
 > **Coverage claim (self-checkable):** every `DbSet` on `TaskdeckDbContext` has a `###` block below,
 > and the only `###` blocks that are *not* a `DbSet` are the domain-only entities named under the
 > ERD. That invariant is the claim -- deliberately not a count, because a hand-maintained count
-> rots silently while the invariant stays checkable:
+> rots silently while the invariant stays checkable. It takes three checks, not one: a single
+> `comm -23` proves only that nothing mapped is missing, and stays silent when an unexpected
+> heading or a duplicate heading is added. Run all three from the repo root, using native `rg`
+> per `AGENTS.md`:
 >
 > ```bash
-> # every mapped entity name should also appear as a heading; this prints nothing when the doc is current
-> comm -23 \
->   <(grep -o 'DbSet<\w*' backend/src/Taskdeck.Infrastructure/Persistence/TaskdeckDbContext.cs | cut -d'<' -f2 | sort -u) \
->   <(grep -o '^### \w*' docs/architecture/DATA_MODEL.md | cut -d' ' -f2 | sort -u)
+> mapped=$(rg --no-filename --no-line-number -o 'DbSet<\w+' \
+>   backend/src/Taskdeck.Infrastructure/Persistence/TaskdeckDbContext.cs | cut -d'<' -f2 | sort -u)
+> headings=$(rg --no-filename --no-line-number -o '^### \w+' \
+>   docs/architecture/DATA_MODEL.md | cut -d' ' -f2 | sort)
+>
+> # 1. mapped entity with no heading    -- expect NO output
+> comm -23 <(printf '%s\n' "$mapped") <(printf '%s\n' "$headings" | sort -u)
+> # 2. heading that is not a DbSet      -- expect EXACTLY: AbuseActor, AbuseEvent
+> comm -13 <(printf '%s\n' "$mapped") <(printf '%s\n' "$headings" | sort -u)
+> # 3. duplicate heading                -- expect NO output
+> printf '%s\n' "$headings" | uniq -d
 > ```
+>
+> Measured on this document 2026-08-12: 51 mapped entities, 53 headings; checks 1 and 3 empty,
+> check 2 exactly `AbuseActor` and `AbuseEvent`.
 >
 > Column-level ground truth is `backend/src/Taskdeck.Domain/Entities/*.cs` (validation rules) plus
 > `backend/src/Taskdeck.Infrastructure/Migrations/TaskdeckDbContextModelSnapshot.cs` (persisted
@@ -42,6 +55,7 @@ erDiagram
     User ||--o| NotificationPreference : "has (FK)"
     User ||--o{ Notification : "receives (FK)"
     User ||--o{ CardComment : "authors (FK)"
+    User ||--o{ CardCommentMention : "is mentioned in (FK)"
     User ||--o{ LlmRequest : "submits (FK)"
     User ||--o{ AuditLog : "triggers (FK)"
     User ||--o{ IntegrationConnector : "owns (FK)"
@@ -273,8 +287,8 @@ Tracks @-mentions within card comments.
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| CardCommentId | `Guid` | Yes | FK to CardComment | Parent comment |
-| MentionedUserId | `Guid` | Yes | FK to User | Mentioned user |
+| CardCommentId | `Guid` | Yes | FK to CardComment (Cascade) | Parent comment |
+| MentionedUserId | `Guid` | Yes | FK to User (Cascade) | Mentioned user; deleting the user deletes this row |
 | MentionedUsername | `string` | Yes | 1-50 chars | Username at time of mention |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -405,8 +419,21 @@ The entity has **no free-text field**, so the no-PII invariant cannot be violate
 
 **Indexes:** `(ProposalId, ReportedByUserId)` (unique), `(ReportedByUserId, CreatedAt)`.
 
-At most one row exists per (proposal, user); a later categorized report upgrades the existing row's
-`Reason` (last-specific-wins) rather than inserting a second.
+At most one row exists per (proposal, user). A repeat report never inserts a second row; instead it
+is a **one-time upgrade out of `Unspecified`, and nothing more**. `ProposalFeedbackService`
+rewrites `Reason` only while the stored value is still `Unspecified`
+(`if (existing.Reason == ProposalFeedbackReason.Unspecified && reason != ...Unspecified)`), so once
+a categorized reason is stored it is frozen -- first-specific-wins, not last. Worked sequence for
+one user on one proposal:
+
+| Report | Stored `Reason` after it | Why |
+|--------|--------------------------|-----|
+| 1st: one-click (no category) | `Unspecified` | Row inserted |
+| 2nd: `Irrelevant` | `Irrelevant` | Upgrade fires -- stored value was `Unspecified` |
+| 3rd: `TooRisky` | `Irrelevant` (unchanged) | Guard fails -- stored value is no longer `Unspecified`; silent no-op returning success |
+
+Under *simultaneous* distinct reasons the unique `(ProposalId, ReportedByUserId)` index and the
+`UpdatedAt` concurrency token make it first-committed-wins, and the loser is a benign no-op.
 
 ### ProposalProvenance
 
@@ -793,10 +820,18 @@ Per-request token usage tracking for quota and cost visibility.
 
 **Indexes:** `CreatedAt`, `UserId`, `(Status, ExpiresAt)`, `(Surface, CreatedAt)`, `(UserId, CreatedAt)`.
 
-`Status`/`ExpiresAt` back the atomic quota-reservation flow: a `Reserved` row holds one request slot
+`Status`/`ExpiresAt` back the quota-reservation flow: a `Reserved` row holds one request slot
 and an estimated token count, and only counts toward quota while `ExpiresAt > now`, so a crashed
 process's stale reservation is ignored and swept on the next attempt. `Commit` overwrites the
 estimate with actual counts and clears `ExpiresAt`.
+
+**Not atomic.** Reserving is a check-then-insert, and concurrent reservations can over-admit past
+the quota: the race was proven not closeable in-process (it survives even a global full-span lock,
+because of cold-start WAL `-shm` read-visibility), so the redesign is deferred to `#1435` and the
+four guarantee tests in `backend/tests/Taskdeck.Api.Tests/LlmQuotaReservationConcurrencyTests.cs`
+are `Skip`-marked pending it. Treat these columns as a best-effort budget signal, not an enforced
+ceiling. What `#1427` *did* close is settlement, not admission: a client that aborts mid-stream can
+no longer discard its own billed usage record.
 
 ### CommandRun
 
@@ -882,7 +917,7 @@ Encrypted credential material for a connector instance. Plaintext secrets are ne
 | Id | `Guid` | Yes | PK | |
 | ConnectorId | `Guid` | Yes | FK to IntegrationConnector (Cascade) | Owning connector |
 | UserId | `Guid` | Yes | FK to User (Cascade) | Owning user |
-| AuthMethod | `ConnectorAuthMethod` | Yes | Enum: None, ApiKey, OAuth2, PersonalAccessToken, WebhookSecret | Credential type |
+| AuthMethod | `ConnectorAuthMethod` | Yes | Enum: None, ApiKey, OAuth2, PersonalAccessToken, WebhookSecret. **Stored as the enum NAME in a `TEXT` column, max length 50** -- not as an integer | Credential type |
 | Label | `string` | Yes | 1-100 chars, trimmed | Non-secret display label |
 | EncryptedValue | `string` | Yes | 1-8000 chars | AES-256 encrypted credential; never plaintext |
 | KeyVersion | `int` | Yes | >= 1, DB default 1 | Encryption key version, for rotation |
@@ -1234,6 +1269,7 @@ Immutable audit record for abuse detection events and state transitions.
 | Card -> CardComment | One-to-many | FK (Cascade) | A card has many comments |
 | CardComment -> CardComment | Self-referencing | FK (Restrict) | Threaded replies via `ParentCommentId` |
 | CardComment -> CardCommentMention | One-to-many | FK (Cascade) | A comment can mention many users |
+| User -> CardCommentMention | One-to-many | FK (Cascade) | Deleting a user deletes the mention rows pointing at them via `MentionedUserId` -- unlike `User -> CardComment`, which is Restrict |
 | ChatSession -> ChatMessage | One-to-many | FK (Cascade) | A session contains many messages |
 | AutomationProposal -> AutomationProposalOperation | One-to-many | FK (Cascade) | A proposal has many operations |
 | AutomationProposal -> ProposalRevision | One-to-many | FK (Cascade) | Edit chain; `ApprovedRevisionId` pins one, without an FK |
@@ -1270,7 +1306,13 @@ Immutable audit record for abuse detection events and state transitions.
   `UpdatedAt` is a plain timestamp maintained by `Touch()` and enforces nothing.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
 - **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`, `WarningsJson`, `SegmentsJson`).
-- **Enum storage:** Enums are stored as integers by default. Exceptions: `UserPreference.WorkspaceMode` and `UserPreference.OnboardingVisibility` are stored as strings.
+- **Enum storage:** Enums are stored as integers by default. There are exactly three exceptions --
+  every `HasConversion<string>()` call in `Persistence/Configurations/`:
+  `UserPreference.WorkspaceMode`, `UserPreference.OnboardingVisibility`, and
+  `ConnectorCredential.AuthMethod` (the last one capped at `HasMaxLength(50)`). All three persist
+  the enum *name* in a `TEXT` column, so schema tooling and raw SQL must compare against the name,
+  not the ordinal. Re-derive the list with
+  `rg -n 'HasConversion<string>' backend/src/Taskdeck.Infrastructure/Persistence/Configurations/`.
 - **Key format:** Most primary keys are `Guid` values. `CardLabel` has a composite key, `RegistrationBootstrap` uses the fixed string key `registration`, and `ArtefactBlob` reuses `SourceArtefactId` as its primary key. API keys use a `tdsk_` prefix with a SHA-256 hash at rest.
 - **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. `ChatSession`,
   `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`,
