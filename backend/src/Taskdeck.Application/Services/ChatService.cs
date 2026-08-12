@@ -18,6 +18,11 @@ public class ChatService : IChatService
     private const int MaxChecklistItemCount = 30;
     private const string StreamErrorPlaceholder = "The provider could not complete the response.";
     private const string StreamErrorDegradedReason = "The upstream provider could not complete the response.";
+    // Stand-in text for a provider outcome that carries no assistant text. It is deliberately generic:
+    // the OpenAI-compatible buffered path sanitizes content_filter/refusal responses to empty content
+    // precisely so upstream refusal text never reaches a log, a persisted row, or the client (#1617).
+    private const string EmptyAssistantContentPlaceholder = "The provider ended the response without returning text.";
+    private const string EmptyAssistantContentDegradedReason = "The provider returned no assistant text.";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -510,6 +515,20 @@ public class ChatService : IChatService
                 }
             }
 
+            // A provider outcome can legitimately carry no assistant text. The OpenAI-compatible
+            // buffered path sanitizes content_filter and refusal responses to empty content so no
+            // upstream refusal text is surfaced, and a tool-calling result can be textless too.
+            // ChatMessage rejects empty content, so persisting it verbatim throws and the user loses
+            // the assistant-history entry entirely (#1617). Substitute the same non-secret placeholder
+            // the streaming path already uses; the sanitized specifics stay in DegradedReason.
+            if (string.IsNullOrWhiteSpace(assistantContent))
+            {
+                assistantContent = EmptyAssistantContentPlaceholder;
+                messageType = "degraded";
+                if (string.IsNullOrWhiteSpace(degradedReason))
+                    degradedReason = EmptyAssistantContentDegradedReason;
+            }
+
             var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
                 ? null
                 : degradedReason;
@@ -725,7 +744,7 @@ public class ChatService : IChatService
             if (streamedContent.Length == 0 && persistEmptyTerminalOutcome)
                 streamedContent = terminalHadError
                     ? StreamErrorPlaceholder
-                    : "The provider ended the response without returning text.";
+                    : EmptyAssistantContentPlaceholder;
             if (!string.IsNullOrEmpty(streamedContent))
             {
                 var assistantMessage = new ChatMessage(
