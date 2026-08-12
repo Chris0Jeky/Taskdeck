@@ -4,7 +4,7 @@
   "description": "Capture selected text and IDE context to Taskdeck inbox",
   "version": "0.1.0",
   "publisher": "taskdeck",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "engines": {
     "vscode": "^1.85.0"
   },

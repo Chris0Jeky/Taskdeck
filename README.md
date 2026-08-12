@@ -6,11 +6,11 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 
 [![CI](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml/badge.svg)](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml)
 [![Status: Beta](https://img.shields.io/badge/status-beta-5b5bd6.svg)](https://github.com/Chris0Jeky/Taskdeck/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL_v3-blue.svg)](LICENSE)
 
 ![Taskdeck capture, proposal, review, and apply loop](docs/assets/taskdeck-core-loop.gif)
 
-> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The shipped repository remains MIT, and the permanent licensing commitment is published in [LICENSING.md](LICENSING.md). The DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
+> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). The DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
 
 ## The loop
 
@@ -172,7 +172,7 @@ Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 
 ## License and security
 
-Taskdeck is released under the [MIT License](LICENSE). The permanent free-core boundary, the MIT-forever commitment for code already shipped, and the additive-only posture for any future commercial module are documented in [LICENSING.md](LICENSING.md) (REVIVAL-03, [#1299](https://github.com/Chris0Jeky/Taskdeck/issues/1299)).
+Taskdeck's current open-source core is released under the [GNU General Public License version 3 only](LICENSE). Earlier copies released under MIT keep their existing grants; the transition, permanent free-core boundary, and posture for any future additive commercial module are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
 
 Found a vulnerability? Follow the private reporting process in [SECURITY.md](SECURITY.md). Do not open a public issue for a suspected security problem.
 

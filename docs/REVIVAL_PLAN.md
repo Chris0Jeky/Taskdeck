@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-12
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
@@ -26,11 +26,11 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 
 **Commitments made now (cheap now, impossible later):**
 
-1. **MIT stays MIT — permanently.** Everything shipped in this repo stays MIT; monetization is *additive* (hosted service, future separately-licensed modules), never a relicense or a claw-back of shipped features. Every backlash case studied (Screenpipe 2026-06, Cal.com 2026-04, Budibase 2024, MinIO 2025) came from moving a boundary retroactively; every accepted model (Plausible CE, n8n SUL, Umami, PostHog `ee/`) declared it early. A `LICENSING.md` + license-commitment note ships before launch (REVIVAL-03).
-2. **DCO, not CLA.** Inbound=outbound makes a future unilateral relicense of contributed code structurally impossible — which is exactly why the pledge is believable. Commercial code will live in separately-licensed modules (PostHog `ee/` pattern), so the maintainer never needs relicensing rights over the core.
+1. **Copyleft core from 2026-08-12.** The current core is GPL-3.0-only under [ADR-0050](decisions/ADR-0050-gplv3-copyleft-core.md), which supersedes the earlier MIT-forever commitment. Copies already received under MIT retain those grants; the current project is not dual licensed. Monetization remains *additive* through managed services or explicitly separately licensed modules rather than removing features from the open-source core.
+2. **DCO, not CLA.** Contributions use an inbound-equals-outbound model under GPL-3.0-only. Commercial code may live in explicitly separately licensed modules (the reserved `ee/` pattern), so no blanket relicensing assignment is collected from contributors.
 3. **The free boundary** (never gated, ever): the core capture → proposal → review → apply loop; data export/portability; BYO API key and local-LLM use; single-user self-hosting. **Candidate paid surfaces** (not built yet — deliberately absent from the free beta so nothing is later subtracted): managed hosted instance, managed high-accuracy transcription/diarization pipeline, org-level approval policies + audit packs, team workspaces at scale, integrations packs. Features that already ship free (MFA, OIDC, board sharing) stay free.
 4. **The hosted control plane stays private from day one.** Multi-tenant/billing/orchestration for a future cloud is never open-sourced — standard open-core practice that requires no pledge-breaking later.
-5. **Trademark:** search + document first-use for "Taskdeck" before launch; the code is MIT, the name/logo are not (REVIVAL-03).
+5. **Trademark:** search + document first-use for "Taskdeck" before launch; the core code is GPL-3.0-only, while the name/logo are not licensed as trademarks (REVIVAL-03, ADR-0050).
 
 **Monetization sequencing (for the commercial ADR later, recorded here as intent):** (1) 3–6 months wide-open beta measuring activation/retention; (2) first paid product = a flat-priced hosted instance (~$9–19/mo — the Plausible/Umami pattern; self-hosters convert via convenience, essentially never via donations); (3) then a team tier at $8–12/user/mo on genuinely multi-user features (market-anchored: Meetily PRO $10, Anarlog/Hyprnote Pro ~$8; incumbents charge $8–30); (4) enterprise only if pulled. Supabase precedent: introduce pricing mid-beta once retention is proven, then hold it flat — price stability is itself an adoption asset.
 
