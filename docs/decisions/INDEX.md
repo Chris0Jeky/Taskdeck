@@ -51,3 +51,4 @@
 | [0047](ADR-0047-artefact-extraction-resource-bounding.md) | Artefact-Extraction Resource Bounding — Permit Gate (Shipped) + Provider-Injection Decode Ceiling as Defense-in-Depth | Accepted | 2026-07-18 |
 | [0048](ADR-0048-decompression-bomb-containment-worker-process.md) | Decompression-Bomb Containment Boundary — Memory-Capped Extraction Worker Process | Accepted | 2026-07-18 |
 | [0049](ADR-0049-frontend-spec-typecheck-quarantined-project.md) | Type-Check the Frontend Spec Tree via a Separate Project with an Explicit Quarantine | Accepted | 2026-08-07 |
+| [0050](ADR-0050-gplv3-copyleft-core.md) | Adopt GPLv3-only for the Taskdeck Core | Accepted | 2026-08-12 |
