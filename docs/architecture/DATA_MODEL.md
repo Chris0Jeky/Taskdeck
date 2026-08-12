@@ -34,11 +34,12 @@ This document describes entities in the Taskdeck data model, their fields, const
 > columns, widths, indexes, delete behavior). Where the two differ -- the domain often validates
 > tighter than the column allows -- both numbers are given.
 >
-> **EF model metadata vs. runtime validation:** Unless this document names a specific domain or
-> service validation for a field, a declared width (`HasMaxLength`) or `JSON` constraint is model
-> metadata, not runtime enforcement. SQLite stores these mapped string properties as `TEXT`; it
-> does not enforce declared widths or JSON syntax. Where this document names domain/service
-> validation, that remains part of the runtime contract and must not be inferred from the column metadata.
+> **EF model metadata vs. runtime validation:** A declared width (`HasMaxLength`) or `JSON`
+> constraint is EF model/schema metadata. SQLite stores these mapped string properties as `TEXT`
+> and does not itself enforce declared widths or JSON syntax. That database behavior does not imply
+> that runtime validation is absent: domain or service code may validate a field even when this
+> document does not cite it. Check the relevant entity, domain, or service implementation before
+> treating a documented constraint as unenforced at runtime.
 >
 > The glob is `Domain/**` on purpose, not `Domain/Entities/*.cs`: 50 of the 51 mapped entities live
 > under `Domain/Entities/`, but `McpToolHash` is defined at
