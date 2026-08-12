@@ -146,6 +146,15 @@ const hasFilterEmptyState = computed(
   () => visibleProposals.value.length > 0 && filteredVisibleProposals.value.length === 0,
 )
 
+function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | null {
+  return (
+    proposals.find(
+      (proposal) =>
+        normalizeProposalStatus(proposal.status) === 'PendingReview' && !isProposalExpired(proposal),
+    )?.id ?? proposals[0]?.id ?? null
+  )
+}
+
 const activeProposal = computed<ApiProposal | null>(() => {
   if (explicitActiveId.value) {
     const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
@@ -156,11 +165,8 @@ const activeProposal = computed<ApiProposal | null>(() => {
     if (found) return found
   }
   // Default to the first pending-review item in the queue.
-  return (
-    filteredVisibleProposals.value.find(
-      (p) => normalizeProposalStatus(p.status) === 'PendingReview' && !isProposalExpired(p),
-    ) ?? filteredVisibleProposals.value[0] ?? null
-  )
+  const preferredId = preferredActiveProposalId(filteredVisibleProposals.value)
+  return filteredVisibleProposals.value.find((proposal) => proposal.id === preferredId) ?? null
 })
 
 watch(
@@ -1038,8 +1044,13 @@ function selectProposal(id: string) {
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
+  const selectedId = explicitActiveId.value ?? hashProposalId.value
   queueFilter.value = filter
-  explicitActiveId.value = filteredVisibleProposals.value[0]?.id ?? null
+  if (selectedId && filteredVisibleProposals.value.some((proposal) => proposal.id === selectedId)) {
+    explicitActiveId.value = selectedId
+    return
+  }
+  explicitActiveId.value = preferredActiveProposalId(filteredVisibleProposals.value)
 }
 </script>
 

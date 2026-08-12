@@ -265,6 +265,71 @@ describe('PaperReviewView', () => {
     ])
   })
 
+  it('selects the first actionable proposal after a filter removes the current selection', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'expired-mine',
+          requestedByUserId: 'u-1',
+          status: 'Expired',
+          riskLevel: 'Low',
+          summary: 'Expired mine',
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+        makeProposal({
+          id: 'pending-mine',
+          requestedByUserId: 'u-1',
+          riskLevel: 'High',
+          summary: 'Pending mine',
+        }),
+        makeProposal({
+          id: 'pending-theirs',
+          requestedByUserId: 'u-2',
+          riskLevel: 'Low',
+          summary: 'Pending theirs',
+        }),
+      ],
+      '/workspace/review#proposal-pending-theirs',
+    )
+
+    const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+    await mineButton?.trigger('click')
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Pending mine')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Expired mine')
+  })
+
+  it('falls back to the first read-only proposal when a filter has no actionable items', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'expired-mine',
+          requestedByUserId: 'u-1',
+          status: 'Expired',
+          summary: 'Expired mine',
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+          diffPreview: 'Stored expired preview',
+        }),
+        makeProposal({
+          id: 'pending-theirs',
+          requestedByUserId: 'u-2',
+          summary: 'Pending theirs',
+        }),
+      ],
+      '/workspace/review#proposal-pending-theirs',
+    )
+
+    const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+    await mineButton?.trigger('click')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const main = wrapper.find('[data-testid="paper-review-main"]')
+    expect(main.text()).toContain('Expired mine')
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').text()).toContain('read-only')
+  })
+
   it('renders the empty state when the queue is empty', async () => {
     const wrapper = await mountView([])
     expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)
