@@ -99,6 +99,9 @@ RUN mkdir -p /app/data && chown taskdeck:taskdeck /app/data
 # read everything; also allows future writes to AppContext.BaseDirectory if needed).
 COPY --chown=taskdeck:taskdeck --from=backend-build /app/publish ./
 COPY --chown=taskdeck:taskdeck --from=backend-build /app/cli ./cli/
+COPY --chown=taskdeck:taskdeck LICENSE /app/LICENSE
+COPY --chown=taskdeck:taskdeck RELICENSING.md /app/RELICENSING.md
+COPY --chown=taskdeck:taskdeck LICENSES /app/LICENSES
 
 # Copy frontend build output into wwwroot/ so the .NET app serves it
 # (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)
