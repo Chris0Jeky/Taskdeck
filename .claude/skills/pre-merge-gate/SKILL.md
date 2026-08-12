@@ -28,21 +28,36 @@ delete, rename, or reuse a state path: the collector derives it from the current
 rejects missing, stale, substituted, or cross-worktree state before feedback or checks run.
 `start` prints one opaque session token visibly to stdout. Confirm that it is exactly 64 lowercase
 hexadecimal characters, then retain that exact token in coordinator/operator context across tool
-calls. Do not put it in a shell variable, environment variable, checkout file, or Git-directory
-file, and do not expose it to untrusted checks. It authenticates every field of the opening record
-at `finish` and authorizes `abort`.
+calls. Do not put it in a shell variable, an environment variable's value, a checkout file, a
+Git-directory file, or the text of any command, and do not expose it to untrusted checks. It
+authenticates every field of the opening record at `finish` and authorizes `abort`.
+
+`abort` and `finish` read the token from standard input, never from an argument, so it is captured
+once here into a private token file and later redirected in. Replace `SESSION_TOKEN_FILE` in every
+block below with the same absolute path to a file **outside every Taskdeck checkout** — a path is
+not a secret, so it may appear in command text. Under the Codex harness `$HOME` is redirected into
+the checkout (`.runtime-codex/home`), so do not build the path from `$HOME` without confirming it
+sits outside `git rev-parse --show-toplevel`.
 
 ```bash
 # Explicit selection (replace VALIDATED_PR_NUMBER with validated decimal digits only):
-bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER
+(umask 077; bash scripts/github/collect-pre-merge-evidence.sh start VALIDATED_PR_NUMBER |
+  tee SESSION_TOKEN_FILE)
 
 # Omitted selection (use this instead of the preceding command when $ARGUMENTS is empty):
-# bash scripts/github/collect-pre-merge-evidence.sh start
+# (umask 077; bash scripts/github/collect-pre-merge-evidence.sh start | tee SESSION_TOKEN_FILE)
 ```
 
-Retain the visible token before starting Step 2. In every later command, replace
-`VALIDATED_SESSION_TOKEN` with only those exact 64 validated hexadecimal characters; never paste
-unvalidated output or surrounding text into a command.
+`tee` keeps the token visible for the shape check while writing the only copy the later commands
+read. A failed `start` prints `BLOCKED:` on stderr and leaves the file empty; `abort` and `finish`
+then fail closed on empty input. Confirm the visible token before starting Step 2.
+
+**What the token file does and does not protect.** It keeps the literal out of every process's
+command text, so it cannot be recovered from a `bash -c`/`bash -lc` argv, from `ps`, or from shell
+history — the exposure that PR-controlled background processes can reach without any filesystem
+access. It does not hide the token from a process already running as the operator with read access
+to that path, and `start` still prints the token into the tool transcript. Treat same-user code
+execution as a compromised session: `abort` it, rotate nothing else, and restart at Step 1.
 
 The start phase fails before local checks unless all of these are simultaneously true:
 
@@ -59,7 +74,8 @@ recording the failure cause, explicitly abandon only that token-authenticated, c
 session before restarting:
 
 ```bash
-printf '%s\n' VALIDATED_SESSION_TOKEN | bash scripts/github/collect-pre-merge-evidence.sh abort
+bash scripts/github/collect-pre-merge-evidence.sh abort <SESSION_TOKEN_FILE
+rm -f -- SESSION_TOKEN_FILE
 ```
 
 `abort` validates the operator token plus the state path, worktree, Git directory, PR number, and
@@ -117,11 +133,13 @@ Immediately after the checks and diff inspection, collect all feedback and exact
 
 ```bash
 if ! evidence_packet="$(
-  printf '%s\n' VALIDATED_SESSION_TOKEN | bash scripts/github/collect-pre-merge-evidence.sh finish
+  bash scripts/github/collect-pre-merge-evidence.sh finish <SESSION_TOKEN_FILE
 )"; then
+  rm -f -- SESSION_TOKEN_FILE
   printf '%s\n' "$evidence_packet"
   exit 1
 fi
+rm -f -- SESSION_TOKEN_FILE
 printf '%s\n' "$evidence_packet" | jq .
 ```
 
@@ -130,9 +148,20 @@ state, top-level PR comments, review summaries, and check states twice. It fails
 pairs of normalized snapshots are identical. It then rereads the PR and fails closed unless the
 number, head ref/OID, base ref/OID, mergeability, parent update timestamp, local `HEAD`, and
 clean-worktree state still equal the opening snapshot.
-Before reading any opening field, it verifies the complete canonical opening record against the
-operator-carried session token, so repository code cannot rewrite opening metadata in place to
-extend an expired evidence window.
+Before reading any opening field, it copies the opening record once and verifies that exact copy's
+complete canonical content against the operator-carried session token, then consumes only those
+authenticated bytes, so repository code cannot rewrite opening metadata in place — or between the
+authentication and the copy — to extend an expired evidence window.
+
+Three collector properties back the rest of that claim, and each is worth knowing when a run fails
+closed. Evidence tools (`gh`, `git`, `jq`, `cmp`, `openssl`, `sha256sum`, and any
+`TASKDECK_*_EXECUTABLE` override) are resolved to absolute paths and rejected when they resolve
+inside the measured checkout or the primary checkout sharing its Git directory, because
+`.codex/config.toml` prepends the gitignored, writable `.runtime-codex/bin` directory to `PATH`.
+Git replacement refs are disabled for every Git invocation, so a transient `refs/replace/` ref
+cannot redirect the scan-definition reads between the two clean-checkout boundaries. Those
+definition reads resolve from the authenticated opening head OID rather than the mutable `HEAD`
+ref, so moving a branch ref during collection cannot make changed definitions compare equal.
 
 `secrets.verdict` is `CLEAN` only when exactly one exact-head check named
 `Secret Scan / Gitleaks Scan` exists in workflow `CI`, is successful in both check snapshots, and
