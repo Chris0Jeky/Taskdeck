@@ -312,15 +312,20 @@ public class StandaloneMcpHostFilteringTests
                     "the body must carry the MCP initialize RESULT, not an empty 500 body");
 
                 // The CORS middleware added for #1602 must grant NO cross-origin access. Same request
-                // with a hostile Origin -- the branch where CorsMiddleware actually evaluates a policy:
-                // it is served (the endpoint runs) but carries no Access-Control-* headers, so a
-                // browser cannot read the response. Registering a permissive policy fails this.
+                // with a hostile Origin: it is served (the endpoint runs) but carries no
+                // Access-Control-* headers, so a browser cannot read the response. What this assertion
+                // actually guards is the DisableCorsAttribute latch on the MCP endpoint --
+                // CorsMiddleware sees IDisableCorsAttribute and never evaluates ANY policy, permissive
+                // or not (the co-hosted host behaves identically for an ALLOWED origin, see
+                // McpHttpTransportApiKeyTests). It would fail if a RequireCors/EnableCors were ever
+                // stamped after the latch. The empty policy map is a second, independent latch that
+                // this assertion cannot see through the first one.
                 using var crossOrigin = await PostMcpInitializeAsync(client, origin: "https://evil.example");
 
                 crossOrigin.StatusCode.Should().Be(HttpStatusCode.OK,
                     "an Origin header must not change server-side handling");
                 crossOrigin.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse(
-                    "the standalone MCP host registers CORS with no policy, so no origin is allowed");
+                    "the MCP endpoint carries DisableCorsAttribute, so no origin may ever be allowed");
                 crossOrigin.Headers.Contains("Access-Control-Allow-Credentials").Should().BeFalse(
                     "no cross-origin credentials may be authorized on the MCP surface");
             });
