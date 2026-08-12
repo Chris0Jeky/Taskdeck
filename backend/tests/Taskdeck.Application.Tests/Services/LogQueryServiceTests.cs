@@ -5,6 +5,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -136,5 +137,25 @@ public class LogQueryServiceTests
             It.IsAny<string?>(),
             50,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task QueryLogsAsync_ShouldStripLineBreaksFromLoggedFilters()
+    {
+        var logger = new InMemoryLogger<LogQueryService>();
+        var service = new LogQueryService(_unitOfWorkMock.Object, logger);
+
+        var result = await service.QueryLogsAsync(new LogQueryDto(
+            Level: "Info\r\nforged-level",
+            Source: "source\nforged-source",
+            CorrelationId: "corr\rforged-correlation",
+            Limit: 50), default);
+
+        result.IsSuccess.Should().BeTrue();
+        var message = logger.Entries.Single().Message;
+        message.Should().NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("Infoforged-level");
+        message.Should().Contain("sourceforged-source");
+        message.Should().Contain("corrforged-correlation");
     }
 }
