@@ -225,6 +225,23 @@ describe('PaperReviewView', () => {
     expect(mocks.executeProposal).not.toHaveBeenCalled()
   })
 
+  it('renders a malformed-risk proposal and keeps it last in the Paper queue', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'malformed', riskLevel: null as any, summary: 'Malformed proposal' }),
+        makeProposal({ id: 'low', riskLevel: 'Low', summary: 'Low proposal' }),
+      ],
+      '/workspace/review#proposal-malformed',
+    )
+
+    expect(
+      wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text()),
+    ).toEqual(['Low proposal', 'Malformed proposal'])
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Malformed proposal')
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
   it('applies risk ordering after Mine and Stale filters', async () => {
     const staleAt = new Date(Date.now() - 25 * 60 * 60_000).toISOString()
     const wrapper = await mountView([

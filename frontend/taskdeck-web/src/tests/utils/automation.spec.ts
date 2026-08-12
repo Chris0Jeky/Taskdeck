@@ -67,8 +67,8 @@ describe('normalizeProposalRiskLevel', () => {
     expect(normalizeProposalRiskLevel(3)).toBe('Critical')
   })
 
-  it('falls back to Low for out-of-range index', () => {
-    expect(normalizeProposalRiskLevel(99)).toBe('Low')
+  it('falls back to Critical for out-of-range index', () => {
+    expect(normalizeProposalRiskLevel(99)).toBe('Critical')
   })
 
   it('normalizes case-insensitive string risk', () => {
@@ -76,8 +76,10 @@ describe('normalizeProposalRiskLevel', () => {
     expect(normalizeProposalRiskLevel('HIGH' as any)).toBe('High')
   })
 
-  it('falls back to Low for unknown string', () => {
-    expect(normalizeProposalRiskLevel('unknown' as any)).toBe('Low')
+  it('falls back to Critical for malformed wire values', () => {
+    for (const value of [null, undefined, {}, 'unknown', -1, 1.5, 4, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(normalizeProposalRiskLevel(value)).toBe('Critical')
+    }
   })
 })
 
