@@ -6,34 +6,128 @@ die() {
   exit 1
 }
 
-require_executable() {
-  local executable="$1"
-  if [[ "$executable" == */* ]]; then
-    [[ -x "$executable" ]] || die "required executable is unavailable: $executable"
-  else
-    command -v "$executable" >/dev/null 2>&1 || die "required executable is unavailable: $executable"
+# Git replacement refs are disabled for every Git invocation this collector makes. The
+# boundary checks in assert_clean_exact_checkout reject persistent refs/replace/ refs, but a
+# PR-controlled background process can install one transiently between those boundaries and
+# redirect ordinary object reads so changed scan definitions compare equal to their opening
+# base. Disabling replacement resolution process-wide removes that window entirely.
+export GIT_NO_REPLACE_OBJECTS=1
+
+# Absolute physical directory containing $1, resolved without trusting any external tool.
+absolute_directory() {
+  [[ $# -eq 1 ]] || die "directory resolver received an invalid argument count"
+  local target="$1"
+  local directory="${target%/*}"
+  if [[ "$directory" == "$target" ]]; then
+    directory="."
+  elif [[ -z "$directory" ]]; then
+    directory="/"
   fi
+  (cd -- "$directory" >/dev/null 2>&1 && pwd -P) || return 1
 }
 
-gh_executable="${TASKDECK_GH_EXECUTABLE:-gh}"
-jq_executable="${TASKDECK_JQ_EXECUTABLE:-jq}"
-cmp_executable="${TASKDECK_CMP_EXECUTABLE:-cmp}"
-openssl_executable="${TASKDECK_OPENSSL_EXECUTABLE:-openssl}"
-sha256sum_executable="${TASKDECK_SHA256SUM_EXECUTABLE:-sha256sum}"
+# True when $1 is $2 or lives beneath it. Ancestors are compared with the same-file test so
+# Windows/MSYS path spellings (C:/x versus /c/x), symlinks, and case differences cannot hide
+# a checkout-local executable behind a differently spelled path.
+path_is_inside_tree() {
+  [[ $# -eq 2 ]] || die "checkout containment test received an invalid argument count"
+  local current="$1"
+  local tree_root="$2"
+  local parent
+  [[ -n "$current" && -n "$tree_root" && -d "$tree_root" ]] || return 1
+  while :; do
+    [[ -e "$current" ]] || return 1
+    [[ "$current" -ef "$tree_root" ]] && return 0
+    parent="${current%/*}"
+    [[ -n "$parent" ]] || parent="/"
+    [[ "$parent" != "$current" ]] || return 1
+    current="$parent"
+  done
+}
+
+# Resolve one evidence tool to an absolute program path and reject any resolution that lives
+# inside the checkout holding this collector. `.codex/config.toml` prepends the gitignored,
+# writable `.runtime-codex/bin` directory to PATH, so without this a PR-controlled check can
+# plant a forged gh, git, jq, cmp, openssl, or sha256sum, leave the worktree clean, and have
+# the collector fabricate a COMPLETE/CLEAN packet without ever querying GitHub. The
+# TASKDECK_*_EXECUTABLE overrides remain supported and are held to the same rejection.
+# (#1625 tracks the broader configuration hazard; this covers the collector only.)
+resolve_trusted_executable() {
+  [[ $# -eq 2 ]] || die "executable resolver received an invalid argument count"
+  local label="$1"
+  local candidate="$2"
+  local candidate_path
+  local candidate_directory
+  local resolved
+
+  if [[ "$candidate" == */* ]]; then
+    candidate_path="$candidate"
+  else
+    candidate_path="$(command -v -- "$candidate" 2>/dev/null)" || candidate_path=""
+    [[ "$candidate_path" == */* ]] ||
+      die "required executable is unavailable or is not a program file: $label ($candidate)"
+  fi
+  [[ -x "$candidate_path" ]] || die "required executable is unavailable: $label ($candidate_path)"
+
+  candidate_directory="$(absolute_directory "$candidate_path")" ||
+    die "cannot resolve the directory of the required executable: $label ($candidate_path)"
+  resolved="${candidate_directory%/}/${candidate_path##*/}"
+  [[ -x "$resolved" ]] ||
+    die "required executable is unavailable after absolute resolution: $label ($resolved)"
+  if path_is_inside_tree "$candidate_directory" "$collector_repo_root"; then
+    die "refusing an evidence tool resolved inside the collector checkout: $label ($resolved)"
+  fi
+  printf '%s\n' "$resolved"
+}
+
+# Re-reject the already absolute evidence tools against a checkout discovered later, so a
+# linked worktree cannot be measured with tools taken from its own tree or from the primary
+# checkout that shares its Git directory.
+assert_trusted_executables_outside() {
+  [[ $# -eq 1 ]] || die "executable trust check received an invalid argument count"
+  local tree_root="$1"
+  local entry
+  local label
+  local executable
+  local directory
+  [[ -n "$tree_root" ]] || die "executable trust check received an empty checkout root"
+  for entry in "${trusted_executables[@]}"; do
+    label="${entry%%:*}"
+    executable="${entry#*:}"
+    directory="$(absolute_directory "$executable")" ||
+      die "cannot resolve the directory of the required executable: $label ($executable)"
+    if path_is_inside_tree "$directory" "$tree_root"; then
+      die "refusing an evidence tool resolved inside the measured checkout: $label ($executable)"
+    fi
+  done
+}
+
+collector_script_directory="$(absolute_directory "${BASH_SOURCE[0]}")" ||
+  die "cannot resolve the collector script directory"
+collector_repo_root="$(cd -- "$collector_script_directory/../.." >/dev/null 2>&1 && pwd -P)" ||
+  die "cannot resolve the collector checkout root"
+
+gh_executable="$(resolve_trusted_executable gh "${TASKDECK_GH_EXECUTABLE:-gh}")"
+jq_executable="$(resolve_trusted_executable jq "${TASKDECK_JQ_EXECUTABLE:-jq}")"
+cmp_executable="$(resolve_trusted_executable cmp "${TASKDECK_CMP_EXECUTABLE:-cmp}")"
+openssl_executable="$(resolve_trusted_executable openssl "${TASKDECK_OPENSSL_EXECUTABLE:-openssl}")"
+sha256sum_executable="$(resolve_trusted_executable sha256sum "${TASKDECK_SHA256SUM_EXECUTABLE:-sha256sum}")"
 if [[ -n "${TASKDECK_GIT_EXECUTABLE:-}" ]]; then
-  git_executable="$TASKDECK_GIT_EXECUTABLE"
+  git_executable="$(resolve_trusted_executable git "$TASKDECK_GIT_EXECUTABLE")"
 elif command -v git.exe >/dev/null 2>&1; then
-  git_executable="$(command -v git.exe)"
+  git_executable="$(resolve_trusted_executable git git.exe)"
 else
-  git_executable="git"
+  git_executable="$(resolve_trusted_executable git git)"
 fi
 
-require_executable "$gh_executable"
-require_executable "$git_executable"
-require_executable "$jq_executable"
-require_executable "$cmp_executable"
-require_executable "$openssl_executable"
-require_executable "$sha256sum_executable"
+trusted_executables=(
+  "gh:$gh_executable"
+  "git:$git_executable"
+  "jq:$jq_executable"
+  "cmp:$cmp_executable"
+  "openssl:$openssl_executable"
+  "sha256sum:$sha256sum_executable"
+)
 
 usage() {
   cat >&2 <<'EOF'
@@ -60,14 +154,33 @@ mode="$1"
 resolve_state_path() {
   local resolved_top_level
   local resolved_git_dir
+  local resolved_common_git_dir
+  local resolved_primary_worktree
   local resolved_state_dir
 
   resolved_top_level="$("$git_executable" rev-parse --show-toplevel)" ||
     die "cannot resolve the checkout root"
   resolved_git_dir="$("$git_executable" rev-parse --absolute-git-dir)" ||
     die "cannot resolve the checkout Git directory"
-  [[ -n "$resolved_top_level" && -n "$resolved_git_dir" ]] ||
+  resolved_common_git_dir="$("$git_executable" rev-parse --git-common-dir)" ||
+    die "cannot resolve the shared checkout Git directory"
+  [[ -n "$resolved_top_level" && -n "$resolved_git_dir" && -n "$resolved_common_git_dir" ]] ||
     die "checkout identity is incomplete"
+  resolved_primary_worktree="$(cd -- "$resolved_common_git_dir/.." >/dev/null 2>&1 && pwd -P)" ||
+    resolved_primary_worktree=""
+  if [[ -z "$resolved_primary_worktree" ]]; then
+    # The shared Git directory is not present on disk, so nothing can be resolved inside the
+    # primary checkout; keep a textual root for the containment test rather than failing.
+    resolved_primary_worktree="${resolved_common_git_dir%/*}"
+    [[ -n "$resolved_primary_worktree" &&
+       "$resolved_primary_worktree" != "$resolved_common_git_dir" ]] ||
+      resolved_primary_worktree="$resolved_top_level"
+  fi
+  # A linked worktree shares the primary checkout's Git directory, and the ignored
+  # `.runtime-codex/bin` PATH entry lives in that primary checkout, so both trees are
+  # untrusted sources of evidence tools.
+  assert_trusted_executables_outside "$resolved_top_level"
+  assert_trusted_executables_outside "$resolved_primary_worktree"
   resolved_state_dir="$resolved_git_dir/taskdeck-pre-merge-evidence"
 
   state_directory="$resolved_state_dir"
@@ -81,33 +194,47 @@ sha256_text() {
   printf '%s' "$1" | "$sha256sum_executable" | awk '{print $1}'
 }
 
+# The binding covers the exact document text supplied by the caller, never a path, so every
+# probe below observes one immutable in-memory buffer.
 state_binding() {
   [[ $# -eq 2 ]] || die "state-binding helper received an invalid argument count"
   local session_token="$1"
-  local opening_state="$2"
+  local state_document="$2"
   local canonical_state
 
-  canonical_state="$("$jq_executable" -S -c 'del(.openingStateBinding)' "$opening_state")" ||
+  canonical_state="$(printf '%s' "$state_document" |
+    "$jq_executable" -S -c 'del(.openingStateBinding)')" ||
     die "cannot canonicalize opening evidence state"
   sha256_text "${session_token}:${canonical_state}"
 }
 
+# Authenticate the bytes of one opening-state document. The file is read exactly once into a
+# variable: re-opening it for each probe let a PR-controlled background process satisfy the
+# digest check with one document and then supply different fields to the binding check.
 validate_session_token() {
-  [[ $# -eq 2 ]] || die "session-token validator received an invalid argument count"
+  [[ $# -eq 3 ]] || die "session-token validator received an invalid argument count"
   local session_token="$1"
   local allow_stale_binding="$2"
+  local state_document="$3"
   local token_digest
+  local recorded_digest
   local actual_binding
   local expected_binding
 
   [[ "$session_token" =~ ^[0-9a-f]{64}$ ]] ||
     die "session token must be a 64-character lowercase hexadecimal value"
+  [[ -n "$state_document" ]] || die "opening evidence state is empty"
   token_digest="$(sha256_text "$session_token")" || die "cannot hash the session token"
-  [[ "$token_digest" == "$("$jq_executable" -r '.sessionTokenDigest' "$state_file")" ]] ||
+  recorded_digest="$(printf '%s' "$state_document" |
+    "$jq_executable" -r '.sessionTokenDigest')" ||
+    die "cannot read the recorded session-token digest"
+  [[ "$token_digest" == "$recorded_digest" ]] ||
     die "session token does not authenticate the opening evidence state"
-  actual_binding="$(state_binding "$session_token" "$state_file")" ||
+  actual_binding="$(state_binding "$session_token" "$state_document")" ||
     die "cannot bind the opening evidence state to the session token"
-  expected_binding="$("$jq_executable" -r '.openingStateBinding' "$state_file")"
+  expected_binding="$(printf '%s' "$state_document" |
+    "$jq_executable" -r '.openingStateBinding')" ||
+    die "cannot read the recorded opening-state binding"
   if [[ "$actual_binding" != "$expected_binding" && "$allow_stale_binding" != true ]]; then
     die "opening evidence state was rewritten after start"
   fi
@@ -125,7 +252,22 @@ load_opening_state() {
   [[ "${#state_candidates[@]}" -eq 1 ]] ||
     die "opening evidence state is missing, ambiguous, or already consumed: $state_directory"
   state_file="${state_candidates[0]}"
-  "$jq_executable" -e '
+  opening_state_document="$(<"$state_file")" ||
+    die "cannot read the opening evidence state: $state_file"
+  assert_authenticated_state_document \
+    "$session_token" "$allow_stale_binding" "$state_file" "$opening_state_document"
+}
+
+# Structure, checkout ownership, and token authentication for one already read state
+# document. Every probe consumes the same buffer, never the path.
+assert_authenticated_state_document() {
+  [[ $# -eq 4 ]] || die "state-document validator received an invalid argument count"
+  local session_token="$1"
+  local allow_stale_binding="$2"
+  local declared_state_path="$3"
+  local state_document="$4"
+
+  printf '%s' "$state_document" | "$jq_executable" -e '
     .schemaVersion == 2 and
     (.session | type == "string" and length > 0) and
     (.sessionTokenDigest | type == "string" and test("^[0-9a-f]{64}$")) and
@@ -136,9 +278,9 @@ load_opening_state() {
     (.worktree | type == "string") and
     (.gitDirectory | type == "string") and
     (.opening | type == "object")
-  ' "$state_file" >/dev/null || die "opening evidence state is invalid"
-  "$jq_executable" -e \
-    --arg statePath "$state_file" \
+  ' >/dev/null || die "opening evidence state is invalid"
+  printf '%s' "$state_document" | "$jq_executable" -e \
+    --arg statePath "$declared_state_path" \
     --arg worktree "$state_worktree" \
     --arg gitDirectory "$state_git_dir" '
       .statePath == $statePath and
@@ -146,9 +288,9 @@ load_opening_state() {
       .gitDirectory == $gitDirectory and
       .statePath == ($gitDirectory + "/taskdeck-pre-merge-evidence/opening." +
         (.opening.number | tostring) + "." + .opening.headRefOid + ".json")
-    ' "$state_file" >/dev/null ||
+    ' >/dev/null ||
     die "opening evidence state does not belong to this checkout"
-  validate_session_token "$session_token" "$allow_stale_binding"
+  validate_session_token "$session_token" "$allow_stale_binding" "$state_document"
 }
 
 validate_pr_snapshot() {
@@ -214,11 +356,13 @@ start_collection() {
     pr_args=("$requested_pr")
   fi
 
+  # Resolve the checkout first: this is where the evidence tools are re-checked against the
+  # measured worktree, and no external evidence tool may run before that rejection.
+  resolve_state_path
   repo_full_name="$("$gh_executable" repo view --json nameWithOwner --jq .nameWithOwner)" ||
     die "cannot identify the current GitHub repository"
   [[ "$repo_full_name" =~ ^[^/]+/[^/]+$ ]] || die "repository identity is invalid"
 
-  resolve_state_path
   mkdir -p "$state_directory" || die "cannot create the checkout evidence directory"
   if compgen -G "$state_directory/opening.*.json" >/dev/null; then
     die "an unfinished pre-merge evidence session already exists for this checkout; investigate it, then run abort before restarting: $state_directory"
@@ -284,7 +428,7 @@ start_collection() {
       gitDirectory: $gitDirectory,
       opening: $opening[0]
     }' >"$state_tmp"
-  opening_state_binding="$(state_binding "$session_token" "$state_tmp")" ||
+  opening_state_binding="$(state_binding "$session_token" "$(<"$state_tmp")")" ||
     die "cannot bind opening evidence state to the operator-carried session token"
   "$jq_executable" --arg openingStateBinding "$opening_state_binding" \
     '. + {openingStateBinding: $openingStateBinding}' "$state_tmp" >"${state_tmp}.bound" ||
@@ -309,8 +453,10 @@ abort_collection() {
   load_opening_state "$session_token" true
   local aborted_pr
   local aborted_head
-  aborted_pr="$("$jq_executable" -r '.opening.number' "$state_file")"
-  aborted_head="$("$jq_executable" -r '.opening.headRefOid' "$state_file")"
+  aborted_pr="$(printf '%s' "$opening_state_document" |
+    "$jq_executable" -r '.opening.number')"
+  aborted_head="$(printf '%s' "$opening_state_document" |
+    "$jq_executable" -r '.opening.headRefOid')"
   rm -f -- "$state_file" || die "cannot abort the opening evidence state"
   printf 'Aborted pre-merge evidence session for PR #%s at %s.\n' \
     "$aborted_pr" "$aborted_head" >&2
@@ -431,11 +577,16 @@ collect_checks_snapshot() {
     >"$snapshot_dir/canonical.json"
 }
 
+# Definition reads resolve from the authenticated opening head OID, never from the mutable
+# HEAD ref: a PR-controlled background process can move a symbolic HEAD's branch ref to the
+# opening base for the duration of these reads and restore it before the closing checkout
+# assertion, which would make every changed Gitleaks definition compare equal to its base.
 bind_enforcing_gitleaks_definitions() {
-  [[ $# -eq 3 ]] || return 1
+  [[ $# -eq 4 ]] || return 1
   local opening_base="$1"
-  local caller_path="$2"
-  local binding_file="$3"
+  local opening_head="$2"
+  local caller_path="$3"
+  local binding_file="$4"
   local caller_body
   local reusable_path
   local path
@@ -465,7 +616,7 @@ bind_enforcing_gitleaks_definitions() {
   local definitions_match=true
   for path in "${definition_paths[@]}"; do
     base_blob="$("$git_executable" rev-parse "$opening_base:$path")" || return 1
-    head_blob="$("$git_executable" rev-parse "HEAD:$path")" || return 1
+    head_blob="$("$git_executable" rev-parse "$opening_head:$path")" || return 1
     if [[ "$head_blob" != "$base_blob" ]]; then
       definitions_match=false
     fi
@@ -485,14 +636,22 @@ finish_collection() {
   local session_token
   local persistent_state_file
   local state_snapshot
+  local snapshot_state_document
   IFS= read -r session_token || die "session token must be supplied through stdin"
   [[ -n "$session_token" ]] || die "session token must be supplied through stdin"
   load_opening_state "$session_token" false
   persistent_state_file="$state_file"
   state_snapshot="$(mktemp)" || die "cannot create immutable opening-state snapshot"
   cp -- "$persistent_state_file" "$state_snapshot" || die "cannot snapshot opening evidence state"
-  state_file="$state_snapshot"
   trap 'rm -f "${state_snapshot:-}"' EXIT
+  # Authenticating the persistent pathname and then copying it left a window in which a
+  # PR-controlled background process could replace the state, so the copied bytes themselves
+  # are authenticated here, before any field is read. Every later read consumes this exact
+  # authenticated buffer rather than reopening a file that can still change.
+  snapshot_state_document="$(<"$state_snapshot")" ||
+    die "cannot read the immutable opening-state snapshot"
+  assert_authenticated_state_document \
+    "$session_token" false "$persistent_state_file" "$snapshot_state_document"
 
   local repo_full_name
   local repo_owner
@@ -517,19 +676,23 @@ finish_collection() {
   local secret_definitions_verified=false
   local secrets_verdict="NOT VERIFIED"
 
-  repo_full_name="$("$jq_executable" -r '.repository' "$state_file")"
+  repo_full_name="$(printf '%s' "$snapshot_state_document" | "$jq_executable" -r '.repository')"
   [[ "$repo_full_name" =~ ^[^/]+/[^/]+$ ]] || die "repository identity is invalid"
   repo_owner="${repo_full_name%%/*}"
   repo_name="${repo_full_name#*/}"
-  pr_number="$("$jq_executable" -r '.opening.number' "$state_file")"
-  opening_head="$("$jq_executable" -r '.opening.headRefOid' "$state_file")"
-  opening_head_ref="$("$jq_executable" -r '.opening.headRefName' "$state_file")"
-  opening_base="$("$jq_executable" -r '.opening.baseRefOid' "$state_file")"
-  opening_base_ref="$("$jq_executable" -r '.opening.baseRefName' "$state_file")"
+  pr_number="$(printf '%s' "$snapshot_state_document" | "$jq_executable" -r '.opening.number')"
+  opening_head="$(printf '%s' "$snapshot_state_document" |
+    "$jq_executable" -r '.opening.headRefOid')"
+  opening_head_ref="$(printf '%s' "$snapshot_state_document" |
+    "$jq_executable" -r '.opening.headRefName')"
+  opening_base="$(printf '%s' "$snapshot_state_document" |
+    "$jq_executable" -r '.opening.baseRefOid')"
+  opening_base_ref="$(printf '%s' "$snapshot_state_document" |
+    "$jq_executable" -r '.opening.baseRefName')"
   assert_clean_exact_checkout "$opening_head"
 
   temp_dir="$(mktemp -d)"
-  trap 'rm -rf "${temp_dir:-}"' EXIT
+  trap 'rm -rf "${temp_dir:-}"; rm -f "${state_snapshot:-}"' EXIT
   printf '[]\n' >"$temp_dir/secret-definition-bindings.jsonl"
 
   collect_feedback_snapshot "$temp_dir/feedback-first" \
@@ -587,7 +750,7 @@ finish_collection() {
     fi
   fi
   if [[ "$secret_provenance_verified" == true ]]; then
-    if bind_enforcing_gitleaks_definitions "$opening_base" \
+    if bind_enforcing_gitleaks_definitions "$opening_base" "$opening_head" \
       "$required_secret_workflow_path" \
       "$temp_dir/secret-definition-bindings.jsonl"; then
       secret_definitions_verified=true
@@ -613,7 +776,8 @@ finish_collection() {
     --json number,headRefName,headRefOid,baseRefName,baseRefOid,mergeable,updatedAt,url \
     >"$temp_dir/closing.json" || die "cannot resolve the closing PR identity"
   validate_pr_snapshot "$temp_dir/closing.json"
-  "$jq_executable" '.opening' "$state_file" >"$temp_dir/opening.json"
+  printf '%s' "$snapshot_state_document" |
+    "$jq_executable" '.opening' >"$temp_dir/opening.json"
   "$jq_executable" -e -s '
     .[0] as $opening | .[1] as $closing |
     $opening.number == $closing.number and
@@ -628,7 +792,7 @@ finish_collection() {
   assert_clean_exact_checkout "$opening_head"
 
   "$jq_executable" -n \
-    --slurpfile state "$state_file" \
+    --argjson state "$snapshot_state_document" \
     --slurpfile closing "$temp_dir/closing.json" \
     --slurpfile feedback "$temp_dir/feedback-second/snapshot.json" \
     --slurpfile checks "$temp_dir/checks-second/snapshot.json" \
@@ -636,7 +800,8 @@ finish_collection() {
     --slurpfile secretCandidates "$temp_dir/secret-candidates.json" \
     --slurpfile secretWorkflowRun "$temp_dir/secret-workflow-run.json" \
     --slurpfile secretDefinitionBindings "$temp_dir/secret-definition-bindings.jsonl" \
-    --arg stateSession "$("$jq_executable" -r '.session' "$state_file")" \
+    --arg stateSession "$(printf '%s' "$snapshot_state_document" |
+      "$jq_executable" -r '.session')" \
     --arg requiredSecretCheckName "$required_secret_check_name" \
     --arg requiredSecretWorkflow "$required_secret_workflow" \
     --arg requiredSecretWorkflowPath "$required_secret_workflow_path" \
@@ -646,14 +811,14 @@ finish_collection() {
     '{
       schemaVersion: 2,
       evidenceSession: $stateSession,
-      repository: $state[0].repository,
-      selection: $state[0].selection,
+      repository: $state.repository,
+      selection: $state.selection,
       pr: {
-        number: $state[0].opening.number,
-        url: $state[0].opening.url,
-        opening: $state[0].opening,
+        number: $state.opening.number,
+        url: $state.opening.url,
+        opening: $state.opening,
         closing: $closing[0],
-        localHeadOid: $state[0].localHeadOid
+        localHeadOid: $state.localHeadOid
       },
       feedback: ($feedback[0] + {stableAcrossTwoSnapshots: true}),
       checks: ($checks[0] + {stableAcrossTwoSnapshots: true}),
