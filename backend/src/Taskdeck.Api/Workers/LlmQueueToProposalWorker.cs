@@ -419,8 +419,11 @@ public class LlmQueueToProposalWorker : BackgroundService
             // CancellationToken.None: ct is already cancelled, and forwarding it would throw before the
             // release could commit — leaving exactly the stale-Processing row this exists to avoid. Same
             // deliberate shutdown-write idiom as AgentRuntime and OutboundWebhookDeliveryWorker's own
-            // ReturnToPending. It is one single-row UPDATE on an open connection (SQLite, local file,
-            // busy_timeout pragma bounds lock waits), so it cannot meaningfully delay shutdown.
+            // ReturnToPending. Not a single-row write: IUnitOfWork shares this scope's DbContext with the
+            // planner, so the flush commits everything the scope still tracks -- e.g. a proposal graph
+            // left Added when cancellation hit CreateProposalAsync's own save. Deliberate and benign:
+            // that graph is complete (AddAsync on client-generated GUID keys makes no cancellable
+            // round-trip), and the restart's idempotency guard above then completes the item off it.
             await unitOfWork.SaveChangesAsync(CancellationToken.None);
             _logger.LogInformation(
                 "Queue item {ItemId} released back to Pending during shutdown; no retry charged",
@@ -710,7 +713,10 @@ public class LlmQueueToProposalWorker : BackgroundService
         // nothing else re-enqueues a Failed row. Cancellation can land either in the backoff wait or in
         // the write itself, so both are inside this guard. Finish the transition with
         // CancellationToken.None -- the retry was already decided and the budget already charged above;
-        // only the waiting is being cut short, and the shutdown must not change the outcome.
+        // only the waiting is being cut short, and the shutdown must not change the outcome. As in
+        // ReleaseClaimOnShutdownAsync, that flush is not scoped to this row: the scope's DbContext is
+        // shared, so it commits whatever else the scope still tracks. Benign for the same reason -- any
+        // such graph is complete, and the restart's idempotency guard completes the item off it.
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             try
