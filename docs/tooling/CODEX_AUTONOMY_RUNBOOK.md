@@ -90,6 +90,15 @@ external authentication boundary; a same-user process can still replace bytes be
 check. An independently reviewed, hash-pinned launcher would be required to close that bootstrap
 gap. The selected base must carry the exact reviewed guard and initializer blob identities. Older or
 divergent commits/tags are rejected before target-path or worktree-registration creation. The helper
+also disables interactive Git credential prompts and bounds each text or blob Git process to 45
+seconds by default. A timeout terminates and boundedly reaps the helper-launched process tree before
+failing; cleanup or stream-drain failure is reported distinctly. On Windows, the captured root PID
+and start time are rechecked before `taskkill /T`; same-user process replacement remains outside this
+self-check's authentication boundary. Use `-GitCommandTimeoutSeconds` only for a controlled test or
+an explicitly measured exceptional environment. SSH transports may still own a separate console
+prompt, but cannot exceed that deadline. A worktree-add timeout after registration enters the same
+exact-identity, full-inventory, plain-removal cleanup path; unverifiable or dirty partial state is
+preserved and named instead of force-removed.
 atomically reserves and revalidates its final target under the approved root; after creation it
 compares the target guard and initializer bytes with the reviewed raw blobs before printing a handoff.
 `-WhatIf` resolves local bases and
