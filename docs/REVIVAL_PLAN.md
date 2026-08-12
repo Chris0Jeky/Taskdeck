@@ -55,7 +55,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 ### Phase 0 — charter (this week)
 | Item | Issue | Done when |
 |---|---|---|
-| Ratify this plan + ship gate; re-scope §D archive issues in place | REVIVAL-00 (amends #1278) | merged + tracker updated |
+| Ratify this plan + ship gate; re-scope §G archive issues in place | REVIVAL-00 (amends #1278) | merged + tracker updated |
 | Dogfooding starts | #1271 (unchanged) | daily real use; findings filed |
 
 ### Phase 1 — truth + safety before strangers (v0.1)
@@ -164,4 +164,4 @@ The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-
 - `docs/analysis/2026-07-10_revival_assessment.md` — evidence base (code + market)
 - `docs/COURSE_CORRECTION.md` / `docs/PROJECT_TRAJECTORY.md` — the 2026-07-02 analysis pair; fallback plan + finite-work discipline
 - `docs/IMPLEMENTATION_MASTERPLAN.md` — Direction section (points here)
-- `OUTSTANDING_TASKS.md` §E/§F — the maintainer-visible checklist mirrors (revival wave / Phase-4 generalist wave)
+- `OUTSTANDING_TASKS.md` §F/§E — the maintainer-visible checklist mirrors (revival wave / Phase-4 generalist wave)

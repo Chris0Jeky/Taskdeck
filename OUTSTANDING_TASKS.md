@@ -27,13 +27,13 @@ Last reviewed: 2026-08-01
 
 - [ ] **#1133** (rest) — Bound `NotificationRepository` paging (push ORDER BY+LIMIT to SQL), incremental SignalR board patch instead of full 3-call refetch, FTS-backed card search.
 
-## B2. Surfaced by post-audit correctness sweep (2026-05-31)
+## C. Surfaced by post-audit correctness sweep (2026-05-31)
 
 - [ ] **Cohort metrics stub** — `AutomationMetricsController.GetCohortMetrics` returns empty data; `CohortDashboard` frontend is wired but always shows "No cohort data available." *How:* build `ICohortMetricsService` with real cohort aggregation once learning-loop data layer design is decided. Tracked in #1142.
 - [ ] **Ollama real streaming** — `OllamaLlmProvider.StreamAsync` does pseudo-streaming (complete-then-drip-by-word). *How:* consume Ollama's `stream:true` API for genuine token streaming when Ollama provider goes beyond prototype.
 - [ ] **#1134 remaining acceptance criteria** — first slice (AuditLogWriter) shipped; 6 remaining criteria still open on the issue.
 
-## C. Strategic / larger tracks (seeded under tracker #1142)
+## D. Strategic / larger tracks (seeded under tracker #1142)
 
 - [ ] **#1123** — v0.1.0 release: a **required revival Phase-1 ship-gate item** under ADR-0044/REVIVAL-07. Exercise the release pipeline, smoke-run the self-contained exe, publish the GHCR image, and fix the documented release-path breakage before strangers are invited. The release smoke step already landed in `release-desktop.yml`. *(Optional-archive framing from 2026-06-13 is superseded.)*
 - [ ] **#1132 maintainer record check-off — delivered.** Required security scanning/configuration hardening shipped via PR #1176 and the GitHub issue is closed; this box remains unchecked under rule 3.
@@ -51,25 +51,25 @@ Last reviewed: 2026-08-01
 
 > Full audit context and the complete gap inventory: **GitHub issue #1142** (master tracker).
 
-## F. Generalist expansion wave (2026-07-13, ADR-0046 Accepted — extends §E as REVIVAL_PLAN Phase 4)
+## E. Generalist expansion wave (2026-07-13, ADR-0046 Accepted — extends §F as REVIVAL_PLAN Phase 4)
 
 Ratified direction: **extend the single app** (artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel); the twin generalist app is **deferred behind the GEN-12 evidence gate**, not built. Wave label `generalist`; strictly subordinate to the v0.1 ship gate.
 
 - [ ] **GEN-00 tracker (#1327)** — ADR-0046, Phase-4 placement, and the decision checklist are ratified; the open tracker now coordinates remaining child execution across #1315–#1326 (GEN-01..12).
 - [ ] **Maintainer at checkpoint:** review GEN-12 (#1326) twin-app gate against friends-family signal (GEN-11 #1325) — recorded decision required, silence is not a close.
 
-## E. Revival wave (2026-07-10 pivot, ADR-0044 — supersedes the archive framing of §D)
+## F. Revival wave (2026-07-10 pivot, ADR-0044 — supersedes the archive framing of §G)
 
-Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is the planning spine; `docs/analysis/2026-07-10_revival_assessment.md` is the evidence base). §D items are re-scoped in place — same work, new purpose (v0.1 ship gate instead of archive gate). Issue IDs below are seeded as the REVIVAL wave; see the tracker for the authoritative list.
+Direction: **free open beta → commercial horizon** (`docs/REVIVAL_PLAN.md` is the planning spine; `docs/analysis/2026-07-10_revival_assessment.md` is the evidence base). §G items are re-scoped in place — same work, new purpose (v0.1 ship gate instead of archive gate). Issue IDs below are seeded as the REVIVAL wave; see the tracker for the authoritative list.
 
 - [ ] **REVIVAL-00 tracker (#1311)** — charter and v0.1 ship gate are ratified; the open tracker remains the wave-sequencing record for #1297–#1310 (REVIVAL-01..14). Direction docs shipped in PR #1296.
 - [ ] **Phase 0 — dogfooding starts now** (#1271, unchanged): real personal use including WhisperX transcripts through the existing transcript capture tab.
 - [ ] **Phase 1 — truth + safety before strangers**: registration gating (#1297), fake-undo removal (#1298), licensing posture (#1299), Paper fonts/favicon (#1300), Paper onboarding (#1301), README revival (#1302), Today truth (#1272), and Paper E2E/axe (#1274) are shipped and their issues are closed. Remaining ship-gate work is the v0.1.0 release exercise/GHCR/render/upgrade path (#1303), branch protection (#1173), and CI keep/kill (#1275).
 - [ ] **Phase 2 — transcript engine** (authorized new-surface exception): LLM triage strategy behind `ICaptureTriageService` is shipped, and PR #1556 delivered the durable Transcript/repository/migration plus export/account-deletion foundation. #1305 remains open for capture/triage linkage, evidence spans, provenance API, and Paper deep links. Remaining scope also includes chunking/cap/schema-v2 work, OpenAICompatible + true SSE, and risk-tiered review/batch-confirm ergonomics (**never auto-apply or bypass ADR-0003's approve-then-execute gate**); 2b audio/WhisperX stays gated on dogfooding value.
 - [ ] **Phase 3 — slim + launch**: dead-surface amputation (#1276 expanded); MCP packaging + scoped keys + hash-pin wiring (#1154) + explicit multi-user-safe stdio identity (#1309); privacy-respecting beta feedback channel; launch checklist (r/selfhosted, Show HN, awesome-selfhosted, hosted demo).
-- [ ] **Checkpoint (~8 weeks)**: fall back to the §D archive plan only if there is no organic traction **and** dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
+- [ ] **Checkpoint (~8 weeks)**: fall back to the §G archive plan only if there is no organic traction **and** dogfooding has not stuck; any mixed outcome requires an explicit maintainer assessment/plan amendment.
 
-## D. Historical archive closeout wave — re-scoped by ADR-0044
+## G. Historical archive closeout wave — re-scoped by ADR-0044
 
 Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_CORRECTION.md` (what must change + ordered plan). These issue titles retain their ARCHIVE-* history, but **nothing in this section independently authorizes archival**: ADR-0044 re-scopes the still-useful work into the revival ship gate and keeps archive only as the checkpoint fallback. Wave source: **#1278** (originally ARCHIVE-00; amended by REVIVAL-00/#1311).
 
@@ -87,7 +87,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 - [ ] **#1291** — Adopt agent-harness T3 profile: one-home policy collapse, .codex mirror retirement, skill read-first diet, region maps, review-twin merge, ledger triage cadence. *(Blueprint: sibling checkout `C:/Users/jekyt/source/agent-harness/BLUEPRINT.md` — outside this repo; complements #1138/#1269/#1275/#1276, no duplication.)*
 - *(Record, already done 2026-07-02:)* re-scope comments posted on #996, #1123/#1139, #1128, #1134 (+#1154 decision), #1135, #1138, #1173, #1175 (+#1174), #1210, #1215, #1222 (+#1227), #1228 — each carries updated finish-or-close ACs.
 
-## E. Revival overnight deferrals (added 2026-07-13)
+## H. Revival overnight deferrals (added 2026-07-13)
 
 - [ ] **#1173** — Apply and verify the required branch-protection settings in GitHub. This is repository-settings work and remains maintainer-only.
 - [ ] **#1303** — Push the `v0.1.0` release tag only after the maintainer accepts the release deck and its pipeline evidence. Agents may repair the pipeline but must not push the tag.
@@ -119,6 +119,7 @@ Analysis docs: `docs/PROJECT_TRAJECTORY.md` (strengths + path) and `docs/COURSE_
 ---
 
 ## Changelog
+- 2026-08-12: **Section letters renumbered — fixes the duplicate `## E.` headings and out-of-order lettering reported in #1473.** Old→new mapping (reading order unchanged, no item moved): A→A, B→B, B2→C, C→D, F→E, E (Revival wave)→F, D (Historical archive closeout wave)→G, E (Revival overnight deferrals)→H. Updated every in-file `§X` cross-reference in live section text to match: the renamed §E header's "extends §E" now reads "extends §F" (it pointed at the old Revival-wave E, now F); the renamed §F header's "supersedes the archive framing of §D" and its body's "§D items are re-scoped" and "fall back to the §D archive plan" now read §G (they pointed at the old Historical-archive D, now G). `§`-references inside changelog entries above this one describe the lettering as it stood at the time they were written and are left as-is; use this mapping to resolve them. No `[ ]`/`[x]` item was added, removed, reworded, or had its checked state changed.
 - 2026-08-01: **Live-state reconciliation without automatic check-offs.** Updated ADR-0046 and REVIVAL ratification wording; recorded the #1556 Transcript foundation and the still-open #1470 full-model recertification; replaced stale instructions for closed #1132/#1136/#1272/#1274/#1282/#1330/#1332/#1335/#1338/#1343/#1347/#1348 with delivered, maintainer-record-pending notes; and removed the obsolete #1274 WIP resume direction. No `[ ]` item was checked because rule 3 still reserves that acknowledgement to the maintainer.
 - 2026-07-27 (later): **#1458 shipped and the live project is Priority-clean.** The reviewed Apply succeeded 141/141; its built-in audit, two pre-merge fresh audits, and the final post-merge handoff audit each proved 1,472/1,472 items, 12 visible/non-authoritative external references, and zero remaining drift. PR #1488 merged as `84674979`; issue #1458 and both project items are Done/Priority I. The human-owned checkbox remains unchecked pending maintainer record review.
 - 2026-07-27: **#1458 label remediation and external-reference policy supersede the prior checkpoint below.** The 130 missing Taskdeck Issue labels were classified and verified, and a stable 1,472-item audit found 142 remaining project-field drifts. External Issues are now recorded as visible non-authority rather than rejected: their labels never rank, external-only PRs derive `Priority V`, and canonical body fallback remains available after an external closing reference. No project-field `-Apply` had run at this checkpoint; the unchecked item remains pending a reviewed Apply and separate zero-drift audit.
