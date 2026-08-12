@@ -37,8 +37,8 @@ public class LogQueryService : ILogQueryService
                 _logger?.LogWarning(
                     "Log query rejected in {DurationMs}ms due to validation failure: {ErrorCode} {ErrorMessage}",
                     stopwatch.ElapsedMilliseconds,
-                    validationResult.ErrorCode,
-                    validationResult.ErrorMessage);
+                    LogValueSanitizer.Sanitize(validationResult.ErrorCode),
+                    LogValueSanitizer.Sanitize(validationResult.ErrorMessage));
                 return Result.Failure<IEnumerable<LogEntryDto>>(validationResult.ErrorCode, validationResult.ErrorMessage);
             }
 
@@ -64,11 +64,11 @@ public class LogQueryService : ILogQueryService
                 "Log query completed in {DurationMs}ms with {ResultCount} entries (level={Level}, source={Source}, correlationId={CorrelationId}, userId={UserId}, boardId={BoardId})",
                 stopwatch.ElapsedMilliseconds,
                 combined.Count,
-                query.Level,
-                query.Source,
-                query.CorrelationId,
-                query.UserId,
-                query.BoardId);
+                LogValueSanitizer.Sanitize(query.Level),
+                LogValueSanitizer.Sanitize(query.Source),
+                LogValueSanitizer.Sanitize(query.CorrelationId),
+                LogValueSanitizer.Sanitize(query.UserId),
+                LogValueSanitizer.Sanitize(query.BoardId));
 
             return Result.Success<IEnumerable<LogEntryDto>>(combined);
         }
@@ -78,11 +78,11 @@ public class LogQueryService : ILogQueryService
                 ex,
                 "Log query failed in {DurationMs}ms (level={Level}, source={Source}, correlationId={CorrelationId}, userId={UserId}, boardId={BoardId})",
                 stopwatch.ElapsedMilliseconds,
-                query.Level,
-                query.Source,
-                query.CorrelationId,
-                query.UserId,
-                query.BoardId);
+                LogValueSanitizer.Sanitize(query.Level),
+                LogValueSanitizer.Sanitize(query.Source),
+                LogValueSanitizer.Sanitize(query.CorrelationId),
+                LogValueSanitizer.Sanitize(query.UserId),
+                LogValueSanitizer.Sanitize(query.BoardId));
             return Result.Failure<IEnumerable<LogEntryDto>>(ErrorCodes.UnexpectedError, ex.Message);
         }
     }
