@@ -695,23 +695,70 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
 
         var backoff = TimeSpan.FromSeconds(GetRetryBackoffSeconds(item.RetryCount));
-        if (backoff > TimeSpan.Zero)
+        try
         {
-            await Task.Delay(backoff, ct);
-        }
+            if (backoff > TimeSpan.Zero)
+            {
+                await Task.Delay(backoff, ct);
+            }
 
-        item.ResetForRetry();
-        if (retryAsProcessing)
-        {
-            item.MarkAsProcessing();
+            ApplyRetryTransition(item, retryAsProcessing);
+            await unitOfWork.SaveChangesAsync(ct);
         }
-        await unitOfWork.SaveChangesAsync(ct);
+        // The Failed row above is ALREADY COMMITTED, so abandoning the requeue here strands it forever
+        // (#1605): the recovery sweep only scans Processing (GetStuckProcessingNonCaptureAsync), and
+        // nothing else re-enqueues a Failed row. Cancellation can land either in the backoff wait or in
+        // the write itself, so both are inside this guard. Finish the transition with
+        // CancellationToken.None -- the retry was already decided and the budget already charged above;
+        // only the waiting is being cut short, and the shutdown must not change the outcome.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try
+            {
+                ApplyRetryTransition(item, retryAsProcessing);
+                await unitOfWork.SaveChangesAsync(CancellationToken.None);
+                _logger.LogInformation(
+                    "Queue item {ItemId} requeued for retry attempt {RetryCount} during shutdown",
+                    item.Id,
+                    item.RetryCount + 1);
+            }
+            catch (Exception ex)
+            {
+                // Same reasoning as ReleaseClaimOnShutdownAsync: never mask the cancellation. The row is
+                // left Failed, which is the pre-#1605 outcome for this window.
+                _logger.LogWarning(
+                    "Failed to requeue queue item {ItemId} during shutdown; it stays Failed. {ExceptionSummary}",
+                    item.Id,
+                    SensitiveDataRedactor.SummarizeException(ex));
+            }
+
+            throw;
+        }
 
         _logger.LogInformation(
             "Queue item {ItemId} scheduled for retry attempt {RetryCount}",
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    /// <summary>
+    /// Moves a just-failed request into its retry state: back to Pending, and on to Processing for the
+    /// capture lane, which reads its queue from Processing. Written to be safe to call twice — the
+    /// shutdown path re-runs it after a write that may have already applied the in-memory transition
+    /// before throwing, and ResetForRetry/MarkAsProcessing both throw outside their source status.
+    /// </summary>
+    private static void ApplyRetryTransition(LlmRequest item, bool retryAsProcessing)
+    {
+        if (item.Status == RequestStatus.Failed)
+        {
+            item.ResetForRetry();
+        }
+
+        if (retryAsProcessing && item.Status == RequestStatus.Pending)
+        {
+            item.MarkAsProcessing();
+        }
     }
 
     private bool IsTransientFailure(string? errorCode)

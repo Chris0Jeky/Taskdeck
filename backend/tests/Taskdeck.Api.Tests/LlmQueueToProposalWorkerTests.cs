@@ -444,6 +444,82 @@ public class LlmQueueToProposalWorkerTests
 
     #endregion
 
+    #region Shutdown during the retry backoff (#1605)
+
+    [Fact]
+    public async Task ProcessBatch_CancellationDuringRetryBackoff_PersistsTheRequeueInsteadOfStrandingFailed()
+    {
+        // #1605 (second gap): MarkAsFailed is committed BEFORE the backoff wait. If cancellation lands in
+        // that wait, the row is left persisted as Failed -- and the recovery sweep only scans Processing,
+        // so nothing ever picks it up again. The requeue must therefore complete on the shutdown path.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        using var cts = new CancellationTokenSource();
+        // Cancel from inside the FIRST write (the MarkAsFailed commit) so cancellation lands squarely in
+        // the backoff wait that follows -- deterministic, unlike a timer race, and it keeps the token
+        // uncancelled at Task.Run time so the item is really claimed and processed.
+        unitOfWork.OnSaveChanges = saveNumber =>
+        {
+            if (saveNumber == 1)
+            {
+                cts.Cancel();
+            }
+        };
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        item.Status.Should().Be(RequestStatus.Pending, "the interrupted retry transition is completed, not abandoned mid-way");
+        item.RetryCount.Should().Be(1, "the failure itself was genuine, so it still costs a retry");
+        unitOfWork.SaveChangesTokens.Should().HaveCount(2, "the MarkAsFailed commit and the requeue commit");
+        unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse(
+            "the requeue must be persisted with CancellationToken.None; the caller token is already cancelled");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureLaneCancellationDuringRetryBackoff_RequeuesAsProcessing()
+    {
+        // Same window on the capture lane, where the retry state is Processing (retryAsProcessing: true).
+        // Leaving a capture row Pending would be just as stranded: the capture lane reads Processing.
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        using var cts = new CancellationTokenSource();
+        unitOfWork.OnSaveChanges = saveNumber =>
+        {
+            if (saveNumber == 1)
+            {
+                cts.Cancel();
+            }
+        };
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+                Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        item.Status.Should().Be(RequestStatus.Processing, "the capture lane re-reads its queue from Processing");
+        item.RetryCount.Should().Be(1);
+        unitOfWork.SaveChangesTokens.Should().HaveCount(2);
+        unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse();
+    }
+
+    #endregion
+
     #region Disabled processing
 
     [Fact]
