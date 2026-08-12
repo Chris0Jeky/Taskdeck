@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-09
+Last Updated: 2026-08-12
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -1282,7 +1282,7 @@ npm run typecheck
 npm run build
 ```
 
-Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
+Frontend spec type-checking (`#1468` / `#1634`, ADR-0049, delivered 2026-08-12):
 - `npm run typecheck` is `vue-tsc -b`, which builds every project referenced from
   `frontend/taskdeck-web/tsconfig.json`. `tsconfig.app.json` covers production source and still
   excludes `src/tests/**`; `tsconfig.vitest.json` covers the spec tree. No CI workflow change was
@@ -1304,15 +1304,16 @@ Frontend spec type-checking (`#1468`, ADR-0049, delivered 2026-08-07):
   un-quarantining `composables/useVoiceCapture.spec.ts` reports 3 errors in untouched production
   source and masks 2 of the spec's own by making two `@ts-expect-error` directives spuriously
   "used". Keep the line, and add any new ambient declaration under `src/`, not elsewhere.
-- Its `exclude` array is a **quarantine**, not configuration. It listed the 64 files carrying the
-  415 pre-existing errors measured 2026-08-07, over the 286 `.ts` files under `src/tests/` (284
-  specs plus `setup.ts` and a mock). **New spec files are checked by default** because they are not
+- Its `exclude` array is a **quarantine**, not configuration. The historical 2026-08-07 baseline
+  listed 64 files carrying 415 pre-existing errors, measured over the 286 `.ts` files under
+  `src/tests/` (284 specs plus `setup.ts` and a mock). PR `#1634` fixed 24 one-error files, leaving
+  **40 quarantined files / 391 errors**. **New spec files are checked by default** because they are not
   in the list. The list may only shrink — delete an entry once its file is fixed, never add one to
   turn a red build green. Burn-down is tracked in `#1607`.
 - **Scope caveat — do not read this as "the test suite is type-checked".** A full Vitest run
   executes **302** spec files: 284 under `src/tests/` and 18 under the frontend-root `tests/`
-  directory. This project gates **220** of them (284 − 64). The **82** it does not gate are those
-  64 plus those 18. (Do not subtract 222 from 302 — 222 counts *files in the project*, including
+  directory. This project gates **244** of them (284 − 40). The **58** it does not gate are those
+  40 plus those 18. (Do not subtract 222 from 302 — 222 counts *files in the project*, including
   `setup.ts` and a mock that are not specs.) The 18 are Node-flavoured — they import the `.mjs`
   files under `scripts/` and use `process`/`NodeJS` — so they need a Node type environment and
   therefore a fourth, separate project; putting them here would require the one setting that breaks
