@@ -127,12 +127,13 @@ public class ChatServiceResilienceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_WhenProviderReturnsEmptyContent_DomainValidationPreventsEmptyMessage()
+    public async Task SendMessageAsync_WhenProviderReturnsEmptyContent_PersistsExplicitDegradedPlaceholder()
     {
-        // When the provider returns empty content, the ChatMessage domain entity constructor
-        // throws DomainException("Content cannot be empty"). ChatService catches DomainException
-        // in its outer try/catch and returns Result.Failure — it does NOT silently persist an
-        // empty message. This test verifies the failure is surfaced with the correct error code.
+        // Empty provider content is still never persisted verbatim — ChatMessage rejects it. But an
+        // empty degraded outcome is legitimate (the OpenAI-compatible buffered path sanitizes
+        // content_filter/refusal responses to empty content), and losing the whole assistant-history
+        // entry to a validation failure was the defect in #1617. ChatService now substitutes an
+        // explicit non-secret placeholder and classifies the message "degraded".
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "Empty content session");
         _chatSessionRepoMock
@@ -151,12 +152,13 @@ public class ChatServiceResilienceTests
         var result = await service.SendMessageAsync(
             session.Id, userId, new SendChatMessageDto("Any question"), default);
 
-        // ChatService catches DomainException and returns a failure result; it never persists
-        // an empty assistant message.
-        result.IsSuccess.Should().BeFalse(
+        result.IsSuccess.Should().BeTrue(
+            "a degraded outcome with no provider text must still produce an assistant-history entry");
+        result.Value.Content.Should().NotBeNullOrWhiteSpace(
             "empty content returned by the provider must never be silently persisted");
-        result.ErrorCode.Should().Be(ErrorCodes.ValidationError,
-            "ChatService wraps the DomainException from ChatMessage into a ValidationError result");
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be("Empty response.",
+            "the provider's own sanitized reason is preserved verbatim");
     }
 
     // -----------------------------------------------------------------------
