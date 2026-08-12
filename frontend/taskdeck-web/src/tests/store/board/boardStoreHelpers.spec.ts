@@ -3,7 +3,7 @@ import { ref } from 'vue'
 
 const { mockToastStore, mockGetErrorMessage, mockIsDemoMode } = vi.hoisted(() => ({
   mockToastStore: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
-  mockGetErrorMessage: vi.fn((err: unknown, fallback: string) => fallback),
+  mockGetErrorMessage: vi.fn((_err: unknown, fallback: string) => fallback),
   mockIsDemoMode: { value: false },
 }))
 

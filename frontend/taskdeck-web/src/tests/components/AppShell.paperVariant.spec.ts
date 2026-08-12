@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
-import { readFileSync } from 'node:fs'
 import AppShell from '../../components/shell/AppShell.vue'
+// Read through Vite's `?raw` loader rather than node:fs — this project deliberately excludes
+// node types (adding them breaks production source), and `?raw` also resolves relative to this
+// file instead of the process CWD.
+import appShellSource from '../../components/shell/AppShell.vue?raw'
 
 const mockRouter = {
   push: vi.fn(),
@@ -230,10 +233,7 @@ describe('AppShell — paper variant routing', () => {
   })
 
   it('keeps Paper phone content padded above the fixed bottom bar', () => {
-    const source = readFileSync(
-      'src/components/shell/AppShell.vue',
-      'utf8',
-    )
+    const source = appShellSource
 
     expect(source).toContain('.td-shell--paper-phone .td-content')
     expect(source).toContain('56px + var(--paper-safe-bottom')

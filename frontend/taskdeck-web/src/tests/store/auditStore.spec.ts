@@ -146,7 +146,9 @@ describe('auditStore', () => {
     },
   ])('$method sets loading true during fetch and false after', async ({ call, api }) => {
     const store = useAuditStore()
-    let resolveRequest: ((value: never[]) => void) | null = null
+    // Definite-assignment: the assignment happens inside mockImplementation's callback, which
+    // TypeScript's control-flow analysis cannot see (it would narrow the variable to `null`).
+    let resolveRequest!: (value: never[]) => void
 
     vi.mocked(auditApi[api]).mockImplementation(() => new Promise((resolve) => {
       resolveRequest = resolve as (value: never[]) => void

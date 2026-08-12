@@ -13,9 +13,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   const { computed, ref, shallowRef } = await vueHelpers
   return {
     useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
-      const getCount = typeof options.count === 'function'
-        ? options.count
-        : () => options.count.value
+      const count = options.count
+      const getCount = typeof count === 'function'
+        ? count
+        : () => count.value
       return {
         parentRef: ref(null),
         virtualItemEls: shallowRef([]),

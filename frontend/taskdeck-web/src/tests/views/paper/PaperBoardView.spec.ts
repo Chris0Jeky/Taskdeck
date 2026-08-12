@@ -250,7 +250,7 @@ describe('PaperBoardView', () => {
     targetLane.element.dispatchEvent(makeDragEvent('dragover'))
     await nextTick()
 
-    expect(wrapper.getComponent(PaperBoardColumn).exists()).toBe(true)
+    expect(wrapper.findComponent(PaperBoardColumn).exists()).toBe(true)
     expect(targetLane.classes()).toContain('paper-board-view__lane--drop-target')
 
     targetLane.element.dispatchEvent(makeDragEvent('drop'))
