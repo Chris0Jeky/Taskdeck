@@ -215,7 +215,7 @@ A task card within a board column.
 | Description | `string` | Yes | Max 4000 chars (DB); domain enforces 2000 | Defaults to empty string |
 | DueDate | `DateTimeOffset?` | No | | Optional deadline |
 | IsBlocked | `bool` | Yes | | Blocked status flag |
-| BlockReason | `string?` | No | Max 500 chars; non-empty when IsBlocked | Reason for blocking |
+| BlockReason | `string?` | No | Non-empty when IsBlocked; 500 is a model width only (SQLite `TEXT`, runtime input unbounded) | Reason for blocking |
 | Position | `int` | Yes | >= 0 | Display order within column |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -380,8 +380,12 @@ chronological chain, and `AutomationProposal.ApprovedRevisionId` pins the one Ap
 
 ### ProposalOutcome
 
-A content-free record of a review decision. Stores structural dimensions only -- never proposal
-text, user rationale, or other business content.
+A record of a review decision that is *intended* to store structural dimensions only -- not
+proposal text, user rationale, or other business content. That content-free property is a caller
+convention, not an enforced guarantee: `SourceType`, `RiskLevel`, and `ModelId` are free-form
+strings the public constructor validates only for non-emptiness and length, so a caller could place
+content in them. The entity carries no free-text field, and its enum and numeric dimensions hold
+none by construction.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -820,8 +824,8 @@ Per-request token usage tracking for quota and cost visibility.
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | References User (no FK) | Requesting user |
 | Surface | `LlmSurface` | Yes | Enum: Chat, CaptureTriage, Worker | Product surface |
-| Provider | `string` | Yes | Non-empty, max 100 chars | LLM provider name; a reservation stores the literal `reserved` until committed |
-| Model | `string` | Yes | Max 200 chars | Model identifier; empty string allowed |
+| Provider | `string` | Yes | Non-empty; 100 is a model width only (SQLite `TEXT`, not runtime-enforced) | LLM provider name; a reservation stores the literal `reserved` until committed |
+| Model | `string` | Yes | 200 is a model width only (SQLite `TEXT`, not runtime-enforced); empty string allowed | Model identifier |
 | InputTokens | `int` | Yes | >= 0 | Input token count |
 | OutputTokens | `int` | Yes | >= 0 | Output token count |
 | Status | `LlmUsageRecordStatus` | Yes | Enum: Reserved, Committed | Lifecycle state; a directly recorded row is Committed |
@@ -1097,8 +1101,11 @@ A timestamped event emitted during an agent run.
 ### McpToolHash
 
 Per-user approval record for an MCP tool definition. Lives in `Taskdeck.Domain.Agents`, not
-`Taskdeck.Domain.Entities`. When a tool's definition changes the hash changes and approval is
-automatically revoked, forcing re-approval before the tool can be used again.
+`Taskdeck.Domain.Entities`. When a tool's definition changes the hash changes and the stored
+approval is cleared -- but only when `RecordToolDefinitionAsync` writes the new hash. No MCP
+execution path yet calls that service or `IsToolApprovedAsync`, so this records the *intended*
+re-approval gate rather than enforcing it before a tool runs; runtime enforcement is tracked in
+#1154.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -1298,7 +1305,8 @@ Immutable audit record for abuse detection events and state transitions.
 | User -> CardCommentMention | One-to-many | FK (Cascade) | Deleting a user deletes the mention rows pointing at them via `MentionedUserId` -- unlike `User -> CardComment`, which is Restrict |
 | ChatSession -> ChatMessage | One-to-many | FK (Cascade) | A session contains many messages |
 | AutomationProposal -> AutomationProposalOperation | One-to-many | FK (Cascade) | A proposal has many operations |
-| AutomationProposal -> ProposalRevision | One-to-many | FK (Cascade) | Edit chain; `ApprovedRevisionId` pins one, without an FK |
+| AutomationProposal -> ProposalRevision | One-to-many | FK (Cascade) | Edit chain; revisions are cascade-owned via `ProposalRevision.ProposalId` |
+| AutomationProposal -> ProposalRevision (approved pin) | One-to-zero-or-one | Logical | `ApprovedRevisionId` points back at the single revision `AutomationExecutorService.MaterializeEffectiveProposalAsync` executes on Apply; opposite direction to the cascade FK, deliberately a plain scalar with no FK to avoid a cycle |
 | AutomationProposal -> ProposalOutcome | One-to-many | FK (Cascade) | Content-free decision records |
 | AutomationProposal -> ProposalFeedback | One-to-many | FK (Cascade) | At most one row per (proposal, user) |
 | AutomationProposal -> ProposalProvenance | One-to-zero-or-one | FK (Cascade) | Provenance chain head, keyed by `ProposalId` |
@@ -1330,7 +1338,9 @@ Immutable audit record for abuse detection events and state transitions.
 - **Concurrency:** `UpdatedAt` is configured as an optimistic concurrency token on exactly seven
   entities -- `AutomationProposal`, `DailySnapshot`, `ProposalFeedback`, `ProposalOutcome`,
   `ProposalProvenance`, `ProvenanceField`, and `ProvenanceEvidenceLink`. On every other entity
-  `UpdatedAt` is a plain timestamp maintained by `Touch()` and enforces nothing.
+  that maps `UpdatedAt` it is a plain timestamp maintained by `Touch()` and enforces nothing.
+  A few mapped tables have no `UpdatedAt` column at all -- `ArtefactBlob`, `CardLabel`, and
+  `RegistrationBootstrap` in the current snapshot.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
 - **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`, `WarningsJson`, `SegmentsJson`).
 - **Enum storage:** Enums are stored as integers by default. There are exactly three exceptions --
@@ -1345,9 +1355,11 @@ Immutable audit record for abuse detection events and state transitions.
   `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`,
   `CommandRun`, `DailySnapshot`, `TomorrowNote`, `McpToolHash`, and `OAuthAuthCode` use logical
   references only -- referential integrity is maintained by application code. `OAuthAuthCode` is the
-  security-relevant one: the exchange endpoints compare the stored `UserId` against the caller
-  (`AuthController.cs:437`, the link-flow CSRF guard), so the binding is real even though the
-  database will not enforce it. The
+  security-relevant one: the authenticated GitHub *link* endpoint compares the stored `UserId`
+  against the caller before consuming the code (`AuthController.cs:437`, the link-flow CSRF guard).
+  The anonymous GitHub/OIDC *login* exchanges run no caller check -- they consume the single-use
+  bearer code and load the user it names -- so the caller-identity binding exists only on the link
+  flow, and the database enforces neither. The
   [Relationship Summary](#relationship-summary) lists every FK relationship in the model snapshot
   plus the notable logical ones; re-derive it from the `HasForeignKey` calls in
   `TaskdeckDbContextModelSnapshot.cs` rather than trusting this table after a migration.
