@@ -14,6 +14,26 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+class ProjectSnapshotDriftException : System.Exception {
+    [string]$DriftKind
+    [int]$PageNumber
+
+    ProjectSnapshotDriftException([string]$Message, [string]$DriftKind, [int]$PageNumber) : base($Message) {
+        $this.DriftKind = $DriftKind
+        $this.PageNumber = $PageNumber
+    }
+}
+
+class ProjectSnapshotRestartExhaustedException : System.Exception {
+    [object[]]$Diagnostics
+
+    ProjectSnapshotRestartExhaustedException([string]$Message, [object[]]$Diagnostics) : base($Message) {
+        $this.Diagnostics = $Diagnostics
+    }
+}
+
+$script:MaxProjectSnapshotRestarts = 2
+
 $priorityRank = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::Ordinal)
 $priorityRank.Add("Priority I", 1)
 $priorityRank.Add("Priority II", 2)
@@ -449,10 +469,16 @@ function Get-CompleteProjectSnapshot {
             }
         } else {
             if ($pageTotalCount -ne $expectedTotalCount) {
-                throw "Project totalCount drifted during pagination: expected $expectedTotalCount, page $pageCount reported $pageTotalCount."
+                throw [ProjectSnapshotDriftException]::new(
+                    "Project totalCount drifted during pagination: expected $expectedTotalCount, page $pageCount reported $pageTotalCount.",
+                    "totalCount",
+                    $pageCount)
             }
             if ($pageUpdatedAt -ne $expectedUpdatedAt) {
-                throw "Project updatedAt drifted during pagination: expected '$expectedUpdatedAt', page $pageCount reported '$pageUpdatedAt'."
+                throw [ProjectSnapshotDriftException]::new(
+                    "Project updatedAt drifted during pagination: expected '$expectedUpdatedAt', page $pageCount reported '$pageUpdatedAt'.",
+                    "updatedAt",
+                    $pageCount)
             }
         }
 
@@ -510,6 +536,58 @@ function Get-CompleteProjectSnapshot {
         complete = $true
         items = $normalizedItems.ToArray()
     }
+}
+
+function Get-CompleteProjectSnapshotWithRestart {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectId,
+        [Parameter(Mandatory = $true)]
+        [string]$PriorityFieldId,
+        [Parameter(Mandatory = $true)]
+        [string]$StatusFieldId,
+        [ValidateRange(0, 10)]
+        [int]$ItemLimit = 0,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$PageProvider,
+        [ValidateRange(0, 10)]
+        [int]$MaxRestarts = $script:MaxProjectSnapshotRestarts
+    )
+
+    $restartDiagnostics = [System.Collections.Generic.List[object]]::new()
+    for ($attempt = 1; $attempt -le ($MaxRestarts + 1); $attempt++) {
+        try {
+            $snapshot = Get-CompleteProjectSnapshot `
+                -ProjectId $ProjectId `
+                -PriorityFieldId $PriorityFieldId `
+                -StatusFieldId $StatusFieldId `
+                -ItemLimit $ItemLimit `
+                -PageProvider $PageProvider
+
+            $snapshot | Add-Member -NotePropertyName snapshotRestartCount -NotePropertyValue $restartDiagnostics.Count -Force
+            $snapshot | Add-Member -NotePropertyName snapshotRestartDiagnostics -NotePropertyValue $restartDiagnostics.ToArray() -Force
+            return $snapshot
+        } catch [ProjectSnapshotDriftException] {
+            $drift = $_.Exception
+            $restartDiagnostics.Add([pscustomobject]@{
+                attempt = $attempt
+                kind = $drift.DriftKind
+                page = $drift.PageNumber
+                message = $drift.Message
+            }) | Out-Null
+
+            if ($attempt -gt $MaxRestarts) {
+                $diagnosticText = @($restartDiagnostics | ForEach-Object {
+                    "attempt $($_.attempt): $($_.kind) drift at page $($_.page)"
+                }) -join "; "
+                throw [ProjectSnapshotRestartExhaustedException]::new(
+                    "Project snapshot restart bound exhausted after $MaxRestarts restart(s): $diagnosticText.",
+                    $restartDiagnostics.ToArray())
+            }
+        }
+    }
+
+    throw "Project snapshot restart loop terminated unexpectedly."
 }
 
 function Assert-AuditableIssuePriorities {
@@ -744,6 +822,21 @@ function Invoke-SelfTest {
             -PageProvider $provider
     }
 
+    function Get-SelfTestSnapshotWithRestart {
+        param(
+            [Parameter(Mandatory = $true)]
+            [scriptblock]$PageProvider,
+            [int]$MaxRestarts = 2
+        )
+
+        Get-CompleteProjectSnapshotWithRestart `
+            -ProjectId $projectId `
+            -PriorityFieldId $priorityFieldId `
+            -StatusFieldId $statusFieldId `
+            -MaxRestarts $MaxRestarts `
+            -PageProvider $PageProvider
+    }
+
     function Get-NormalizedSelfTestItems {
         param([object[]]$RawItems)
 
@@ -939,6 +1032,78 @@ function Invoke-SelfTest {
         "stamp-next" = New-SelfTestResponse -TotalCount 2 -Nodes @($itemB) -HasNextPage $false -EndCursor $null -UpdatedAt "2026-07-26T00:00:01Z"
     }
     $checks += Assert-SelfTestThrows -Action { Get-SelfTestSnapshot -Pages $stampDriftPages } -MessagePattern "updatedAt drifted"
+
+    $restartState = [pscustomobject]@{
+        starts = 0
+        cursors = [System.Collections.Generic.List[string]]::new()
+    }
+    $restartProvider = {
+        param($requestedProjectId, $after)
+        $cursor = if ([string]::IsNullOrWhiteSpace([string]$after)) { "<start>" } else { [string]$after }
+        $restartState.cursors.Add($cursor) | Out-Null
+        if ($cursor -eq "<start>") {
+            $restartState.starts++
+            if ($restartState.starts -eq 1) {
+                return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "late-drift")
+            }
+            return (New-SelfTestResponse -TotalCount 1 -Nodes @($itemB) -HasNextPage $false -EndCursor $null)
+        }
+        New-SelfTestResponse -TotalCount 3 -Nodes @($itemB) -HasNextPage $false -EndCursor $null
+    }
+    $restartSuccess = Get-SelfTestSnapshotWithRestart -PageProvider $restartProvider -MaxRestarts 2
+    $checks += Assert-SelfTest `
+        -Condition ($restartSuccess.snapshotRestartCount -eq 1 -and
+            $restartSuccess.items.Count -eq 1 -and
+            $restartSuccess.items[0].id -ceq "item-b" -and
+            [string]::Join("|", $restartState.cursors) -ceq "<start>|late-drift|<start>") `
+        -Message "recognized drift must restart from the first page and discard the partial snapshot"
+
+    $exhaustionState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $exhaustionProvider = {
+        param($requestedProjectId, $after)
+        $exhaustionState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $exhaustionState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "always-drift")
+        }
+        New-SelfTestResponse -TotalCount 3 -Nodes @($itemB) -HasNextPage $false -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $exhaustionProvider -MaxRestarts 2
+    } -MessagePattern "restart bound exhausted.*attempt 1: totalCount drift at page 2; attempt 2: totalCount drift at page 2; attempt 3: totalCount drift at page 2"
+    $checks += Assert-SelfTest `
+        -Condition ($exhaustionState.starts -eq 3 -and $exhaustionState.calls -eq 6) `
+        -Message "restart exhaustion must use only the explicit attempt bound"
+
+    $nonDriftState = [pscustomobject]@{ starts = 0 }
+    $nonDriftProvider = {
+        param($requestedProjectId, $after)
+        $nonDriftState.starts++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "duplicate")
+        }
+        New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $false -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $nonDriftProvider -MaxRestarts 2
+    } -MessagePattern "duplicate item id"
+    $checks += Assert-SelfTest `
+        -Condition ($nonDriftState.starts -eq 2) `
+        -Message "non-drift completeness faults must not trigger a restart"
+
+    $exhaustionApplyState = [pscustomobject]@{ writes = 0 }
+    $checks += Assert-SelfTestThrows -Action {
+        $snapshot = Get-SelfTestSnapshotWithRestart -PageProvider $exhaustionProvider -MaxRestarts 0
+        Invoke-PriorityApplyWithAudit `
+            -InitialState ([pscustomobject]@{ updates = @(); guardFingerprint = "unused" }) `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider { throw "snapshot unexpectedly completed" } `
+            -ItemWriter { $exhaustionApplyState.writes++ } `
+            -PostAuditProvider { throw "snapshot unexpectedly completed" }
+    } -MessagePattern "restart bound exhausted"
+    $checks += Assert-SelfTest `
+        -Condition ($exhaustionApplyState.writes -eq 0) `
+        -Message "Apply must perform zero writes when the pre-write snapshot exhausts restarts"
 
     $cursorPages = @{
         "<start>" = New-SelfTestResponse -TotalCount 3 -Nodes @($itemA) -HasNextPage $true -EndCursor "same-cursor"
@@ -2474,7 +2639,7 @@ function Get-LivePriorityExecutionContext {
         param($requestedProjectId, $after)
         Invoke-ProjectItemsPage -ProjectId $requestedProjectId -After $after
     }
-    $snapshot = Get-CompleteProjectSnapshot `
+    $snapshot = Get-CompleteProjectSnapshotWithRestart `
         -ProjectId $ProjectId `
         -PriorityFieldId $priorityField.id `
         -StatusFieldId $statusField.id `
@@ -2595,6 +2760,8 @@ if ($Json) {
         scanned = $items.Count
         pages = $snapshot.pageCount
         projectUpdatedAt = $snapshot.projectUpdatedAt
+        snapshotRestartCount = $snapshot.snapshotRestartCount
+        snapshotRestartDiagnostics = @($snapshot.snapshotRestartDiagnostics)
         limit = $Limit
         ignoredIssueReferenceCount = $ignoredIssueReferences.Count
         ignoredIssueReferences = $ignoredIssueReferences
@@ -2614,6 +2781,10 @@ Write-Host ""
 Write-Host "Project: $($project.title) (#$ProjectNumber)"
 Write-Host "Items scanned: $($items.Count)"
 Write-Host "Completeness: COMPLETE ($($items.Count)/$($snapshot.totalCount) items across $($snapshot.pageCount) pages; project updatedAt $($snapshot.projectUpdatedAt))"
+Write-Host "Snapshot restarts: $($snapshot.snapshotRestartCount)"
+foreach ($restartDiagnostic in @($snapshot.snapshotRestartDiagnostics)) {
+    Write-Host "- Restart $($restartDiagnostic.attempt): $($restartDiagnostic.kind) drift at page $($restartDiagnostic.page)"
+}
 Write-Host "Ignored cross-repository Issue references: $($ignoredIssueReferences.Count)"
 Write-Host "Items needing priority sync: $($updates.Count)"
 if ($Apply) {
