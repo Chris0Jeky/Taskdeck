@@ -1,6 +1,5 @@
 import type {
   Proposal,
-  ProposalRiskLevelValue,
   ProposalSourceTypeValue,
   ProposalStatusValue,
 } from '../types/automation'
@@ -27,13 +26,22 @@ export function normalizeProposalSourceType(value: ProposalSourceTypeValue): typ
   return found ?? 'Manual'
 }
 
-export function normalizeProposalRiskLevel(value: ProposalRiskLevelValue): typeof proposalRiskByIndex[number] {
+/**
+ * Normalize the risk value at the wire boundary.
+ *
+ * Unknown values deliberately display and sort as Critical so malformed data
+ * can never make a proposal appear safer or easier to apply.
+ */
+export function normalizeProposalRiskLevel(value: unknown): typeof proposalRiskByIndex[number] {
   if (typeof value === 'number') {
-    return proposalRiskByIndex[value] ?? 'Low'
+    return Number.isInteger(value) && value >= 0
+      ? proposalRiskByIndex[value] ?? 'Critical'
+      : 'Critical'
   }
+  if (typeof value !== 'string') return 'Critical'
 
   const found = proposalRiskByIndex.find(v => v.toLowerCase() === value.toLowerCase())
-  return found ?? 'Low'
+  return found ?? 'Critical'
 }
 
 const proposalRiskRank: Record<typeof proposalRiskByIndex[number], number> = {
