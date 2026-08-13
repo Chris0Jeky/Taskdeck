@@ -295,14 +295,20 @@ function Assert-CompleteNestedConnection {
         throw "$Context returned an incomplete connection shape."
     }
 
+    $hasNextPage = $Connection.pageInfo.hasNextPage
+    if ($null -eq $hasNextPage -or $hasNextPage.GetType() -ne [bool]) {
+        $actualType = if ($null -eq $hasNextPage) { "null" } else { $hasNextPage.GetType().FullName }
+        throw "$Context returned malformed hasNextPage metadata; expected Boolean, got $actualType."
+    }
+
     $nodes = @($Connection.nodes)
     $totalCount = [int]$Connection.totalCount
     if ($totalCount -lt 0) {
         throw "$Context returned a negative totalCount."
     }
 
-    if ([bool]$Connection.pageInfo.hasNextPage -or $nodes.Count -ne $totalCount) {
-        throw "$Context was truncated: received $($nodes.Count) of $totalCount nodes (hasNextPage=$([bool]$Connection.pageInfo.hasNextPage))."
+    if ($hasNextPage -or $nodes.Count -ne $totalCount) {
+        throw "$Context was truncated: received $($nodes.Count) of $totalCount nodes (hasNextPage=$hasNextPage)."
     }
 }
 
@@ -452,6 +458,12 @@ function Get-CompleteProjectSnapshot {
             throw "ProjectV2 page $pageCount returned an incomplete pagination shape."
         }
 
+        $hasNextPage = $projectNode.items.pageInfo.hasNextPage
+        if ($null -eq $hasNextPage -or $hasNextPage.GetType() -ne [bool]) {
+            $actualType = if ($null -eq $hasNextPage) { "null" } else { $hasNextPage.GetType().FullName }
+            throw "ProjectV2 page $pageCount returned malformed hasNextPage metadata; expected Boolean, got $actualType."
+        }
+
         $pageTotalCount = [int]$projectNode.items.totalCount
         $pageUpdatedAt = [string]$projectNode.updatedAt
         if ($pageTotalCount -lt 0) {
@@ -484,7 +496,6 @@ function Get-CompleteProjectSnapshot {
                 -StatusFieldId $StatusFieldId)) | Out-Null
         }
 
-        $hasNextPage = [bool]$projectNode.items.pageInfo.hasNextPage
         $endCursor = $null
         if ($hasNextPage) {
             $endCursor = [string]$projectNode.items.pageInfo.endCursor
@@ -667,7 +678,7 @@ function Invoke-SelfTest {
             [int]$Number,
             [string[]]$Labels = @("Priority I"),
             [int]$LabelTotalCount = -1,
-            [bool]$LabelsHasNextPage = $false
+            [object]$LabelsHasNextPage = $false
         )
 
         $labelNodes = @($Labels | ForEach-Object { [pscustomobject]@{ name = $_ } })
@@ -717,12 +728,12 @@ function Invoke-SelfTest {
             [string[]]$Labels = @("Priority I"),
             [string]$Body = "",
             [int]$FieldValueTotalCount = 3,
-            [bool]$FieldValuesHasNextPage = $false,
+            [object]$FieldValuesHasNextPage = $false,
             [int]$LabelTotalCount = -1,
-            [bool]$LabelsHasNextPage = $false,
+            [object]$LabelsHasNextPage = $false,
             [object[]]$ClosingIssues = @(),
             [int]$ClosingIssueTotalCount = -1,
-            [bool]$ClosingIssuesHasNextPage = $false
+            [object]$ClosingIssuesHasNextPage = $false
         )
 
         $fieldNodes = @(
@@ -778,7 +789,7 @@ function Invoke-SelfTest {
         param(
             [int]$TotalCount,
             [object[]]$Nodes,
-            [bool]$HasNextPage,
+            [object]$HasNextPage,
             [AllowNull()]
             [string]$EndCursor,
             [string]$UpdatedAt = $stableUpdatedAt
@@ -1028,6 +1039,119 @@ function Invoke-SelfTest {
             $caseDistinctSnapshot.items[0].id -ceq "PVTI_lAHOA47lx84BPH_rzgoqVOw" -and
             $caseDistinctSnapshot.items[1].id -ceq "PVTI_lAHOA47lx84BPH_rzgoqVow") `
         -Message "ProjectV2 node ids must use ordinal case-sensitive identity"
+
+    $outerMalformedCases = @(
+        [pscustomobject]@{ name = "null"; value = $null },
+        [pscustomobject]@{ name = "string"; value = "false" },
+        [pscustomobject]@{ name = "number"; value = 0 },
+        [pscustomobject]@{ name = "object"; value = [pscustomobject]@{} }
+    )
+    foreach ($malformedCase in $outerMalformedCases) {
+        $malformedPages = @{
+            "<start>" = New-SelfTestResponse `
+                -TotalCount 1 `
+                -Nodes @($itemA) `
+                -HasNextPage $malformedCase.value `
+                -EndCursor $null
+        }
+        $checks += Assert-SelfTestThrows `
+            -Action { Get-SelfTestSnapshot -Pages $malformedPages } `
+            -MessagePattern "malformed hasNextPage metadata"
+    }
+
+    $nestedFieldValuesMalformedItem = New-SelfTestItem -Id "nested-field-values-malformed" -FieldValuesHasNextPage "false"
+    $nestedLabelsMalformedItem = New-SelfTestItem -Id "nested-labels-malformed" -LabelsHasNextPage $null
+    $nestedClosingIssueLabelsMalformed = New-SelfTestClosingIssue `
+        -RepositoryName $canonicalRepository `
+        -Number 44 `
+        -LabelsHasNextPage ([pscustomobject]@{})
+    $nestedClosingReferencesMalformedItem = New-SelfTestItem `
+        -Id "nested-closing-references-malformed" `
+        -ContentType "PullRequest" `
+        -ClosingIssues @($nestedClosingIssueLabelsMalformed) `
+        -ClosingIssuesHasNextPage 0
+    $nestedMalformedCases = @(
+        [pscustomobject]@{ name = "fieldValues"; item = $nestedFieldValuesMalformedItem },
+        [pscustomobject]@{ name = "labels"; item = $nestedLabelsMalformedItem },
+        [pscustomobject]@{ name = "closingIssuesReferences"; item = $nestedClosingReferencesMalformedItem }
+    )
+    foreach ($malformedCase in $nestedMalformedCases) {
+        $nestedMalformedPages = @{
+            "<start>" = New-SelfTestResponse `
+                -TotalCount 1 `
+                -Nodes @($malformedCase.item) `
+                -HasNextPage $false `
+                -EndCursor $null
+        }
+        $checks += Assert-SelfTestThrows `
+            -Action { Get-SelfTestSnapshot -Pages $nestedMalformedPages } `
+            -MessagePattern "malformed hasNextPage metadata"
+    }
+
+    $nestedClosingLabelsMalformedItem = New-SelfTestItem `
+        -Id "nested-closing-labels-malformed" `
+        -ContentType "PullRequest" `
+        -ClosingIssues @(
+            (New-SelfTestClosingIssue `
+                -RepositoryName $canonicalRepository `
+                -Number 45 `
+                -LabelsHasNextPage ([pscustomobject]@{}))
+        )
+    $nestedClosingLabelsMalformedPages = @{
+        "<start>" = New-SelfTestResponse `
+            -TotalCount 1 `
+            -Nodes @($nestedClosingLabelsMalformedItem) `
+            -HasNextPage $false `
+            -EndCursor $null
+    }
+    $checks += Assert-SelfTestThrows `
+        -Action { Get-SelfTestSnapshot -Pages $nestedClosingLabelsMalformedPages } `
+        -MessagePattern "malformed hasNextPage metadata"
+
+    $mixedOuterMalformedState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedOuterMalformedProvider = {
+        param($requestedProjectId, $after)
+        $mixedOuterMalformedState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedOuterMalformedState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-malformed")
+        }
+        New-SelfTestResponse `
+            -TotalCount 3 `
+            -Nodes @($itemB) `
+            -HasNextPage "false" `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedOuterMalformedProvider -MaxRestarts 2
+    } -MessagePattern "malformed hasNextPage metadata"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedOuterMalformedState.calls -eq 2 -and $mixedOuterMalformedState.starts -eq 1) `
+        -Message "outer malformed pagination metadata must not retry when the same page also reports drift"
+
+    $mixedNestedMalformedState = [pscustomobject]@{ starts = 0; calls = 0 }
+    $mixedNestedMalformedItem = New-SelfTestItem -Id "mixed-nested-malformed" -FieldValuesHasNextPage "false"
+    $mixedNestedMalformedProvider = {
+        param($requestedProjectId, $after)
+        $mixedNestedMalformedState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $mixedNestedMalformedState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "mixed-nested-malformed")
+        }
+        New-SelfTestResponse `
+            -TotalCount 3 `
+            -Nodes @($mixedNestedMalformedItem) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart -PageProvider $mixedNestedMalformedProvider -MaxRestarts 2
+    } -MessagePattern "malformed hasNextPage metadata"
+    $checks += Assert-SelfTest `
+        -Condition ($mixedNestedMalformedState.calls -eq 2 -and $mixedNestedMalformedState.starts -eq 1) `
+        -Message "nested malformed pagination metadata must not retry when the same page also reports drift"
 
     $prematurePages = @{
         "<start>" = New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $false -EndCursor $null
@@ -1898,6 +2022,55 @@ function Invoke-SelfTest {
             $exhaustionApplyState.writes -eq 0 -and
             $exhaustionApplyState.postAudits -eq 0) `
         -Message "Apply must perform zero writes when its pre-write snapshot exhausts restarts"
+
+    $malformedApplyState = [pscustomobject]@{
+        starts = 0
+        calls = 0
+        currentChecks = 0
+        writes = 0
+        postAudits = 0
+    }
+    $malformedApplyProvider = {
+        param($requestedProjectId, $after)
+        $malformedApplyState.calls++
+        if ([string]::IsNullOrWhiteSpace([string]$after)) {
+            $malformedApplyState.starts++
+            return (New-SelfTestResponse -TotalCount 2 -Nodes @($itemA) -HasNextPage $true -EndCursor "apply-malformed")
+        }
+        New-SelfTestResponse `
+            -TotalCount 3 `
+            -Nodes @($itemB) `
+            -HasNextPage "false" `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:01Z"
+    }
+    $checks += Assert-SelfTestThrows -Action {
+        Invoke-PriorityApplyWithAudit `
+            -InitialState $partialInitialState `
+            -OptionMap $testOptionMap `
+            -CurrentStateProvider {
+                $malformedApplyState.currentChecks++
+                Get-SelfTestSnapshotWithRestart `
+                    -PageProvider $malformedApplyProvider `
+                    -MaxRestarts 2 | Out-Null
+                throw "snapshot unexpectedly completed"
+            } `
+            -ItemWriter {
+                param($update, $optionId)
+                $malformedApplyState.writes++
+            } `
+            -PostAuditProvider {
+                $malformedApplyState.postAudits++
+                throw "post-audit unexpectedly reached"
+            }
+    } -MessagePattern "malformed hasNextPage metadata"
+    $checks += Assert-SelfTest `
+        -Condition ($malformedApplyState.currentChecks -eq 1 -and
+            $malformedApplyState.starts -eq 1 -and
+            $malformedApplyState.calls -eq 2 -and
+            $malformedApplyState.writes -eq 0 -and
+            $malformedApplyState.postAudits -eq 0) `
+        -Message "Apply must perform zero writes and no restart when malformed pagination metadata is mixed with drift"
 
     $partialPostState = [pscustomobject]@{
         guardFingerprint = "post-partial-guard"
