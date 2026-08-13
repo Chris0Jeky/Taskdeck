@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Cli.Tests;
@@ -15,6 +16,15 @@ public sealed class CliProcessLifecycleCollection
 [Collection(CliProcessLifecycleCollection.Name)]
 public sealed class CliTestHarnessTests
 {
+    [Fact]
+    public void DefaultProcessTimeout_LeavesBoundedCompletionBudgetAfterMigrationLockWait()
+    {
+        CliTestHarness.DefaultCommandCompletionBudget.Should().BePositive();
+        CliTestHarness.DefaultProcessTimeout.Should().Be(
+            SerializedMigrator.DefaultLockTimeout + CliTestHarness.DefaultCommandCompletionBudget);
+        CliTestHarness.DefaultProcessTimeout.Should().BeGreaterThan(SerializedMigrator.DefaultLockTimeout);
+    }
+
     [Fact]
     public async Task RunAsync_WhenChildExceedsDeadline_ReapsTheChildBeforeReturning()
     {

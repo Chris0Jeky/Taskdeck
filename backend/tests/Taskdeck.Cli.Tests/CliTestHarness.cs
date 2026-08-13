@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using FluentAssertions;
+using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Cli.Tests;
 
@@ -12,7 +13,12 @@ namespace Taskdeck.Cli.Tests;
 /// </summary>
 internal sealed class CliTestHarness : IAsyncDisposable
 {
-    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+    // SerializedMigrator may legitimately consume its full bounded lock wait before
+    // failing open. The outer process deadline must still leave a bounded window for
+    // migration, command dispatch, and host disposal after that inner timeout.
+    internal static readonly TimeSpan DefaultCommandCompletionBudget = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan DefaultProcessTimeout =
+        SerializedMigrator.DefaultLockTimeout + DefaultCommandCompletionBudget;
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
     // Windows CI has demonstrated that overlapping real CLI roots can leave
@@ -51,7 +57,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         Func<Process, CancellationToken, Task<string>>? readStandardOutputAsync = null,
         TaskCompletionSource<int>? processStartedSignal = null)
     {
-        _processTimeout = processTimeout ?? ProcessTimeout;
+        _processTimeout = processTimeout ?? DefaultProcessTimeout;
         if (_processTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(processTimeout));
