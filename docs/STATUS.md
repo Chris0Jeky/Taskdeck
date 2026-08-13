@@ -1,6 +1,12 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-13
+
+Reliability and Paper review delivery (2026-08-13, merged PRs `#1655`, `#1667`, `#1668`, `#1663`, `#1669`, `#1648`, `#1659`, and `#1649`):
+- **ProjectV2 priority synchronization now fails closed on unstable or malformed snapshots without hiding nontransactional Apply outcomes.** Bounded whole-snapshot restarts are limited to recognized count/stamp drift (`#1655`, merge `a76cca06`); malformed outer or nested pagination booleans are non-retryable (`#1667`, merge `226786ce`); and intrinsic overflow/premature-count faults outrank drift and cannot restart or write (`#1668`, merge `bbe578bd`). The authentication-free suite is 102/102. Pre-write restart exhaustion proves zero writes; post-Apply audit exhaustion may follow writes and therefore reports final state unknown.
+- **The Windows CLI test runway is both bounded and materially faster.** Every real-process contract uses the shared launcher, whose 60-second outer deadline is derived from the 30-second migrator lock bound plus a 30-second command-completion budget. Default harnesses copy isolated bytes from one fully migrated, disposed SQLite template, while an explicit cold-start test still runs the complete migration path (`#1663`, merge `c51b3170`; `#1669`, merge `a4c2ac80`). The exact-head hosted Windows lane passed 127/127 in 2m28s after the prior recurrence failed after 7m33s.
+- **Paper Review ordering and filter fallback now preserve review-first attention.** Risk ordering is stable and malformed, null, or unknown risk values fail safe to Critical (`#1648`, merge `61f7cd53`). When a queue filter removes the current proposal, the view selects the first non-expired actionable proposal in risk order before any read-only fallback, while preserving an explicit/hash selection that remains visible (`#1659`, merge `412bdff3`).
+- **The data-model reference now states the current MFA-at-rest boundary.** `MfaCredential.Secret` is stored as plaintext SQLite `TEXT`; production MFA remains blocked on the encryption, key-management, migration, rotation, and fail-closed work tracked by `#1653` (`#1649`, merge `a565f3cd`). This is a truth correction, not an encryption claim, and the maintainer-owned `#1470` record checkbox remains open.
 
 Licensing decision (2026-08-12, maintainer-decided, **ADR-0050**):
 - **The current Taskdeck open-source core is GPL-3.0-only.** The full GPLv3 text is now the root `LICENSE`; package and API metadata, contributor guidance, public documentation, desktop release archives, and runtime container images are aligned. Earlier versions and copies received under MIT keep those grants, with the former notice retained in `LICENSES/MIT.txt`; the current project is not offered under MIT as an alternative. `LICENSING.md` records the free-core and separately licensed `ee/` boundaries. ADR-0050 explicitly supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
@@ -1218,7 +1224,7 @@ Result:
 - Domain: 962/962 passing
 - Application: 2396/2396 passing
 - API integration: 1592/1594 passing (2 skipped)
-- CLI contract: 82/82 passing
+- CLI contract: 82/82 passing at this historical snapshot (current exact project count: 127; see `docs/TESTING_GUIDE.md`)
 - Architecture boundaries: 8/8 passing
 - Integration (Testcontainers): 20/20 passing
 - Backend Total: 5060/5062 passing (2 skipped)

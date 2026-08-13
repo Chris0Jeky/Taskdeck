@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-13
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,13 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-08-13, project/CLI reliability and Paper review)
+
+- **ProjectV2 synchronization hardened in PRs `#1655`, `#1667`, and `#1668`.** The helper performs bounded whole-snapshot restart only for recognized count/stamp drift, rejects malformed pagination booleans, makes intrinsic overflow/premature-count faults non-retryable and pre-write, and distinguishes zero-write preflight exhaustion from an unknown post-Apply state. Its authentication-free suite is 102/102.
+- **The Windows CLI runway shipped through PRs `#1663` and `#1669`.** All real-process contracts share one serialized launcher; the outer deadline is derived from the migrator lock bound plus a separate command budget; default tests copy isolated fully migrated SQLite template bytes; and an explicit cold-start path still proves real migration. Exact-head hosted Windows evidence passed 127/127 in 2m28s.
+- **Paper Review shipped stable risk ordering and actionable filter fallback in PRs `#1648` and `#1659`.** Malformed/null/unknown risk fails safe to Critical, equal-risk order is stable, visible explicit/hash selection is retained, and a filtered-out selection falls to the first non-expired actionable proposal before a read-only proposal. The later stale-source edge is independently tracked by `#1671` and is not claimed here.
+- **PR `#1649` records the live MFA storage boundary:** `MfaCredential.Secret` remains plaintext SQLite `TEXT`. Encryption/key-management/migration/rotation is a production prerequisite tracked by `#1653`; no encryption behavior shipped in this documentation correction.
 
 ## Licensing update (2026-08-12, ADR-0050)
 

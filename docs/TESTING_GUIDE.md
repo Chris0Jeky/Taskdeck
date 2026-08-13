@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-13
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -16,7 +16,7 @@ Companion Active Docs:
   - Domain: 1,626 passed
   - Application: 3,185 passed
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
-  - CLI contract (**newer than this dated aggregate**): 112 passed / 0 skipped / 0 failed on Windows at `#1533`; hosted exact-head Windows recertification remains required
+  - CLI contract (**newer than this dated aggregate**): 127 passed / 0 skipped / 0 failed at `#1530` / PR `#1669`; the exact-head hosted Windows lane recertified 127/127 in 2m28s
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
   - Integration project (**newer than this dated aggregate**): 35 tests at `#1520` — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute and pass the hosted TRX identity contract.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
