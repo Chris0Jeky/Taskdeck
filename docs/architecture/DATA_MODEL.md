@@ -34,6 +34,13 @@ This document describes entities in the Taskdeck data model, their fields, const
 > columns, widths, indexes, delete behavior). Where the two differ -- the domain often validates
 > tighter than the column allows -- both numbers are given.
 >
+> **EF model metadata vs. runtime validation:** A declared width (`HasMaxLength`) or `JSON`
+> constraint is EF model/schema metadata. SQLite stores these mapped string properties as `TEXT`
+> and does not itself enforce declared widths or JSON syntax. That database behavior does not imply
+> that runtime validation is absent: domain or service code may validate a field even when this
+> document does not cite it. Check the relevant entity, domain, or service implementation before
+> treating a documented constraint as unenforced at runtime.
+>
 > The glob is `Domain/**` on purpose, not `Domain/Entities/*.cs`: 50 of the 51 mapped entities live
 > under `Domain/Entities/`, but `McpToolHash` is defined at
 > `backend/src/Taskdeck.Domain/Agents/McpToolHash.cs`, so an `Entities/`-only sweep silently skips
@@ -667,6 +674,10 @@ Links a user to an external OAuth provider (e.g., GitHub).
 ### MfaCredential
 
 TOTP-based multi-factor authentication credential (one per user).
+
+**Security note:** `Secret` is currently stored plaintext at rest. Encryption is required before
+MFA is used in production; the current entity and EF configuration do not define an encryption
+converter.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|

@@ -3,7 +3,16 @@ import {
   normalizeProposalStatus,
   normalizeProposalSourceType,
   normalizeProposalRiskLevel,
+  sortProposalsByRisk,
 } from '../../utils/automation'
+
+function makeProposal(id: string, riskLevel: string, createdAt: string) {
+  return {
+    id,
+    riskLevel,
+    createdAt,
+  } as any
+}
 
 describe('normalizeProposalStatus', () => {
   it('maps numeric index to status string', () => {
@@ -58,8 +67,8 @@ describe('normalizeProposalRiskLevel', () => {
     expect(normalizeProposalRiskLevel(3)).toBe('Critical')
   })
 
-  it('falls back to Low for out-of-range index', () => {
-    expect(normalizeProposalRiskLevel(99)).toBe('Low')
+  it('falls back to Critical for out-of-range index', () => {
+    expect(normalizeProposalRiskLevel(99)).toBe('Critical')
   })
 
   it('normalizes case-insensitive string risk', () => {
@@ -67,7 +76,43 @@ describe('normalizeProposalRiskLevel', () => {
     expect(normalizeProposalRiskLevel('HIGH' as any)).toBe('High')
   })
 
-  it('falls back to Low for unknown string', () => {
-    expect(normalizeProposalRiskLevel('unknown' as any)).toBe('Low')
+  it('falls back to Critical for malformed wire values', () => {
+    for (const value of [null, undefined, {}, 'unknown', -1, 1.5, 4, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(normalizeProposalRiskLevel(value)).toBe('Critical')
+    }
+  })
+})
+
+describe('sortProposalsByRisk', () => {
+  it('orders all risk levels without mutating the source array', () => {
+    const proposals = [
+      makeProposal('critical', 'Critical', '2026-08-12T12:00:00Z'),
+      makeProposal('low', 'Low', '2026-08-12T08:00:00Z'),
+      makeProposal('high', 'High', '2026-08-12T10:00:00Z'),
+      makeProposal('medium', 'Medium', '2026-08-12T09:00:00Z'),
+    ]
+    const originalOrder = proposals.map((proposal) => proposal.id)
+
+    expect(sortProposalsByRisk(proposals).map((proposal) => proposal.id)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'critical',
+    ])
+    expect(proposals.map((proposal) => proposal.id)).toEqual(originalOrder)
+  })
+
+  it('preserves source order for deterministic same-risk ties', () => {
+    const proposals = [
+      makeProposal('same-b', 'Medium', '2026-08-12T09:00:00Z'),
+      makeProposal('newest', 'Medium', '2026-08-12T10:00:00Z'),
+      makeProposal('same-a', 'Medium', '2026-08-12T09:00:00Z'),
+    ]
+
+    expect(sortProposalsByRisk(proposals).map((proposal) => proposal.id)).toEqual([
+      'same-b',
+      'newest',
+      'same-a',
+    ])
   })
 })

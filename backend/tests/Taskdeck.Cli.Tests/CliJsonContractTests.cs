@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using Xunit;
@@ -10,7 +9,7 @@ public class CliJsonContractTests
     [Fact]
     public async Task BoardsList_WithJson_ShouldReturnJsonArray()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-json-contract");
 
         var result = await harness.RunAsync("boards list --json");
 
@@ -22,7 +21,7 @@ public class CliJsonContractTests
     [Fact]
     public async Task BoardsCreate_WithJson_ShouldBeDiscoverableInBoardsListJson()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-json-contract");
 
         var createResult = await harness.RunAsync("boards create ContractBoard --json");
         createResult.ExitCode.Should().Be(0, createResult.StdErr);
@@ -41,7 +40,7 @@ public class CliJsonContractTests
     [Fact]
     public async Task CardsList_WithJson_ShouldReturnCreatedCard()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-json-contract");
 
         var createBoardResult = await harness.RunAsync("boards create JsonCardsBoard --json");
         createBoardResult.ExitCode.Should().Be(0, createBoardResult.StdErr);
@@ -70,7 +69,7 @@ public class CliJsonContractTests
     [Fact]
     public async Task BoardsUpdate_MissingBoardArgument_ShouldReturnUsageExitCode()
     {
-        await using var harness = new CliHarness();
+        await using var harness = new CliTestHarness("cli-json-contract");
 
         var result = await harness.RunAsync("boards update --name Updated --json");
 
@@ -78,100 +77,4 @@ public class CliJsonContractTests
         result.StdErr.Should().Contain("Invalid or missing --board");
     }
 
-    private sealed class CliHarness : IAsyncDisposable
-    {
-        private readonly string _repoRoot;
-        private readonly string _databasePath;
-        private readonly string _connectionString;
-
-        public CliHarness()
-        {
-            _repoRoot = FindRepoRoot();
-            _databasePath = Path.Combine(Path.GetTempPath(), $"taskdeck-cli-tests-{Guid.NewGuid():N}.db");
-            _connectionString = $"Data Source={_databasePath}";
-        }
-
-        public async Task<CliCommandResult> RunAsync(string arguments)
-        {
-            var cliDllPath = ResolveCliDllPath(_repoRoot);
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"\"{cliDllPath}\" {arguments}",
-                WorkingDirectory = _repoRoot,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
-            };
-
-            startInfo.Environment["TASKDECK_CONNECTION_STRING"] = _connectionString;
-            startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-            // Test-only 256-bit encryption key for connector credentials.
-            startInfo.Environment["Connectors__EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-
-            using var process = new Process { StartInfo = startInfo };
-            process.Start();
-
-            var stdOut = await process.StandardOutput.ReadToEndAsync();
-            var stdErr = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            return new CliCommandResult(process.ExitCode, stdOut.Trim(), stdErr.Trim());
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            try
-            {
-                if (File.Exists(_databasePath))
-                {
-                    File.Delete(_databasePath);
-                }
-            }
-            catch (IOException)
-            {
-                // No-op for teardown cleanup issues.
-            }
-
-            return ValueTask.CompletedTask;
-        }
-
-        private static string FindRepoRoot()
-        {
-            var current = new DirectoryInfo(AppContext.BaseDirectory);
-
-            while (current != null)
-            {
-                var solutionPath = Path.Combine(current.FullName, "backend", "Taskdeck.sln");
-                if (File.Exists(solutionPath))
-                {
-                    return current.FullName;
-                }
-
-                current = current.Parent;
-            }
-
-            throw new InvalidOperationException("Could not locate repository root from test execution directory.");
-        }
-
-        private static string ResolveCliDllPath(string repoRoot)
-        {
-            var cliProjectBin = Path.Combine(repoRoot, "backend", "src", "Taskdeck.Cli", "bin");
-            var debugPath = Path.Combine(cliProjectBin, "Debug", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(debugPath))
-            {
-                return debugPath;
-            }
-
-            var releasePath = Path.Combine(cliProjectBin, "Release", "net8.0", "Taskdeck.Cli.dll");
-            if (File.Exists(releasePath))
-            {
-                return releasePath;
-            }
-
-            throw new FileNotFoundException("Taskdeck.Cli.dll was not found in Debug or Release output directories.");
-        }
-    }
-
-    private sealed record CliCommandResult(int ExitCode, string StdOut, string StdErr);
 }

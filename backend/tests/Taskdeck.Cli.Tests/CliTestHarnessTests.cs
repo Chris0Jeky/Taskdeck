@@ -1,6 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Cli.Tests;
@@ -14,6 +18,70 @@ public sealed class CliProcessLifecycleCollection
 [Collection(CliProcessLifecycleCollection.Name)]
 public sealed class CliTestHarnessTests
 {
+    [Fact]
+    public void DefaultProcessTimeout_LeavesBoundedCompletionBudgetAfterMigrationLockWait()
+    {
+        CliTestHarness.DefaultCommandCompletionBudget.Should().BePositive();
+        CliTestHarness.DefaultProcessTimeout.Should().Be(
+            SerializedMigrator.DefaultLockTimeout + CliTestHarness.DefaultCommandCompletionBudget);
+        CliTestHarness.DefaultProcessTimeout.Should().BeGreaterThan(SerializedMigrator.DefaultLockTimeout);
+    }
+
+    [Fact]
+    public async Task Constructor_DefaultDatabaseIsFullyMigratedAndEmpty()
+    {
+        await using var harness = new CliTestHarness("cli-template-state");
+
+        File.Exists(harness.DatabasePath).Should().BeTrue();
+        CliTestHarness.LastDatabaseTemplateDirectory.Should().NotBeNull();
+        Directory.Exists(CliTestHarness.LastDatabaseTemplateDirectory!).Should().BeFalse(
+            "the disposed process-owned template must not leave a persistent directory");
+        using var context = CreateDatabaseContext(harness.DatabasePath);
+        var migrations = context.Database.GetMigrations().ToArray();
+
+        migrations.Should().NotBeEmpty();
+        context.Database.GetAppliedMigrations().Should().Equal(migrations);
+        context.Database.GetPendingMigrations().Should().BeEmpty();
+        context.Boards.Should().BeEmpty();
+        context.Users.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Constructor_ConcurrentDefaultDatabasesShareOneTemplateButNotState()
+    {
+        var harnesses = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            Task.Run(() => new CliTestHarness($"cli-template-concurrent-{index}"))));
+
+        try
+        {
+            CliTestHarness.DatabaseTemplateBuildCount.Should().Be(1);
+            harnesses.Select(harness => harness.DatabasePath).Should().OnlyHaveUniqueItems();
+            harnesses.Should().OnlyContain(harness => File.Exists(harness.DatabasePath));
+
+            await using (var firstConnection = CreateSqliteConnection(harnesses[0].DatabasePath))
+            {
+                await firstConnection.OpenAsync();
+                await using var createProbe = firstConnection.CreateCommand();
+                createProbe.CommandText = "CREATE TABLE HarnessIsolationProbe (Value INTEGER NOT NULL);";
+                await createProbe.ExecuteNonQueryAsync();
+            }
+
+            await using var secondConnection = CreateSqliteConnection(harnesses[1].DatabasePath);
+            await secondConnection.OpenAsync();
+            await using var findProbe = secondConnection.CreateCommand();
+            findProbe.CommandText =
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'HarnessIsolationProbe';";
+            Convert.ToInt64(await findProbe.ExecuteScalarAsync()).Should().Be(0);
+        }
+        finally
+        {
+            foreach (var harness in harnesses)
+            {
+                await harness.DisposeAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task RunAsync_WhenChildExceedsDeadline_ReapsTheChildBeforeReturning()
     {
@@ -37,8 +105,68 @@ public sealed class CliTestHarnessTests
             .And.NotContain(sentinel)
             .And.Contain("pre=process=live")
             .And.Contain("post=process=exited")
-            .And.Contain("last=migration-begin")
             .And.Contain("cleanup=reaped");
+
+        // The deliberately short deadline may interrupt any startup phase on a
+        // loaded Windows host. Exact trace ordering is covered separately; this
+        // regression owns redaction plus the terminate-and-reap guarantee.
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCanceledAfterMigrationBegins_ReapsTheChildBeforeReturning()
+    {
+        const string sentinel = "TOP_SECRET_SENTINEL";
+        using var processCancellation = new CancellationTokenSource();
+        await using var harness = new CliTestHarness(
+            "cli-migration-cancellation",
+            processCancellationToken: processCancellation.Token);
+        await using var migrationLock = new FileStream(
+            $"{harness.DatabasePath}.migrate.lock",
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None);
+
+        Task<CliCommandResult>? runTask = null;
+        try
+        {
+            runTask = harness.RunAsync($"boards create {sentinel} --json");
+            await WaitForStartupPhaseAsync(
+                harness.DataDirectory,
+                CliStartupTrace.MigrationBeginPhase,
+                TimeSpan.FromSeconds(10));
+
+            harness.LastStartedProcessId.Should().HaveValue();
+            ProcessHasExited(harness.LastStartedProcessId!.Value).Should().BeFalse();
+            processCancellation.Cancel();
+
+            Func<Task> action = async () => await runTask;
+            var timeout = await action.Should().ThrowAsync<TimeoutException>();
+
+            ProcessHasExited(harness.LastStartedProcessId.Value).Should().BeTrue();
+            timeout.Which.Message.Should().Contain("command=boards/create")
+                .And.NotContain(sentinel)
+                .And.Contain("pre=process=live")
+                .And.Contain("post=process=exited")
+                .And.Contain("last=migration-begin")
+                .And.Contain("cleanup=reaped");
+        }
+        finally
+        {
+            processCancellation.Cancel();
+            if (runTask is not null)
+            {
+                try
+                {
+                    await runTask;
+                }
+                catch (Exception)
+                {
+                    // The assertions above own the expected failure. If phase
+                    // readiness fails first, still observe the canceled run so
+                    // no child or task escapes the test.
+                }
+            }
+        }
     }
 
     [Theory]
@@ -54,19 +182,54 @@ public sealed class CliTestHarnessTests
     }
 
     [Fact]
+    public void CliTestProject_ProcessLaunchesStayBehindSharedHarness()
+    {
+        var sourceDirectory = GetSourceDirectory();
+        var directLaunchTokens = new[]
+        {
+            $"new {nameof(ProcessStartInfo)}",
+            $"new {nameof(Process)} {{",
+            $"{nameof(Process)}.Start("
+        };
+
+        var directLaunchFiles = Directory
+            .EnumerateFiles(sourceDirectory, "*.cs", SearchOption.TopDirectoryOnly)
+            .Where(path => directLaunchTokens.Any(token =>
+                File.ReadAllText(path).Contains(token, StringComparison.Ordinal)))
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        directLaunchFiles.Should().Equal(["CliTestHarness.cs"],
+            "every real CLI root must share the bounded launch, timeout, and reap policy");
+    }
+
+    [Fact]
     public async Task RunAsync_WhenCommandCompletes_RecordsFullStartupLifecycle()
     {
-        await using var harness = new CliTestHarness("cli-startup-trace");
+        await using var harness = new CliTestHarness(
+            "cli-startup-trace",
+            preprovisionDatabase: false);
+
+        File.Exists(harness.DatabasePath).Should().BeFalse();
 
         var result = await harness.RunAsync("help");
 
         result.ExitCode.Should().Be(0);
+        File.Exists(harness.DatabasePath).Should().BeTrue();
         var snapshot = harness.LastStartupTraceSnapshot;
         snapshot.Should().NotBeNull();
         snapshot!.State.Should().Be("available");
         snapshot.RecordCount.Should().Be(8);
         snapshot.MalformedRecordCount.Should().Be(0);
         snapshot.LastPhase.Should().Be(CliStartupTrace.DisposalEndPhase);
+
+        using var context = CreateDatabaseContext(harness.DatabasePath);
+        var migrations = context.Database.GetMigrations().ToArray();
+        migrations.Should().NotBeEmpty();
+        context.Database.GetAppliedMigrations().Should().Equal(migrations);
+        context.Database.GetPendingMigrations().Should().BeEmpty();
+        context.Boards.Should().BeEmpty();
     }
 
     [Fact]
@@ -558,6 +721,62 @@ public sealed class CliTestHarnessTests
         catch (Exception exception)
         {
             return exception;
+        }
+    }
+
+    private static string GetSourceDirectory([CallerFilePath] string sourceFilePath = "") =>
+        Path.GetDirectoryName(sourceFilePath)
+        ?? throw new InvalidOperationException("Could not resolve the CLI test source directory.");
+
+    private static TaskdeckDbContext CreateDatabaseContext(string databasePath)
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite(CreateSqliteConnectionString(databasePath))
+            .Options;
+        return new TaskdeckDbContext(options);
+    }
+
+    private static SqliteConnection CreateSqliteConnection(string databasePath) =>
+        new(CreateSqliteConnectionString(databasePath));
+
+    private static string CreateSqliteConnectionString(string databasePath) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Pooling = false
+        }.ToString();
+
+    private static async Task WaitForStartupPhaseAsync(
+        string dataDirectory,
+        string expectedPhase,
+        TimeSpan timeout)
+    {
+        using var timeoutCancellation = new CancellationTokenSource(timeout);
+        try
+        {
+            while (true)
+            {
+                foreach (var tracePath in Directory.EnumerateFiles(
+                    dataDirectory,
+                    "startup-*.trace",
+                    SearchOption.TopDirectoryOnly))
+                {
+                    var fileName = Path.GetFileNameWithoutExtension(tracePath);
+                    var correlationId = fileName["startup-".Length..];
+                    var snapshot = CliStartupTrace.ReadSnapshot(tracePath, correlationId);
+                    if (string.Equals(snapshot.LastPhase, expectedPhase, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(10), timeoutCancellation.Token);
+            }
+        }
+        catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"CLI startup trace did not reach the expected phase within {timeout.TotalSeconds}s.");
         }
     }
 
