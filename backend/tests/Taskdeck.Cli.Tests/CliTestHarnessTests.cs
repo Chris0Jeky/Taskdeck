@@ -2,6 +2,9 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Cli.Tests;
@@ -15,6 +18,70 @@ public sealed class CliProcessLifecycleCollection
 [Collection(CliProcessLifecycleCollection.Name)]
 public sealed class CliTestHarnessTests
 {
+    [Fact]
+    public void DefaultProcessTimeout_LeavesBoundedCompletionBudgetAfterMigrationLockWait()
+    {
+        CliTestHarness.DefaultCommandCompletionBudget.Should().BePositive();
+        CliTestHarness.DefaultProcessTimeout.Should().Be(
+            SerializedMigrator.DefaultLockTimeout + CliTestHarness.DefaultCommandCompletionBudget);
+        CliTestHarness.DefaultProcessTimeout.Should().BeGreaterThan(SerializedMigrator.DefaultLockTimeout);
+    }
+
+    [Fact]
+    public async Task Constructor_DefaultDatabaseIsFullyMigratedAndEmpty()
+    {
+        await using var harness = new CliTestHarness("cli-template-state");
+
+        File.Exists(harness.DatabasePath).Should().BeTrue();
+        CliTestHarness.LastDatabaseTemplateDirectory.Should().NotBeNull();
+        Directory.Exists(CliTestHarness.LastDatabaseTemplateDirectory!).Should().BeFalse(
+            "the disposed process-owned template must not leave a persistent directory");
+        using var context = CreateDatabaseContext(harness.DatabasePath);
+        var migrations = context.Database.GetMigrations().ToArray();
+
+        migrations.Should().NotBeEmpty();
+        context.Database.GetAppliedMigrations().Should().Equal(migrations);
+        context.Database.GetPendingMigrations().Should().BeEmpty();
+        context.Boards.Should().BeEmpty();
+        context.Users.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Constructor_ConcurrentDefaultDatabasesShareOneTemplateButNotState()
+    {
+        var harnesses = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            Task.Run(() => new CliTestHarness($"cli-template-concurrent-{index}"))));
+
+        try
+        {
+            CliTestHarness.DatabaseTemplateBuildCount.Should().Be(1);
+            harnesses.Select(harness => harness.DatabasePath).Should().OnlyHaveUniqueItems();
+            harnesses.Should().OnlyContain(harness => File.Exists(harness.DatabasePath));
+
+            await using (var firstConnection = CreateSqliteConnection(harnesses[0].DatabasePath))
+            {
+                await firstConnection.OpenAsync();
+                await using var createProbe = firstConnection.CreateCommand();
+                createProbe.CommandText = "CREATE TABLE HarnessIsolationProbe (Value INTEGER NOT NULL);";
+                await createProbe.ExecuteNonQueryAsync();
+            }
+
+            await using var secondConnection = CreateSqliteConnection(harnesses[1].DatabasePath);
+            await secondConnection.OpenAsync();
+            await using var findProbe = secondConnection.CreateCommand();
+            findProbe.CommandText =
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'HarnessIsolationProbe';";
+            Convert.ToInt64(await findProbe.ExecuteScalarAsync()).Should().Be(0);
+        }
+        finally
+        {
+            foreach (var harness in harnesses)
+            {
+                await harness.DisposeAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task RunAsync_WhenChildExceedsDeadline_ReapsTheChildBeforeReturning()
     {
@@ -140,17 +207,29 @@ public sealed class CliTestHarnessTests
     [Fact]
     public async Task RunAsync_WhenCommandCompletes_RecordsFullStartupLifecycle()
     {
-        await using var harness = new CliTestHarness("cli-startup-trace");
+        await using var harness = new CliTestHarness(
+            "cli-startup-trace",
+            preprovisionDatabase: false);
+
+        File.Exists(harness.DatabasePath).Should().BeFalse();
 
         var result = await harness.RunAsync("help");
 
         result.ExitCode.Should().Be(0);
+        File.Exists(harness.DatabasePath).Should().BeTrue();
         var snapshot = harness.LastStartupTraceSnapshot;
         snapshot.Should().NotBeNull();
         snapshot!.State.Should().Be("available");
         snapshot.RecordCount.Should().Be(8);
         snapshot.MalformedRecordCount.Should().Be(0);
         snapshot.LastPhase.Should().Be(CliStartupTrace.DisposalEndPhase);
+
+        using var context = CreateDatabaseContext(harness.DatabasePath);
+        var migrations = context.Database.GetMigrations().ToArray();
+        migrations.Should().NotBeEmpty();
+        context.Database.GetAppliedMigrations().Should().Equal(migrations);
+        context.Database.GetPendingMigrations().Should().BeEmpty();
+        context.Boards.Should().BeEmpty();
     }
 
     [Fact]
@@ -648,6 +727,24 @@ public sealed class CliTestHarnessTests
     private static string GetSourceDirectory([CallerFilePath] string sourceFilePath = "") =>
         Path.GetDirectoryName(sourceFilePath)
         ?? throw new InvalidOperationException("Could not resolve the CLI test source directory.");
+
+    private static TaskdeckDbContext CreateDatabaseContext(string databasePath)
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite(CreateSqliteConnectionString(databasePath))
+            .Options;
+        return new TaskdeckDbContext(options);
+    }
+
+    private static SqliteConnection CreateSqliteConnection(string databasePath) =>
+        new(CreateSqliteConnectionString(databasePath));
+
+    private static string CreateSqliteConnectionString(string databasePath) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Pooling = false
+        }.ToString();
 
     private static async Task WaitForStartupPhaseAsync(
         string dataDirectory,
