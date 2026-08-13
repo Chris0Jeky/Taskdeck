@@ -441,14 +441,49 @@ public class WriteTools
         if (!Guid.TryParse(board_id, out var boardGuid))
             return Error("Invalid board_id format");
 
+        var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWrite.IsSuccess)
+            return Error(canWrite.ErrorMessage);
+        if (!canWrite.Value)
+            return Error("Not authorized to create columns on this board");
+
+        var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(boardGuid)).ToList();
+        var appendPositionResult = ProposalOperationContractValidator.ResolveAppendPosition(columns);
+        if (!appendPositionResult.IsSuccess)
+            return Error(appendPositionResult.ErrorMessage);
+
         var parameters = new Dictionary<string, object?>
         {
             ["boardId"] = boardGuid,
-            ["name"] = name
+            ["name"] = name,
+            ["position"] = appendPositionResult.Value
         };
 
         if (wip_limit.HasValue)
             parameters["wipLimit"] = wip_limit.Value;
+
+        var createOperation = new CreateProposalOperationDto(
+            Sequence: 0,
+            ActionType: "create",
+            TargetType: "column",
+            Parameters: JsonSerializer.Serialize(parameters, BoardResources.SerializerOptions),
+            IdempotencyKey: Guid.NewGuid().ToString());
+        var operation = new ProposalOperationDto(
+            Guid.Empty,
+            Guid.Empty,
+            createOperation.Sequence,
+            createOperation.ActionType,
+            createOperation.TargetType,
+            createOperation.TargetId,
+            createOperation.Parameters,
+            createOperation.IdempotencyKey,
+            createOperation.ExpectedVersion);
+        var contractValidation = await ProposalOperationContractValidator.ValidateAsync(
+            _unitOfWork,
+            boardGuid,
+            new[] { operation });
+        if (!contractValidation.IsSuccess)
+            return Error(contractValidation.ErrorMessage);
 
         var dto = new CreateProposalDto(
             SourceType: ProposalSourceType.Manual,
@@ -459,12 +494,7 @@ public class WriteTools
             BoardId: boardGuid,
             Operations: new List<CreateProposalOperationDto>
             {
-                new(
-                    Sequence: 0,
-                    ActionType: "create",
-                    TargetType: "column",
-                    Parameters: JsonSerializer.Serialize(parameters, BoardResources.SerializerOptions),
-                    IdempotencyKey: Guid.NewGuid().ToString())
+                createOperation
             });
 
         var result = await _proposalService.CreateProposalAsync(dto);
