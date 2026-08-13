@@ -1044,7 +1044,7 @@ function selectProposal(id: string) {
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
-  const selectedId = explicitActiveId.value ?? hashProposalId.value
+  const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
   queueFilter.value = filter
   if (selectedId && filteredVisibleProposals.value.some((proposal) => proposal.id === selectedId)) {
     explicitActiveId.value = selectedId

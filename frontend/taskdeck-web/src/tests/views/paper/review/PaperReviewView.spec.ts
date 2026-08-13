@@ -316,6 +316,74 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Expired mine')
   })
 
+  it('preserves the displayed fallback after removal when a later filter still contains it', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'removed-expired',
+          requestedByUserId: 'u-1',
+          status: 'Expired',
+          riskLevel: 'Medium',
+          summary: 'Removed expired',
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+        makeProposal({
+          id: 'displayed-fallback',
+          requestedByUserId: 'u-1',
+          riskLevel: 'High',
+          summary: 'Displayed fallback',
+          createdAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+        }),
+        makeProposal({
+          id: 'stale-preferred',
+          requestedByUserId: 'u-2',
+          riskLevel: 'Low',
+          summary: 'Stale preferred',
+          createdAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+        }),
+      ],
+      '/workspace/review#proposal-removed-expired',
+    )
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Mine')?.trigger('click')
+    await wrapper.find('[data-testid="decision-file-away"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Displayed fallback')
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Stale')?.trigger('click')
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Displayed fallback')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Stale preferred')
+  })
+
+  it('preserves a manually displayed proposal when the next filter still contains it', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'low-proposal',
+        requestedByUserId: 'u-2',
+        riskLevel: 'Low',
+        summary: 'Low proposal',
+        createdAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+      }),
+      makeProposal({
+        id: 'selected-proposal',
+        requestedByUserId: 'u-1',
+        riskLevel: 'High',
+        summary: 'Selected proposal',
+        createdAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString(),
+      }),
+    ])
+
+    await wrapper.findAll('.paper-review-q')[1].trigger('click')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Selected proposal')
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Stale')?.trigger('click')
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Selected proposal')
+  })
+
   it('falls back to the first read-only proposal when a filter has no actionable items', async () => {
     const wrapper = await mountView(
       [
