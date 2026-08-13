@@ -88,6 +88,9 @@ function setFilter(next: QueueFilter) {
           @click="setFilter(key)"
         >{{ key === 'all' ? 'All' : key === 'mine' ? 'Mine' : 'Stale' }}</button>
       </div>
+      <p class="paper-review-rail__risk-note tk-meta" role="note" data-testid="paper-review-risk-order-note">
+        Risk order: Low, Medium, High, Critical. Sorting only changes presentation; review actions remain manual.
+      </p>
       <button
         v-if="dismissableCount >= 1"
         type="button"
@@ -159,6 +162,10 @@ function setFilter(next: QueueFilter) {
   background: var(--paper-card);
   color: var(--ink);
   border-color: var(--line);
+}
+.paper-review-rail__risk-note {
+  margin: 10px 0 0;
+  line-height: 1.45;
 }
 .paper-review-rail__file-away {
   margin-top: 10px;
