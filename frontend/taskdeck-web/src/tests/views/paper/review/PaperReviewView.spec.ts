@@ -203,6 +203,85 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
   })
 
+  it('orders Paper queue rows by risk while preserving hash selection and manual actions', async () => {
+    const proposals = [
+      makeProposal({ id: 'critical', riskLevel: 'Critical', summary: 'Critical proposal' }),
+      makeProposal({ id: 'low', riskLevel: 'Low', summary: 'Low proposal' }),
+      makeProposal({ id: 'high', riskLevel: 'High', summary: 'High proposal' }),
+      makeProposal({ id: 'medium', riskLevel: 'Medium', summary: 'Medium proposal' }),
+    ]
+    const originalOrder = proposals.map((proposal) => proposal.id)
+    const wrapper = await mountView(proposals, '/workspace/review#proposal-critical')
+
+    expect(
+      wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text()),
+    ).toEqual(['Low proposal', 'Medium proposal', 'High proposal', 'Critical proposal'])
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Critical proposal')
+    expect(wrapper.find('[data-testid="paper-review-risk-order-note"]').text()).toContain(
+      'Risk order: Low, Medium, High, Critical',
+    )
+    expect(proposals.map((proposal) => proposal.id)).toEqual(originalOrder)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('renders a malformed-risk proposal and keeps it last in the Paper queue', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'malformed', riskLevel: null as any, summary: 'Malformed proposal' }),
+        makeProposal({ id: 'low', riskLevel: 'Low', summary: 'Low proposal' }),
+      ],
+      '/workspace/review#proposal-malformed',
+    )
+
+    expect(
+      wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text()),
+    ).toEqual(['Low proposal', 'Malformed proposal'])
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Malformed proposal')
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('applies risk ordering after Mine and Stale filters', async () => {
+    const staleAt = new Date(Date.now() - 25 * 60 * 60_000).toISOString()
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'mine-high',
+        requestedByUserId: 'u-1',
+        riskLevel: 'High',
+        summary: 'Mine high',
+        createdAt: staleAt,
+      }),
+      makeProposal({
+        id: 'mine-low',
+        requestedByUserId: 'u-1',
+        riskLevel: 'Low',
+        summary: 'Mine low',
+      }),
+      makeProposal({
+        id: 'theirs-medium',
+        requestedByUserId: 'u-2',
+        riskLevel: 'Medium',
+        summary: 'Theirs medium',
+        createdAt: staleAt,
+      }),
+    ])
+
+    const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+    await mineButton?.trigger('click')
+    expect(wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text())).toEqual([
+      'Mine low',
+      'Mine high',
+    ])
+
+    const staleButton = wrapper.findAll('button').find((button) => button.text() === 'Stale')
+    await staleButton?.trigger('click')
+    expect(wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text())).toEqual([
+      'Theirs medium',
+      'Mine high',
+    ])
+  })
+
   it('renders the empty state when the queue is empty', async () => {
     const wrapper = await mountView([])
     expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)

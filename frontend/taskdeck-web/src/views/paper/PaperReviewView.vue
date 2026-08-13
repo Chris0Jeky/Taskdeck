@@ -17,7 +17,11 @@ import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidation
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
-import { normalizeProposalSourceType, normalizeProposalStatus } from '../../utils/automation'
+import {
+  normalizeProposalSourceType,
+  normalizeProposalStatus,
+  sortProposalsByRisk,
+} from '../../utils/automation'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { useRoute } from 'vue-router'
 import type {
@@ -114,17 +118,22 @@ const hashProposalId = computed(() => {
 })
 
 const filteredVisibleProposals = computed(() => {
+  let filtered: ApiProposal[]
   switch (queueFilter.value) {
     case 'mine':
-      return visibleProposals.value.filter(
+      filtered = visibleProposals.value.filter(
         (proposal) => !!session.userId && proposal.requestedByUserId === session.userId,
       )
+      break
     case 'stale':
-      return visibleProposals.value.filter(isStaleProposal)
+      filtered = visibleProposals.value.filter(isStaleProposal)
+      break
     case 'all':
     default:
-      return visibleProposals.value
+      filtered = visibleProposals.value
+      break
   }
+  return sortProposalsByRisk(filtered)
 })
 
 const activeFilterLabel = computed(() => {
