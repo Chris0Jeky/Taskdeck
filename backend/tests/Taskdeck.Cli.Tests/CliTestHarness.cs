@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Cli.Tests;
@@ -27,6 +29,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
     // they need to exercise concurrent cleanup behavior.
     private const int DefaultProcessLaunchLimit = 1;
     private static readonly CliProcessLaunchGate DefaultProcessLaunchGate = new(DefaultProcessLaunchLimit);
+    private static readonly Lazy<byte[]> MigratedDatabaseTemplate = new(
+        CreateMigratedDatabaseTemplate,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static int _databaseTemplateBuildCount;
+    private static string? _lastDatabaseTemplateDirectory;
 
     private readonly string _dataDirectory;
     private readonly string _databasePath;
@@ -47,9 +54,15 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// simulates a CLEAN machine: no key is supplied, so the CLI must bootstrap
     /// one itself.
     /// </param>
+    /// <param name="preprovisionDatabase">
+    /// When true (default), copy a fully migrated empty SQLite template into the
+    /// harness's isolated data directory. Set false only when a test explicitly
+    /// needs to prove cold CLI database creation and migration.
+    /// </param>
     public CliTestHarness(
         string dbPrefix = "taskdeck-cli-tests",
         bool provisionEncryptionKey = true,
+        bool preprovisionDatabase = true,
         TimeSpan? processTimeout = null,
         CliProcessLaunchGate? processLaunchGate = null,
         CancellationToken processCancellationToken = default,
@@ -63,13 +76,46 @@ internal sealed class CliTestHarness : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(processTimeout));
         }
 
+        // Evaluate the process-wide template before allocating this instance's
+        // directory. If the one-time migration fails, repeated constructor calls
+        // observe the Lazy's cached failure without leaking empty harness roots.
+        var databaseTemplate = preprovisionDatabase ? MigratedDatabaseTemplate.Value : null;
+
         // Each harness gets its own data directory so the SQLite file -- and any
         // appsettings.local.json written by the CLI's first-run bootstrap -- are
         // isolated from other tests and cleaned up on dispose.
         _dataDirectory = Path.Combine(Path.GetTempPath(), $"{dbPrefix}-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dataDirectory);
         _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
+        try
+        {
+            Directory.CreateDirectory(_dataDirectory);
+            if (databaseTemplate is not null)
+            {
+                File.WriteAllBytes(_databasePath, databaseTemplate);
+            }
+        }
+        catch (Exception constructionFailure)
+        {
+            try
+            {
+                if (Directory.Exists(_dataDirectory))
+                {
+                    Directory.Delete(_dataDirectory, recursive: true);
+                }
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(
+                    "CLI harness database provisioning and cleanup both failed.",
+                    constructionFailure,
+                    cleanupFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(constructionFailure).Throw();
+            throw new UnreachableException();
+        }
+
         _provisionEncryptionKey = provisionEncryptionKey;
         _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
         _processCancellationToken = processCancellationToken;
@@ -96,6 +142,9 @@ internal sealed class CliTestHarness : IAsyncDisposable
     }
 
     internal CliStartupTraceSnapshot? LastStartupTraceSnapshot => _lastStartupTraceSnapshot;
+    internal static int DatabaseTemplateBuildCount => Volatile.Read(ref _databaseTemplateBuildCount);
+    internal static string? LastDatabaseTemplateDirectory =>
+        Volatile.Read(ref _lastDatabaseTemplateDirectory);
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -550,6 +599,70 @@ internal sealed class CliTestHarness : IAsyncDisposable
         catch (InvalidOperationException)
         {
             return false;
+        }
+    }
+
+    private static byte[] CreateMigratedDatabaseTemplate()
+    {
+        Interlocked.Increment(ref _databaseTemplateBuildCount);
+        var templateDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-cli-migrated-template-{Guid.NewGuid():N}");
+        Volatile.Write(ref _lastDatabaseTemplateDirectory, templateDirectory);
+        var templateDatabasePath = Path.Combine(templateDirectory, "taskdeck.db");
+
+        try
+        {
+            Directory.CreateDirectory(templateDirectory);
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = templateDatabasePath,
+                Pooling = false
+            }.ToString();
+            var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            using (var context = new TaskdeckDbContext(options))
+            {
+                context.Database.Migrate();
+                if (context.Database.GetPendingMigrations().Any())
+                {
+                    throw new InvalidOperationException(
+                        "The CLI database template still has pending migrations.");
+                }
+
+                if (context.Boards.Any() || context.Users.Any())
+                {
+                    throw new InvalidOperationException(
+                        "The CLI database template must not contain product data.");
+                }
+
+                context.Database.CloseConnection();
+            }
+
+            if (!File.Exists(templateDatabasePath))
+            {
+                throw new InvalidOperationException(
+                    "The CLI database template migration did not create a SQLite file.");
+            }
+
+            if (File.Exists($"{templateDatabasePath}-wal") ||
+                File.Exists($"{templateDatabasePath}-shm") ||
+                File.Exists($"{templateDatabasePath}-journal"))
+            {
+                throw new InvalidOperationException(
+                    "The disposed CLI database template retained live journal state.");
+            }
+
+            return File.ReadAllBytes(templateDatabasePath);
+        }
+        finally
+        {
+            if (Directory.Exists(templateDirectory))
+            {
+                Directory.Delete(templateDirectory, recursive: true);
+            }
         }
     }
 
