@@ -275,7 +275,30 @@ node --test scripts\check-github-ops-governance.test.mjs; if ($LASTEXITCODE -ne 
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-On POSIX, use `python3 -B` for the manual utilities and fail fast:
+When `pre-merge-gate` or its evidence collector changes, run its Git Bash syntax and mocked
+boundary canaries as well. The canaries cover explicit and omitted PR selection, genuinely
+separate start/finish processes, missing/consumed/substituted checkout state, cursor-complete
+review feedback, independent thread-resolution drift, same-head check drift, closing identity
+drift, explicit validated abort/restart after an expired session, process-independent diff target
+selection, enforcing-workflow provenance, exact opening-base scan-definition equality, and
+fail-closed secret-scan verdicts. Further cases cover evidence-tool trust — rejection of tools
+resolved inside the measured or collector checkout, checkout-local `PATH` entries dropped before
+any tool is resolved, a forged `awk` aimed at the state-authenticating digest, and a forged `git`
+in the primary checkout of a linked-worktree layout — plus authentication of the copied
+opening-state snapshot and the redirected token-file channel. Transient replacement-ref and
+branch-ref races against definition binding run against a real Git checkout. Seven of those cases
+first assert that a deliberately defective copy of the collector fails them (eight defective
+variants in all), so the canary cannot pass by accident:
+
+```powershell
+$gitBash = "C:\Program Files\Git\bin\bash.exe"
+& $gitBash --noprofile --norc -n scripts/github/collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $gitBash --noprofile --norc -n scripts/github/test-collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $gitBash --noprofile --norc scripts/github/test-collect-pre-merge-evidence.sh; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+```
+
+On POSIX, use `python3 -B` for the manual utilities and fail fast. The final three Bash commands
+apply only when the pre-merge skill or collector changed:
 
 ```sh
 set -eu
@@ -295,6 +318,9 @@ node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
 node --test scripts/check-github-ops-governance.test.mjs
 node scripts/check-github-ops-governance.mjs
+bash -n scripts/github/collect-pre-merge-evidence.sh
+bash -n scripts/github/test-collect-pre-merge-evidence.sh
+bash scripts/github/test-collect-pre-merge-evidence.sh
 ```
 
 The staging-gate governance regression pins the complete parked workflow after normalizing line
