@@ -4,7 +4,7 @@ This folder contains deployment, observability, and human-operator runbooks.
 
 ## Deployment
 
-- `DEPLOYMENT_WORKFLOW.md` — Staged blue/green + canary workflow (ADR-0028) — **parked by the archive pivot** (hosted/multi-instance; not the personal run path). The personal release path is the self-contained executable build + smoke in `.github/workflows/release-desktop.yml`. ⚠️ **Caveat:** the implementing workflow `.github/workflows/cd-staging-gate.yml` still auto-triggers on `release: published` and then waits on a `production` environment that doesn't exist for the personal build — so the optional `v0.1.0` archival release would hang it. Disabling/gating that trigger is tracked in **#1228** (a workflow change, out of this docs PR's scope).
+- `DEPLOYMENT_WORKFLOW.md` — Staged blue/green + canary workflow (ADR-0028) — **parked by the archive pivot** (hosted/multi-instance; not the personal run path). The beta release path is the self-contained executable build + smoke in `.github/workflows/release-desktop.yml`. The implementing `.github/workflows/cd-staging-gate.yml` is manual-dispatch-only after **#1228**; release publication no longer invokes its parked `production` environment gate.
 - `RELEASE_CHECKLIST.md` — Smoke checklist for the OPS-09 staged (blue/green/canary) deployment — **parked by the archive pivot** (hosted/multi-instance; requires staging/prod URLs, container images, rollback slots — not the personal run path).
 - `DEPLOYMENT_CONTAINERS.md` — Container baseline (Dockerfiles, compose, nginx)
 - `DEPLOYMENT_HARDENING_MATRIX.md` — Container hardening verification matrix

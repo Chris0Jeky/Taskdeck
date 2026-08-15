@@ -290,12 +290,12 @@ Emergency overrides must still pass Phase 1 (CI build) and Phase 2 (staging smok
 
 The `cd-staging-gate.yml` workflow automates Phase 1 and Phase 2 gates:
 
-> ⚠️ _(Parked by the 2026-06-13 archive pivot — staged cloud deployment de-scoped. The workflow **still auto-triggers on `release: published`** and then waits on a `production` environment that does not exist for the personal build, so the optional archival release would **hang** it. Disabling/gating that trigger is tracked in **#1228** — see `docs/ops/README.md`.)_
+> ⚠️ _(Parked by the 2026-06-13 archive pivot — staged cloud deployment de-scoped. After **#1228**, the workflow is manual-dispatch-only, so release publication cannot invoke its parked `production` environment gate. See `docs/ops/README.md`.)_
 
-- Triggers on release publish or manual dispatch
+- Triggers only on manual dispatch with an explicit image tag
 - Builds and verifies container images
 - Runs the smoke test suite against a CI-hosted staging environment
-- Requires manual approval (GitHub environment protection) before Phase 3 can proceed
+- Binds the final handoff job to `production`, but does **not** itself prove approval protection; the live repository has no protected `production` environment, and #1504 must be maintainer-resolved before reactivation
 - See `.github/workflows/cd-staging-gate.yml` for the workflow definition
 
 ## Ownership and Escalation
