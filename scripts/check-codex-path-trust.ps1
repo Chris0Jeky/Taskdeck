@@ -106,6 +106,12 @@ function Assert-NoWeakAllow {
         [string]$Boundary
     )
 
+    $acl = Get-Acl -LiteralPath $Path
+    $owner = New-Object System.Security.Principal.NTAccount($acl.Owner)
+    if (Test-WeakIdentity -Identity $owner) {
+        Throw-TrustFailure "$Boundary is owned by a weak identity at ${Path}: $($acl.Owner)"
+    }
+
     $weakAces = @(Get-WeakAllowAces -Path $Path -RightsMask $RightsMask)
     if ($weakAces.Count -gt 0) {
         $details = ($weakAces | ForEach-Object {
