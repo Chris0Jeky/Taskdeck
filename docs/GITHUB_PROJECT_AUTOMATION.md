@@ -142,10 +142,12 @@ defects remain immediate non-retryable failures.
 
 When pagination observes only a recognized `totalCount` or `updatedAt` drift, the helper may make at
 most two whole-snapshot restarts. Each restart begins with `after = null` and discards every partial
-item, cursor, ID, and snapshot value from the failed attempt. Exhaustion exits nonzero with
-deterministic diagnostics, emits no `complete: true` result, and performs no project writes.
-`-Apply` retains its pre-write snapshot/plan drift guard and complete post-Apply audit; a restart
-does not weaken either boundary.
+item, cursor, ID, and snapshot value from the failed attempt. Exhaustion of the initial/pre-write
+snapshot restart budget exits nonzero with deterministic diagnostics, emits no `complete: true`
+result, and performs no project writes. Post-Apply audit exhaustion follows the separate completeness
+rule below, where writes may already have occurred and final state is unknown. `-Apply` retains its
+pre-write snapshot/plan drift guard and complete post-Apply audit; a restart does not weaken either
+boundary.
 
 ## Verification Checklist
 
