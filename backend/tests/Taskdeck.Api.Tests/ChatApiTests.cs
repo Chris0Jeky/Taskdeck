@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Entities;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -263,6 +264,69 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateColumnProposal_ShouldRequireReviewBeforeApplyingToBoard()
+    {
+        var userId = await AuthenticateAsync("chat-create-column");
+        var boardId = await CreateOwnedBoardWithColumnAsync(userId);
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Create column proposal flow", boardId));
+        createSessionResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        (await GetColumnsAsync(boardId)).Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new { Name = "Backlog", Position = 0 });
+
+        var sendMessageResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            new SendChatMessageDto("create column called 'Review'"));
+
+        sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant.Should().NotBeNull();
+        assistant!.MessageType.Should().Be("proposal-reference");
+        assistant.ProposalId.Should().NotBeNull();
+        var proposalId = assistant.ProposalId!.Value;
+
+        (await GetColumnsAsync(boardId)).Should().ContainSingle()
+            .Which.Name.Should().Be("Backlog", "proposing must not mutate the board");
+
+        var diffResponse = await _client.GetAsync($"/api/automation/proposals/{proposalId}/diff");
+        diffResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await diffResponse.Content.ReadAsStringAsync()).Should().Contain("Review");
+
+        var approveResponse = await _client.PostAsync(
+            $"/api/automation/proposals/{proposalId}/approve",
+            content: null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        approved.Should().NotBeNull();
+        approved!.Status.Should().Be(ProposalStatus.Approved);
+        (await GetColumnsAsync(boardId)).Should().ContainSingle()
+            .Which.Name.Should().Be("Backlog", "approval must not apply the proposal");
+
+        using var executeRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/automation/proposals/{proposalId}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await _client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var executed = await executeResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        executed.Should().NotBeNull();
+        executed!.Status.Should().Be(ProposalStatus.Applied);
+
+        (await GetColumnsAsync(boardId))
+            .OrderBy(column => column.Position)
+            .Select(column => new { column.Name, column.Position })
+            .Should()
+            .Equal(
+                new { Name = "Backlog", Position = 0 },
+                new { Name = "Review", Position = 1 });
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldReturnError_ForChecklistBootstrapRequestWithoutBoardScope()
     {
         await AuthenticateAsync("chat-checklist-noboard");
@@ -334,5 +398,14 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         result.BoardId.Should().NotBeNull();
 
         return result.BoardId!.Value;
+    }
+
+    private async Task<List<ColumnDto>> GetColumnsAsync(Guid boardId)
+    {
+        var response = await _client.GetAsync($"/api/boards/{boardId}/columns");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var columns = await response.Content.ReadFromJsonAsync<List<ColumnDto>>();
+        columns.Should().NotBeNull();
+        return columns!;
     }
 }

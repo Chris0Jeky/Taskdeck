@@ -164,6 +164,96 @@ public class OperationHandlerRegistryTests
     }
 
     [Fact]
+    public async Task ExecuteOperationAsync_ShouldCreateColumnThroughColumnServiceWithCanonicalContract()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        Column? createdColumn = null;
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(board.Id, default))
+            .ReturnsAsync(Array.Empty<Column>());
+        _columnRepoMock.Setup(repository => repository.AddAsync(It.IsAny<Column>(), default))
+            .Callback<Column, CancellationToken>((column, _) => createdColumn = column)
+            .ReturnsAsync((Column column, CancellationToken _) => column);
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            0,
+            "create",
+            "column",
+            null,
+            JsonSerializer.Serialize(new { boardId = board.Id, name = "Review", position = 3, wipLimit = 2 }),
+            "create-column",
+            null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        createdColumn.Should().NotBeNull();
+        createdColumn!.BoardId.Should().Be(board.Id);
+        createdColumn.Name.Should().Be("Review");
+        createdColumn.Position.Should().Be(3);
+        createdColumn.WipLimit.Should().Be(2);
+        _unitOfWorkMock.Verify(unitOfWork => unitOfWork.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldRecheckCreateColumnPositionImmediatelyBeforeInsert()
+    {
+        var boardId = Guid.NewGuid();
+        _columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new[] { new Column(boardId, "Backlog", 0) });
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            0,
+            "create",
+            "column",
+            null,
+            JsonSerializer.Serialize(new { boardId, name = "Review", position = 0 }),
+            "create-column-conflict",
+            null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("position 0");
+        _columnRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<Column>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldAllowDuplicateColumnNameAtAvailablePosition()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        Column? createdColumn = null;
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(board.Id, default))
+            .ReturnsAsync(new[] { new Column(board.Id, "Review", 0) });
+        _columnRepoMock.Setup(repository => repository.AddAsync(It.IsAny<Column>(), default))
+            .Callback<Column, CancellationToken>((column, _) => createdColumn = column)
+            .ReturnsAsync((Column column, CancellationToken _) => column);
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            0,
+            "create",
+            "column",
+            null,
+            JsonSerializer.Serialize(new { boardId = board.Id, name = "review", position = 1 }),
+            "create-column-duplicate-name",
+            null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        createdColumn.Should().NotBeNull();
+        createdColumn!.Name.Should().Be("review");
+        createdColumn.Position.Should().Be(1);
+    }
+
+    [Fact]
     public async Task ExecuteOperationAsync_ShouldReturnFailure_ForUpdateCardWithoutTitleOrDescription()
     {
         var cardId = Guid.NewGuid();

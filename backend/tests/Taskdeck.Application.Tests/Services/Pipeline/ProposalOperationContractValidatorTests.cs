@@ -310,6 +310,188 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_ShouldAcceptCanonicalCreateColumnContract()
+    {
+        var boardId = Guid.NewGuid();
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Column>());
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, name = "Review", position = 3, wipLimit = 2 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { operation });
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("{\"name\":\"Review\",\"position\":1}", "'boardId'")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"position\":1}", "'name'")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Review\"}", "'position'")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Review\",\"position\":-1}", "non-negative")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Review\",\"position\":1.5}", "integer")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Review\",\"position\":1,\"wipLimit\":0}", "greater than 0")]
+    [InlineData("{\"boardId\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"Review\",\"position\":1,\"extra\":true}", "Unsupported")]
+    public async Task ValidateAsync_ShouldRejectMalformedCreateColumnContract(string rawParameters, string expectedMessage)
+    {
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            0,
+            "create",
+            "column",
+            null,
+            rawParameters,
+            Guid.NewGuid().ToString(),
+            null);
+        var unitOfWork = new Mock<IUnitOfWork>();
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(expectedMessage);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateColumnTargetIdAndCrossBoardRedirect()
+    {
+        var boardId = Guid.NewGuid();
+        var otherBoardId = Guid.NewGuid();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var targetIdOperation = CreateOperation(
+            0,
+            "create",
+            Guid.NewGuid(),
+            new { boardId, name = "Review", position = 1 },
+            targetType: "column");
+        var redirectOperation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId = otherBoardId, name = "Review", position = 1 },
+            targetType: "column");
+
+        var targetResult = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { targetIdOperation });
+        var redirectResult = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { redirectOperation });
+
+        targetResult.IsSuccess.Should().BeFalse();
+        targetResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        targetResult.ErrorMessage.Should().Contain("must not specify targetId");
+        redirectResult.IsSuccess.Should().BeFalse();
+        redirectResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        redirectResult.ErrorMessage.Should().Contain("outside the proposal board scope");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateColumnNameBeyondDomainLimit()
+    {
+        var boardId = Guid.NewGuid();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, name = new string('x', 51), position = 1 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Column name cannot exceed 50");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectOccupiedCreateColumnPosition()
+    {
+        var boardId = Guid.NewGuid();
+        var existingColumn = new Column(boardId, "Backlog", 0);
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { existingColumn });
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, name = "Review", position = 0 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("position 0");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectDuplicateCreateColumnPositionsWithinProposal()
+    {
+        var boardId = Guid.NewGuid();
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Column>());
+        var operations = new[]
+        {
+            CreateOperation(0, "create", null, new { boardId, name = "Review", position = 1 }, targetType: "column"),
+            CreateOperation(1, "create", null, new { boardId, name = "Ready", position = 1 }, targetType: "column")
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("duplicated within the proposal");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ShouldAllowDuplicateColumnNamesAtDifferentPositions()
+    {
+        var boardId = Guid.NewGuid();
+        var (unitOfWork, _, columns, _) = CreateMocks();
+        columns.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new Column(boardId, "Review", 0) });
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, name = "review", position = 1 },
+            targetType: "column");
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object,
+            boardId,
+            new[] { operation });
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldRequireAnUpdateFieldForBoardUpdate()
     {
         var boardId = Guid.NewGuid();
