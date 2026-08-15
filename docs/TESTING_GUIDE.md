@@ -271,6 +271,7 @@ py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_led
 powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-docs-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node --test scripts\check-github-ops-governance.test.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
@@ -292,8 +293,13 @@ python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
+node --test scripts/check-github-ops-governance.test.mjs
 node scripts/check-github-ops-governance.mjs
 ```
+
+The staging-gate governance regression pins the complete parked workflow after normalizing line
+endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
+Actionlint; substring checks are not treated as proof of effective YAML semantics.
 
 The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
 
