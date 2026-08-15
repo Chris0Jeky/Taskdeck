@@ -1850,6 +1850,65 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldDiscloseCanonicalCreateColumnEffects()
+    {
+        // The approval preview must disclose every field execution passes to
+        // ColumnService.CreateColumnAsync: name, position, and either the WIP
+        // limit value or the explicit no-limit state.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create review columns",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        var limitedParameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            boardId,
+            name = "In Review",
+            position = 2,
+            wipLimit = 3
+        });
+        var unlimitedParameters = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            boardId,
+            name = "Done",
+            position = 3
+        });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "create", "column", limitedParameters, Guid.NewGuid().ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "create", "column", unlimitedParameters, Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Column>());
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(columnRepoMock.Object);
+
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cardRepoMock.Object);
+
+        var labelRepoMock = new Mock<ILabelRepository>();
+        labelRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(Array.Empty<Label>());
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(labelRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Should().Contain("0. Create column \"In Review\" at position 2; WIP limit 3");
+        result.Value.Should().Contain("1. Create column \"Done\" at position 3; no WIP limit");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldSurfaceDestinationPosition_ForColumnReorderOperations()
     {
         // Arrange: a 3-column board with a STRICTLY INTERIOR destination (position 1;

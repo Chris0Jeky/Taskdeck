@@ -1280,6 +1280,21 @@ public class AutomationProposalService : IAutomationProposalService
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
         }
 
+        if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(operation.ActionType, "create", StringComparison.OrdinalIgnoreCase))
+        {
+            var columnName = ExtractStringParameter(operation.Parameters, "name") ?? "(unspecified)";
+            var position = ExtractInt32Parameter(operation.Parameters, "position");
+            var wipLimit = ExtractInt32Parameter(operation.Parameters, "wipLimit");
+            var wipLimitDescription = wipLimit.HasValue
+                ? $"WIP limit {wipLimit.Value}"
+                : "no WIP limit";
+
+            return position.HasValue
+                ? $"{operation.Sequence}. {verb} column \"{columnName}\" at position {position.Value}; {wipLimitDescription}"
+                : $"{operation.Sequence}. {verb} column \"{columnName}\"; {wipLimitDescription}";
+        }
+
         // Column reorder: surface the CLAMPED effective destination so the approval
         // preview shows what Apply will do (the position is the whole point of the op).
         // ColumnService.ReorderColumnAsync inserts at Math.Min(position, columnCount - 1),
