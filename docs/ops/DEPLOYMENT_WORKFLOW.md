@@ -290,12 +290,14 @@ Emergency overrides must still pass Phase 1 (CI build) and Phase 2 (staging smok
 
 The `cd-staging-gate.yml` workflow automates Phase 1 and Phase 2 gates:
 
-> ⚠️ _(Parked by the 2026-06-13 archive pivot — staged cloud deployment de-scoped. After **#1228**, the workflow is manual-dispatch-only, so release publication cannot invoke its parked `production` environment gate. See `docs/ops/README.md`.)_
+> ⚠️ _(Parked by the 2026-06-13 archive pivot — staged cloud deployment remains de-scoped. After **#1228**, the workflow is manual-dispatch-only, so release publication cannot invoke it. The stacked, unmerged **#1506** candidate removes the `production` environment binding and stops at a non-deploying summary. See `docs/ops/README.md`.)_
 
 - Triggers only on manual dispatch with an explicit image tag
 - Builds and verifies container images
-- Runs the smoke test suite against a CI-hosted staging environment
-- Binds the final handoff job to `production`, but does **not** itself prove approval protection; the live repository has no protected `production` environment, and #1504 must be maintainer-resolved before reactivation
+- Generates and masks ephemeral JWT and connector inputs after Docker Compose's effective variable parser confirms exactly those two requirements
+- Runs S1-S9 against a runner-local Compose stack, then cleans it up
+- Ends at a summary-only parked handoff with environment `none` and deployment `no`; **#1504** activation/environment protection remains maintainer-owned
+- Hosted rehearsal [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896) passed build, real smoke, cleanup, and the parked summary at exact unmerged workflow/helper head `3efb7bd4`; both values were masked and the exact-SHA deployments query returned `[]`. This evidence refresh changes documentation only; CodeQL remains owed after the stacked PR is retargeted
 - See `.github/workflows/cd-staging-gate.yml` for the workflow definition
 
 ## Ownership and Escalation

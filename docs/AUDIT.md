@@ -217,7 +217,9 @@ Taskdeck is a **mature, well-engineered product** at the end of its core build p
 | `mutation-testing.yml` | Weekly | Stryker.NET + Stryker JS (non-blocking) |
 | `ci-release.yml` | Tag/release | SBOM/provenance, container artifacts |
 | `release-security.yml` | Tag/release | Dependency inventory, vulnerability reports |
-| `cd-staging-gate.yml` | Release | 4-phase blue/green with manual approval |
+| `cd-staging-gate.yml` | Release _(2026-04-16 snapshot; superseded)_ | 4-phase blue/green with manual approval _(historical)_ |
+
+> **Current-state correction (2026-07-27):** after `#1228`, this workflow is manual-dispatch-only. The stacked, unmerged `#1506` candidate has no GitHub environment or deployment job and stops at a parked summary. Run [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896) passed build, real S1-S9 smoke/cleanup, environment `none`, and deployment `no` at exact workflow/helper head `3efb7bd4`; both values were masked and the exact-SHA deployments query returned `[]`. This follow-up changes docs only. Post-retarget CodeQL, `#1504` activation, topology, and maintainer merge remain pending.
 
 ### Operations Maturity
 

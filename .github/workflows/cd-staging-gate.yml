@@ -1,8 +1,8 @@
 # =============================================================================
-# CD Staging Gate — Automated staging deployment verification with a parked
-# production-environment handoff. Implements Phase 1-2 of the staged deployment
-# workflow (docs/ops/DEPLOYMENT_WORKFLOW.md). Environment protection is external
-# repository state and must not be inferred from this workflow definition.
+# CD Staging Gate — Automated staging verification with a non-deploying parked
+# handoff. Implements Phase 1-2 of the staged deployment workflow
+# (docs/ops/DEPLOYMENT_WORKFLOW.md) without binding a GitHub environment or
+# creating a deployment.
 #
 # Triggers:
 #   - Manual workflow dispatch (for re-runs or pre-release validation)
@@ -17,11 +17,11 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Container image tag to deploy (e.g., v0.2.0)"
+        description: "Container image tag to build and verify (e.g., v0.2.0)"
         required: true
         type: string
       skip_smoke:
-        description: "Skip smoke tests (emergency only)"
+        description: "Skip the local Compose smoke phase (diagnostic reruns only)"
         required: false
         type: boolean
         default: false
@@ -96,10 +96,12 @@ jobs:
           docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:${{ steps.resolve-tag.outputs.tag }} .
           docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:${{ steps.resolve-tag.outputs.tag }} .
 
+      - name: Prepare ephemeral Compose inputs
+        id: compose-inputs
+        run: node scripts/ci/prepare-staging-compose-inputs.mjs
+
       - name: Verify compose configuration
-        run: |
-          TASKDECK_JWT_SECRET=ci-staging-gate-secret \
-          docker compose -f deploy/docker-compose.yml --profile baseline config > /dev/null
+        run: docker compose -f deploy/docker-compose.yml --profile baseline config > /dev/null
 
       - name: Write Phase 1 summary
         run: |
@@ -131,10 +133,12 @@ jobs:
           docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:local .
           docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:local .
 
+      - name: Prepare ephemeral Compose inputs
+        id: compose-inputs
+        run: node scripts/ci/prepare-staging-compose-inputs.mjs
+
       - name: Start stack
-        run: |
-          TASKDECK_JWT_SECRET=ci-staging-smoke-secret \
-          docker compose -f deploy/docker-compose.yml --profile baseline up -d
+        run: docker compose -f deploy/docker-compose.yml --profile baseline up -d
 
       - name: Wait for services to be ready
         run: |
@@ -157,7 +161,7 @@ jobs:
           bash scripts/deploy/smoke-test.sh http://localhost:8080
 
       - name: Collect logs on failure
-        if: failure()
+        if: ${{ failure() && steps.compose-inputs.outcome == 'success' }}
         run: |
           echo "--- Container status ---"
           docker compose -f deploy/docker-compose.yml --profile baseline ps
@@ -166,7 +170,7 @@ jobs:
           docker compose -f deploy/docker-compose.yml --profile baseline logs --tail=100
 
       - name: Stop stack
-        if: always()
+        if: ${{ always() && steps.compose-inputs.outcome == 'success' }}
         run: |
           docker compose -f deploy/docker-compose.yml --profile baseline down -v
 
@@ -181,26 +185,25 @@ jobs:
           EOF
 
   # -----------------------------------------------------------------------
-  # Production Environment Handoff (protection rules are external repository state)
+  # Parked Handoff (summary only; no environment or deployment)
   # -----------------------------------------------------------------------
-  promotion-gate:
-    name: "Phase 3: Production Environment Handoff"
+  parked-handoff:
+    name: "Phase 3: Parked Handoff Summary"
     needs: [build-verification, staging-smoke]
     if: always() && needs.build-verification.result == 'success' && (needs.staging-smoke.result == 'success' || needs.staging-smoke.result == 'skipped')
     runs-on: ubuntu-latest
-    environment: production
     steps:
-      - name: Record production environment handoff
+      - name: Record parked non-deploying handoff
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"
-          ## Phase 3: Production Environment Handoff -- REACHED
+          ## Phase 3: Parked Handoff -- REACHED
 
           - **Image tag**: \`${{ needs.build-verification.outputs.image_tag }}\`
           - Build verification: passed
           - Staging smoke: ${{ needs.staging-smoke.result }}
-          - Environment binding: \`production\`
-          - Approval protection: external repository setting; not asserted by this workflow
-          - **Next step**: Keep the parked deployment path inactive until #1504 is maintainer-resolved
+          - Environment binding: none
+          - Deployment created: no
+          - **Next step**: Keep deployment inactive until #1504 is maintainer-resolved
           EOF
-          echo "Production environment handoff reached for tag: ${{ needs.build-verification.outputs.image_tag }}"
-          echo "This workflow does not assert that environment approval protection is configured."
+          echo "Parked non-deploying handoff recorded for tag: ${{ needs.build-verification.outputs.image_tag }}"
+          echo "This workflow does not bind an environment or create a deployment."
