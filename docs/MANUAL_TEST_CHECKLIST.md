@@ -1054,7 +1054,12 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 19. [ ] Verify mutation testing workflow is NOT listed in `ci-required.yml` (non-blocking, nightly only).
 20. [ ] Verify `StrykerOutput` directories are in `.gitignore`.
 21. [ ] Run `npm run mutation:test` locally to validate frontend Stryker setup (after `npm install`).
-22. [ ] Run `dotnet stryker --config-file stryker-config.json` locally in `backend/` to validate backend setup.
+22. [ ] Validate the backend Stryker setup from the repository root.
+    - Run: `powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest`
+    - Run: `dotnet tool restore`
+    - Run: `cd backend/tests/Taskdeck.Domain.Tests`
+    - Run: `dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput`
+    - Expected: the preflight passes and Stryker uses only `Taskdeck.Domain.Tests` for the `Taskdeck.Domain` mutation run.
 
 ### Z8. Platform: PWA and Offline Readiness (PR #802 — merged)
 

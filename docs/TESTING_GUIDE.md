@@ -877,18 +877,24 @@ CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uplo
 
 ### Mutation Testing (TST-05, `#90`/`#796`)
 
-Backend (Stryker.NET): targets `Taskdeck.Domain` with `Taskdeck.Domain.Tests`. Thresholds: break=60, high=80.
+Backend (Stryker.NET 4.16.0): targets `Taskdeck.Domain` from the `Taskdeck.Domain.Tests` project context. Thresholds: break=0, low=60, high=80. The checked-in preflight rejects obsolete config keys and solution-context/workflow drift before the long mutation run.
 Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with vitest runner.
 
 Run commands:
 ```bash
 # Backend
-cd backend && dotnet tool install dotnet-stryker && dotnet stryker
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+dotnet tool restore
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 # Frontend
 cd frontend/taskdeck-web && npm run mutation:test
 ```
 
-CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. Non-blocking, reports uploaded as artifacts. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. The backend job has a finite 180-minute ceiling for the full Domain mutation set and fails if no report artifact exists. Mutation score remains non-blocking. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+
+Verified baseline: backend-only run [30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d` completed in 192 seconds. Stryker created 3,682 mutants; 2,351 were killed, 576 survived, 2 timed out, and 753 were skipped, for a 70.75% score. The uploaded two-file `stryker-net-report` artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`).
 
 ### Container Integration Tests (TST-06, `#91`/`#804`)
 
@@ -1052,9 +1058,12 @@ Mutation testing is available as a non-blocking quality signal for detecting wea
 ### Running locally
 
 ```bash
-# Backend (requires dotnet-stryker global tool)
-cd backend
-dotnet stryker --config-file stryker-config.json
+# Backend (from the repository root; uses the workflow-pinned tool version)
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+dotnet tool restore
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 
 # Frontend
 cd frontend/taskdeck-web
@@ -1063,7 +1072,7 @@ npm run mutation:test
 
 ### CI
 
-Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. Reports uploaded as artifacts.
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. The backend job has a 180-minute ceiling and missing backend reports fail artifact upload.
 
 ### Policy and triage
 
