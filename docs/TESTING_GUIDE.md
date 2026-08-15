@@ -299,7 +299,41 @@ node scripts/check-github-ops-governance.mjs
 
 The staging-gate governance regression pins the complete parked workflow after normalizing line
 endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
-Actionlint; substring checks are not treated as proof of effective YAML semantics.
+Actionlint; substring checks are not treated as proof of effective YAML semantics. Its 26-test Node
+suite includes 12 `prepare-staging-compose-inputs` contracts and 14 workflow/governance contracts.
+The helper invokes Docker Compose's effective `config --variables --format json` parser, rejects
+command/JSON/schema/key-name/boolean drift before generating secrets, proves comments and `$${...}`
+literals are inert with a real minimal Compose file, and preserves mask-before-environment ordering.
+The workflow regression keeps each preparation step immediately before its first Compose consumer.
+
+Manual run [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896)
+passed build verification, real S1-S9 smoke plus cleanup, and the parked handoff at exact unmerged
+workflow/helper head `3efb7bd4499c30d0f0b3c3683e43221e46f103f7`; logs masked both generated
+inputs, the summary reported environment `none` and deployment `no`, and an exact-SHA deployments
+query returned `[]`. This follow-up changes documentation only, not the proven workflow/helper bytes.
+Required CI must still pass on the final docs head. The stacked non-default base did not generate
+CodeQL; re-run it after retargeting before maintainer merge.
+
+For a local check against the real Compose contract, prove both the positive configuration and the
+missing-connector-key negative path. These are explicitly non-production test values:
+
+```powershell
+$env:TASKDECK_JWT_SECRET='non-production-compose-test-secret'
+$env:TASKDECK_CONNECTORS_ENCRYPTION_KEY='MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA='
+docker compose -f deploy/docker-compose.yml --profile baseline config *> $null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Remove-Item Env:TASKDECK_CONNECTORS_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+$composeOutput = docker compose -f deploy/docker-compose.yml --profile baseline config 2>&1
+$composeExit = $LASTEXITCODE
+if ($composeExit -eq 0) { Write-Error 'Compose unexpectedly accepted a missing connector key'; exit 1 }
+if (($composeOutput | Out-String) -notmatch 'TASKDECK_CONNECTORS_ENCRYPTION_KEY') {
+  $composeOutput
+  Write-Error 'Compose failed for an unexpected reason'
+  exit 1
+}
+Remove-Item Env:TASKDECK_JWT_SECRET -ErrorAction SilentlyContinue
+```
 
 The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
 
