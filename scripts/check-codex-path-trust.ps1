@@ -44,14 +44,22 @@ function Get-ConfiguredPath {
     }
 }
 
-$script:CurrentUserSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$script:WeakSids = @(
+$script:CurrentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$script:CurrentPrincipal = [System.Security.Principal.WindowsPrincipal]::new($script:CurrentIdentity)
+$script:CurrentUserSid = $script:CurrentIdentity.User.Value
+$script:AlwaysWeakSids = @(
     'S-1-1-0',       # Everyone
     'S-1-5-4',       # Interactive
     'S-1-5-11',      # Authenticated Users
     'S-1-5-32-545',  # BUILTIN\Users
     $script:CurrentUserSid
 )
+$script:EnabledTokenGroupSids = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($group in $script:CurrentIdentity.Groups) {
+    if ($script:CurrentPrincipal.IsInRole($group)) {
+        [void]$script:EnabledTokenGroupSids.Add($group.Value)
+    }
+}
 $script:WriteMask =
     [System.Security.AccessControl.FileSystemRights]::WriteData -bor
     [System.Security.AccessControl.FileSystemRights]::AppendData -bor
@@ -75,8 +83,13 @@ function Test-WeakIdentity {
         # Unresolved local identities still receive the conservative name check below.
     }
 
-    if ($sid -and $script:WeakSids -contains $sid) {
-        return $true
+    if ($sid) {
+        if ($script:AlwaysWeakSids -contains $sid) {
+            return $true
+        }
+        if ($script:EnabledTokenGroupSids.Contains($sid)) {
+            return $true
+        }
     }
 
     return $Identity.Value -match '(?i)(^|\\)(Everyone|Users|Authenticated Users|INTERACTIVE|.*CodexSandbox.*)$'
@@ -239,6 +252,32 @@ function Invoke-CheckedNative {
     Write-Host "OK [codex-path-trust]: $([System.IO.Path]::GetFileName($Path)) $($output[0])"
 }
 
+function Select-PythonInterpreterFromInventory {
+    param([object[]]$Inventory)
+
+    foreach ($line in $Inventory) {
+        $text = [string]$line
+        if ($text -match '^\s*-(?:V:)?3(?:\.\d+)*(?:\s+\*)?\s+(?<path>[A-Za-z]:\\.+?\.exe)\s*$') {
+            return [System.IO.Path]::GetFullPath($Matches['path'])
+        }
+    }
+
+    Throw-TrustFailure "Python launcher did not enumerate a Python 3 interpreter: $($Inventory -join ' ')"
+}
+
+function Get-SelectedPythonInterpreter {
+    param([string]$LauncherPath)
+
+    $global:LASTEXITCODE = $null
+    $inventory = @(& $LauncherPath -0p 2>&1)
+    $exitCode = $global:LASTEXITCODE
+    if ($null -eq $exitCode -or $exitCode -ne 0) {
+        Throw-TrustFailure "Trusted Python launcher inventory failed with exit '$exitCode': $($inventory -join ' ')"
+    }
+
+    return Select-PythonInterpreterFromInventory -Inventory $inventory
+}
+
 $resolvedConfig = (Resolve-Path -LiteralPath $ConfigPath).Path
 $configuredPath = Get-ConfiguredPath -Path $resolvedConfig
 $pathEntries = @($configuredPath.Split([System.IO.Path]::PathSeparator))
@@ -257,6 +296,7 @@ foreach ($entry in $pathEntries) {
 $originalPath = $env:PATH
 $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\')
 $forgedBin = Join-Path $tempBase ("taskdeck-codex-path-canary-{0}" -f [guid]::NewGuid().ToString('N'))
+$aclCanary = Join-Path $tempBase ("taskdeck-codex-acl-canary-{0}" -f [guid]::NewGuid().ToString('N'))
 
 try {
     [void](New-Item -ItemType Directory -Path $forgedBin)
@@ -276,12 +316,12 @@ try {
     }
 
     $canarySource = 'C:\Windows\System32\where.exe'
-    foreach ($name in @('git', 'gh', 'jq', 'python', 'python3', 'node', 'npm', 'npx', 'powershell')) {
+    foreach ($name in @('git', 'gh', 'docker', 'jq', 'python', 'python3', 'node', 'npm', 'npx', 'powershell')) {
         Copy-Item -LiteralPath $canarySource -Destination (Join-Path $forgedBin "$name.exe")
     }
 
     $env:PATH = "$forgedBin$([System.IO.Path]::PathSeparator)$configuredPath"
-    foreach ($name in @('git', 'gh', 'jq', 'python', 'python3', 'node', 'npm', 'npx', 'powershell')) {
+    foreach ($name in @('git', 'gh', 'docker', 'jq', 'python', 'python3', 'node', 'npm', 'npx', 'powershell')) {
         $positiveControl = Resolve-ApplicationPath -Name $name
         $expectedCanary = [System.IO.Path]::GetFullPath((Join-Path $forgedBin "$name.exe"))
         if (
@@ -294,9 +334,77 @@ try {
 
     $env:PATH = $configuredPath
 
+    [void](New-Item -ItemType Directory -Path $aclCanary)
+    $delegatedGroupSid = @($script:CurrentIdentity.Groups | Where-Object {
+        $script:CurrentPrincipal.IsInRole($_) -and
+        $script:AlwaysWeakSids -notcontains $_.Value
+    } | Select-Object -First 1)
+    if ($delegatedGroupSid.Count -ne 1) {
+        Throw-TrustFailure 'Current token did not expose an enabled non-baseline group for the delegated-group ACL control.'
+    }
+    $delegatedGroupSid = $delegatedGroupSid[0]
+
+    $acl = Get-Acl -LiteralPath $aclCanary
+    $delegatedWriteRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $delegatedGroupSid,
+        [System.Security.AccessControl.FileSystemRights]::WriteData,
+        [System.Security.AccessControl.InheritanceFlags]::None,
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+    [void]$acl.AddAccessRule($delegatedWriteRule)
+    Set-Acl -LiteralPath $aclCanary -AclObject $acl
+
+    $delegatedGroupDetected = @(Get-WeakAllowAces -Path $aclCanary -RightsMask $script:WriteMask | Where-Object {
+        try {
+            $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $delegatedGroupSid.Value
+        }
+        catch {
+            $false
+        }
+    })
+    if ($delegatedGroupDetected.Count -eq 0) {
+        Throw-TrustFailure "Verifier did not reject write access delegated through enabled token group $($delegatedGroupSid.Value)."
+    }
+
+    $ownerRejected = $false
+    try {
+        Assert-NoWeakAllow -Path $aclCanary -RightsMask $script:WriteMask -Boundary 'ACL owner control'
+    }
+    catch {
+        $ownerRejected = $_.Exception.Message -match 'owned by a weak identity'
+    }
+    if (-not $ownerRejected) {
+        Throw-TrustFailure 'Verifier did not reject effective owner rights on the ACL control directory.'
+    }
+
+    $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $administratorsExpectedWeak = $script:CurrentPrincipal.IsInRole($administratorsSid)
+    if ((Test-WeakIdentity -Identity $administratorsSid) -ne $administratorsExpectedWeak) {
+        Throw-TrustFailure 'Enabled-group control misclassified the Administrators SID for the current token.'
+    }
+
+    $untrustedPython = Join-Path $aclCanary 'python.exe'
+    Copy-Item -LiteralPath $canarySource -Destination $untrustedPython
+    $selectedCanaryPython = Select-PythonInterpreterFromInventory -Inventory @(" -V:3.13 *        $untrustedPython")
+    if (-not $selectedCanaryPython.Equals($untrustedPython, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-TrustFailure 'Python inventory control did not select the forged interpreter path.'
+    }
+    $untrustedPythonRejected = $false
+    try {
+        Assert-TrustedFile -Path $selectedCanaryPython
+    }
+    catch {
+        $untrustedPythonRejected = $_.Exception.Message -match 'user-writable root|owned by a weak identity|writable by a weak identity'
+    }
+    if (-not $untrustedPythonRejected) {
+        Throw-TrustFailure 'Verifier did not reject the forged Python interpreter before execution.'
+    }
+
     $expectedApplications = @(
         @{ Name = 'git';        Path = 'C:\Program Files\Git\cmd\git.exe' },
         @{ Name = 'gh';         Path = 'C:\Program Files\GitHub CLI\gh.exe' },
+        @{ Name = 'docker';     Path = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' },
         @{ Name = 'dotnet';     Path = 'C:\Program Files\dotnet\dotnet.exe' },
         @{ Name = 'node';       Path = 'C:\Program Files\nodejs\node.exe' },
         @{ Name = 'npm';        Path = 'C:\Program Files\nodejs\npm.cmd' },
@@ -326,6 +434,7 @@ try {
 
     Invoke-CheckedNative -Path 'C:\Program Files\Git\cmd\git.exe' -Arguments @('--version')
     Invoke-CheckedNative -Path 'C:\Program Files\GitHub CLI\gh.exe' -Arguments @('--version')
+    Invoke-CheckedNative -Path 'C:\Program Files\Docker\Docker\resources\bin\docker.exe' -Arguments @('--version')
     Invoke-CheckedNative -Path 'C:\Program Files\dotnet\dotnet.exe' -Arguments @('--version')
     Invoke-CheckedNative -Path 'C:\Program Files\nodejs\node.exe' -Arguments @('--version')
     Invoke-CheckedNative -Path 'C:\Program Files\nodejs\npm.cmd' -Arguments @('--version')
@@ -349,8 +458,11 @@ print(json.dumps({
     'version': sys.version.split()[0],
 }))
 '@
+    $selectedPython = Get-SelectedPythonInterpreter -LauncherPath 'C:\Windows\py.exe'
+    Assert-TrustedFile -Path $selectedPython
+
     $global:LASTEXITCODE = $null
-    $pythonProbeOutput = @(& 'C:\Windows\py.exe' -3 -B -c $pythonProbe $resolvedConfig 2>&1)
+    $pythonProbeOutput = @(& $selectedPython -I -B -c $pythonProbe $resolvedConfig 2>&1)
     $pythonProbeExit = $global:LASTEXITCODE
     if ($null -eq $pythonProbeExit -or $pythonProbeExit -ne 0) {
         Throw-TrustFailure "Trusted py -3 TOML probe failed with exit '$pythonProbeExit': $($pythonProbeOutput -join ' ')"
@@ -364,17 +476,30 @@ print(json.dumps({
     if ($pythonInfo.path -cne $configuredPath) {
         Throw-TrustFailure 'The full TOML parse disagrees with the bootstrap PATH extraction.'
     }
+    if (
+        -not ([System.IO.Path]::GetFullPath($pythonInfo.executable)).Equals(
+            $selectedPython,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        Throw-TrustFailure "Isolated Python probe executed '$($pythonInfo.executable)', expected '$selectedPython'."
+    }
     Assert-TrustedFile -Path $pythonInfo.executable
-    Write-Host "OK [codex-path-trust]: py -3 $($pythonInfo.version) -> $($pythonInfo.executable)"
+    Write-Host "OK [codex-path-trust]: py -3 selection $($pythonInfo.version) -> $($pythonInfo.executable) (absolute -I execution)"
 
     Write-Host "OK [codex-path-trust]: $($pathEntries.Count) existing PATH roots are protected."
+    Write-Host 'OK [codex-path-trust]: untrusted Python selection was rejected before execution.'
+    Write-Host "OK [codex-path-trust]: enabled-group ACL mutation and deny-only-group control passed."
     Write-Host 'OK [codex-path-trust]: forged writable-bin executables cannot participate in the configured PATH.'
     Write-Host 'OK [codex-path-trust]: jq, python, and python3 fail closed; use py -3 for Windows Python.'
 }
 finally {
     $env:PATH = $originalPath
-    if (Test-Path -LiteralPath $forgedBin) {
-        $resolvedCanary = [System.IO.Path]::GetFullPath($forgedBin)
+    foreach ($canaryPath in @($forgedBin, $aclCanary)) {
+        if (-not (Test-Path -LiteralPath $canaryPath)) {
+            continue
+        }
+        $resolvedCanary = [System.IO.Path]::GetFullPath($canaryPath)
         if (
             $resolvedCanary.StartsWith("$tempBase\", [System.StringComparison]::OrdinalIgnoreCase) -and
             -not $resolvedCanary.Equals($tempBase, [System.StringComparison]::OrdinalIgnoreCase)
