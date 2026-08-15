@@ -142,10 +142,12 @@ defects remain immediate non-retryable failures.
 
 When pagination observes only a recognized `totalCount` or `updatedAt` drift, the helper may make at
 most two whole-snapshot restarts. Each restart begins with `after = null` and discards every partial
-item, cursor, ID, and snapshot value from the failed attempt. Exhaustion exits nonzero with
-deterministic diagnostics, emits no `complete: true` result, and performs no project writes.
-`-Apply` retains its pre-write snapshot/plan drift guard and complete post-Apply audit; a restart
-does not weaken either boundary.
+item, cursor, ID, and snapshot value from the failed attempt. Exhaustion of the initial/pre-write
+snapshot restart budget exits nonzero with deterministic diagnostics, emits no `complete: true`
+result, and performs no project writes. Post-Apply audit exhaustion follows the separate completeness
+rule below, where writes may already have occurred and final state is unknown. `-Apply` retains its
+pre-write snapshot/plan drift guard and complete post-Apply audit; a restart does not weaken either
+boundary.
 
 ## Verification Checklist
 
@@ -181,6 +183,7 @@ The priority helper's completeness contract is fail-closed:
 - `-Limit 0` (the default) means no configured ceiling. A positive `-Limit` is a safety ceiling, not a sample size; if the project is larger, the command exits nonzero without a completeness claim.
 - All same-repository project Issues with zero or multiple priority labels are aggregated and reported before any PR reference resolution. Issue priorities are never guessed; fix every listed label defect first under the issue-item rule above.
 - `-Apply` validates every planned Priority option, rebuilds the complete snapshot and source-derived update plan immediately before writes, and aborts before the first write if either plan drifts. The guarded source fingerprint includes the exact ignored external Issue occurrences, so reference identity/count drift is fatal even when the Priority update plan is unchanged. After the first write attempt it always runs a complete post-apply audit, including when a later write fails, because ProjectV2 edits are not transactional as a batch. Success output is built from that verified post-state; a partial failure reports both the writer error and whether the final state was auditable.
+- If the pre-write snapshot exhausts its restart budget, no writes have occurred. If the post-Apply audit snapshot exhausts its restart budget, writes may already have occurred because ProjectV2 edits are nontransactional, so the final project state is unknown; the complete post-Apply audit remains mandatory even after a partial writer failure.
 - `-SelfTest` exercises the authentication-free parser/audit behavior for pagination, saturation, identity, cursor, nested-connection, typed reference authority, ignored-reference evidence/drift, plan drift, zero-write preflight, partial-writer failure, and post-apply output. Required CI runs the parser and this regression suite directly.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
