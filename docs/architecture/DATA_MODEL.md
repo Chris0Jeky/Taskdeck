@@ -505,7 +505,7 @@ Confidence is monotonic downward once set: verification may downgrade it, never 
 ### ProvenanceEvidenceLink
 
 A structured pointer from a provenance field back to its source material -- a capture, a chat
-message, a document chunk.
+message, a document chunk, or a durable Transcript.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -520,6 +520,18 @@ message, a document chunk.
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
 
 **Index:** `ProvenanceFieldId`.
+
+For transcript triage, the canonical source contract is `SourceType = "Transcript"`, a `Guid` `D`
+string in `SourceId`, and the fixed non-content label `Transcript evidence`. `SpanStart` and
+`SpanEnd` are either both null when the verbatim quote is ambiguous, or a paired half-open
+`[start,end)` range measured in .NET UTF-16 code units over the Transcript's LF-normalized text.
+Neither `Label` nor the inferred field's `ExtractiveQuote` duplicates Transcript content. Board
+readers may receive this opaque metadata, but any future quote resolver must load text through the
+owner-scoped Transcript repository and return an explicit unavailable state to other users.
+
+This generic source reference has no Transcript FK. Account erasure therefore deletes matching
+Transcript evidence links transactionally before deleting the user's Transcript rows; any other
+Transcript-deletion workflow must perform the same cleanup or deliberately omit the stale links.
 
 > Not to be confused with the unmapped domain class `EvidenceLink`, which has no table.
 
