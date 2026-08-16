@@ -10,6 +10,10 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## Delivery update (2026-08-16, Windows API timing diagnostics)
+
+- **The first bounded `#1682` slice makes recurring green Windows API slow tails diagnosable without retaining test content.** The reusable API integration workflow writes a deterministic, bounded summary of TRX class, method, outcome, and duration metadata and retains that summary for 14 days on Ubuntu and Windows, including successful runs. Raw TRX remains failure-only, and the summary excludes output, error details, attachments, and theory arguments. Two exact-main Windows runs took 32-34 minutes against a contemporaneous 17-minute PR run, but the existing aggregate logs do not identify a cause. `#1682` therefore remains open; this slice changes no timeout, ordering, parallelism, quarantine, product behavior, or coverage.
+
 ## Delivery update (2026-08-16, REVIVAL-09 transcript linkage)
 
 - **The first bounded `#1305` linkage slice turns the Transcript foundation into the canonical triage source.** A transcript queue request owns at most one linked Transcript through a nullable unique FK. The worker persists the normalized source and linkage atomically before provider work, reuses it across retries/replays, and sends its LF-normalized UTF-16 text to extraction. Post-link capture edits fail with Conflict, preventing the future evidence coordinate space from drifting; the accepted 200,000-character capture limit is now also the Transcript persistence limit. The follow-up detail contract exposes a server-computed edit capability rather than the internal Transcript identity, so Inbox removes linked edit affordances, suppresses a stale open editor after refresh, and gives linked failures retry-or-ignore guidance. Deleting a Transcript sets the optional request FK to null, while legacy queue payload text remains for compatibility and portability.

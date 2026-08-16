@@ -10,6 +10,27 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## 2026-08-16 API Integration Timing Evidence (`#1682`)
+
+The successful-run diagnostic artifact is summary-only: it may contain resolved test class/method
+identity, outcome, and duration, but never TRX output, error details, attachments, or theory
+arguments. Raw TRX stays failure-only. Prove the parser, workflow syntax, and one real TRX shape
+without running the complete API suite:
+
+```powershell
+python scripts/ci/test_summarize_trx_timing.py
+python -m py_compile scripts/ci/summarize_trx_timing.py scripts/ci/test_summarize_trx_timing.py
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~Taskdeck.Api.Tests.ResultExtensionsTests" --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/local"
+python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/local/api-integration.trx" --output "backend/TestResults/api-integration/local/api-integration-timing.json"
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 parser tests and 22/22 focused API tests**, followed by successful
+parsing of all 22 real TRX results. Hosted CI remains the authoritative proof that both matrix
+lanes upload the 14-day summary and Workflow Lint accepts the changed YAML. The artifact diagnoses
+the next recurrence; it does not by itself identify the cause or prove a duration repair.
+
 ## 2026-08-16 REVIVAL-09 Transcript Linkage and Editability Checkpoint (`#1305`)
 
 The first linkage slice must prove the domain attachment invariant, immutable edit boundary,
