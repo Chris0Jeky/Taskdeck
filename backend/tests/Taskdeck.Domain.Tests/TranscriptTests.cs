@@ -9,6 +9,11 @@ namespace Taskdeck.Domain.Tests;
 public sealed class TranscriptTests
 {
     [Fact]
+    public void MaxTextLength_MatchesTranscriptCaptureLimit()
+    {
+        Transcript.MaxTextLength.Should().Be(200_000);
+    }
+    [Fact]
     public void Constructor_NormalizesCrLfAndRetainsUnicodeLineSegments()
     {
         var transcript = new Transcript(

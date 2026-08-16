@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-13
+Last Updated: 2026-08-16
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,10 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-08-16, REVIVAL-09 transcript linkage)
+
+- **The first bounded `#1305` linkage slice turns the Transcript foundation into the canonical triage source.** A transcript queue request owns at most one linked Transcript through a nullable unique FK. The worker persists the normalized source and linkage atomically before provider work, reuses it across retries/replays, and sends its LF-normalized UTF-16 text to extraction. Post-link capture edits fail with Conflict, preventing the future evidence coordinate space from drifting; the accepted 200,000-character capture limit is now also the Transcript persistence limit. Deleting a Transcript sets the optional request FK to null, while legacy queue payload text remains for compatibility and portability. Evidence spans, provenance reads, Paper deep links, shared-reader authorization, and payload retirement remain later `#1305` slices.
 
 ## Delivery update (2026-08-13, project/CLI reliability and Paper review)
 

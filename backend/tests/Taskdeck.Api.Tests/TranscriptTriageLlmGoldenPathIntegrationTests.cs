@@ -118,6 +118,19 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         triaged.Provenance.PromptVersion.Should().Be("llm-triage.v2");
         var proposalId = triaged.Provenance.ProposalId!.Value;
 
+        // The worker persists the canonical transcript and queue linkage before invoking the
+        // provider. The linked row is the durable source for all later triage/replay work.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var persistedRequest = await db.LlmRequests.SingleAsync(request => request.Id == capture.Id);
+            persistedRequest.TranscriptId.Should().NotBeNull();
+            (await db.Transcripts.CountAsync(transcript => transcript.CreatedFromCaptureId == capture.Id))
+                .Should().Be(1);
+            (await db.Transcripts.SingleAsync(transcript => transcript.Id == persistedRequest.TranscriptId))
+                .Text.Should().Be(TranscriptText);
+        }
+
         // The extractor sent the transcript text under the triage system prompt with capture attribution.
         providerStub.CompletionCallCount.Should().Be(1);
         var llmRequest = providerStub.LastRequest;

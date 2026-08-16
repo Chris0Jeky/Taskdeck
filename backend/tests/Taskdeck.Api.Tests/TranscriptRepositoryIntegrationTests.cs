@@ -75,6 +75,48 @@ public sealed class TranscriptRepositoryIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task LlmRequestTranscriptLink_IsUniqueAndSetsNullWhenTranscriptIsDeleted()
+    {
+        var dbPath = CreateDbPath();
+        try
+        {
+            await using var db = new TaskdeckDbContext(CreateOptions(dbPath));
+            await db.Database.MigrateAsync();
+            var owner = AddUser(db, "transcript-link-owner");
+            var transcript = AddTranscript(owner.Id, "linked transcript");
+            db.Transcripts.Add(transcript);
+            var firstRequest = new LlmRequest(owner.Id, "inbox.capture.transcript.v1", "payload");
+            firstRequest.AttachTranscript(transcript.Id);
+            db.LlmRequests.Add(firstRequest);
+            await db.SaveChangesAsync();
+
+            var duplicateRequest = new LlmRequest(owner.Id, "inbox.capture.transcript.v1", "payload-2");
+            duplicateRequest.AttachTranscript(transcript.Id);
+            db.LlmRequests.Add(duplicateRequest);
+            var duplicateSave = () => db.SaveChangesAsync();
+            await duplicateSave.Should().ThrowAsync<DbUpdateException>();
+
+            db.ChangeTracker.Clear();
+            var persistedRequest = await db.LlmRequests.SingleAsync(request => request.Id == firstRequest.Id);
+            var persistedTranscript = await db.Transcripts.SingleAsync(item => item.Id == transcript.Id);
+            db.Transcripts.Remove(persistedTranscript);
+            await db.SaveChangesAsync();
+
+            await db.Entry(persistedRequest).ReloadAsync();
+            persistedRequest.TranscriptId.Should().BeNull();
+
+            var indexes = await db.Database.SqlQueryRaw<string>(
+                    "SELECT name AS Value FROM pragma_index_list('LlmRequests')")
+                .ToListAsync();
+            indexes.Should().Contain("IX_LlmRequests_TranscriptId");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
     private static DbContextOptions<TaskdeckDbContext> CreateOptions(string dbPath) =>
         new DbContextOptionsBuilder<TaskdeckDbContext>()
             .UseSqlite(TestSqlite.ConnectionString(dbPath))

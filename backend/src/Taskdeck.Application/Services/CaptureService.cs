@@ -400,6 +400,13 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
+        if (item.TranscriptId.HasValue)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                "Capture text cannot be edited after its transcript is linked");
+        }
+
         var currentPayload = ParsePayload(item);
         var currentStatus = ResolveCaptureStatus(item, currentPayload);
 
