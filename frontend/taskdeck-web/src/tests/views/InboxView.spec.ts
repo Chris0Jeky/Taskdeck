@@ -1235,6 +1235,45 @@ describe('InboxView', () => {
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
   })
 
+  it('hides a stale editor when refreshed detail becomes non-editable', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Editable transcript excerpt',
+        rawText: 'Editable transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+        canEditSuggestion: true,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+    await wrapper.get('[data-testid="suggestion-edit-btn"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(true)
+
+    const current = mockCaptureStore.detailById['capture-1']!
+    mockCaptureStore.detailById['capture-1'] = {
+      ...current,
+      status: 'Triaging',
+      canEditSuggestion: false,
+    }
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+  })
+
   it('hides edit for a linked triaged capture', async () => {
     mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
       mockCaptureStore.detailById[itemId] = {

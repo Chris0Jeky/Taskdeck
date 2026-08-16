@@ -96,7 +96,7 @@ const canTriageSelection = canMutateSelection
         <div v-if="loadingDetail" class="td-inbox-detail__spinner">
           <TdSpinner label="Refreshing detail..." />
         </div>
-        <template v-else-if="isEditingSuggestion">
+        <template v-else-if="isEditingSuggestion && selectedItem.canEditSuggestion === true">
           <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
           <textarea
             id="inbox-edit-text"
