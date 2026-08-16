@@ -84,7 +84,7 @@ def _definition_map(
             continue
         class_name = _bounded(class_name, label="class identity", limit=identity_limit)
         method_name = _bounded(method_name, label="method identity", limit=identity_limit)
-        fully_qualified_name = _bounded(
+        _bounded(
             f"{class_name}.{method_name}",
             label="fully-qualified identity",
             limit=identity_limit,

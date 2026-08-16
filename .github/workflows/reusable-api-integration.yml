@@ -43,7 +43,7 @@ jobs:
         run: dotnet restore backend/Taskdeck.sln
 
       - name: Run API integration tests
-        id: api-integration-tests
+        id: api_integration_tests
         run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
 
       - name: Summarize API integration timing
@@ -60,7 +60,7 @@ jobs:
           retention-days: 14
 
       - name: Upload API integration test results
-        if: ${{ always() && steps.api-integration-tests.outcome == 'failure' }}
+        if: ${{ always() && steps.api_integration_tests.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: api-integration-trx-${{ matrix.os }}
