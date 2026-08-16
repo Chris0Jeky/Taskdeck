@@ -26,4 +26,8 @@ public interface ITranscriptRepository : IRepository<Transcript>
     Task<int> DeleteByUserIdAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Guid>> GetIdsByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }
