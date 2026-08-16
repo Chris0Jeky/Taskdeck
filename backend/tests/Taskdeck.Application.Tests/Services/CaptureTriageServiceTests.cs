@@ -845,6 +845,59 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalFromTranscriptAsync_PassesTranscriptIdAndAmbiguousSpansAsNull()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var transcriptId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        IReadOnlyList<TranscriptEvidenceLinkInput>? createdEvidence = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+        _proposalServiceMock
+            .Setup(s => s.CreateTranscriptProposalAsync(
+                It.IsAny<CreateProposalDto>(),
+                It.IsAny<IReadOnlyList<TranscriptEvidenceLinkInput>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalDto, IReadOnlyList<TranscriptEvidenceLinkInput>, CancellationToken>(
+                (dto, evidence, _) =>
+                {
+                    createdProposal = dto;
+                    createdEvidence = evidence;
+                })
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                new CaptureTriageOutputV2(
+                    CaptureTriageOutputContract.SchemaVersionV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    [new CaptureTriageTaskV2("Review item", "action", null, null, 0.9m, "repeated quote")]),
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                EvidenceSpans: [null]));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromTranscriptAsync(
+            captureId,
+            userId,
+            boardId,
+            transcriptId,
+            TranscriptPayload("repeated quote"));
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        createdEvidence.Should().ContainSingle();
+        createdEvidence![0].OperationSequence.Should().Be(0);
+        createdEvidence[0].TranscriptId.Should().Be(transcriptId);
+        createdEvidence[0].SpanStart.Should().BeNull();
+        createdEvidence[0].SpanEnd.Should().BeNull();
+    }
+
+    [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldKeepV2MetadataOutOfExecutableOperationParameters()
     {
         var userId = Guid.NewGuid();

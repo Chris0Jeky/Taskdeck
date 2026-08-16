@@ -98,6 +98,36 @@ public class ProvenanceQueryServiceTests
     }
 
     [Fact]
+    public async Task GetProvenanceRowsAsync_MapsOpaqueEvidenceMetadataWithoutQuoteText()
+    {
+        var provenance = CreateProvenance();
+        var transcriptId = Guid.NewGuid();
+        var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.75, provenance.Id);
+        field.AddEvidenceLink(new ProvenanceEvidenceLink(
+            "Transcript",
+            transcriptId.ToString("D"),
+            field.Id,
+            "Transcript evidence",
+            12,
+            23));
+        provenance.AddField(field);
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(provenance.ProposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(provenance);
+
+        var result = await _service.GetProvenanceRowsAsync(provenance.ProposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        var link = result.Value.Single().EvidenceLinks.Should().ContainSingle().Subject;
+        link.SourceType.Should().Be("Transcript");
+        link.SourceId.Should().Be(transcriptId.ToString("D"));
+        link.Label.Should().Be("Transcript evidence");
+        link.SpanStart.Should().Be(12);
+        link.SpanEnd.Should().Be(23);
+        result.Value.Single().Value.Should().NotContain(transcriptId.ToString("D"));
+    }
+
+    [Fact]
     public async Task GetProvenanceRowsAsync_MapsMultipleFields()
     {
         var provenance = CreateProvenance();

@@ -55,7 +55,36 @@ public class AutomationProposalService : IAutomationProposalService
         _policyEngine = policyEngine ?? new AutomationPolicyEngine(unitOfWork);
     }
 
-    public async Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default)
+        => CreateProposalCoreAsync(dto, evidence: null, cancellationToken);
+
+    public async Task<Result<ProposalDto>> CreateTranscriptProposalAsync(
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput> evidence,
+        CancellationToken cancellationToken = default)
+    {
+        if (_provenanceRepository is null)
+        {
+            return Result.Failure<ProposalDto>(
+                ErrorCodes.UnexpectedError,
+                "Transcript evidence persistence is unavailable");
+        }
+
+        var evidenceValidation = ValidateTranscriptEvidence(dto, evidence);
+        if (!evidenceValidation.IsSuccess)
+        {
+            return Result.Failure<ProposalDto>(
+                evidenceValidation.ErrorCode,
+                evidenceValidation.ErrorMessage);
+        }
+
+        return await CreateProposalCoreAsync(dto, evidence, cancellationToken);
+    }
+
+    private async Task<Result<ProposalDto>> CreateProposalCoreAsync(
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput>? evidence,
+        CancellationToken cancellationToken)
     {
         // Defensive create-time validation (issue #1125): reject malformed operation input
         // (markup/binary actionType-targetType, non-JSON or oversized/over-nested parameters)
@@ -99,7 +128,7 @@ public class AutomationProposalService : IAutomationProposalService
 
             if (_provenanceRepository is not null)
             {
-                var provenance = BuildCreationProvenance(proposal, dto);
+                var provenance = BuildCreationProvenance(proposal, dto, evidence);
                 await _provenanceRepository.AddAsync(provenance, cancellationToken);
             }
 
@@ -113,7 +142,10 @@ public class AutomationProposalService : IAutomationProposalService
         }
     }
 
-    private static ProposalProvenance BuildCreationProvenance(AutomationProposal proposal, CreateProposalDto dto)
+    private static ProposalProvenance BuildCreationProvenance(
+        AutomationProposal proposal,
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput>? evidence)
     {
         var provenance = new ProposalProvenance(
             proposal.Id,
@@ -131,17 +163,80 @@ public class AutomationProposalService : IAutomationProposalService
             .OrderBy(operation => operation.Sequence)
             .ToList();
 
+        var evidenceBySequence = evidence?.ToDictionary(item => item.OperationSequence);
         for (var i = 0; i < orderedOperations.Count; i++)
         {
             var operation = orderedOperations[i];
-            provenance.AddField(new ProvenanceField(
+            var field = new ProvenanceField(
                 TruncateProvenanceFieldName($"Operation {i + 1}: {operation.ActionType} {operation.TargetType}"),
                 ProvenanceKind.Inferred,
                 0.75,
-                provenance.Id));
+                provenance.Id);
+            if (evidenceBySequence is not null)
+            {
+                var link = evidenceBySequence[operation.Sequence];
+                field.AddEvidenceLink(new ProvenanceEvidenceLink(
+                    "Transcript",
+                    link.TranscriptId.ToString("D"),
+                    field.Id,
+                    label: "Transcript evidence",
+                    spanStart: link.SpanStart,
+                    spanEnd: link.SpanEnd));
+            }
+
+            provenance.AddField(field);
         }
 
         return provenance;
+    }
+
+    private static Result ValidateTranscriptEvidence(
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput>? evidence)
+    {
+        if (evidence is null || dto.Operations is null || evidence.Count != dto.Operations.Count)
+        {
+            return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence must cover every proposal operation exactly once");
+        }
+
+        var operationSequences = dto.Operations.Select(operation => operation.Sequence).ToList();
+        if (operationSequences.Count != operationSequences.Distinct().Count())
+        {
+            return Result.Failure(ErrorCodes.ValidationError, "Proposal operation sequences must be unique");
+        }
+
+        var evidenceSequences = evidence.Select(item => item.OperationSequence).ToList();
+        if (evidenceSequences.Count != evidenceSequences.Distinct().Count() ||
+            !operationSequences.OrderBy(sequence => sequence).SequenceEqual(evidenceSequences.OrderBy(sequence => sequence)))
+        {
+            return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence must match proposal operation sequences");
+        }
+
+        foreach (var link in evidence)
+        {
+            if (link.TranscriptId == Guid.Empty)
+            {
+                return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence requires a transcript ID");
+            }
+
+            if (link.SpanStart.HasValue != link.SpanEnd.HasValue)
+            {
+                return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence span offsets must be paired");
+            }
+
+            if (link.SpanStart is { } start && link.SpanEnd is { } end &&
+                (start < 0 || end <= start))
+            {
+                return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence span offsets must be non-empty and ordered");
+            }
+        }
+
+        if (evidence.Select(link => link.TranscriptId).Distinct().Count() != 1)
+        {
+            return Result.Failure(ErrorCodes.ValidationError, "Transcript evidence must reference one transcript");
+        }
+
+        return Result.Success();
     }
 
     private static string ResolveProvenanceModelId(CreateProposalDto dto)
