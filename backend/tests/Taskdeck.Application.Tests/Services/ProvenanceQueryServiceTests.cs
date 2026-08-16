@@ -104,12 +104,13 @@ public class ProvenanceQueryServiceTests
         var transcriptId = Guid.NewGuid();
         var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.75, provenance.Id);
         field.AddEvidenceLink(new ProvenanceEvidenceLink(
-            "Transcript",
+            ProvenanceEvidenceLink.TranscriptSourceType,
             transcriptId.ToString("D"),
             field.Id,
             "Transcript evidence",
             12,
-            23));
+            23,
+            transcriptId));
         provenance.AddField(field);
         _provenanceRepo
             .Setup(r => r.GetByProposalIdAsync(provenance.ProposalId, It.IsAny<CancellationToken>()))

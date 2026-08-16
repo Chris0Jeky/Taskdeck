@@ -30,14 +30,12 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly ITranscriptRepository _transcripts;
-    private readonly IProposalProvenanceRepository _provenance;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
-        IProposalProvenanceRepository provenance,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null)
     {
@@ -47,7 +45,6 @@ public class AccountDeletionService : IAccountDeletionService
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
-        _provenance = provenance;
     }
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
@@ -125,11 +122,8 @@ public class AccountDeletionService : IAccountDeletionService
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
             var artefactsDeleted = await _artefacts.DeleteByUserIdAsync(userId, cancellationToken);
-            var transcriptIds = await _transcripts.GetIdsByUserIdAsync(userId, cancellationToken);
-            await _provenance.DeleteEvidenceLinksBySourceIdsAsync(
-                "Transcript",
-                transcriptIds,
-                cancellationToken);
+            // Transcript evidence links are database-owned by their Transcript FK, so this
+            // set-based delete cascades without a racy string-source-ID scan.
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions

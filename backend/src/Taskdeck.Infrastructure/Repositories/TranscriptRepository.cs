@@ -56,13 +56,4 @@ public sealed class TranscriptRepository : Repository<Transcript>, ITranscriptRe
         CancellationToken cancellationToken = default)
         => _dbSet.Where(transcript => transcript.UserId == userId)
             .ExecuteDeleteAsync(cancellationToken);
-
-    public async Task<IReadOnlyList<Guid>> GetIdsByUserIdAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default)
-        => await _dbSet
-            .AsNoTracking()
-            .Where(transcript => transcript.UserId == userId)
-            .Select(transcript => transcript.Id)
-            .ToListAsync(cancellationToken);
 }

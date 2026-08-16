@@ -9,9 +9,4 @@ public interface IProposalProvenanceRepository : IRepository<ProposalProvenance>
     /// and evidence links, or null if no provenance exists for the proposal.
     /// </summary>
     Task<ProposalProvenance?> GetByProposalIdAsync(Guid proposalId, CancellationToken cancellationToken = default);
-
-    Task<int> DeleteEvidenceLinksBySourceIdsAsync(
-        string sourceType,
-        IReadOnlyCollection<Guid> sourceIds,
-        CancellationToken cancellationToken = default);
 }

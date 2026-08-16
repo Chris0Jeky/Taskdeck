@@ -28,7 +28,6 @@ public class AccountDeletionServiceTests
     private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly Mock<ISourceArtefactRepository> _artefactRepoMock;
     private readonly Mock<ITranscriptRepository> _transcriptRepoMock;
-    private readonly Mock<IProposalProvenanceRepository> _provenanceRepoMock;
     private readonly AccountDeletionService _service;
 
     private readonly Guid _userId = Guid.NewGuid();
@@ -51,13 +50,10 @@ public class AccountDeletionServiceTests
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
         _artefactRepoMock = new Mock<ISourceArtefactRepository>();
         _transcriptRepoMock = new Mock<ITranscriptRepository>();
-        _provenanceRepoMock = new Mock<IProposalProvenanceRepository>();
         _artefactRepoMock.Setup(r => r.DeleteByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
         _transcriptRepoMock.Setup(r => r.DeleteByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(0);
-        _transcriptRepoMock.Setup(r => r.GetIdsByUserIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
 
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Notifications).Returns(_notificationRepoMock.Object);
@@ -80,7 +76,7 @@ public class AccountDeletionServiceTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ReturnsAsync(1);
 
-        _service = new AccountDeletionService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, _provenanceRepoMock.Object);
+        _service = new AccountDeletionService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object);
     }
 
     [Fact]
@@ -102,34 +98,6 @@ public class AccountDeletionServiceTests
         _transcriptRepoMock.Verify(
             repository => repository.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()),
             Times.Once);
-    }
-
-    [Fact]
-    public async Task DeleteAccountAsync_RemovesOnlyUsersTranscriptEvidenceBeforeTranscriptRows()
-    {
-        SetupUserFound();
-        SetupEmptyRepositories();
-        var targetTranscript = Guid.NewGuid();
-        _transcriptRepoMock
-            .Setup(r => r.GetIdsByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([targetTranscript]);
-        _provenanceRepoMock
-            .Setup(r => r.DeleteEvidenceLinksBySourceIdsAsync(
-                "Transcript",
-                It.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { targetTranscript })),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(1);
-
-        var result = await _service.DeleteAccountAsync(
-            _userId,
-            new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
-
-        result.IsSuccess.Should().BeTrue();
-        _provenanceRepoMock.Verify(r => r.DeleteEvidenceLinksBySourceIdsAsync(
-            "Transcript",
-            It.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(new[] { targetTranscript })),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _transcriptRepoMock.Verify(r => r.DeleteByUserIdAsync(_userId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -569,7 +537,7 @@ public class AccountDeletionServiceTests
         // Arrange — create a service with a cache mock
         var cacheMock = new Mock<IActiveUserCache>();
         var serviceWithCache = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, _provenanceRepoMock.Object, cacheMock.Object);
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, cacheMock.Object);
 
         SetupUserFound();
         SetupEmptyRepositories();
@@ -607,7 +575,7 @@ public class AccountDeletionServiceTests
 
         var loggerMock = new Mock<ILogger<AccountDeletionService>>();
         var serviceWithLogger = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, _provenanceRepoMock.Object,
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object,
             activeUserCache: null, logger: loggerMock.Object);
 
         var expectedException = new InvalidOperationException("DB error");

@@ -272,8 +272,9 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeTrue();
         var link = captured!.Fields.Single(field => field.FieldName.StartsWith("Operation "))
             .EvidenceLinks.Should().ContainSingle().Subject;
-        link.SourceType.Should().Be("Transcript");
+        link.SourceType.Should().Be(ProvenanceEvidenceLink.TranscriptSourceType);
         link.SourceId.Should().Be(transcriptId.ToString("D"));
+        link.TranscriptId.Should().Be(transcriptId);
         link.Label.Should().Be("Transcript evidence");
         link.SpanStart.Should().Be(4);
         link.SpanEnd.Should().Be(12);

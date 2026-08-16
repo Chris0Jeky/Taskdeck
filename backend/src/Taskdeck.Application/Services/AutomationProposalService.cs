@@ -176,12 +176,13 @@ public class AutomationProposalService : IAutomationProposalService
             {
                 var link = evidenceBySequence[operation.Sequence];
                 field.AddEvidenceLink(new ProvenanceEvidenceLink(
-                    "Transcript",
+                    ProvenanceEvidenceLink.TranscriptSourceType,
                     link.TranscriptId.ToString("D"),
                     field.Id,
                     label: "Transcript evidence",
                     spanStart: link.SpanStart,
-                    spanEnd: link.SpanEnd));
+                    spanEnd: link.SpanEnd,
+                    transcriptId: link.TranscriptId));
             }
 
             provenance.AddField(field);
