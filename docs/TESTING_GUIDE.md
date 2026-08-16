@@ -28,7 +28,7 @@ dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.In
 ```
 
 Linkage-head result: **23 Domain, 38 Application, 23 worker, 15 repository/migration,
-one golden-path HTTP, and four focused capture-API tests passed**; the Release solution build
+one golden-path HTTP, and three focused capture-API tests passed**; the Release solution build
 completed with zero errors and EF reported no pending model changes. These checks prove one
 canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
 and SQLite unique/`SET NULL` behavior. They do not prove evidence spans, provenance API/UI reads,
