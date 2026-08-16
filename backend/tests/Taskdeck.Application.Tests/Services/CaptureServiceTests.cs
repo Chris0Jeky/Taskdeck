@@ -924,6 +924,30 @@ public class CaptureServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRejectEditAfterTranscriptIsLinked()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeTranscriptV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "canonical transcript")));
+        item.AttachTranscript(Guid.NewGuid());
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto("attempted edit"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("cannot be edited");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
     [Theory]
     [InlineData(CaptureSource.TranscriptPaste)]
     [InlineData(CaptureSource.TranscriptFile)]

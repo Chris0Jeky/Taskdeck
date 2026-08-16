@@ -12,6 +12,7 @@ public class LlmRequest : Entity
 {
     public Guid UserId { get; private set; }
     public Guid? BoardId { get; private set; }
+    public Guid? TranscriptId { get; private set; }
     public string RequestType { get; private set; } = string.Empty;
     public string Payload { get; private set; } = string.Empty;
     public RequestStatus Status { get; private set; }
@@ -170,6 +171,31 @@ public class LlmRequest : Entity
         }
 
         BoardId = boardId;
+        Touch();
+    }
+
+    /// <summary>
+    /// Links this queue request to its durable transcript. Replaying the same linkage is a
+    /// no-op; assigning a different transcript would make the queue request ambiguous.
+    /// </summary>
+    public void AttachTranscript(Guid transcriptId)
+    {
+        if (transcriptId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Transcript ID cannot be empty");
+
+        if (TranscriptId.HasValue)
+        {
+            if (TranscriptId.Value != transcriptId)
+            {
+                throw new DomainException(
+                    ErrorCodes.Conflict,
+                    "Cannot attach a different transcript to this request");
+            }
+
+            return;
+        }
+
+        TranscriptId = transcriptId;
         Touch();
     }
 }
