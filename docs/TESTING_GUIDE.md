@@ -2,13 +2,37 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-13
+Last Updated: 2026-08-16
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-16 REVIVAL-09 Transcript Linkage Checkpoint (`#1305`)
+
+The first linkage slice must prove the domain attachment invariant, immutable edit boundary,
+worker retry/reuse behavior, real SQLite FK/index/delete behavior, the proposal-first HTTP path,
+and EF model parity:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmRequestTests|FullyQualifiedName~TranscriptTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests.LlmGoldenPath_TranscriptCaptureTriageApproveExecute_ShouldCreateStubCardsWithLlmProvenance"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldUpdateCaptureText|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldAllowTranscriptTextAtSourceSpecificLimit|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```
+
+Linkage-head result: **23 Domain, 38 Application, 23 worker, 15 repository/migration,
+one golden-path HTTP, and four focused capture-API tests passed**; the Release solution build
+completed with zero errors and EF reported no pending model changes. These checks prove one
+canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
+and SQLite unique/`SET NULL` behavior. They do not prove evidence spans, provenance API/UI reads,
+shared-reader policy, or real external-provider behavior; those remain later `#1305` work.
 
 ## Current Verified Totals (2026-05-16)
 
