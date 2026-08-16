@@ -102,6 +102,20 @@ Constraints discovered in the shipped seam:
    (~`pollInterval*3 + MaxBatchSize×180s`) because a legitimate tick blocks for minutes of
    sequential LLM calls — the fast worker's threshold would false-alarm.
 
+7. **Durable evidence uses server-resolved Transcript coordinates without upgrading provider v2.**
+   After a successful schema-v2 LLM extraction, the server resolves each verbatim quote ordinally
+   inside its normalized chunk and converts it to an absolute half-open `[start,end)` range in .NET
+   UTF-16 code units over the linked LF-normalized Transcript. Every observation of a deduplicated
+   same-title task must resolve to the same absolute range; a missing quote, overlapping repeat, or
+   conflicting range is ambiguous and retains a source reference with null offsets rather than a
+   guessed span. Each proposed operation attaches that reference through the existing generic
+   `ProvenanceEvidenceLink` (`SourceType = "Transcript"`, `SourceId` = Transcript Guid in `D` format,
+   fixed non-content label). The link does not copy source text into its label or the inferred
+   provenance field. Board-authorized provenance reads expose only opaque identifiers and optional
+   offsets. Any future quote resolver must remain owner-scoped, and Transcript erasure must first
+   remove the generic non-FK links. Deterministic fallback output has no Transcript evidence link;
+   the provider prompt/parser stays v2 and is not treated as an authoritative offset source.
+
 ## Consequences
 
 - A transcript capture triages through a real LLM when (and only when) a live provider is
