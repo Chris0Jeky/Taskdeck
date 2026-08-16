@@ -59,20 +59,22 @@ When changing transcript quote-to-span resolution, trusted proposal evidence, op
 responses, or Transcript erasure cleanup, run:
 
 ```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceEvidenceLinkTests"
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests|FullyQualifiedName~AccountDeletionServiceTests"
-dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests|FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~AutomationProposalsApiTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests|FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~AutomationProposalsApiTests|FullyQualifiedName~MigrationBootstrapTests"
 dotnet build backend/Taskdeck.sln -c Release -m:1
 dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
 ```
 
-Evidence-head result: **253 Application and 73 API tests passed**, with no failures or skips; the
+Evidence-head result: **17 Domain, 252 Application, and 86 API tests passed**, with no failures or skips; the
 Release solution build completed with zero errors and two pre-existing nullable warnings in
 `CliStartupTraceTests`, EF reported no pending model changes, and both documentation gates passed.
-The proof covers UTF-16 absolute offsets, repeated-quote and
-same-title ambiguity, stable reduction alignment, one trusted link per operation, SQLite cleanup
-batching/source isolation, and a board viewer receiving opaque metadata without Transcript text.
+The proof covers UTF-16 absolute offsets, repeated-quote and same-title ambiguity, stable reduction
+alignment, one trusted link per operation, database source-type consistency, cascading erasure,
+atomic stale-link rejection, migration/model parity, and a board viewer receiving opaque metadata
+without Transcript text.
 It does not prove PostgreSQL-specific deletion translation, Paper quote resolution/deep links,
 provenance export, or real external-provider behavior.
 
