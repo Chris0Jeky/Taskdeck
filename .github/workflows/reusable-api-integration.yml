@@ -43,12 +43,26 @@ jobs:
         run: dotnet restore backend/Taskdeck.sln
 
       - name: Run API integration tests
+        id: api-integration-tests
         run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
 
+      - name: Summarize API integration timing
+        if: always()
+        run: python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/${{ matrix.os }}/api-integration.trx" --output "backend/TestResults/api-integration/${{ matrix.os }}/api-integration-timing.json"
+
+      - name: Upload API integration timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-integration-timing-${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}/api-integration-timing.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload API integration test results
-        if: failure()
+        if: ${{ always() && steps.api-integration-tests.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: api-integration-trx-${{ matrix.os }}
-          path: backend/TestResults/api-integration/${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}/*.trx
           if-no-files-found: ignore
