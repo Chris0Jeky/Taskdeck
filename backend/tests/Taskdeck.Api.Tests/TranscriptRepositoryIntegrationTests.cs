@@ -76,6 +76,82 @@ public sealed class TranscriptRepositoryIntegrationTests
     }
 
     [Fact]
+    public async Task DeleteEvidenceLinksBySourceIdsAsync_BatchesAndDeletesOnlyMatchingTranscriptLinks()
+    {
+        var dbPath = CreateDbPath();
+        try
+        {
+            await using var db = new TaskdeckDbContext(CreateOptions(dbPath));
+            await db.Database.MigrateAsync();
+            var owner = AddUser(db, "transcript-evidence-owner");
+            var proposal = new AutomationProposal(
+                ProposalSourceType.Queue,
+                owner.Id,
+                "Transcript evidence proposal",
+                RiskLevel.Low,
+                Guid.NewGuid().ToString("D"));
+            var provenance = new ProposalProvenance(
+                proposal.Id,
+                proposal.CorrelationId,
+                "test-model");
+            var field = new ProvenanceField(
+                "Operation 1: create card",
+                ProvenanceKind.Inferred,
+                0.9,
+                provenance.Id);
+            var targetTranscriptId = Guid.NewGuid();
+            var retainedTranscriptId = Guid.NewGuid();
+            field.AddEvidenceLink(new ProvenanceEvidenceLink(
+                "Transcript",
+                targetTranscriptId.ToString("D"),
+                field.Id,
+                "Transcript evidence",
+                2,
+                8));
+            field.AddEvidenceLink(new ProvenanceEvidenceLink(
+                "InboxCapture",
+                targetTranscriptId.ToString("D"),
+                field.Id,
+                "Different source type"));
+            field.AddEvidenceLink(new ProvenanceEvidenceLink(
+                "Transcript",
+                retainedTranscriptId.ToString("D"),
+                field.Id,
+                "Different transcript"));
+            provenance.AddField(field);
+            db.AutomationProposals.Add(proposal);
+            db.ProposalProvenances.Add(provenance);
+            await db.SaveChangesAsync();
+
+            var sourceIds = Enumerable.Range(0, 400)
+                .Select(_ => Guid.NewGuid())
+                .Append(targetTranscriptId)
+                .ToArray();
+
+            var deleted = await new ProposalProvenanceRepository(db)
+                .DeleteEvidenceLinksBySourceIdsAsync("Transcript", sourceIds);
+
+            db.ChangeTracker.Clear();
+            var remaining = await db.ProvenanceEvidenceLinks
+                .OrderBy(link => link.SourceType)
+                .ThenBy(link => link.SourceId)
+                .ToListAsync();
+            deleted.Should().Be(1);
+            remaining.Should().HaveCount(2);
+            remaining.Should().ContainSingle(link =>
+                link.SourceType == "InboxCapture" &&
+                link.SourceId == targetTranscriptId.ToString("D"));
+            remaining.Should().ContainSingle(link =>
+                link.SourceType == "Transcript" &&
+                link.SourceId == retainedTranscriptId.ToString("D"));
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task LlmRequestTranscriptLink_IsUniqueAndSetsNullWhenTranscriptIsDeleted()
     {
         var dbPath = CreateDbPath();
