@@ -98,11 +98,16 @@ Read before editing — do not assume layout:
   proves the changed seam:**
   - Normal backend tests use SQLite and do **not** need Docker. Do not pay container startup cost
     for an unrelated unit or application-layer slice.
-  - For positive PostgreSQL/Testcontainers proof, first run `docker info`, then run
-    `dotnet test backend/tests/Taskdeck.Integration.Tests/Taskdeck.Integration.Tests.csproj -c Release`.
-    With responsive Docker, require zero skips and the current total documented in
-    `docs/TESTING_GUIDE.md` (**35 passed / 0 skipped** today); **7 passed / 28 skipped** is today's
-    graceful Dockerless gate, not PostgreSQL parity.
+  - For positive PostgreSQL/Testcontainers proof, first run `docker info`. Set
+    `TASKDECK_REQUIRE_DOCKER=true` for the integration run, emit a TRX, and validate it with
+    `py -3 -B scripts/ci/assert_container_integration_results.py --trx
+    "backend/TestResults/container-integration/container-integration.trx" --mode positive
+    --minimum-postgres-results 28`. Follow `.github/workflows/reusable-container-integration.yml`
+    for the exact `dotnet test` arguments and forced-unavailable negative control. Fail if either
+    command is nonzero, and clear the environment variable afterward.
+  - A normal local green with all container cases skipped proves only graceful Dockerless gating,
+    not PostgreSQL parity. Do not infer positive proof from aggregate counts; the TRX verifier pins
+    fully qualified PostgreSQL test identities and the live minimum.
   - Use the Docker MCP for container/image inspection when available; use the repository's shell
     `docker compose` commands for canonical workflows and script parity. The Docker MCP gateway is
     declared once at user scope — never add another declaration to this repo.
