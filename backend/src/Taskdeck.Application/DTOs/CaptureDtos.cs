@@ -21,7 +21,8 @@ public record CaptureItemDto(
     DateTimeOffset? ProcessedAt,
     int RetryCount,
     string? ErrorMessage = null,
-    CaptureProvenanceV1? Provenance = null);
+    CaptureProvenanceV1? Provenance = null,
+    bool CanEditSuggestion = false);
 
 public record CaptureItemSummaryDto(
     Guid Id,

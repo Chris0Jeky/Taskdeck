@@ -49,19 +49,6 @@ export function canMutateSelection(status: CaptureStatusValue | undefined): bool
     status === 'Failed'
 }
 
-export function canEditSuggestion(status: CaptureStatusValue | undefined): boolean {
-  if (status === undefined) {
-    return false
-  }
-
-  return status === 0 ||
-    status === 'New' ||
-    status === 2 ||
-    status === 'Triaged' ||
-    status === 6 ||
-    status === 'Failed'
-}
-
 export function triageButtonLabel(
   status: CaptureStatusValue | undefined,
   triagePollingItemId: string | null,

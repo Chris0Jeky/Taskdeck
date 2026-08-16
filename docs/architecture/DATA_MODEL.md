@@ -1,6 +1,6 @@
 # Data Model Reference
 
-Last Verified: 2026-08-12 (full-model recertification against `TaskdeckDbContext` and the EF model snapshot -- issue `#1470`)
+Last Verified: 2026-08-16 (full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
@@ -96,6 +96,9 @@ erDiagram
     Board ||--o{ LlmRequest : "scoped to (FK)"
     Board o|--o{ SourceArtefact : "optionally scopes (FK, SetNull)"
     Board o|--o{ Transcript : "optionally scopes (FK, SetNull)"
+
+    LlmRequest ||--o{ Transcript : "created from (logical)"
+    LlmRequest o|--o| Transcript : "links snapshot (FK, SetNull)"
 
     Column ||--o{ Card : "holds (FK)"
 
@@ -783,7 +786,9 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 
 ### Transcript
 
-User-owned normalized transcript record. It is an independent durable text store, but not yet the only one: the current transcript-capture path also retains input text in `LlmRequest.Payload` until `#1305` links triage to Transcript and establishes the final ownership boundary.
+User-owned normalized transcript record. It is the canonical durable transcript snapshot for linked
+transcript captures. The current transcript-capture path also retains input text in
+`LlmRequest.Payload` as a compatibility duplicate; this linkage does not imply payload retirement.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -791,7 +796,7 @@ User-owned normalized transcript record. It is an independent durable text store
 | UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
 | BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
 | CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
-| Text | `string` | Yes | 1-102,400 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
+| Text | `string` | Yes | 1-200,000 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
 | SegmentsJson | `string` | Yes | Max 1,048,576 chars; at most 5,000 segments | Serialized line-indexed annotations |
 | CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
 | SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
@@ -815,6 +820,7 @@ A queued request for LLM processing.
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | FK to User | Requesting user |
 | BoardId | `Guid?` | No | FK to Board | Optional board scope |
+| TranscriptId | `Guid?` | No | FK to Transcript (SetNull); unique when present | Optional durable transcript snapshot linked to this request |
 | RequestType | `string` | Yes | Non-empty | Request category |
 | Payload | `string` | Yes | Non-empty | Request content (JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
@@ -824,7 +830,9 @@ A queued request for LLM processing.
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
-**Navigation:** User, Board
+**Navigation:** User, Board, Transcript
+
+**Index:** `TranscriptId` (unique; nullable values may repeat).
 
 ### LlmUsageRecord
 
@@ -1335,8 +1343,9 @@ Immutable audit record for abuse detection events and state transitions.
 | AgentProfile -> AgentRun | One-to-many | FK (Cascade) | A profile executes many runs |
 | AgentRun -> AgentRunEvent | One-to-many | FK (Cascade) | A run emits many events |
 | CommandRun -> CommandRunLog | One-to-many | FK (Cascade) | Execution logs per command run |
-| LlmRequest -> SourceArtefact | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
-| LlmRequest -> Transcript | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
+| LlmRequest -> SourceArtefact | One-to-many (optional) | Logical | `SourceArtefact.CreatedFromCaptureId` provenance; no FK |
+| LlmRequest -> Transcript (created-from) | One-to-many (optional) | Logical | `Transcript.CreatedFromCaptureId` provenance; no FK; distinct from the snapshot link below |
+| LlmRequest -> Transcript (linked snapshot) | One-to-zero-or-one (optional) | FK (SetNull) | `LlmRequest.TranscriptId`; unique when present |
 | SourceArtefact -> ArtefactBlob | One-to-zero-or-one | FK (Cascade) | Binary payload keyed by `SourceArtefactId` |
 | SourceArtefact -> ArtefactExtraction | One-to-many | FK (Cascade) | Append-only extraction history |
 | SourceArtefact -> Transcript | One-to-many (optional) | FK (SetNull) | Transcript survives source-artefact deletion |

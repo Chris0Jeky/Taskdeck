@@ -65,6 +65,8 @@ export interface CaptureItem extends CaptureItemSummary {
   retryCount: number
   errorMessage?: string | null
   provenance?: CaptureProvenance | null
+  /** Optional while older API instances roll out; absent is conservatively not editable. */
+  canEditSuggestion?: boolean
 }
 
 export interface CreateCaptureItemDto {

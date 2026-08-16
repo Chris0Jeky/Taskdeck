@@ -10,7 +10,7 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## 2026-08-16 REVIVAL-09 Transcript Linkage Checkpoint (`#1305`)
+## 2026-08-16 REVIVAL-09 Transcript Linkage and Editability Checkpoint (`#1305`)
 
 The first linkage slice must prove the domain attachment invariant, immutable edit boundary,
 worker retry/reuse behavior, real SQLite FK/index/delete behavior, the proposal-first HTTP path,
@@ -33,6 +33,24 @@ completed with zero errors and EF reported no pending model changes. These check
 canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
 and SQLite unique/`SET NULL` behavior. They do not prove evidence spans, provenance API/UI reads,
 shared-reader policy, or real external-provider behavior; those remain later `#1305` work.
+
+The follow-up editability slice reuses the authoritative Application rule in the additive capture-detail
+capability and proves that Inbox neither offers nor retains an editor after linkage:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests"
+Push-Location frontend/taskdeck-web
+npx vitest --run src/tests/views/InboxView.spec.ts --maxWorkers=2
+npm run typecheck
+npm run lint
+npm run build
+Pop-Location
+```
+
+Editability-head result: **42 Application, 27 capture-API, and 71 Inbox tests passed**;
+type-check and production build passed, while lint reported zero errors and six unrelated existing
+accessibility warnings. The API proof also confirms that capture detail does not expose `TranscriptId`.
 
 ## Current Verified Totals (2026-05-16)
 
