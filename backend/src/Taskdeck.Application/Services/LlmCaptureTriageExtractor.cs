@@ -64,7 +64,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                             ? extraction.EvidenceSpans[index]
                             : null))
                     .ToList())
-            ]);
+            ], payload.Text);
             return extraction with
             {
                 Output = extraction.Output with { Tasks = singleReduced.Tasks },
@@ -146,7 +146,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Model: model);
         }
 
-        var reduced = ReduceMappedTasks(mappedTasks);
+        var reduced = ReduceMappedTasks(mappedTasks, payload.Text);
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
             CaptureTriageOutputContract.PromptVersionLlmV2,
@@ -449,14 +449,20 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         IReadOnlyList<(int Start, int End)?> Spans);
 
     private static ReducedTasks ReduceMappedTasks(
-        IReadOnlyList<MappedChunkTasks> mappedTasks)
+        IReadOnlyList<MappedChunkTasks> mappedTasks,
+        string canonicalTranscript)
     {
         // A transcript can yield more than the schema-v2 contract's 20 cards. Do not let an early chunk
         // consume every output slot: take one task from evenly spaced source chunks first, then
         // fill remaining slots in stable chunk/task order. This makes the lossy reduction
         // deterministic while preserving coverage of both the beginning and end of a long meeting.
         var sanitizedByChunk = mappedTasks
-            .Select(chunk => chunk.Tasks.ToList())
+            .Select(chunk => chunk.Tasks
+                .Select(candidate => candidate with
+                {
+                    Span = FindUniqueAbsoluteSpan(canonicalTranscript, candidate.Task.EvidenceQuote, 0)
+                })
+                .ToList())
             .ToList();
         var reduced = new List<CaptureTriageTaskV2>();
         var reducedSpans = new List<(int Start, int End)?>();

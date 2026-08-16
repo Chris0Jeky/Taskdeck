@@ -269,6 +269,31 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_ShouldNotLinkAQuoteRepeatedAcrossNonOverlappingMapChunks()
+    {
+        _settings.MaxInputTokensPerChunk = 24;
+        _settings.ChunkOverlapTokens = 0;
+        const string quote = "same evidence";
+        var transcript = $"Alice: {quote}\n\nBob: {quote}";
+        var chunks = TranscriptTriageChunker.Chunk(
+            transcript,
+            _settings.MaxInputTokensPerChunk,
+            _settings.ChunkOverlapTokens);
+        chunks.Should().HaveCount(2);
+        chunks.Should().OnlyContain(chunk => chunk.Text.Contains(quote, StringComparison.Ordinal));
+        SetupCompletionForRequest(request => request.Messages.Single().Content == chunks[0].Text
+            ? V2Completion(("Use evidence", quote))
+            : "{\"tasks\":[]}");
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.Output!.Tasks.Should().ContainSingle().Which.Title.Should().Be("Use evidence");
+        result.EvidenceSpans.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReportProgressBeforeAndAfterEachMapCompletion()
     {
         _settings.MaxInputTokensPerChunk = 64;
