@@ -110,12 +110,13 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
                 .OrderBy(item => item.Id)
                 .First();
             field.AddEvidenceLink(new ProvenanceEvidenceLink(
-                "Transcript",
+                ProvenanceEvidenceLink.TranscriptSourceType,
                 transcript.Id.ToString("D"),
                 field.Id,
                 "Transcript evidence",
                 8,
-                23));
+                23,
+                transcript.Id));
             db.Transcripts.Add(transcript);
             await db.SaveChangesAsync();
             transcriptId = transcript.Id;

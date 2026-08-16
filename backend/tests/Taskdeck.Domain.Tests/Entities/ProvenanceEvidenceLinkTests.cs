@@ -16,6 +16,7 @@ public class ProvenanceEvidenceLinkTests
 
         link.SourceType.Should().Be("InboxCapture");
         link.SourceId.Should().Be("cap-123");
+        link.TranscriptId.Should().BeNull();
         link.ProvenanceFieldId.Should().Be(_fieldId);
         link.Label.Should().BeNull();
         link.SpanStart.Should().BeNull();
@@ -142,5 +143,61 @@ public class ProvenanceEvidenceLinkTests
 
         link.SpanStart.Should().Be(10);
         link.SpanEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_ShouldCreateTypedTranscriptLink_WithCanonicalSourceId()
+    {
+        var transcriptId = Guid.NewGuid();
+
+        var link = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcriptId.ToString("D"),
+            _fieldId,
+            transcriptId: transcriptId);
+
+        link.TranscriptId.Should().Be(transcriptId);
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectTranscriptLinkWithoutTypedTranscriptId()
+    {
+        var transcriptId = Guid.NewGuid();
+
+        var act = () => new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcriptId.ToString("D"),
+            _fieldId);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Transcript evidence requires a transcript ID");
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectTranscriptLinkWithNonCanonicalSourceId()
+    {
+        var transcriptId = Guid.NewGuid();
+
+        var act = () => new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcriptId.ToString("N"),
+            _fieldId,
+            transcriptId: transcriptId);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Transcript evidence SourceId must be the transcript ID in canonical D format");
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectTypedTranscriptIdForOtherSourceTypes()
+    {
+        var act = () => new ProvenanceEvidenceLink(
+            "InboxCapture",
+            "cap-123",
+            _fieldId,
+            transcriptId: Guid.NewGuid());
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("TranscriptId is only valid for Transcript evidence");
     }
 }

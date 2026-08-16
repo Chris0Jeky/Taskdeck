@@ -9,8 +9,11 @@ namespace Taskdeck.Domain.Entities;
 /// </summary>
 public class ProvenanceEvidenceLink : Entity
 {
+    public const string TranscriptSourceType = "Transcript";
+
     public string SourceType { get; private set; } = string.Empty;
     public string SourceId { get; private set; } = string.Empty;
+    public Guid? TranscriptId { get; private set; }
     public string? Label { get; private set; }
     public int? SpanStart { get; private set; }
     public int? SpanEnd { get; private set; }
@@ -24,7 +27,8 @@ public class ProvenanceEvidenceLink : Entity
         Guid provenanceFieldId,
         string? label = null,
         int? spanStart = null,
-        int? spanEnd = null)
+        int? spanEnd = null,
+        Guid? transcriptId = null)
     {
         if (string.IsNullOrWhiteSpace(sourceType))
             throw new DomainException(ErrorCodes.ValidationError, "SourceType cannot be empty");
@@ -44,9 +48,21 @@ public class ProvenanceEvidenceLink : Entity
             throw new DomainException(ErrorCodes.ValidationError, "SpanEnd cannot be negative");
         if (spanStart.HasValue && spanEnd.HasValue && spanEnd.Value < spanStart.Value)
             throw new DomainException(ErrorCodes.ValidationError, "SpanEnd cannot be less than SpanStart");
+        if (string.Equals(sourceType, TranscriptSourceType, StringComparison.Ordinal))
+        {
+            if (transcriptId is not { } typedTranscriptId || typedTranscriptId == Guid.Empty)
+                throw new DomainException(ErrorCodes.ValidationError, "Transcript evidence requires a transcript ID");
+            if (!string.Equals(sourceId, typedTranscriptId.ToString("D"), StringComparison.Ordinal))
+                throw new DomainException(ErrorCodes.ValidationError, "Transcript evidence SourceId must be the transcript ID in canonical D format");
+        }
+        else if (transcriptId.HasValue)
+        {
+            throw new DomainException(ErrorCodes.ValidationError, "TranscriptId is only valid for Transcript evidence");
+        }
 
         SourceType = sourceType;
         SourceId = sourceId;
+        TranscriptId = transcriptId;
         ProvenanceFieldId = provenanceFieldId;
         Label = label;
         SpanStart = spanStart;
