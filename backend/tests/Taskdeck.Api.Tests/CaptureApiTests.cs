@@ -199,6 +199,59 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GetById_ShouldExposeEditCapabilityOnlyBeforeTranscriptLinkage()
+    {
+        await AuthenticateAsAsync("capture-edit-capability");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "capture capability payload", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+        created!.CanEditSuggestion.Should().BeTrue();
+
+        var beforeLinkResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
+        beforeLinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var beforeLinkJson = await beforeLinkResponse.Content.ReadAsStringAsync();
+        var beforeLink = JsonSerializer.Deserialize<CaptureItemDto>(
+            beforeLinkJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        beforeLink.Should().NotBeNull();
+        beforeLink!.CanEditSuggestion.Should().BeTrue();
+        beforeLinkJson.ToLowerInvariant().Should().NotContain("transcriptid");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            var transcript = new Transcript(
+                created.UserId,
+                CaptureSource.TranscriptPaste,
+                "canonical transcript",
+                createdFromCaptureId: created.Id);
+            db.Transcripts.Add(transcript);
+            request.AttachTranscript(transcript.Id);
+            await db.SaveChangesAsync();
+        }
+
+        var afterLinkResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
+        afterLinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterLinkJson = await afterLinkResponse.Content.ReadAsStringAsync();
+        var afterLink = JsonSerializer.Deserialize<CaptureItemDto>(
+            afterLinkJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        afterLink.Should().NotBeNull();
+        afterLink!.CanEditSuggestion.Should().BeFalse();
+        afterLinkJson.ToLowerInvariant().Should().NotContain("transcriptid");
+
+        var editResponse = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("attempted linked edit"));
+        await ApiTestHarness.AssertErrorContractAsync(editResponse, HttpStatusCode.Conflict, "Conflict");
+    }
+
+    [Fact]
     public async Task Ignore_ShouldBeIdempotent()
     {
         await AuthenticateAsAsync("capture-ignore");

@@ -49,6 +49,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }>,
   loadingList: false,
   loadingDetail: false,
@@ -74,6 +75,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }, syncSummary?: boolean) => void>(),
   fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
   fetchDetail: vi.fn<(itemId: string, options?: {
@@ -104,6 +106,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }>>(),
   ignoreItem: vi.fn<(itemId: string) => Promise<void>>(),
   cancelItem: vi.fn<(itemId: string) => Promise<void>>(),
@@ -316,6 +319,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
       mockCaptureStore.detailById[itemId] = detail
       return detail
@@ -1140,6 +1144,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1167,6 +1172,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1207,6 +1213,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1226,6 +1233,90 @@ describe('InboxView', () => {
 
     expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('hides edit for a linked triaged capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Triaged',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Linked transcript excerpt',
+        rawText: 'Linked transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+        canEditSuggestion: false,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+  })
+
+  it('shows edit and edit recovery guidance for an unlinked failed capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Failed',
+        source: 'Typed',
+        textExcerpt: 'Failed capture excerpt',
+        rawText: 'Failed capture text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 1,
+        errorMessage: 'Triage failed',
+        provenance: null,
+        canEditSuggestion: true,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capture-error-banner"]').text()).toContain('You can edit the text and retry')
+  })
+
+  it('hides edit and gives retry or ignore guidance for a linked failed capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Failed',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Linked failed excerpt',
+        rawText: 'Linked failed transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 1,
+        errorMessage: 'Triage failed',
+        provenance: null,
+        canEditSuggestion: false,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+    const banner = wrapper.find('[data-testid="capture-error-banner"]')
+    expect(banner.text()).toContain('Retry triage or ignore this capture')
+    expect(banner.text()).not.toContain('You can edit the text')
   })
 
   describe('triage action visibility', () => {

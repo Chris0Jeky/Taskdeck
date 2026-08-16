@@ -410,8 +410,7 @@ public class CaptureService : ICaptureService
         var currentPayload = ParsePayload(item);
         var currentStatus = ResolveCaptureStatus(item, currentPayload);
 
-        if (currentStatus != CaptureStatus.New && currentStatus != CaptureStatus.Failed &&
-            currentStatus != CaptureStatus.Triaged)
+        if (!CanEditSuggestion(item, currentStatus))
         {
             return Result.Failure<CaptureItemDto>(ErrorCodes.Conflict,
                 $"Capture item in status {currentStatus} cannot be edited");
@@ -517,8 +516,15 @@ public class CaptureService : ICaptureService
             item.ProcessedAt,
             item.RetryCount,
             item.ErrorMessage,
-            payload.Provenance);
+            payload.Provenance,
+            CanEditSuggestion(item, status));
     }
+
+    private static bool CanEditSuggestion(LlmRequest item, CaptureStatus status) =>
+        !item.TranscriptId.HasValue && IsSuggestionEditableStatus(status);
+
+    private static bool IsSuggestionEditableStatus(CaptureStatus status) =>
+        status is CaptureStatus.New or CaptureStatus.Failed or CaptureStatus.Triaged;
 
     private async Task<IReadOnlyDictionary<Guid, AutomationProposal>> LoadAppliedProposalLookupAsync(
         IReadOnlyList<(LlmRequest Item, CapturePayloadV1 Payload)> captureItems,

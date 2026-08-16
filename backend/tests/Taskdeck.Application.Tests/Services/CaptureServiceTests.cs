@@ -93,6 +93,7 @@ public class CaptureServiceTests
         parsedPayload.Value.Provenance.BoardId.Should().Be(boardId);
         parsedPayload.Value.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
         result.Value.RawText.Should().Be("quick capture text");
+        result.Value.CanEditSuggestion.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -584,6 +585,62 @@ public class CaptureServiceTests
         result.Value.Provenance.PromptVersion.Should().Be("triage.v1");
         result.Value.Provenance.Provider.Should().Be("OpenAI");
         result.Value.Provenance.Model.Should().Be("gpt-4o-mini");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ShouldHideEditCapability_WhenTranscriptIsLinked()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeTranscriptV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "canonical transcript")));
+        item.AttachTranscript(Guid.NewGuid());
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.GetByIdAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CanEditSuggestion.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(RequestStatus.Pending, CaptureStatus.New)]
+    [InlineData(RequestStatus.Failed, CaptureStatus.Failed)]
+    [InlineData(RequestStatus.Completed, CaptureStatus.Triaged)]
+    public async Task GetByIdAsync_ShouldAllowEditCapability_ForEligibleUnlinkedStatuses(
+        RequestStatus queueStatus,
+        CaptureStatus expectedCaptureStatus)
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "capture payload")));
+        if (queueStatus == RequestStatus.Failed)
+        {
+            item.MarkAsFailed("triage failed");
+        }
+        else if (queueStatus == RequestStatus.Completed)
+        {
+            item.MarkAsProcessing();
+            item.MarkAsCompleted();
+        }
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.GetByIdAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(expectedCaptureStatus);
+        result.Value.CanEditSuggestion.Should().BeTrue();
     }
 
     [Fact]
