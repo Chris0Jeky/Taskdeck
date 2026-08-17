@@ -17,6 +17,19 @@ namespace Taskdeck.Infrastructure.Migrations
                 type: "TEXT",
                 nullable: true);
 
+            // Down preserves the generic source reference. Rehydrate the typed FK from the
+            // actual parent row so a rollback followed by a redeploy does not strand evidence.
+            migrationBuilder.Sql(
+                """
+                UPDATE "ProvenanceEvidenceLinks"
+                SET "TranscriptId" = (
+                    SELECT "Transcripts"."Id"
+                    FROM "Transcripts"
+                    WHERE lower("Transcripts"."Id") = lower("ProvenanceEvidenceLinks"."SourceId")
+                )
+                WHERE "SourceType" = 'Transcript';
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "IX_ProvenanceEvidenceLinks_TranscriptId",
                 table: "ProvenanceEvidenceLinks",

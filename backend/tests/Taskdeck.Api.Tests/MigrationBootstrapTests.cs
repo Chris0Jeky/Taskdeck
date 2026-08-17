@@ -134,6 +134,54 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void AddTypedTranscriptEvidenceLink_is_reapplicable_after_rollback_with_existing_evidence()
+    {
+        _context.Database.Migrate();
+
+        var user = new User("migration-transcript-owner", "migration-transcript-owner@example.test", "hash");
+        var transcript = new Transcript(
+            user.Id,
+            CaptureSource.TranscriptPaste,
+            "Transcript evidence survives a rollback.",
+            [new TranscriptSegment(0, 0, "Speaker", 0)]);
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Migration transcript evidence",
+            RiskLevel.Low,
+            $"migration-transcript-evidence-{Guid.NewGuid():N}");
+        var provenance = new ProposalProvenance(proposal.Id, proposal.CorrelationId, "test-model");
+        var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.9, provenance.Id);
+        var link = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcript.Id.ToString("D"),
+            field.Id,
+            label: "Transcript evidence",
+            spanStart: 0,
+            spanEnd: 10,
+            transcriptId: transcript.Id);
+        field.AddEvidenceLink(link);
+        provenance.AddField(field);
+
+        _context.Users.Add(user);
+        _context.Transcripts.Add(transcript);
+        _context.AutomationProposals.Add(proposal);
+        _context.ProposalProvenances.Add(provenance);
+        _context.SaveChanges();
+        _context.ChangeTracker.Clear();
+
+        var migrator = _context.GetService<IMigrator>();
+        migrator.Migrate("20260816135723_AddLlmRequestTranscriptLinkage");
+        migrator.Migrate("20260816163822_AddTypedTranscriptEvidenceLink");
+
+        _context.ChangeTracker.Clear();
+        var restoredLink = _context.ProvenanceEvidenceLinks.Single(candidate => candidate.Id == link.Id);
+        restoredLink.SourceType.Should().Be(ProvenanceEvidenceLink.TranscriptSourceType);
+        restoredLink.SourceId.Should().Be(transcript.Id.ToString("D"));
+        restoredLink.TranscriptId.Should().Be(transcript.Id);
+    }
+
+    [Fact]
     public void All_migrations_have_distinct_timestamps()
     {
         // Act — get the full ordered migration list
