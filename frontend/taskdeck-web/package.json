@@ -48,7 +48,7 @@
     "pinia": "^3.0.4",
     "vue": "^3.5.41",
     "vue-router": "^5.2.0",
-    "ws": "^8.21.2"
+    "ws": "^8.21.3"
   },
   "overrides": {
     "vite-plugin-pwa": {
@@ -56,16 +56,16 @@
     }
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
-    "@storybook/vue3-vite": "^10.5.7",
+    "@storybook/vue3-vite": "^10.5.8",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^24.13.3",
-    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.46.2",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vitest/coverage-v8": "^4.1.10",
@@ -74,14 +74,14 @@
     "@vue/tsconfig": "^0.9.1",
     "autoprefixer": "^10.5.4",
     "axios-mock-adapter": "^2.1.0",
-    "baseline-browser-mapping": "^2.11.12",
-    "eslint": "^10.8.0",
+    "baseline-browser-mapping": "^2.11.14",
+    "eslint": "^10.8.1",
     "eslint-plugin-vue": "^10.10.0",
-    "eslint-plugin-vuejs-accessibility": "^2.5.0",
+    "eslint-plugin-vuejs-accessibility": "^2.6.0",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
-    "globals": "^17.9.0",
-    "happy-dom": "^20.11.1",
+    "globals": "^17.11.0",
+    "happy-dom": "^20.11.2",
     "postcss": "^8.5.26",
     "storybook": "^10.3.5",
     "tailwindcss": "^4.2.2",
