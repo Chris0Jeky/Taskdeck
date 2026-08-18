@@ -30,6 +30,21 @@ namespace Taskdeck.Infrastructure.Migrations
                 WHERE "SourceType" = 'Transcript';
                 """);
 
+            // A rollback removes the typed FK while intentionally retaining the generic source
+            // reference. A transcript can then be deleted before this migration is reapplied.
+            // Remove only those now-orphaned Transcript rows before rebuilding the strict check
+            // constraint and FK; valid transcript evidence and every other source type survive.
+            migrationBuilder.Sql(
+                """
+                DELETE FROM "ProvenanceEvidenceLinks"
+                WHERE "SourceType" = 'Transcript'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM "Transcripts"
+                    WHERE lower("Transcripts"."Id") = lower("ProvenanceEvidenceLinks"."SourceId")
+                  );
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "IX_ProvenanceEvidenceLinks_TranscriptId",
                 table: "ProvenanceEvidenceLinks",
