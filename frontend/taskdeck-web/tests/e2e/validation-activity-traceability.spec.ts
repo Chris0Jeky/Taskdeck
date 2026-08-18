@@ -209,9 +209,6 @@ test.describe('TST11-SC-018: Board-scoped activity timeline', () => {
     const history = await getBoardHistory(request, boardId)
     expect(history).toHaveLength(50)
 
-    await page.addInitScript(() => {
-      localStorage.setItem('td.paper.mode.v2', 'off')
-    })
     await page.goto('/workspace/activity')
     await page.locator('#activity-board-select').selectOption({ label: boardName })
     await page.getByRole('button', { name: 'Fetch', exact: true }).click()
