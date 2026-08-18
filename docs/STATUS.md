@@ -1,6 +1,11 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-08-16
+Last Updated: 2026-08-18
+
+Execution authority and backlog admission (2026-08-18, **ADR-0051** / `#1269`):
+- **Ordinary PR merge eligibility no longer depends on a human reviewer or owner click.** The live T3 declaration remains `push: free` / `merge: free` and now explicitly covers dependency, workflow, governance, and major-version PRs within task scope after exact-head `ci-required.yml`, DCO, canonical `review-and-ship`, and seam-specific proof. `CODEOWNERS` remains advisory review routing rather than merge eligibility. Blind check-only platform auto-merge is not enabled.
+- **The active plan now has a bounded autonomous backlog lane.** An authorized coordinator may promote acceptance-ready existing issues under `REVIVAL_PLAN.md` §5 without another owner decision, with at most four issue items in `Now` and eight in `Next`. New tables/endpoints/mutation paths/views/security posture still need existing plan authority or an Accepted ADR. Credentials/private data, production mutations, release tags, legal/licensing/trademark decisions, repository/environment settings, destructive work-loss actions, and subjective dogfooding/beta judgments remain separately human-scoped.
+- **The initial queue is populated and live in ProjectV2.** `Now`: `#1206`, `#1633`, `#1661`, `#1664`. `Next`: `#1495`, `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`. Each was verified open, acceptance-ready, without an owning PR/worktree, and with exactly one Priority label; `#1652` follows the `#1661` sanitizer contract and `#1665` follows the `#1664` CLI-test seam.
 
 Windows API timing diagnostics (2026-08-16, first bounded `#1682` slice):
 - **Successful and failed API integration lanes now retain a sanitized timing summary for 14 days.** The reusable Ubuntu/Windows workflow derives class, method, outcome, and duration metadata from its TRX and uploads only the bounded JSON summary on every completed test run; stdout, error details, attachments, theory arguments, and other test content are never copied into it. Raw TRX remains failure-only. This instrumentation responds to two green exact-main Windows runs that took 32-34 minutes versus a contemporaneous 17-minute PR run; it does not identify or fix the cause, alter timeouts or parallelism, quarantine tests, or reduce coverage. `#1682` remains open for evidence from a subsequent recurrence and the narrow causal repair.
@@ -1372,7 +1377,7 @@ Dependency update automation: `.github/dependabot.yml`
 - weekly Dependabot PRs for NuGet, npm, and GitHub Actions ecosystems
 - minor/patch grouped; major NuGet/npm individual; Actions fully grouped
 - security updates follow severity-based triage SLAs in `docs/ops/DEPENDENCY_UPDATE_POLICY.md`
-- no unattended auto-merge; all dependency PRs require human review and the `ci-required.yml` gate, after which merge execution follows the declared authority and global pipeline
+- no blind check-only platform auto-merge; an authorized agent may review and merge every dependency category after exact-head `ci-required.yml`, the canonical review pipeline, and the risk-specific compatibility/security evidence in ADR-0051
 
 Release/security deep workflow: `.github/workflows/release-security.yml`
 
@@ -1387,7 +1392,7 @@ Nightly quality signals workflow: `.github/workflows/nightly-quality.yml`
 - dependency and security signal scan (reuses `.github/workflows/reusable-dependency-security-signals.yml`)
 
 CI workflow topology is documented in the header comment of `.github/workflows/ci-required.yml`.
-Workflow ownership is declared via `CODEOWNERS` (`.github/workflows/` requires maintainer review by policy). Live branch protection does not currently require code-owner approval, so this is self-enforced until the maintainer completes `#1173`; after the required review, merge execution follows `.agent-harness/tier.json` and the global gate.
+Workflow ownership is declared via `CODEOWNERS` for advisory routing. Live branch protection does not currently require code-owner approval, and ADR-0051 makes clear that the requested owner's absence is not a merge gate; workflow PRs still need risk-calibrated review, exact-head required CI, and any workflow-specific proof. Changing live branch protection remains separately scoped under `#1173`.
 
 ## Known Gaps and Risks
 

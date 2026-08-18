@@ -1,14 +1,28 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-16
+Last Updated: 2026-08-18
 <br>
-Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
+Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Governance update (2026-08-18, ADR-0051 autonomous admission and merge authority)
+
+- **Merge authority is agent-executable across PR classes.** The existing T3 `merge: free`
+  declaration now explicitly covers dependency, workflow, governance, and major-version PRs after
+  exact-head required CI, DCO, the canonical risk-calibrated review pipeline, and seam-specific
+  proof. CODEOWNERS provides advisory routing; it does not reserve merge eligibility to a human.
+- **The tracked backlog can continuously replenish execution.** `REVIVAL_PLAN.md` §5 admits up to
+  four acceptance-ready issue items in `Now` and eight in `Next` without per-issue owner approval,
+  while plan/Accepted-ADR authority still gates new product surface and external or irreversible
+  actions remain separately human-scoped.
+- **Initial admitted queue:** `Now` = `#1206`, `#1633`, `#1661`, `#1664`; `Next` = `#1495`,
+  `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`. The paired sanitizer and CLI
+  follow-ups stay sequenced rather than competing for the same seam.
 
 ## Delivery update (2026-08-16, Windows API timing diagnostics)
 
@@ -203,7 +217,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
 
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), plus the other scoped exceptions enumerated in the plan's §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 grants it (Phase-2 grants per ADR-0044; Phase-4 grants per ADR-0046). The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
 
 Goals, in order:
 
