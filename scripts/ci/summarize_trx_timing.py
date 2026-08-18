@@ -17,6 +17,7 @@ from typing import Any
 DEFAULT_MAX_RESULTS = 10_000
 DEFAULT_MAX_IDENTITY_LENGTH = 256
 MAX_OUTCOME_LENGTH = 64
+TOP_N = 10
 _DURATION_PATTERN = re.compile(
     r"^(?P<hours>\d+):(?P<minutes>[0-5]\d):(?P<seconds>[0-5]\d)(?:\.(?P<fraction>\d{1,7}))?$"
 )
@@ -60,6 +61,15 @@ def _duration_seconds(raw_duration: str | None) -> float | None:
     except InvalidOperation:
         return None
     return float(value.quantize(Decimal("0.000001")))
+
+
+def _nearest_rank_percentile(sorted_values: list[float], percentile: int) -> float | None:
+    """Return a deterministic nearest-rank percentile for non-empty sorted values."""
+
+    if not sorted_values:
+        return None
+    rank = max(1, (len(sorted_values) * percentile + 99) // 100)
+    return round(sorted_values[rank - 1], 6)
 
 
 def _definition_map(
@@ -190,20 +200,30 @@ def summarize_trx(
         key=lambda row: (-row["summedTestDurationSeconds"], row["className"])
     )
 
-    timed_durations = [
+    timed_durations = sorted(
         row["durationSeconds"]
         for row in result_rows
         if row["durationSeconds"] is not None
+    )
+    timed_results = [
+        row for row in result_rows if row["durationSeconds"] is not None
     ]
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "resultCount": len(result_rows),
         "timedResultCount": len(timed_durations),
         "missingDurationCount": len(result_rows) - len(timed_durations),
         "summedTestDurationSeconds": round(sum(timed_durations), 6),
         "workflowWallTimeSeconds": None,
-        "classes": classes,
-        "results": result_rows,
+        "durationStatistics": {
+            "p50Seconds": _nearest_rank_percentile(timed_durations, 50),
+            "p90Seconds": _nearest_rank_percentile(timed_durations, 90),
+            "p95Seconds": _nearest_rank_percentile(timed_durations, 95),
+            "p99Seconds": _nearest_rank_percentile(timed_durations, 99),
+            "maxSeconds": timed_durations[-1] if timed_durations else None,
+        },
+        "topClasses": classes[:TOP_N],
+        "topResults": timed_results[:TOP_N],
     }
 
 

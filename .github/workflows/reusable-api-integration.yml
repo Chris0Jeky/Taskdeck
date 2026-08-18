@@ -42,9 +42,25 @@ jobs:
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln
 
+      - name: Capture API integration runner context
+        run: python scripts/ci/collect_runner_context.py begin --state "backend/TestResults/api-integration/${{ matrix.os }}/runner-context-state.json" --matrix-os "${{ matrix.os }}" --workspace "${{ github.workspace }}"
+
       - name: Run API integration tests
         id: api_integration_tests
         run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
+
+      - name: Finalize API integration runner context
+        if: always()
+        run: python scripts/ci/collect_runner_context.py finalize --state "backend/TestResults/api-integration/${{ matrix.os }}/runner-context-state.json" --output "backend/TestResults/api-integration/${{ matrix.os }}/api-integration-runner-context.json" --workspace "${{ github.workspace }}"
+
+      - name: Upload API integration runner context
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-integration-runner-context-${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}/api-integration-runner-context.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Summarize API integration timing
         if: always()
