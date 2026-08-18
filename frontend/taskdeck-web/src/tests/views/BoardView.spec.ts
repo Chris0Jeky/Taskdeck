@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
@@ -24,6 +24,7 @@ const routeMock = reactive({
 })
 
 const addCardToggleMock = vi.fn()
+const mountedWrappers: Array<{ unmount: () => void }> = []
 
 const realtimeMock = {
   start: vi.fn(async () => {}),
@@ -35,6 +36,7 @@ const realtimeMock = {
 // Captures the onPresenceChanged callback passed by BoardView so tests can
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
+let capturedRealtimeFetchBoard: ((boardId: string) => Promise<void>) | undefined
 
 const mockBoardStore = reactive({
   currentBoard: {
@@ -71,7 +73,7 @@ const mockBoardStore = reactive({
   },
   filteredCardCount: 0,
   totalCardCount: 0,
-  fetchBoard: vi.fn(async () => {}),
+  fetchBoard: vi.fn(async () => true),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => {}),
@@ -95,6 +97,7 @@ vi.mock('../../composables/useKeyboardShortcuts', () => ({
 vi.mock('../../composables/useBoardRealtime', () => ({
   createBoardRealtimeController: vi.fn((options) => {
     capturedOnPresenceChanged = options.onPresenceChanged
+    capturedRealtimeFetchBoard = options.fetchBoard
     return realtimeMock
   }),
 }))
@@ -104,8 +107,18 @@ async function waitForUi() {
   await Promise.resolve()
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
+
 function mountView() {
-  return mount(BoardView, {
+  const wrapper = mount(BoardView, {
     attachTo: document.body,
     global: {
       stubs: {
@@ -135,12 +148,15 @@ function mountView() {
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('BoardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     capturedOnPresenceChanged = undefined
+    capturedRealtimeFetchBoard = undefined
     localStorage.clear()
     routeMock.params.id = 'board-1'
     mockSessionStore.userId = 'user-abc'
@@ -169,6 +185,10 @@ describe('BoardView', () => {
     mockBoardStore.error = null
     addCardToggleMock.mockReset()
     usePaperThemeStore().disable()
+  })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
   })
 
   it('renders the board action rail and preserves board context for review, inbox, and chat routes', async () => {
@@ -297,6 +317,57 @@ describe('BoardView', () => {
     const firstCall = mockBoardStore.setBoardPresenceMembers.mock.calls[0]
     expect(firstCall).toBeDefined()
     expect(firstCall[0]).toEqual([])
+  })
+
+  it('switches realtime only for the newest board load when A resolves after B', async () => {
+    const firstLoad = createDeferred<boolean>()
+    const secondLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => firstLoad.promise)
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => secondLoad.promise)
+
+    mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await waitForUi()
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(1, 'board-1')
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
+
+    secondLoad.resolve(true)
+    await waitForUi()
+    expect(realtimeMock.switchBoard).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.switchBoard).toHaveBeenCalledWith('board-2')
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+
+    firstLoad.resolve(false)
+    await waitForUi()
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+    expect(realtimeMock.switchBoard).toHaveBeenCalledTimes(1)
+
+  })
+
+  it('does not let a previous realtime subscription refresh after navigation to a new board', async () => {
+    const boardBLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(async () => true)
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => boardBLoad.promise)
+
+    mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await waitForUi()
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(1, 'board-1')
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
+
+    expect(capturedRealtimeFetchBoard).toBeDefined()
+    await capturedRealtimeFetchBoard!('board-1')
+    expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
+
+    boardBLoad.resolve(true)
+    await waitForUi()
+    expect(realtimeMock.switchBoard).toHaveBeenCalledWith('board-2')
   })
 
   it('normalizes current user displayName to username when server sends email in presence snapshot (#683)', async () => {

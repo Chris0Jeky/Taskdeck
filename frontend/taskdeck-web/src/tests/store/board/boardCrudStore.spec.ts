@@ -11,6 +11,18 @@ const { mockBoardsApi } = vi.hoisted(() => ({
   },
 }))
 
+const { mockCardsApi } = vi.hoisted(() => ({
+  mockCardsApi: {
+    getCards: vi.fn(),
+  },
+}))
+
+const { mockLabelsApi } = vi.hoisted(() => ({
+  mockLabelsApi: {
+    getLabels: vi.fn(),
+  },
+}))
+
 const { mockDemoData } = vi.hoisted(() => ({
   mockDemoData: {
     buildDemoBoardList: vi.fn(),
@@ -20,6 +32,14 @@ const { mockDemoData } = vi.hoisted(() => ({
 
 vi.mock('../../../api/boardsApi', () => ({
   boardsApi: mockBoardsApi,
+}))
+
+vi.mock('../../../api/cardsApi', () => ({
+  cardsApi: mockCardsApi,
+}))
+
+vi.mock('../../../api/labelsApi', () => ({
+  labelsApi: mockLabelsApi,
 }))
 
 vi.mock('../../../utils/demoData', () => ({
@@ -54,6 +74,16 @@ function createMockHelpers(overrides: { isDemoMode?: boolean } = {}) {
     isDemoMode: overrides.isDemoMode ?? false,
     toast: { success: vi.fn(), error: vi.fn() },
   }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
 }
 
 describe('boardCrudStore', () => {
@@ -223,30 +253,33 @@ describe('boardCrudStore', () => {
   })
 
   describe('fetchBoard', () => {
-    it('sets currentBoard and calls fetchCards and fetchLabels', async () => {
+    it('sets currentBoard, cards, and labels together', async () => {
       const boardDetail = { id: 'board-1', name: 'My Board', columns: [] }
+      const cards = [{ id: 'card-1', columnId: 'column-1' }]
+      const labels = [{ id: 'label-1', name: 'Bug' }]
       mockBoardsApi.getBoard.mockResolvedValueOnce(boardDetail)
-      const fetchCards = vi.fn().mockResolvedValue(undefined)
-      const fetchLabels = vi.fn().mockResolvedValue(undefined)
+      mockCardsApi.getCards.mockResolvedValueOnce(cards)
+      mockLabelsApi.getLabels.mockResolvedValueOnce(labels)
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      await fetchBoard('board-1', fetchCards, fetchLabels)
+      const committed = await fetchBoard('board-1')
 
       expect(mockBoardsApi.getBoard).toHaveBeenCalledWith('board-1')
       expect(state.currentBoard.value).toEqual(boardDetail)
-      expect(fetchCards).toHaveBeenCalledWith('board-1')
-      expect(fetchLabels).toHaveBeenCalledWith('board-1')
+      expect(state.currentBoardCards.value).toEqual(cards)
+      expect(state.currentBoardLabels.value).toEqual(labels)
+      expect(committed).toBe(true)
       expect(state.loading.value).toBe(false)
     })
 
     it('clears cardCommentsByCardId', async () => {
       state.cardCommentsByCardId.value = { 'card-1': [{ text: 'hello' }] }
-      mockBoardsApi.getBoard.mockResolvedValueOnce({ id: 'board-1', name: 'Test' })
-      const fetchCards = vi.fn().mockResolvedValue(undefined)
-      const fetchLabels = vi.fn().mockResolvedValue(undefined)
+      mockBoardsApi.getBoard.mockResolvedValueOnce({ id: 'board-1', name: 'Test', columns: [] })
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      await fetchBoard('board-1', fetchCards, fetchLabels)
+      await fetchBoard('board-1')
 
       expect(state.cardCommentsByCardId.value).toEqual({})
     })
@@ -258,11 +291,9 @@ describe('boardCrudStore', () => {
         cards: [{ id: 'card-1', title: 'Task' }],
       }
       mockDemoData.buildDemoBoardDetail.mockReturnValue(demoDetail)
-      const fetchCards = vi.fn()
-      const fetchLabels = vi.fn()
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      await fetchBoard('demo-1', fetchCards, fetchLabels)
+      const committed = await fetchBoard('demo-1')
 
       expect(mockDemoData.buildDemoBoardDetail).toHaveBeenCalledWith('demo-1')
       expect(state.currentBoard.value).toEqual(demoDetail.board)
@@ -270,23 +301,77 @@ describe('boardCrudStore', () => {
       expect(state.currentBoardLabels.value).toEqual([])
       expect(state.cardCommentsByCardId.value).toEqual({})
       expect(mockBoardsApi.getBoard).not.toHaveBeenCalled()
-      expect(fetchCards).not.toHaveBeenCalled()
-      expect(fetchLabels).not.toHaveBeenCalled()
+      expect(mockCardsApi.getCards).not.toHaveBeenCalled()
+      expect(mockLabelsApi.getLabels).not.toHaveBeenCalled()
+      expect(committed).toBe(true)
       expect(state.loading.value).toBe(false)
     })
 
     it('handles error and rethrows', async () => {
       mockBoardsApi.getBoard.mockRejectedValueOnce(new Error('not found'))
-      const fetchCards = vi.fn()
-      const fetchLabels = vi.fn()
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
-      await expect(fetchBoard('board-1', fetchCards, fetchLabels)).rejects.toThrow('not found')
+      await expect(fetchBoard('board-1')).rejects.toThrow('not found')
 
       expect(helpers.handleApiError).toHaveBeenCalledWith(
         expect.any(Error),
         'Failed to fetch board',
       )
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('commits only the latest board detail request when an older request resolves last', async () => {
+      const boardA = createDeferred<{ id: string; name: string; columns: Array<{ id: string; cardCount: number }> }>()
+      const cardsA = createDeferred<Array<{ id: string; columnId: string }>>()
+      const labelsA = createDeferred<Array<{ id: string; name: string }>>()
+      const boardB = createDeferred<{ id: string; name: string; columns: Array<{ id: string; cardCount: number }> }>()
+      const cardsB = createDeferred<Array<{ id: string; columnId: string }>>()
+      const labelsB = createDeferred<Array<{ id: string; name: string }>>()
+      state.currentBoard.value = { id: 'existing', name: 'Existing' }
+      state.currentBoardCards.value = [{ id: 'existing-card' }]
+      state.currentBoardLabels.value = [{ id: 'existing-label' }]
+      state.cardCommentsByCardId.value = { 'existing-card': [{ text: 'keep until commit' }] }
+      mockBoardsApi.getBoard.mockReturnValueOnce(boardA.promise).mockReturnValueOnce(boardB.promise)
+      mockCardsApi.getCards.mockReturnValueOnce(cardsA.promise).mockReturnValueOnce(cardsB.promise)
+      mockLabelsApi.getLabels.mockReturnValueOnce(labelsA.promise).mockReturnValueOnce(labelsB.promise)
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoard('board-a')
+      const second = fetchBoard('board-b')
+
+      boardB.resolve({ id: 'board-b', name: 'Board B', columns: [{ id: 'column-b', cardCount: 0 }] })
+      cardsB.resolve([{ id: 'card-b', columnId: 'column-b' }])
+      labelsB.resolve([{ id: 'label-b', name: 'Bug' }])
+      await expect(second).resolves.toBe(true)
+
+      boardA.resolve({ id: 'board-a', name: 'Board A', columns: [{ id: 'column-a', cardCount: 0 }] })
+      cardsA.resolve([{ id: 'card-a', columnId: 'column-a' }])
+      labelsA.resolve([{ id: 'label-a', name: 'Feature' }])
+      await expect(first).resolves.toBe(false)
+
+      expect(state.currentBoard.value).toMatchObject({ id: 'board-b' })
+      expect(state.currentBoardCards.value).toEqual([{ id: 'card-b', columnId: 'column-b' }])
+      expect(state.currentBoardLabels.value).toEqual([{ id: 'label-b', name: 'Bug' }])
+      expect(state.cardCommentsByCardId.value).toEqual({})
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('does not surface a stale board-load error after a newer request commits', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(staleBoard.promise).mockResolvedValueOnce({ id: 'board-b', name: 'Board B', columns: [] })
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoard('board-a')
+      const second = fetchBoard('board-b')
+      await expect(second).resolves.toBe(true)
+
+      staleBoard.reject(new Error('stale failure'))
+      await expect(first).resolves.toBe(false)
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.error.value).toBeNull()
       expect(state.loading.value).toBe(false)
     })
   })

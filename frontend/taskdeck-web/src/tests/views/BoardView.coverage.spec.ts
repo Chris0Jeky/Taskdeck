@@ -59,7 +59,7 @@ const mockBoardStore = reactive({
   },
   filteredCardCount: 0,
   totalCardCount: 0,
-  fetchBoard: vi.fn(async () => {}),
+  fetchBoard: vi.fn(async () => true),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => {}),
