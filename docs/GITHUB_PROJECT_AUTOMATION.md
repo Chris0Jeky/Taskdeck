@@ -194,7 +194,7 @@ Goal:
 
 Weekly process:
 1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TaskdeckNextWorkChecklist.md`.
-2. Select the highest-priority items whose dependencies are complete.
+2. Select the highest-priority items whose dependencies are complete for `Now`; a `Next` successor may instead be explicitly sequenced behind a named `Now` dependency.
 3. Create/update issues with explicit acceptance criteria and required labels.
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
 5. For product-facing slices, include thesis-alignment notes:
@@ -214,6 +214,8 @@ Promotion and override rules:
 - An authorized coordinator may promote existing issues under `docs/REVIVAL_PLAN.md` §5 without a
   separate maintainer decision. `Now` items must be unblocked; a `Next` item may be explicitly
   sequenced behind a named `Now` item.
+- Before promoting an issue to `Now` or `Next`, verify that it has exactly one priority label and
+  that the Project `Priority` field exactly matches it; resolve any parity defect before promotion.
 - Finish or deliberately park an existing conflicting lane before promoting its successor to `Now`.
 - Explicit owner direction may waive the numeric intake or queue cap for a bounded reconciliation
   event. Record the waiver and exact resulting queue; it does not waive dependency, ownership,

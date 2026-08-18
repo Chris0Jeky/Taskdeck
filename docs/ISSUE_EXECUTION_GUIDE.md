@@ -1,9 +1,9 @@
 # Issue Execution Guide
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-18
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL/authorized GEN wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
+> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL/authorized GEN wave or ADR-0051's existing-backlog lane**, not the historical tranches. ADR-0051 (Accepted 2026-08-18) permits an authorized coordinator to promote an acceptance-ready existing issue to `Now` or `Next` without another owner decision, subject to known dependencies/ownership, proving checks, and the stated human-only boundaries. A `Next` item may be sequenced behind a named `Now` dependency. In high-autonomy mode, the bounded queue is at most four issue items in `Now` and eight in `Next`; the default remains a narrow one-major-item WIP preference. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents and Accepted ADRs win.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Use this file when starting backlog work. It prevents out-of-order development a
 2. Read `docs/IMPLEMENTATION_MASTERPLAN.md`.
 3. Read `docs/GITHUB_PROJECT_AUTOMATION.md`.
 4. Confirm current branch is clean and based on `main`.
-5. Pick the highest-priority issue whose dependencies are complete.
+5. Pick the highest-priority admitted issue whose dependencies are complete for `Now`, or a `Next` successor explicitly sequenced behind a named `Now` dependency. Existing tracked issues may be admitted under ADR-0051 when their acceptance criteria, ownership, dependencies, proving checks, and human-only boundaries are clear.
 6. Verify the issue has exactly one priority label (`Priority I` to `Priority V`).
 7. Use the project `No Status` view (`no:status`) and assign status before active work.
 
@@ -475,12 +475,12 @@ Execution note:
 
 ## WIP Discipline
 
-- Prefer one major implementation issue at a time.
-- Keep at most:
+- Default posture: prefer one major implementation issue at a time and keep at most:
   - 1 issue in `Now`
   - 1 issue in `Review`
+- High-autonomy ADR-0051 batches may use the bounded queue of at most four issue items in `Now` and eight in `Next`; use isolated worktrees, one coordinator, linked PRs, the canonical review-and-ship pipeline, and final docs/project-status reconciliation.
 - If parallel work is needed, split by non-overlapping layers (example: docs-only issue plus one code issue).
-- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; the WIP override must still use isolated worktrees, one coordinator, linked PRs, the canonical review-and-ship pipeline, and final docs/project-status reconciliation.
+- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`.
 
 ## Escalation Rules
 

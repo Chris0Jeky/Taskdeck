@@ -35,8 +35,9 @@ Codex cannot reliably configure GitHub repository settings unless you explicitly
 
 Do in GitHub UI:
 - Protect `main`:
-  - require PR reviews (even 1 self-review is fine)
-  - require status checks to pass:
+  - require the exact PR head to pass `ci-required.yml`, DCO, and the canonical `review-and-ship` evidence before merge
+  - do not require a mandatory human PR-review approval or owner click as a merge gate; `CODEOWNERS` remains advisory routing
+  - require the status checks reported by `ci-required.yml` to pass:
     - docs-governance
     - backend-architecture
     - backend-unit (ubuntu/windows)
