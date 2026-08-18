@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NotFoundView from '../../views/NotFoundView.vue'
+import appRouter from '../../router'
 
 function makeRouter() {
   return createRouter({
@@ -15,6 +16,14 @@ function makeRouter() {
 }
 
 describe('NotFoundView', () => {
+  it('is the production router catch-all and uses the authenticated shell', () => {
+    const resolved = appRouter.resolve('/workspace/definitely-missing?secret=do-not-display#private-fragment')
+
+    expect(resolved.name).toBe('not-found')
+    expect(resolved.meta.requiresShell).toBe(true)
+    expect(resolved.matched[0]?.components?.default).toBe(NotFoundView)
+  })
+
   it('gives users a safe recovery state without echoing the requested URL', async () => {
     const router = makeRouter()
     await router.push('/workspace/definitely-missing?secret=do-not-display#private-fragment')
