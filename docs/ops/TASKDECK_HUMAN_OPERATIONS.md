@@ -35,22 +35,23 @@ Codex cannot reliably configure GitHub repository settings unless you explicitly
 
 Do in GitHub UI:
 - Protect `main`:
-  - require the exact PR head to pass `ci-required.yml`, DCO, and the canonical `review-and-ship` evidence before merge
   - do not require a mandatory human PR-review approval or owner click as a merge gate; `CODEOWNERS` remains advisory routing
-  - require the status checks reported by `ci-required.yml` to pass:
-    - docs-governance
-    - backend-architecture
-    - backend-unit (ubuntu/windows)
-    - api-integration (ubuntu/windows)
-    - frontend-unit (ubuntu/windows)
-    - e2e-smoke
+  - `ci-required.yml` has no aggregate gate: enumerate the exact check-run contexts on the current PR head and require every
+    non-advisory context individually. Reusable jobs may appear as `<caller job name> / <inner job name>`; reconcile the
+    current contexts rather than relying on this recipe's shorthand. The current top-level contexts to reconcile are Docs
+    Governance, Backend Architecture, Backend Unit, API Integration, Migration Validation, Frontend Unit, Paper Color Audit,
+    Container Images, Secret Scan, and E2E Smoke. Use ADR-0035 for the security enforcement state: Secret Scan is enforcing,
+    while Dependency Security and SAST remain visible but advisory until their baselines are promoted.
+  - DCO sign-offs and the canonical `review-and-ship` pipeline remain process gates until separately enforced; neither is an
+    aggregate branch-protection check.
   - require up-to-date branches before merge (optional)
 
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`, `No Status`, `WIP Audit`
-- WIP: cap Now/In Progress to 1 major item
+- WIP: default narrow posture is at most 1 major item in `Now`/In Progress; ADR-0051 high-autonomy batches may use at most 4
+  issue items in `Now` and 8 in `Next`.
 - Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`, `feature`, `automation`, `worker`, `performance`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
