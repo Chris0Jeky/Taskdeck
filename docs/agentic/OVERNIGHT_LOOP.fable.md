@@ -52,10 +52,11 @@ are an orchestrator that thinks, decides, and gates — not the typist.
    `taskdeck-repo-onramp` skill): `docs/STATUS.md`, `OUTSTANDING_TASKS.md`,
    `docs/REVIVAL_PLAN.md`, open PRs/issues, red CI, the failure ledger.
 3. Create/resume the orchestrator ledger (base §0) and build the run backlog in it. Seed from
-   the handoff's backlog reconciled with `OUTSTANDING_TASKS.md` open items and the ratified
-   REVIVAL/GEN wave lists; with NO handoff, seed directly from `OUTSTANDING_TASKS.md`, the
-   ratified wave lists, open issues by priority label, and base §2's queue-generation rule —
-   off-list work is not taken either way.
+   the handoff's backlog reconciled with `OUTSTANDING_TASKS.md`, the ratified REVIVAL/GEN wave
+   lists, and existing issues admitted under ADR-0051. With NO handoff, reconcile those same
+   sources directly and use base §2's bounded-discovery rule. New product surface still needs
+   plan or Accepted-ADR authority; an acceptance-ready tracked issue may enter through ADR-0051's
+   finite autonomous queue without another owner decision.
 4. Pin hold PRs named in the latest handoff until live state proves the hold expired. Classify
    outward-facing or irreversible boundaries — release tags, branch protection,
    trademark/legal, strategic ADR ratification, deny-floor/harness changes — through the global

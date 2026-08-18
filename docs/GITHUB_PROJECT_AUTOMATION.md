@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-07-26
+Last Updated: 2026-08-18
 
 ## Canonical Status Model
 
@@ -17,7 +17,8 @@ Required `Status` options:
 Rules:
 - Every new project item must receive `Status=Pending` automatically.
 - `Done` is terminal for closed or merged work.
-- `Now` is WIP-limited to one major item at a time (team discipline + weekly audit).
+- `Now` is WIP-limited to four issue items; `Next` is limited to eight issue items. This is the
+  finite autonomous queue defined by ADR-0051, not a reservation for owner approval.
 
 ## Required Labels
 
@@ -204,16 +205,25 @@ Weekly process:
 
 WIP-aware intake limits:
 - Maximum 5 newly-seeded issues per week.
-- Maximum 1 major issue in `Now`.
-- Maximum 2 issues in `Next`.
+- Promoting an already-open tracked issue does not count as newly seeding an issue.
+- Maximum 4 issue items in `Now`.
+- Maximum 8 issue items in `Next`.
 - Remaining seeded issues stay in `Pending` until promoted.
 
-Override rule:
-- Maintainer may explicitly waive intake cap for one-off backlog seeding/reconciliation events.
-- WIP execution discipline (`Now`/`Review` limits) remains in force even when intake cap is waived.
+Promotion and override rules:
+- An authorized coordinator may promote existing issues under `docs/REVIVAL_PLAN.md` §5 without a
+  separate maintainer decision. `Now` items must be unblocked; a `Next` item may be explicitly
+  sequenced behind a named `Now` item.
+- Finish or deliberately park an existing conflicting lane before promoting its successor to `Now`.
+- Explicit owner direction may waive the numeric intake or queue cap for a bounded reconciliation
+  event. Record the waiver and exact resulting queue; it does not waive dependency, ownership,
+  review, CI, or human-only external-action boundaries.
 
 Evidence of execution:
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 - 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.
 - 2026-04-25 roadmap-v4 reconciliation pass intentionally exceeded the normal weekly intake cap to seed tracker `#972` and child issues `#973`--`#984`; WIP status discipline still applies before implementation starts.
+- 2026-08-18 ADR-0051 autonomous-admission pass promoted four open issues to `Now` (`#1206`,
+  `#1633`, `#1661`, `#1664`) and eight to `Next` (`#1495`, `#1626`, `#1639`, `#1641`, `#1652`,
+  `#1665`, `#1666`, `#1670`) after live dependency, ownership, acceptance, and Priority checks.
