@@ -147,14 +147,17 @@ function applyPresenceSeed() {
 
 onMounted(async () => {
   boardLoadPerf.start()
+  const requestedBoardId = boardId.value
   try {
     // Seed presence with the current user immediately so the panel never
     // shows "No active collaborators" while waiting for the SignalR
     // BoardJoined push event (fixes #523 flicker).
     applyPresenceSeed()
     boardStore.setEditingCard(null)
-    await boardStore.fetchBoard(boardId.value)
-    await realtime.start(boardId.value)
+    const committed = await boardStore.fetchBoard(requestedBoardId)
+    if (committed && boardId.value === requestedBoardId) {
+      await realtime.start(requestedBoardId)
+    }
   } catch (error) {
     logError('Failed to load board:', error)
   } finally {
@@ -177,8 +180,10 @@ watch(
     boardStore.setEditingCard(null)
 
     try {
-      await boardStore.fetchBoard(boardId.value)
-      await realtime.switchBoard(boardId.value)
+      const committed = await boardStore.fetchBoard(nextBoardId)
+      if (committed && boardId.value === nextBoardId) {
+        await realtime.switchBoard(nextBoardId)
+      }
     } catch (error) {
       logError('Failed to switch board:', error)
     }

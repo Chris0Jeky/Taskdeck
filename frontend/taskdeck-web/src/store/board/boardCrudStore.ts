@@ -2,6 +2,8 @@
  * Board CRUD operations: fetch, create, update, delete boards.
  */
 import { boardsApi } from '../../api/boardsApi'
+import { cardsApi } from '../../api/cardsApi'
+import { labelsApi } from '../../api/labelsApi'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import type { BoardState } from './boardState'
@@ -14,6 +16,7 @@ const FETCH_BOARDS_THROTTLE_MS = 5000
 
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
+  let boardFetchGeneration = 0
 
   async function fetchBoards(search?: string, includeArchived = false) {
     const now = Date.now()
@@ -54,36 +57,62 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
   }
 
-  async function fetchBoard(
-    id: string,
-    fetchCards: (boardId: string) => Promise<void>,
-    fetchLabels: (boardId: string) => Promise<void>,
-  ) {
+  async function fetchBoard(id: string): Promise<boolean> {
+    const requestGeneration = ++boardFetchGeneration
+
     if (helpers.isDemoMode) {
       state.loading.value = true
       state.error.value = null
       const demo = buildDemoBoardDetail(id)
-      state.currentBoard.value = demo.board
-      state.currentBoardCards.value = demo.cards
-      state.currentBoardLabels.value = []
-      state.cardCommentsByCardId.value = {}
-      state.loading.value = false
-      return
+      if (requestGeneration === boardFetchGeneration) {
+        state.currentBoard.value = demo.board
+        state.currentBoardCards.value = demo.cards
+        state.currentBoardLabels.value = []
+        state.cardCommentsByCardId.value = {}
+        state.loading.value = false
+        return true
+      }
+
+      return false
     }
 
     try {
       state.loading.value = true
       state.error.value = null
-      state.currentBoard.value = await boardsApi.getBoard(id)
-      state.cardCommentsByCardId.value = {}
+      const [board, cards, labels] = await Promise.all([
+        boardsApi.getBoard(id),
+        cardsApi.getCards(id),
+        labelsApi.getLabels(id),
+      ])
 
-      // Fetch cards and labels for the board
-      await Promise.all([fetchCards(id), fetchLabels(id)])
+      if (requestGeneration !== boardFetchGeneration) {
+        return false
+      }
+
+      const cardCounts = cards.reduce((counts, card) => {
+        counts.set(card.columnId, (counts.get(card.columnId) ?? 0) + 1)
+        return counts
+      }, new Map<string, number>())
+      board.columns.forEach((column) => {
+        column.cardCount = cardCounts.get(column.id) ?? 0
+      })
+
+      state.currentBoard.value = board
+      state.currentBoardCards.value = cards
+      state.currentBoardLabels.value = labels
+      state.cardCommentsByCardId.value = {}
+      return true
     } catch (e: unknown) {
+      if (requestGeneration !== boardFetchGeneration) {
+        return false
+      }
+
       helpers.handleApiError(e, 'Failed to fetch board')
       throw e
     } finally {
-      state.loading.value = false
+      if (requestGeneration === boardFetchGeneration) {
+        state.loading.value = false
+      }
     }
   }
 
