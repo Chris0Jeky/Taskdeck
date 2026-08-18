@@ -77,8 +77,8 @@ Read before editing — do not assume layout:
   `.codex/memories/00_ACTIVE.md`, and `.codex/config.toml`. Then
   `docs/STATUS.md` (current shipped reality — **authoritative**), `docs/IMPLEMENTATION_MASTERPLAN.md`
   (delivery history + roadmap), `docs/GOLDEN_PRINCIPLES.md` (invariants),
-  `docs/REVIVAL_PLAN.md` (the active planning spine — work not on its ratified wave list is
-  not taken), `docs/decisions/INDEX.md` (ADRs), and `OUTSTANDING_TASKS.md` (the maintainer's
+  `docs/REVIVAL_PLAN.md` (the active planning spine — ratified waves plus ADR-0051's bounded
+  autonomous-admission lane), `docs/decisions/INDEX.md` (ADRs), and `OUTSTANDING_TASKS.md` (the maintainer's
   durable checklist — surface its open items in every summary; never auto-check an item).
   Precedence when docs conflict: `docs/STATUS.md` > `AGENTS.md` > everything else.
 - **Verification commands** (record them, then trust them):
@@ -160,15 +160,17 @@ Priority order (highest first):
 4. **Ready open PRs** — reconcile them through the canonical pipeline; keep WIP small and don't hoard.
 5. **High-value features/improvements**, then lower-severity polish.
 
-Prefer unblocked tasks. Respect `REVIVAL_PLAN.md` — do not take work off its ratified wave
-list without seeding an ADR/issue and flagging it (Q-N).
+Prefer unblocked tasks. Respect `REVIVAL_PLAN.md`: work must be tracked and enter through either a
+ratified wave or ADR-0051's autonomous-admission criteria. Keep at most four issue items in `Now`
+and eight in `Next`; project promotion within those rules does not require another owner decision.
 
 **When the admitted queue empties, do bounded discovery instead of manufacturing work.** Analyze
 the code and live product evidence for the next-most-valuable correctness, security, reliability,
-test, or docs-drift problem. Seed a concrete issue with scope + acceptance criteria **only** when it
-meets `REVIVAL_PLAN.md` intake/admission rules (or is a directly observed high-severity defect).
-Reserve labels claimed by the maintainer. If no candidate qualifies and all remaining work needs a
-human decision, that is a clean-pause condition under §9, not permission to invent a polish task.
+test, or docs-drift problem. First promote an acceptance-ready existing issue under
+`REVIVAL_PLAN.md` §5. Seed a new issue with scope + acceptance criteria **only** when no existing
+tracker owns the evidence and it meets the intake rules (or is a directly observed high-severity
+defect). Reserve labels claimed by the maintainer. If no candidate qualifies and all remaining work
+needs a human decision, that is a clean-pause condition under §9, not permission to invent polish.
 
 ---
 

@@ -1,6 +1,6 @@
 # Dependency Update Policy
 
-Last Updated: 2026-06-26
+Last Updated: 2026-08-18
 Owner: Repository maintainers
 Linked issue: `#148` (OPS-18)
 
@@ -29,14 +29,18 @@ Taskdeck uses **GitHub Dependabot** for automated dependency update PRs across t
 
 - Grouped into single PRs per ecosystem to reduce noise.
 - Expected to pass CI without intervention in most cases.
-- Maintainer review is required; no unattended auto-merge is enabled. After that review, merge execution follows the repository authority and canonical global pipeline.
-- If CI passes and the changelog shows no breaking changes, merge promptly.
+- No human-review category gate applies. Merge execution follows the live repository authority and
+  canonical `review-and-ship` pipeline on the exact head and base.
+- If required CI passes, review finds no merge blocker, and compatibility notes show no breaking
+  change, merge promptly.
 
 ### Major version updates
 
-- Arrive as individual PRs for explicit review.
-- Require maintainer assessment of breaking changes, migration guides, and downstream impact.
-- Should be tested locally when the changelog indicates API surface changes.
+- Arrive as individual PRs for explicit compatibility review.
+- Require an accountable reviewer to assess breaking changes, migration guides, and downstream
+  impact; that reviewer may be an authorized agent. “Major” is a risk signal, not a human gate.
+- Require targeted local build/test evidence for the affected ecosystem, plus any migration-specific
+  proof indicated by the changelog.
 - Target resolution within one development cycle (1 to 2 weeks) unless blocked.
 
 ### Security updates
@@ -78,9 +82,10 @@ Additional verification for dependency PRs:
 
 ### Triage ownership
 
-- The maintainer who sees the alert first owns initial triage classification.
+- The authorized maintainer or agent who sees the alert first owns initial triage classification.
 - Classification means: confirm severity, determine if the package is runtime/test/build-only, and assign a remediation owner.
-- If no maintainer is available within the SLA window, the alert must be escalated (GitHub issue with `Priority I` or `Priority II` label).
+- If initial triage is not completed within the SLA window, escalate with a GitHub issue carrying
+  the appropriate `Priority I` or `Priority II` label.
 
 ### Severity-based response targets
 
@@ -113,14 +118,17 @@ For each security advisory or Dependabot security PR:
 
 ### What this policy does NOT cover
 
-- Unattended auto-merge: all dependency PRs require human review. Unattended auto-merge may be considered in the future for patch-only grouped updates with passing CI, but is not enabled now; an authorized agent may execute the merge after that review and every normal gate.
+- Blind platform auto-merge: Taskdeck does not enable a rule that merges solely because checks are
+  green. ADR-0051 authorizes an accountable agent to review, verify, and merge without a human
+  category gate; it does not remove review or exact-head evidence.
 - Renovate: the project uses Dependabot only. Renovate may be evaluated if Dependabot proves insufficient.
 - SBOM generation: tracked separately in `#103`.
 - Stricter required-PR blocking for vulnerability findings: tracked as a follow-up in the vulnerability policy doc.
 
 ### Review cadence
 
-- Maintainers should review open Dependabot PRs at least weekly (aligned with the Monday generation schedule).
+- The active coordinator or maintainer should reconcile open Dependabot PRs at least weekly
+  (aligned with the Monday generation schedule).
 - Stale Dependabot PRs older than 30 days should be investigated: either the update is blocked (needs an issue) or it was overlooked.
 
 ## Pinned / version-capped dependencies
