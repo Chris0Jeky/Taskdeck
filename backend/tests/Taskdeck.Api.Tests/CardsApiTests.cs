@@ -213,6 +213,27 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateCard_ShouldReturnNotFoundAndCreateNothing_WhenColumnBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "Other board column", wipLimit: null);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardA.Id}/cards",
+            new CreateCardDto(boardA.Id, boardBColumn.Id, "Cross-board card", null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+
+        var cardsOnBoardA = await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardA.Id}/cards");
+        var cardsOnBoardB = await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardB.Id}/cards");
+        cardsOnBoardA.Should().BeEmpty();
+        cardsOnBoardB.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UpdateCard_ShouldReturnNotFound_WhenCardBelongsToDifferentBoard()
     {
         var boardA = await CreateBoardAsync();
