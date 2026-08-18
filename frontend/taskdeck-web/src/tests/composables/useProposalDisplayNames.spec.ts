@@ -63,6 +63,18 @@ function makeProposal(boardId: string, columnId: string): Proposal {
   }
 }
 
+function makeBoard(id: string, name: string): Board {
+  const now = new Date().toISOString()
+  return {
+    id,
+    name,
+    description: null,
+    isArchived: false,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
 describe('useProposalDisplayNames column loading', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -89,15 +101,7 @@ describe('useProposalDisplayNames column loading', () => {
 
     const resolver = createProposalDisplayNameResolver()
     const proposals = boardIds.map((boardId, index) => makeProposal(boardId, `column-${index + 1}`))
-    const now = new Date().toISOString()
-    const boards: Board[] = boardIds.map((id, index) => ({
-      id,
-      name: `Board ${index + 1}`,
-      description: null,
-      isArchived: false,
-      createdAt: now,
-      updatedAt: now,
-    }))
+    const boards = boardIds.map((id, index) => makeBoard(id, `Board ${index + 1}`))
     const ensurePromise = resolver.ensure(proposals, boards)
 
     await Promise.resolve()
@@ -124,5 +128,60 @@ describe('useProposalDisplayNames column loading', () => {
       expect(resolver.boardLabel(boardId)).toBe(`Board ${index + 1}`)
       expect(resolver.columnLabel(boardId, `column-${index + 1}`)).toBe(`Column ${index + 1}`)
     }
+  })
+})
+
+describe('useProposalDisplayNames cache lifecycle', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    mocks.getColumns.mockResolvedValue([])
+  })
+
+  it('keeps board metadata failures retryable instead of caching an empty snapshot', async () => {
+    mocks.getBoards
+      .mockRejectedValueOnce(new Error('temporary board metadata failure'))
+      .mockResolvedValueOnce([makeBoard('board-1', 'Roadmap')])
+
+    const resolver = createProposalDisplayNameResolver()
+    await resolver.ensure([makeProposal('board-1', 'column-1')])
+    expect(resolver.boardLabel('board-1')).toBe('Unavailable board')
+
+    await resolver.ensure([makeProposal('board-1', 'column-1')])
+    expect(mocks.getBoards).toHaveBeenCalledTimes(2)
+    expect(resolver.boardLabel('board-1')).toBe('Roadmap')
+  })
+
+  it('ignores a late account-A board response after reset and account-B hydration', async () => {
+    const accountABoards = createDeferred<Board[]>()
+    mocks.getBoards
+      .mockReturnValueOnce(accountABoards.promise)
+      .mockResolvedValueOnce([makeBoard('board-b', 'Account B board')])
+    mocks.getColumns.mockResolvedValue([])
+
+    const resolver = createProposalDisplayNameResolver()
+    const accountAEnsure = resolver.ensure([makeProposal('board-a', 'column-a')])
+    await Promise.resolve()
+    expect(mocks.getBoards).toHaveBeenCalledTimes(1)
+
+    resolver.reset()
+    await resolver.ensure([makeProposal('board-b', 'column-b')])
+    expect(resolver.boardLabel('board-b')).toBe('Account B board')
+
+    accountABoards.resolve([makeBoard('board-a', 'Account A board')])
+    await accountAEnsure
+
+    expect(resolver.boardLabel('board-a')).toBe('Unavailable board')
+    expect(resolver.boardLabel('board-b')).toBe('Account B board')
+  })
+
+  it('uses a proposed name as the target for CreateColumn operations', () => {
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-1')
+    const operation = proposal.operations[0]
+    operation.actionType = 'CreateColumn'
+    operation.targetId = null
+    operation.parameters = JSON.stringify({ boardId: 'board-1', name: 'Ready for review' })
+
+    expect(resolver.operationHeadline(proposal, operation)).toContain('Ready for review')
   })
 })

@@ -60,11 +60,13 @@ export function createProposalDisplayNameResolver() {
   const pendingColumnLoads: Array<{
     boardId: string
     boardKey: string
+    generation: number
     resolve: () => void
   }> = []
   let activeColumnLoads = 0
   let boardRequest: Promise<void> | null = null
   let hasBoardSnapshot = false
+  let generation = 0
 
   function applyBoards(boards: readonly Board[]) {
     boardNames.clear()
@@ -81,10 +83,17 @@ export function createProposalDisplayNameResolver() {
   async function loadBoards(): Promise<void> {
     if (hasBoardSnapshot) return
     if (!boardRequest) {
+      const requestGeneration = generation
       boardRequest = boardsApi
         .getBoards(undefined, true)
-        .then((boards) => applyBoards(boards))
-        .catch(() => applyBoards([]))
+        .then((boards) => {
+          if (requestGeneration === generation) applyBoards(boards)
+        })
+        .finally(() => {
+          // A reset starts a fresh request for the next authenticated session.
+          // Never let the old request clear the newer session's handle.
+          if (requestGeneration === generation) boardRequest = null
+        })
     }
     await boardRequest
   }
@@ -92,10 +101,15 @@ export function createProposalDisplayNameResolver() {
   function drainColumnLoads(): void {
     while (activeColumnLoads < PROPOSAL_COLUMN_LOAD_CONCURRENCY && pendingColumnLoads.length > 0) {
       const task = pendingColumnLoads.shift()!
+      if (task.generation !== generation) {
+        task.resolve()
+        continue
+      }
       activeColumnLoads += 1
       void (async () => {
         try {
           const columns = await columnsApi.getColumns(task.boardId)
+          if (task.generation !== generation) return
           for (const column of columns) {
             const columnKey = key(column.id)
             if (columnKey) columnNames.set(`${task.boardKey}:${columnKey}`, column.name)
@@ -121,7 +135,7 @@ export function createProposalDisplayNameResolver() {
     }
 
     const request = new Promise<void>((resolve) => {
-      pendingColumnLoads.push({ boardId, boardKey, resolve })
+      pendingColumnLoads.push({ boardId, boardKey, generation, resolve })
       drainColumnLoads()
     })
     loadedColumns.set(boardKey, request)
@@ -145,8 +159,17 @@ export function createProposalDisplayNameResolver() {
     proposals: readonly Proposal[],
     knownBoards?: readonly Board[],
   ): Promise<void> {
+    const requestGeneration = generation
     if (knownBoards !== undefined) applyBoards(knownBoards)
-    else await loadBoards()
+    else {
+      try {
+        await loadBoards()
+      } catch {
+        // Keep review responsive, but leave the failed request uncached so the
+        // next render can retry board metadata rather than treating it as empty.
+      }
+    }
+    if (requestGeneration !== generation) return
 
     const boardIds = new Set<string>()
     for (const proposal of proposals) {
@@ -175,6 +198,9 @@ export function createProposalDisplayNameResolver() {
       return boardLabel(operation.targetId ?? stringParameter(parameters, 'boardId', 'targetBoardId') ?? proposal.boardId)
     }
     if (type === 'column') {
+      if (operation.actionType.trim().toLowerCase() === 'createcolumn') {
+        return stringParameter(parameters, 'name')
+      }
       const boardId = operationBoardId(proposal, operation)
       return columnLabel(boardId, operation.targetId ?? operationColumnId(operation))
     }
@@ -264,10 +290,15 @@ export function createProposalDisplayNameResolver() {
   }
 
   function reset() {
+    generation += 1
     boardNames.clear()
     columnNames.clear()
     accessibleBoards.clear()
     loadedColumns.clear()
+    // Queued requests belong to the old session and should not hold their
+    // callers forever. In-flight requests retain their slots until they settle,
+    // so the global eight-request cap stays true across a session transition.
+    for (const task of pendingColumnLoads.splice(0)) task.resolve()
     boardRequest = null
     hasBoardSnapshot = false
   }

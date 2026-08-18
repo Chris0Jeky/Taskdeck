@@ -162,6 +162,39 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(wrapper.find('[data-testid="review-diff-stored-empty"]').exists()).toBe(false)
   })
 
+  it('keeps the backend CreateCard headline when board and column ids are present', async () => {
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        operations: [{
+          id: 'op-1',
+          proposalId: 'p-1',
+          sequence: 0,
+          actionType: 'CreateCard',
+          targetType: 'Card',
+          targetId: null,
+          parameters: JSON.stringify({ boardId: 'board-1', columnId: 'column-1', title: 'Implement OAuth' }),
+          idempotencyKey: 'k-1',
+          expectedVersion: null,
+        }],
+        presentation: {
+          plainSummary: 'Add OAuth support',
+          impactSummary: 'Adds one card.',
+          riskCue: 'Low risk',
+          sourceCue: 'Chat',
+          operationHeadlines: ['Create card “Implement OAuth” in the authentication column'],
+          affectedEntities: [],
+        },
+      }),
+    })
+
+    const plannedChanges = wrapper.findAll('button').find((button) => button.text().includes('Planned changes'))
+    expect(plannedChanges).toBeDefined()
+    await plannedChanges!.trigger('click')
+
+    expect(wrapper.find('.td-review-card__operation-list').text())
+      .toContain('Create card “Implement OAuth” in the authentication column')
+  })
+
   it('renders the invalid verdict with the zero-op fallback when no backend reason is supplied', () => {
     const wrapper = mountCard({
       selectedDiffMode: 'invalid',
