@@ -72,9 +72,17 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
   $inventoryState = ($capture | ConvertFrom-Json).path
 
   # Launch the read-only lane only after the capture exit check succeeds.
-  & $laneCommand
-  $laneSucceeded = $?
-  $laneExit = $LASTEXITCODE
+  $laneSucceeded = $false
+  $laneExit = $null
+  $laneError = $null
+  try {
+    & $laneCommand
+    $laneSucceeded = $?
+    $laneExit = $LASTEXITCODE
+  }
+  catch {
+    $laneError = $_
+  }
 
   & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $compareExit = $LASTEXITCODE
@@ -83,6 +91,7 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
   & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $cleanupExit = $LASTEXITCODE
   if ($cleanupExit -ne 0) { exit $cleanupExit }
+  if ($null -ne $laneError) { throw $laneError }
   if (-not $laneSucceeded -or ($null -ne $laneExit -and $laneExit -ne 0)) {
     if ($null -ne $laneExit -and $laneExit -ne 0) { exit $laneExit }
     exit 1

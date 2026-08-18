@@ -311,11 +311,18 @@ Run-Test 'requires both batch skill wrappers to propagate lane failure after cle
     )
     foreach ($skill in $skills) {
         $text = Get-Content -LiteralPath $skill -Raw
-        $lane = $text.IndexOf('& $laneCommand', [StringComparison]::Ordinal)
+        $errorSlot = $text.IndexOf('$laneError = $null', [StringComparison]::Ordinal)
+        $lane = $text.IndexOf('& $laneCommand', $errorSlot, [StringComparison]::Ordinal)
         $saved = $text.IndexOf('$laneSucceeded = $?', [StringComparison]::Ordinal)
+        $caught = $text.IndexOf('$laneError = $_', $lane, [StringComparison]::Ordinal)
+        $compare = $text.IndexOf('-Mode Compare', $caught, [StringComparison]::Ordinal)
         $cleanup = $text.IndexOf('-Mode Cleanup', [StringComparison]::Ordinal)
+        $rethrown = $text.IndexOf('throw $laneError', $cleanup, [StringComparison]::Ordinal)
         $propagated = $text.IndexOf('if (-not $laneSucceeded', [StringComparison]::Ordinal)
-        Assert-True ($lane -ge 0 -and $saved -gt $lane -and $cleanup -gt $saved -and $propagated -gt $cleanup) ('lane failure gate is missing or misordered in ' + $skill)
+        Assert-True (
+            $errorSlot -ge 0 -and $lane -gt $errorSlot -and $saved -gt $lane -and $caught -gt $saved -and
+            $compare -gt $caught -and $cleanup -gt $compare -and $rethrown -gt $cleanup -and $propagated -gt $rethrown
+        ) ('lane failure gate is missing or misordered in ' + $skill)
     }
 }
 
