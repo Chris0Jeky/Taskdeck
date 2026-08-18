@@ -122,6 +122,8 @@ public class AccountDeletionService : IAccountDeletionService
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
             var artefactsDeleted = await _artefacts.DeleteByUserIdAsync(userId, cancellationToken);
+            // Transcript evidence links are database-owned by their Transcript FK, so this
+            // set-based delete cascades without a racy string-source-ID scan.
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions

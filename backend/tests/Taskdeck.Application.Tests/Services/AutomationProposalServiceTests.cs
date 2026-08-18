@@ -244,6 +244,75 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task CreateTranscriptProposalAsync_AttachesOpaqueEvidenceToMatchingOperation()
+    {
+        var transcriptId = Guid.NewGuid();
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations:
+            [
+                new(0, "create", "card", "{\"title\":\"Test\"}", "key1")
+            ]);
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((p, _) => captured = p)
+            .ReturnsAsync((ProposalProvenance p, CancellationToken _) => p);
+
+        var result = await _service.CreateTranscriptProposalAsync(
+            dto,
+            [new TranscriptEvidenceLinkInput(0, transcriptId, 4, 12)]);
+
+        result.IsSuccess.Should().BeTrue();
+        var link = captured!.Fields.Single(field => field.FieldName.StartsWith("Operation "))
+            .EvidenceLinks.Should().ContainSingle().Subject;
+        link.SourceType.Should().Be(ProvenanceEvidenceLink.TranscriptSourceType);
+        link.SourceId.Should().Be(transcriptId.ToString("D"));
+        link.TranscriptId.Should().Be(transcriptId);
+        link.Label.Should().Be("Transcript evidence");
+        link.SpanStart.Should().Be(4);
+        link.SpanEnd.Should().Be(12);
+        link.ProvenanceFieldId.Should().Be(captured.Fields.Single(field => field.FieldName.StartsWith("Operation ")).Id);
+        link.Label.Should().NotContain("Test");
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task CreateTranscriptProposalAsync_RejectsMalformedEvidenceBeforePersistence(
+        bool oneSided,
+        bool reversed)
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations:
+            [
+                new(0, "create", "card", "{\"title\":\"Test\"}", "key1")
+            ]);
+        var evidence = oneSided
+            ? new TranscriptEvidenceLinkInput(0, Guid.NewGuid(), 4, null)
+            : new TranscriptEvidenceLinkInput(0, Guid.NewGuid(), reversed ? 12 : 4, reversed ? 4 : 4);
+
+        var result = await _service.CreateTranscriptProposalAsync(dto, [evidence]);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _proposalRepoMock.Verify(r => r.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()), Times.Never);
+        _provenanceRepoMock.Verify(r => r.AddAsync(It.IsAny<ProposalProvenance>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task CreateProposalAsync_ShouldAddOperations_WhenProvided()
     {
         // Arrange
