@@ -11,6 +11,12 @@ public interface IAutomationProposalService
     /// </summary>
     Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default);
 
+    /// <summary>Creates a proposal and attaches trusted transcript evidence to its operation fields.</summary>
+    Task<Result<ProposalDto>> CreateTranscriptProposalAsync(
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput> evidence,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Gets a proposal by ID with all operations.
     /// </summary>
