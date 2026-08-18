@@ -1900,6 +1900,70 @@ function Invoke-SelfTest {
         -Condition ($sourceGuardState.providerCalls -eq 1 -and $sourceGuardState.writes -eq 0) `
         -Message "source drift must abort before item-edit"
 
+    $statusChurnInitialSnapshot = Get-SelfTestSnapshot -Pages @{
+        "<start>" = New-SelfTestResponse `
+            -TotalCount 1 `
+            -Nodes @((New-SelfTestItem `
+                -Id "status-churn-item" `
+                -Priority "Priority V" `
+                -Status "Pending")) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:00:00Z"
+    }
+    $statusChurnCurrentSnapshot = Get-SelfTestSnapshot -Pages @{
+        "<start>" = New-SelfTestResponse `
+            -TotalCount 1 `
+            -Nodes @((New-SelfTestItem `
+                -Id "status-churn-item" `
+                -Priority "Priority V" `
+                -Status "Review")) `
+            -HasNextPage $false `
+            -EndCursor $null `
+            -UpdatedAt "2026-07-26T00:01:00Z"
+    }
+    $statusChurnInitialAudit = New-PriorityAuditState `
+        -Items $statusChurnInitialSnapshot.items `
+        -CanonicalRepository $canonicalRepository
+    $statusChurnCurrentAudit = New-PriorityAuditState `
+        -Items $statusChurnCurrentSnapshot.items `
+        -CanonicalRepository $canonicalRepository
+    $statusChurnInitialState = New-PriorityExecutionState `
+        -Snapshot $statusChurnInitialSnapshot `
+        -AuditState $statusChurnInitialAudit `
+        -PriorityFieldId $priorityFieldId `
+        -StatusFieldId $statusFieldId `
+        -OptionMap $testOptionMap
+    $statusChurnCurrentState = New-PriorityExecutionState `
+        -Snapshot $statusChurnCurrentSnapshot `
+        -AuditState $statusChurnCurrentAudit `
+        -PriorityFieldId $priorityFieldId `
+        -StatusFieldId $statusFieldId `
+        -OptionMap $testOptionMap
+    $checks += Assert-SelfTest `
+        -Condition ([string]::Equals(
+                $statusChurnInitialState.guardFingerprint,
+                $statusChurnCurrentState.guardFingerprint,
+                [System.StringComparison]::Ordinal)) `
+        -Message "Status and updatedAt-only churn must preserve the Priority execution guard"
+    $statusChurnGuardState = [pscustomobject]@{ providerCalls = 0; writes = 0 }
+    $statusChurnOutcome = Invoke-PriorityUpdatePlan `
+        -InitialState $statusChurnInitialState `
+        -OptionMap $testOptionMap `
+        -CurrentStateProvider {
+            $statusChurnGuardState.providerCalls++
+            $statusChurnCurrentState
+        } `
+        -ItemWriter {
+            param($update, $optionId)
+            $statusChurnGuardState.writes++
+        }
+    $checks += Assert-SelfTest `
+        -Condition ($statusChurnGuardState.providerCalls -eq 1 -and
+            $statusChurnGuardState.writes -eq 1 -and
+            $statusChurnOutcome.succeededCount -eq 1) `
+        -Message "Status and updatedAt-only churn must allow the planned Priority writer"
+
     $ignoredFingerprintInitialSnapshot = Get-SelfTestSnapshot -Pages @{
         "<start>" = New-SelfTestResponse `
             -TotalCount 1 `
@@ -2648,7 +2712,6 @@ function Get-PriorityAuditFingerprints {
             contentType = [string]$item.contentType
             repository = [string]$item.repository
             number = $item.number
-            status = [string]$item.status
             actualPriority = [string]$item.actualPriority
             expectedPriority = [string]$item.expectedPriority
             reason = [string]$item.reason
@@ -2920,7 +2983,6 @@ function New-PriorityExecutionState {
     $guard = [pscustomobject]@{
         projectId = $Snapshot.projectId
         totalCount = $Snapshot.totalCount
-        projectUpdatedAt = $Snapshot.projectUpdatedAt
         priorityFieldId = $PriorityFieldId
         statusFieldId = $StatusFieldId
         options = Get-PriorityOptionFingerprint -OptionMap $OptionMap
