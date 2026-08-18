@@ -32,8 +32,8 @@ public class ProposalFeedbackService : IProposalFeedbackService
 
             if (existing is not null)
             {
-                // One signal per user per proposal. A repeat is a no-op, except a later specific
-                // reason refines an earlier one-click Unspecified (last-specific-wins).
+                // One signal per user per proposal. A repeat is a no-op, except the first specific
+                // reason refines an earlier one-click Unspecified (first-specific-wins).
                 if (existing.Reason == ProposalFeedbackReason.Unspecified && reason != ProposalFeedbackReason.Unspecified)
                 {
                     existing.UpdateReason(reason);
@@ -58,7 +58,7 @@ public class ProposalFeedbackService : IProposalFeedbackService
             // The same Conflict path also covers a concurrent reason REFINEMENT (two requests from
             // the one user upgrading the same Unspecified row to two different specific reasons at
             // once): the first commit wins on the UpdatedAt concurrency token and the second is a
-            // benign no-op here. So the precise contract is "last-specific-wins for SEQUENTIAL
+            // benign no-op here. So the precise contract is "first-specific-wins for SEQUENTIAL
             // re-reports; first-committed-wins under simultaneous distinct reasons" -- a negligible
             // edge for a single-user signal, and the row's integrity is preserved either way
             // (see ADR-0043).

@@ -16,7 +16,7 @@ public class ProposalFeedbackRepository : Repository<ProposalFeedback>, IProposa
     public async Task<ProposalFeedback?> GetByProposalAndUserAsync(Guid proposalId, Guid userId, CancellationToken cancellationToken = default)
     {
         // Tracked on purpose: the report flow may refine this row's reason in place
-        // (last-specific-wins) and persist it through the shared UnitOfWork.
+        // (the first specific reason wins) and persist it through the shared UnitOfWork.
         return await _dbSet
             .FirstOrDefaultAsync(f => f.ProposalId == proposalId && f.ReportedByUserId == userId, cancellationToken);
     }
