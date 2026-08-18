@@ -313,4 +313,52 @@ function handleWorkspaceModeChange(event: Event) {
   font-size: 13px;
   color: var(--ink-deep);
 }
+
+@media (max-width: 640px) {
+  .paper-topbar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .paper-topbar__crumbs {
+    flex: 0 1 auto;
+    max-width: min(32vw, 140px);
+    gap: 4px;
+  }
+
+  .paper-topbar__crumb {
+    max-width: 12ch;
+  }
+
+  .paper-topbar__spacer,
+  .paper-topbar__mode-label,
+  .paper-topbar__palette-label,
+  .paper-topbar__palette-spacer,
+  .paper-topbar__status,
+  .paper-topbar__hairline,
+  .paper-topbar__icon-btn {
+    display: none;
+  }
+
+  .paper-topbar__mode {
+    flex: 0 0 auto;
+  }
+
+  .paper-topbar__mode-select {
+    max-width: 82px;
+    padding: 0 4px;
+  }
+
+  .paper-topbar__palette {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    gap: 6px;
+    padding: 5px 6px;
+  }
+
+  .paper-topbar__avatar {
+    flex: 0 0 26px;
+  }
+}
 </style>
