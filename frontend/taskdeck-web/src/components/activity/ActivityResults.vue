@@ -100,7 +100,7 @@ const timelineTranslateY = timeline.translateY
 .td-btn--ghost { background: var(--td-surface-secondary); color: var(--td-text-secondary); border: 1px solid var(--td-border-default); }
 .td-btn--ghost:hover { background: var(--td-surface-tertiary); }
 .td-timeline { display: flex; flex-direction: column; gap: 0; }
-.td-timeline--virtual { max-height: 600px; overflow-y: auto; contain: strict; }
+.td-timeline--virtual { max-height: 600px; overflow-y: auto; contain: layout paint; }
 .td-timeline__entry { display: flex; gap: var(--td-space-4); padding: var(--td-space-4) 0; border-left: 2px solid var(--td-border-default); margin-left: var(--td-space-3); padding-left: var(--td-space-4); position: relative; }
 .td-timeline__dot { position: absolute; left: -6px; top: var(--td-space-5); width: 10px; height: 10px; background: var(--td-color-primary); border-radius: 50%; border: 2px solid var(--td-surface-secondary); }
 .td-timeline__content { flex: 1; background: var(--td-surface-primary); border-radius: var(--td-radius-md); padding: var(--td-space-3); border: 1px solid var(--td-border-default); }
