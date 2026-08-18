@@ -1,14 +1,28 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-16
+Last Updated: 2026-08-18
 <br>
-Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]), then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
+Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Governance update (2026-08-18, ADR-0051 autonomous admission and merge authority)
+
+- **Merge authority is agent-executable across PR classes.** The existing T3 `merge: free`
+  declaration now explicitly covers dependency, workflow, governance, and major-version PRs after
+  exact-head required CI, DCO, the canonical risk-calibrated review pipeline, and seam-specific
+  proof. CODEOWNERS provides advisory routing; it does not reserve merge eligibility to a human.
+- **The tracked backlog can continuously replenish execution.** `REVIVAL_PLAN.md` §5 admits up to
+  four acceptance-ready issue items in `Now` and eight in `Next` without per-issue owner approval,
+  while plan/Accepted-ADR authority still gates new product surface and external or irreversible
+  actions remain separately human-scoped.
+- **Initial admitted queue:** `Now` = `#1206`, `#1633`, `#1661`, `#1664`; `Next` = `#1495`,
+  `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`. The paired sanitizer and CLI
+  follow-ups stay sequenced rather than competing for the same seam.
 
 ## Delivery update (2026-08-16, Windows API timing diagnostics)
 
@@ -130,7 +144,7 @@ supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
 - **AuditLog flake closed (`#1451`; closes `#1438`):** the class adopted the workerless factory (#1391 family), 6× deterministic runs; seeded `#1452` (no test covers `AuditRetentionWorker.ExecuteAsync`'s real startup path — pre-existing).
 - **LLM quota-reservation hardening (`#1427`; `#1313`, atomicity deferred to `#1435`):** closes a client-controllable usage-erasure hole — streaming/non-streaming `ChatService` and the extractor finalize with `CancellationToken.None` and settle in `finally`, so aborting a stream after tokens are billed (including read-one-token-and-disconnect) no longer discards the usage record. Also recovers a TTL-swept reservation's real billed tokens into a committed row (idempotent), floors `ReservationEstimatedTokens` at 1 so reservations stay visible to budget sums, settles the capture-triage reservation in `finally`, pins the release paths with tests (provider-throw, zero-token, no-LLM bootstrap, board-context throw, error-event-only) while pinning cancel-after-billed-tokens to the opposite rule — commit, never release, since releasing there would reopen the very bypass M1 closes — and wraps request/board-context construction so setup failures release rather than leak to TTL. The check-then-insert atomicity guarantee is **not** closed: it is not closeable in-process (over-admits even under a global full-span lock, due to cold-start WAL `-shm` read-visibility) and needs a redesign routed to the maintainer as `#1435`; its concurrency tests are skipped pending that. Merged on the maintainer's merge-with-tracked ruling; residual P2s as `#1431`.
 - **Frugality mode promoted into the manual (`#1448`):** the overlay that survived two full runs now lives in `docs/agentic/OVERNIGHT_LOOP.fable.md` instead of the launch prompt (enforcement-ladder rule). Reusable lesson from its review: when a bot converges on a seam by enumerating exemptions one round at a time, invert the rule instead of extending the enumeration — one allowlist inversion (only pure mechanical-motion packets are sampleable; suite/CI verdicts and reviewer/settlement packets never are) ended a three-round cycle.
-- **Dependabot:** `#1443` (.NET 8.0.29 patch train) + `#1440` (npm minor-patch group) merged. `#1441` (actions group) was staged green and then merged on explicit maintainer authorization under that wave's policy. Current workflow PRs retain designated maintainer/CODEOWNER review, while merge execution follows the repository authority and global gate after that review. `#1442` (pinia 3→4 major) was red and is closed to snooze, with the real migration slice tracked as `#1455`.
+- **Dependabot:** `#1443` (.NET 8.0.29 patch train) + `#1440` (npm minor-patch group) merged. `#1441` (actions group) was staged green and then merged on explicit maintainer authorization under that wave's policy. ADR-0051 has since superseded that category gate: current workflow PRs use advisory `CODEOWNERS` routing plus the exact-head technical/review gate, without a designated-human-review requirement. `#1442` (pinia 3→4 major) was red and is closed to snooze, with the real migration slice tracked as `#1455`.
 - **Process/estate notes:** duplicate tracker `#1450` consolidated into `#1444`; Gemini Code Assist (consumer) is sunset and Copilot review quota-exhausted — Codex is the only live external review bot.
 
 ## Delivery update (2026-07-18, post-wave)
@@ -203,7 +217,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
 
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), plus the other scoped exceptions enumerated in the plan's §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 grants it (Phase-2 grants per ADR-0044; Phase-4 grants per ADR-0046). The finite-work discipline from `COURSE_CORRECTION.md` carries over — work not on the ratified wave list is, by definition, not taken.
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
 
 Goals, in order:
 
