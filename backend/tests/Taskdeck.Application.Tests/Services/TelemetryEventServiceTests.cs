@@ -181,19 +181,19 @@ public class TelemetryEventServiceTests
     }
 
     [Fact]
-    public void RecordEvent_ShouldStripLineBreaksFromLoggedValues()
+    public void RecordEvent_ShouldStripTerminalControlsFromLoggedValues()
     {
         var logger = new InMemoryLogger<TelemetryEventService>();
         var service = new TelemetryEventService(_settings, logger);
         var evt = CreateValidEvent();
-        evt.SessionId = "session\r\nforged-entry";
-        evt.WorkspaceMode = "guided\nforged-mode";
+        evt.SessionId = "session \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
+        evt.WorkspaceMode = "guided \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
 
         service.RecordEvent(evt).Should().BeTrue();
 
         var message = logger.Entries.Single().Message;
-        message.Should().NotContain("\r").And.NotContain("\n");
-        message.Should().Contain("sessionforged-entry");
-        message.Should().Contain("guidedforged-mode");
+        message.Should().NotContain("\u001B").And.NotContain("\u000B").And.NotContain("\u009B").And.NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("session escapeverticalc1safe café ✓");
+        message.Should().Contain("guided escapeverticalc1safe café ✓");
     }
 }
