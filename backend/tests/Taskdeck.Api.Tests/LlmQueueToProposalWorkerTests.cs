@@ -91,12 +91,18 @@ public class LlmQueueToProposalWorkerTests
         FakeAutomationPlannerService? planner = null,
         FakeCaptureTriageService? triageService = null,
         IAutomationProposalRepository? automationProposals = null,
-        FakeUnitOfWork? unitOfWork = null)
+        FakeUnitOfWork? unitOfWork = null,
+        List<FakeUnitOfWork>? createdUnitOfWorks = null)
     {
         var services = new ServiceCollection();
         // Tests that need to observe or drive the writes (which token, cancel between saves) build the
-        // unit of work themselves and pass it in; everyone else gets a default one.
-        services.AddSingleton<IUnitOfWork>(unitOfWork ?? new FakeUnitOfWork(queueRepo, automationProposals));
+        // unit of work themselves and pass it in; everyone else gets a fresh scoped fake like production.
+        services.AddScoped<IUnitOfWork>(_ =>
+        {
+            var scopedUnitOfWork = unitOfWork ?? new FakeUnitOfWork(queueRepo, automationProposals);
+            createdUnitOfWorks?.Add(scopedUnitOfWork);
+            return scopedUnitOfWork;
+        });
         services.AddSingleton<IAutomationPlannerService>(planner ?? new FakeAutomationPlannerService());
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
         return services.BuildServiceProvider();
@@ -295,6 +301,41 @@ public class LlmQueueToProposalWorkerTests
         unitOfWork.SaveChangesTokens.Should().ContainSingle("the release is the only write on this path");
         unitOfWork.SaveChangesTokens[0].IsCancellationRequested.Should().BeFalse(
             "the release must be persisted with CancellationToken.None, not the cancelled caller token");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneShutdownRelease_UsesFreshScopeWithoutFlushingPlannerState()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService();
+        planner.OnParseInstruction = () =>
+        {
+            // ProcessSingleItemAsync owns the last UoW created before the shutdown helper opens its
+            // fresh scope. Model a proposal graph still tracked there when planner cancellation lands.
+            createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+            cts.Cancel();
+        };
+        planner.ResultFactory = _ => throw new OperationCanceledException(cts.Token);
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            planner,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, item processing, and shutdown scopes");
+        var plannerUnitOfWork = createdUnitOfWorks[^2];
+        var shutdownUnitOfWork = createdUnitOfWorks[^1];
+        plannerUnitOfWork.SaveChangesTokens.Should().BeEmpty("the planner scope must not flush on shutdown release");
+        plannerUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse();
+        shutdownUnitOfWork.SaveChangesTokens.Should().ContainSingle(token => !token.IsCancellationRequested);
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(0);
     }
 
     [Fact]
@@ -516,6 +557,49 @@ public class LlmQueueToProposalWorkerTests
         item.RetryCount.Should().Be(1);
         unitOfWork.SaveChangesTokens.Should().HaveCount(2);
         unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneRetryCompletion_UsesFreshScopeWithoutFlushingPlannerState()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        planner.OnParseInstruction = () =>
+        {
+            // The first Failed save is intentional and commits the retry charge. Add unrelated state
+            // only after that write, then cancel so the second transition must use a fresh scope.
+            createdUnitOfWorks[^1].OnSaveChanges = saveNumber =>
+            {
+                if (saveNumber == 1)
+                {
+                    createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+                    cts.Cancel();
+                }
+            };
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            planner,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, item processing, and shutdown scopes");
+        var plannerUnitOfWork = createdUnitOfWorks[^2];
+        var shutdownUnitOfWork = createdUnitOfWorks[^1];
+        plannerUnitOfWork.SaveChangesTokens.Should().HaveCount(1, "only the committed Failed transition belongs to the planner scope");
+        plannerUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse("unrelated state was tracked after the first save");
+        shutdownUnitOfWork.SaveChangesTokens.Should().ContainSingle(token => !token.IsCancellationRequested);
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(1);
     }
 
     #endregion
@@ -1307,6 +1391,7 @@ public class LlmQueueToProposalWorkerTests
         public int CallCount { get; private set; }
 
         public Func<string, Result<ProposalDto>>? ResultFactory { get; set; }
+        public Action? OnParseInstruction { get; set; }
 
         public Task<Result<ProposalDto>> ParseInstructionAsync(
             string instruction,
@@ -1318,6 +1403,7 @@ public class LlmQueueToProposalWorkerTests
             string? correlationId = null)
         {
             CallCount++;
+            OnParseInstruction?.Invoke();
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(instruction));
@@ -1443,12 +1529,23 @@ public class LlmQueueToProposalWorkerTests
         /// </summary>
         public List<CancellationToken> SaveChangesTokens { get; } = [];
 
+        /// <summary>Models unrelated state tracked by the planner scope for shutdown-isolation tests.</summary>
+        public bool UnrelatedTrackedState { get; set; }
+
+        /// <summary>Records whether a SaveChangesAsync flush included that unrelated state.</summary>
+        public bool UnrelatedStateWasSaved { get; private set; }
+
         /// <summary>Invoked after each SaveChangesAsync is recorded, so a test can cancel between writes.</summary>
         public Action<int>? OnSaveChanges { get; set; }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesTokens.Add(cancellationToken);
+            if (UnrelatedTrackedState)
+            {
+                UnrelatedStateWasSaved = true;
+            }
+
             // EF Core's SaveChangesAsync throws on an already-cancelled token; model that, or a
             // shutdown-path write that forwards the cancelled token would silently pass here.
             cancellationToken.ThrowIfCancellationRequested();
