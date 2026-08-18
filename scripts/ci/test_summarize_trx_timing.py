@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from summarize_trx_timing import TOP_N, summarize_trx
+from summarize_trx_timing import summarize_trx
 
 
 TRX = """<?xml version="1.0" encoding="utf-8"?>
@@ -44,67 +44,29 @@ class SummarizeTrxTimingTests(unittest.TestCase):
         self.assertEqual(summary["missingDurationCount"], 1)
         self.assertEqual(summary["summedTestDurationSeconds"], 3.75)
         self.assertIsNone(summary["workflowWallTimeSeconds"])
-        self.assertEqual(summary["schemaVersion"], 2)
         self.assertEqual(
-            summary["durationStatistics"],
-            {
-                "p50Seconds": 1.0,
-                "p90Seconds": 2.25,
-                "p95Seconds": 2.25,
-                "p99Seconds": 2.25,
-                "maxSeconds": 2.25,
-            },
-        )
-        self.assertEqual(
-            [row["fullyQualifiedName"] for row in summary["topResults"]],
+            [row["fullyQualifiedName"] for row in summary["results"]],
             [
                 "Zeta.Tests.SlowTests.TakesTime",
                 "Alpha.Tests.FastTests.RunsQuickly",
                 None,
+                "Alpha.Tests.FastTests.NoTiming",
             ],
         )
-        self.assertEqual(summary["topResults"][2]["identityStatus"], "missing-definition")
-        self.assertEqual(summary["topClasses"][0]["className"], "Zeta.Tests.SlowTests")
-        self.assertEqual(summary["topClasses"][1]["resultCount"], 2)
+        self.assertEqual(summary["results"][2]["identityStatus"], "missing-definition")
+        self.assertEqual(summary["classes"][0]["className"], "Zeta.Tests.SlowTests")
+        self.assertEqual(summary["classes"][1]["resultCount"], 2)
         serialized = json.dumps(summary)
         self.assertNotIn("secret output", serialized)
         self.assertNotIn("private error", serialized)
         self.assertNotIn("theory-secret", serialized)
 
-    def test_percentiles_ties_top_n_and_missing_durations_are_deterministic(self) -> None:
-        rows = []
-        definitions = []
-        for index in range(TOP_N + 2):
-            duration = "00:00:03.0000000" if index < 2 else f"00:00:{index:02d}.0000000"
-            rows.append(
-                f'<UnitTestResult testId="id-{index}" outcome="Passed" duration="{duration}" />'
-            )
-            definitions.append(
-                f'<UnitTest id="id-{index}"><TestMethod className="Tests.Tie{index:02d}" name="Run" /></UnitTest>'
-            )
-        rows.append('<UnitTestResult testId="untimed" outcome="Skipped" duration="" />')
-        definitions.append('<UnitTest id="untimed"><TestMethod className="Tests.Untimed" name="Run" /></UnitTest>')
-        trx = "<TestRun><Results>" + "".join(rows) + "</Results><Definitions>" + "".join(definitions) + "</Definitions></TestRun>"
-
-        summary = summarize_trx(self.write_trx(trx))
-
-        self.assertEqual(summary["timedResultCount"], TOP_N + 2)
-        self.assertEqual(summary["missingDurationCount"], 1)
-        self.assertEqual(len(summary["topResults"]), TOP_N)
-        self.assertEqual(
-            [row["fullyQualifiedName"] for row in summary["topResults"][-2:]],
-            ["Tests.Tie00.Run", "Tests.Tie01.Run"],
-        )
-        self.assertEqual(summary["durationStatistics"]["p50Seconds"], 5.0)
-        self.assertEqual(summary["durationStatistics"]["p90Seconds"], 10.0)
-        self.assertNotIn("Tests.Untimed.Run", json.dumps(summary["topResults"]))
-
     def test_missing_and_invalid_duration_are_nullable_and_not_summed(self) -> None:
         path = self.write_trx(TRX.replace('duration=""', 'duration="not-a-duration"'))
         summary = summarize_trx(path)
+        self.assertIsNone(summary["results"][-1]["durationSeconds"])
         self.assertEqual(summary["missingDurationCount"], 1)
         self.assertEqual(summary["summedTestDurationSeconds"], 3.75)
-        self.assertFalse(any(row["durationSeconds"] is None for row in summary["topResults"]))
 
     def test_malformed_xml_and_empty_results_fail_explicitly(self) -> None:
         with self.assertRaisesRegex(ValueError, "no UnitTestResult"):

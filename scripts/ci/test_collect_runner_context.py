@@ -88,7 +88,14 @@ class RunnerContextTests(unittest.TestCase):
         self.assertIn(command, text)
         self.assertLess(text.index("Capture API integration runner context"), text.index(command))
         self.assertGreater(text.index("Finalize API integration runner context"), text.index(command))
+        capture_block = text[text.index("- name: Capture API integration runner context") : text.index("- name: Run API integration tests")]
+        self.assertIn("continue-on-error: true", capture_block)
         self.assertIn("if: always()", text[text.index("Finalize API integration runner context") :])
+        finalize_block = text[text.index("- name: Finalize API integration runner context") : text.index("- name: Upload API integration runner context")]
+        self.assertIn("continue-on-error: true", finalize_block)
+        upload_block = text[text.index("- name: Upload API integration runner context") : text.index("- name: Summarize API integration timing")]
+        self.assertIn("continue-on-error: true", upload_block)
+        self.assertIn("if-no-files-found: warn", upload_block)
         self.assertIn("api-integration-runner-context-${{ matrix.os }}", text)
         self.assertIn("retention-days: 14", text)
         lowered = text.lower()
