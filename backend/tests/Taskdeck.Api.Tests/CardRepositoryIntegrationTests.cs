@@ -1,4 +1,6 @@
 using FluentAssertions;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -19,6 +21,36 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
     public CardRepositoryIntegrationTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    [Fact]
+    public async Task SqliteJsonEach_ShouldBeAvailableFromBundledRuntime()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        await db.Database.OpenConnectionAsync();
+
+        try
+        {
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = "SELECT value FROM json_each($boardIds) ORDER BY key";
+            var expectedIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$boardIds";
+            parameter.Value = JsonSerializer.Serialize(expectedIds);
+            command.Parameters.Add(parameter);
+
+            await using var reader = await command.ExecuteReaderAsync();
+            var values = new List<string>();
+            while (await reader.ReadAsync())
+                values.Add(reader.GetString(0));
+
+            values.Should().Equal(expectedIds.Select(id => id.ToString()));
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
     }
 
     [Fact]
@@ -484,9 +516,10 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
         var results = (await repo.GetByDueDateRangeAsync(
             new[] { boardA.Id, boardB.Id, boardA.Id, Guid.Empty }, from, to)).ToList();
 
-        var expectedIds = new[] { atFrom, sameInstantOnOtherBoard }
-            .OrderBy(card => card.BoardId.ToString(), StringComparer.Ordinal)
-            .Append(fractional)
+        var expectedIds = new[] { atFrom, sameInstantOnOtherBoard, fractional }
+            .OrderBy(card => card.DueDate!.Value)
+            .ThenBy(card => card.BoardId.ToString(), StringComparer.Ordinal)
+            .ThenBy(card => card.Id.ToString(), StringComparer.Ordinal)
             .Select(card => card.Id);
         results.Select(card => card.Id).Should().BeEquivalentTo(expectedIds, options => options.WithStrictOrdering());
         results.Select(card => card.DueDate!.Value.UtcDateTime.Ticks).Should().BeInAscendingOrder();
@@ -507,18 +540,61 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
         var board = new Board("Calendar limit board", ownerId: user.Id);
         var column = new Column(board.Id, "Calendar limit column", 0);
         var from = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
-        var cards = Enumerable.Range(0, 501)
-            .Select(index => new Card(board.Id, column.Id, $"Calendar limit {index}", dueDate: from.AddTicks(index)))
+        var cards = Enumerable.Range(1, 501)
+            .Select(index => new Card(
+                Guid.Parse($"00000000-0000-0000-0000-{index:D12}"),
+                board.Id,
+                column.Id,
+                $"Calendar limit {index}",
+                dueDate: from))
             .ToList();
 
         db.AddRange(user, board, column);
         db.Cards.AddRange(cards);
         await db.SaveChangesAsync();
 
+        db.ChangeTracker.Clear();
+
         var results = (await repo.GetByDueDateRangeAsync(new[] { board.Id }, from, from.AddDays(1))).ToList();
+        var repeatedResults = (await repo.GetByDueDateRangeAsync(new[] { board.Id }, from, from.AddDays(1))).ToList();
+        var expectedIds = cards
+            .OrderBy(card => card.BoardId.ToString(), StringComparer.Ordinal)
+            .ThenBy(card => card.Id.ToString(), StringComparer.Ordinal)
+            .Take(500)
+            .Select(card => card.Id)
+            .ToList();
 
         results.Should().HaveCount(500);
-        results.Select(card => card.Id).Should().BeEquivalentTo(cards.Take(500).Select(card => card.Id), options => options.WithStrictOrdering());
+        results.Select(card => card.Id).Should().Equal(expectedIds);
+        repeatedResults.Select(card => card.Id).Should().Equal(expectedIds);
         results.Should().NotContain(card => card.Id == cards[500].Id);
+    }
+
+    [Fact]
+    public async Task GetByDueDateRangeAsync_WithMoreThan999BoardIds_ShouldUseOneJsonParameter()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("calendar-many-boards-user", "calendar-many-boards@example.com", "hash");
+        var board = new Board("Calendar many-board target", ownerId: user.Id);
+        var column = new Column(board.Id, "Calendar many-board column", 0);
+        var from = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var card = new Card(board.Id, column.Id, "Calendar many-board card", dueDate: from.AddHours(1));
+        db.AddRange(user, board, column, card);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var boardIds = Enumerable.Range(0, 1_000)
+            .Select(_ => Guid.NewGuid())
+            .Append(board.Id)
+            .ToArray();
+
+        var results = (await repo.GetByDueDateRangeAsync(boardIds, from, from.AddDays(1))).ToList();
+
+        results.Should().ContainSingle().Which.Id.Should().Be(card.Id);
+        results[0].Board.Name.Should().Be(board.Name);
+        results[0].Column.Name.Should().Be(column.Name);
     }
 }

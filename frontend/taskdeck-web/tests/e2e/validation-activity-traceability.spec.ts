@@ -175,6 +175,22 @@ test.describe('TST11-SC-018: Board-scoped activity timeline', () => {
     // Verify a Created action exists
     expect(history.some((e) => e.action === AuditAction.Created)).toBeTruthy()
   })
+
+  test('board history fetch renders the first audit row in the virtual timeline', async ({ page, request }) => {
+    const boardName = `Visible Activity ${Date.now()}`
+    await createBoard(request, boardName)
+
+    await page.goto('/workspace/activity')
+
+    await page.locator('#activity-board-select').selectOption({ label: boardName })
+    await page.getByRole('button', { name: 'Fetch', exact: true }).click()
+
+    await expect(page).toHaveURL(/\/workspace\/activity\/board\/[a-f0-9-]+$/)
+    const timeline = page.locator('.td-timeline--virtual')
+    await expect(timeline).toBeVisible()
+    await expect(timeline.locator('[data-index="0"]')).toBeVisible()
+    await expect(timeline.locator('.td-timeline__action').first()).toHaveText('Created')
+  })
 })
 
 test.describe('TST11-SC-019: Entity-scoped activity (card level)', () => {

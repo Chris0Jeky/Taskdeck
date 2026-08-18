@@ -88,6 +88,17 @@ class RunnerContextTests(unittest.TestCase):
         self.assertIn(command, text)
         self.assertLess(text.index("Capture API integration runner context"), text.index(command))
         self.assertGreater(text.index("Finalize API integration runner context"), text.index(command))
+        test_block = text[text.index("- name: Run API integration tests") : text.index("- name: Upload API integration test assembly diagnostics")]
+        self.assertIn("TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH", test_block)
+        self.assertIn("${{ github.workspace }}/backend/TestResults/api-integration/${{ matrix.os }}/api-test-assembly-diagnostics.json", test_block)
+        self.assertEqual(text.count("TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH"), 1)
+        diagnostics_upload = text[text.index("- name: Upload API integration test assembly diagnostics") : text.index("- name: Finalize API integration runner context")]
+        self.assertIn("if: always()", diagnostics_upload)
+        self.assertIn("continue-on-error: true", diagnostics_upload)
+        self.assertIn("api-integration-test-assembly-diagnostics-${{ matrix.os }}", diagnostics_upload)
+        self.assertIn("api-test-assembly-diagnostics.json", diagnostics_upload)
+        self.assertIn("if-no-files-found: warn", diagnostics_upload)
+        self.assertIn("retention-days: 14", diagnostics_upload)
         capture_block = text[text.index("- name: Capture API integration runner context") : text.index("- name: Run API integration tests")]
         self.assertIn("continue-on-error: true", capture_block)
         self.assertIn("if: always()", text[text.index("Finalize API integration runner context") :])

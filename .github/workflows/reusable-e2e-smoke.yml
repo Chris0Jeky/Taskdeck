@@ -24,7 +24,7 @@ jobs:
   e2e-smoke:
     name: E2E Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,9 +59,15 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ hashFiles('frontend/taskdeck-web/package-lock.json') }}
 
-      - name: Install Playwright browser
+      - name: Install Playwright browser dependencies
+        timeout-minutes: 10
         working-directory: frontend/taskdeck-web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install-deps chromium
+
+      - name: Install Playwright Chromium browser
+        timeout-minutes: 5
+        working-directory: frontend/taskdeck-web
+        run: npx playwright install chromium
 
       - name: Remove stale E2E database
         working-directory: frontend/taskdeck-web
