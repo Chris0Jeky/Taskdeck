@@ -198,7 +198,8 @@ export function createProposalDisplayNameResolver() {
       return boardLabel(operation.targetId ?? stringParameter(parameters, 'boardId', 'targetBoardId') ?? proposal.boardId)
     }
     if (type === 'column') {
-      if (operation.actionType.trim().toLowerCase() === 'createcolumn') {
+      const action = operation.actionType.trim().toLowerCase()
+      if (action === 'create' || action === 'createcolumn') {
         return stringParameter(parameters, 'name')
       }
       const boardId = operationBoardId(proposal, operation)

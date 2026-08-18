@@ -174,14 +174,16 @@ describe('useProposalDisplayNames cache lifecycle', () => {
     expect(resolver.boardLabel('board-b')).toBe('Account B board')
   })
 
-  it('uses a proposed name as the target for CreateColumn operations', () => {
+  it('uses a proposed name as the target for normalized create column operations', () => {
     const resolver = createProposalDisplayNameResolver()
     const proposal = makeProposal('board-1', 'column-1')
     const operation = proposal.operations[0]
-    operation.actionType = 'CreateColumn'
+    operation.actionType = 'create'
+    operation.targetType = 'column'
     operation.targetId = null
     operation.parameters = JSON.stringify({ boardId: 'board-1', name: 'Ready for review' })
 
+    expect(resolver.operationTargetLabel(proposal, operation)).toBe('Ready for review')
     expect(resolver.operationHeadline(proposal, operation)).toContain('Ready for review')
   })
 })
