@@ -9,9 +9,10 @@ Local-first execution workspace for developers: transcripts/notes in → evidenc
 → human-approved board changes. No silent or destructive mutations; SQLite persistence.
 .NET 8 backend (clean architecture) + Vue 3/Vite frontend + a write-gated MCP server.
 
-**Active direction:** ADR-0044 revival (2026-07-10) — free open beta, spine is `docs/REVIVAL_PLAN.md`;
-work not on its ratified wave list is not taken. This supersedes the 2026-06-13 archive pivot and the
-archive tracker #1278 (still open, seeded 2026-07-02, kept as the checkpoint fallback).
+**Active direction:** ADR-0044 revival (2026-07-10) — free open beta, spine is `docs/REVIVAL_PLAN.md`.
+ADR-0051 adds a bounded autonomous-admission lane for acceptance-ready tracked backlog while keeping
+new product surfaces inside the plan/ADR boundary. This supersedes the 2026-06-13 archive pivot and
+the archive tracker #1278 (still open, seeded 2026-07-02, kept as the checkpoint fallback).
 
 ## Orient (do NOT bulk-read the big docs)
 
