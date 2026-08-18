@@ -1,8 +1,22 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import type { Proposal } from '../../../types/automation'
 import type { ReviewDiffMode } from '../../../composables/useReviewActions'
 import ReviewProposalCard from '../../../components/review/ReviewProposalCard.vue'
+import { resetProposalDisplayNamesForTests } from '../../../composables/useProposalDisplayNames'
+
+const mocks = vi.hoisted(() => ({
+  getBoards: vi.fn(),
+  getColumns: vi.fn(),
+}))
+
+vi.mock('../../../api/boardsApi', () => ({
+  boardsApi: { getBoards: mocks.getBoards },
+}))
+
+vi.mock('../../../api/columnsApi', () => ({
+  columnsApi: { getColumns: mocks.getColumns },
+}))
 
 // #1397: PR #1395 made `/diff` 400 for expired/terminal proposals. The Legacy
 // card must present the stored preview under a read-only banner (never a live
@@ -61,6 +75,13 @@ function mountCard(props: {
 }
 
 describe('ReviewProposalCard diff presentation (#1397)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetProposalDisplayNamesForTests()
+    mocks.getBoards.mockResolvedValue([])
+    mocks.getColumns.mockResolvedValue([])
+  })
+
   it('shows a read-only banner and the stored preview for an expired proposal', () => {
     const wrapper = mountCard({
       proposal: makeProposal({ status: 'Expired' }),
@@ -136,7 +157,8 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     const ops = wrapper.find('[data-testid="review-diff-stored-operations"]')
     expect(ops.exists()).toBe(true)
     // Sequence-ordered: CreateCard (seq 0) before MoveCard (seq 1).
-    expect(ops.text()).toMatch(/1\. CreateCard Card[\s\S]*2\. MoveCard Card \(card-9\)/)
+    expect(ops.text()).toMatch(/1\. CreateCard Card[\s\S]*2\. MoveCard Card/)
+    expect(ops.text()).not.toContain('card-9')
     expect(wrapper.find('[data-testid="review-diff-stored-empty"]').exists()).toBe(false)
   })
 
@@ -254,5 +276,45 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     // Live mode + no content yet → nothing rendered (mirrors the pre-fetch state),
     // so a slow request never flashes a misleading "no changes" line.
     expect(wrapper.find('[data-testid="review-diff-wrapper"]').exists()).toBe(false)
+  })
+
+  it('presents readable board and column names in Legacy while disclosing raw IDs', async () => {
+    mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Support Triage' }])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-1', boardId: 'board-1', name: 'Done' }])
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        operations: [{
+          id: 'op-column',
+          proposalId: 'p-1',
+          sequence: 0,
+          actionType: 'MoveCard',
+          targetType: 'Column',
+          targetId: 'column-1',
+          parameters: JSON.stringify({ boardId: 'board-1', columnId: 'column-1' }),
+          idempotencyKey: 'k-1',
+          expectedVersion: null,
+        }],
+      }),
+      selectedDiffMode: 'stored',
+      selectedDiff: null,
+    })
+    await flushPromises()
+
+    const plannedToggle = wrapper.findAll('.td-review-card__collapse-toggle')
+      .find((button) => button.text().includes('Planned changes'))!
+    await plannedToggle.trigger('click')
+    const planned = wrapper.find('.td-review-card__operation-list')
+    expect(wrapper.text()).toContain('Board: Support Triage')
+    expect(planned.text()).toContain('Done')
+    expect(planned.text()).not.toContain('board-1')
+    expect(planned.text()).not.toContain('column-1')
+    expect(mocks.getBoards).toHaveBeenCalledTimes(1)
+    expect(mocks.getColumns).toHaveBeenCalledTimes(1)
+
+    const details = wrapper.find('[data-testid="review-technical-details"]')
+    expect(details.attributes('open')).toBeUndefined()
+    await details.find('summary').trigger('click')
+    expect(details.text()).toContain('board-1')
+    expect(details.text()).toContain('column-1')
   })
 })

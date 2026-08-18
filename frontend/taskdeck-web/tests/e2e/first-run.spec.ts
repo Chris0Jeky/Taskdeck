@@ -201,7 +201,7 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await openProposalButton.click()
 
   await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
-  await expect(page.getByText(boardName)).toBeVisible()
+  await expect(page.locator('.td-review__board-filter').getByText(boardName, { exact: true })).toBeVisible()
   await expect(page.locator(`#proposal-${controlProposalId}`)).toHaveCount(0)
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
