@@ -433,4 +433,92 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
             new[] { board.Id }, "", maxResults: 10)).ToList();
         results.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task GetByDueDateRangeAsync_ShouldReturnEmptyForBoardWithoutDueDates()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("calendar-empty-user", "calendar-empty@example.com", "hash");
+        var board = new Board("Calendar empty board", ownerId: user.Id);
+        var column = new Column(board.Id, "Calendar empty column", 0);
+        db.AddRange(user, board, column, new Card(board.Id, column.Id, "No due date"));
+        await db.SaveChangesAsync();
+
+        var results = await repo.GetByDueDateRangeAsync(
+            new[] { board.Id },
+            new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero));
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetByDueDateRangeAsync_ShouldFilterByInstantOrderAndLoadNavigations()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("calendar-range-user", "calendar-range@example.com", "hash");
+        var boardA = new Board("Calendar range board A", ownerId: user.Id);
+        var boardB = new Board("Calendar range board B", ownerId: user.Id);
+        var columnA = new Column(boardA.Id, "Calendar range column A", 0);
+        var columnB = new Column(boardB.Id, "Calendar range column B", 0);
+        var from = new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero);
+        var equivalentInstant = new DateTimeOffset(2026, 8, 10, 1, 0, 0, TimeSpan.FromHours(1));
+        var fractionalInstant = from.AddTicks(9_999_999);
+        var to = from.AddDays(1);
+        var atFrom = new Card(boardA.Id, columnA.Id, "At from", dueDate: equivalentInstant);
+        var sameInstantOnOtherBoard = new Card(boardB.Id, columnB.Id, "Same instant", dueDate: from);
+        var fractional = new Card(boardB.Id, columnB.Id, "Fractional", dueDate: fractionalInstant);
+        var atTo = new Card(boardA.Id, columnA.Id, "At to", dueDate: to);
+        var before = new Card(boardA.Id, columnA.Id, "Before", dueDate: from.AddTicks(-1));
+
+        db.AddRange(user, boardA, boardB, columnA, columnB, atFrom, sameInstantOnOtherBoard, fractional, atTo, before);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var results = (await repo.GetByDueDateRangeAsync(
+            new[] { boardA.Id, boardB.Id, boardA.Id, Guid.Empty }, from, to)).ToList();
+
+        var expectedIds = new[] { atFrom, sameInstantOnOtherBoard }
+            .OrderBy(card => card.BoardId.ToString(), StringComparer.Ordinal)
+            .Append(fractional)
+            .Select(card => card.Id);
+        results.Select(card => card.Id).Should().BeEquivalentTo(expectedIds, options => options.WithStrictOrdering());
+        results.Select(card => card.DueDate!.Value.UtcDateTime.Ticks).Should().BeInAscendingOrder();
+        results.Select(card => card.Board).Should().NotContainNulls();
+        results.Select(card => card.Column).Should().NotContainNulls();
+        results.Should().Contain(card => card.Board.Name == "Calendar range board A" && card.Column.Name == "Calendar range column A");
+        results.Should().Contain(card => card.Board.Name == "Calendar range board B" && card.Column.Name == "Calendar range column B");
+    }
+
+    [Fact]
+    public async Task GetByDueDateRangeAsync_ShouldLimitToEarliestFiveHundredCards()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+
+        var user = new User("calendar-limit-user", "calendar-limit@example.com", "hash");
+        var board = new Board("Calendar limit board", ownerId: user.Id);
+        var column = new Column(board.Id, "Calendar limit column", 0);
+        var from = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var cards = Enumerable.Range(0, 501)
+            .Select(index => new Card(board.Id, column.Id, $"Calendar limit {index}", dueDate: from.AddTicks(index)))
+            .ToList();
+
+        db.AddRange(user, board, column);
+        db.Cards.AddRange(cards);
+        await db.SaveChangesAsync();
+
+        var results = (await repo.GetByDueDateRangeAsync(new[] { board.Id }, from, from.AddDays(1))).ToList();
+
+        results.Should().HaveCount(500);
+        results.Select(card => card.Id).Should().BeEquivalentTo(cards.Take(500).Select(card => card.Id), options => options.WithStrictOrdering());
+        results.Should().NotContain(card => card.Id == cards[500].Id);
+    }
 }
