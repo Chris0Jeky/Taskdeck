@@ -70,6 +70,9 @@ function Assert-GitReadCommand {
 
     foreach ($argument in $Arguments) {
         $normalized = $argument.ToLowerInvariant()
+        if ($subcommand -eq "grep" -and $argument -cmatch "^-[^-]+O") {
+            Deny-InventoryCommand "git grep short-option cluster '$argument' contains uppercase O and can launch a process"
+        }
         if (
             $normalized -eq "--output" -or
             $normalized.StartsWith("--output=") -or
@@ -338,6 +341,7 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("git", "status", "--short", "--branch")
     Assert-Allowed @("git", "worktree", "list", "--porcelain")
     Assert-Allowed @("git", "diff", "origin/main..HEAD", "--", "src")
+    Assert-Allowed @("git", "grep", "-nIi", "needle", "--", "src")
     Assert-Allowed @("gh", "pr", "list", "--state", "open")
     Assert-Allowed @("gh", "issue", "view", "1753", "--json", "title,state")
     Assert-Allowed @("gh", "project", "item-list", "1", "--owner", "example")
@@ -361,6 +365,8 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("git", "reset", "--hard") "not allowlisted"
     Assert-Denied @("git", "diff", "--output=result.patch") "can write"
     Assert-Denied @("git", "grep", "-O", "powershell", "needle") "can write or execute"
+    Assert-Denied @("git", "grep", "-nOpowershell", "needle") "short-option cluster"
+    Assert-Denied @("git", "grep", "-inO", "needle") "short-option cluster"
     Assert-Denied @("git", "cat-file", "--filters", "HEAD:path") "can write or execute"
     Assert-Denied @("git", "cat-file", "--batch-command") "can write or execute"
     Assert-Denied @("git", "ls-remote", "ext::powershell -Command touch-owned") "can write or execute"
