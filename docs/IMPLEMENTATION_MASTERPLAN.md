@@ -20,9 +20,19 @@ Companion Active Docs:
   four acceptance-ready issue items in `Now` and eight in `Next` without per-issue owner approval,
   while plan/Accepted-ADR authority still gates new product surface and external or irreversible
   actions remain separately human-scoped.
-- **Initial admitted queue:** `Now` = `#1206`, `#1633`, `#1661`, `#1664`; `Next` = `#1495`,
-  `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`. The paired sanitizer and CLI
-  follow-ups stay sequenced rather than competing for the same seam.
+- **Initial admitted queue record:** the first seeded set was `Now` = `#1206`, `#1633`, `#1661`,
+  `#1664`; `Next` = `#1495`, `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`.
+  This is historical admission evidence rather than a live-status mirror; ProjectV2 is authoritative
+  as items move through `Review`, `Blocked`, and `Done`. Paired sanitizer and CLI follow-ups remain
+  dependency-sequenced rather than competing for the same seam.
+
+## Delivery update (2026-08-18, log sanitization expansion)
+
+- **PR `#1695` / issue `#1661` centralizes the log-safe character contract.** One Application helper
+  removes C0, DEL, and C1 code points for Application telemetry, log-query, and API
+  unhandled-exception values before bounded structured logging. Printable Unicode, persisted user
+  text, and public API payloads are unchanged. Unicode line/paragraph separators remain sequenced
+  under `#1652`; surrogate-safe truncation is separately tracked by `#1700`.
 
 ## Delivery update (2026-08-16, Windows API timing diagnostics)
 
@@ -52,9 +62,10 @@ supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
 - **Dependency and tracking hygiene landed in PRs `#1622`, `#1623`, and `#1624`.** The npm minor-patch group (`#1622`) is merged; the NuGet/.NET minor-patch group (`#1623`) updates `ModelContextProtocol` and `ModelContextProtocol.AspNetCore` from 2.0.0 to 2.1.0; and the human-action document's section labels now follow reading order. The current MCP package pin is 2.1.0.
 - **Frontend typecheck burn-down advanced in PR `#1634`:** the 24 one-error specs were fixed, leaving 40 quarantined files and 391 errors; the active project now gates 244 of the 302 Vitest-run specs, with 58 outside this gate. `#1607` remains the burn-down tracker.
 
-## Delivery update (2026-08-12, log sanitization)
+## Initial delivery update (2026-08-12, log sanitization)
 
 - **PR `#1650`** sanitizes user-controlled request metadata before API exception logging and adds bounded application telemetry/log-query sanitization with CR/LF regression coverage. The accepted local-first browser-token follow-up remains tracked in `#1644`.
+- The 2026-08-18 `#1661` expansion above supersedes this section's character-set boundary.
 
 ## Delivery update (2026-08-10, OpenAI-compatible provider replacement)
 

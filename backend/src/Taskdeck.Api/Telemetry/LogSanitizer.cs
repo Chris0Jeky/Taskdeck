@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Telemetry;
 
@@ -7,7 +7,7 @@ namespace Taskdeck.Api.Telemetry;
 /// Prevents log injection (CWE-117) by stripping newlines and control characters
 /// that could forge log entries in plain-text sinks.
 /// </summary>
-public static partial class LogSanitizer
+public static class LogSanitizer
 {
     private const int MaxSanitizedLength = 200;
 
@@ -20,7 +20,7 @@ public static partial class LogSanitizer
         if (string.IsNullOrEmpty(value))
             return string.Empty;
 
-        var sanitized = ControlCharPattern().Replace(value, string.Empty);
+        var sanitized = LogControlCharacterSanitizer.Strip(value);
         if (sanitized.Length > MaxSanitizedLength)
             sanitized = string.Concat(sanitized.AsSpan(0, MaxSanitizedLength), "...");
 
@@ -37,7 +37,7 @@ public static partial class LogSanitizer
         if (string.IsNullOrEmpty(value))
             return string.Empty;
 
-        return ControlCharPattern().Replace(value, string.Empty);
+        return LogControlCharacterSanitizer.Strip(value);
     }
 
     /// <summary>
@@ -49,7 +49,4 @@ public static partial class LogSanitizer
     {
         return exception.GetType().Name;
     }
-
-    [GeneratedRegex(@"[\x00-\x1F\x7F]")]
-    private static partial Regex ControlCharPattern();
 }
