@@ -9,5 +9,14 @@ public record ProvenanceRowDto(
     string Icon,
     string Key,
     string Value,
-    string Weight
+    string Weight,
+    IReadOnlyList<ProvenanceEvidenceLinkDto>? EvidenceLinks = null
 );
+
+/// <summary>Opaque evidence-link metadata; transcript text is never returned.</summary>
+public record ProvenanceEvidenceLinkDto(
+    string SourceType,
+    string SourceId,
+    string? Label,
+    int? SpanStart,
+    int? SpanEnd);

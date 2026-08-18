@@ -120,6 +120,7 @@ erDiagram
 
     ProposalProvenance ||--o{ ProvenanceField : "explains (FK)"
     ProvenanceField ||--o{ ProvenanceEvidenceLink : "cites (FK)"
+    Transcript ||--o{ ProvenanceEvidenceLink : "anchors transcript evidence (FK)"
 
     IntegrationConnector ||--o{ ConnectorEvent : "logs (FK)"
     IntegrationConnector ||--o{ ConnectorCredential : "authenticates with (FK)"
@@ -505,7 +506,7 @@ Confidence is monotonic downward once set: verification may downgrade it, never 
 ### ProvenanceEvidenceLink
 
 A structured pointer from a provenance field back to its source material -- a capture, a chat
-message, a document chunk.
+message, a document chunk, or a durable Transcript.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -513,13 +514,28 @@ message, a document chunk.
 | ProvenanceFieldId | `Guid` | Yes | FK to ProvenanceField (Cascade) | Parent field |
 | SourceType | `string` | Yes | 1-100 chars | Kind of source referenced |
 | SourceId | `string` | Yes | 1-500 chars | Identifier within that source |
+| TranscriptId | `Guid?` | Conditional | FK to Transcript (Cascade) | Required for canonical Transcript sources; null for every other source type |
 | Label | `string?` | No | Max 200 chars | Optional display label |
 | SpanStart | `int?` | No | >= 0 | Optional start offset in the source |
 | SpanEnd | `int?` | No | >= 0, >= SpanStart | Optional end offset |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
 
-**Index:** `ProvenanceFieldId`.
+**Indexes:** `ProvenanceFieldId`, `TranscriptId`.
+
+For transcript triage, the canonical source contract is `SourceType = "Transcript"`, a `Guid` `D`
+string in `SourceId`, the same value in typed `TranscriptId`, and the fixed non-content label
+`Transcript evidence`. `SpanStart` and `SpanEnd` are either both null when the verbatim quote is
+ambiguous, or a paired half-open
+`[start,end)` range measured in .NET UTF-16 code units over the Transcript's LF-normalized text.
+Neither `Label` nor the inferred field's `ExtractiveQuote` duplicates Transcript content. Board
+readers may receive this opaque metadata, but any future quote resolver must load text through the
+owner-scoped Transcript repository and return an explicit unavailable state to other users.
+
+The database check requires typed `TranscriptId` exactly for `SourceType = "Transcript"`, and its
+FK cascades on Transcript deletion. A link committed before erasure is therefore deleted by the
+database; a stale proposal/link save attempted after erasure fails its FK and rolls back atomically.
+Other generic source types remain untyped and retain only `SourceType`/`SourceId`.
 
 > Not to be confused with the unmapped domain class `EvidenceLink`, which has no table.
 
@@ -1331,6 +1347,7 @@ Immutable audit record for abuse detection events and state transitions.
 | AutomationProposal -> ProposalProvenance | One-to-zero-or-one | FK (Cascade) | Provenance chain head, keyed by `ProposalId` |
 | ProposalProvenance -> ProvenanceField | One-to-many | FK (Cascade) | Per-field derivation metadata |
 | ProvenanceField -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Source references per field |
+| Transcript -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Typed ownership for canonical Transcript evidence; prevents post-erasure orphan links |
 | IntegrationConnector -> ConnectorEvent | One-to-many | FK (Cascade) | A connector logs many events |
 | IntegrationConnector -> ConnectorCredential | One-to-many | FK (Cascade) | Encrypted credentials per connector |
 | User -> ConnectorCredential | One-to-many | FK (Cascade) | Credentials are deleted with their owner |

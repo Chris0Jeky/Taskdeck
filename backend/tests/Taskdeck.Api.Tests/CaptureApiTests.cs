@@ -822,5 +822,14 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
                 ErrorCodes.UnexpectedError,
                 "Authorization: Bearer triage-secret {\"text\":\"capture secret note\"} token=triage-token"));
         }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
     }
 }

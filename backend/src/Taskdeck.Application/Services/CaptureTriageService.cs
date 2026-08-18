@@ -84,6 +84,45 @@ public class CaptureTriageService : ICaptureTriageService
         Guid? boardId,
         CapturePayloadV1 payload,
         CancellationToken cancellationToken = default)
+        => await CreateProposalCoreAsync(
+            captureItemId,
+            userId,
+            boardId,
+            transcriptId: null,
+            payload,
+            cancellationToken);
+
+    public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        Guid transcriptId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken = default)
+    {
+        if (transcriptId == Guid.Empty)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                ErrorCodes.ValidationError,
+                "TranscriptId cannot be empty");
+        }
+
+        return await CreateProposalCoreAsync(
+            captureItemId,
+            userId,
+            boardId,
+            transcriptId,
+            payload,
+            cancellationToken);
+    }
+
+    private async Task<Result<CaptureTriageProposalResultDto>> CreateProposalCoreAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        Guid? transcriptId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -170,6 +209,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
+        LlmCaptureTriageExtraction? successfulLlmExtraction = null;
         var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
         var triageModel = TriageModelName;
@@ -189,6 +229,7 @@ public class CaptureTriageService : ICaptureTriageService
                     proposalTasks = outputValidation.Value.Tasks
                         .Select(task => new CaptureTriageTaskV1(task.Title, task.EvidenceQuote))
                         .ToList();
+                    successfulLlmExtraction = extraction;
                     triagePromptVersion = outputValidation.Value.PromptVersion;
                     triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
                         extraction.Provider, CaptureRequestContract.MaxProviderLength);
@@ -293,8 +334,7 @@ public class CaptureTriageService : ICaptureTriageService
                 permissionResult.ErrorMessage);
         }
 
-        var createProposalResult = await _proposalService.CreateProposalAsync(
-            new CreateProposalDto(
+        var createProposalDto = new CreateProposalDto(
                 SourceType: ProposalSourceType.Queue,
                 RequestedByUserId: userId,
                 Summary: summary,
@@ -302,8 +342,36 @@ public class CaptureTriageService : ICaptureTriageService
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
                 SourceReferenceId: captureReferenceId,
-                Operations: operations),
-            cancellationToken);
+                Operations: operations);
+
+        Result<ProposalDto> createProposalResult;
+        if (transcriptId is Guid linkedTranscriptId && successfulLlmExtraction is not null)
+        {
+            var spans = successfulLlmExtraction.EvidenceSpans;
+            var evidence = operations
+                .Select((_, sequence) =>
+                {
+                    var span = spans is not null && sequence < spans.Count
+                        ? spans[sequence]
+                        : null;
+                    return new TranscriptEvidenceLinkInput(
+                        sequence,
+                        linkedTranscriptId,
+                        span?.Start,
+                        span?.End);
+                })
+                .ToList();
+            createProposalResult = await _proposalService.CreateTranscriptProposalAsync(
+                createProposalDto,
+                evidence,
+                cancellationToken);
+        }
+        else
+        {
+            createProposalResult = await _proposalService.CreateProposalAsync(
+                createProposalDto,
+                cancellationToken);
+        }
 
         if (!createProposalResult.IsSuccess)
         {
