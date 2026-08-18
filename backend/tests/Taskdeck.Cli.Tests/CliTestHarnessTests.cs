@@ -217,6 +217,25 @@ public sealed class CliTestHarnessTests
                 };
                 """);
             File.WriteAllText(
+                Path.Combine(nestedDirectory, "TargetTypedProcess.cs"),
+                """
+                using Process child = new()
+                {
+                    StartInfo = new() { FileName = "dotnet" }
+                };
+
+                child.Start();
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "ProcessAliases.cs"),
+                """
+                using P = System.Diagnostics.Process;
+                using PSI = System.Diagnostics.ProcessStartInfo;
+
+                var startInfo = new PSI();
+                P.Start("dotnet");
+                """);
+            File.WriteAllText(
                 Path.Combine(nestedDirectory, "bin", "Generated.cs"),
                 "System.Diagnostics.Process.Start(\"dotnet\");");
             File.WriteAllText(
@@ -224,7 +243,11 @@ public sealed class CliTestHarnessTests
                 "new ProcessStartInfo(\"dotnet\");");
 
             FindProcessLaunchFiles(sourceDirectory).Should().Equal(
-                [Path.Combine("nested", "AlternateSyntax.cs")]);
+                [
+                    Path.Combine("nested", "AlternateSyntax.cs"),
+                    Path.Combine("nested", "ProcessAliases.cs"),
+                    Path.Combine("nested", "TargetTypedProcess.cs")
+                ]);
         }
         finally
         {
@@ -779,16 +802,22 @@ public sealed class CliTestHarnessTests
     private static bool ContainsProcessLaunch(string source)
     {
         var tokens = TokenizeCSharp(source);
+        var typeAliases = FindTypeAliases(tokens);
+        var processTypeNames = GetTypeNames(typeAliases, "Process");
+        var processStartInfoTypeNames = GetTypeNames(typeAliases, "ProcessStartInfo");
+        var processVariables = FindTargetTypedProcessVariables(tokens, processTypeNames);
+
         for (var index = 0; index < tokens.Count; index++)
         {
             if (tokens[index] == "new"
-                && (IsQualifiedType(tokens, index + 1, "Process")
-                    || IsQualifiedType(tokens, index + 1, "ProcessStartInfo")))
+                && TryReadQualifiedType(tokens, index + 1, out var constructedType, out _)
+                && (processTypeNames.Contains(constructedType)
+                    || processStartInfoTypeNames.Contains(constructedType)))
             {
                 return true;
             }
 
-            if (tokens[index] == "Process"
+            if ((processTypeNames.Contains(tokens[index]) || processVariables.Contains(tokens[index]))
                 && index + 3 < tokens.Count
                 && tokens[index + 1] == "."
                 && tokens[index + 2] == "Start"
@@ -801,11 +830,79 @@ public sealed class CliTestHarnessTests
         return false;
     }
 
-    private static bool IsQualifiedType(
+    private static Dictionary<string, string> FindTypeAliases(IReadOnlyList<string> tokens)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index + 3 < tokens.Count; index++)
+        {
+            if (tokens[index] != "using"
+                || !IsIdentifier(tokens[index + 1])
+                || tokens[index + 2] != "=")
+            {
+                continue;
+            }
+
+            if (TryReadQualifiedType(tokens, index + 3, out var targetType, out var typeEnd)
+                && typeEnd < tokens.Count
+                && tokens[typeEnd] == ";")
+            {
+                aliases[tokens[index + 1]] = targetType;
+                index = typeEnd;
+            }
+        }
+
+        return aliases;
+    }
+
+    private static HashSet<string> GetTypeNames(
+        IReadOnlyDictionary<string, string> aliases,
+        string targetType)
+    {
+        var typeNames = new HashSet<string>(StringComparer.Ordinal) { targetType };
+        foreach (var (alias, resolvedType) in aliases)
+        {
+            if (resolvedType == targetType)
+            {
+                typeNames.Add(alias);
+            }
+        }
+
+        return typeNames;
+    }
+
+    private static HashSet<string> FindTargetTypedProcessVariables(
+        IReadOnlyList<string> tokens,
+        IReadOnlySet<string> processTypeNames)
+    {
+        var processVariables = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            if (!TryReadQualifiedType(tokens, index, out var declaredType, out var typeEnd)
+                || !processTypeNames.Contains(declaredType)
+                || typeEnd + 3 >= tokens.Count
+                || !IsIdentifier(tokens[typeEnd])
+                || tokens[typeEnd + 1] != "="
+                || tokens[typeEnd + 2] != "new"
+                || tokens[typeEnd + 3] != "(")
+            {
+                continue;
+            }
+
+            processVariables.Add(tokens[typeEnd]);
+            index = typeEnd;
+        }
+
+        return processVariables;
+    }
+
+    private static bool TryReadQualifiedType(
         IReadOnlyList<string> tokens,
         int startIndex,
-        string expectedType)
+        out string typeName,
+        out int typeEnd)
     {
+        typeName = string.Empty;
+        typeEnd = startIndex;
         if (startIndex >= tokens.Count)
         {
             return false;
@@ -822,14 +919,15 @@ public sealed class CliTestHarnessTests
             return false;
         }
 
-        var typeName = tokens[index++];
+        typeName = tokens[index++];
         while (index + 1 < tokens.Count && tokens[index] == "." && IsIdentifier(tokens[index + 1]))
         {
             typeName = tokens[index + 1];
             index += 2;
         }
 
-        return typeName == expectedType;
+        typeEnd = index;
+        return true;
     }
 
     private static bool IsIdentifier(string token) =>
