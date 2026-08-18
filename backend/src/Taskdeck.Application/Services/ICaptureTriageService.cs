@@ -11,4 +11,12 @@ public interface ICaptureTriageService
         Guid? boardId,
         CapturePayloadV1 payload,
         CancellationToken cancellationToken = default);
+
+    Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        Guid transcriptId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken = default);
 }
