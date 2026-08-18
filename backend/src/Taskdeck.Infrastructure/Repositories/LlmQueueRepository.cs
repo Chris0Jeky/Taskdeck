@@ -462,7 +462,21 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             """,
             cancellationToken);
 
-        return rowsAffected > 0;
+        if (rowsAffected == 0)
+        {
+            return false;
+        }
+
+        // The raw-SQL UPDATE bypasses the EF change tracker. If this context already
+        // tracks the entity (e.g. it was materialized by GetOldestProcessingCaptureAsync),
+        // reload it so callers holding the instance observe the persisted claim timestamp.
+        var tracked = _context.LlmRequests.Local.FirstOrDefault(lr => lr.Id == requestId);
+        if (tracked != null)
+        {
+            await _context.Entry(tracked).ReloadAsync(cancellationToken);
+        }
+
+        return true;
     }
 
     public async Task<bool> TryClaimProcessingTranscriptAsync(
