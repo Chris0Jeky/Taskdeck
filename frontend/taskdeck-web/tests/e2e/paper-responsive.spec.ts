@@ -58,4 +58,19 @@ test.describe('Paper responsive shell', () => {
     await expect(page.getByRole('heading', { name: `Paper Tablet ${seed}` })).toBeVisible()
     await expect(page.locator('[data-testid="paper-board-lanes"]')).toHaveClass(/paper-board-view__lanes--snap/)
   })
+
+  test('@mobile Paper Activity stays within the viewport', async ({ page, request }) => {
+    await enablePaperMode(page)
+    await registerAndAttachSession(page, request, 'paper-activity-mobile')
+
+    await page.goto('/workspace/activity')
+    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible()
+
+    const geometry = await page.evaluate(() => ({
+      viewportWidth: window.innerWidth,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }))
+    expect([390, 412]).toContain(geometry.viewportWidth)
+    expect(geometry.overflow).toBeLessThanOrEqual(0)
+  })
 })

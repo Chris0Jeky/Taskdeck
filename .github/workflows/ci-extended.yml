@@ -149,6 +149,9 @@ jobs:
       - name: Test Actionlint bootstrap contract
         run: node --test scripts/ci/actionlint-bootstrap.test.mjs
 
+      - name: Test Playwright bootstrap bounds contract
+        run: node --test scripts/ci/playwright-bootstrap-bounds.test.mjs
+
       - name: Run actionlint
         shell: bash
         run: |
