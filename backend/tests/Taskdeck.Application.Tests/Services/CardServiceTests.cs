@@ -119,6 +119,39 @@ public class CardServiceTests
     }
 
     [Fact]
+    public async Task CreateCardAsync_ShouldRejectColumnFromAnotherBoardWithoutWriting()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var otherBoard = TestDataBuilder.CreateBoard();
+        var foreignColumn = TestDataBuilder.CreateColumn(otherBoard.Id, "Other board column");
+        var dto = new CreateCardDto(board.Id, foreignColumn.Id, "Cross-board card", null, null, null);
+        var realtimeNotifier = new Mock<IBoardRealtimeNotifier>();
+        var historyService = new Mock<IHistoryService>();
+        var service = new CardService(_unitOfWorkMock.Object, realtimeNotifier.Object, historyService.Object);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(foreignColumn.Id, default))
+            .ReturnsAsync(foreignColumn);
+
+        var result = await service.CreateCardAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Be($"Column with ID {foreignColumn.Id} not found in board {board.Id}");
+        _cardRepoMock.Verify(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()), Times.Never);
+        _labelRepoMock.Verify(r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        realtimeNotifier.Verify(
+            notifier => notifier.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        historyService.Verify(
+            history => history.LogActionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Taskdeck.Domain.Enums.AuditAction>(),
+                It.IsAny<Guid?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task CreateCardAsync_ShouldEnforceWipLimit_WhenColumnAtLimit()
     {
         // Arrange
