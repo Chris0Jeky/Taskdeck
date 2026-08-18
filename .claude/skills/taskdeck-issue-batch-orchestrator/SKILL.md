@@ -36,9 +36,30 @@ Avoid concurrent edits to the same view, store, service, migration chain, projec
 ## Read-only Inventory Hygiene
 
 - A read-only inventory lane is filesystem-read-only as well as GitHub-read-only. Process bounded Git, GitHub, CI, and ProjectV2 responses in memory or stream them directly to the coordinator; never redirect a snapshot into the primary checkout or any worktree.
-- If a tool genuinely requires materialization, allocate a unique path below the operating system's temporary directory, outside every repository and worktree. Record that exact path in the lane handoff; generic repo-root names such as `.tmp-*.json` are forbidden.
-- Before cleanup, prove the lane created that exact absent path during its current turn. A collision, pre-existing path, missing provenance, or uncertain ownership means preserve the artifact and report it to the coordinator; never overwrite or delete it.
-- The coordinator compares primary-checkout status before and after every inventory wave and investigates any delta before accepting the handoff or starting another writer.
+- This is detection and accountability for accidental same-account filesystem mutation, not an OS security boundary against a malicious same-account process. The coordinator must still keep the lane filesystem-read-only and compare checkout status before and after the wave.
+- Before launching every lane, capture the bounded non-ignored status-artifact fingerprint with one nonempty caller token. Capture creates an authenticated, direct-child OS-temp state file outside all linked worktrees; do not put the token, state payload, or its digest in a handoff.
+
+  ```powershell
+  $checkout = (& git rev-parse --show-toplevel).Trim()
+  $inventoryToken = [Guid]::NewGuid().ToString('N')
+  $capture = & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Capture -CheckoutPath $checkout -Token $inventoryToken
+  $captureExit = $LASTEXITCODE
+  if ($captureExit -ne 0) { exit $captureExit }
+  $inventoryState = ($capture | ConvertFrom-Json).path
+
+  # Launch the read-only lane only after the capture exit check succeeds.
+  & $laneCommand
+
+  & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
+  $compareExit = $LASTEXITCODE
+  if ($compareExit -ne 0) { exit $compareExit } # preserves state for investigation
+
+  & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
+  $cleanupExit = $LASTEXITCODE
+  if ($cleanupExit -ne 0) { exit $cleanupExit }
+  ```
+
+- The fingerprint covers only exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation; any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.
 
 ## Structured Patch Discipline
 
