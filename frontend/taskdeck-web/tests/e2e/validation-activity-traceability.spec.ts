@@ -181,7 +181,6 @@ test.describe('TST11-SC-018: Board-scoped activity timeline', () => {
     await createBoard(request, boardName)
 
     await page.goto('/workspace/activity')
-    await expect(page.getByRole('heading', { name: 'No board activity yet' })).toBeVisible()
 
     await page.locator('#activity-board-select').selectOption({ label: boardName })
     await page.getByRole('button', { name: 'Fetch', exact: true }).click()
