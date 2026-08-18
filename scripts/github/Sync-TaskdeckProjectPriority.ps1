@@ -570,7 +570,7 @@ function Get-CompleteProjectSnapshotWithRestart {
         [int]$ItemLimit = 0,
         [Parameter(Mandatory = $true)]
         [scriptblock]$PageProvider,
-        [ValidateRange(0, 10)]
+        [ValidateRange(0, 2)]
         [int]$MaxRestarts = $script:MaxProjectSnapshotRestarts
     )
 
@@ -1023,6 +1023,12 @@ function Invoke-SelfTest {
     $checks += Assert-SelfTest `
         -Condition ($largeRestartSnapshot.complete -and $largeRestartSnapshot.items.Count -eq 1001) `
         -Message "restart wrapper must preserve the CLI ItemLimit range above ten"
+    $checks += Assert-SelfTestThrows -Action {
+        Get-SelfTestSnapshotWithRestart `
+            -PageProvider $largeRestartProvider `
+            -TestLimit 1001 `
+            -MaxRestarts 3 | Out-Null
+    } -MessagePattern "MaxRestarts|range|validation"
 
     $itemA = New-SelfTestItem -Id "item-a"
     $itemB = New-SelfTestItem -Id "item-b" -Number 2
