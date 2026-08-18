@@ -41,8 +41,12 @@ Avoid concurrent edits to the same view, store, service, migration chain, projec
 
   ```powershell
   $checkout = (& git rev-parse --show-toplevel).Trim()
+  $fingerprintTool = [IO.Path]::GetFullPath((Join-Path -Path $checkout -ChildPath 'scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1'))
+  if (-not [IO.Path]::IsPathRooted($fingerprintTool) -or -not (Test-Path -LiteralPath $fingerprintTool -PathType Leaf)) {
+    throw 'checkout fingerprint guard path is not a valid absolute file'
+  }
   $inventoryToken = [Guid]::NewGuid().ToString('N')
-  $capture = & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Capture -CheckoutPath $checkout -Token $inventoryToken
+  $capture = & $fingerprintTool -Mode Capture -CheckoutPath $checkout -Token $inventoryToken
   $captureExit = $LASTEXITCODE
   if ($captureExit -ne 0) { exit $captureExit }
   $inventoryState = ($capture | ConvertFrom-Json).path
@@ -60,11 +64,11 @@ Avoid concurrent edits to the same view, store, service, migration chain, projec
     $laneError = $_
   }
 
-  & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
+  & $fingerprintTool -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $compareExit = $LASTEXITCODE
   if ($compareExit -ne 0) { exit $compareExit } # preserves state for investigation
 
-  & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
+  & $fingerprintTool -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $cleanupExit = $LASTEXITCODE
   if ($cleanupExit -ne 0) { exit $cleanupExit }
   if ($null -ne $laneError) { throw $laneError }

@@ -28,11 +28,14 @@ function Quote-Argument {
 }
 
 function Invoke-FingerprintTool {
-    param([string[]]$Arguments)
+    param(
+        [string[]]$Arguments,
+        [string]$Tool = $script:toolPath
+    )
 
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $powerShellPath
-    $startInfo.Arguments = '-NoProfile -ExecutionPolicy Bypass -File ' + (Quote-Argument $toolPath) + ' ' + (($Arguments | ForEach-Object { Quote-Argument $_ }) -join ' ')
+    $startInfo.Arguments = '-NoProfile -ExecutionPolicy Bypass -File ' + (Quote-Argument $Tool) + ' ' + (($Arguments | ForEach-Object { Quote-Argument $_ }) -join ' ')
     $startInfo.UseShellExecute = $false
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
@@ -323,6 +326,44 @@ Run-Test 'requires both batch skill wrappers to propagate lane failure after cle
             $errorSlot -ge 0 -and $lane -gt $errorSlot -and $saved -gt $lane -and $caught -gt $saved -and
             $compare -gt $caught -and $cleanup -gt $compare -and $rethrown -gt $cleanup -and $propagated -gt $rethrown
         ) ('lane failure gate is missing or misordered in ' + $skill)
+    }
+}
+
+Run-Test 'anchors the guard path before a lane changes location' {
+    $skills = @(
+        (Join-Path $PSScriptRoot '..\..\.codex\skills\taskdeck-issue-batch-orchestrator\SKILL.md'),
+        (Join-Path $PSScriptRoot '..\..\.claude\skills\taskdeck-issue-batch-orchestrator\SKILL.md')
+    )
+    foreach ($skill in $skills) {
+        $text = Get-Content -LiteralPath $skill -Raw
+        $path = $text.IndexOf('$fingerprintTool = [IO.Path]::GetFullPath((Join-Path -Path $checkout', [StringComparison]::Ordinal)
+        $validation = $text.IndexOf('Test-Path -LiteralPath $fingerprintTool -PathType Leaf', $path, [StringComparison]::Ordinal)
+        $capture = $text.IndexOf('& $fingerprintTool -Mode Capture', $validation, [StringComparison]::Ordinal)
+        $lane = $text.IndexOf('& $laneCommand', $capture, [StringComparison]::Ordinal)
+        $compare = $text.IndexOf('& $fingerprintTool -Mode Compare', $lane, [StringComparison]::Ordinal)
+        $cleanup = $text.IndexOf('& $fingerprintTool -Mode Cleanup', $compare, [StringComparison]::Ordinal)
+        Assert-True ($path -ge 0 -and $validation -gt $path -and $capture -gt $validation -and $lane -gt $capture -and $compare -gt $lane -and $cleanup -gt $compare) ('guard path is not resolved before Capture and reused after the lane in ' + $skill)
+        Assert-True ($text -notmatch '& scripts/agentic/Assert-TaskdeckCheckoutFingerprint\.ps1') ('relative guard invocation remains in ' + $skill)
+    }
+
+    New-TestRepository {
+        param($repo)
+        $artifact = Join-Path $repo 'artifact.txt'
+        [IO.File]::WriteAllText($artifact, 'before lane')
+        $state = Capture-State -Repo $repo
+        try {
+            $fingerprintTool = [IO.Path]::GetFullPath($toolPath)
+            Push-Location ([IO.Path]::GetTempPath())
+            try {
+                [IO.File]::WriteAllText($artifact, 'after lane changes location')
+                $result = Invoke-FingerprintTool -Arguments @('-Mode', 'Compare', '-CheckoutPath', $repo, '-Token', 'test-token', '-StatePath', $state) -Tool $fingerprintTool
+            }
+            finally { Pop-Location }
+            Assert-True ($result.exitCode -eq 2) 'location-changing lane mutation was not detected through the anchored guard path'
+            $records = @($result.stdout.Trim() | ConvertFrom-Json)
+            Assert-True ($records.Count -eq 1 -and $records[0].classification -eq 'overwritten') 'location-changing lane mutation emitted the wrong classification'
+        }
+        finally { Cleanup-State -Repo $repo -State $state }
     }
 }
 
