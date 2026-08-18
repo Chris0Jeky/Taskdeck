@@ -143,7 +143,12 @@ function Test-StrykerToolManifest {
         throw "Stryker tool manifest '$resolvedPath' is not valid JSON: $($_.Exception.Message)"
     }
 
-    if ($manifest.version -ne 1 -or $manifest.isRoot -isnot [bool] -or -not $manifest.isRoot) {
+    $manifestVersionIsIntegralNumber = (Test-IsJsonNumber -Value $manifest.version) -and
+        ([decimal]$manifest.version -eq [math]::Truncate([decimal]$manifest.version))
+    if (-not $manifestVersionIsIntegralNumber -or
+        [decimal]$manifest.version -ne 1 -or
+        $manifest.isRoot -isnot [bool] -or
+        -not $manifest.isRoot) {
         throw "Stryker tool manifest '$resolvedPath' must be a version 1 root manifest."
     }
 
@@ -420,6 +425,8 @@ function Invoke-StrykerConfigSelfTest {
         }
 
         $toolManifestVariants = @(
+            @('quoted root version', '  "version": 1,', '  "version": "1",', 'must be a version 1 root manifest'),
+            @('boolean root version', '  "version": 1,', '  "version": true,', 'must be a version 1 root manifest'),
             @('tool version', '      "version": "4.16.0",', '      "version": "4.17.0",', "must pin dotnet-stryker version '4.16.0'"),
             @('tool command', (@('      "commands": [', '        "dotnet-stryker"', '      ]') -join "`n"), (@('      "commands": [', '        "other-command"', '      ]') -join "`n"), 'must expose only the dotnet-stryker command')
         )
