@@ -35,6 +35,16 @@ Avoid concurrent edits to the same view, store, service, migration chain, projec
 
 ## Read-only Inventory Hygiene
 
+- Route every delegated shell-backed Git or GitHub inventory command through
+  `scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1`; pass an argv array, for example
+  `& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @("gh", "pr", "list", "--state", "open")`.
+  Run its `-SelfTest` mode when changing the wrapper or this routing contract.
+- A purpose-built connector whose exposed operation is intrinsically read-only may be used directly.
+  Direct `git` or `gh` belongs to the coordinator's separately authorized mutation lane, not to a
+  delegated read-only inventory lane.
+- The wrapper is an opt-in routed entry point, not a project command-deny hook. It validates command
+  argv and blocks known write and execution surfaces; never describe it as enforcement over commands
+  that bypass the entry point.
 - A read-only inventory lane is filesystem-read-only as well as GitHub-read-only. Process bounded Git, GitHub, CI, and ProjectV2 responses in memory or stream them directly to the coordinator; never redirect a snapshot into the primary checkout or any worktree.
 - If a tool genuinely requires materialization, allocate a unique path below the operating system's temporary directory, outside every repository and worktree. Record that exact path in the lane handoff; generic repo-root names such as `.tmp-*.json` are forbidden.
 - Before cleanup, prove the lane created that exact absent path during its current turn. A collision, pre-existing path, missing provenance, or uncertain ownership means preserve the artifact and report it to the coordinator; never overwrite or delete it.

@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-18
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
@@ -62,6 +62,25 @@ Batch override does not remove discipline:
 - every implementation issue gets its own branch/worktree
 - each PR links its issue
 - project priority/status fields must be reconciled before handoff
+
+## Read-only inventory entry point
+
+Delegated shell-backed Git and GitHub inventory must use the repository wrapper:
+
+```powershell
+& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @(
+  "gh", "pr", "list", "--state", "open", "--json", "number,headRefOid,statusCheckRollup"
+)
+```
+
+The wrapper accepts only allowlisted read operations, rejects known filesystem-write, process-launch,
+and GitHub-mutation argv, and disables Git's optional index locks while it runs. Use `-ValidateOnly`
+to inspect a constructed command without launching it and `-SelfTest` after changing the contract.
+A purpose-built connector with an intrinsically read-only operation may still be used directly.
+
+This is an opt-in routed entry point, not a Taskdeck command-deny hook. The coordinator keeps direct
+`git` and `gh` access for its separately authorized mutation lane and must not claim that the wrapper
+governs a command that bypasses it.
 
 ## Worktree Protocol
 
