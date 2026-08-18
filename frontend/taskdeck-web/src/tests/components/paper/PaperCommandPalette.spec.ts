@@ -48,6 +48,14 @@ const items: CommandItem[] = [
     kind: 'navigation',
   },
   {
+    id: 'nav:calendar',
+    label: 'Go to Calendar',
+    icon: 'C',
+    path: '/workspace/calendar',
+    keywords: 'calendar schedule',
+    kind: 'navigation',
+  },
+  {
     id: 'action:capture',
     label: 'New Capture',
     icon: '+',
@@ -123,17 +131,35 @@ describe('PaperCommandPalette', () => {
     expect(visibleLabels.some((t) => t.includes('Home'))).toBe(false)
   })
 
-  it('preserves Go to labels for navigation commands', async () => {
+  it('renders navigation labels with exactly one Go to prefix and activates the route', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },
       attachTo: document.body,
     })
     await nextTick()
 
-    const visibleLabels = rows().map((r) => r.textContent ?? '')
-    expect(visibleLabels.some((t) => t.includes('Go to Home'))).toBe(true)
-    expect(visibleLabels.some((t) => t.includes('Go to Boards'))).toBe(true)
-    expect(visibleLabels.some((t) => t.includes('Go to New Capture'))).toBe(false)
+    const visibleLabels = rows().map((row) => row.querySelector('.paper-palette__row-label')?.textContent?.trim())
+    expect(visibleLabels).toEqual([
+      'Propose: split into 3 cards',
+      'Go to Home',
+      'Go to Boards',
+      'Go to Calendar',
+      'New Capture',
+    ])
+
+    const calendarRow = rows().find(
+      (row) => row.querySelector('.paper-palette__row-label')?.textContent?.trim() === 'Go to Calendar',
+    )
+    expect(calendarRow).toBeDefined()
+    calendarRow?.click()
+    await nextTick()
+    expect(wrapper.emitted('activate')?.[0]?.[0]).toMatchObject({
+      id: 'nav:calendar',
+      label: 'Go to Calendar',
+      path: '/workspace/calendar',
+      kind: 'navigation',
+    })
+
   })
 
   it('separates AI (haiku) actions into their own section with the haiku tag', async () => {
