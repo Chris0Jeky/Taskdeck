@@ -5,6 +5,10 @@ import type { Board } from '../types/board'
 
 type IdMap = Map<string, string>
 
+// Keep board metadata hydration responsive without turning a large proposal
+// page into an unbounded burst of column requests.
+export const PROPOSAL_COLUMN_LOAD_CONCURRENCY = 8
+
 function key(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase()
 }
@@ -53,6 +57,12 @@ export function createProposalDisplayNameResolver() {
   const columnNames: IdMap = new Map()
   const accessibleBoards = new Set<string>()
   const loadedColumns = new Map<string, Promise<void>>()
+  const pendingColumnLoads: Array<{
+    boardId: string
+    boardKey: string
+    resolve: () => void
+  }> = []
+  let activeColumnLoads = 0
   let boardRequest: Promise<void> | null = null
   let hasBoardSnapshot = false
 
@@ -79,6 +89,28 @@ export function createProposalDisplayNameResolver() {
     await boardRequest
   }
 
+  function drainColumnLoads(): void {
+    while (activeColumnLoads < PROPOSAL_COLUMN_LOAD_CONCURRENCY && pendingColumnLoads.length > 0) {
+      const task = pendingColumnLoads.shift()!
+      activeColumnLoads += 1
+      void (async () => {
+        try {
+          const columns = await columnsApi.getColumns(task.boardId)
+          for (const column of columns) {
+            const columnKey = key(column.id)
+            if (columnKey) columnNames.set(`${task.boardKey}:${columnKey}`, column.name)
+          }
+        } catch {
+          // Display names are best-effort and must not block proposal review.
+        } finally {
+          activeColumnLoads -= 1
+          task.resolve()
+          drainColumnLoads()
+        }
+      })()
+    }
+  }
+
   async function loadColumns(boardId: string): Promise<void> {
     const boardKey = key(boardId)
     if (!boardKey || !accessibleBoards.has(boardKey)) return
@@ -88,15 +120,10 @@ export function createProposalDisplayNameResolver() {
       return
     }
 
-    const request = columnsApi
-      .getColumns(boardId)
-      .then((columns) => {
-        for (const column of columns) {
-          const columnKey = key(column.id)
-          if (columnKey) columnNames.set(`${boardKey}:${columnKey}`, column.name)
-        }
-      })
-      .catch(() => undefined)
+    const request = new Promise<void>((resolve) => {
+      pendingColumnLoads.push({ boardId, boardKey, resolve })
+      drainColumnLoads()
+    })
     loadedColumns.set(boardKey, request)
     await request
   }
