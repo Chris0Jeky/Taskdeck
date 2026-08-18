@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -271,40 +271,37 @@ public class CardRepository : Repository<Card>, ICardRepository
             // text (whose lexical order changes with the offset). `strftime` converts the whole
             // second plus offset to Unix time; the separate 7-digit fractional component retains
             // .NET tick precision without julianday's floating-point rounding.
-            const string dueInstantKey =
-                "CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000 " +
-                "+ CASE WHEN substr(DueDate, 20, 1) = '.' THEN " +
-                "CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER) " +
-                "ELSE 0 END";
-
-            var parameters = materializedBoardIds.Select(id => (object)id).ToList();
-            var boardPlaceholders = string.Join(", ", Enumerable.Range(0, parameters.Count).Select(index => $"{{{index}}}"));
-
-            var sql = new StringBuilder("SELECT * FROM Cards WHERE BoardId IN (")
-                .Append(boardPlaceholders)
-                .Append(") AND DueDate IS NOT NULL AND (")
-                .Append(dueInstantKey)
-                .Append(") >= {")
-                .Append(parameters.Count)
-                .Append('}');
-            parameters.Add(GetSqliteInstantKey(from));
-
-            sql.Append(" AND (")
-                .Append(dueInstantKey)
-                .Append(") < {")
-                .Append(parameters.Count)
-                .Append('}');
-            parameters.Add(GetSqliteInstantKey(to));
-
-            sql.Append(" ORDER BY (")
-                .Append(dueInstantKey)
-                .Append("), BoardId LIMIT {")
-                .Append(parameters.Count)
-                .Append('}');
-            parameters.Add(maxResults);
+            const string calendarSql = """
+                SELECT *
+                FROM Cards
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM json_each({0}) AS board_ids
+                    WHERE board_ids.value = Cards.BoardId
+                )
+                AND DueDate IS NOT NULL
+                AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                        ELSE 0 END) >= {1}
+                AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                        ELSE 0 END) < {2}
+                ORDER BY (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                        ELSE 0 END), BoardId, Id
+                LIMIT {3}
+                """;
 
             var rows = await _dbSet
-                .FromSqlRaw(sql.ToString(), parameters.ToArray())
+                .FromSqlRaw(
+                    calendarSql,
+                    JsonSerializer.Serialize(materializedBoardIds.Select(id => id.ToString("D").ToUpperInvariant())),
+                    GetSqliteInstantKey(from),
+                    GetSqliteInstantKey(to),
+                    maxResults)
                 .AsNoTracking()
                 .Include(c => c.Board)
                 .Include(c => c.Column)
@@ -316,6 +313,7 @@ public class CardRepository : Repository<Card>, ICardRepository
             return rows
                 .OrderBy(c => c.DueDate!.Value)
                 .ThenBy(c => c.BoardId.ToString(), StringComparer.Ordinal)
+                .ThenBy(c => c.Id.ToString(), StringComparer.Ordinal)
                 .ToList();
         }
 
@@ -330,6 +328,7 @@ public class CardRepository : Repository<Card>, ICardRepository
             .Include(c => c.Column)
             .OrderBy(c => c.DueDate)
             .ThenBy(c => c.BoardId)
+            .ThenBy(c => c.Id)
             .Take(maxResults)
             .ToListAsync(cancellationToken);
     }
