@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
+import NotFoundView from '../views/NotFoundView.vue'
 import { isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
@@ -349,6 +350,15 @@ const router = createRouter({
       component: DevToolsView,
       meta: { requiresShell: true, requiresFlag: 'devTools', breadcrumb: 'Dev Tools' },
     },
+
+    // Keep unknown URLs inside the authenticated workspace shell so users can
+    // recover without losing the primary navigation.
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: NotFoundView,
+      meta: { requiresShell: true, breadcrumb: 'Page not found' },
+    },
   ],
 })
 
@@ -369,7 +379,7 @@ router.beforeEach((to) => {
     tokenStorage.clearAll()
   }
 
-  if (!isPublic && !hasValidSession && to.path.startsWith('/workspace')) {
+  if (!isPublic && !hasValidSession && to.meta.requiresShell === true) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 
