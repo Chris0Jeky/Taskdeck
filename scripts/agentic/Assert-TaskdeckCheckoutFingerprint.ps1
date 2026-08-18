@@ -514,7 +514,9 @@ function Invoke-Capture {
         $stream.Dispose()
     }
 
-    Write-FingerprintRecord -Path $state -Classification 'captured' -Count $inventory.Count
+    # Capture is assigned by the mandatory coordinator recipe so it must emit
+    # through the PowerShell success pipeline, not directly to Console.Out.
+    Write-Output (ConvertTo-FingerprintRecord -Path $state -Classification 'captured' -Count $inventory.Count)
 }
 
 function Invoke-Compare {

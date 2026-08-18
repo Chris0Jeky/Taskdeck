@@ -160,6 +160,29 @@ Run-Test 'accepts identical bytes at the same status path' {
     }
 }
 
+Run-Test 'supports the documented in-process capture assignment' {
+    New-TestRepository {
+        param($repo)
+        $token = 'in-process-capture-token'
+        $state = $null
+        try {
+            $capture = & $toolPath -Mode Capture -CheckoutPath $repo -Token $token
+            $captureExit = $LASTEXITCODE
+            Assert-True ($captureExit -eq 0) 'in-process capture failed'
+            Assert-True (@($capture).Count -eq 1) 'capture record bypassed the PowerShell success pipeline'
+            $record = ([string]$capture | ConvertFrom-Json)
+            Assert-True ($record.classification -eq 'captured') 'in-process capture emitted the wrong classification'
+            $state = $record.path
+            Assert-True (-not [string]::IsNullOrWhiteSpace($state) -and (Test-Path -LiteralPath $state)) 'in-process capture did not return its state path'
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($state)) {
+                Cleanup-State -Repo $repo -State $state -Token $token
+            }
+        }
+    }
+}
+
 Run-Test 'detects deletion of a captured status artifact' {
     New-TestRepository {
         param($repo)
