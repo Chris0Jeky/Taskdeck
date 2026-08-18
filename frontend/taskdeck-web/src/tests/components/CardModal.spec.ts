@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
 import { useBoardStore } from '../../store/boardStore'
@@ -118,6 +119,62 @@ describe('CardModal', () => {
 
     expect(wrapper.find('h2').text()).toBe('Edit Card')
     expect(wrapper.find('#card-title').exists()).toBe(true)
+  })
+
+  it('should focus the close control when opened and restore the invoking card focus', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    opener.textContent = 'Open card'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    expect(document.activeElement).toBe(
+      wrapper.find('[aria-label="Close card editor"]').element,
+    )
+
+    await wrapper.setProps({ isOpen: false })
+    await nextTick()
+    expect(document.activeElement).toBe(opener)
+
+    wrapper.unmount()
+    opener.remove()
+  })
+
+  it('should keep Tab and Shift+Tab inside the dialog focus cycle', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    const dialog = wrapper.find('[role="dialog"]')
+    const focusable = dialog.findAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
+
+    ;(first.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last.element)
+
+    ;(last.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(first.element)
+
+    wrapper.unmount()
   })
 
   it('should not render when isOpen is false', () => {
