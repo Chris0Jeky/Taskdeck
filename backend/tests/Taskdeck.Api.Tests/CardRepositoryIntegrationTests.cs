@@ -530,6 +530,47 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
     }
 
     [Fact]
+    public async Task GetByDueDateRangeAsync_SqlitePlan_UsesBoardLeadingIndexWithoutCorrelatedSubquery()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        await db.Database.OpenConnectionAsync();
+
+        try
+        {
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                EXPLAIN QUERY PLAN
+                SELECT *
+                FROM Cards
+                WHERE BoardId IN (SELECT value FROM json_each($boardIds))
+                AND DueDate IS NOT NULL
+                ORDER BY BoardId, Id
+                LIMIT 500
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "$boardIds";
+            parameter.Value = JsonSerializer.Serialize(new[] { Guid.NewGuid().ToString("D").ToUpperInvariant() });
+            command.Parameters.Add(parameter);
+
+            var planDetails = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                planDetails.Add(reader.GetString(3));
+
+            planDetails.Should().Contain(detail =>
+                detail.Contains("IX_Cards_BoardId_ColumnId", StringComparison.OrdinalIgnoreCase));
+            planDetails.Should().NotContain(detail =>
+                detail.Contains("CORRELATED SCALAR SUBQUERY", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    [Fact]
     public async Task GetByDueDateRangeAsync_ShouldLimitToEarliestFiveHundredCards()
     {
         using var scope = _factory.Services.CreateScope();

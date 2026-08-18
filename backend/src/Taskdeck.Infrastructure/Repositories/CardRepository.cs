@@ -274,11 +274,7 @@ public class CardRepository : Repository<Card>, ICardRepository
             const string calendarSql = """
                 SELECT *
                 FROM Cards
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM json_each({0}) AS board_ids
-                    WHERE board_ids.value = Cards.BoardId
-                )
+                WHERE BoardId IN (SELECT value FROM json_each({0}))
                 AND DueDate IS NOT NULL
                 AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
                     + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
