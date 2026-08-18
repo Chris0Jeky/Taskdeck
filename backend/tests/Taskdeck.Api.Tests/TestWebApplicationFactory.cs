@@ -59,6 +59,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices((context, services) =>
         {
+            var diagnostics = TestAssemblyDiagnostics.ActivateIfConfigured();
+            var configureServicesStarted = diagnostics?.BeginConfigureServices();
             var databaseSettings = context.Configuration.GetSection("Database").Get<DatabaseSettings>()
                 ?? new DatabaseSettings();
 
@@ -86,7 +88,16 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             using var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var databaseMigrateStarted = diagnostics?.BeginDatabaseMigrate();
             dbContext.Database.Migrate();
+            if (databaseMigrateStarted is long migrationStarted)
+            {
+                diagnostics!.CompleteDatabaseMigrate(migrationStarted);
+            }
+            if (configureServicesStarted is long configureServicesStartedTimestamp)
+            {
+                diagnostics!.CompleteConfigureServices(configureServicesStartedTimestamp);
+            }
         });
     }
 

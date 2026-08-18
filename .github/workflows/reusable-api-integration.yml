@@ -48,7 +48,19 @@ jobs:
 
       - name: Run API integration tests
         id: api_integration_tests
+        env:
+          TASKDECK_API_TEST_ASSEMBLY_DIAGNOSTICS_PATH: ${{ github.workspace }}/backend/TestResults/api-integration/${{ matrix.os }}/api-test-assembly-diagnostics.json
         run: dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/${{ matrix.os }}"
+
+      - name: Upload API integration test assembly diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-integration-test-assembly-diagnostics-${{ matrix.os }}
+          path: backend/TestResults/api-integration/${{ matrix.os }}/api-test-assembly-diagnostics.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Finalize API integration runner context
         if: always()
