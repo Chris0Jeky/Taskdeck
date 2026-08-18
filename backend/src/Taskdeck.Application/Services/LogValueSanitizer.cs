@@ -9,9 +9,7 @@ internal static class LogValueSanitizer
     public static string Sanitize(object? value)
     {
         var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
-        var sanitized = text
-            .Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Replace("\n", string.Empty, StringComparison.Ordinal);
+        var sanitized = LogControlCharacterSanitizer.Strip(text);
 
         return sanitized.Length <= MaxLength
             ? sanitized

@@ -333,7 +333,7 @@ function Write-TextVariant {
         [string]$Replacement
     )
 
-    $content = [System.IO.File]::ReadAllText($Source)
+    $content = ([System.IO.File]::ReadAllText($Source)).Replace("`r`n", "`n").Replace("`r", "`n")
     $firstMatch = $content.IndexOf($Expected, [System.StringComparison]::Ordinal)
     $lastMatch = $content.LastIndexOf($Expected, [System.StringComparison]::Ordinal)
     if ($firstMatch -lt 0 -or $firstMatch -ne $lastMatch) {
