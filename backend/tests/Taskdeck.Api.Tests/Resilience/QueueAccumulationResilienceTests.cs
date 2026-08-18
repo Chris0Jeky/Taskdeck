@@ -19,11 +19,11 @@ namespace Taskdeck.Api.Tests.Resilience;
 /// Covers issue #720 (TST-67): "All workers stopped → queue items accumulate
 /// but don't corrupt; restart processes them."
 /// </summary>
-public class QueueAccumulationResilienceTests : IClassFixture<TestWebApplicationFactory>
+public class QueueAccumulationResilienceTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public QueueAccumulationResilienceTests(TestWebApplicationFactory factory)
+    public QueueAccumulationResilienceTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
