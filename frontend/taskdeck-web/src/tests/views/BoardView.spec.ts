@@ -36,6 +36,7 @@ const realtimeMock = {
 // Captures the onPresenceChanged callback passed by BoardView so tests can
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
+let capturedRealtimeFetchBoard: ((boardId: string) => Promise<void>) | undefined
 
 const mockBoardStore = reactive({
   currentBoard: {
@@ -96,6 +97,7 @@ vi.mock('../../composables/useKeyboardShortcuts', () => ({
 vi.mock('../../composables/useBoardRealtime', () => ({
   createBoardRealtimeController: vi.fn((options) => {
     capturedOnPresenceChanged = options.onPresenceChanged
+    capturedRealtimeFetchBoard = options.fetchBoard
     return realtimeMock
   }),
 }))
@@ -154,6 +156,7 @@ describe('BoardView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     capturedOnPresenceChanged = undefined
+    capturedRealtimeFetchBoard = undefined
     localStorage.clear()
     routeMock.params.id = 'board-1'
     mockSessionStore.userId = 'user-abc'
@@ -342,6 +345,29 @@ describe('BoardView', () => {
     expect(realtimeMock.start).not.toHaveBeenCalled()
     expect(realtimeMock.switchBoard).toHaveBeenCalledTimes(1)
 
+  })
+
+  it('does not let a previous realtime subscription refresh after navigation to a new board', async () => {
+    const boardBLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(async () => true)
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => boardBLoad.promise)
+
+    mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await waitForUi()
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(1, 'board-1')
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
+
+    expect(capturedRealtimeFetchBoard).toBeDefined()
+    await capturedRealtimeFetchBoard!('board-1')
+    expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
+
+    boardBLoad.resolve(true)
+    await waitForUi()
+    expect(realtimeMock.switchBoard).toHaveBeenCalledWith('board-2')
   })
 
   it('normalizes current user displayName to username when server sends email in presence snapshot (#683)', async () => {

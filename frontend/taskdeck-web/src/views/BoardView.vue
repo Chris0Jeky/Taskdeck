@@ -72,6 +72,10 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
+    if (id !== boardId.value) {
+      return
+    }
+
     await boardStore.fetchBoard(id)
   },
   onPresenceChanged: (snapshot) => {
