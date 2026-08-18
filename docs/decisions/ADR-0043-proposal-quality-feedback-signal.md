@@ -47,7 +47,8 @@ an extension of `ProposalOutcome`.
    clean 204 no-op, and the `UnitOfWork` unique-violation mapping turns a true race into a benign
    success. `ReportedByUserId` comes only from claims, never the body (closes IDOR). On a repeat where
    the stored reason is `Unspecified` and a specific reason arrives, the row's reason is refined
-   in place (last-specific-wins) — still one row.
+   in place. Once a specific reason is stored, later reports are no-ops (first-specific-wins) —
+   still one row.
 
 5. **Read access, not write access.** Feedback mutates nothing on the board or proposal, so gating it
    behind board-edit rights would wrongly silence read-only reviewers whose quality signal is exactly
@@ -79,7 +80,7 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
   is `Unspecified`, so the index has no selectivity yet).
 - The no-PII guarantee depends on the entity never gaining a text field; a future "add a comment"
   request would reintroduce PII risk and must be revisited here.
-- **Concurrency contract for reason refinement.** The precise guarantee is "last-specific-wins for
+- **Concurrency contract for reason refinement.** The precise guarantee is "first-specific-wins for
   *sequential* re-reports; first-committed-wins under *simultaneous distinct* reasons." If one user
   fires two requests upgrading the same `Unspecified` row to two different specific reasons at once,
   the first commit wins on the `UpdatedAt` concurrency token and the second is mapped Conflict→benign
@@ -107,7 +108,7 @@ insert race; cascade-delete of feedback relies on the Microsoft.Data.Sqlite fore
 ## References
 
 - `backend/src/Taskdeck.Domain/Entities/ProposalFeedback.cs`, `Enums/ProposalFeedbackReason.cs`
-- `backend/src/Taskdeck.Application/Services/ProposalFeedbackService.cs` (idempotent, last-specific-wins)
+- `backend/src/Taskdeck.Application/Services/ProposalFeedbackService.cs` (idempotent, first-specific-wins)
 - `POST /api/automation/proposals/{id}/feedback` (`AutomationProposalsController.ReportFeedback`)
 - `ProposalOutcome.cs` (the content-free decision-telemetry convention this mirrors)
 - Frontend: `automationApi.reportBadSuggestion`, `PaperReviewView.onReportBadSuggestion`
