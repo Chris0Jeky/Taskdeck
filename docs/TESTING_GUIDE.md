@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-16
+Last Updated: 2026-08-18
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -30,6 +30,29 @@ Local slice evidence is **5/5 parser tests and 22/22 focused API tests**, follow
 parsing of all 22 real TRX results. Hosted CI remains the authoritative proof that both matrix
 lanes upload the 14-day summary and Workflow Lint accepts the changed YAML. The artifact diagnoses
 the next recurrence; it does not by itself identify the cause or prove a duration repair.
+
+Required API Integration also emits a best-effort, 14-day testhost assembly diagnostic when the
+testhost exits normally. Its fixed numeric schema records only before/exit process counters plus
+aggregate `ConfigureServices` and `Database.Migrate()` workload timings. It never records paths,
+environment values, test identities, database names, exception text, or request content. A missing
+artifact after a killed or crashed testhost is itself diagnostic and must not mask the authoritative
+`dotnet test` result. Prove the dormant serializer and workflow contract without running the full
+API suite:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TestAssemblyDiagnosticsTests"
+Push-Location scripts/ci
+py -3 -B -m unittest -v test_collect_runner_context.py
+py -3 -m py_compile test_collect_runner_context.py
+Pop-Location
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 diagnostic serializer tests, 5/5 workflow-contract tests, and one
+real factory-backed testhost exit** producing a 642-byte schema-v1 artifact. Hosted Ubuntu and
+Windows upload evidence remains required before treating the workflow path as proven; even then,
+the artifact is instrumentation rather than a timing-root-cause claim.
 
 ## 2026-08-16 REVIVAL-09 Transcript Linkage and Editability Checkpoint (`#1305`)
 
