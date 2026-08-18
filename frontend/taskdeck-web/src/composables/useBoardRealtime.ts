@@ -198,6 +198,14 @@ export function createBoardRealtimeController(
       return
     }
 
+    // SignalR only accepts hub invocations when connected. During any
+    // transition state (especially Reconnecting), retain the last confirmed
+    // subscription so onreconnected can leave it and join the latest request.
+    if (hubConnection.state !== HubConnectionState.Connected) {
+      startFallbackPolling(boardId)
+      return
+    }
+
     if (subscribedBoardId && subscribedBoardId !== boardId) {
       await hubConnection.invoke('LeaveBoard', subscribedBoardId)
     }

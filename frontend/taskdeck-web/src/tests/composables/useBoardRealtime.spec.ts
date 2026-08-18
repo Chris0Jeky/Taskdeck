@@ -246,6 +246,37 @@ describe('createBoardRealtimeController', () => {
     expect(joinedBoardIds).toEqual(['board-b'])
   })
 
+  it('defers a reconnecting switch until connected while polling the requested board', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-a')
+    mockConnection.invoke.mockClear()
+    mockConnection.state = 'Reconnecting'
+    await callbacks.reconnecting?.()
+
+    await controller.switchBoard('board-b')
+    expect(mockConnection.invoke).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+    expect(fetchBoard).toHaveBeenCalledWith('board-b')
+
+    mockConnection.state = 'Connected'
+    await callbacks.reconnected?.()
+
+    const boardTransitionSends = mockConnection.invoke.mock.calls.filter(
+      ([method]) => method === 'LeaveBoard' || method === 'JoinBoard',
+    )
+    expect(boardTransitionSends).toEqual([
+      ['LeaveBoard', 'board-a'],
+      ['JoinBoard', 'board-b'],
+    ])
+
+    await controller.stop()
+  })
+
   it('cancels a pending debounce timer when switching boards', async () => {
     // Regression: a board-A mutation event with a debounce timer pending must
     // not fire fetchBoard after subscribedBoardId has advanced to board-B.
