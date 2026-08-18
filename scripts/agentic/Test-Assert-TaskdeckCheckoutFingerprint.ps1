@@ -250,6 +250,52 @@ Run-Test 'fails closed when a status artifact exceeds a configured bound' {
     }
 }
 
+Run-Test 'checks metadata byte limits before invoking the file hasher' {
+    New-TestRepository {
+        param($repo)
+        [IO.File]::WriteAllBytes((Join-Path $repo 'too-large.bin'), (New-Object byte[] 2048))
+        $message = & {
+            . $toolPath
+            function Get-ArtifactFingerprint { throw 'file hasher was invoked before the metadata limit' }
+            try {
+                [void](Get-Inventory -Checkout $repo -FileLimit 512 -PerFileLimit 1024 -TotalLimit 4096)
+                return 'capture unexpectedly succeeded'
+            }
+            catch {
+                return $_.Exception.Message
+            }
+        }
+        Assert-True ($message -eq 'status artifact exceeds the per-file byte limit') ('unexpected bound ordering: ' + $message)
+    }
+}
+
+Run-Test 'bounds git status output before full materialization' {
+    New-TestRepository {
+        param($repo)
+        for ($index = 0; $index -lt 40; $index++) {
+            [IO.File]::WriteAllText((Join-Path $repo (('status-output-' + $index + '-').PadRight(60, 'x') + '.txt')), 'x')
+        }
+        $result = Invoke-FingerprintTool -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'test-token', '-MaxGitOutputBytes', '1024')
+        Assert-True ($result.exitCode -ne 0) 'oversized Git status output was accepted'
+        Assert-True ($result.stderr -match 'git output exceeds the configured byte limit') 'Git output bound did not fail with the expected classification'
+    }
+}
+
+Run-Test 'requires both batch skill wrappers to propagate lane failure after cleanup' {
+    $skills = @(
+        (Join-Path $PSScriptRoot '..\..\.codex\skills\taskdeck-issue-batch-orchestrator\SKILL.md'),
+        (Join-Path $PSScriptRoot '..\..\.claude\skills\taskdeck-issue-batch-orchestrator\SKILL.md')
+    )
+    foreach ($skill in $skills) {
+        $text = Get-Content -LiteralPath $skill -Raw
+        $lane = $text.IndexOf('& $laneCommand', [StringComparison]::Ordinal)
+        $saved = $text.IndexOf('$laneSucceeded = $?', [StringComparison]::Ordinal)
+        $cleanup = $text.IndexOf('-Mode Cleanup', [StringComparison]::Ordinal)
+        $propagated = $text.IndexOf('if (-not $laneSucceeded', [StringComparison]::Ordinal)
+        Assert-True ($lane -ge 0 -and $saved -gt $lane -and $cleanup -gt $saved -and $propagated -gt $cleanup) ('lane failure gate is missing or misordered in ' + $skill)
+    }
+}
+
 Run-Test 'uses a direct canonical temp-root state file and rejects nested state paths' {
     New-TestRepository {
         param($repo)

@@ -73,6 +73,8 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
 
   # Launch the read-only lane only after the capture exit check succeeds.
   & $laneCommand
+  $laneSucceeded = $?
+  $laneExit = $LASTEXITCODE
 
   & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $compareExit = $LASTEXITCODE
@@ -81,6 +83,10 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
   & scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1 -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
   $cleanupExit = $LASTEXITCODE
   if ($cleanupExit -ne 0) { exit $cleanupExit }
+  if (-not $laneSucceeded -or ($null -ne $laneExit -and $laneExit -ne 0)) {
+    if ($null -ne $laneExit -and $laneExit -ne 0) { exit $laneExit }
+    exit 1
+  }
   ```
 
 - The fingerprint covers only exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation; any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.

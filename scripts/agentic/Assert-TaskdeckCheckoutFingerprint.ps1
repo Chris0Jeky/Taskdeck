@@ -16,7 +16,10 @@ param(
     [Int64]$MaxBytesPerFile = 10485760,
 
     [ValidateRange(1, 4294967296)]
-    [Int64]$MaxTotalBytes = 52428800
+    [Int64]$MaxTotalBytes = 52428800,
+
+    [ValidateRange(1024, 16777216)]
+    [Int64]$MaxGitOutputBytes = 16777216
 )
 
 Set-StrictMode -Version Latest
@@ -57,7 +60,8 @@ function Get-Utf8Text {
 function Invoke-GitBytes {
     param(
         [string]$Checkout,
-        [string]$Arguments
+        [string]$Arguments,
+        [Int64]$OutputLimit = $MaxGitOutputBytes
     )
 
     if ($Checkout.Contains('"')) {
@@ -74,15 +78,25 @@ function Invoke-GitBytes {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
-    if (-not $process.Start()) {
-        throw 'could not start git'
-    }
-
     $output = New-Object System.IO.MemoryStream
+    $started = $false
     try {
-        $process.StandardOutput.BaseStream.CopyTo($output)
+        $started = $process.Start()
+        if (-not $started) {
+            throw 'could not start git'
+        }
+
+        $errorTask = $process.StandardError.ReadToEndAsync()
+        $buffer = New-Object byte[] 8192
+        while (($read = $process.StandardOutput.BaseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            if ($output.Length -gt ($OutputLimit - $read)) {
+                try { $process.Kill() } catch { }
+                throw 'git output exceeds the configured byte limit'
+            }
+            $output.Write($buffer, 0, $read)
+        }
         $process.WaitForExit()
-        $errorText = $process.StandardError.ReadToEnd()
+        [void]$errorTask.GetAwaiter().GetResult()
         if ($process.ExitCode -ne 0) {
             throw 'git could not establish checkout identity'
         }
@@ -90,6 +104,12 @@ function Invoke-GitBytes {
         return ,$output.ToArray()
     }
     finally {
+        if ($started) {
+            try {
+                if (-not $process.HasExited) { $process.Kill() }
+            }
+            catch { }
+        }
         $output.Dispose()
         $process.Dispose()
     }
@@ -188,7 +208,10 @@ function Get-ArtifactPath {
 }
 
 function Get-ArtifactFingerprint {
-    param([string]$FullPath)
+    param(
+        [string]$FullPath,
+        [Int64]$ExpectedLength
+    )
 
     $item = Get-Item -LiteralPath $FullPath -Force -ErrorAction Stop
     if ($item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
@@ -198,6 +221,9 @@ function Get-ArtifactFingerprint {
     $stream = [IO.File]::Open($FullPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     try {
         $length = $stream.Length
+        if ($length -ne $ExpectedLength) {
+            throw 'status artifact changed before it could be fingerprinted'
+        }
         $hasher = [Security.Cryptography.SHA256]::Create()
         try {
             $digest = $hasher.ComputeHash($stream)
@@ -251,15 +277,16 @@ function Get-Inventory {
             throw 'status artifact is not a regular file'
         }
 
-        $fingerprint = Get-ArtifactFingerprint -FullPath $fullPath
-        if ($fingerprint.length -gt $PerFileLimit) {
+        $metadataLength = [Int64]$statusItem.Length
+        if ($metadataLength -gt $PerFileLimit) {
             throw 'status artifact exceeds the per-file byte limit'
         }
 
-        if ($fingerprint.length -gt ($TotalLimit - $total)) {
+        if ($metadataLength -gt ($TotalLimit - $total)) {
             throw 'status artifact total exceeds the configured byte limit'
         }
 
+        $fingerprint = Get-ArtifactFingerprint -FullPath $fullPath -ExpectedLength $metadataLength
         $total += $fingerprint.length
         $records.Add([pscustomobject]@{
                 path = $relativePath
