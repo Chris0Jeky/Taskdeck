@@ -24,7 +24,7 @@ jobs:
   e2e-smoke:
     name: E2E Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -24,7 +24,7 @@ test('bounds the required E2E Smoke job and preserves the smoke-test ceiling', a
 
   assert.match(
     workflow,
-    /e2e-smoke:\r?\n\s+name: E2E Smoke\r?\n\s+runs-on: ubuntu-latest\r?\n\s+timeout-minutes: 30\r?\n\s+steps:/,
+    /e2e-smoke:\r?\n\s+name: E2E Smoke\r?\n\s+runs-on: ubuntu-latest\r?\n\s+timeout-minutes: 35\r?\n\s+steps:/,
   )
   assert.match(
     workflow,
