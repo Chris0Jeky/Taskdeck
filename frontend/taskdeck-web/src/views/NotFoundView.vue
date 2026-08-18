@@ -1,9 +1,18 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const attemptedPath = computed(() => route.path)
+</script>
+
 <template>
   <section class="td-not-found td-panel" aria-labelledby="not-found-title">
     <p class="td-not-found__eyebrow">404</p>
     <h1 id="not-found-title" class="td-page-title">Page not found</h1>
     <p class="td-not-found__message">
-      We couldn’t find that Taskdeck page. Use one of these destinations to get back to your work.
+      We couldn’t find <code class="td-not-found__path">{{ attemptedPath }}</code>. Use one of these
+      destinations to get back to your work.
     </p>
     <nav class="td-not-found__actions" aria-label="Not found recovery">
       <RouterLink class="td-btn td-btn--primary" to="/workspace/home">Go to Home</RouterLink>
@@ -33,6 +42,12 @@
   margin: var(--td-space-3) 0 0;
   color: var(--td-text-secondary);
   line-height: 1.6;
+}
+
+.td-not-found__path {
+  color: var(--td-text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95em;
 }
 
 .td-not-found__actions {

@@ -32,9 +32,10 @@ describe('NotFoundView', () => {
     const wrapper = mount(NotFoundView, { global: { plugins: [router] } })
 
     expect(wrapper.get('h1').text()).toBe('Page not found')
-    expect(wrapper.text()).toContain('We couldn’t find that Taskdeck page.')
+    expect(wrapper.text()).toContain('We couldn’t find /workspace/definitely-missing.')
     expect(wrapper.text()).toContain('Go to Home')
     expect(wrapper.text()).toContain('Open Boards')
+    expect(wrapper.text()).not.toContain('?secret=')
     expect(wrapper.text()).not.toContain('do-not-display')
     expect(wrapper.text()).not.toContain('private-fragment')
   })
