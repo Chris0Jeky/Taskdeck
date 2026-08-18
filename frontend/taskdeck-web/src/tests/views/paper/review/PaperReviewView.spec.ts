@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
+import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   getHistory: vi.fn(),
   getSimilarPast: vi.fn(),
   getBoards: vi.fn(),
+  getColumns: vi.fn(),
   createRevision: vi.fn(),
   getRevisions: vi.fn(),
   getLatestRevision: vi.fn(),
@@ -47,6 +49,10 @@ vi.mock('../../../../api/automationApi', () => ({
 
 vi.mock('../../../../api/boardsApi', () => ({
   boardsApi: { getBoards: mocks.getBoards },
+}))
+
+vi.mock('../../../../api/columnsApi', () => ({
+  columnsApi: { getColumns: mocks.getColumns },
 }))
 
 vi.mock('../../../../api/proposalDeepReviewApi', () => ({
@@ -137,9 +143,15 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   }
 }
 
-async function mountView(proposals: Proposal[], path = '/workspace/review') {
+async function mountView(
+  proposals: Proposal[],
+  path = '/workspace/review',
+  boards: unknown[] = [],
+  columns: unknown[] = [],
+) {
   mocks.getProposals.mockResolvedValueOnce(proposals)
-  mocks.getBoards.mockResolvedValueOnce([])
+  mocks.getBoards.mockResolvedValueOnce(boards)
+  mocks.getColumns.mockResolvedValue(columns)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/workspace/review', name: 'workspace-review', component: PaperReviewView }],
@@ -166,6 +178,7 @@ describe('PaperReviewView', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    resetProposalDisplayNamesForTests()
     mocks.sessionState.userId = 'u-1'
     mocks.getRevisions.mockResolvedValue([])
     mocks.getLatestRevision.mockResolvedValue(null)
@@ -188,6 +201,7 @@ describe('PaperReviewView', () => {
     mocks.getConflicts.mockResolvedValue([])
     mocks.getHistory.mockResolvedValue([])
     mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
+    mocks.getColumns.mockResolvedValue([])
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -454,13 +468,75 @@ describe('PaperReviewView', () => {
 
     const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
     expect(mainText).toContain('Move Card · Card')
-    expect(mainText).toContain('columnId: done')
+    expect(mainText).toContain('columnId: Unavailable column')
     expect(mainText).not.toContain('Implement dark mode')
     expect(mainText).not.toContain('No data left this device')
 
     const viewText = wrapper.text()
     expect(viewText).not.toContain('Haiku · local')
     expect(viewText).not.toContain('crossed your "split this" threshold')
+  })
+
+  it('uses accessible board and column names while keeping IDs in technical details', async () => {
+    const proposal = makeProposal({
+      operations: [
+        {
+          id: 'op-move',
+          proposalId: 'proposal-001',
+          sequence: 0,
+          actionType: 'MoveCard',
+          targetType: 'Card',
+          targetId: 'card-99',
+          parameters: JSON.stringify({ boardId: 'board-1', columnId: 'column-1', position: 2 }),
+          idempotencyKey: 'move-1',
+          expectedVersion: null,
+        },
+      ],
+    })
+    const originalOperations = JSON.parse(JSON.stringify(proposal.operations))
+    const wrapper = await mountView(
+      [proposal],
+      '/workspace/review',
+      [{ id: 'board-1', name: 'Support Triage' }],
+      [{ id: 'column-1', boardId: 'board-1', name: 'Done' }],
+    )
+
+    const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
+    expect(mainText).toContain('Support Triage')
+    expect(mainText).toContain('Done')
+    expect(mainText).not.toContain('board-1')
+    expect(mainText).not.toContain('column-1')
+    expect(mocks.getBoards).toHaveBeenCalledTimes(1)
+    expect(mocks.getColumns).toHaveBeenCalledTimes(1)
+    expect(proposal.operations).toEqual(originalOperations)
+
+    const details = wrapper.find('[data-testid="paper-review-technical-details"]')
+    expect(details.attributes('open')).toBeUndefined()
+    await details.find('summary').trigger('click')
+    expect(details.text()).toContain('board-1')
+    expect(details.text()).toContain('column-1')
+  })
+
+  it('uses a neutral fallback for an inaccessible board or column', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        operations: [{
+          id: 'op-column',
+          proposalId: 'proposal-001',
+          sequence: 0,
+          actionType: 'MoveCard',
+          targetType: 'Column',
+          targetId: 'column-missing',
+          parameters: '{}',
+          idempotencyKey: 'move-1',
+          expectedVersion: null,
+        }],
+      }),
+    ])
+
+    const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
+    expect(mainText).toContain('Unavailable column')
+    expect(mainText).not.toContain('column-missing')
   })
 
   it('uses proposal ownership for the Mine queue filter', async () => {
