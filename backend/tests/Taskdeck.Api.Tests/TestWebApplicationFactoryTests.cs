@@ -13,6 +13,64 @@ namespace Taskdeck.Api.Tests;
 public class TestWebApplicationFactoryTests
 {
     [Fact]
+    public async Task ConcurrentFactories_CopyOneMigratedTemplate_WithoutSharingData()
+    {
+        const int factoryCount = 6;
+        var factories = await Task.WhenAll(Enumerable.Range(0, factoryCount)
+            .Select(index => Task.Run(() =>
+            {
+                var factory = new TestWebApplicationFactory();
+                _ = factory.Services;
+                return factory;
+            })));
+
+        try
+        {
+            var databasePaths = factories.Select(GetDatabasePath).ToList();
+
+            TestWebApplicationFactory.PristineDatabaseMigrationCount.Should().Be(1,
+                "the process-local template is the only database that runs Database.Migrate()");
+            databasePaths.Should().OnlyHaveUniqueItems(
+                "each factory must still own an isolated SQLite file");
+
+            foreach (var factory in factories)
+            {
+                using var scope = factory.Services.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                context.Database.GetAppliedMigrations().Should().NotBeEmpty(
+                    "each copied database must contain the complete migrated schema");
+            }
+
+            ExecuteNonQuery(databasePaths[0],
+                "CREATE TABLE FactoryCopyIsolation (Value TEXT NOT NULL); INSERT INTO FactoryCopyIsolation (Value) VALUES ('only-first-factory');");
+
+            Scalar<long>(databasePaths[1],
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'FactoryCopyIsolation';")
+                .Should().Be(0, "a write to one factory database must not leak into another copy");
+        }
+        finally
+        {
+            foreach (var factory in factories)
+            {
+                factory.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void Dispose_RemovesCopiedDatabaseAndSqliteSidecars()
+    {
+        var factory = new TestWebApplicationFactory();
+        var databasePath = GetDatabasePath(factory);
+
+        factory.Dispose();
+
+        TestWebApplicationFactory.GetDatabaseCleanupTargets(databasePath)
+            .Should().OnlyContain(path => !File.Exists(path),
+                "disposing an isolated factory must release and remove its copied database files");
+    }
+
+    [Fact]
     public void HostedWorkerDisabledFactory_RemovesApplicationWorkers_ButKeepsTheWebHostService()
     {
         // Guards the issue #1335 isolation mechanism against silent regression: if a future
@@ -97,5 +155,30 @@ public class TestWebApplicationFactoryTests
         command.CommandText = $"PRAGMA {pragma};";
         var result = command.ExecuteScalar();
         return (T)Convert.ChangeType(result!, typeof(T));
+    }
+
+    private static string GetDatabasePath(TestWebApplicationFactory factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        return context.Database.GetDbConnection().DataSource;
+    }
+
+    private static void ExecuteNonQuery(string databasePath, string sql)
+    {
+        using var connection = new SqliteConnection(TestSqlite.ConnectionString(databasePath));
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+
+    private static T Scalar<T>(string databasePath, string sql)
+    {
+        using var connection = new SqliteConnection(TestSqlite.ConnectionString(databasePath));
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (T)Convert.ChangeType(command.ExecuteScalar()!, typeof(T));
     }
 }
