@@ -96,7 +96,7 @@ const ledeText = computed(() => {
   const p = proposalsAwaiting.value
   const c = carryOvers.value
   if (p === 0 && c === 0) {
-    return 'Nothing waiting. Good.'
+    return ''
   }
   const parts: string[] = []
   if (p > 0) {
@@ -296,7 +296,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
           {{ greeting.opener }}.
         </template>
       </h1>
-      <p class="tk-lede paper-home__lede" data-testid="paper-home-lede">
+      <p v-if="ledeText" class="tk-lede paper-home__lede" data-testid="paper-home-lede">
         {{ ledeText }}
       </p>
     </header>

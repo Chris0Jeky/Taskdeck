@@ -199,6 +199,7 @@ describe('PaperHomeView', () => {
 
       expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="paper-home-empty"]').text()).toContain('Nothing waiting')
+      expect(wrapper.text().match(/Nothing waiting\. Good\./g) ?? []).toHaveLength(1)
       expect(wrapper.find('[data-testid="paper-home-card-proposal"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-home-card-carryover"]').exists()).toBe(false)
     })
