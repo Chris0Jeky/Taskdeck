@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -263,6 +264,61 @@ public class CardRepository : Repository<Card>, ICardRepository
 
         const int maxResults = 500;
 
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite stores DateTimeOffset as offset-bearing TEXT and cannot translate a typed
+            // DateTimeOffset ORDER BY. Compare an exact integer instant key instead of the stored
+            // text (whose lexical order changes with the offset). `strftime` converts the whole
+            // second plus offset to Unix time; the separate 7-digit fractional component retains
+            // .NET tick precision without julianday's floating-point rounding.
+            const string dueInstantKey =
+                "CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000 " +
+                "+ CASE WHEN substr(DueDate, 20, 1) = '.' THEN " +
+                "CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER) " +
+                "ELSE 0 END";
+
+            var parameters = materializedBoardIds.Select(id => (object)id).ToList();
+            var boardPlaceholders = string.Join(", ", Enumerable.Range(0, parameters.Count).Select(index => $"{{{index}}}"));
+
+            var sql = new StringBuilder("SELECT * FROM Cards WHERE BoardId IN (")
+                .Append(boardPlaceholders)
+                .Append(") AND DueDate IS NOT NULL AND (")
+                .Append(dueInstantKey)
+                .Append(") >= {")
+                .Append(parameters.Count)
+                .Append('}');
+            parameters.Add(GetSqliteInstantKey(from));
+
+            sql.Append(" AND (")
+                .Append(dueInstantKey)
+                .Append(") < {")
+                .Append(parameters.Count)
+                .Append('}');
+            parameters.Add(GetSqliteInstantKey(to));
+
+            sql.Append(" ORDER BY (")
+                .Append(dueInstantKey)
+                .Append("), BoardId LIMIT {")
+                .Append(parameters.Count)
+                .Append('}');
+            parameters.Add(maxResults);
+
+            var rows = await _dbSet
+                .FromSqlRaw(sql.ToString(), parameters.ToArray())
+                .AsNoTracking()
+                .Include(c => c.Board)
+                .Include(c => c.Column)
+                .ToListAsync(cancellationToken);
+
+            // Include composes over FromSqlRaw and may obscure the raw inner ORDER BY. The SQL
+            // above already selected the bounded top 500; re-sorting only those rows restores
+            // the public order while preserving the database filter and limit.
+            return rows
+                .OrderBy(c => c.DueDate!.Value)
+                .ThenBy(c => c.BoardId.ToString(), StringComparer.Ordinal)
+                .ToList();
+        }
+
         return await _dbSet
             .AsNoTracking()
             .Where(c =>
@@ -276,5 +332,12 @@ public class CardRepository : Repository<Card>, ICardRepository
             .ThenBy(c => c.BoardId)
             .Take(maxResults)
             .ToListAsync(cancellationToken);
+    }
+
+    private static long GetSqliteInstantKey(DateTimeOffset value)
+    {
+        var utcTicks = value.UtcDateTime.Ticks;
+        var epochTicks = DateTimeOffset.UnixEpoch.UtcDateTime.Ticks;
+        return utcTicks - epochTicks;
     }
 }

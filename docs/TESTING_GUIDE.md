@@ -52,8 +52,9 @@ Linkage-head result: **23 Domain, 38 Application, 23 worker, 15 repository/migra
 one golden-path HTTP, and three focused capture-API tests passed**; the Release solution build
 completed with zero errors and EF reported no pending model changes. These checks prove one
 canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
-and SQLite unique/`SET NULL` behavior. They do not prove evidence spans, provenance API/UI reads,
-shared-reader policy, or real external-provider behavior; those remain later `#1305` work.
+and SQLite unique/`SET NULL` behavior. At that linkage head they did not prove evidence spans or
+provenance reads; the evidence checkpoint below now covers those backend seams. Paper quote
+resolution and real external-provider behavior remain outside both checkpoints.
 
 The follow-up editability slice reuses the authoritative Application rule in the additive capture-detail
 capability and proves that Inbox neither offers nor retains an editor after linkage:
@@ -72,6 +73,31 @@ Pop-Location
 Editability-head result: **42 Application, 27 capture-API, and 71 Inbox tests passed**;
 type-check and production build passed, while lint reported zero errors and six unrelated existing
 accessibility warnings. The API proof also confirms that capture detail does not expose `TranscriptId`.
+
+## 2026-08-16 REVIVAL-09 Transcript Evidence Checkpoint (`#1305`)
+
+When changing transcript quote-to-span resolution, trusted proposal evidence, opaque provenance
+responses, or Transcript erasure cleanup, run:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceEvidenceLinkTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests|FullyQualifiedName~AccountDeletionServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests|FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~AutomationProposalsApiTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Evidence-head result: **17 Domain, 252 Application, and 86 API tests passed**, with no failures or skips; the
+Release solution build completed with zero errors and two pre-existing nullable warnings in
+`CliStartupTraceTests`, EF reported no pending model changes, and both documentation gates passed.
+The proof covers UTF-16 absolute offsets, repeated-quote and same-title ambiguity, stable reduction
+alignment, one trusted link per operation, database source-type consistency, cascading erasure,
+atomic stale-link rejection, migration/model parity, and a board viewer receiving opaque metadata
+without Transcript text.
+It does not prove PostgreSQL-specific deletion translation, Paper quote resolution/deep links,
+provenance export, or real external-provider behavior.
 
 ## Current Verified Totals (2026-05-16)
 
@@ -147,7 +173,7 @@ npm run typecheck
 
 The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
 capture, never persists a partial automatic board write. The M3 contract has its own checkpoint
-below; `#1305` evidence linkage remains outside both checkpoints.
+below; persistent Transcript evidence linkage is covered by the 2026-08-16 checkpoint above.
 
 ## 2026-08-02 REVIVAL-08 M3 Contract Checkpoint (`#1304`)
 
@@ -163,8 +189,8 @@ The application seam must reject missing, unknown, wrongly typed, noncanonical, 
 non-verbatim model fields as a complete fallback; it must not normalize or retain a partial map leg.
 It also pins that model classification, assignee, due-date, and confidence metadata never enter
 executable operation parameters. The API golden path proves a valid exact quote remains reviewable
-in the proposed card description. `#1305` durable evidence spans/provenance/API/UI linkage remains
-outside this contract-only checkpoint.
+in the proposed card description. Durable span/provenance API coverage is now in the 2026-08-16
+checkpoint above; Paper quote resolution and deep links remain outside this contract checkpoint.
 
 ## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
 
@@ -177,9 +203,10 @@ dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
 ```
 
-Current-main result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
-skips. This proves persistence, export/deletion, and migration/bootstrap behavior only; `#1305`
-remains open for triage linkage, evidence spans, provenance API reads, and Paper deep links.
+Foundation-head result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
+skips. That checkpoint proves persistence, export/deletion, and migration/bootstrap behavior. The
+linkage and evidence checkpoints above cover the subsequent backend work; `#1305` remains open for
+Paper quote resolution/deep links, provenance export, and the final payload-retention boundary.
 
 The MCP create-card column contract is exercised through the real write tool and SQLite-backed
 proposal lifecycle:

@@ -129,6 +129,53 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_UsesUtf16OffsetsForUniqueEvidenceIncludingEmoji()
+    {
+        const string transcript = "😀 Alice: send the report.";
+        const string quote = "Alice: send the report.";
+        SetupCompletion($$"""{"tasks":[{"title":"Send report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"{{quote}}"}]}""");
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.EvidenceSpans.Should().ContainSingle();
+        result.EvidenceSpans![0].Should().Be((3, 3 + quote.Length));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DoesNotLinkOverlappingRepeatedQuote()
+    {
+        const string transcript = "aaa";
+        SetupCompletion("""{"tasks":[{"title":"Inspect text","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"aa"}]}""");
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.EvidenceSpans.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DuplicateTitleWithDifferentRangesHasNoStructuredSpan()
+    {
+        const string transcript = "Alpha quote.\nBeta quote.";
+        SetupCompletion(V2Completion(
+            ("Review item", "Alpha quote."),
+            ("review item", "Beta quote.")));
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.Output!.Tasks.Should().ContainSingle();
+        result.EvidenceSpans.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldTolerateCodeFences_WhenJsonUsesTheExactV2Shape()
     {
         SetupCompletion("""

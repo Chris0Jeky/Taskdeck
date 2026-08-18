@@ -236,10 +236,11 @@ public class TranscriptTriageWorker : BackgroundService
 
             var canonicalPayload = parsedPayloadResult.Value with { Text = transcript.Text };
 
-            var triageResult = await triageService.CreateProposalFromCaptureAsync(
+            var triageResult = await triageService.CreateProposalFromTranscriptAsync(
                 item.Id,
                 item.UserId,
                 item.BoardId,
+                transcript.Id,
                 canonicalPayload,
                 ct);
 
