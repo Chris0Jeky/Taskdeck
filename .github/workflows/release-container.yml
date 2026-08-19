@@ -55,20 +55,30 @@ jobs:
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/taskdeck" >> "$GITHUB_OUTPUT"
 
       # Product version stamped into the image's binaries and its OCI version label (#1804).
-      # Derived from the v* tag with the leading "v" stripped; a rehearsal dispatch from a
+      #
+      # Derived from the v* tag. This workflow takes NO dispatch input, so GITHUB_REF_NAME is
+      # a real Git ref rather than attacker-influenced text; a rehearsal dispatch from a
       # branch gets the same 0.0.0-dev fallback backend/Directory.Build.props uses.
+      #
+      # Any "+<build>" metadata is stripped, because `ProductVersion.Normalize` drops it
+      # before reporting: without this, a v1.2.3+meta tag would stamp "1.2.3+meta" while
+      # /health/live echoed "1.2.3", and the version-stamp assertion in the smoke step below
+      # would fail on two spellings of the same version. The validation regex refuses "+" for
+      # the same reason — admitting a character we have just stripped would only hide a bug
+      # in the stripping.
       - name: Resolve product version
         id: product-version
         run: |
           set -euo pipefail
           if [ "${GITHUB_REF#refs/tags/v}" != "$GITHUB_REF" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            VERSION="${VERSION%%+*}"
           else
             VERSION="0.0.0-dev"
           fi
           # The value reaches MSBuild as a property; refuse anything that is not a plain token.
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$'; then
-            echo "::error::Refusing product version '$VERSION' — not a plain version token."
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "$VERSION"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

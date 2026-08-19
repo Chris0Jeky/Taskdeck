@@ -91,14 +91,17 @@ at build time and only read at runtime. It is documented here because it is the
 answer to "what version am I running?" for a self-hoster.
 
 `backend/Directory.Build.props` sets `Version` for every backend project.
-Release workflows override it from the `v*` release tag with the leading `v`
-stripped:
+Release workflows override it from the `v*` release tag, stripping the leading
+`v` and any `+<build>` metadata (the runtime reader drops build metadata before
+reporting, so stamping it would make the reported value un-comparable with the
+value injected):
 
 | Build | Injection | Reported version |
 | --- | --- | --- |
-| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v>` in `.github/workflows/release-desktop.yml` | e.g. `0.1.0` |
+| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
 | Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
-| Rehearsal dispatch, local build, `docker build`, CI | none | `0.0.0-dev` |
+| Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
+| Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
 
 Where to read it:
 
@@ -109,8 +112,8 @@ Where to read it:
 - Container image OCI labels → `org.opencontainers.image.version`
   (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <image>`)
 
-A reported `0.0.0-dev` means the binary was built without a release version
-injected — it is not a released artefact.
+A reported `0.0.0-dev` or `0.0.0-dryrun` means the binary was not cut from a
+release tag — it is not a released artefact.
 
 ## Startup validation
 
