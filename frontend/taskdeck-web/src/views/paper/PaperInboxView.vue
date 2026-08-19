@@ -130,13 +130,13 @@ function onComposerAttachments(_files: File[]) {
   // now; tests assert the event fires.
 }
 
-async function onTriageAccept(itemId: string) {
+async function onTriageAccept(itemId: string, boardId?: string | null) {
   if (stopTriagePolling) {
     stopTriagePolling()
     stopTriagePolling = null
   }
   try {
-    await captureStore.triageItem(itemId)
+    await captureStore.triageItem(itemId, boardId)
     const latestStatus = captureStore.detailById[itemId]?.status
     if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
       return

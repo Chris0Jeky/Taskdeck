@@ -18,13 +18,22 @@ import { useCaptureStore } from '../../store/captureStore'
  *     derived from the local clock at render time.
  *   • A `tk-lede` subtitle summarising today's queue.
  *   • Up to three "queued for you" cards (proposals first — ember-accented —
- *     followed by triage carry-overs, hairline only).
+ *     followed by captures awaiting triage, hairline only).
+ *
  *   • A single-line quick capture row that wires through the existing
  *     captureStore so we don't duplicate dispatch logic.
  *
  * Data is read from the existing `workspaceStore.homeSummary` cache —
  * AppShell prefetches it on mount, so we do not refetch here unless the
  * cache is empty.
+ *
+ * Day-boundary contract (issue #1768): the Home workload counters are pure
+ * STATUS counts — `capturesNeedingTriage` is `NewCount + FailedCount` in
+ * `WorkspaceService.GetHomeAsync`, with no date predicate anywhere in the
+ * chain. This surface must therefore never describe them as belonging to a
+ * particular day ("from yesterday", "carry-over", "overnight"): a capture
+ * saved seconds ago is `New` and would be mislabelled in every timezone.
+ * Copy here stays date-neutral unless the payload grows a real timestamp.
  */
 
 interface QueueCardModel {
@@ -82,7 +91,8 @@ const greeting = computed(() => {
 // ── Lede / queue summary ─────────────────────────────────────────────────
 
 const proposalsAwaiting = computed(() => summary.value?.workload.proposalsPendingReview ?? 0)
-const carryOvers = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
+// Status count, not a dated bucket — see the day-boundary contract above.
+const capturesAwaitingTriage = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
 const showLoadingState = computed(() => workspace.homeLoading && !summary.value)
 const showErrorState = computed(() => Boolean(workspace.homeError))
 
@@ -94,7 +104,7 @@ const ledeText = computed(() => {
     return 'Loading your workspace summary...'
   }
   const p = proposalsAwaiting.value
-  const c = carryOvers.value
+  const c = capturesAwaitingTriage.value
   if (p === 0 && c === 0) {
     return 'Nothing waiting. Good.'
   }
@@ -103,7 +113,7 @@ const ledeText = computed(() => {
     parts.push(`${p} awaiting review`)
   }
   if (c > 0) {
-    parts.push(`${c} carry-over${c === 1 ? '' : 's'} from yesterday`)
+    parts.push(`${c} awaiting triage`)
   }
   return parts.join(' · ')
 })
@@ -131,18 +141,18 @@ const queueCards = computed<QueueCardModel[]>(() => {
       })
     })
 
-  // Triage carry-overs — hairline only, no ember.
+  // Captures awaiting triage — hairline only, no ember. Date-neutral copy.
   if (cards.length < 3 && s.workload.capturesNeedingTriage > 0) {
     const remaining = 3 - cards.length
-    const carryCount = Math.min(remaining, s.workload.capturesNeedingTriage)
-    for (let i = 0; i < carryCount; i += 1) {
+    const triageCount = Math.min(remaining, s.workload.capturesNeedingTriage)
+    for (let i = 0; i < triageCount; i += 1) {
       cards.push({
         serial: `#${String(cards.length + 1).padStart(3, '0')}`,
         title: i === 0
-          ? `Triage ${s.workload.capturesNeedingTriage} capture${s.workload.capturesNeedingTriage === 1 ? '' : 's'} from yesterday`
-          : 'Triage carry-over',
+          ? `Triage ${s.workload.capturesNeedingTriage} capture${s.workload.capturesNeedingTriage === 1 ? '' : 's'}`
+          : 'Triage a capture',
         meta: 'inbox · awaiting decision',
-        tagLabel: 'CARRY-OVER',
+        tagLabel: 'TRIAGE',
         tagTone: 'mute',
         isProposal: false,
       })
@@ -364,6 +374,10 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     <section v-else class="paper-home__queue" aria-label="Queued for you">
       <h2 class="tk-eyebrow paper-home__queue-title">II · Queued for you</h2>
       <div class="paper-home__queue-grid">
+        <!--
+          `carryover` here is a legacy structural id meaning "not a proposal";
+          it carries no date claim. User-visible copy stays date-neutral (#1768).
+        -->
         <PaperCard
           v-for="card in queueCards"
           :key="card.serial"

@@ -223,10 +223,14 @@ public class CaptureService : ICaptureService
     public async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,
+        Guid? targetBoardId = null,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (targetBoardId.HasValue && targetBoardId.Value == Guid.Empty)
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "BoardId cannot be empty");
 
         var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
         if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
@@ -236,7 +240,7 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
         var payload = ParsePayload(item);
-        var (effectivePayload, _, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
+        var (effectivePayload, effectiveBoardId, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
             item,
             payload,
             persistChanges: true,
@@ -249,6 +253,8 @@ public class CaptureService : ICaptureService
         var currentStatus = ResolveCaptureStatus(item, effectivePayload);
         if (currentStatus == CaptureStatus.Triaging)
         {
+            // Already in flight — the board was resolved on the first accept. Stay idempotent so a
+            // double-click can't turn a live triage into a spurious validation error.
             return Result.Success(new CaptureTriageEnqueueResultDto(
                 item.Id,
                 CaptureStatus.Triaging,
@@ -267,6 +273,39 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(
                 ErrorCodes.Conflict,
                 $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
+        }
+
+        // A capture with no board can never be triaged into a proposal — a proposal targets a board
+        // (CaptureTriageService enforces this at the worker). Home quick-capture lands board-less, so
+        // resolve the target board now that the item is otherwise transition-eligible: link a
+        // caller-supplied board, then reject synchronously with a 400 instead of queueing a doomed
+        // async job that dead-ends at a bare FAILED badge with no reason (#1764).
+        if (!effectiveBoardId.HasValue && targetBoardId.HasValue)
+        {
+            var permission = await _authorizationService.CanReadBoardAsync(userId, targetBoardId.Value);
+            if (!permission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(permission.ErrorCode, permission.ErrorMessage);
+            if (!permission.Value)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have access to this board");
+
+            try
+            {
+                item.BackfillBoard(targetBoardId.Value);
+            }
+            catch (DomainException ex)
+            {
+                return Result.Failure<CaptureTriageEnqueueResultDto>(ex.ErrorCode, ex.Message);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            effectiveBoardId = targetBoardId;
+        }
+
+        if (!effectiveBoardId.HasValue)
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(
+                ErrorCodes.ValidationError,
+                "Choose a board before accepting this capture. Triage turns a capture into a board proposal, so it needs a target board.");
         }
 
         try
@@ -371,7 +410,7 @@ public class CaptureService : ICaptureService
         Guid itemId,
         CancellationToken cancellationToken)
     {
-        var triageResult = await EnqueueTriageAsync(userId, itemId, cancellationToken);
+        var triageResult = await EnqueueTriageAsync(userId, itemId, targetBoardId: null, cancellationToken);
         return triageResult.IsSuccess
             ? Result.Success()
             : Result.Failure(triageResult.ErrorCode, triageResult.ErrorMessage);
@@ -496,7 +535,8 @@ public class CaptureService : ICaptureService
             payload.Source,
             excerpt,
             item.CreatedAt,
-            item.ProcessedAt);
+            item.ProcessedAt,
+            item.ErrorMessage);
     }
 
     private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
