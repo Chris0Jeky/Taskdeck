@@ -144,6 +144,7 @@ describe('usePaperReviewSelectors', () => {
             label: 'ship the export fix',
             spanStart: 5,
             spanEnd: 24,
+            viewable: true,
           },
         ],
       },
@@ -180,8 +181,10 @@ describe('usePaperReviewSelectors', () => {
       weight: 'primary',
       sourceType: 'Transcript',
       sourceId: transcriptId,
+      viewable: true,
     })
-    // A link without a label falls back to the row's rendered value.
+    // A link without a label falls back to the row's rendered value. Its wire payload carries
+    // no `viewable` flag, which must fail closed rather than default to "followable".
     expect(selectors.evidenceLinks.value[1]).toEqual({
       sourceKey: 'capture',
       span: null,
@@ -189,7 +192,39 @@ describe('usePaperReviewSelectors', () => {
       weight: 'contextual',
       sourceType: 'Transcript',
       sourceId: transcriptId,
+      viewable: false,
     })
+  })
+
+  it('carries the server viewable flag through and fails closed for anything but true', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 0, spanEnd: 4, viewable: true },
+          { sourceType: 'Transcript', sourceId: 't-2', label: null, spanStart: 0, spanEnd: 4, viewable: false },
+          // A collaborator's payload from a server that never sends the flag.
+          { sourceType: 'Transcript', sourceId: 't-3', label: null, spanStart: 0, spanEnd: 4 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(3)
+    })
+
+    expect(selectors.evidenceLinks.value.map((link) => link.viewable)).toEqual([
+      true,
+      false,
+      false,
+    ])
   })
 
   it('drops an incoherent evidence span rather than deep-linking to wrong characters', async () => {
@@ -203,6 +238,9 @@ describe('usePaperReviewSelectors', () => {
         evidenceLinks: [
           { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 40, spanEnd: 12 },
           { sourceType: 'Transcript', sourceId: 't-2', label: null, spanStart: -3, spanEnd: 12 },
+          // Zero-length: highlights nothing, so it is not a deep link either (#1837 item 2).
+          { sourceType: 'Transcript', sourceId: 't-3', label: null, spanStart: 12, spanEnd: 12 },
+          { sourceType: 'Transcript', sourceId: 't-4', label: null, spanStart: 0, spanEnd: 0 },
         ],
       },
     ])
@@ -211,10 +249,39 @@ describe('usePaperReviewSelectors', () => {
     const selectors = usePaperReviewSelectors(activeProposal)
 
     await vi.waitFor(() => {
-      expect(selectors.evidenceLinks.value.length).toBe(2)
+      expect(selectors.evidenceLinks.value.length).toBe(4)
     })
 
-    expect(selectors.evidenceLinks.value.map((link) => link.span)).toEqual([null, null])
+    expect(selectors.evidenceLinks.value.map((link) => link.span)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ])
+  })
+
+  it('keeps a one-character span, the smallest span that highlights anything', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 12, spanEnd: 13 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(1)
+    })
+
+    expect(selectors.evidenceLinks.value[0].span).toEqual([12, 13])
   })
 
   it('clears evidence links when no proposal is active', async () => {
