@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-19
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
@@ -73,10 +73,14 @@ Delegated shell-backed Git and GitHub inventory must use the repository wrapper:
 )
 ```
 
-The wrapper accepts only allowlisted read operations, rejects GitHub-mutation argv, and disables
-Git's optional index locks while it runs. Use `-ValidateOnly` to inspect a constructed command
-without launching it and `-SelfTest` after changing the contract. A purpose-built connector with an
-intrinsically read-only operation may still be used directly.
+The wrapper accepts only allowlisted read operations and rejects GitHub-mutation argv. It also pins
+the launched process environment and restores every variable it changed afterwards: a Git launch
+gets `GIT_OPTIONAL_LOCKS=0`, `GIT_PAGER=cat`, `PAGER=cat`, and `GIT_TERMINAL_PROMPT=0` on top of the
+transport neutralization below; a `gh` launch gets `GH_PROMPT_DISABLED=true`, `GH_PAGER=cat`, and
+`GH_NO_UPDATE_NOTIFIER=1`. The Git transport neutralization applies to Git launches only. Use
+`-ValidateOnly` to inspect a constructed command without launching it and `-SelfTest` after changing
+the contract. A purpose-built connector with an intrinsically read-only operation may still be used
+directly.
 
 Git argv is accepted by an exact per-subcommand option allowlist, not a denylist. Git expands any
 unambiguous long-option abbreviation before it executes anything (`git status --shor` runs
@@ -93,15 +97,32 @@ options whose argument is *optional* are read only in the attached form, so Git 
 token as a real option — this is why `git diff -U` is not a value flag at all (`--unified=<n>` is
 the allowlisted spelling) and why no short value flag may be added for an optional-argument option.
 For the same read-boundary reason `git grep --no-index` is unlisted: it drops the index boundary
-and reads untracked and gitignored working-tree files such as `.env.local`.
+and reads untracked and gitignored working-tree files such as `.env.local`. `git worktree` accepts
+the single action `list`, validated as that exact token: a case variant such as `LIST` is refused
+by the wrapper rather than forwarded for Git to reject after a process has already been launched.
+
+Argument *content* is policed separately from argument *shape*. No argument may contain a NUL byte,
+and the literal shell control tokens (`&`, `&&`, `|`, `||`, `;`, `>`, `>>`, `<`, `<<`, `2>`, `2>>`)
+are refused as whole argv elements even though the wrapper never runs a shell — that denial is
+deliberately wider than the launch path strictly needs and is kept as a cheap belt-and-braces rule.
+CR/LF is refused the same way, with one carve-out: a newline is permitted inside the *value* of a
+`gh api` field flag (`-f`, `-F`, `--field`, `--raw-field`), so a multi-line GraphQL document can be
+passed as written. The carve-out is proven positionally from argv — the command must be `gh api`
+(`graphql` included) and the token must be that field flag's own value argument — never from the
+token's shape, and a field flag that is itself another flag's value does not open it. The attached
+`--field=name=value` spelling is not covered, so pass a multi-line query as a separate `-f` value
+argument. Because the child process is launched through argv with no shell, a control character
+inside one field value cannot splice a second command; NUL stays refused everywhere, field values
+included, and a control token in any other argument stays refused.
 
 `ls-remote` is the only remote-touching subcommand. It requires an explicit lowercase `https://`
 repository URL as its first operand: a bare remote name, `ssh://`, `git://`, `file://`, an `ext::`
 helper, or `user@host:path` is refused before any process is launched, because those resolve
 through configuration into an external transport. Every launched Git process additionally pins
-`-c protocol.allow=never -c protocol.https.allow=always -c core.sshCommand= -c diff.external=`
-(command-line `-c` outranks repository, user, and `GIT_CONFIG_PARAMETERS` configuration, so an
-`insteadOf` rewrite cannot reintroduce another transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
+`-c core.fsmonitor=false -c diff.external= -c core.sshCommand= -c protocol.allow=never
+-c protocol.https.allow=always` (command-line `-c` outranks repository, user, and
+`GIT_CONFIG_PARAMETERS` configuration, so an `insteadOf` rewrite cannot reintroduce another
+transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
 `GIT_SSH_VARIANT`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_ALLOW_PROTOCOL`,
 `GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
 `GIT_CONFIG_SYSTEM`, `GIT_EXEC_PATH`, and `GIT_EXTERNAL_DIFF`. `GIT_CONFIG_GLOBAL` and
