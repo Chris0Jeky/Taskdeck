@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   reportBadSuggestion: vi.fn(),
   getBoards: vi.fn(),
   getColumns: vi.fn(),
+  getConfidence: vi.fn(),
   createRevision: vi.fn(),
   getRevisions: vi.fn(),
   getLatestRevision: vi.fn(),
@@ -69,9 +70,9 @@ vi.mock('../../../../api/columnsApi', () => ({
 vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   proposalDeepReviewApi: {
     getProvenance: vi.fn().mockResolvedValue([]),
-    getConfidence: vi
-      .fn()
-      .mockResolvedValue({ overall: 0.84, components: [], note: null, threshold: 0.7, meetsThreshold: true }),
+    // Hoisted so a single test can return a NON-EMPTY components array; the
+    // default below keeps every other test on the empty-breakdown fixture.
+    getConfidence: mocks.getConfidence,
     // Rejected so the CATALOG fallback copy is what renders, not a server string.
     getSideEffects: vi.fn().mockRejectedValue(new Error('unavailable')),
     getConflicts: vi.fn().mockResolvedValue([]),
@@ -175,6 +176,13 @@ describe('PaperReviewView — language', () => {
     mocks.sessionState.userId = 'u-1'
     mocks.getRevisions.mockResolvedValue([])
     mocks.getLatestRevision.mockResolvedValue(null)
+    mocks.getConfidence.mockResolvedValue({
+      overall: 0.84,
+      components: [],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
     i18n.global.locale.value = DEFAULT_LOCALE
   })
 
@@ -249,6 +257,38 @@ describe('PaperReviewView — language', () => {
     expect(wrapper.find('[data-testid="apply-risk-posture"]').text()).toContain(
       'Detalles del riesgo no disponibles',
     )
+  })
+
+  it('re-translates the confidence component label produced before the switch', async () => {
+    // The `Reversibility` wire key is relabelled from the catalogs. Every other
+    // test here fetches `components: []`, so this is the only case that renders
+    // the relabel at all — and it asserts the label follows a locale switch that
+    // happens AFTER the deep-review fetch resolved (#1857).
+    mocks.getConfidence.mockResolvedValue({
+      overall: 0.84,
+      // A server-supplied key rides along: it must stay verbatim in every locale.
+      components: [
+        { key: 'Reversibility', value: 0.92 },
+        { key: 'Evidence density', value: 0.4 },
+      ],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
+
+    const wrapper = await mountView([makeProposal()])
+    const barKeys = () =>
+      wrapper.findAll('.paper-review-author__bar-key').map((n) => n.text())
+
+    expect(barKeys()).toEqual(['Operation safety', 'Evidence density'])
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(barKeys()).toEqual(['Sicurezza delle operazioni', 'Evidence density'])
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(barKeys()).toEqual(['Seguridad de las operaciones', 'Evidence density'])
   })
 
   it('never leaks a raw key path into the rendered surface', async () => {

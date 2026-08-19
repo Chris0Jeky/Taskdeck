@@ -78,6 +78,13 @@ export interface ConfidenceBreakdown {
   threshold: number
 }
 
+/**
+ * Confidence as HELD IN STATE: structurally identical to `ConfidenceBreakdown`,
+ * but every `components[].key` is still the raw backend wire key. Translation
+ * happens in the exposed `computed` (`localizeConfidence`), never at fetch time.
+ */
+type StoredConfidenceBreakdown = ConfidenceBreakdown
+
 export interface ConflictRow {
   tone: 'warn' | 'info' | 'ok'
   key: string
@@ -230,18 +237,45 @@ function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v))
 }
 
-function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
+/**
+ * `Reversibility` is a backend WIRE VALUE — the comparison is never translated.
+ * Only its display relabel is catalog material; every other component key is
+ * server-supplied text this client cannot localise.
+ */
+const REVERSIBILITY_WIRE_KEY = 'Reversibility'
+
+function mapConfidence(dto: ConfidenceBreakdownDto): StoredConfidenceBreakdown {
   return {
     overall: clamp01(dto.overall),
+    // Stored with the WIRE key; `localizeConfidence` relabels at read time.
     components: dto.components.map((c) => ({
-      // `Reversibility` is a backend WIRE VALUE — the comparison is never
-      // translated. Only its display relabel is catalog material; every other
-      // `c.key` is server-supplied text this client cannot localise.
-      key: c.key === 'Reversibility' ? i18n.global.t('review.author.component.operationSafety') : c.key,
+      key: c.key,
       value: clamp01(c.value),
     })),
     note: dto.note ?? undefined,
     threshold: dto.threshold,
+  }
+}
+
+/**
+ * Resolves the one catalog-driven component label. Called from a `computed`,
+ * NOT from the fetch path: `i18n.global.t` reads `i18n.global.locale`
+ * internally, so deriving here is what makes the label follow a language
+ * switch instead of freezing the locale that was active at deep-review load
+ * (ADR-0054 decision 2, #1857 — the same rule `emptySideEffects()` follows).
+ */
+function localizeConfidence(stored: StoredConfidenceBreakdown): ConfidenceBreakdown {
+  return {
+    overall: stored.overall,
+    components: stored.components.map((c) => ({
+      key:
+        c.key === REVERSIBILITY_WIRE_KEY
+          ? i18n.global.t('review.author.component.operationSafety')
+          : c.key,
+      value: c.value,
+    })),
+    note: stored.note,
+    threshold: stored.threshold,
   }
 }
 
@@ -287,7 +321,7 @@ export function usePaperReviewSelectors(
   // null means "nothing loaded" — the computed below then renders the
   // catalog-driven empty shape, so a language switch re-renders the fallback.
   const sideEffectsData: Ref<SideEffects | null> = ref(null)
-  const confidenceData: Ref<ConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
+  const confidenceData: Ref<StoredConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
   const conflictsData: Ref<ConflictRow[]> = ref([])
   const historyData: Ref<HistoryRow[]> = ref([])
   const similarPastData: Ref<SimilarPastRow[]> = ref([])
@@ -364,7 +398,9 @@ export function usePaperReviewSelectors(
   const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
   const evidenceLinks = computed<EvidenceLink[]>(() => evidenceLinksData.value)
   const sideEffects = computed<SideEffects>(() => sideEffectsData.value ?? emptySideEffects())
-  const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
+  const confidenceBreakdown = computed<ConfidenceBreakdown>(() =>
+    localizeConfidence(confidenceData.value),
+  )
   const conflicts = computed<ConflictRow[]>(() => conflictsData.value)
   const history = computed<HistoryRow[]>(() => historyData.value)
   const similarPast = computed<SimilarPastRow[]>(() => similarPastData.value)
