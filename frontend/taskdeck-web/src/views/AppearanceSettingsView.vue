@@ -131,7 +131,7 @@ function selectMode(mode: PaperMode) {
 }
 
 .paper-appearance__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-appearance__title {
@@ -206,7 +206,7 @@ function selectMode(mode: PaperMode) {
 .paper-appearance__hint {
   margin: 0;
   min-height: 1.25rem;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-sm, 12px);
 }
 </style>

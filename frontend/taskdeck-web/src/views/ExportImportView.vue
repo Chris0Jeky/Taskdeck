@@ -495,7 +495,7 @@ function resetWebClipImport() {
 }
 
 .paper-portability__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-portability__title {
@@ -519,7 +519,7 @@ function resetWebClipImport() {
   font-size: var(--t-sm, 12px);
   font-weight: 500;
   cursor: pointer;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   transition: color var(--d-quick, 140ms) var(--ease-paper, ease),
@@ -581,7 +581,7 @@ function resetWebClipImport() {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-portability__input,
@@ -727,7 +727,7 @@ function resetWebClipImport() {
 }
 
 .paper-portability__note-ref {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
   flex-shrink: 0;

@@ -323,7 +323,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 .paper-run-detail__state {
   padding: var(--s-8, 32px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -355,13 +355,13 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 .paper-run-detail__meta {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   white-space: nowrap;
 }
 
 .paper-run-detail__run-summary { margin: var(--s-2, 8px) 0 0; color: var(--ink-2, #3a352d); font-size: var(--t-md, 13.5px); line-height: 1.5; }
 .paper-run-detail__failure { margin: var(--s-2, 8px) 0 0; color: var(--overdue, #8c4a26); font-size: var(--t-md, 13.5px); line-height: 1.5; }
-.paper-run-detail__queued-note { margin: var(--s-2, 8px) 0 0; color: var(--mute, #6c6557); font-size: var(--t-md, 13.5px); line-height: 1.5; }
+.paper-run-detail__queued-note { margin: var(--s-2, 8px) 0 0; color: var(--mute, #635c4e); font-size: var(--t-md, 13.5px); line-height: 1.5; }
 .paper-run-detail__proposal-link { margin-top: var(--s-2, 8px); }
 
 /* Run status badge — mirrors AgentRunsView */
@@ -380,12 +380,12 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 .paper-run-status--error { background: var(--ember-bloom, #a8421f1a); color: var(--ember-deep, #7a2e15); }
 .paper-run-status--warning { background: var(--overdue-tint, #ecd9c4); color: var(--overdue, #8c4a26); }
 .paper-run-status--info { background: var(--ember-tint, #f0d9c8); color: var(--ember-ink, #6e2810); }
-.paper-run-status--neutral { background: var(--paper-2, #ebe5d8); color: var(--mute, #6c6557); }
+.paper-run-status--neutral { background: var(--paper-2, #ebe5d8); color: var(--mute, #635c4e); }
 
 /* Timeline */
 .paper-run-detail__timeline { margin-top: var(--s-6, 24px); }
 .paper-run-detail__timeline-title { margin: 0 0 var(--s-4, 16px); font-size: var(--t-lg, 18px); }
-.paper-run-detail__timeline-empty { color: var(--mute, #6c6557); padding: var(--s-6, 24px); text-align: center; }
+.paper-run-detail__timeline-empty { color: var(--mute, #635c4e); padding: var(--s-6, 24px); text-align: center; }
 
 .paper-timeline { list-style: none; padding: 0; margin: 0; position: relative; }
 .paper-timeline::before {
@@ -423,8 +423,8 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 
 .paper-timeline__header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3, 12px); }
 .paper-timeline__event-type { font-weight: 600; color: var(--ink-deep, #0a0908); font-size: var(--t-md, 13.5px); }
-.paper-timeline__time { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #6c6557); white-space: nowrap; }
-.paper-timeline__seq { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #6c6557); margin-top: var(--s-1, 4px); }
+.paper-timeline__time { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #635c4e); white-space: nowrap; }
+.paper-timeline__seq { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #635c4e); margin-top: var(--s-1, 4px); }
 
 .paper-timeline__payload {
   margin-top: var(--s-3, 12px);

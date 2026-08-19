@@ -206,7 +206,7 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
 .paper-agent-runs__state {
   padding: var(--s-8, 32px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -292,7 +292,7 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
 
 .paper-agent-runs__summary { margin: 0; font-size: var(--t-md, 13.5px); color: var(--ink-2, #3a352d); line-height: 1.5; }
 .paper-agent-runs__failure { margin: 0; font-size: var(--t-md, 13.5px); color: var(--overdue, #8c4a26); line-height: 1.5; }
-.paper-agent-runs__queued-note { margin: 0; font-size: var(--t-md, 13.5px); color: var(--mute, #6c6557); line-height: 1.5; }
+.paper-agent-runs__queued-note { margin: 0; font-size: var(--t-md, 13.5px); color: var(--mute, #635c4e); line-height: 1.5; }
 
 .paper-agent-runs__meta {
   display: flex;
@@ -300,7 +300,7 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
   gap: var(--s-4, 16px);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-run-status {
@@ -318,5 +318,5 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
 .paper-run-status--error { background: var(--ember-bloom, #a8421f1a); color: var(--ember-deep, #7a2e15); }
 .paper-run-status--warning { background: var(--overdue-tint, #ecd9c4); color: var(--overdue, #8c4a26); }
 .paper-run-status--info { background: var(--ember-tint, #f0d9c8); color: var(--ember-ink, #6e2810); }
-.paper-run-status--neutral { background: var(--paper-2, #ebe5d8); color: var(--mute, #6c6557); }
+.paper-run-status--neutral { background: var(--paper-2, #ebe5d8); color: var(--mute, #635c4e); }
 </style>

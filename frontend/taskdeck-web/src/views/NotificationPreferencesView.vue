@@ -156,7 +156,7 @@ onMounted(() => {
 }
 
 .paper-prefs__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-prefs__title {
@@ -195,7 +195,7 @@ onMounted(() => {
 
 .paper-prefs__group-label {
   margin-top: var(--s-2, 8px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-prefs__toggle-row {

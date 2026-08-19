@@ -125,7 +125,7 @@ function openRuns(agentId: string) {
 .paper-agents__state {
   padding: var(--s-8, 32px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -215,7 +215,7 @@ function openRuns(agentId: string) {
   gap: var(--s-4, 16px);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-agents__meta-item { white-space: nowrap; }
@@ -236,6 +236,6 @@ function openRuns(agentId: string) {
 
 .paper-agents__status-badge--disabled {
   background: var(--paper-2, #ebe5d8);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 </style>

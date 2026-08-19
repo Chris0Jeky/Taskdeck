@@ -437,7 +437,7 @@ onMounted(loadKeys)
 }
 
 .paper-api-keys__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-api-keys__title {
@@ -490,7 +490,7 @@ onMounted(loadKeys)
 
 .paper-api-keys__empty-hint {
   font-size: var(--t-sm, 12px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   text-align: center;
   padding: var(--s-4, 16px);
 }
@@ -536,7 +536,7 @@ onMounted(loadKeys)
 }
 
 .paper-api-keys__meta-label {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   margin-right: var(--s-1, 4px);
 }
 
@@ -570,7 +570,7 @@ onMounted(loadKeys)
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-api-keys__created-display {
@@ -605,12 +605,12 @@ onMounted(loadKeys)
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-api-keys__hint {
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 /* ── Revoke warning ── */

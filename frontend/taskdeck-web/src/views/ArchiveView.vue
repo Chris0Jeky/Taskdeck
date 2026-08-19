@@ -352,7 +352,7 @@ onMounted(() => {
 .paper-archive__helper {
   margin: calc(-1 * var(--s-1, 4px)) 0 var(--s-3, 12px);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-archive__toolbar {
@@ -364,7 +364,7 @@ onMounted(() => {
 .paper-archive__state {
   text-align: center;
   padding: var(--s-6, 24px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-archive__list {
@@ -408,7 +408,7 @@ onMounted(() => {
 .paper-archive__meta {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -426,7 +426,7 @@ onMounted(() => {
 
 .paper-archive__badge--muted {
   background: var(--paper-edge, #e3dac8);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-archive__input {

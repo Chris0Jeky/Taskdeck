@@ -219,7 +219,7 @@ onMounted(() => {
 .cohort-dashboard__loading {
   padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .cohort-dashboard__error {
@@ -278,7 +278,7 @@ onMounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   margin-top: var(--s-1, 4px);
 }
 
@@ -300,7 +300,7 @@ onMounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   border-bottom: 1px solid var(--line, #d8d0bf);
 }
 
@@ -354,7 +354,7 @@ onMounted(() => {
 .cohort-dashboard__empty {
   padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 @media (max-width: 768px) {

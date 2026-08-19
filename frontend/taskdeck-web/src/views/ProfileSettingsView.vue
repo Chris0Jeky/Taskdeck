@@ -381,7 +381,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 }
 
 .paper-profile__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-profile__title {
@@ -443,7 +443,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-profile__info-value {
@@ -493,7 +493,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 
 .paper-profile__status--off {
   background: var(--paper-2, #ebe5d8);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-profile__status--dnt {
@@ -521,7 +521,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-profile__input {
@@ -605,7 +605,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 
 .paper-profile__note {
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   margin-top: var(--s-2, 8px);
   font-style: italic;
 }
@@ -646,7 +646,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 }
 
 .paper-profile__linked-account-provider {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-profile__linked-account-name {
@@ -676,7 +676,7 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 .paper-profile__link-loading {
   padding: var(--s-3, 12px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-sm, 12px);
 }
 

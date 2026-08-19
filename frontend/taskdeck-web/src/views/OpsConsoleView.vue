@@ -529,7 +529,7 @@ function openRoute(path: string) {
 
 .paper-ops__role-title { font-size: var(--t-md, 13.5px); font-weight: 600; color: var(--ink-deep, #0a0908); }
 .paper-ops__role-body { margin-top: 2px; font-size: var(--t-xs, 10.5px); color: var(--ink-2, #3a352d); }
-.paper-ops__role-hint { margin-top: var(--s-1, 4px); font-size: var(--t-xs, 10.5px); color: var(--mute, #6c6557); }
+.paper-ops__role-hint { margin-top: var(--s-1, 4px); font-size: var(--t-xs, 10.5px); color: var(--mute, #635c4e); }
 
 .paper-ops__tabs {
   display: flex;
@@ -546,7 +546,7 @@ function openRoute(path: string) {
   font-size: var(--t-md, 13.5px);
   font-weight: 500;
   cursor: pointer;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
   transition: color var(--d-quick, 140ms) var(--ease-paper, ease);
@@ -587,7 +587,7 @@ function openRoute(path: string) {
   margin-top: 2px;
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-ops__form-group {
@@ -602,7 +602,7 @@ function openRoute(path: string) {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-ops__input,
@@ -650,12 +650,12 @@ function openRoute(path: string) {
 }
 
 .paper-ops__cli-line { white-space: pre-wrap; line-height: 1.5; }
-.paper-ops__cli-placeholder { color: var(--mute, #6c6557); }
+.paper-ops__cli-placeholder { color: var(--mute, #635c4e); }
 
 .paper-ops__run-ref {
   margin-top: var(--s-2, 8px);
   font-family: var(--mono, ui-monospace, monospace);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
 }
 
@@ -717,7 +717,7 @@ function openRoute(path: string) {
 .paper-ops__empty {
   text-align: center;
   padding: var(--s-6, 24px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-ops__empty--panel {
@@ -750,13 +750,13 @@ function openRoute(path: string) {
   font-size: var(--t-xs, 10.5px);
 }
 
-.paper-ops__log-time { color: var(--mute, #6c6557); font-family: var(--mono, ui-monospace, monospace); }
+.paper-ops__log-time { color: var(--mute, #635c4e); font-family: var(--mono, ui-monospace, monospace); }
 .paper-ops__log-level { font-weight: 700; color: var(--ink-deep, #0a0908); }
 .paper-ops__log-source { color: var(--ink-2, #3a352d); }
 .paper-ops__log-message { color: var(--ink, #1a1814); }
 
 .paper-ops__log-correlation {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-family: var(--mono, ui-monospace, monospace);
   white-space: nowrap;
   overflow: hidden;

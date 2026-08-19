@@ -475,7 +475,7 @@ watch([unreadOnly, activeBoardId], () => {
 }
 
 .paper-notifications__empty {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   padding: var(--s-6, 24px) 0;
 }
 
@@ -492,7 +492,7 @@ watch([unreadOnly, activeBoardId], () => {
 
 .paper-notifications__time-header {
   margin: var(--s-4, 16px) 0 var(--s-3, 12px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-notifications__group-summary {
@@ -520,7 +520,7 @@ watch([unreadOnly, activeBoardId], () => {
 .paper-notifications__group-hint {
   margin-left: auto;
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-notifications__collapse-btn {
@@ -545,7 +545,7 @@ watch([unreadOnly, activeBoardId], () => {
   border-radius: var(--r-3, 6px);
   /* Per-side, never the `border` / `border-color` shorthand. Vue scopes these
      rules to `.paper-notifications__row[data-v-…]` (0,2,0), which outranks the
-     single-class `border-l-4 border-l-*` utilities `typeBorderClass` puts on
+     single-class `td-notify-stripe--*` classes `typeBorderClass` puts on
      the same element (0,1,0) — a shorthand here silently erases the per-type
      accent stripe, which is information, not decoration. The left edge is left
      undeclared so those utilities own it (Tailwind preflight supplies
@@ -573,6 +573,6 @@ watch([unreadOnly, activeBoardId], () => {
   gap: var(--s-3, 12px);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 </style>

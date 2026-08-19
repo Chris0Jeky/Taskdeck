@@ -133,7 +133,7 @@ onMounted(async () => {
 }
 
 .paper-activity__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-activity__title {

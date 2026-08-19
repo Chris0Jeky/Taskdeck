@@ -484,7 +484,7 @@ watch(viewDate, fetchCalendar)
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
   letter-spacing: 0.04em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 /* ── Loading / error / empty states ── */
@@ -492,7 +492,7 @@ watch(viewDate, fetchCalendar)
 .paper-calendar__placeholder {
   padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-calendar__alert {
@@ -549,7 +549,7 @@ watch(viewDate, fetchCalendar)
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   text-align: center;
 }
 
@@ -643,7 +643,7 @@ watch(viewDate, fetchCalendar)
 .paper-calendar__more {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   padding: 0 var(--s-2, 8px);
 }
 
@@ -680,7 +680,7 @@ watch(viewDate, fetchCalendar)
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
   letter-spacing: 0.04em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-timeline-group__cards {
@@ -785,7 +785,7 @@ watch(viewDate, fetchCalendar)
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
   letter-spacing: 0.04em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-timeline-card__block-reason {

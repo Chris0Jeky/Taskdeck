@@ -24,7 +24,19 @@
   --ink:          #1a1814;
   --ink-deep:     #0a0908;
   --ink-2:        #3a352d;
-  --mute:         #6c6557;
+  /*
+   * `--mute` and `--faint` are two rungs of one ink ladder, and they used to be
+   * the SAME colour here (#6c6557) while `.paper-night` kept them a real step
+   * apart (#9a8f7a / #8f846f) — so light Paper silently lost a rung (#1817).
+   * The rung is restored by darkening `--mute` rather than lightening
+   * `--faint`: `--faint` measures 4.60:1 on `--paper-2`, the darkest ground
+   * small text sits on, so it has ~0.1 of AA headroom and cannot move.
+   * Darkening `--mute` only ever raises contrast.  #635c4e puts the two rungs
+   * 1.15:1 apart, matching the night ladder's own step, and holds 6.1:1 on
+   * `--paper` / 5.3:1 on `--paper-2` / 4.9:1 on `--paper-edge`.
+   * Pinned by `tests/paper-ink-ladder-contrast.spec.ts`.
+   */
+  --mute:         #635c4e;
   /* Small text uses this token, so it must clear 4.5:1 on the darkest Paper surface. */
   --faint:        #6c6557;
   --whisper:      #c2bba8;
