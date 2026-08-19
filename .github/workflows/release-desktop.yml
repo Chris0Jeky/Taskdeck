@@ -687,8 +687,10 @@ jobs:
                 printf 'Uploaded %s (attempt %s).\n' "${asset}" "${attempt}"
                 break
               fi
-              printf '::warning::Upload of %s failed (attempt %s/3); retrying.\n' "${asset}" "${attempt}"
-              sleep "$((attempt * 10))"
+              printf '::warning::Upload of %s failed (attempt %s/3).\n' "${asset}" "${attempt}"
+              if [ "${attempt}" -lt 3 ]; then
+                sleep "$((attempt * 10))"
+              fi
             done
             if [ "${uploaded}" -ne 1 ]; then
               printf '::error::Failed to upload %s after 3 attempts; the release stays a draft.\n' "${asset}"
@@ -697,6 +699,9 @@ jobs:
           done
           printf 'All %s release assets uploaded.\n' "${#assets[@]}"
 
+      # `--draft=false` leaves the "latest release" choice to GitHub's default
+      # (semver/date based), which is what the previous single `gh release create`
+      # did too — this step does not change which release is marked latest.
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
