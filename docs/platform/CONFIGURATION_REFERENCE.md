@@ -21,6 +21,7 @@ Source files used to build this reference:
 ## Table of contents
 
 - [Conventions](#conventions)
+- [Product version](#product-version)
 - [JWT and authentication](#jwt-and-authentication)
   - [`Jwt`](#jwt)
   - [`GitHubOAuth`](#githuboauth)
@@ -81,6 +82,34 @@ Source files used to build this reference:
 - Arrays may be provided either as a JSON array or a comma-separated string
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
+
+## Product version
+
+The product version is **not configurable** — it is stamped into the assemblies
+at build time and only read at runtime. It is documented here because it is the
+answer to "what version am I running?" for a self-hoster.
+
+`backend/Directory.Build.props` sets `Version` for every backend project.
+Release workflows override it from the `v*` release tag with the leading `v`
+stripped:
+
+| Build | Injection | Reported version |
+| --- | --- | --- |
+| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v>` in `.github/workflows/release-desktop.yml` | e.g. `0.1.0` |
+| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Rehearsal dispatch, local build, `docker build`, CI | none | `0.0.0-dev` |
+
+Where to read it:
+
+- `GET /health/live` → `version` (anonymous, cheapest probe)
+- `GET /health/ready` → `version`
+- `taskdeck --version` → `{"version":"…"}` (answered before any configuration,
+  database, or migration work, so it still works on a broken data directory)
+- Container image OCI labels → `org.opencontainers.image.version`
+  (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <image>`)
+
+A reported `0.0.0-dev` means the binary was built without a release version
+injected — it is not a released artefact.
 
 ## Startup validation
 
