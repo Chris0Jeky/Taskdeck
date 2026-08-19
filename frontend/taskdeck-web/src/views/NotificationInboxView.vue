@@ -395,11 +395,17 @@ watch([unreadOnly, activeBoardId], () => {
    Styled against the Paper token system (--paper, --ink, --ember families).
    Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
    surface legible if rendered outside the Paper shell.  The per-type accent
-   classes still come from `composables/useNotificationGrouping.ts` (shared
-   with the notification bell) and are intentionally untouched here. */
+   stripe still comes from `typeBorderClass` in
+   `composables/useNotificationGrouping.ts` and is intentionally untouched:
+   card rules below therefore declare borders PER SIDE and leave the left edge
+   entirely undeclared (see `.paper-notifications__row`). */
 
 .paper-notifications {
   font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 
@@ -495,7 +501,10 @@ watch([unreadOnly, activeBoardId], () => {
   padding: var(--s-4, 16px);
   margin-bottom: var(--s-3, 12px);
   border-radius: var(--r-3, 6px);
-  border: 1px solid var(--line, #d8d0bf);
+  /* Left edge deliberately undeclared — see `.paper-notifications__row`. */
+  border-top: 1px solid var(--line, #d8d0bf);
+  border-right: 1px solid var(--line, #d8d0bf);
+  border-bottom: 1px solid var(--line, #d8d0bf);
   background: var(--paper-card, #fbf7ee);
   box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
   cursor: pointer;
@@ -534,12 +543,26 @@ watch([unreadOnly, activeBoardId], () => {
   padding: var(--s-4, 16px);
   margin-bottom: var(--s-3, 12px);
   border-radius: var(--r-3, 6px);
-  border: 1px solid var(--line, #d8d0bf);
+  /* Per-side, never the `border` / `border-color` shorthand. Vue scopes these
+     rules to `.paper-notifications__row[data-v-…]` (0,2,0), which outranks the
+     single-class `border-l-4 border-l-*` utilities `typeBorderClass` puts on
+     the same element (0,1,0) — a shorthand here silently erases the per-type
+     accent stripe, which is information, not decoration. The left edge is left
+     undeclared so those utilities own it (Tailwind preflight supplies
+     `border-style: solid`), exactly as before the Paper restyle. */
+  border-top: 1px solid var(--line, #d8d0bf);
+  border-right: 1px solid var(--line, #d8d0bf);
+  border-bottom: 1px solid var(--line, #d8d0bf);
   background: var(--paper-card, #fbf7ee);
   box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
 }
 
-.paper-notifications__row--unread { border-color: var(--ember, #a8421f); }
+/* Unread also stays per-side: `border-color` would repaint the type stripe. */
+.paper-notifications__row--unread {
+  border-top-color: var(--ember, #a8421f);
+  border-right-color: var(--ember, #a8421f);
+  border-bottom-color: var(--ember, #a8421f);
+}
 
 .paper-notifications__row-title { font-weight: 600; color: var(--ink-deep, #0a0908); }
 .paper-notifications__row-message { color: var(--ink-2, #3a352d); font-size: var(--t-md, 13.5px); }
