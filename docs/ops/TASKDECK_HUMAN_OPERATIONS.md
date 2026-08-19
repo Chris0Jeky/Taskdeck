@@ -39,27 +39,29 @@ Use it alongside the Codex execution plan.
 ## A1) GitHub repo settings (branch protections + required checks)
 Codex cannot reliably configure GitHub repository settings unless you explicitly delegate admin access, and it's risky.
 
-Do in GitHub UI:
-- Protect `main` without requiring PR approval or a CODEOWNERS/owner click. `CODEOWNERS` is advisory routing only; the absence of a requested owner is not merge eligibility.
-- There is no aggregate required-check context. If branch protection is configured, select the exact
-  check-run contexts emitted by the current `CI` workflow (including matrix suffixes):
-  - `Docs Governance / Docs Governance`
-  - `Docs Governance / Worktree Helper (Windows PowerShell)`
-  - `Backend Architecture / Backend Architecture`
-  - `Backend Unit / Backend Unit (ubuntu-latest)`
-  - `Backend Unit / Backend Unit (windows-latest)`
-  - `API Integration / API Integration (ubuntu-latest)`
-  - `API Integration / API Integration (windows-latest)`
-  - `Migration Validation / Migration Validation`
-  - `Frontend Unit / Frontend Unit (ubuntu-latest)`
-  - `Frontend Unit / Frontend Unit (windows-latest)`
-  - `Paper Color Audit / Paper Color Audit`
-  - `Container Images / Container Images`
-  - `Secret Scan / Gitleaks Scan` (pull-request events; enforcing)
-  - `E2E Smoke / E2E Smoke`
-- `Dependency Security / Dependency Security Signals` and `SAST Scan / SAST Scan (Semgrep)` are
-  current advisory contexts: they run in the required workflow but remain non-blocking while their
-  baselines are remediated. `DCO (advisory)` is also non-blocking.
+**As configured on `main` (verified 2026-08-19, `#1173`; see also ADR-0052 and `docs/STATUS.md`).**
+This is a record of live state, not a wish list — change it only after re-reading the live
+protection settings.
+- Classic branch protection is enabled: `required_approving_review_count: 0` (no PR approval and no
+  CODEOWNERS/owner click), `enforce_admins: false`, force-push and deletion disabled.
+  `CODEOWNERS` is advisory review routing only; the absence of a requested owner is not merge
+  eligibility.
+- There is no aggregate required-check context — `ci-required` itself is **not** a required context.
+  The required contexts are exactly these three PR-head check-run names (the security scans):
+  - `Dependency Security / Dependency Security Signals`
+  - `SAST Scan / SAST Scan (Semgrep)`
+  - `Secret Scan / Gitleaks Scan`
+- CodeQL default setup is currently **disabled** (turned off 2026-08-19 after its checks hung).
+  No CodeQL context may be listed as required or expected until re-enablement lands; that is
+  tracked in `#1819`.
+- Every other `ci-required.yml` lane (Docs Governance, Backend Architecture, Backend Unit, API
+  Integration, Migration Validation, Frontend Unit, Paper Color Audit, Container Images, E2E Smoke)
+  and `DCO (advisory)` still run on every PR and are still read before merge — they are simply not
+  enforced by branch protection. Exact-head green `ci-required.yml` remains the repository evidence
+  gate under the canonical review-and-ship pipeline; protection is a floor, not the gate.
+- If you ever add a lane to the required list, use the exact PR-head check-run name including any
+  matrix suffix (for example `Backend Unit / Backend Unit (windows-latest)`), and update this
+  section in the same change.
 - Require up-to-date branches before merge only if desired; it does not replace the exact-head CI, DCO, canonical review-pipeline, or seam-specific evidence requirements.
 
 ## A2) GitHub Project / Execution Board setup
