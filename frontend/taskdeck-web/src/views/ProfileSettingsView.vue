@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { useSessionStore } from '../store/sessionStore'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
 import { useTelemetryStore } from '../store/telemetryStore'
@@ -173,61 +174,64 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
 </script>
 
 <template>
-  <div class="td-settings">
-    <h1 class="td-page-title">Settings</h1>
+  <div class="paper-profile">
+    <header class="paper-profile__hero">
+      <span class="tk-eyebrow paper-profile__eyebrow">Settings</span>
+      <h1 class="tk-h1 paper-profile__title">Settings</h1>
+    </header>
 
     <!-- Profile Section -->
-    <section class="td-settings__section">
-      <h2 class="td-section-title">Profile</h2>
-      <div class="td-info-grid">
-        <div class="td-info-row">
-          <span class="td-info-label">Username</span>
-          <span class="td-info-value">{{ session.username || '—' }}</span>
+    <section class="paper-profile__panel">
+      <h2 class="tk-h3 paper-profile__panel-title">Profile</h2>
+      <div class="paper-profile__info-grid">
+        <div class="paper-profile__info-row">
+          <span class="paper-profile__info-label">Username</span>
+          <span class="paper-profile__info-value">{{ session.username || '—' }}</span>
         </div>
-        <div class="td-info-row">
-          <span class="td-info-label">Email</span>
-          <span class="td-info-value">{{ session.email || '—' }}</span>
+        <div class="paper-profile__info-row">
+          <span class="paper-profile__info-label">Email</span>
+          <span class="paper-profile__info-value">{{ session.email || '—' }}</span>
         </div>
-        <div class="td-info-row">
-          <span class="td-info-label">User ID</span>
-          <span class="td-info-value td-mono">{{ session.userId || '—' }}</span>
+        <div class="paper-profile__info-row">
+          <span class="paper-profile__info-label">User ID</span>
+          <span class="paper-profile__info-value paper-profile__mono">{{ session.userId || '—' }}</span>
         </div>
-        <div class="td-info-row">
-          <span class="td-info-label">Role</span>
-          <span class="td-info-value">{{ roleLabel }}</span>
+        <div class="paper-profile__info-row">
+          <span class="paper-profile__info-label">Role</span>
+          <span class="paper-profile__info-value">{{ roleLabel }}</span>
         </div>
-        <div class="td-info-row td-info-row--stacked">
-          <span class="td-info-label">Ops Access</span>
-          <span class="td-info-value">{{ opsCapabilitySummary }}</span>
+        <div class="paper-profile__info-row paper-profile__info-row--stacked">
+          <span class="paper-profile__info-label">Ops Access</span>
+          <span class="paper-profile__info-value">{{ opsCapabilitySummary }}</span>
         </div>
       </div>
     </section>
 
     <!-- Linked Accounts Section -->
-    <section v-if="githubAvailable && !isDemoMode" class="td-settings__section">
-      <h2 class="td-section-title">Linked Accounts</h2>
-      <p class="td-section-desc">Connect your GitHub account to sign in with GitHub.</p>
+    <section v-if="githubAvailable && !isDemoMode" class="paper-profile__panel">
+      <h2 class="tk-h3 paper-profile__panel-title">Linked Accounts</h2>
+      <p class="paper-profile__panel-desc">Connect your GitHub account to sign in with GitHub.</p>
 
-      <div v-if="linkError" class="td-alert td-alert--error" role="alert">{{ linkError }}</div>
-      <div v-if="linkSuccess" class="td-alert td-alert--success" role="status">{{ linkSuccess }}</div>
-      <div v-if="linkingGitHub" class="td-link-loading">Linking GitHub account...</div>
+      <div v-if="linkError" class="paper-profile__alert paper-profile__alert--error" role="alert">{{ linkError }}</div>
+      <div v-if="linkSuccess" class="paper-profile__alert paper-profile__alert--success" role="status">{{ linkSuccess }}</div>
+      <div v-if="linkingGitHub" class="paper-profile__link-loading">Linking GitHub account...</div>
 
-      <div v-if="isGitHubLinked && gitHubAccount" class="td-linked-account">
-        <div class="td-linked-account__info">
+      <div v-if="isGitHubLinked && gitHubAccount" class="paper-profile__linked-account">
+        <div class="paper-profile__linked-account-info">
           <img
             v-if="gitHubAccount.avatarUrl"
             :src="gitHubAccount.avatarUrl"
             alt="GitHub avatar"
-            class="td-linked-account__avatar"
+            class="paper-profile__linked-account-avatar"
           />
-          <div class="td-linked-account__details">
-            <span class="td-linked-account__provider">GitHub</span>
-            <span class="td-linked-account__name">{{ gitHubAccount.displayName || gitHubAccount.providerUserId }}</span>
+          <div class="paper-profile__linked-account-details">
+            <span class="tk-eyebrow paper-profile__linked-account-provider">GitHub</span>
+            <span class="paper-profile__linked-account-name">{{ gitHubAccount.displayName || gitHubAccount.providerUserId }}</span>
           </div>
         </div>
         <button
           type="button"
-          class="td-btn td-btn--danger-outline"
+          class="paper-profile__danger-btn"
           :disabled="unlinking"
           @click="handleUnlinkGitHub"
         >
@@ -235,59 +239,59 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
         </button>
       </div>
 
-      <div v-else-if="!linkingGitHub" class="td-link-action">
-        <button
-          type="button"
-          class="td-btn td-btn--github"
-          @click="startGitHubLink"
-        >
-          <svg class="td-github-icon" viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-          </svg>
+      <div v-else-if="!linkingGitHub" class="paper-profile__link-action">
+        <PaperHLBtn class="paper-profile__github-btn" @click="startGitHubLink">
+          <template #icon>
+            <svg class="paper-profile__github-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+              <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+          </template>
           Link GitHub Account
-        </button>
+        </PaperHLBtn>
       </div>
     </section>
 
     <!-- Change Password Section -->
-    <section class="td-settings__section">
-      <h2 class="td-section-title">Change Password</h2>
-      <form @submit.prevent="handleChangePassword" class="td-settings__form">
-        <div v-if="passwordError" class="td-alert td-alert--error" role="alert">{{ passwordError }}</div>
-        <div v-if="passwordSuccess" class="td-alert td-alert--success" role="status">Password changed successfully.</div>
+    <section class="paper-profile__panel">
+      <h2 class="tk-h3 paper-profile__panel-title">Change Password</h2>
+      <form @submit.prevent="handleChangePassword" class="paper-profile__form">
+        <div v-if="passwordError" class="paper-profile__alert paper-profile__alert--error" role="alert">{{ passwordError }}</div>
+        <div v-if="passwordSuccess" class="paper-profile__alert paper-profile__alert--success" role="status">Password changed successfully.</div>
 
-        <div class="td-form-group">
-          <label for="current-pw" class="td-label">Current Password</label>
-          <input id="current-pw" v-model="currentPassword" type="password" class="td-input" autocomplete="current-password" />
+        <div class="paper-profile__form-group">
+          <label for="current-pw" class="paper-profile__label">Current Password</label>
+          <input id="current-pw" v-model="currentPassword" type="password" class="paper-profile__input" autocomplete="current-password" />
         </div>
-        <div class="td-form-group">
-          <label for="new-pw" class="td-label">New Password</label>
-          <input id="new-pw" v-model="newPassword" type="password" class="td-input" autocomplete="new-password" />
+        <div class="paper-profile__form-group">
+          <label for="new-pw" class="paper-profile__label">New Password</label>
+          <input id="new-pw" v-model="newPassword" type="password" class="paper-profile__input" autocomplete="new-password" />
         </div>
-        <div class="td-form-group">
-          <label for="confirm-pw" class="td-label">Confirm New Password</label>
-          <input id="confirm-pw" v-model="confirmNewPassword" type="password" class="td-input" autocomplete="new-password" />
+        <div class="paper-profile__form-group">
+          <label for="confirm-pw" class="paper-profile__label">Confirm New Password</label>
+          <input id="confirm-pw" v-model="confirmNewPassword" type="password" class="paper-profile__input" autocomplete="new-password" />
         </div>
-        <button type="submit" class="td-btn td-btn--primary" :disabled="submitting">
-          {{ submitting ? 'Changing...' : 'Change Password' }}
-        </button>
+        <div class="paper-profile__actions">
+          <PaperHLBtn type="submit" variant="ember" :disabled="submitting">
+            {{ submitting ? 'Changing...' : 'Change Password' }}
+          </PaperHLBtn>
+        </div>
       </form>
     </section>
 
     <!-- Telemetry & Privacy Section -->
-    <section class="td-settings__section">
-      <h2 class="td-section-title">Telemetry &amp; Privacy</h2>
-      <p class="td-section-desc">
+    <section class="paper-profile__panel">
+      <h2 class="tk-h3 paper-profile__panel-title">Telemetry &amp; Privacy</h2>
+      <p class="paper-profile__panel-desc">
         Taskdeck can collect anonymous usage data to help improve the product.
         No personal information, card content, board names, or user-generated text is ever collected.
         Telemetry is <strong>off by default</strong> and requires your explicit opt-in.
       </p>
-      <p v-if="telemetry.privacySignalActive" class="td-telemetry-status td-telemetry-status--dnt">
+      <p v-if="telemetry.privacySignalActive" class="paper-profile__status paper-profile__status--dnt">
         Your browser has Do Not Track or Global Privacy Control enabled.
         Telemetry consent is not auto-restored across sessions. You may still opt in below.
       </p>
-      <div class="td-flag-row">
-        <label for="telemetry-consent" class="td-flag-label">
+      <div class="paper-profile__flag-row">
+        <label for="telemetry-consent" class="paper-profile__flag-label">
           Enable anonymous telemetry
         </label>
         <input
@@ -295,25 +299,25 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
           type="checkbox"
           :checked="telemetry.consentGiven"
           @change="telemetry.setConsent(($event.target as HTMLInputElement).checked)"
-          class="td-checkbox"
+          class="paper-profile__checkbox"
         />
       </div>
-      <p v-if="telemetry.consentGiven" class="td-telemetry-status td-telemetry-status--on">
+      <p v-if="telemetry.consentGiven" class="paper-profile__status paper-profile__status--on">
         Telemetry is enabled. Anonymous usage events will be sent periodically.
       </p>
-      <p v-else class="td-telemetry-status td-telemetry-status--off">
+      <p v-else class="paper-profile__status paper-profile__status--off">
         Telemetry is disabled. No usage data is collected or sent.
       </p>
-      <details class="td-telemetry-details">
-        <summary class="td-telemetry-summary">What data is collected?</summary>
-        <ul class="td-telemetry-list">
+      <details class="paper-profile__details">
+        <summary class="paper-profile__summary">What data is collected?</summary>
+        <ul class="paper-profile__list">
           <li>Page navigation events (which pages are visited, not content)</li>
           <li>Feature usage counts (captures, proposals, board loads)</li>
           <li>Error codes (no error messages or stack traces)</li>
           <li>Workspace mode and app version</li>
           <li>Anonymous session ID (rotated on each app restart)</li>
         </ul>
-        <p class="td-telemetry-note">
+        <p class="paper-profile__note">
           We never collect: card titles, board names, usernames, emails, passwords,
           file paths, or any user-generated content.
         </p>
@@ -321,117 +325,382 @@ const flagLabels: Record<keyof FeatureFlags, string> = {
     </section>
 
     <!-- Feature Flags Section -->
-    <section class="td-settings__section">
-      <h2 class="td-section-title">Feature Flags</h2>
-      <p class="td-section-desc">Toggle feature flags to enable or disable new features.</p>
-      <div class="td-flags-grid">
-        <div v-for="(label, key) in flagLabels" :key="key" class="td-flag-row">
-          <label :for="`flag-${key}`" class="td-flag-label">{{ label }}</label>
+    <section class="paper-profile__panel">
+      <h2 class="tk-h3 paper-profile__panel-title">Feature Flags</h2>
+      <p class="paper-profile__panel-desc">Toggle feature flags to enable or disable new features.</p>
+      <div class="paper-profile__flags-grid">
+        <div v-for="(label, key) in flagLabels" :key="key" class="paper-profile__flag-row">
+          <label :for="`flag-${key}`" class="paper-profile__flag-label">{{ label }}</label>
           <input
             :id="`flag-${key}`"
             type="checkbox"
             :checked="featureFlags.isEnabled(key)"
             @change="featureFlags.setFlag(key, ($event.target as HTMLInputElement).checked)"
-            class="td-checkbox"
+            class="paper-profile__checkbox"
           />
         </div>
       </div>
-      <button class="td-btn td-btn--secondary" @click="featureFlags.resetAll()">Reset All Flags</button>
+      <div class="paper-profile__actions">
+        <PaperHLBtn @click="featureFlags.resetAll()">Reset All Flags</PaperHLBtn>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.td-settings { max-width: 640px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; margin-bottom: var(--td-space-6); color: var(--td-text-primary); }
-.td-settings__section { background: var(--td-surface-primary); border-radius: var(--td-radius-lg); padding: var(--td-space-6); margin-bottom: var(--td-space-4); border: 1px solid var(--td-border-default); }
-.td-section-title { font-size: var(--td-font-lg); font-weight: 600; margin-bottom: var(--td-space-4); color: var(--td-text-primary); }
-.td-section-desc { font-size: var(--td-font-sm); color: var(--td-text-secondary); margin-bottom: var(--td-space-4); }
-.td-info-grid { display: flex; flex-direction: column; gap: var(--td-space-3); }
-.td-info-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; border-bottom: 1px solid var(--td-border-default); }
-.td-info-row--stacked { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--td-space-3); }
-.td-info-label { font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
-.td-info-value { font-size: var(--td-font-sm); color: var(--td-text-primary); }
-.td-mono { font-family: monospace; font-size: var(--td-font-xs); }
-.td-settings__form { display: flex; flex-direction: column; gap: var(--td-space-4); }
-.td-alert { padding: var(--td-space-3); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); }
-.td-alert--error { background: var(--td-color-error-light); color: var(--td-color-error); }
-.td-alert--success { background: var(--td-color-success-light); color: var(--td-color-success); }
-.td-form-group { display: flex; flex-direction: column; gap: var(--td-space-1); }
-.td-label { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-secondary); }
-.td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-base); }
-.td-input:focus { outline: none; border-color: var(--td-border-focus); box-shadow: var(--td-focus-ring); }
-.td-btn { padding: var(--td-space-2) var(--td-space-4); border: none; border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-weight: 600; cursor: pointer; }
-.td-btn--primary { background: var(--td-color-primary); color: var(--td-text-inverse); }
-.td-btn--primary:hover:not(:disabled) { background: var(--td-color-primary-hover); }
-.td-btn--secondary { background: var(--td-surface-tertiary); color: var(--td-text-primary); border: 1px solid var(--td-border-default); margin-top: var(--td-space-4); }
-.td-btn--secondary:hover { background: var(--td-surface-hover); }
-.td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.td-flags-grid { display: flex; flex-direction: column; gap: var(--td-space-3); margin-bottom: var(--td-space-4); }
-.td-flag-row { display: flex; justify-content: space-between; align-items: center; padding: var(--td-space-2) 0; }
-.td-flag-label { font-size: var(--td-font-sm); color: var(--td-text-primary); }
-.td-checkbox { width: 18px; height: 18px; cursor: pointer; }
-.td-telemetry-status { font-size: var(--td-font-sm); margin-top: var(--td-space-3); padding: var(--td-space-2) var(--td-space-3); border-radius: var(--td-radius-md); }
-.td-telemetry-status--on { background: var(--td-color-success-light); color: var(--td-color-success); }
-.td-telemetry-status--off { background: var(--td-surface-tertiary); color: var(--td-text-secondary); }
-.td-telemetry-status--dnt { background: var(--td-color-warning-light, #fef3cd); color: var(--td-color-warning, #856404); }
-.td-telemetry-details { margin-top: var(--td-space-4); }
-.td-telemetry-summary { cursor: pointer; font-size: var(--td-font-sm); color: var(--td-text-secondary); font-weight: 500; }
-.td-telemetry-list { font-size: var(--td-font-sm); color: var(--td-text-secondary); padding-left: var(--td-space-6); margin-top: var(--td-space-2); list-style: disc; }
-.td-telemetry-list li { margin-bottom: var(--td-space-1); }
-.td-telemetry-note { font-size: var(--td-font-xs); color: var(--td-text-tertiary); margin-top: var(--td-space-2); font-style: italic; }
+/* ── Paper & Graphite — ProfileSettingsView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night` in paper-tokens.css and are NOT
+   defined at :root, so outside the Paper shell (Legacy/Obsidian "off" mode)
+   every var() resolves to its literal fallback. The substrate line on the root —
+   `background: var(--paper, #f3eee5)` painted alongside `color: var(--ink,
+   #1a1814)` — is what keeps the text legible in Legacy: without it the near-black
+   ink lands on AppShell's Obsidian `--td-surface-base` (#131313) at ~1.05:1. It
+   is a no-op under `.paper` / `.paper-night`, where `.td-shell--paper
+   .td-content` already paints `var(--paper)`.
+   Paper typography (the `tk-*` classes) is scoped as `.paper .tk-*` /
+   `.paper-night .tk-*` and intentionally does NOT render in Legacy mode — only
+   legibility is preserved there, not the Paper type ladder. */
 
-/* GitHub button styling */
-.td-btn--github {
+.paper-profile {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--td-space-2);
-  width: 100%;
-  padding: var(--td-space-2) var(--td-space-4);
-  background: #24292f;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--td-radius-md);
-  font-size: var(--td-font-base);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--td-transition-fast);
+  flex-direction: column;
+  gap: var(--s-4, 16px);
+  max-width: 640px;
+  font-family: var(--sans, system-ui, sans-serif);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
-.td-btn--github:hover:not(:disabled) { background: #2f363d; }
-.td-btn--github:disabled { opacity: 0.4; cursor: not-allowed; }
-.td-github-icon { flex-shrink: 0; }
 
-/* Danger outline button for unlinking */
-.td-btn--danger-outline {
-  background: transparent;
-  color: var(--td-color-error);
-  border: 1px solid var(--td-color-error);
-  padding: var(--td-space-1) var(--td-space-3);
-  border-radius: var(--td-radius-md);
-  font-size: var(--td-font-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--td-transition-fast);
+/* ── Hero ── */
+
+.paper-profile__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
 }
-.td-btn--danger-outline:hover:not(:disabled) { background: var(--td-color-error-light); }
-.td-btn--danger-outline:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* Linked account display */
-.td-linked-account {
+.paper-profile__eyebrow {
+  color: var(--mute, #6c6557);
+}
+
+.paper-profile__title {
+  margin: 0;
+  font-size: var(--t-h2, 32px);
+}
+
+/* ── Panels ── */
+
+.paper-profile__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3, 12px);
+  padding: var(--s-5, 20px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+.paper-profile__panel-title {
+  margin: 0;
+  font-size: var(--t-lg, 18px);
+  color: var(--ink-deep, #0a0908);
+}
+
+.paper-profile__panel-desc {
+  margin: 0;
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
+  line-height: 1.55;
+}
+
+/* ── Read-only info rows ── */
+
+.paper-profile__info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+}
+
+.paper-profile__info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--td-space-3);
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-md);
-  background: var(--td-surface-container);
+  gap: var(--s-3, 12px);
+  padding: var(--s-2, 8px) 0;
+  border-bottom: 1px solid var(--line-soft, #e3dcc9);
 }
-.td-linked-account__info { display: flex; align-items: center; gap: var(--td-space-3); }
-.td-linked-account__avatar { width: 32px; height: 32px; border-radius: 50%; }
-.td-linked-account__details { display: flex; flex-direction: column; }
-.td-linked-account__provider { font-size: var(--td-font-xs); color: var(--td-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; }
-.td-linked-account__name { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-primary); }
-.td-link-action { margin-top: var(--td-space-2); }
-.td-link-loading { padding: var(--td-space-3); text-align: center; color: var(--td-text-secondary); font-size: var(--td-font-sm); }
+
+.paper-profile__info-row--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2, 8px);
+}
+
+.paper-profile__info-label {
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #6c6557);
+}
+
+.paper-profile__info-value {
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink, #1a1814);
+}
+
+.paper-profile__mono {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+}
+
+/* ── Alerts & status strips ── */
+
+.paper-profile__alert {
+  padding: var(--s-3, 12px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
+  font-size: var(--t-md, 13.5px);
+}
+
+.paper-profile__alert--error {
+  border-color: var(--overdue, #8c4a26);
+  background: var(--overdue-tint, #ecd9c4);
+  color: var(--overdue, #8c4a26);
+}
+
+.paper-profile__alert--success {
+  border-color: var(--applied, #4a6b3f);
+  background: var(--applied-tint, #d8e0ce);
+  color: var(--applied, #4a6b3f);
+}
+
+.paper-profile__status {
+  margin: 0;
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
+  font-size: var(--t-sm, 12px);
+}
+
+.paper-profile__status--on {
+  border-color: var(--applied, #4a6b3f);
+  background: var(--applied-tint, #d8e0ce);
+  color: var(--applied, #4a6b3f);
+}
+
+.paper-profile__status--off {
+  background: var(--paper-2, #ebe5d8);
+  color: var(--mute, #6c6557);
+}
+
+.paper-profile__status--dnt {
+  border-color: var(--overdue, #8c4a26);
+  background: var(--overdue-tint, #ecd9c4);
+  color: var(--overdue, #8c4a26);
+}
+
+/* ── Forms ── */
+
+.paper-profile__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4, 16px);
+}
+
+.paper-profile__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+}
+
+.paper-profile__label {
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #6c6557);
+}
+
+.paper-profile__input {
+  width: 100%;
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
+  transition: border-color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-profile__input:focus {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
+}
+
+.paper-profile__actions {
+  display: flex;
+  gap: var(--s-2, 8px);
+  flex-wrap: wrap;
+}
+
+/* ── Toggles (telemetry + feature flags) ── */
+
+.paper-profile__flags-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+}
+
+.paper-profile__flag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3, 12px);
+  padding: var(--s-2, 8px) 0;
+}
+
+.paper-profile__flag-label {
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink, #1a1814);
+  cursor: pointer;
+}
+
+.paper-profile__checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ember, #a8421f);
+  cursor: pointer;
+}
+
+/* ── Telemetry disclosure ── */
+
+.paper-profile__details {
+  border-top: 1px solid var(--line-soft, #e3dcc9);
+  padding-top: var(--s-3, 12px);
+}
+
+.paper-profile__summary {
+  cursor: pointer;
+  font-size: var(--t-sm, 12px);
+  font-weight: 600;
+  color: var(--ink-2, #3a352d);
+}
+
+.paper-profile__list {
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
+  padding-left: var(--s-6, 24px);
+  margin-top: var(--s-2, 8px);
+  list-style: disc;
+}
+
+.paper-profile__list li {
+  margin-bottom: var(--s-1, 4px);
+}
+
+.paper-profile__note {
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #6c6557);
+  margin-top: var(--s-2, 8px);
+  font-style: italic;
+}
+
+/* ── Linked accounts ──
+   The GitHub action is a Paper hairline button (PaperHLBtn) with the octocat
+   mark drawn in currentColor rather than GitHub's brand-black fill: Paper keeps
+   a single accent per surface, and the password form already owns the ember. */
+
+.paper-profile__linked-account {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3, 12px);
+  padding: var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+}
+
+.paper-profile__linked-account-info {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3, 12px);
+}
+
+.paper-profile__linked-account-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line, #d8d0bf);
+}
+
+.paper-profile__linked-account-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+}
+
+.paper-profile__linked-account-provider {
+  color: var(--mute, #6c6557);
+}
+
+.paper-profile__linked-account-name {
+  font-size: var(--t-md, 13.5px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
+}
+
+.paper-profile__link-action {
+  margin-top: var(--s-1, 4px);
+}
+
+/* Passed as a fallthrough `class` to <PaperHLBtn>, whose single root IS the
+   <button>; Vue stamps this component's scope id onto a child component's root
+   node, so this rule reaches it. Restores the full-bleed geometry the pre-#1779
+   `.td-btn--github { width: 100%; justify-content: center }` rule supplied —
+   `.pbtn` itself is only `inline-flex; align-items: center`. */
+.paper-profile__github-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.paper-profile__github-icon {
+  flex-shrink: 0;
+}
+
+.paper-profile__link-loading {
+  padding: var(--s-3, 12px);
+  text-align: center;
+  color: var(--mute, #6c6557);
+  font-size: var(--t-sm, 12px);
+}
+
+/* Destructive action: ember-deep outline, never a saturated red fill. */
+.paper-profile__danger-btn {
+  padding: var(--s-1, 4px) var(--s-3, 12px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--ember-deep, #7a2e15);
+  background: transparent;
+  color: var(--ember-deep, #7a2e15);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-sm, 12px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-profile__danger-btn:hover:not(:disabled) {
+  background: var(--ember-bloom, #a8421f1a);
+}
+
+.paper-profile__danger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 </style>
+

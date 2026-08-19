@@ -17,6 +17,8 @@ public class LlmRequestConfiguration : IEntityTypeConfiguration<LlmRequest>
 
         builder.Property(lr => lr.BoardId);
 
+        builder.Property(lr => lr.TranscriptId);
+
         builder.Property(lr => lr.RequestType)
             .IsRequired()
             .HasMaxLength(100);
@@ -53,9 +55,16 @@ public class LlmRequestConfiguration : IEntityTypeConfiguration<LlmRequest>
             .HasForeignKey(lr => lr.BoardId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne<Transcript>()
+            .WithMany()
+            .HasForeignKey(lr => lr.TranscriptId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Indexes for queue processing
         builder.HasIndex(lr => lr.Status);
         builder.HasIndex(lr => lr.CreatedAt);
         builder.HasIndex(lr => new { lr.UserId, lr.Status });
+        builder.HasIndex(lr => lr.TranscriptId)
+            .IsUnique();
     }
 }

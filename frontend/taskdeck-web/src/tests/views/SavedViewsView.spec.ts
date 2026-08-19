@@ -122,6 +122,17 @@ describe('SavedViewsView', () => {
     expect(wrapper.text()).toContain('Saved Views')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(SavedViewsView)
+    await waitForUi()
+
+    // Root and hero should use the Paper (`paper-views__*`) idiom, and none of
+    // the legacy Obsidian (`td-saved-views__*`) hooks should survive.
+    expect(wrapper.find('.paper-views').exists()).toBe(true)
+    expect(wrapper.find('.paper-views__hero').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-saved-views"]').exists()).toBe(false)
+  })
+
   it('renders default views in the picker', async () => {
     const wrapper = mount(SavedViewsView)
     await waitForUi()
@@ -252,7 +263,7 @@ describe('SavedViewsView', () => {
     const wrapper = mount(SavedViewsView)
     await waitForUi()
 
-    const viewCard = wrapper.findAll('.td-saved-views__card').at(0)
+    const viewCard = wrapper.findAll('.paper-views__card').at(0)
     expect(viewCard).toBeDefined()
     await viewCard!.trigger('click')
     await waitForUi()

@@ -45,7 +45,7 @@ test.describe('Ops Console — CLI Runner', () => {
 
     // Should show error in output or toast notification
     await expect(
-      page.locator('.td-cli-output, .td-toast').getByText(/error/i).first(),
+      page.locator('.paper-ops__cli-output, .td-toast').getByText(/error/i).first(),
     ).toBeVisible()
   })
 
@@ -72,10 +72,10 @@ test.describe('Ops Console — Logs Tab', () => {
     await page.goto('/workspace/ops/logs')
 
     // Logs tab should be active
-    await expect(page.locator('.td-tab--active')).toContainText('Logs')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('Logs')
 
     // Wait for log entries to load
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
   })
 
   test('should filter logs by level', async ({ page, request }) => {
@@ -87,21 +87,21 @@ test.describe('Ops Console — Logs Tab', () => {
     await assertOk(setupResponse, 'setup: run health.check for level filter')
 
     await page.goto('/workspace/ops/logs')
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Filter by Info level
     await page.getByLabel('Log level filter').selectOption('Info')
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     // Wait for filtered entries to load after refresh
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // All visible entries should be Info level
-    const entries = page.locator('.td-log-entry')
+    const entries = page.locator('.paper-ops__log-entry')
     const count = await entries.count()
     expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
-      await expect(entries.nth(i).locator('.td-log-level')).toContainText('Info')
+      await expect(entries.nth(i).locator('.paper-ops__log-level')).toContainText('Info')
     }
   })
 
@@ -114,20 +114,20 @@ test.describe('Ops Console — Logs Tab', () => {
     await assertOk(setupResponse, 'setup: run health.check for source filter')
 
     await page.goto('/workspace/ops/logs')
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Filter by OpsCliService source
     await page.getByLabel('Source filter').fill('OpsCliService')
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
     // Wait for filtered entries to load after refresh
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
 
-    const entries = page.locator('.td-log-entry')
+    const entries = page.locator('.paper-ops__log-entry')
     const count = await entries.count()
     expect(count).toBeGreaterThan(0)
     for (let i = 0; i < count; i++) {
-      await expect(entries.nth(i).locator('.td-log-source')).toContainText('OpsCliService')
+      await expect(entries.nth(i).locator('.paper-ops__log-source')).toContainText('OpsCliService')
     }
   })
 
@@ -159,7 +159,7 @@ test.describe('Ops Console — Logs Tab', () => {
     await assertOk(setupResponse, 'setup: run health.check for clear filters')
 
     await page.goto('/workspace/ops/logs')
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
 
     // Apply a filter that yields no results
     await page.getByLabel('Source filter').fill('NonexistentSource12345')
@@ -170,7 +170,7 @@ test.describe('Ops Console — Logs Tab', () => {
     await page.getByRole('button', { name: 'Clear Filters' }).click()
 
     // Entries should reappear
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
   })
 })
 
@@ -209,8 +209,8 @@ test.describe('Ops Console — Correlation ID Propagation', () => {
     await page.getByLabel('Correlation ID').fill(run.correlationId)
     await page.getByRole('button', { name: 'Refresh', exact: true }).click()
 
-    await expect(page.locator('.td-log-entry').first()).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator('.td-log-correlation').first()).toContainText(run.correlationId)
+    await expect(page.locator('.paper-ops__log-entry').first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('.paper-ops__log-correlation').first()).toContainText(run.correlationId)
   })
 
   test('should return 403 when querying another user correlation via API', async ({ request }) => {
@@ -248,25 +248,25 @@ test.describe('Ops Console — Tab Navigation', () => {
   test('should sync tab state with URL', async ({ page }) => {
     // Start on CLI tab
     await page.goto('/workspace/ops/cli')
-    await expect(page.locator('.td-tab--active')).toContainText('CLI Runner')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('CLI Runner')
 
     // Click Endpoint Explorer tab
     await page.getByRole('button', { name: 'Endpoint Explorer' }).click()
     await expect(page).toHaveURL(/\/workspace\/ops\/endpoints/)
-    await expect(page.locator('.td-tab--active')).toContainText('Endpoint Explorer')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('Endpoint Explorer')
 
     // Click Logs tab
     await page.getByRole('button', { name: 'Logs' }).click()
     await expect(page).toHaveURL(/\/workspace\/ops\/logs/)
-    await expect(page.locator('.td-tab--active')).toContainText('Logs')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('Logs')
 
     // Direct navigation to logs URL
     await page.goto('/workspace/ops/logs')
-    await expect(page.locator('.td-tab--active')).toContainText('Logs')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('Logs')
 
     // Direct navigation to CLI URL
     await page.goto('/workspace/ops/cli')
-    await expect(page.locator('.td-tab--active')).toContainText('CLI Runner')
+    await expect(page.locator('.paper-ops__tab--active')).toContainText('CLI Runner')
   })
 })
 
@@ -284,8 +284,8 @@ test.describe('Ops Console — Endpoint Explorer', () => {
     await page.getByRole('button', { name: 'Send' }).click()
 
     // Verify response panel appears
-    await expect(page.locator('.td-response-panel')).toBeVisible()
-    await expect(page.locator('.td-status-code')).toBeVisible()
+    await expect(page.locator('.paper-ops__response-panel')).toBeVisible()
+    await expect(page.locator('.paper-ops__status-code')).toBeVisible()
   })
 })
 

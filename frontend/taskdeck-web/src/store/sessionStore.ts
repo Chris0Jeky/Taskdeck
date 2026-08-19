@@ -9,6 +9,7 @@ import { getTokenExpiryIso, isTokenExpired } from '../utils/jwt'
 import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession, DEMO_USER } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
+import { proposalDisplayNames } from '../composables/useProposalDisplayNames'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -55,6 +56,7 @@ export const useSessionStore = defineStore('session', () => {
       return
     }
 
+    if (userId.value !== data.user.id) proposalDisplayNames.reset()
     token.value = data.token
     userId.value = data.user.id
     username.value = data.user.username
@@ -72,6 +74,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function clearSession() {
+    proposalDisplayNames.reset()
     isDemo.value = false
     token.value = null
     userId.value = null
@@ -108,6 +111,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function setDemoSession() {
+    if (userId.value !== DEMO_USER.id) proposalDisplayNames.reset()
     tokenStorage.clearAll()
     isDemo.value = true
     token.value = null
@@ -133,6 +137,7 @@ export const useSessionStore = defineStore('session', () => {
     const savedToken = tokenStorage.getToken()
     const session = tokenStorage.getSession()
     if (savedToken && session) {
+      if (userId.value !== session.userId) proposalDisplayNames.reset()
       token.value = savedToken
       userId.value = session.userId
       username.value = session.username

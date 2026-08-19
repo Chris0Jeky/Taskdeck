@@ -1396,6 +1396,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TranscriptId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -1409,6 +1412,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("TranscriptId")
+                        .IsUnique();
 
                     b.HasIndex("UserId", "Status");
 
@@ -1999,6 +2005,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int?>("SpanStart")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TranscriptId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
@@ -2007,7 +2016,12 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasIndex("ProvenanceFieldId");
 
-                    b.ToTable("ProvenanceEvidenceLinks", (string)null);
+                    b.HasIndex("TranscriptId");
+
+                    b.ToTable("ProvenanceEvidenceLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProvenanceEvidenceLinks_TranscriptId", "(\"SourceType\" = 'Transcript' AND \"TranscriptId\" IS NOT NULL) OR (\"SourceType\" <> 'Transcript' AND \"TranscriptId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
@@ -2214,7 +2228,7 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(102400)
+                        .HasMaxLength(200000)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
@@ -2604,6 +2618,11 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("BoardId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Taskdeck.Domain.Entities.Transcript", null)
+                        .WithMany()
+                        .HasForeignKey("TranscriptId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Taskdeck.Domain.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -2723,6 +2742,11 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("ProvenanceFieldId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Transcript", null)
+                        .WithMany()
+                        .HasForeignKey("TranscriptId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>

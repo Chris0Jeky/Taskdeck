@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardAccessView from '../../views/BoardAccessView.vue'
+import boardAccessSource from '../../views/BoardAccessView.vue?raw'
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -141,6 +142,20 @@ describe('BoardAccessView', () => {
     expect(wrapper.text()).toContain('Why use the board selector here?')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    // Root, hero, and panel should use the Paper (`paper-access__*`) idiom, and
+    // none of the legacy Obsidian (`td-access*`) hooks should survive. The
+    // shared WorkspaceHelpCallout keeps its own chrome and is out of scope.
+    expect(wrapper.find('.paper-access').exists()).toBe(true)
+    expect(wrapper.find('.paper-access__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-access__panel').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-access"]').exists()).toBe(false)
+  })
+
   it('fetches the selected board access list when the selector changes', async () => {
     const wrapper = mount(BoardAccessView)
     mountedWrapper = wrapper
@@ -228,6 +243,51 @@ describe('BoardAccessView', () => {
     expect(wrapper.findAll('button').some((node) => node.text() === 'Create or Open Boards')).toBe(true)
   })
 
+  it('grants access by email or username identifier instead of a raw user id', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    const addMember = wrapper.findAll('button').find((node) => node.text() === '+ Add Member')
+    expect(addMember).toBeTruthy()
+    await addMember!.trigger('click')
+    await waitForUi()
+
+    const identifierInput = wrapper.get('#grant-user')
+    expect(identifierInput.attributes('placeholder')).toBe('Enter email or username')
+    // The old raw user-id affordance must be gone.
+    expect(wrapper.find('input[placeholder="Enter user ID"]').exists()).toBe(false)
+
+    await identifierInput.setValue('friend@example.com')
+
+    const grantButton = wrapper.findAll('button').find((node) => node.text().includes('Grant Access'))
+    await grantButton!.trigger('click')
+    await waitForUi()
+
+    expect(permissionsStore.grantAccess).toHaveBeenCalledTimes(1)
+    expect(permissionsStore.grantAccess).toHaveBeenCalledWith('board-1', {
+      identifier: 'friend@example.com',
+      role: 'Viewer',
+    })
+  })
+
+  it('warns and does not grant when the identifier is blank', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    const addMember = wrapper.findAll('button').find((node) => node.text() === '+ Add Member')
+    await addMember!.trigger('click')
+    await waitForUi()
+
+    const grantButton = wrapper.findAll('button').find((node) => node.text().includes('Grant Access'))
+    await grantButton!.trigger('click')
+    await waitForUi()
+
+    expect(toastMocks.warning).toHaveBeenCalledWith('Please enter an email or username.')
+    expect(permissionsStore.grantAccess).not.toHaveBeenCalled()
+  })
+
   it('surfaces the mapped board-load error details', async () => {
     boardsApiMocks.getBoards.mockRejectedValueOnce(new Error('boom'))
 
@@ -236,5 +296,25 @@ describe('BoardAccessView', () => {
     await waitForUi()
 
     expect(toastMocks.error).toHaveBeenCalledWith('Failed to load boards for access management. boom')
+  })
+})
+
+// ── #1808 review (MEDIUM): Legacy ("off") mode substrate guard ──
+// Paper tokens exist only under `.paper` / `.paper-night` (paper-tokens.css), so
+// in Legacy mode this view's `color: var(--ink, …)` resolves to the near-black
+// literal while AppShell's `.td-content` still paints `--td-surface-base`
+// (#131313) — ~1.05:1 on the hero. A root that sets the Paper ink MUST therefore
+// also paint the Paper substrate; that is a no-op under `.paper`/`.paper-night`.
+// Source is read through Vite's `?raw` rather than `node:fs` because
+// `tsconfig.vitest.json` deliberately omits the "node" types.
+// #1815 tracks unifying these per-view assertions into one wave-wide spec.
+describe('BoardAccessView Legacy-mode substrate', () => {
+  it('paints --paper on the root wherever it sets --ink', () => {
+    const rule = boardAccessSource.match(/^\.paper-access \{([\s\S]*?)\}/m)?.[1]
+    expect(rule, '.paper-access root rule').toBeTruthy()
+    // Guard the guard: if the ink declaration were dropped or renamed, the
+    // substrate assertion below would otherwise pass vacuously.
+    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })

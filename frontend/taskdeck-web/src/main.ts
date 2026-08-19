@@ -5,6 +5,9 @@ import App from './App.vue'
 import './style.css'
 import './paper-fonts.css'
 import './paper-tokens.css'
+// Must come after paper-tokens.css: it remaps the legacy Obsidian substrate
+// onto Paper values, scoped under `.paper` / `.paper-night` (ADR-0053, #1778).
+import './paper-legacy-bridge.css'
 import {
   installVueErrorHandler,
   installWindowErrorListeners,

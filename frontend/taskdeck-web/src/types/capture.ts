@@ -51,6 +51,8 @@ export interface CaptureItemSummary {
   textExcerpt: string
   createdAt: string
   processedAt: string | null
+  /** Failure reason surfaced on a FAILED capture so the row can explain what went wrong (#1764). */
+  errorMessage?: string | null
 }
 
 export interface CaptureProvenance {
@@ -65,6 +67,8 @@ export interface CaptureItem extends CaptureItemSummary {
   retryCount: number
   errorMessage?: string | null
   provenance?: CaptureProvenance | null
+  /** Optional while older API instances roll out; absent is conservatively not editable. */
+  canEditSuggestion?: boolean
 }
 
 export interface CreateCaptureItemDto {

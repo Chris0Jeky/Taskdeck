@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../ui'
-import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, canEditSuggestion, triageButtonLabel } from './inboxUtils'
+import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel } from './inboxUtils'
 import type { CaptureItem } from '../../types/capture'
 
 defineProps<{
@@ -96,7 +96,7 @@ const canTriageSelection = canMutateSelection
         <div v-if="loadingDetail" class="td-inbox-detail__spinner">
           <TdSpinner label="Refreshing detail..." />
         </div>
-        <template v-else-if="isEditingSuggestion">
+        <template v-else-if="isEditingSuggestion && selectedItem.canEditSuggestion === true">
           <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
           <textarea
             id="inbox-edit-text"
@@ -138,7 +138,7 @@ const canTriageSelection = canMutateSelection
         <template v-else>
           <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           <button
-            v-if="canEditSuggestion(selectedItem.status)"
+            v-if="selectedItem.canEditSuggestion === true"
             class="td-btn td-btn--secondary td-btn--sm td-inbox-detail__edit-btn"
             data-testid="suggestion-edit-btn"
             @click="emit('start-edit-suggestion')"
@@ -155,8 +155,11 @@ const canTriageSelection = canMutateSelection
       >
         <p class="td-inbox-detail__error-title">Triage failed</p>
         <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-msg">{{ selectedItem.errorMessage }}</p>
-        <p class="td-inbox-detail__error-hint">
+        <p v-if="selectedItem.canEditSuggestion === true" class="td-inbox-detail__error-hint">
           You can edit the text and retry, or ignore this capture if it is no longer needed.
+        </p>
+        <p v-else class="td-inbox-detail__error-hint">
+          Editing is unavailable for this capture. Retry triage or ignore this capture if it is no longer needed.
         </p>
       </TdInlineAlert>
 

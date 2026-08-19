@@ -1,9 +1,9 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-19
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
-**Authority:** work not on this plan's ratified wave list is, by definition, not taken (the finite-work discipline from `COURSE_CORRECTION.md` §1.1 carries over unchanged). New backend surface is allowed only where §7 grants it.
+**Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
 **Evidence base:** `docs/analysis/2026-07-10_revival_assessment.md` (7 code-review dimensions, ~25 adversarially verified claims; market research with live-verified competitor data) plus the 2026-07-10 business research (monetization/licensing/beta-mechanics; sources cited inline below).
 **Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 = `#1311` (amends `#1278`).
 **Issue numbers:** REVIVAL-00 `#1311` · 01 `#1297` · 02 `#1298` · 03 `#1299` · 04 `#1300` · 05 `#1301` · 06 `#1302` · 07 `#1303` · 08 `#1304` · 09 `#1305` · 10 `#1306` · 11 `#1307` · 12 `#1308` · 13 `#1309` · 14 `#1310`.
@@ -67,7 +67,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | **Delivered** by PR `#1329`; issue `#1300` closed |
 | Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | **Delivered** by PR `#1344`; issue `#1301` closed |
 | README revival rewrite + demo GIF + MCP section | REVIVAL-06 | **Delivered** by PR `#1331`; issue `#1302` closed |
-| v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; matches ADR-0044's required image channel |
+| v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | **Shipped 2026-08-19** (q-2 ruling): tag `v0.1.0`, public 4-platform Release + checksums, `ghcr.io/chris0jeky/taskdeck:0.1.0` public with green smoke, render.yaml fixed; issue `#1303` closed, folds #1123 + #1139 (closed). UPGRADING.md + auto-backup spun out → `#1803`; version stamping → `#1804`; release-lane workflow repairs → PR `#1801` |
 | De-stub Today dossier or honest empty states | #1272 (unchanged) | **Delivered** by PR `#1333`; issue closed |
 | Re-point E2E + axe at Paper | #1274 (unchanged) | **Delivered** by PR `#1362`; issue closed |
 | CI keep/kill/gate pass | #1275 (unchanged) | zero always-red lanes |
@@ -113,11 +113,37 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 
 ## 5. What agents need to know (execution contract)
 
-- Every REVIVAL issue body is a self-contained agent brief: context, acceptance criteria, entry-point files, traps, and verification commands. Do not start work that lacks a tracked issue.
-- Review and merge disposition come from the live authority declaration, the global laws, and `review-and-ship`; this plan does not restate tier values, reviewer counts, convergence, or post-push eligibility. Exact-head `ci-required.yml` remains Taskdeck's required CI evidence. When the canonical pipeline requests a Taskdeck-specific lens, prioritize changes touching capture→proposal→apply, auth, migrations, retention, or destructive operations. The former local FULL/LIGHT doctrine is superseded; #1269 owns any remaining Taskdeck-specific intake design.
-- **Intake severity bar** (#1269): new issues only for data loss, silent corruption, security exposure real under the deployment model, or dogfooding/beta-user findings. Everything else is fixed in-PR or recorded as dated accepted-risk.
-- Wave membership is the admission ticket. Review-seeded follow-ups go through the severity bar, not straight into the wave.
-- Worktree protocol (`docs/WORKTREE_AGENT_PROTOCOL.md`) for parallel work; one coordinator synthesizes.
+- Do not start untracked work. A selected issue must state its intended outcome, acceptance criteria,
+  relevant dependencies, entry points, and proving checks well enough to hand to one writer.
+- Review and merge disposition come from the live authority declaration, the global laws, and
+  `review-and-ship`; this plan does not restate tier values, reviewer counts, convergence, or
+  post-push eligibility. Exact-head `ci-required.yml` remains Taskdeck's required CI evidence. When
+  the canonical pipeline requests a Taskdeck-specific lens, prioritize changes touching
+  capture→proposal→apply, auth, migrations, retention, or destructive operations. The former local
+  FULL/LIGHT doctrine and blanket human-review categories are superseded by ADR-0051.
+- **Autonomous admission (ADR-0051):** a coordinator may promote an existing open issue from
+  `Pending` to `Next` or `Now` without another owner decision when all of these are true:
+  1. the issue has exactly one Priority label, clear acceptance criteria and a proportionate proof;
+  2. `Now` work is unblocked, while `Next` is either unblocked or sequenced behind a named `Now` item;
+  3. no open PR or occupied worktree already owns the same scope, unless that lineage is the one
+     deliberately being resumed;
+  4. the slice advances the active product direction or repairs correctness, security, reliability,
+     test, documentation-truth, or delivery substrate; and
+  5. it does not require a credential/private data, production mutation, release tag, legal or
+     licensing decision, repository/environment setting, destructive work-loss action, or subjective
+     dogfooding/beta judgment.
+- Keep no more than **four issue items in `Now`** and **eight in `Next`**. Finish or deliberately park
+  existing WIP before opening a conflicting lane, replenish after workflow events, and leave every
+  other candidate in `Pending` or `Blocked`. Existing-backlog promotion does not consume the five-
+  per-week allowance for creating genuinely new issues.
+- New issues still need observed evidence, acceptance criteria, and the normal intake severity/value
+  bar; do not manufacture follow-ups to keep the queue full. Review findings below the issue bar are
+  fixed in the current PR when merge-blocking, explicitly declined, or recorded as accepted risk.
+- Autonomous admission does not authorize surprise surface area. A new table, endpoint, mutation
+  path, connector type, top-level view, security posture, or comparable architectural decision must
+  already be granted by §7 or a later Accepted ADR/plan amendment.
+- Worktree protocol (`docs/WORKTREE_AGENT_PROTOCOL.md`) applies to parallel work; one coordinator
+  owns prioritization, integration, canonical docs, and the final merge judgment.
 
 ## 6. The v0.1 ship gate (repurposed #1278 exit criteria + revival additions)
 
@@ -125,14 +151,14 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 - **(b)** Preview diff equals what Apply executes — **done** (#1235/#1280, regression-tested).
 - **(c)** Provenance never names an actor that didn't act — **done** (#1273/#1283).
 - **(d)** Registration is gateable; public deployment defaults are safe (REVIVAL-01; render.yaml fixed).
-- **(e)** One validated, documented run path *per audience*: desktop exe (smoke-run from a real release) and `docker run` from a published image (REVIVAL-07).
+- **(e)** One validated, documented run path *per audience*: desktop exe (smoke-run from a real release) and `docker run` from a published image (REVIVAL-07) — **done 2026-08-19** (v0.1.0 Release + public GHCR image, both smoke-verified).
 - **(f)** Paper core loop has E2E + axe coverage; zero always-red CI lanes; branch protection live (#1274, #1275, #1173).
 - **(g)** README/onboarding welcome strangers: no archive messaging, demo GIF present, guided first-board path in Paper (REVIVAL-05, REVIVAL-06).
 - **(h)** Licensing posture published (REVIVAL-03).
 - **(i)** ≥10 days of organic dogfooding data (#1271).
 - A written **beta threat model** (public-facing self-hosted instances with untrusted registrants) replaces the single-user threat model; ACL/TOCTOU-class findings are re-triaged against it once (REVIVAL-00).
 
-## 7. New-surface exceptions (everything else stays under the #1269 rule)
+## 7. New-surface authority
 
 Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript engine), REVIVAL-12 (feedback/telemetry), REVIVAL-13 (key scopes + hash-pin wiring + explicit multi-user-safe stdio identity).
 
@@ -155,12 +181,13 @@ The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-
 - **Solo-maintainer support burden** — mitigated by Discussions-only channel, the severity bar, pre-written launch answers, and the checkpoint.
 - **Incumbents move into the follow-through lane** (Circleback automations, Otter MCP) — mitigated by the local-first + human-gate combination they structurally can't copy (their business is the cloud and the autonomy).
 - **The beta exposes quality gaps fast** (Hyprnote's diarization "dealbreaker" precedent) — mitigated by honest v0.x signaling and shipping the feedback loop before the launch spike.
-- **Scope regrowth** — the same failure mode the archive analysis diagnosed; mitigated by §5's admission rules and this plan being the single wave list.
+- **Scope regrowth** — the same failure mode the archive analysis diagnosed; mitigated by §5's finite `Now`/`Next` queue, tracked acceptance-ready issues, dependency/ownership checks, and the §7/ADR boundary for new surface.
 
 ## 10. Related documents
 
 - `docs/decisions/ADR-0044-revival-pivot-open-beta.md` — the decision this plan executes
 - `docs/decisions/ADR-0046-generalist-expansion-single-app.md` — the Phase 4 amendment (artefact intake, dossiers, generalist reach; twin-app deferral)
+- `docs/decisions/ADR-0051-autonomous-backlog-admission-and-merge-authority.md` — continuous bounded admission and agent-executable merge authority
 - `docs/analysis/2026-07-10_revival_assessment.md` — evidence base (code + market)
 - `docs/COURSE_CORRECTION.md` / `docs/PROJECT_TRAJECTORY.md` — the 2026-07-02 analysis pair; fallback plan + finite-work discipline
 - `docs/IMPLEMENTATION_MASTERPLAN.md` — Direction section (points here)

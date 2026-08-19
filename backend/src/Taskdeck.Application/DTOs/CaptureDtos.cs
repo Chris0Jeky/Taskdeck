@@ -21,7 +21,8 @@ public record CaptureItemDto(
     DateTimeOffset? ProcessedAt,
     int RetryCount,
     string? ErrorMessage = null,
-    CaptureProvenanceV1? Provenance = null);
+    CaptureProvenanceV1? Provenance = null,
+    bool CanEditSuggestion = false);
 
 public record CaptureItemSummaryDto(
     Guid Id,
@@ -31,12 +32,21 @@ public record CaptureItemSummaryDto(
     CaptureSource Source,
     string TextExcerpt,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? ProcessedAt);
+    DateTimeOffset? ProcessedAt,
+    string? ErrorMessage = null);
 
 public record CaptureListFilterDto(
     CaptureStatus? Status = null,
     Guid? BoardId = null,
     int Limit = 50);
+
+/// <summary>
+/// Optional request body for triage enqueue. Supplies a target board when the capture has none
+/// yet — Home quick-capture lands board-less, and triage turns a capture into a board proposal, so
+/// it requires a target board. Absent body / null board means "use the board already on the item".
+/// </summary>
+public record EnqueueTriageRequestDto(
+    Guid? BoardId = null);
 
 public record CaptureTriageEnqueueResultDto(
     Guid Id,

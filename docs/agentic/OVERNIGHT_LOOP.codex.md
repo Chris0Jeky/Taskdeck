@@ -1,9 +1,10 @@
 # Taskdeck — Autonomous Overnight Orchestrator (Codex)
 
 Paste this as the opening instruction for an unattended Codex run. It is written for **this
-repo's real conventions** (repository-specific proving checks, SQLite/no-Docker tests, Windows quirks,
-stacked PRs, docs-governance). Higher-authority project docs override this prompt where they
-conflict — follow them and record the conflict.
+repo's real conventions** (repository-specific proving checks, SQLite-first backend tests with
+optional Docker-positive PostgreSQL proof, Windows quirks, stacked PRs, docs-governance). Higher-
+authority project docs override this prompt where they conflict — follow them and record the
+conflict.
 
 ---
 
@@ -23,15 +24,28 @@ keeps denying you — **stop feature work and fix that first, as its own tracked
 smoother substrate compounds across every later task; grinding through the same breakage all
 night does not. Sharpening the tools *is* progress. (See §8.)
 
+### Run bootstrap
+
+1. Invoke `route-codex-work` to right-size the run, then use `resume-repo-work`,
+   `taskdeck-repo-onramp`, and `taskdeck-issue-batch-orchestrator` to reconcile live state before
+   selecting anything. Use the relevant Taskdeck seam skill for each slice and
+   `verify-and-handoff` at every closeout.
+2. Keep the routed Sol coordinator responsible for authority, prioritization, architecture,
+   integration, final verification, and merge judgment. Once the path is paved, route the bulk of
+   bounded inventory, mapping, triage, implementation, and narrow review work through Luna (§3).
+3. Read the newest existing overnight ledger before trusting a handoff, then refresh its claims
+   against Git, GitHub, CI, project state, review threads, and worktrees. Never bake a current issue
+   or PR number into this reusable prompt; the excluded ledger owns the exact resume point.
+
 ---
 
 ## 0) ORCHESTRATOR STATE FILE — single source of truth
 
-Reuse the existing coordinator ledger if one is present (this repo has used
-`ORCHESTRATOR.overnight-YYYY-MM-DD.md` at the root, kept **uncommitted/excluded**). Otherwise
-create `ORCHESTRATOR.overnight-<date>.md`. Keep it uncommitted (it is your scratch log, not a
-repo doc). A fresh session must be able to read this file *alone* and resume. Keep entries
-terse and factual. It must hold:
+Reuse the newest active coordinator ledger if one is present (this repo has used
+`ORCHESTRATOR.overnight-YYYY-MM-DD.md` at the root, kept **uncommitted/excluded**); do not fork a
+second ledger merely because the date changed. Otherwise create `ORCHESTRATOR.overnight-<date>.md`.
+Keep it uncommitted (it is your scratch log, not a repo doc). A fresh session must be able to read
+this file *alone* and resume. Keep entries terse and factual. It must hold:
 
 - **Run header:** start commit + branch, the run's goal, current cycle #, last-updated time.
 - **Verification commands** you discovered (build / test / lint / type-check / docs-gates) — so
@@ -57,13 +71,14 @@ or tool noise into durable rows.
 
 Read before editing — do not assume layout:
 
-- **Authority docs:** `AGENTS.md` (full contributor protocol — highest authority for you),
-  `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `.codex/config.toml`. Then
+- **Authority docs:** `autodoc/AGENT_INDEX.md` (fast seam map — start here instead of bulk-reading),
+  `CLAUDE.md` (repo facts and proving checks), `AGENTS.md` (contributor protocol),
+  `.agent-harness/tier.json` (declared authority), `.codex/README.md`,
+  `.codex/memories/00_ACTIVE.md`, and `.codex/config.toml`. Then
   `docs/STATUS.md` (current shipped reality — **authoritative**), `docs/IMPLEMENTATION_MASTERPLAN.md`
   (delivery history + roadmap), `docs/GOLDEN_PRINCIPLES.md` (invariants),
-  `docs/REVIVAL_PLAN.md` (the active planning spine — work not on its ratified wave list is
-  not taken), `docs/decisions/INDEX.md` (ADRs), `autodoc/AGENT_INDEX.md` (fast seam map — start
-  here to find a region instead of bulk-reading), and `OUTSTANDING_TASKS.md` (the maintainer's
+  `docs/REVIVAL_PLAN.md` (the active planning spine — ratified waves plus ADR-0051's bounded
+  autonomous-admission lane), `docs/decisions/INDEX.md` (ADRs), and `OUTSTANDING_TASKS.md` (the maintainer's
   durable checklist — surface its open items in every summary; never auto-check an item).
   Precedence when docs conflict: `docs/STATUS.md` > `AGENTS.md` > everything else.
 - **Verification commands** (record them, then trust them):
@@ -79,6 +94,26 @@ Read before editing — do not assume layout:
   - EF migration merges: `dotnet ef migrations has-pending-model-changes --project
     backend/src/Taskdeck.Infrastructure/... --startup-project backend/src/Taskdeck.Api/...` →
     "No changes" is the definitive proof a hand-merged model snapshot is correct.
+- **Docker Desktop is normally available on this box; verify it live and use it only when it
+  proves the changed seam:**
+  - Normal backend tests use SQLite and do **not** need Docker. Do not pay container startup cost
+    for an unrelated unit or application-layer slice.
+  - For positive PostgreSQL/Testcontainers proof, first run `docker info`. Set
+    `TASKDECK_REQUIRE_DOCKER=true` for the integration run, emit a TRX, and validate it with
+    `py -3 -B scripts/ci/assert_container_integration_results.py --trx
+    "backend/TestResults/container-integration/container-integration.trx" --mode positive
+    --minimum-postgres-results 28`. Follow `.github/workflows/reusable-container-integration.yml`
+    for the exact `dotnet test` arguments and forced-unavailable negative control. Fail if either
+    command is nonzero, and clear the environment variable afterward.
+  - A normal local green with all container cases skipped proves only graceful Dockerless gating,
+    not PostgreSQL parity. Do not infer positive proof from aggregate counts; the TRX verifier pins
+    fully qualified PostgreSQL test identities and the live minimum.
+  - Use the Docker MCP for container/image inspection when available; use the repository's shell
+    `docker compose` commands for canonical workflows and script parity. The Docker MCP gateway is
+    declared once at user scope — never add another declaration to this repo.
+  - Give concurrent worktrees unique Compose project names, ports, and data paths. Tear down only
+    containers created by the current task; never remove volumes or unrelated Docker state merely
+    to obtain a clean test environment.
 - **VCS / CI reality (READ THIS TWICE):**
   - Use `gh` for PRs/issues/reviews. Default branch is `main`.
   - Branch protection is lenient and therefore is not evidence of eligibility. Enter the
@@ -93,8 +128,10 @@ Read before editing — do not assume layout:
     original hashes — retargeting then loses the shared ancestry and manufactures conflicts.
     **Never `--delete-branch` a stacked base PR** (it cascade-closes children unreopenably). In a
     stack, **merge the oldest/base first**, then retarget/absorb children.
-- **Inventory** open PRs, open issues, red CI, `TODO`/`FIXME`, the failure ledger. This seeds
-  the backlog.
+- **Inventory** the current ledger and every occupied worktree first, then open PRs (including
+  exact heads, CI, reviews, comments, and conflicts), open issues and project priority/status,
+  `OUTSTANDING_TASKS.md`, red `main`, `TODO`/`FIXME`, and the failure ledger. This seeds the
+  backlog without duplicating work already in progress.
 - **Windows/env quirks** (this box): git may resolve to a wrapper — if git misbehaves, use
   `C:\Program Files\Git\cmd\git.exe` explicitly. In PowerShell, `&&` is a parser error — use
   `;` and check `$LASTEXITCODE`, or run POSIX in a bash shell. `reset --hard`/force-push are
@@ -110,6 +147,11 @@ assumption in the state file**, and proceed.
 
 ## 2) TASK SELECTION & SEEDING
 
+Reconcile existing `IN-PROGRESS`, `IN-REVIEW`, and occupied-worktree tasks before starting a new
+one. Within the same severity and dependency class, finish or deliberately park existing WIP first.
+Treat `OUTSTANDING_TASKS.md` as human-owned input: surface every open item and use it to identify
+dependencies, but do not auto-check boxes.
+
 Priority order (highest first):
 1. **Unblock the substrate** — a red `main`, a broken shared command, or recurring friction
    from your Friction ledger (§8). Fix these *before* feature work.
@@ -118,13 +160,17 @@ Priority order (highest first):
 4. **Ready open PRs** — reconcile them through the canonical pipeline; keep WIP small and don't hoard.
 5. **High-value features/improvements**, then lower-severity polish.
 
-Prefer unblocked tasks. Respect `REVIVAL_PLAN.md` — do not take work off its ratified wave
-list without seeding an ADR/issue and flagging it (Q-N).
+Prefer unblocked tasks. Respect `REVIVAL_PLAN.md`: work must be tracked and enter through either a
+ratified wave or ADR-0051's autonomous-admission criteria. Keep at most four issue items in `Now`
+and eight in `Next`; project promotion within those rules does not require another owner decision.
 
-**When the queue empties, generate the queue** — never idle. Analyze the code for the
-next-most-valuable work (bugs, risks, debt, missing tests, docs drift), and **seed concrete
-issues with scope + acceptance criteria** before working them. Reserve any tracker labels the
-maintainer has claimed (e.g. `CODEX-*`) if a convention says so.
+**When the admitted queue empties, do bounded discovery instead of manufacturing work.** Analyze
+the code and live product evidence for the next-most-valuable correctness, security, reliability,
+test, or docs-drift problem. First promote an acceptance-ready existing issue under
+`REVIVAL_PLAN.md` §5. Seed a new issue with scope + acceptance criteria **only** when no existing
+tracker owns the evidence and it meets the intake rules (or is a directly observed high-severity
+defect). Reserve labels claimed by the maintainer. If no candidate qualifies and all remaining work
+needs a human decision, that is a clean-pause condition under §9, not permission to invent polish.
 
 ---
 
@@ -149,24 +195,38 @@ maintainer has claimed (e.g. `CODEX-*`) if a convention says so.
   gets an `ADR-NNNN` (template + `INDEX.md` entry). Mark `Proposed` until the maintainer
   ratifies — do **not** self-ratify a strategic ADR; that is a deferred question.
 
-### Compute routing — spend effort where it pays (cheapest dial first)
+### Compute routing — Sol coordinates; Luna carries the paved load
 
 Right-size **effort → model → parallelism**, in that order. Escalate only when the work earns
 it; don't reflexively spin up a fleet or crank max reasoning on trivia — that drains the run
 before the hard tasks.
 
-- **High reasoning effort** for the genuinely hard: security review, auth/permission changes,
-  EF migration-snapshot merges, concurrency/race analysis, ambiguous multi-file debugging,
-  architecture, and *final* adversarial verification of a risky change.
-- **Low/medium effort** for the mechanical: formatting, mass renames, dependency bumps, log
-  triage, doc-link fixes, obvious one-line fixes. Racing through these cheaply leaves budget
-  for the hard ones.
-- **Parallelize** only when the work is genuinely disjoint (separate files/regions), when you
-  need an independent perspective (reviewers with independent context), or when one
-  context can't hold the scope. A few focused agents (≤3–5; ≤8–12 for a broad sweep), never a
-  reflexive swarm. **You (the coordinator) always own final synthesis, verification, and the
-  evidence handoff to the global pipeline.** Read-only reviewers are structurally safer (no tools
-  to mutate, so their only output is findings).
+- **Sol coordinator:** retain authority interpretation, task ordering, architecture and security
+  judgment, dependency/stack management, integration, final evidence synthesis, and every merge
+  decision. The coordinator reads the applicable skills and authority files itself; summaries from
+  agents are evidence inputs, not delegated judgment.
+- **Luna heavy-lifting lanes:** once a task is bounded and the acceptance criteria, owned files,
+  checkout, and proving command are explicit, use the cheapest matching role:
+  - `luna_inventory` for read-only Git/GitHub/CI/project/worktree reconciliation;
+  - `luna_mapper` for read-only entry-point, dependency, and test-seam mapping;
+  - `luna_triage` for bounded test/log/CI failure classification;
+  - `luna_slice_builder` for a well-specified low-risk slice in its **own isolated checkout**;
+  - `luna_narrow_reviewer` for a read-only narrow-diff defect and regression pass.
+- Give Luna a self-contained narrow brief, preferably with `fork_turns: "none"`, exact ownership,
+  explicit non-goals, and the command that proves completion. Tell every writer that it is not alone
+  in the repo and must not revert other work. One writer owns each checkout; never let two agents
+  edit the same files or canonical batch docs concurrently.
+- Create issue-writer checkouts with `scripts/git/New-CodexIssueWorktree.ps1`; the worker's first
+  actions are the helper-printed guard and initializer. Never pass the primary checkout's absolute
+  paths into a worktree brief.
+- At each workflow event, discover the live collaboration ceiling and replenish **useful disjoint**
+  Luna lanes while the coordinator continues integration work. Start with PR/CI inventory,
+  issue/project inventory, code-seam mapping, and friction triage when those are independently
+  useful. Do not hard-code a fleet size, duplicate a lane, or create work merely to keep a slot busy.
+- Use Terra for a bounded implementation or independent technical review that needs more judgment
+  than a paved Luna lane. Reserve high reasoning for security/auth, EF snapshot merges,
+  concurrency/races, ambiguous multi-file debugging, architecture, and final adversarial
+  verification of risky changes.
 - **Budget awareness:** checkpoint often; keep diffs and test runs targeted (targeted `dotnet
   --filter`, `vitest --maxWorkers=2`) to avoid burning time/OOM. If you're deep in a rabbit
   hole, stop, write the finding, and pick a cheaper path.
@@ -255,8 +315,9 @@ smoother than you found it — future you (and the maintainer) inherit it.
 
 ## 9) LOOP CONTROL — KEEP GOING
 
-After each merged task: update the orchestrator file, then pick the next task and repeat. **Do
-not stop after one task.** Continue the cycle.
+After each merged task: update the orchestrator file, refresh live Git/GitHub/project state,
+replenish useful Luna lanes, then pick the next admitted task and repeat. **Do not stop after one
+task.** Continue the cycle while safe qualified work remains.
 
 Legitimate stop/pause conditions (and only these): the maintainer says wrap up; a true blocker
 with no safe next task; a hard budget/time limit; or the repo is in a state where proceeding is

@@ -2,13 +2,125 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-13
+Last Updated: 2026-08-18
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-16 API Integration Timing Evidence (`#1682`)
+
+The successful-run diagnostic artifact is summary-only: it may contain resolved test class/method
+identity, outcome, and duration, but never TRX output, error details, attachments, or theory
+arguments. Raw TRX stays failure-only. Prove the parser, workflow syntax, and one real TRX shape
+without running the complete API suite:
+
+```powershell
+python scripts/ci/test_summarize_trx_timing.py
+python -m py_compile scripts/ci/summarize_trx_timing.py scripts/ci/test_summarize_trx_timing.py
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~Taskdeck.Api.Tests.ResultExtensionsTests" --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/local"
+python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/local/api-integration.trx" --output "backend/TestResults/api-integration/local/api-integration-timing.json"
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 parser tests and 22/22 focused API tests**, followed by successful
+parsing of all 22 real TRX results. Hosted CI remains the authoritative proof that both matrix
+lanes upload the 14-day summary and Workflow Lint accepts the changed YAML. The artifact diagnoses
+the next recurrence; it does not by itself identify the cause or prove a duration repair.
+
+Required API Integration also emits a best-effort, 14-day testhost assembly diagnostic when the
+testhost exits normally. Its fixed numeric schema records only before/exit process counters plus
+aggregate `ConfigureServices` and `Database.Migrate()` workload timings. It never records paths,
+environment values, test identities, database names, exception text, or request content. A missing
+artifact after a killed or crashed testhost is itself diagnostic and must not mask the authoritative
+`dotnet test` result. Prove the dormant serializer and workflow contract without running the full
+API suite:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TestAssemblyDiagnosticsTests"
+Push-Location scripts/ci
+py -3 -B -m unittest -v test_collect_runner_context.py
+py -3 -m py_compile test_collect_runner_context.py
+Pop-Location
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 diagnostic serializer tests, 5/5 workflow-contract tests, and one
+real factory-backed testhost exit** producing a 642-byte schema-v1 artifact. Hosted Ubuntu and
+Windows upload evidence remains required before treating the workflow path as proven; even then,
+the artifact is instrumentation rather than a timing-root-cause claim.
+
+## 2026-08-16 REVIVAL-09 Transcript Linkage and Editability Checkpoint (`#1305`)
+
+The first linkage slice must prove the domain attachment invariant, immutable edit boundary,
+worker retry/reuse behavior, real SQLite FK/index/delete behavior, the proposal-first HTTP path,
+and EF model parity:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmRequestTests|FullyQualifiedName~TranscriptTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests.LlmGoldenPath_TranscriptCaptureTriageApproveExecute_ShouldCreateStubCardsWithLlmProvenance"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldUpdateCaptureText|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldAllowTranscriptTextAtSourceSpecificLimit|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```
+
+Linkage-head result: **23 Domain, 38 Application, 23 worker, 15 repository/migration,
+one golden-path HTTP, and three focused capture-API tests passed**; the Release solution build
+completed with zero errors and EF reported no pending model changes. These checks prove one
+canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
+and SQLite unique/`SET NULL` behavior. At that linkage head they did not prove evidence spans or
+provenance reads; the evidence checkpoint below now covers those backend seams. Paper quote
+resolution and real external-provider behavior remain outside both checkpoints.
+
+The follow-up editability slice reuses the authoritative Application rule in the additive capture-detail
+capability and proves that Inbox neither offers nor retains an editor after linkage:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests"
+Push-Location frontend/taskdeck-web
+npx vitest --run src/tests/views/InboxView.spec.ts --maxWorkers=2
+npm run typecheck
+npm run lint
+npm run build
+Pop-Location
+```
+
+Editability-head result: **42 Application, 27 capture-API, and 71 Inbox tests passed**;
+type-check and production build passed, while lint reported zero errors and six unrelated existing
+accessibility warnings. The API proof also confirms that capture detail does not expose `TranscriptId`.
+
+## 2026-08-16 REVIVAL-09 Transcript Evidence Checkpoint (`#1305`)
+
+When changing transcript quote-to-span resolution, trusted proposal evidence, opaque provenance
+responses, or Transcript erasure cleanup, run:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceEvidenceLinkTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests|FullyQualifiedName~AccountDeletionServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests|FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~AutomationProposalsApiTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Evidence-head result: **17 Domain, 252 Application, and 86 API tests passed**, with no failures or skips; the
+Release solution build completed with zero errors and two pre-existing nullable warnings in
+`CliStartupTraceTests`, EF reported no pending model changes, and both documentation gates passed.
+The proof covers UTF-16 absolute offsets, repeated-quote and same-title ambiguity, stable reduction
+alignment, one trusted link per operation, database source-type consistency, cascading erasure,
+atomic stale-link rejection, migration/model parity, and a board viewer receiving opaque metadata
+without Transcript text.
+It does not prove PostgreSQL-specific deletion translation, Paper quote resolution/deep links,
+provenance export, or real external-provider behavior.
 
 ## Current Verified Totals (2026-05-16)
 
@@ -84,7 +196,7 @@ npm run typecheck
 
 The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
 capture, never persists a partial automatic board write. The M3 contract has its own checkpoint
-below; `#1305` evidence linkage remains outside both checkpoints.
+below; persistent Transcript evidence linkage is covered by the 2026-08-16 checkpoint above.
 
 ## 2026-08-02 REVIVAL-08 M3 Contract Checkpoint (`#1304`)
 
@@ -100,8 +212,8 @@ The application seam must reject missing, unknown, wrongly typed, noncanonical, 
 non-verbatim model fields as a complete fallback; it must not normalize or retain a partial map leg.
 It also pins that model classification, assignee, due-date, and confidence metadata never enter
 executable operation parameters. The API golden path proves a valid exact quote remains reviewable
-in the proposed card description. `#1305` durable evidence spans/provenance/API/UI linkage remains
-outside this contract-only checkpoint.
+in the proposed card description. Durable span/provenance API coverage is now in the 2026-08-16
+checkpoint above; Paper quote resolution and deep links remain outside this contract checkpoint.
 
 ## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
 
@@ -114,9 +226,10 @@ dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
 ```
 
-Current-main result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
-skips. This proves persistence, export/deletion, and migration/bootstrap behavior only; `#1305`
-remains open for triage linkage, evidence spans, provenance API reads, and Paper deep links.
+Foundation-head result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
+skips. That checkpoint proves persistence, export/deletion, and migration/bootstrap behavior. The
+linkage and evidence checkpoints above cover the subsequent backend work; `#1305` remains open for
+Paper quote resolution/deep links, provenance export, and the final payload-retention boundary.
 
 The MCP create-card column contract is exercised through the real write tool and SQLite-backed
 proposal lifecycle:

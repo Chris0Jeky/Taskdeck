@@ -5,6 +5,10 @@ import { usersApi } from '../../api/usersApi'
 import { useSessionStore } from '../../store/sessionStore'
 import type { AuthResponse } from '../../types/auth'
 
+const displayNameMocks = vi.hoisted(() => ({
+  reset: vi.fn(),
+}))
+
 vi.mock('../../api/authApi', () => ({
   authApi: {
     login: vi.fn(),
@@ -21,6 +25,10 @@ vi.mock('../../api/usersApi', () => ({
   },
 }))
 
+vi.mock('../../composables/useProposalDisplayNames', () => ({
+  proposalDisplayNames: { reset: displayNameMocks.reset },
+}))
+
 function toBase64Url(value: string): string {
   return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
@@ -31,11 +39,11 @@ function fakeJwt(exp?: number): string {
   return `${header}.${payload}.sig`
 }
 
-function makeAuthResponse(expOffsetSeconds = 3600): AuthResponse {
+function makeAuthResponse(expOffsetSeconds = 3600, userId = 'user-1'): AuthResponse {
   return {
     token: fakeJwt(Math.floor(Date.now() / 1000) + expOffsetSeconds),
     user: {
-      id: 'user-1',
+      id: userId,
       username: 'testuser',
       email: 'test@example.com',
       defaultRole: 2,
@@ -317,6 +325,18 @@ describe('sessionStore', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem('taskdeck_token')).toBeNull()
     expect(localStorage.getItem('taskdeck_session')).toBeNull()
+    expect(displayNameMocks.reset).toHaveBeenCalledTimes(2)
+  })
+
+  it('resets proposal display names when the authenticated identity changes', async () => {
+    vi.mocked(authApi.login)
+      .mockResolvedValueOnce(makeAuthResponse(3600, 'account-a'))
+      .mockResolvedValueOnce(makeAuthResponse(3600, 'account-b'))
+
+    await store.login({ usernameOrEmail: 'account-a', password: 'pass' })
+    await store.login({ usernameOrEmail: 'account-b', password: 'pass' })
+
+    expect(displayNameMocks.reset).toHaveBeenCalledTimes(2)
   })
 
   it('requireUserId throws when session is missing', () => {

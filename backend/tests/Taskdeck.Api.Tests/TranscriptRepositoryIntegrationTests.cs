@@ -75,6 +75,127 @@ public sealed class TranscriptRepositoryIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task DeleteByUserIdAsync_CascadesPersistedTranscriptEvidenceLinks_AndDatabaseRejectsUntypedTranscriptRows()
+    {
+        var dbPath = CreateDbPath();
+        try
+        {
+            await using var db = new TaskdeckDbContext(CreateOptions(dbPath));
+            await db.Database.MigrateAsync();
+            var owner = AddUser(db, "transcript-evidence-owner");
+            var transcript = AddTranscript(owner.Id, "erase this transcript");
+            var evidence = CreateTranscriptEvidence(owner, transcript, "cascade");
+            db.Transcripts.Add(transcript);
+            db.AutomationProposals.Add(evidence.Proposal);
+            db.ProposalProvenances.Add(evidence.Provenance);
+            await db.SaveChangesAsync();
+
+            Func<Task> removeTypedReference = () => db.Database.ExecuteSqlRawAsync(
+                "UPDATE \"ProvenanceEvidenceLinks\" SET \"TranscriptId\" = NULL WHERE \"Id\" = {0}",
+                evidence.Link.Id);
+            await removeTypedReference.Should().ThrowAsync<SqliteException>();
+
+            var deleted = await new TranscriptRepository(db).DeleteByUserIdAsync(owner.Id);
+
+            db.ChangeTracker.Clear();
+            deleted.Should().Be(1);
+            (await db.ProvenanceEvidenceLinks.CountAsync()).Should().Be(0);
+            (await db.Transcripts.CountAsync()).Should().Be(0);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task StaleProposalAggregate_CannotPersistTypedTranscriptEvidenceAfterTranscriptDeletion()
+    {
+        var dbPath = CreateDbPath();
+        try
+        {
+            User owner;
+            Transcript transcript;
+            (AutomationProposal Proposal, ProposalProvenance Provenance, ProvenanceEvidenceLink Link) staleEvidence;
+            await using (var setup = new TaskdeckDbContext(CreateOptions(dbPath)))
+            {
+                await setup.Database.MigrateAsync();
+                owner = AddUser(setup, "transcript-stale-owner");
+                transcript = AddTranscript(owner.Id, "deleted before proposal save");
+                setup.Transcripts.Add(transcript);
+                await setup.SaveChangesAsync();
+                staleEvidence = CreateTranscriptEvidence(owner, transcript, "stale");
+            }
+
+            await using (var deletion = new TaskdeckDbContext(CreateOptions(dbPath)))
+            {
+                var persistedTranscript = await deletion.Transcripts.SingleAsync(item => item.Id == transcript.Id);
+                deletion.Transcripts.Remove(persistedTranscript);
+                await deletion.SaveChangesAsync();
+            }
+
+            await using (var staleSave = new TaskdeckDbContext(CreateOptions(dbPath)))
+            {
+                staleSave.AutomationProposals.Add(staleEvidence.Proposal);
+                staleSave.ProposalProvenances.Add(staleEvidence.Provenance);
+
+                var save = () => staleSave.SaveChangesAsync();
+                await save.Should().ThrowAsync<DbUpdateException>();
+            }
+
+            await using var verify = new TaskdeckDbContext(CreateOptions(dbPath));
+            (await verify.AutomationProposals.CountAsync()).Should().Be(0);
+            (await verify.ProvenanceEvidenceLinks.CountAsync()).Should().Be(0);
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task LlmRequestTranscriptLink_IsUniqueAndSetsNullWhenTranscriptIsDeleted()
+    {
+        var dbPath = CreateDbPath();
+        try
+        {
+            await using var db = new TaskdeckDbContext(CreateOptions(dbPath));
+            await db.Database.MigrateAsync();
+            var owner = AddUser(db, "transcript-link-owner");
+            var transcript = AddTranscript(owner.Id, "linked transcript");
+            db.Transcripts.Add(transcript);
+            var firstRequest = new LlmRequest(owner.Id, "inbox.capture.transcript.v1", "payload");
+            firstRequest.AttachTranscript(transcript.Id);
+            db.LlmRequests.Add(firstRequest);
+            await db.SaveChangesAsync();
+
+            var duplicateRequest = new LlmRequest(owner.Id, "inbox.capture.transcript.v1", "payload-2");
+            duplicateRequest.AttachTranscript(transcript.Id);
+            db.LlmRequests.Add(duplicateRequest);
+            var duplicateSave = () => db.SaveChangesAsync();
+            await duplicateSave.Should().ThrowAsync<DbUpdateException>();
+
+            db.ChangeTracker.Clear();
+            var persistedRequest = await db.LlmRequests.SingleAsync(request => request.Id == firstRequest.Id);
+            var persistedTranscript = await db.Transcripts.SingleAsync(item => item.Id == transcript.Id);
+            db.Transcripts.Remove(persistedTranscript);
+            await db.SaveChangesAsync();
+
+            await db.Entry(persistedRequest).ReloadAsync();
+            persistedRequest.TranscriptId.Should().BeNull();
+
+            var indexes = await db.Database.SqlQueryRaw<string>(
+                    "SELECT name AS Value FROM pragma_index_list('LlmRequests')")
+                .ToListAsync();
+            indexes.Should().Contain("IX_LlmRequests_TranscriptId");
+        }
+        finally
+        {
+            Cleanup(dbPath);
+        }
+    }
+
     private static DbContextOptions<TaskdeckDbContext> CreateOptions(string dbPath) =>
         new DbContextOptionsBuilder<TaskdeckDbContext>()
             .UseSqlite(TestSqlite.ConnectionString(dbPath))
@@ -97,6 +218,30 @@ public sealed class TranscriptRepositoryIntegrationTests
             text,
             [new TranscriptSegment(0, 0, "Speaker", 0)]);
         return transcript;
+    }
+
+    private static (AutomationProposal Proposal, ProposalProvenance Provenance, ProvenanceEvidenceLink Link)
+        CreateTranscriptEvidence(User owner, Transcript transcript, string correlationSuffix)
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            owner.Id,
+            "Transcript evidence proposal",
+            RiskLevel.Low,
+            $"transcript-evidence-{correlationSuffix}-{Guid.NewGuid():N}");
+        var provenance = new ProposalProvenance(proposal.Id, proposal.CorrelationId, "test-model");
+        var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.9, provenance.Id);
+        var link = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcript.Id.ToString("D"),
+            field.Id,
+            label: "Transcript evidence",
+            spanStart: 2,
+            spanEnd: 8,
+            transcriptId: transcript.Id);
+        field.AddEvidenceLink(link);
+        provenance.AddField(field);
+        return (proposal, provenance, link);
     }
 
     private static void Cleanup(string dbPath)

@@ -67,6 +67,27 @@ describe('BoardsListView', () => {
     expect(wrapper.text()).toContain('My Boards')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian / Tailwind ones)', async () => {
+    mockBoardStore.boards = [makeBoard({ id: 'board-xyz', name: 'My Board' })]
+
+    const wrapper = mount(BoardsListView)
+    await waitForUi()
+
+    expect(wrapper.find('.paper-boards').exists()).toBe(true)
+    expect(wrapper.find('.paper-boards__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-boards__card').exists()).toBe(true)
+
+    // The legacy hooks and the raw Tailwind color utilities that resolved to
+    // Obsidian values (`bg-surface`, `bg-ember`, `text-on-surface`) must be gone.
+    const html = wrapper.html()
+    expect(html).not.toContain('td-boards-skeleton')
+    expect(html).not.toContain('td-panel')
+    expect(html).not.toContain('td-btn')
+    expect(html).not.toContain('bg-surface')
+    expect(html).not.toContain('bg-ember')
+    expect(html).not.toContain('text-on-surface')
+  })
+
   it('shows loading skeleton while boards are loading', async () => {
     mockBoardStore.loading = true
 
@@ -74,7 +95,7 @@ describe('BoardsListView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Loading boards...')
-    expect(wrapper.find('.td-boards-skeleton').exists()).toBe(true)
+    expect(wrapper.find('.paper-boards__skeleton').exists()).toBe(true)
   })
 
   it('shows error state when boardStore.error is set', async () => {
@@ -118,7 +139,7 @@ describe('BoardsListView', () => {
     await waitForUi()
 
     // Find the clickable board card by looking for the board name in a clickable div
-    const boardCards = wrapper.findAll('.cursor-pointer')
+    const boardCards = wrapper.findAll('.paper-boards__card')
     const targetCard = boardCards.find((c) => c.text().includes('My Board'))
     expect(targetCard).toBeDefined()
     await targetCard!.trigger('click')

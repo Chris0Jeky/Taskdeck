@@ -122,7 +122,7 @@ describe('MetricsView — retry and export', () => {
 
     expect(wrapper.text()).toContain('Connection timeout')
 
-    const retryBtn = wrapper.find('.td-metrics__state--error button')
+    const retryBtn = wrapper.find('.paper-metrics__state--error button')
     expect(retryBtn.exists()).toBe(true)
 
     vi.clearAllMocks()
@@ -199,7 +199,7 @@ describe('MetricsView — forecast section', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Computing forecast...')
-    expect(wrapper.find('.td-metrics__forecast-loading').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__forecast-loading').exists()).toBe(true)
   })
 
   it('shows forecast error state with retry button', async () => {
@@ -208,7 +208,7 @@ describe('MetricsView — forecast section', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Forecast computation failed')
-    const retryBtn = wrapper.find('.td-metrics__forecast-error button')
+    const retryBtn = wrapper.find('.paper-metrics__forecast-error button')
     expect(retryBtn.exists()).toBe(true)
     expect(retryBtn.text()).toBe('Retry')
   })
@@ -257,7 +257,7 @@ describe('MetricsView — forecast section', () => {
     const wrapper = mount(MetricsView)
     await waitForUi()
 
-    const details = wrapper.find('.td-metrics__assumptions')
+    const details = wrapper.find('.paper-metrics__assumptions')
     expect(details.exists()).toBe(true)
     expect(wrapper.text()).toContain('Assumptions (2)')
   })

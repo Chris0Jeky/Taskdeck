@@ -112,6 +112,14 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a Processing plain capture request (request type
+    /// <c>inbox.capture.*</c>, excluding transcript captures) for the capture worker lane using
+    /// optimistic concurrency: stamps UpdatedAt only if the row still has the expected UpdatedAt.
+    /// Returns true if the claim succeeded. On success, implementations must refresh any in-memory
+    /// instance of the request they hold so callers observe the persisted claim timestamp.
+    /// </summary>
     Task<bool> TryClaimProcessingCaptureAsync(
         Guid requestId,
         DateTimeOffset expectedUpdatedAt,

@@ -23,6 +23,8 @@ public class ProvenanceEvidenceLinkConfiguration : IEntityTypeConfiguration<Prov
             .IsRequired()
             .HasMaxLength(500);
 
+        builder.Property(el => el.TranscriptId);
+
         builder.Property(el => el.Label)
             .HasMaxLength(200);
 
@@ -40,5 +42,15 @@ public class ProvenanceEvidenceLinkConfiguration : IEntityTypeConfiguration<Prov
             .IsConcurrencyToken();
 
         builder.HasIndex(el => el.ProvenanceFieldId);
+        builder.HasIndex(el => el.TranscriptId);
+
+        builder.HasOne<Transcript>()
+            .WithMany()
+            .HasForeignKey(el => el.TranscriptId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.ToTable(table => table.HasCheckConstraint(
+            "CK_ProvenanceEvidenceLinks_TranscriptId",
+            $"(\"SourceType\" = '{ProvenanceEvidenceLink.TranscriptSourceType}' AND \"TranscriptId\" IS NOT NULL) OR (\"SourceType\" <> '{ProvenanceEvidenceLink.TranscriptSourceType}' AND \"TranscriptId\" IS NULL)"));
     }
 }

@@ -134,6 +134,81 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void AddTypedTranscriptEvidenceLink_removes_orphaned_transcript_evidence_when_reapplied_after_rollback()
+    {
+        _context.Database.Migrate();
+
+        var user = new User("migration-transcript-owner", "migration-transcript-owner@example.test", "hash");
+        var deletedTranscript = new Transcript(
+            user.Id,
+            CaptureSource.TranscriptPaste,
+            "Transcript evidence is orphaned after rollback.",
+            [new TranscriptSegment(0, 0, "Speaker", 0)]);
+        var retainedTranscript = new Transcript(
+            user.Id,
+            CaptureSource.TranscriptPaste,
+            "Transcript evidence remains parent-backed.",
+            [new TranscriptSegment(0, 0, "Speaker", 0)]);
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Migration transcript evidence",
+            RiskLevel.Low,
+            $"migration-transcript-evidence-{Guid.NewGuid():N}");
+        var provenance = new ProposalProvenance(proposal.Id, proposal.CorrelationId, "test-model");
+        var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.9, provenance.Id);
+        var orphanedLink = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            deletedTranscript.Id.ToString("D"),
+            field.Id,
+            label: "Orphaned transcript evidence",
+            spanStart: 0,
+            spanEnd: 10,
+            transcriptId: deletedTranscript.Id);
+        var retainedLink = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            retainedTranscript.Id.ToString("D"),
+            field.Id,
+            label: "Retained transcript evidence",
+            spanStart: 0,
+            spanEnd: 10,
+            transcriptId: retainedTranscript.Id);
+        var unrelatedLink = new ProvenanceEvidenceLink(
+            "InboxCapture",
+            "capture-survives-transcript-cleanup",
+            field.Id,
+            label: "Unrelated evidence");
+        field.AddEvidenceLink(orphanedLink);
+        field.AddEvidenceLink(retainedLink);
+        field.AddEvidenceLink(unrelatedLink);
+        provenance.AddField(field);
+
+        _context.Users.Add(user);
+        _context.Transcripts.AddRange(deletedTranscript, retainedTranscript);
+        _context.AutomationProposals.Add(proposal);
+        _context.ProposalProvenances.Add(provenance);
+        _context.SaveChanges();
+        _context.ChangeTracker.Clear();
+
+        var migrator = _context.GetService<IMigrator>();
+        migrator.Migrate("20260816135723_AddLlmRequestTranscriptLinkage");
+        _context.ChangeTracker.Clear();
+        _context.Transcripts.Remove(_context.Transcripts.Single(transcript => transcript.Id == deletedTranscript.Id));
+        _context.SaveChanges();
+        migrator.Migrate("20260816163822_AddTypedTranscriptEvidenceLink");
+
+        _context.ChangeTracker.Clear();
+        _context.ProvenanceEvidenceLinks.Should().NotContain(candidate => candidate.Id == orphanedLink.Id);
+        var restoredLink = _context.ProvenanceEvidenceLinks.Single(candidate => candidate.Id == retainedLink.Id);
+        restoredLink.SourceType.Should().Be(ProvenanceEvidenceLink.TranscriptSourceType);
+        restoredLink.SourceId.Should().Be(retainedTranscript.Id.ToString("D"));
+        restoredLink.TranscriptId.Should().Be(retainedTranscript.Id);
+        var restoredUnrelatedLink = _context.ProvenanceEvidenceLinks.Single(candidate => candidate.Id == unrelatedLink.Id);
+        restoredUnrelatedLink.SourceType.Should().Be("InboxCapture");
+        restoredUnrelatedLink.TranscriptId.Should().BeNull();
+    }
+
+    [Fact]
     public void All_migrations_have_distinct_timestamps()
     {
         // Act — get the full ordered migration list

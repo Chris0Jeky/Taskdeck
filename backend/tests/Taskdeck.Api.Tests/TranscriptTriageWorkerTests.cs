@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Taskdeck.Api.Workers;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -89,13 +90,24 @@ public class TranscriptTriageWorkerTests
 
     private static ServiceProvider BuildServiceProvider(
         FakeLlmQueueRepository queueRepo,
-        FakeCaptureTriageService? triageService = null)
+        FakeCaptureTriageService? triageService = null,
+        ITranscriptRepository? transcriptRepository = null)
     {
         var services = new ServiceCollection();
         var unitOfWork = new FakeUnitOfWork(queueRepo);
         services.AddSingleton<IUnitOfWork>(unitOfWork);
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
+        services.AddSingleton<ITranscriptRepository>(transcriptRepository ?? CreateTranscriptRepositoryMock().Object);
         return services.BuildServiceProvider();
+    }
+
+    private static Mock<ITranscriptRepository> CreateTranscriptRepositoryMock()
+    {
+        var repository = new Mock<ITranscriptRepository>();
+        repository
+            .Setup(item => item.AddAsync(It.IsAny<Transcript>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Transcript transcript, CancellationToken _) => transcript);
+        return repository;
     }
 
     private static async Task InvokeProcessBatchAsync(
@@ -145,6 +157,77 @@ public class TranscriptTriageWorkerTests
         triageService.LastCaptureItemId.Should().Be(item.Id);
         triageService.LastUserId.Should().Be(item.UserId);
         triageService.LastBoardId.Should().Be(boardId);
+        triageService.LastTranscriptId.Should().Be(item.TranscriptId);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_TranscriptItem_PersistsOneTranscriptAndFeedsCanonicalText()
+    {
+        var item = CreateTranscriptTriageItem(
+            payload: CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+                1,
+                CaptureSource.TranscriptPaste,
+                "first line\r\nsecond line\r\n🌍")));
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var triageService = new FakeCaptureTriageService();
+        var transcript = new Transcript(
+            item.UserId,
+            CaptureSource.TranscriptPaste,
+            "placeholder");
+        var transcriptRepository = CreateTranscriptRepositoryMock();
+        transcriptRepository
+            .Setup(repository => repository.AddAsync(It.IsAny<Transcript>(), It.IsAny<CancellationToken>()))
+            .Callback<Transcript, CancellationToken>((created, _) => transcript = created)
+            .ReturnsAsync((Transcript created, CancellationToken _) => created);
+        using var sp = BuildServiceProvider(queueRepo, triageService, transcriptRepository.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.TranscriptId.Should().Be(transcript.Id);
+        transcript.Text.Should().Be("first line\nsecond line\n🌍");
+        triageService.LastPayload.Should().NotBeNull();
+        triageService.LastPayload!.Text.Should().Be(transcript.Text);
+        triageService.LastPayload.Text.Should().NotContain("\r");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_TranscriptRetry_ReusesLinkedTranscript()
+    {
+        var item = CreateTranscriptTriageItem(payload: BuildTranscriptPayloadJson("retry me"));
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var calls = 0;
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) =>
+            {
+                calls++;
+                return calls == 1
+                    ? Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.Conflict, "retry")
+                    : Result.Success(new CaptureTriageProposalResultDto(
+                        captureItemId, Guid.NewGuid(), Guid.NewGuid(), 1, "v1", "mock", "mock-model"));
+            }
+        };
+        var added = new List<Transcript>();
+        var transcriptRepository = CreateTranscriptRepositoryMock();
+        transcriptRepository
+            .Setup(repository => repository.AddAsync(It.IsAny<Transcript>(), It.IsAny<CancellationToken>()))
+            .Callback<Transcript, CancellationToken>((created, _) => added.Add(created))
+            .ReturnsAsync((Transcript created, CancellationToken _) => created);
+        transcriptRepository
+            .Setup(repository => repository.GetByIdForUserAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, Guid _, CancellationToken _) => added.SingleOrDefault(item => item.Id == id));
+        using var sp = BuildServiceProvider(queueRepo, triageService, transcriptRepository.Object);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        added.Should().ContainSingle();
+        item.TranscriptId.Should().Be(added[0].Id);
+        item.Status.Should().Be(RequestStatus.Completed);
+        triageService.CallCount.Should().Be(2);
     }
 
     [Fact]
@@ -775,6 +858,8 @@ public class TranscriptTriageWorkerTests
         public Guid? LastCaptureItemId { get; private set; }
         public Guid? LastUserId { get; private set; }
         public Guid? LastBoardId { get; private set; }
+        public Guid? LastTranscriptId { get; private set; }
+        public CapturePayloadV1? LastPayload { get; private set; }
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -789,6 +874,7 @@ public class TranscriptTriageWorkerTests
             LastCaptureItemId = captureItemId;
             LastUserId = userId;
             LastBoardId = boardId;
+            LastPayload = payload;
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));
@@ -803,6 +889,18 @@ public class TranscriptTriageWorkerTests
                 "mock",
                 "mock-model");
             return Task.FromResult(Result.Success(result));
+        }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+        {
+            LastTranscriptId = transcriptId;
+            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
         }
     }
 

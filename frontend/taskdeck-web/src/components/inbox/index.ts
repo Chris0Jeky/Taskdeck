@@ -5,6 +5,5 @@ export {
   statusBadgeVariant,
   sourceLabel,
   canMutateSelection,
-  canEditSuggestion,
   triageButtonLabel,
 } from './inboxUtils'

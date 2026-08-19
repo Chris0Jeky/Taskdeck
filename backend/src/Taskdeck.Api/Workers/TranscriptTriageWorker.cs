@@ -2,6 +2,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -134,6 +135,7 @@ public class TranscriptTriageWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var triageService = scope.ServiceProvider.GetRequiredService<ICaptureTriageService>();
+        var transcriptRepository = scope.ServiceProvider.GetRequiredService<ITranscriptRepository>();
 
         var claimed = await unitOfWork.LlmQueue.TryClaimProcessingTranscriptAsync(itemId, expectedUpdatedAt, ct);
         if (!claimed)
@@ -196,11 +198,50 @@ public class TranscriptTriageWorker : BackgroundService
                 return;
             }
 
-            var triageResult = await triageService.CreateProposalFromCaptureAsync(
+            var transcript = item.TranscriptId.HasValue
+                ? await transcriptRepository.GetByIdForUserAsync(item.TranscriptId.Value, item.UserId, ct)
+                : null;
+
+            if (item.TranscriptId.HasValue && transcript is null)
+            {
+                var linkedTranscriptRetryScheduled = await HandleFailureWithRetryAsync(
+                    unitOfWork,
+                    item,
+                    ErrorCodes.NotFound,
+                    "The linked transcript could not be found",
+                    ct);
+
+                outcome = linkedTranscriptRetryScheduled ? "failed_retry" : "failed_permanent";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+                return;
+            }
+
+            if (transcript is null)
+            {
+                transcript = new Transcript(
+                    item.UserId,
+                    parsedPayloadResult.Value.Source,
+                    parsedPayloadResult.Value.Text,
+                    boardId: item.BoardId,
+                    createdFromCaptureId: item.Id);
+                await transcriptRepository.AddAsync(transcript, ct);
+                item.AttachTranscript(transcript.Id);
+
+                // Persist the transcript and queue linkage together before any provider work. A
+                // replay observes TranscriptId and reuses this canonical text instead of creating
+                // a second transcript.
+                await unitOfWork.SaveChangesAsync(ct);
+            }
+
+            var canonicalPayload = parsedPayloadResult.Value with { Text = transcript.Text };
+
+            var triageResult = await triageService.CreateProposalFromTranscriptAsync(
                 item.Id,
                 item.UserId,
                 item.BoardId,
-                parsedPayloadResult.Value,
+                transcript.Id,
+                canonicalPayload,
                 ct);
 
             if (triageResult.IsSuccess)

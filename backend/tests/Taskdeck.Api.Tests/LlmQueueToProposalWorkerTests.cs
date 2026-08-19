@@ -1386,6 +1386,15 @@ public class LlmQueueToProposalWorkerTests
                 "mock-model");
             return Task.FromResult(Result.Success(result));
         }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

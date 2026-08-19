@@ -22,6 +22,31 @@ public class LlmRequestTests
     }
 
     [Fact]
+    public void AttachTranscript_ShouldBeIdempotentForSameId()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        var transcriptId = Guid.NewGuid();
+
+        request.AttachTranscript(transcriptId);
+        request.AttachTranscript(transcriptId);
+
+        request.TranscriptId.Should().Be(transcriptId);
+    }
+
+    [Fact]
+    public void AttachTranscript_ShouldRejectDifferentId()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.AttachTranscript(Guid.NewGuid());
+
+        var act = () => request.AttachTranscript(Guid.NewGuid());
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot attach a different transcript to this request")
+            .Where(exception => exception.ErrorCode == ErrorCodes.Conflict);
+    }
+
+    [Fact]
     public void Constructor_ShouldThrow_WhenBoardIdIsEmpty()
     {
         // Act
