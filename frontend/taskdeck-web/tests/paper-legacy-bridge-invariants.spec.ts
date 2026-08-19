@@ -165,6 +165,17 @@ function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
+/**
+ * The only rules in the bridge allowed to select the root element. `<body>`
+ * cannot set `color-scheme` for the document, so these two follow the body
+ * skin through `:has()`. They are exempt from the "scoped under .paper" rule
+ * BY NAME, and may declare nothing but `color-scheme`.
+ */
+const ROOT_COLOR_SCHEME_RULES = [
+  { selector: ':root:has(> body.paper)', value: 'light' },
+  { selector: ':root:has(> body.paper-night)', value: 'dark' },
+] as const
+
 describe('ADR-0053 bridge invariant 1 — Legacy is byte-identical', () => {
   it('emits every Tailwind semantic colour as var(--td-tw-<name>, <original hex>)', () => {
     const entries = tailwindColorEntries()
@@ -211,14 +222,35 @@ describe('ADR-0053 bridge invariant 1 — Legacy is byte-identical', () => {
     expect(drift).toEqual([])
   })
 
-  it('scopes every bridge rule under .paper / .paper-night, never :root', () => {
-    const selectors = [...stripComments(paperBridge).matchAll(/(^|\})\s*([^{}]+)\{/gm)].map(
-      ([, , selector]) => selector.trim().replace(/\s+/g, ' '),
+  it('scopes every bridge rule under .paper / .paper-night, apart from two named :root color-scheme rules', () => {
+    // The old assertion was named "never :root" but accepted anything matching
+    // `body.paper` ANYWHERE in the selector, which the two `:root:has(> body.paper*)`
+    // rules do inside their `:has()` — so it never tested the claim its name
+    // made (#1842). The two rules are deliberate: `color-scheme` on the root
+    // element cannot be reached from `<body>`. They are exempted BY NAME, and
+    // held to carrying nothing but `color-scheme`, so a token declaration can
+    // never ride in at `:root` behind the exemption.
+    const rules = [...stripComments(paperBridge).matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(
+      ([, selector, body]) => ({ selector: selector.trim().replace(/\s+/g, ' '), body: body.trim() }),
     )
-    expect(selectors.length).toBeGreaterThan(0)
-    for (const selector of selectors) {
-      expect(selector, `bridge selector "${selector}"`).toMatch(/(^|[\s,(])(\.paper\b|\.paper-night\b|body\.paper)/)
+    expect(rules.length).toBeGreaterThan(0)
+
+    const seenExemptions: string[] = []
+    for (const { selector, body } of rules) {
+      const exemption = ROOT_COLOR_SCHEME_RULES.find((r) => r.selector === selector)
+      if (exemption) {
+        seenExemptions.push(selector)
+        expect(body, `exempt rule "${selector}" must declare only color-scheme`)
+          .toBe(`color-scheme: ${exemption.value};`)
+        continue
+      }
+      expect(selector, `bridge selector "${selector}"`).not.toMatch(/(^|[\s,>+~(])(:root|html)\b/)
+      expect(selector, `bridge selector "${selector}"`).toMatch(/(^|[\s,(])(\.paper\b|\.paper-night\b)/)
     }
+
+    // Both exemptions must actually be present, so deleting one is a failure
+    // rather than a silently smaller allow-list.
+    expect(seenExemptions).toEqual(ROOT_COLOR_SCHEME_RULES.map((r) => r.selector))
   })
 })
 
@@ -293,6 +325,27 @@ describe('ADR-0053 bridge invariant 2 — no Obsidian leaks into Paper', () => {
     }
     // Five types, five visually separable stripes.
     expect(new Set(paperValues).size).toBe(stripes.length)
+  })
+
+  it('re-tints all five notification badges, with :root holding the Legacy hues', () => {
+    // The stripes' companion (#1842): `typeBadgeClass` used to emit raw
+    // Tailwind palette utilities, which do not follow the active skin.
+    const types = ['proposal', 'mention', 'board-change', 'assignment', 'system']
+    const backgrounds = types.map((t) => declaredValue(paperScope, `--td-notify-${t}-bg`))
+
+    for (const t of types) {
+      for (const part of ['bg', 'fg']) {
+        const name = `--td-notify-${t}-${part}`
+        expect(declaredValue(paperScope, name), `${name} under Paper`).toMatch(/^var\(--[a-z0-9-]+\)$/)
+        expect(declaredValue(rootBlock, name), `${name} at :root`).toBeTruthy()
+      }
+      // The badge is a filled chip, so the type is carried by the background.
+      expect(declaredValue(paperScope, `--td-notify-${t}-fg`), `${t} badge foreground`)
+        .toBe('var(--ink)')
+    }
+
+    // Five types, five separable fills.
+    expect(new Set(backgrounds).size).toBe(types.length)
   })
 })
 

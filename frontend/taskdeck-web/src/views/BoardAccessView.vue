@@ -348,8 +348,9 @@ function openRoute(path: string) {
   max-width: 720px;
 }
 
+/* Eyebrow token: `--mute`, the canonical wayfinding tint (ADR-0053, #1842). */
 .paper-access__eyebrow {
-  color: var(--ember, #a8421f);
+  color: var(--mute, #635c4e);
 }
 
 .paper-access__title {

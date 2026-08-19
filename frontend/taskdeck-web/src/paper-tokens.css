@@ -32,11 +32,11 @@
    * `--faint`: `--faint` measures 4.60:1 on `--paper-2`, the darkest ground
    * small text sits on, so it has ~0.1 of AA headroom and cannot move.
    * Darkening `--mute` only ever raises contrast.  #635c4e puts the two rungs
-   * 1.15:1 apart, matching the night ladder's own step, and holds 5.7:1 on
-   * `--paper` / 5.3:1 on `--paper-2` / 4.8:1 on `--paper-edge` (6.2:1 on
-   * `--paper-card`) — figures reproduced with the WCAG formula in
-   * `tests/paper-ink-ladder-contrast.spec.ts`, which pins the >= 4.5 floor.
-   * Pinned by `tests/paper-ink-ladder-contrast.spec.ts`.
+   * 1.15:1 apart, matching the night ladder's own step, and holds 5.73:1 on
+   * `--paper` / 5.28:1 on `--paper-2` / 4.77:1 on `--paper-edge` (6.19:1 on
+   * `--paper-card`).  Every figure in this comment is asserted EXACTLY, not
+   * merely against the >= 4.5 floor, in
+   * `tests/paper-ink-ladder-contrast.spec.ts` (#1842).
    */
   --mute:         #635c4e;
   /* Small text uses this token, so it must clear 4.5:1 on the darkest Paper surface. */

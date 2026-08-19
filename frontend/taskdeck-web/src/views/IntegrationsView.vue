@@ -413,7 +413,7 @@ onMounted(() => {
 }
 
 .paper-int__hero-copy { display: flex; flex-direction: column; gap: var(--s-2, 8px); }
-.paper-int__eyebrow { color: var(--ember, #a8421f); }
+.paper-int__eyebrow { color: var(--mute, #635c4e); }
 .paper-int__title { margin: 0; font-size: var(--t-h2, 32px); }
 .paper-int__subtitle { margin: 0; color: var(--ink-2, #3a352d); max-width: 32rem; }
 

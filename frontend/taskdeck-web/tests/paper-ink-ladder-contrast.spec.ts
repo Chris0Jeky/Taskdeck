@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
  *   - `--ink-2` is the new `--td-color-info` foreground under Paper: `info`
  *     used to collapse onto `--ember` alongside `error`.
  *   - `--ember-ink` on `--ember-tint` is the new `.td-alert--error` pairing;
- *     the previous `--ember` on `--ember-tint` measures 4.45:1, under AA.
+ *     the previous `--ember` on `--ember-tint` measures 4.46:1, under AA.
  *
  * Text grounds are the three Paper surfaces body copy actually sits on
  * (`--paper`, `--paper-2`, `--paper-card`). `--paper-edge` is included only
@@ -117,5 +117,97 @@ describe.each(THEMES)('Paper status foregrounds — %s', (theme) => {
   it('--ember-ink clears 4.5:1 on --ember-tint (the .td-alert--error pairing)', () => {
     expect(contrast(readToken(block, '--ember-ink'), readToken(block, '--ember-tint')))
       .toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+/**
+ * Notification type badges (#1842).
+ *
+ * `typeBadgeClass` used to emit raw Tailwind palette utilities; the colour now
+ * lives in `--td-notify-*-bg` / `--td-notify-*-fg`, re-tinted under Paper by
+ * `paper-legacy-bridge.css`. The badge is a filled chip, so the type is carried
+ * by the background — five distinct Paper tints — and the foreground is `--ink`
+ * for all five rather than each tint's own hue, because `--applied` on
+ * `--applied-tint` is sub-AA in light Paper.
+ */
+const BADGE_TINTS = ['--overdue-tint', '--ember-tint', '--applied-tint', '--paper-edge', '--paper-2'] as const
+
+describe.each(THEMES)('Paper notification badges — %s', (theme) => {
+  const block = extractBlock(theme)
+
+  it('gives the five badges five distinct backgrounds', () => {
+    const values = BADGE_TINTS.map((name) => readToken(block, name))
+    expect(new Set(values).size).toBe(BADGE_TINTS.length)
+  })
+
+  it.each(BADGE_TINTS)('--ink (the badge foreground) clears 4.5:1 on %s', (surface) => {
+    expect(contrast(readToken(block, '--ink'), readToken(block, surface)))
+      .toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+/**
+ * Exact contrast figures cited in permanent comments (#1842, item 4).
+ *
+ * The `>= 4.5` assertions above are a FLOOR: a comment could state any number
+ * above it and the suite would stay green, which is how a stale or invented
+ * figure survives in a file that looks tested. Per the verify-the-measurement
+ * norm, every figure a permanent comment states is re-measured here with the
+ * same WCAG formula and pinned to two decimal places, so moving a token forces
+ * the comment to be corrected alongside it. Each row names the comment it
+ * pins. (Figures re-measured on this branch; `--ember` on `--ember-tint` came
+ * back 4.46:1, not the 4.45:1 three comments had recorded — corrected there.)
+ */
+const PINNED_FIGURES: ReadonlyArray<{
+  theme: Theme
+  fg: string
+  bg: string
+  expected: number
+  citedBy: string
+}> = [
+  // src/paper-tokens.css — the `--mute` ink-ladder comment.
+  { theme: '.paper', fg: '--mute', bg: '--paper', expected: 5.73, citedBy: 'paper-tokens.css --mute comment' },
+  { theme: '.paper', fg: '--mute', bg: '--paper-2', expected: 5.28, citedBy: 'paper-tokens.css --mute comment' },
+  { theme: '.paper', fg: '--mute', bg: '--paper-edge', expected: 4.77, citedBy: 'paper-tokens.css --mute comment' },
+  { theme: '.paper', fg: '--mute', bg: '--paper-card', expected: 6.19, citedBy: 'paper-tokens.css --mute comment' },
+  { theme: '.paper', fg: '--faint', bg: '--paper-2', expected: 4.60, citedBy: 'paper-tokens.css --faint headroom claim' },
+  // src/paper-legacy-bridge.css — the `.td-alert--error` disposition comment.
+  { theme: '.paper', fg: '--ember-ink', bg: '--ember-tint', expected: 7.83, citedBy: 'paper-legacy-bridge.css .td-alert--error comment' },
+  { theme: '.paper-night', fg: '--ember-ink', bg: '--ember-tint', expected: 9.53, citedBy: 'paper-legacy-bridge.css .td-alert--error comment' },
+  { theme: '.paper', fg: '--ember', bg: '--ember-tint', expected: 4.46, citedBy: 'paper-legacy-bridge.css — the sub-AA pairing it rejects' },
+  // src/paper-legacy-bridge.css — the Tailwind `obsidian` mapping comment.
+  { theme: '.paper', fg: '--paper', bg: '--ember', expected: 5.25, citedBy: 'paper-legacy-bridge.css --td-tw-obsidian comment' },
+  // src/paper-legacy-bridge.css — the badge foreground comment.
+  { theme: '.paper', fg: '--applied', bg: '--applied-tint', expected: 4.46, citedBy: 'paper-legacy-bridge.css badge comment — why the fg is --ink' },
+]
+
+/** Contrast rounded the way the comments state it: two decimal places. */
+function pinnedContrast(theme: Theme, fg: string, bg: string): number {
+  const block = extractBlock(theme)
+  return Math.round(contrast(readToken(block, fg), readToken(block, bg)) * 100) / 100
+}
+
+describe('contrast figures stated in permanent comments are exactly what is asserted', () => {
+  it.each(PINNED_FIGURES)(
+    '$theme: $fg on $bg is $expected:1 (cited by $citedBy)',
+    ({ theme, fg, bg, expected }) => {
+      expect(pinnedContrast(theme, fg, bg)).toBe(expected)
+    },
+  )
+
+  it('puts --mute and --faint exactly 1.15:1 apart in light Paper', () => {
+    // paper-tokens.css: "#635c4e puts the two rungs 1.15:1 apart".
+    expect(pinnedContrast('.paper', '--mute', '--faint')).toBe(1.15)
+  })
+
+  it('keeps every badge foreground/background pair at 12.6:1 or better', () => {
+    // paper-legacy-bridge.css badge comment: "--ink clears 12.6:1 or better on
+    // every one of the five tints in BOTH themes".
+    for (const theme of THEMES) {
+      for (const tint of BADGE_TINTS) {
+        expect(pinnedContrast(theme, '--ink', tint), `${theme} --ink on ${tint}`)
+          .toBeGreaterThanOrEqual(12.6)
+      }
+    }
   })
 })

@@ -143,6 +143,33 @@
   --td-notify-board-change: oklch(72.3% 0.219 149.579);  /* was green-500  */
   --td-notify-assignment: oklch(62.7% 0.265 303.9);      /* was purple-500 */
   --td-notify-system: oklch(70.7% 0.022 261.325);        /* was gray-400   */
+
+  /* ── Notification type badges (issue #1842) ──
+     The same treatment as the stripes above, one slice later: `typeBadgeClass`
+     in `useNotificationGrouping.ts` used to emit raw Tailwind palette utilities
+     (`bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200`), so
+     the badges stayed Obsidian-era hues inside the cream Paper shell.
+
+     Values are the exact Tailwind v4 palette entries those utilities compiled
+     to, copied from `tailwindcss@4.3.3/theme.css`, so Legacy rendering is
+     unchanged. The `dark:` halves are NOT carried over: `tailwind.config.js`
+     sets `darkMode: 'class'` and nothing in the app ever puts `dark` on an
+     element (`src/tests/config/PaperBranding.spec.ts` even asserts `index.html`
+     does not), so those variants never rendered. Paper's own night skin is
+     `.paper-night`, which `paper-legacy-bridge.css` handles alongside `.paper`.
+
+     `.td-notify-badge--*` in `style.css` paints these; the composable stays the
+     single source of the type -> badge mapping. */
+  --td-notify-proposal-bg: oklch(96.2% 0.059 95.617);       /* was amber-100  */
+  --td-notify-proposal-fg: oklch(47.3% 0.137 46.201);       /* was amber-800  */
+  --td-notify-mention-bg: oklch(93.2% 0.032 255.585);       /* was blue-100   */
+  --td-notify-mention-fg: oklch(42.4% 0.199 265.638);       /* was blue-800   */
+  --td-notify-board-change-bg: oklch(96.2% 0.044 156.743);  /* was green-100  */
+  --td-notify-board-change-fg: oklch(44.8% 0.119 151.328);  /* was green-800  */
+  --td-notify-assignment-bg: oklch(94.6% 0.033 307.174);    /* was purple-100 */
+  --td-notify-assignment-fg: oklch(43.8% 0.218 303.724);    /* was purple-800 */
+  --td-notify-system-bg: oklch(96.7% 0.003 264.542);        /* was gray-100   */
+  --td-notify-system-fg: oklch(37.3% 0.034 259.733);        /* was gray-700   */
 }
 
 /* ══════════════════════════════════════════════════

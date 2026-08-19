@@ -431,7 +431,7 @@ watch(viewDate, fetchCalendar)
 }
 
 .paper-calendar__eyebrow {
-  color: var(--ember, #a8421f);
+  color: var(--mute, #635c4e);
 }
 
 .paper-calendar__title {
