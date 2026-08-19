@@ -87,6 +87,14 @@ its value, and every character of a short cluster must itself be allowlisted. An
 abbreviated option is refused rather than passed through, so widening the lane means adding the
 exact option name to that subcommand's list and re-running `-SelfTest`.
 
+A short value flag consumes the next token, so that token must not itself start with `-`: the
+wrapper refuses `-x -anything` rather than waving an unvalidated option through as a value. Git
+options whose argument is *optional* are read only in the attached form, so Git would parse such a
+token as a real option — this is why `git diff -U` is not a value flag at all (`--unified=<n>` is
+the allowlisted spelling) and why no short value flag may be added for an optional-argument option.
+For the same read-boundary reason `git grep --no-index` is unlisted: it drops the index boundary
+and reads untracked and gitignored working-tree files such as `.env.local`.
+
 `ls-remote` is the only remote-touching subcommand. It requires an explicit lowercase `https://`
 repository URL as its first operand: a bare remote name, `ssh://`, `git://`, `file://`, an `ext::`
 helper, or `user@host:path` is refused before any process is launched, because those resolve
@@ -95,8 +103,11 @@ through configuration into an external transport. Every launched Git process add
 (command-line `-c` outranks repository, user, and `GIT_CONFIG_PARAMETERS` configuration, so an
 `insteadOf` rewrite cannot reintroduce another transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
 `GIT_SSH_VARIANT`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_ALLOW_PROTOCOL`,
-`GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, and `GIT_EXTERNAL_DIFF`.
-The validated URL is passed after `--end-of-options`.
+`GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_SYSTEM`, `GIT_EXEC_PATH`, and `GIT_EXTERNAL_DIFF`. `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_SYSTEM` substitute whole configuration files and `GIT_EXEC_PATH` relocates the
+directory Git resolves its subcommand binaries from, so they are cleared alongside the transport
+variables. The validated URL is passed after `--end-of-options`.
 
 This is an opt-in routed entry point, not a Taskdeck command-deny hook. The coordinator keeps direct
 `git` and `gh` access for its separately authorized mutation lane and must not claim that the wrapper

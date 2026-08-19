@@ -82,6 +82,10 @@ $script:GitReadOptionPolicy = @{
     "describe" = (New-GitOptionPolicy `
         -LongFlags @("--all", "--always", "--contains", "--dirty", "--first-parent", "--long", "--tags") `
         -LongValueFlags @("--abbrev", "--candidates", "--dirty", "--exclude", "--match"))
+    # diff has no short value flags on purpose. -U takes an OPTIONAL argument that Git reads only in
+    # the attached -U<n> form, so treating a lone -U as consuming the next token would hand Git an
+    # unvalidated option (git diff -U --output=<path> once wrote a file through this wrapper).
+    # --unified=<n> is the allowlisted spelling; -U and -U<n> are both refused by ShortFlags.
     "diff" = (New-GitOptionPolicy `
         -LongFlags @(
             "--binary", "--cached", "--check", "--color", "--exit-code", "--find-copies",
@@ -96,20 +100,24 @@ $script:GitReadOptionPolicy = @{
             "--ignore-submodules", "--inter-hunk-context", "--relative", "--src-prefix", "--stat",
             "--unified", "--word-diff"
         ) `
-        -ShortFlags "bpstwzCMR" `
-        -ShortValueFlags "U")
+        -ShortFlags "bpstwzCMR")
     "for-each-ref" = (New-GitOptionPolicy `
         -LongFlags @("--omit-empty") `
         -LongValueFlags @(
             "--contains", "--count", "--format", "--merged", "--no-contains", "--no-merged",
             "--points-at", "--sort"
         ))
+    # grep deliberately omits --no-index: it drops Git's index boundary and reads working-tree files
+    # Git does not track, gitignored ones included. Measured on git 2.45.1 - with --no-index the
+    # wrapper returned the contents of an ignored frontend .env.local that plain 'git grep' refuses
+    # to read. (Git itself still rejects a path outside the repository while the working directory
+    # is inside one, so the widening measured here is untracked/ignored content, not the whole disk.)
     "grep" = (New-GitOptionPolicy `
         -LongFlags @(
             "--all-match", "--and", "--basic-regexp", "--break", "--cached", "--color", "--column",
             "--count", "--extended-regexp", "--files-with-matches", "--files-without-match",
             "--fixed-strings", "--full-name", "--function-context", "--heading", "--ignore-case",
-            "--invert-match", "--line-number", "--name-only", "--no-color", "--no-index", "--not",
+            "--invert-match", "--line-number", "--name-only", "--no-color", "--not",
             "--null", "--or", "--perl-regexp", "--quiet", "--show-function", "--text", "--untracked",
             "--word-regexp"
         ) `
@@ -165,13 +173,19 @@ $script:GitReadOptionPolicy = @{
     "worktree" = (New-GitOptionPolicy -LongFlags @("--porcelain", "--verbose") -ShortFlags "vz")
 }
 
-# Environment variables that can make Git launch an external transport, helper, or prompt program.
+# Environment variables that can make Git launch an external transport, helper, or prompt program,
+# or redirect it to attacker-chosen configuration or helper binaries. GIT_CONFIG_GLOBAL and
+# GIT_CONFIG_SYSTEM substitute whole config files (alias, insteadOf, core.* helper hooks) and
+# GIT_EXEC_PATH relocates the directory Git resolves its subcommand binaries from.
 # They are cleared for every launched Git process; command-line -c settings close the config half.
 $script:GitNeutralizedEnvironmentVariables = @(
     "GIT_ALLOW_PROTOCOL",
     "GIT_ASKPASS",
     "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_GLOBAL",
     "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_EXEC_PATH",
     "GIT_EXTERNAL_DIFF",
     "GIT_PROTOCOL_FROM_USER",
     "GIT_PROXY_COMMAND",
@@ -247,12 +261,21 @@ function Split-GitInventoryArguments {
                 $index++
                 continue
             }
-            if ($characters.Length -eq 1 -and $Policy["ShortValueFlags"].Contains($characters)) {
+            if ($characters.Length -eq 1 -and $Policy["ShortValueFlags"].Length -gt 0 -and $Policy["ShortValueFlags"].Contains($characters)) {
                 if ($index + 1 -ge $Arguments.Count) {
                     Deny-InventoryCommand "git short option '$token' requires a separate value argument"
                 }
+                # This branch is the wrapper's assumption that Git consumes the next token as the
+                # option's value. Where that assumption is wrong - a short option whose argument is
+                # optional and only read when attached - Git parses the next token as a real option
+                # while the wrapper has already waved it through unvalidated. Refusing any value
+                # that looks like an option keeps a mistaken arity from becoming a bypass.
+                $value = $Arguments[$index + 1]
+                if ($value.StartsWith("-", [System.StringComparison]::Ordinal)) {
+                    Deny-InventoryCommand "git short option '$token' takes the next argument as its value, so '$value' is refused; a value starting with '-' cannot be distinguished from an unvalidated option"
+                }
                 [void]$options.Add($token)
-                [void]$options.Add($Arguments[$index + 1])
+                [void]$options.Add($value)
                 $index += 2
                 continue
             }
@@ -686,6 +709,25 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("git", "grep", "-f", "patterns.txt", "--", "src") "short option '-f'"
     Assert-Denied @("git", "status", "-") "reads from standard input"
 
+    # git diff -U takes an OPTIONAL argument that Git reads only when attached, so a lone -U does
+    # not consume the next token: Git parses it as a real option. Treating -U as a value flag let
+    # 'git diff -U --output=<path> HEAD~1' through and Git wrote the file. -U is not a diff flag at
+    # all now, in either spelling; --unified=<n> is the allowlisted form.
+    Assert-Allowed @("git", "diff", "--unified=3", "HEAD")
+    Assert-Denied @("git", "diff", "-U", "--output=result.patch", "HEAD~1") "short option '-U'"
+    Assert-Denied @("git", "diff", "-U", "--ext-diff", "HEAD~1") "short option '-U'"
+    Assert-Denied @("git", "diff", "-U5", "HEAD") "short option '-U'"
+
+    # Defense in depth against the same class: whatever the arity assumption, a consumed value that
+    # starts with a dash is refused for every short value flag of every subcommand.
+    Assert-Denied @("git", "grep", "-e", "--output=result.patch", "--", "src") "cannot be distinguished from an unvalidated option"
+    Assert-Denied @("git", "grep", "-C", "--textconv", "needle") "cannot be distinguished from an unvalidated option"
+    Assert-Denied @("git", "log", "-n", "--output=result.patch") "cannot be distinguished from an unvalidated option"
+    Assert-Denied @("git", "ls-files", "-x", "--ext-diff") "cannot be distinguished from an unvalidated option"
+
+    # git grep --no-index reads untracked and gitignored working-tree files (.env.local and friends).
+    Assert-Denied @("git", "grep", "--no-index", "-e", "secret", "frontend/taskdeck-web/.env.local") "not allowlisted for 'grep'"
+
     # ls-remote resolves its operand through Git's URL and configuration layers, so only an
     # explicit lowercase https URL may reach the transport.
     Assert-Denied @("git", "ls-remote", "ssh://example.invalid/repo") "only an explicit lowercase https"
@@ -746,6 +788,28 @@ function Invoke-ReadOnlyInventorySelfTest {
         throw "Expected ls-remote to be denied: $rejectedRemote"
     }
 
+    # Get-GitLaunchArguments forwards the original argv verbatim for local subcommands, so an option
+    # the splitter swallowed as a value would still reach Git. These must never reach the launcher.
+    foreach ($rejectedArgv in @(
+        @("git", "diff", "-U", "--output=result.patch", "HEAD~1"),
+        @("git", "diff", "-U", "--ext-diff", "HEAD~1"),
+        @("git", "diff", "-U", "--textconv", "HEAD~1"),
+        @("git", "grep", "-e", "--output=result.patch", "--", "src"),
+        @("git", "grep", "--no-index", "-e", "secret", "frontend/taskdeck-web/.env.local")
+    )) {
+        try {
+            Invoke-ValidatedInventoryCommand -CommandTokens $rejectedArgv -Launcher $fakeLauncher
+        }
+        catch {
+            if ($state.LaunchCount -ne 1) {
+                throw "A swallowed-value argv reached the launcher: $($rejectedArgv -join ' ')"
+            }
+            $state.Checks++
+            continue
+        }
+        throw "Expected argv to be denied: $($rejectedArgv -join ' ')"
+    }
+
     $remoteLaunch = Get-GitLaunchArguments -Arguments @("ls-remote", "--heads", "https://github.com/Chris0Jeky/Taskdeck.git")
     foreach ($requiredPair in @("core.sshCommand=", "protocol.allow=never", "protocol.https.allow=always", "diff.external=")) {
         if ($remoteLaunch -cnotcontains $requiredPair) {
@@ -759,7 +823,10 @@ function Invoke-ReadOnlyInventorySelfTest {
     }
     $state.Checks++
 
-    foreach ($requiredVariable in @("GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ALLOW_PROTOCOL", "GIT_PROXY_COMMAND", "GIT_CONFIG_PARAMETERS")) {
+    foreach ($requiredVariable in @(
+        "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "GIT_ALLOW_PROTOCOL", "GIT_PROXY_COMMAND",
+        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_EXEC_PATH"
+    )) {
         if ($script:GitNeutralizedEnvironmentVariables -cnotcontains $requiredVariable) {
             throw "Git launches must neutralize $requiredVariable."
         }
