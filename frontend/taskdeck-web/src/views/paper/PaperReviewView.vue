@@ -697,6 +697,20 @@ const applyPhase = computed<ApplyPhase>(() => {
   return normalizeProposalStatus(p.status) === 'Approved' ? 'execute' : 'approve'
 })
 
+// #1830 round 2: the confirmation dialog must not claim "0 operations will be
+// applied" for the revision-aware apply path onApply deliberately allows (zero
+// original operations + a saved revision, #1235). `revisionCount` tracks the
+// ACTIVE proposal only, so it is only passed while the proposal awaiting
+// confirmation is still the active one — otherwise the dialog is told nothing
+// (null) and falls back to copy that claims no count.
+const applyConfirmRevisionCount = computed<number | null>(() => {
+  const pending = executeConfirmProposal.value
+  if (!pending) return null
+  if (activeProposal.value?.id !== pending.id) return null
+  if (!revisionsLoaded.value) return null
+  return revisionCount.value
+})
+
 function onFileAway() {
   const p = activeProposal.value
   if (!p) return
@@ -1325,6 +1339,7 @@ function onQueueFilterChange(filter: QueueFilter) {
     <ApplyToBoardDialog
       :proposal="executeConfirmProposal"
       :busy="busy"
+      :revision-count="applyConfirmRevisionCount"
       @confirm="confirmExecuteProposal"
       @cancel="cancelExecuteProposal"
     />

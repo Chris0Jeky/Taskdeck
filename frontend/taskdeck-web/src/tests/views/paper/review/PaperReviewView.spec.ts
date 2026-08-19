@@ -1968,6 +1968,14 @@ describe('PaperReviewView', () => {
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
+
+    // #1830 round 2: the dialog that gates this path must not report the zero
+    // ORIGINAL operations as what is about to be applied.
+    expect(document.body.querySelector('[data-testid="apply-confirm-operations"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-testid="apply-confirm-revision"]')?.textContent,
+    ).toContain('latest saved revision')
+
     await confirmApplyDialog()
 
     expect(mocks.executeProposal).toHaveBeenCalledWith('approved-revised', expect.anything())
@@ -2405,17 +2413,39 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
-    it('⏎ does not re-dispatch apply while the confirmation dialog is open', async () => {
+    it('the review keymap is inert while the confirmation dialog is open', async () => {
+      // #1830 round 2: asserting only "executeProposal was not called" for ⏎ is
+      // NOT discriminating — with the `executeConfirmProposal === null` clause
+      // deleted from the keymap's enabled gate, ⏎ reaches onApply, which merely
+      // re-requests the same confirmation and calls no API. Two assertions that
+      // do discriminate:
+      //   1. the keymap only calls preventDefault() when it actually dispatches
+      //      a handler, so an un-prevented event proves the gate held;
+      //   2. ⌫ behind the dialog would reach onReject, and an Approved proposal
+      //      is not reject-actionable, so it emits its refusal toast.
       const wrapper = await mountView([makeProposal({ id: 'approved-4', status: 'Approved' })])
 
       await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+      mocks.infoToast.mockClear()
 
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+      window.dispatchEvent(enter)
       await flushPromises()
+      expect(enter.defaultPrevented).toBe(false)
 
+      const backspace = new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true })
+      window.dispatchEvent(backspace)
+      await flushPromises()
+      expect(backspace.defaultPrevented).toBe(false)
+      expect(mocks.infoToast).not.toHaveBeenCalled()
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+      // The dialog is still the only path to the board.
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       wrapper.unmount()
     })

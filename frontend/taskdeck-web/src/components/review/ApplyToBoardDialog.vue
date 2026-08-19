@@ -21,6 +21,12 @@ const props = defineProps<{
   proposal: Proposal | null
   /** True while the execute call is in flight. */
   busy?: boolean
+  /**
+   * How many saved revisions the surface knows this proposal has, or
+   * null/undefined when the surface does not track revision state (Legacy).
+   * Load-bearing for the scope line below — NOT decoration.
+   */
+  revisionCount?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -45,9 +51,42 @@ const summary = computed(() => {
 
 const operationCount = computed(() => props.proposal?.operations?.length ?? 0)
 
-const operationLabel = computed(
-  () => `${operationCount.value} ${operationCount.value === 1 ? 'operation' : 'operations'}`,
+/**
+ * #1830 round 2: the proposal's ORIGINAL operations are not necessarily what
+ * gets applied. A saved revision is materialized server-side at execute time
+ * (#1235, preview == apply), which is exactly why PaperReviewView.onApply lets
+ * an Approved proposal with ZERO original operations through when it has a
+ * revision. Saying "0 operations will be applied" there is materially wrong on
+ * the one surface this dialog exists to make honest.
+ */
+const hasRevisions = computed(() => (props.revisionCount ?? 0) > 0)
+
+/**
+ * The count is only trustworthy when the applied content IS the original
+ * operations list: no revision replaces it, and either the list is non-empty
+ * or the surface authoritatively told us the revision count is 0. An unknown
+ * revision count with an empty list (the Legacy surface, which does not track
+ * revisions) gets copy without a number rather than a possibly-wrong "0".
+ */
+const showOperationCount = computed(
+  () =>
+    !hasRevisions.value &&
+    (operationCount.value > 0 || typeof props.revisionCount === 'number'),
 )
+
+/**
+ * No number is claimed for the revision case: the only revision data the client
+ * holds is the raw `revisedPayload` JSON, and re-deriving a count from it would
+ * be a client-side guess at what the backend will materialize. Honest copy
+ * without a number beats a number we cannot stand behind.
+ */
+const operationLabel = computed(() => {
+  if (!showOperationCount.value) {
+    return 'The approved contents of this proposal will be applied.'
+  }
+  const n = operationCount.value
+  return `${n} ${n === 1 ? 'operation' : 'operations'} will be applied.`
+})
 </script>
 
 <template>
@@ -65,8 +104,12 @@ const operationLabel = computed(
       <blockquote class="td-apply-confirm__summary" data-testid="apply-confirm-summary">
         {{ summary }}
       </blockquote>
-      <p class="td-apply-confirm__meta" data-testid="apply-confirm-operations">
-        {{ operationLabel }} will be applied.
+      <p v-if="hasRevisions" class="td-apply-confirm__meta" data-testid="apply-confirm-revision">
+        This proposal was edited — its latest saved revision is what will be applied, not the
+        original operations.
+      </p>
+      <p v-else class="td-apply-confirm__meta" data-testid="apply-confirm-operations">
+        {{ operationLabel }}
       </p>
     </div>
 
