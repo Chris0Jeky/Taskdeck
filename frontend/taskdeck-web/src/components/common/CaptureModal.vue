@@ -477,7 +477,12 @@ onUnmounted(() => {
 
 .td-alert--error {
   background: var(--td-color-error-light);
-  color: var(--td-color-error);
+  /* Paper-first, Legacy fallback (the LoginView/RegisterView pattern). Under
+     Paper this pair resolves to --ember on --ember-tint, which measures
+     4.45:1 — just under AA — so the ember INK rung is used instead (7.8:1
+     light / 9.5:1 night). --ember-ink is undeclared outside the Paper shell,
+     so Legacy still resolves --td-color-error exactly as before. #1817 */
+  color: var(--ember-ink, var(--td-color-error));
 }
 
 /* --- Mobile: full-screen capture --- */
