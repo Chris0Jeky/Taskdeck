@@ -71,6 +71,18 @@ describe('ExportImportView', () => {
     expect(wrapper.text()).toContain('Board ID')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', () => {
+    const wrapper = mount(ExportImportView)
+
+    // Root, tabs, and panels should use the Paper (`paper-portability__*`)
+    // idiom, and none of the legacy Obsidian hooks should survive.
+    expect(wrapper.find('.paper-portability').exists()).toBe(true)
+    expect(wrapper.find('.paper-portability__tabs').exists()).toBe(true)
+    expect(wrapper.find('.paper-portability__panel').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-export-import"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-tab"]').exists()).toBe(false)
+  })
+
   it('switches to import panel when Import tab is clicked', async () => {
     const wrapper = mount(ExportImportView)
 
@@ -120,7 +132,7 @@ describe('ExportImportView', () => {
       await waitForUi()
 
       expect(wrapper.text()).toContain('my-board-id')
-      expect(wrapper.find('pre.td-json-viewer').exists()).toBe(true)
+      expect(wrapper.find('pre.paper-portability__json').exists()).toBe(true)
     })
 
     it('shows Copy and Download buttons after a successful export', async () => {
@@ -131,7 +143,7 @@ describe('ExportImportView', () => {
       await exportBtn!.trigger('click')
       await waitForUi()
 
-      const resultActionBtns = wrapper.findAll('.td-result-actions button')
+      const resultActionBtns = wrapper.findAll('.paper-portability__result-actions button')
       expect(resultActionBtns.some((b) => b.text().includes('Copy'))).toBe(true)
       expect(resultActionBtns.some((b) => b.text().includes('Download'))).toBe(true)
     })
@@ -149,7 +161,7 @@ describe('ExportImportView', () => {
       expect(mocks.errorToast).toHaveBeenCalledWith(
         'Export failed. Check board ID and permissions.',
       )
-      expect(wrapper.find('pre.td-json-viewer').exists()).toBe(false)
+      expect(wrapper.find('pre.paper-portability__json').exists()).toBe(false)
     })
   })
 
