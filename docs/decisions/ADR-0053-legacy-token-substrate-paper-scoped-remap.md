@@ -110,9 +110,14 @@ visual regression harder. Track and remove it separately.
   (`#0e0e0e` in `InboxDetailPanel` vs `#f9f9f9`/`#f0f0f0` in `CohortDashboard`/`ProvenanceDrawer`);
   `--td-surface-elevated` (`MfaChallengeModal`, `MfaSetup`, `LoginView`) has *no* fallback, so its
   `background` is invalid-at-computed-value-time and resolves to transparent. The bridge defines all
-  five under Paper. **The `:root` gap is a separate pre-existing defect and is deliberately not
-  fixed here** — defining them at `:root` would change Legacy rendering, which this slice's whole
-  safety argument rests on not doing. Filed as `#1814`.
+  five under Paper. **The `:root` gap was a separate pre-existing defect and was deliberately not
+  fixed here** — defining them at `:root` changes Legacy rendering, which this slice's whole
+  safety argument rests on not doing. Filed as `#1814` and **closed there**: `design-tokens.css`
+  now aliases the five onto the Obsidian ladder at `:root`
+  (`lowest`/`sunken` → `container-lowest`, `low` → `container-low`,
+  `elevated`/`high` → `container-high`) and the per-site fallbacks were reconciled to agree.
+  Paper is unaffected — the bridge's declarations sit on `<body>`, and a declaration on the
+  element beats an inherited `:root` value.
 - **Accent collapse.** Obsidian already collapsed "primary", "error" and "ember" onto three
   near-identical reds (`#ffb3ae` / `#ffb4ab` / `#ff4d4d`). Paper has one accent hue, so they
   collapse onto `--ember` here too. This is faithful to the palette being replaced, not a new
