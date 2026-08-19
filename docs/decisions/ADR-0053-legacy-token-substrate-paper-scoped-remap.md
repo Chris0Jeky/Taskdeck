@@ -92,12 +92,25 @@ visual regression harder. Track and remove it separately.
 
 ### Colour-mapping choices worth knowing
 
-- **Surface ladder.** Obsidian's ladder brightens as it rises. Paper's rises by getting *lighter*
-  for raised chrome (`--paper-card`) and *darker* for recessed chrome (`--paper-2`, `--paper-edge`,
-  `--line`), matching `.card` / `.well` / `.pbtn` in `paper-tokens.css`.
-  `--td-surface-container` is deliberately mapped one step *darker* than
-  `--td-surface-container-low`, because it is the hover state of `.td-card` — and Paper's own
-  `.pbtn:hover` darkens rather than brightens.
+- **Surface ladder.** Obsidian's ladder brightens as it rises. On a light substrate that inverts —
+  emphasis reads as *more* contrast against the page — with one exception: the card, which Paper
+  lifts by going *lighter* than the page (`--paper-card` vs `--paper`), exactly as `.card` does in
+  `paper-tokens.css`. The mapped ladder is therefore monotonic away from the page:
+  card → page → panel (`--paper-2`) → edge (`--paper-edge`) → `--line` → `--whisper`. Every step is
+  a distinct value, so hover pairs Obsidian expressed as "one tier up" still read as state changes,
+  and they darken — which is Paper's own direction (`.pbtn:hover`).
+  `--td-surface-container` was mapped by measured weight, not by its name: it carries ~122 call
+  sites (65 Tailwind `bg-surface-container` + 57 `var()`), making it the dominant *panel* surface
+  rather than merely the `.td-card` hover tier, so it gets a real step off the page.
+- **Five tokens that were never defined.** `--td-surface-lowest`, `--td-surface-sunken`,
+  `--td-surface-elevated`, `--td-surface-low` and `--td-surface-high` are consumed by 9+ components
+  and declared nowhere in the repo. Some call sites carry disagreeing hex fallbacks
+  (`#0e0e0e` in `InboxDetailPanel` vs `#f9f9f9`/`#f0f0f0` in `CohortDashboard`/`ProvenanceDrawer`);
+  `--td-surface-elevated` (`MfaChallengeModal`, `MfaSetup`, `LoginView`) has *no* fallback, so its
+  `background` is invalid-at-computed-value-time and resolves to transparent. The bridge defines all
+  five under Paper. **The `:root` gap is a separate pre-existing defect and is deliberately not
+  fixed here** — defining them at `:root` would change Legacy rendering, which this slice's whole
+  safety argument rests on not doing.
 - **Accent collapse.** Obsidian already collapsed "primary", "error" and "ember" onto three
   near-identical reds (`#ffb3ae` / `#ffb4ab` / `#ff4d4d`). Paper has one accent hue, so they
   collapse onto `--ember` here too. This is faithful to the palette being replaced, not a new

@@ -39,20 +39,51 @@
 .paper,
 .paper-night {
   /* ── Surface ladder ──────────────────────────────────────
-     Obsidian's ladder brightens as it rises.  Paper's rises by getting
-     LIGHTER for raised chrome (cards) and darker for recessed chrome
-     (wells, chips, edges), matching `.card` / `.well` / `.pbtn` in
-     paper-tokens.css.  `--td-surface-container` is deliberately one step
-     DARKER than `--td-surface-container-low` because it is the hover state
-     of `.td-card`, and Paper's own `.pbtn:hover` darkens rather than
-     brightens. */
+     Obsidian's ladder brightens as it rises: base #131313 is the page and
+     each tier above it is lighter.  On a light substrate that inverts —
+     emphasis reads as *more* contrast against the page, i.e. darker — with
+     one exception: the card, which Paper lifts by going lighter than the
+     page (`--paper-card` #fbf7ee vs `--paper` #f3eee5), exactly as `.card`
+     does in paper-tokens.css.
+
+     So the ladder below is monotonic *away from* the page in the Paper
+     direction: card (lighter) → page → panel → edge → line → whisper.  Each
+     step is a distinct value, so hover pairs that Obsidian expressed as
+     "one tier up" still read as a state change:
+       .td-card       rest bg-surface-container-low  → --paper-card
+                      hover bg-surface-container     → --paper-2   (darkens)
+       .td-btn--secondary rest bg-surface-container-highest → --line
+                      hover bg-surface-bright        → --whisper  (darkens)
+     Paper's own `.pbtn:hover` darkens rather than brightens, so this is the
+     idiom's direction, not an inversion of it.
+
+     `--td-surface-container` carries ~122 call sites (65 Tailwind
+     `bg-surface-container` + 57 `var()`), which makes it the dominant PANEL
+     surface and not merely the card-hover tier — hence `--paper-2`, a real
+     step off the page, rather than the page colour itself. */
   --td-surface-base: var(--paper);
   --td-surface-container-lowest: var(--paper-2);
   --td-surface-container-low: var(--paper-card);
-  --td-surface-container: var(--paper);
-  --td-surface-container-high: var(--paper-2);
-  --td-surface-container-highest: var(--paper-edge);
-  --td-surface-bright: var(--line);
+  --td-surface-container: var(--paper-2);
+  --td-surface-container-high: var(--paper-edge);
+  --td-surface-container-highest: var(--line);
+  --td-surface-bright: var(--whisper);
+
+  /* Referenced-but-never-defined tokens.  `--td-surface-lowest`,
+     `--td-surface-sunken`, `--td-surface-elevated`, `--td-surface-low` and
+     `--td-surface-high` are consumed by 9+ components but declared NOWHERE —
+     not in design-tokens.css, not anywhere else.  Some call sites carry a
+     hex fallback and disagree with each other (#0e0e0e vs #f9f9f9/#f0f0f0);
+     `--td-surface-elevated` has no fallback at all, so `background` there is
+     invalid-at-computed-value-time and resolves to transparent.  Defining
+     them here fixes those surfaces under Paper without touching Legacy,
+     where they stay undefined exactly as before.  The `:root` gap is a
+     separate, pre-existing defect (see ADR-0053). */
+  --td-surface-lowest: var(--paper-2);
+  --td-surface-sunken: var(--paper-2);
+  --td-surface-low: var(--paper-card);
+  --td-surface-elevated: var(--paper-card);
+  --td-surface-high: var(--paper-edge);
 
   /* ── Text (Argent hierarchy → Ink ladder) ── */
   --td-text-primary: var(--ink);
@@ -117,10 +148,10 @@
      variables ALREADY substituted — so the aliases froze to the Obsidian
      values at `:root` and would NOT follow the remap above.  They have to be
      restated here.  Keep them in step with the surface ladder. */
-  --td-surface-primary: var(--paper);
+  --td-surface-primary: var(--paper-2);
   --td-surface-secondary: var(--paper-card);
-  --td-surface-tertiary: var(--paper-2);
-  --td-surface-hover: var(--line);
+  --td-surface-tertiary: var(--paper-edge);
+  --td-surface-hover: var(--whisper);
 
   /* ── Tailwind semantic colors ───────────────────────────
      `tailwind.config.js` emits every semantic color as
@@ -132,12 +163,12 @@
   /* Surfaces — mirrors the --td-surface-* ladder above. */
   --td-tw-surface: var(--paper);
   --td-tw-surface-dim: var(--paper-2);
-  --td-tw-surface-bright: var(--line);
+  --td-tw-surface-bright: var(--whisper);
   --td-tw-surface-container-lowest: var(--paper-2);
   --td-tw-surface-container-low: var(--paper-card);
-  --td-tw-surface-container: var(--paper);
-  --td-tw-surface-container-high: var(--paper-2);
-  --td-tw-surface-container-highest: var(--paper-edge);
+  --td-tw-surface-container: var(--paper-2);
+  --td-tw-surface-container-high: var(--paper-edge);
+  --td-tw-surface-container-highest: var(--line);
   --td-tw-surface-variant: var(--paper-edge);
   --td-tw-surface-tint: var(--ember);
   --td-tw-background: var(--paper);
