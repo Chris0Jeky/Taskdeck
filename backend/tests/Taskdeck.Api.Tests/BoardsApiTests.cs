@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Domain.Enums;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -227,6 +228,100 @@ public class BoardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         var activeBoardsAfterRestore = await ApiTestHarness.ListBoardsAsync(_client);
         activeBoardsAfterRestore.Should().ContainSingle(board => board.Id == createdBoard.Id && !board.IsArchived);
+    }
+
+    // ---------------------------------------------------------------------
+    // BoardDto.CanWrite — the server-computed write signal the Paper board
+    // picker uses to disable read-only boards (#1836 item 1).
+    // ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetBoards_ShouldStampCanWriteTrue_ForTheBoardOwner()
+    {
+        // Owners have no BoardAccess row at all, so this can only come from the
+        // ownership short-circuit — the exact case permissionsStore.canEdit gets wrong.
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "canwrite-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "canwrite-owned");
+
+        var boards = await ApiTestHarness.ListBoardsAsync(client);
+
+        boards.Single(b => b.Id == board.Id).CanWrite.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(UserRole.Admin)]
+    [InlineData(UserRole.Editor)]
+    public async Task GetBoards_ShouldStampCanWriteTrue_ForWriteCapableMembers(UserRole role)
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var memberClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "canwrite-grantor");
+        var member = await ApiTestHarness.AuthenticateAsync(memberClient, "canwrite-member");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "canwrite-shared");
+
+        var grant = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, member.UserId, role));
+        grant.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var boards = await ApiTestHarness.ListBoardsAsync(memberClient);
+
+        boards.Single(b => b.Id == board.Id).CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetBoards_ShouldStampCanWriteFalse_ForAViewerMember()
+    {
+        // The picker case: a Viewer still SEES the board (read access) but must not be
+        // able to triage into it — the board is rendered disabled, not filtered away.
+        using var ownerClient = _factory.CreateClient();
+        using var viewerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "canwrite-viewer-grantor");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "canwrite-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "canwrite-viewonly");
+
+        var grant = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grant.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var boards = await ApiTestHarness.ListBoardsAsync(viewerClient);
+
+        var listed = boards.Single(b => b.Id == board.Id);
+        listed.CanWrite.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetBoards_ShouldNotListABoardAtAll_ForANonMember()
+    {
+        // "canWrite: false for a non-member" is unreachable through this endpoint by
+        // construction: the read gate removes the board before it can be stamped. This
+        // pins that, so a future change that widens the list can't quietly leak a board
+        // with a plausible-looking false.
+        using var ownerClient = _factory.CreateClient();
+        using var strangerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "canwrite-stranger-owner");
+        await ApiTestHarness.AuthenticateAsync(strangerClient, "canwrite-stranger");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "canwrite-private");
+
+        var boards = await ApiTestHarness.ListBoardsAsync(strangerClient);
+
+        boards.Should().NotContain(b => b.Id == board.Id);
+    }
+
+    [Fact]
+    public async Task CreateBoard_ShouldStampCanWriteTrue_ForTheCreator()
+    {
+        await EnsureAuthenticatedAsync();
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/boards",
+            new CreateBoardDto($"canwrite-created-{Guid.NewGuid():N}", null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<BoardDto>();
+        created!.CanWrite.Should().BeTrue();
     }
 
     private async Task EnsureAuthenticatedAsync()

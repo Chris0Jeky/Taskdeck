@@ -174,7 +174,9 @@ public class BoardAccessService : IBoardAccessService
             return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
         var accesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId);
-        return Result.Success(accesses.Select(a => MapToBoardDto(a.Board)));
+        // Every row here belongs to `userId`, so its role IS that user's write capability —
+        // no extra lookup needed, and no board is stamped `canWrite: false` by omission.
+        return Result.Success(accesses.Select(a => MapToBoardDto(a.Board, a.CanWrite())));
     }
 
     /// <summary>
@@ -230,7 +232,7 @@ public class BoardAccessService : IBoardAccessService
             access.GrantedAt);
     }
 
-    private static BoardDto MapToBoardDto(Board board)
+    private static BoardDto MapToBoardDto(Board board, bool canWrite)
     {
         return new BoardDto(
             board.Id,
@@ -238,6 +240,7 @@ public class BoardAccessService : IBoardAccessService
             board.Description,
             board.IsArchived,
             board.CreatedAt,
-            board.UpdatedAt);
+            board.UpdatedAt,
+            canWrite);
     }
 }
