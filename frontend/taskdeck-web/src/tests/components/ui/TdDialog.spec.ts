@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import TdDialog from '../../../components/ui/TdDialog.vue'
@@ -133,6 +133,89 @@ describe('TdDialog', () => {
     await wrapper.setProps({ open: false })
     expect(escapeHandlers.length).toBe(0)
     wrapper.unmount()
+  })
+
+  describe('visual viewport binding', () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+
+    function installSyntheticVisualViewport(height: number, offsetTop: number) {
+      const events = new EventTarget()
+      let currentHeight = height
+      let currentOffsetTop = offsetTop
+
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: {
+          get height() {
+            return currentHeight
+          },
+          get offsetTop() {
+            return currentOffsetTop
+          },
+          addEventListener: events.addEventListener.bind(events),
+          removeEventListener: events.removeEventListener.bind(events),
+        },
+      })
+
+      return (next: { height: number; offsetTop: number }) => {
+        currentHeight = next.height
+        currentOffsetTop = next.offsetTop
+        events.dispatchEvent(new Event('resize'))
+        events.dispatchEvent(new Event('scroll'))
+      }
+    }
+
+    afterEach(() => {
+      if (originalDescriptor) {
+        Object.defineProperty(window, 'visualViewport', originalDescriptor)
+      } else {
+        Reflect.deleteProperty(window, 'visualViewport')
+      }
+    })
+
+    function backdrop() {
+      return document.querySelector('.td-dialog-backdrop') as HTMLElement | null
+    }
+
+    it('binds the backdrop to the contracted visual viewport', () => {
+      installSyntheticVisualViewport(420, 120)
+
+      const wrapper = mount(TdDialog, { props: { open: true }, attachTo: document.body })
+      const style = backdrop()!.style
+
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('420px')
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('120px')
+
+      wrapper.unmount()
+    })
+
+    it('follows the visual viewport as it contracts while the dialog is open', async () => {
+      const setVisualViewport = installSyntheticVisualViewport(800, 0)
+
+      const wrapper = mount(TdDialog, { props: { open: true }, attachTo: document.body })
+      expect(backdrop()!.style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('800px')
+
+      setVisualViewport({ height: 420, offsetTop: 120 })
+      await nextTick()
+
+      const style = backdrop()!.style
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('420px')
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('120px')
+
+      wrapper.unmount()
+    })
+
+    it('sets no viewport custom properties without a VisualViewport API, keeping the 100dvh fallback', () => {
+      Object.defineProperty(window, 'visualViewport', { configurable: true, value: undefined })
+
+      const wrapper = mount(TdDialog, { props: { open: true }, attachTo: document.body })
+      const style = backdrop()!.style
+
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('')
+      expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('')
+
+      wrapper.unmount()
+    })
   })
 
   it('restores focus to the previously active element when unmounted while open', async () => {

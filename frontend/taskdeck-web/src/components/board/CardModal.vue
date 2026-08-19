@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
+import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
 import {
   CardModalHeader,
@@ -27,33 +28,9 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocusedElement: HTMLElement | null = null
 
-const visualViewportState = ref({
-  height: typeof window === 'undefined' ? 0 : window.innerHeight,
-  offsetTop: 0,
-})
-let observedVisualViewport: VisualViewport | null = null
-
-function refreshVisualViewport() {
-  if (typeof window === 'undefined') return
-
-  const visualViewport = window.visualViewport
-  visualViewportState.value = {
-    height: visualViewport?.height ?? window.innerHeight,
-    offsetTop: visualViewport?.offsetTop ?? 0,
-  }
-}
-
-const visualViewportStyle = computed<Record<string, string>>(() => ({
-  '--card-modal-visual-viewport-height': `${visualViewportState.value.height}px`,
-  '--card-modal-visual-viewport-offset-top': `${visualViewportState.value.offsetTop}px`,
-}))
-
-onMounted(() => {
-  refreshVisualViewport()
-  observedVisualViewport = window.visualViewport ?? null
-  observedVisualViewport?.addEventListener('resize', refreshVisualViewport)
-  observedVisualViewport?.addEventListener('scroll', refreshVisualViewport)
-})
+// `'layout'` fallback: `.card-modal-viewport` has no other height declaration,
+// so without a VisualViewport API it must still receive the layout viewport.
+const { style: visualViewportStyle } = useVisualViewport({ prefix: '--card-modal' })
 
 const focusableSelector =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -116,10 +93,6 @@ watch(
 )
 
 onUnmounted(() => {
-  observedVisualViewport?.removeEventListener('resize', refreshVisualViewport)
-  observedVisualViewport?.removeEventListener('scroll', refreshVisualViewport)
-  observedVisualViewport = null
-
   if (props.isOpen) {
     restoreFocus()
   }
