@@ -119,12 +119,37 @@ describe('CalendarView', () => {
     expect(wrapper.find('.paper-calendar').exists()).toBe(true)
     expect(wrapper.find('.paper-calendar__hero').exists()).toBe(true)
     expect(wrapper.find('.paper-calendar__grid').exists()).toBe(true)
+    expect(wrapper.find('.paper-cal-card').exists()).toBe(true)
 
     const html = wrapper.html()
     expect(html).not.toContain('td-calendar')
     expect(html).not.toContain('td-cal-card')
-    expect(html).not.toContain('td-timeline')
     expect(html).not.toContain('td-panel')
+    expect(html).not.toContain('td-btn')
+  })
+
+  // #1816: the month view never renders the timeline branch, so asserting
+  // `not.toContain('td-timeline')` on the default mount was vacuous -- it held
+  // whatever the timeline markup looked like. Switch to the timeline view and
+  // pin the hooks that are actually rendered there.
+  it('renders the timeline view with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(CalendarView)
+    await waitForUi()
+
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
+    const timelineBtn = buttons.find(b => b.text() === 'Timeline')
+    expect(timelineBtn).toBeDefined()
+    await timelineBtn!.trigger('click')
+
+    // Guard the guard: without a rendered timeline the negatives below would
+    // pass on an empty branch again.
+    expect(wrapper.find('.paper-calendar__timeline').exists()).toBe(true)
+    expect(wrapper.find('.paper-timeline-group').exists()).toBe(true)
+    expect(wrapper.find('.paper-timeline-card').exists()).toBe(true)
+
+    const html = wrapper.html()
+    expect(html).not.toContain('td-timeline')
+    expect(html).not.toContain('td-calendar')
     expect(html).not.toContain('td-btn')
   })
 
