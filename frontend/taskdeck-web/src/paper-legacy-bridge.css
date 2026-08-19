@@ -69,16 +69,17 @@
   --td-surface-container-highest: var(--line);
   --td-surface-bright: var(--whisper);
 
-  /* Referenced-but-never-defined tokens.  `--td-surface-lowest`,
-     `--td-surface-sunken`, `--td-surface-elevated`, `--td-surface-low` and
-     `--td-surface-high` are consumed by 9+ components but declared NOWHERE —
-     not in design-tokens.css, not anywhere else.  Some call sites carry a
-     hex fallback and disagree with each other (#0e0e0e vs #f9f9f9/#f0f0f0);
-     `--td-surface-elevated` has no fallback at all, so `background` there is
-     invalid-at-computed-value-time and resolves to transparent.  Defining
-     them here fixes those surfaces under Paper without touching Legacy,
-     where they stay undefined exactly as before.  The `:root` gap is a
-     separate, pre-existing defect (see ADR-0053). */
+  /* Depth aliases.  `--td-surface-lowest`, `--td-surface-sunken`,
+     `--td-surface-elevated`, `--td-surface-low` and `--td-surface-high` were
+     consumed by 9+ components but declared NOWHERE when this file landed;
+     `--td-surface-elevated` had no fallback at all, so `background` there was
+     invalid-at-computed-value-time and resolved to transparent in Legacy.
+     Issue #1814 closed that gap: `design-tokens.css` now aliases all five
+     onto the Obsidian ladder at `:root`.  These rules still matter — the
+     `:root` aliases substitute to Obsidian hexes at `:root` and are merely
+     INHERITED here, and a declaration on the element (Paper's classes sit on
+     <body>) beats an inherited value.  Keep the five in step with the ladder
+     above; deleting them would leak Obsidian into Paper. */
   --td-surface-lowest: var(--paper-2);
   --td-surface-sunken: var(--paper-2);
   --td-surface-low: var(--paper-card);

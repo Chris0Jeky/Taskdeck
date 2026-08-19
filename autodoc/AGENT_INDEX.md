@@ -1,6 +1,7 @@
 # Agent Index - Taskdeck (seam map)
 
-Last-Verified: 2026-08-02 (routing plus transcript/MCP/container and map-reduce seams; other regions retain the
+Last-Verified: 2026-08-18 (agent-inventory routing; transcript/MCP/container and map-reduce seams remain
+verified 2026-08-02; other regions retain the
 2026-07-13 exploration). Re-verify when a seam moves; treat a stamp older than ~90 days as stale
 (a wrong map misroutes — worse than no map).
 
@@ -39,7 +40,7 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
 | Backend API/application | `backend/Taskdeck.sln`, `Api/`, `Application/`; DI at `Infrastructure/DependencyInjection.cs` | Domain has no infra/framework refs; Application no Api/Infra refs (Architecture.Tests); claims-first identity; stable HTTP 400/401/403/404/409; no cross-user leak | `dotnet test backend/Taskdeck.sln -c Release -m:1` (see `backend/CLAUDE.md`) |
 | Frontend workspace | `frontend/taskdeck-web/src/`: `router`, `views`, `store/board*`, `composables/`, `api/http.ts`, `components/ui` (17 `Td*`) | Review-first UI gating; per-board SignalR (`useBoardRealtime.ts`), not global; `boardStore` is a facade over `store/board/*`; all HTTP through `api/http.ts` | `npm run typecheck`, `npm run build`, `npx vitest --run` (OOM-prone: `--maxWorkers=2`/targeted), Playwright (see `frontend/taskdeck-web/CLAUDE.md`) |
 | Agent runtime & MCP | `Application` (`AutomationPolicyEngine`), **MCP surface in `Api`** (`Program.cs` `--mcp` branch, `Api/Mcp/*`), `.codex/config.toml`, `.mcp.json`, `docs/MCP_TOOLING_GUIDE.md` | Policy evaluated before execute; egress/telemetry guards; tool registry | security tests, MCP inventory/egress tests |
-| Agent tooling / CI / docs | `.claude/`, `.codex/`, `scripts/agent_hooks/` (manual ledger projection only), `.github/workflows/` (`ci-required.yml` = the required CI evidence), `scripts/check-*.mjs` | Review and merge disposition come from the live authority declaration plus the canonical global pipeline; docs-governance `Last Updated: YYYY-MM-DD` exact line; no Taskdeck-owned runtime hooks or local command-deny list | Failure-ledger synchronization unittest, settings/tier parsing, worktree helper suite when touched, then docs gates (see `scripts/agent_hooks/CLAUDE.md`) |
+| Agent tooling / CI / docs | `.claude/`, `.codex/`, `scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1`, `scripts/agent_hooks/` (manual ledger projection only), `.github/workflows/` (`ci-required.yml` = the required CI evidence), `scripts/check-*.mjs` | Delegated shell-backed inventory enters through the opt-in read-only argv wrapper; direct Git/GitHub mutation stays coordinator-owned; review and merge disposition come from live authority plus the canonical global pipeline; no Taskdeck-owned runtime hooks or local command-deny list | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest`; failure-ledger synchronization unittest, settings/tier parsing, worktree helper suite when touched, then docs gates (see `scripts/agent_hooks/CLAUDE.md`) |
 | Docs & planning | `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/TESTING_GUIDE.md` | STATUS is source of truth for shipped reality; keep governance line intact | `node scripts/check-docs-governance.mjs`, `node scripts/check-golden-principles.mjs` |
 
 ## Interface-On-Top Convention

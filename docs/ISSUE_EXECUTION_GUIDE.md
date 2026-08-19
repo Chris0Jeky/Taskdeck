@@ -1,9 +1,9 @@
 # Issue Execution Guide
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-19
 Scope: How agents should execute the GitHub issue backlog safely, in dependency order, and with explicit priority discipline.
 
-> **⚠️ Revival override (2026-07-10, ADR-0044).** The active sequence is the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the *mechanics* below (clean-branch start protocol, project-status workflow, one-priority-label discipline, dependency ordering) still apply. Where the Start Protocol says "pick the highest-priority issue," read that as **the next dependency-ready item admitted by the REVIVAL/authorized GEN wave**, not the historical tranches. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
+> **⚠️ Revival and admission override (2026-08-19, ADR-0044 + ADR-0051).** The active sequence remains the ratified REVIVAL wave in `docs/REVIVAL_PLAN.md`: truth + safety before strangers → transcript engine → bounded open-beta launch → generalist expansion (Phase 4) → checkpoint. The 2026-06-13 archive sequence is superseded and retained only as the checkpoint fallback. ADR-0046's Phase-4 generalist expansion (Accepted 2026-07-13, tracker GEN-00 `#1327`) stays strictly subordinate to the v0.1 ship gate; the twin generalist app remains deferred behind the GEN-12 `#1326` evidence gate. ADR-0051 also permits an authorized coordinator to admit an acceptance-ready existing issue without a maintainer-request gate. `Now` requires complete dependencies; `Next` may be sequenced behind a named `Now`; and the high-autonomy queue is capped at four `Now` issue items and eight `Next` issue items. Treat the `Priority I`–`V`, Phase-4, and expansion tranches below as historical framing; the mechanics below (clean-branch start protocol, project-status workflow, priority-label/Project-field parity, dependency ordering) still apply. New tables, endpoints, mutation paths, connector types, top-level views, security posture, and other architectural surprises still require `REVIVAL_PLAN.md` §7 or a later Accepted ADR/plan amendment. When this guide and `docs/STATUS.md`/`docs/REVIVAL_PLAN.md` conflict, those active documents win.
 
 ## Purpose
 
@@ -15,16 +15,20 @@ Use this file when starting backlog work. It prevents out-of-order development a
 2. Read `docs/IMPLEMENTATION_MASTERPLAN.md`.
 3. Read `docs/GITHUB_PROJECT_AUTOMATION.md`.
 4. Confirm current branch is clean and based on `main`.
-5. Pick the highest-priority issue whose dependencies are complete.
-6. Verify the issue has exactly one priority label (`Priority I` to `Priority V`).
-7. Use the project `No Status` view (`no:status`) and assign status before active work.
+5. Pick the highest-priority acceptance-ready existing issue admitted by the active plan or an
+   Accepted ADR. A `Now` candidate must have complete dependencies; a `Next` candidate may be
+   explicitly sequenced behind a named `Now` dependency.
+6. Verify the issue has exactly one priority label (`Priority I` to `Priority V`) and that the Project `Priority` field matches it before promotion.
+7. Use the project `No Status` view (`no:status`) and assign `Now` or `Next` before active work, respecting the four-`Now`/eight-`Next` caps.
 
 ## Project Status Workflow (Required)
 
-- Move issue to `Now` only when active implementation starts.
+- Move issue to `Now` only when active implementation starts and all dependencies are complete.
+- Move an acceptance-ready existing issue to `Next` when it is explicitly sequenced behind a named `Now` dependency.
 - Move issue to `Review` when PR is open and linked.
 - Move issue to `Done` only after merge and verification notes are posted.
 - If item is blocked by dependency or external input, move to `Blocked` and add blocking note.
+- Ordinary merge eligibility does not require a human PR approval or owner click; use the canonical global review-and-ship pipeline and exact-head proving checks.
 
 ## Priority Model (historical framing — see the revival override above)
 
@@ -475,12 +479,13 @@ Execution note:
 
 ## WIP Discipline
 
-- Prefer one major implementation issue at a time.
-- Keep at most:
-  - 1 issue in `Now`
-  - 1 issue in `Review`
+- Keep the autonomous queue bounded and inspectable:
+  - at most 4 issue items in `Now`;
+  - at most 8 issue items in `Next`;
+  - each `Now` item has complete dependencies, and each staged `Next` dependency is named.
+- Existing conflicting work must be finished or deliberately parked before its successor enters `Now`.
 - If parallel work is needed, split by non-overlapping layers (example: docs-only issue plus one code issue).
-- If a maintainer explicitly requests high-autonomy batch execution, follow `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; the WIP override must still use isolated worktrees, one coordinator, linked PRs, the canonical review-and-ship pipeline, and final docs/project-status reconciliation.
+- Authorized high-autonomy execution follows `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`; no separate maintainer request is needed for an acceptance-ready existing issue admitted under ADR-0051. Use isolated worktrees, one coordinator, linked PRs, the canonical review-and-ship pipeline, and final docs/project-status reconciliation.
 
 ## Escalation Rules
 

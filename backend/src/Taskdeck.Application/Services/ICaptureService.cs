@@ -30,6 +30,13 @@ public interface ICaptureService
         Guid itemId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Enqueues a capture for triage into an automation proposal. Requires write-capable membership
+    /// (Owner/Admin/Editor, or board owner) on the board the proposal will target — whether that
+    /// board is already linked to the capture or supplied here as <paramref name="targetBoardId"/>.
+    /// Read-only members get <see cref="ErrorCodes.Forbidden"/> (#1794). Approval and execution
+    /// authorization are unaffected.
+    /// </summary>
     Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,

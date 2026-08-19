@@ -9,7 +9,7 @@
 
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -276,10 +276,7 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
   await assertOk(await executeResponse, `execute proposal ${proposalId}`)
   await expect(queueItem).toHaveCount(0)
 

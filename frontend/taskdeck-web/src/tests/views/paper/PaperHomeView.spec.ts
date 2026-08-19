@@ -199,6 +199,7 @@ describe('PaperHomeView', () => {
 
       expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="paper-home-empty"]').text()).toContain('Nothing waiting')
+      expect(wrapper.text().match(/Nothing waiting\. Good\./g) ?? []).toHaveLength(1)
       expect(wrapper.find('[data-testid="paper-home-card-proposal"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-home-card-carryover"]').exists()).toBe(false)
     })
@@ -419,9 +420,29 @@ describe('PaperHomeView', () => {
     })
 
     it('still reports nothing waiting when the workload is empty', () => {
-      const lede = ledeAt(new Date(2026, 7, 20, 0, 0, 1), 'Pacific/Midway', 0)
+      vi.stubEnv('TZ', 'Pacific/Midway')
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 7, 20, 0, 0, 1))
+      mockWorkspaceStore.homeSummary = buildSummary({
+        workload: {
+          capturesNeedingTriage: 0,
+          capturesInProgress: 0,
+          capturesReadyForFollowUp: 0,
+          proposalsPendingReview: 0,
+        },
+      })
 
-      expect(lede).toBe('Nothing waiting. Good.')
+      const wrapper = mount(PaperHomeView)
+
+      // #1734: the empty state owns the message, so the lede is suppressed
+      // rather than saying it a second time. The copy stays date-neutral (#1768).
+      expect(wrapper.find('[data-testid="paper-home-lede"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-home-empty"]').text()).toContain(
+        'Nothing waiting. Good.',
+      )
+
+      wrapper.unmount()
+      vi.useRealTimers()
     })
   })
 
