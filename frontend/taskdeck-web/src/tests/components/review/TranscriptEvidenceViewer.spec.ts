@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TranscriptEvidenceViewer from '../../../components/review/TranscriptEvidenceViewer.vue'
 import { transcriptsApi, type TranscriptDto } from '../../../api/transcriptsApi'
+import { i18n } from '../../../i18n'
 
 vi.mock('../../../api/transcriptsApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/transcriptsApi')>()
@@ -144,5 +145,19 @@ describe('TranscriptEvidenceViewer', () => {
     expect(wrapper.get('[data-testid="transcript-evidence-error"]').text()).toContain(
       'could not be loaded',
     )
+  })
+
+  it('re-translates an on-screen error when the locale switches (#1857)', async () => {
+    // The failure is produced under `en`; the switch happens AFTER it is on
+    // screen. Storing the translated copy instead of the key freezes it here.
+    vi.mocked(transcriptsApi.getById).mockRejectedValue({ response: { status: 404 } })
+
+    const wrapper = await mountViewer({ spanStart: 0, spanEnd: 4 })
+    const errorText = () => wrapper.get('[data-testid="transcript-evidence-error"]').text()
+    expect(errorText()).toBe('This transcript is no longer available.')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(errorText()).toBe('Questa trascrizione non è più disponibile.')
   })
 })
