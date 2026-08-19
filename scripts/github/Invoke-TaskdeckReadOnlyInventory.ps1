@@ -20,13 +20,58 @@ function Deny-InventoryCommand {
     throw "Read-only inventory command denied: $Reason"
 }
 
+# Flags of 'gh api' that consume the FOLLOWING argv element as their value. Every one of them is
+# tracked, not just the field flags, so that a field flag which is itself another flag's value
+# ('gh api --method -f ...') is never mistaken for a real field flag by the scan below.
+$script:GhApiValueFlags = @(
+    "-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header",
+    "-q", "--jq", "-t", "--template", "-p", "--preview", "--hostname", "--cache", "--input"
+)
+
+# The subset of those flags whose value is a caller-supplied field payload. A GraphQL document is
+# naturally multi-line, and the wrapper launches through argv with no shell between it and the
+# child process, so CR/LF inside one such value cannot splice a second command. Newlines are
+# therefore permitted in exactly these positions and refused in every other argument.
+$script:GhApiFieldFlags = @("-f", "--raw-field", "-F", "--field")
+
+function Get-GhApiFieldValueIndexes {
+    param([Parameter(Mandatory = $true)][string[]]$CommandTokens)
+
+    $indexes = New-Object System.Collections.Generic.HashSet[int]
+    if ($CommandTokens.Count -lt 2) {
+        return ,$indexes
+    }
+    if ($CommandTokens[0].ToLowerInvariant() -ne "gh" -or $CommandTokens[1].ToLowerInvariant() -ne "api") {
+        return ,$indexes
+    }
+
+    # Field flags are matched case-sensitively: -f and -F are different gh flags, and the attached
+    # '--field=name=value' spelling is deliberately not covered - the carve-out applies only to a
+    # token that is the field value itself.
+    for ($index = 2; $index -lt $CommandTokens.Count; $index++) {
+        if ($script:GhApiValueFlags -ccontains $CommandTokens[$index]) {
+            if ($script:GhApiFieldFlags -ccontains $CommandTokens[$index] -and $index + 1 -lt $CommandTokens.Count) {
+                [void]$indexes.Add($index + 1)
+            }
+            $index++
+        }
+    }
+
+    return ,$indexes
+}
+
 function Assert-NoShellControlTokens {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
     $controlTokens = @("&", "&&", "|", "||", ";", ">", ">>", "<", "<<", "2>", "2>>")
-    foreach ($argument in $Arguments) {
-        if ($argument.IndexOf([char]0) -ge 0 -or $argument.Contains("`r") -or $argument.Contains("`n")) {
-            Deny-InventoryCommand "arguments cannot contain NUL or newline characters"
+    $newlineAllowedIndexes = Get-GhApiFieldValueIndexes -CommandTokens $Arguments
+    for ($index = 0; $index -lt $Arguments.Count; $index++) {
+        $argument = $Arguments[$index]
+        if ($argument.IndexOf([char]0) -ge 0) {
+            Deny-InventoryCommand "arguments cannot contain NUL characters"
+        }
+        if (($argument.Contains("`r") -or $argument.Contains("`n")) -and -not $newlineAllowedIndexes.Contains($index)) {
+            Deny-InventoryCommand "arguments cannot contain newline characters outside the value of a 'gh api' -f/-F/--field/--raw-field field"
         }
         if ($controlTokens -contains $argument) {
             Deny-InventoryCommand "shell control token '$argument' is not an argv value"
@@ -338,8 +383,14 @@ function Assert-GitReadCommand {
 
     $optionStart = 1
     if ($subcommand -eq "worktree") {
-        if ($Arguments.Count -lt 2 -or $Arguments[1].ToLowerInvariant() -ne "list") {
+        # The action token is forwarded to Git verbatim, so it is validated verbatim: a case variant
+        # such as 'LIST' is a different token that Git itself would reject, and the wrapper refuses
+        # it here instead of launching a process to produce that error.
+        if ($Arguments.Count -lt 2) {
             Deny-InventoryCommand "only 'git worktree list' is allowed"
+        }
+        if ($Arguments[1] -cne "list") {
+            Deny-InventoryCommand "only 'git worktree list' is allowed; the action must be the exact token 'list', not '$($Arguments[1])'"
         }
         $optionStart = 2
     }
@@ -671,6 +722,32 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "api", "--method", "GET", "repos/example/repo/issues", "-f", "state=open")
     Assert-Allowed @("gh", "api", "graphql", "-f", 'query=query($owner:String!){repositoryOwner(login:$owner){login}}', "-F", "owner=example")
 
+    # Argument-content policy: the wrapper launches through argv with no shell, so CR/LF inside the
+    # value of a gh api field flag cannot splice a command and a real multi-line GraphQL document
+    # is accepted. The position is proven from argv, not from the token's shape.
+    $multiLineGraphQlQuery = "query(`$owner:String!) {`n  repositoryOwner(login:`$owner) {`r`n    login`n  }`n}"
+    Assert-Allowed @("gh", "api", "graphql", "-f", "query=$multiLineGraphQlQuery")
+    Assert-Allowed @("gh", "api", "graphql", "--raw-field", "query=$multiLineGraphQlQuery", "-F", "owner=example")
+    Assert-Allowed @("gh", "api", "--method", "GET", "repos/example/repo/issues", "-f", "labels=first`nsecond")
+
+    # ... and nowhere else. A newline in a subcommand or action name, in a flag token, in a git
+    # argument, or after a field flag that belongs to a different tool stays denied.
+    Assert-Denied @("gh", "pr`nlist") "newline characters outside"
+    Assert-Denied @("gh", "api", "graphql`n", "-f", "query=x") "newline characters outside"
+    Assert-Denied @("gh", "api", "--method`n", "GET", "repos/example/repo/issues") "newline characters outside"
+    Assert-Denied @("gh", "api", "repos/example/repo/issues`n") "newline characters outside"
+    Assert-Denied @("gh", "issue", "view", "-f", "query=a`nb") "newline characters outside"
+    Assert-Denied @("git", "log", "--format=%H`n%s") "newline characters outside"
+    Assert-Denied @("git", "grep", "-e", "a`nb", "--", "src") "newline characters outside"
+    # The carve-out covers the separate value token only, never the attached spelling.
+    Assert-Denied @("gh", "api", "graphql", "--field=query=a`nb") "newline characters outside"
+    # A field flag that is itself another flag's value does not open the carve-out for what follows.
+    Assert-Denied @("gh", "api", "--method", "-f", "x=a`nb", "repos/example/repo/issues") "newline characters outside"
+    # NUL is refused everywhere, field values included.
+    Assert-Denied @("gh", "api", "graphql", "-f", "query=a$([char]0)b") "NUL characters"
+    # An allowed multi-line field does not relax the shell-control-token rule for other arguments.
+    Assert-Denied @("gh", "api", "graphql", "-f", "query=$multiLineGraphQlQuery", "&&", "gh", "pr", "merge", "1") "shell control token"
+
     Assert-Denied @("gh", "api", "--method", "POST", "repos/example/repo/issues") "method.*not read-only"
     Assert-Denied @("gh", "api", "-X", "DELETE", "repos/example/repo/issues/1") "method.*not read-only"
     Assert-Denied @("gh", "api", "repos/example/repo/issues", "-f", "title=x") "default to POST"
@@ -684,6 +761,14 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("gh", "workflow", "run", "ci.yml") "not allowlisted"
     Assert-Denied @("git", "fetch", "origin", "main") "not allowlisted"
     Assert-Denied @("git", "reset", "--hard") "not allowlisted"
+
+    # The worktree action token reaches Git verbatim, so the wrapper validates it verbatim instead
+    # of forwarding a case variant and letting Git produce the error.
+    Assert-Denied @("git", "worktree") "only 'git worktree list' is allowed"
+    Assert-Denied @("git", "worktree", "LIST") "exact token 'list'"
+    Assert-Denied @("git", "worktree", "List", "--porcelain") "exact token 'list'"
+    Assert-Denied @("git", "worktree", "add", "../elsewhere") "only 'git worktree list' is allowed"
+    Assert-Denied @("git", "worktree", "remove", "../elsewhere") "only 'git worktree list' is allowed"
 
     # Full option names stay denied because they are absent from every subcommand allowlist.
     Assert-Denied @("git", "diff", "--output=result.patch") "not allowlisted for 'diff'"
@@ -795,7 +880,8 @@ function Invoke-ReadOnlyInventorySelfTest {
         @("git", "diff", "-U", "--ext-diff", "HEAD~1"),
         @("git", "diff", "-U", "--textconv", "HEAD~1"),
         @("git", "grep", "-e", "--output=result.patch", "--", "src"),
-        @("git", "grep", "--no-index", "-e", "secret", "frontend/taskdeck-web/.env.local")
+        @("git", "grep", "--no-index", "-e", "secret", "frontend/taskdeck-web/.env.local"),
+        @("git", "worktree", "LIST", "--porcelain")
     )) {
         try {
             Invoke-ValidatedInventoryCommand -CommandTokens $rejectedArgv -Launcher $fakeLauncher
@@ -876,6 +962,10 @@ $toolName = $Command[0].ToLowerInvariant()
 $toolArguments = @($Command | Select-Object -Skip 1)
 $executable = Resolve-InventoryExecutable -Tool $toolName
 
+# Initialized before the try block: under Set-StrictMode -Version Latest, reading an unassigned
+# variable is itself an error, so a launch that throws before $LASTEXITCODE is captured must not
+# leave the post-finally exit-code read looking at a variable that was never set.
+$childExitCode = 0
 $savedEnvironment = @{}
 try {
     $launchArguments = $toolArguments
