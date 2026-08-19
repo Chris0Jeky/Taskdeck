@@ -199,7 +199,7 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
   // Step 6: Verify board appears in archive view (S5 archive)
   await page.goto('/workspace/archive')
   await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
-  const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: boardName }).first()
+  const archivedBoardRow = page.locator('.paper-archive__row').filter({ hasText: boardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
   // Step 7: Restore the board from archive (S5 restore)
@@ -207,7 +207,7 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
     type: 'confirm',
     message: /^Restore board "/,
   })
-  await expect(page.locator('.td-archive-row').filter({ hasText: boardName })).toHaveCount(0)
+  await expect(page.locator('.paper-archive__row').filter({ hasText: boardName })).toHaveCount(0)
 
   // Step 8: Verify restored board is back in boards list (S1 board)
   await page.goto('/workspace/boards')

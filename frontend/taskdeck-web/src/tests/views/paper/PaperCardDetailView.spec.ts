@@ -48,6 +48,9 @@ describe('PaperCardDetailView', () => {
     const banner = wrapper.find('[data-pending-proposal]')
     expect(banner.exists()).toBe(true)
     expect(banner.text()).toContain('Pending proposal')
+    // The banner attributes the proposal model-neutrally, never to a persona (#1767).
+    expect(banner.text()).toContain('An assistant proposal is waiting')
+    expect(banner.text().toLowerCase()).not.toContain('haiku')
   })
 
   it('preserves manual description line breaks and whitespace', () => {

@@ -45,8 +45,11 @@ on:
 
 permissions:
   contents: read
-  # PR scan-mode (gitleaks-action) reads the PR commit context. Intersected with the caller's
-  # grant, so non-PR callers are unaffected. (#1132 review)
+  # PR scan-mode (gitleaks-action) reads the PR commit context. NOTE: every caller must grant
+  # pull-requests: read on its calling job or workflow — GitHub refuses a reusable-workflow call
+  # whose caller grants less than the callee declares (whole-workflow startup_failure at plan
+  # time), it does NOT silently intersect. Proven by ci-release.yml on the v0.1.0 tag push
+  # (run 32211340361). (#1132 review; corrected 2026-08-19)
   pull-requests: read
 
 jobs:

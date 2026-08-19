@@ -1,0 +1,244 @@
+/* =========================================================
+   Paper ← Legacy token bridge  (ADR-0053 · issue #1778)
+
+   THIS FILE IS AN INTERIM FLOOR, NOT THE PAPER IDIOM.
+
+   Taskdeck carries two visual substrates:
+
+     1. Obsidian legacy — the `--td-*` custom properties in
+        `design-tokens.css`, the `.td-*` utility layer in `style.css`, and
+        the Tailwind semantic colors in `tailwind.config.js`.  All three are
+        pinned to dark surfaces (#131313 / #0e0e0e) and a hot ember (#ff4d4d).
+     2. Paper — the `--paper` / `--ink` / `--ember` tokens in
+        `paper-tokens.css`, scoped under `.paper` / `.paper-night`, which
+        `paperThemeStore` puts on <body>.
+
+   Paper is canonical (ADR-0038), but ~22 workspace views have not been
+   migrated to the Paper idiom yet.  Because substrate 1 is defined at
+   `:root`, those views kept rendering black-on-red *inside* the Paper shell.
+
+   This file remaps substrate 1 onto Paper values, scoped to the Paper shell
+   classes only.  Consequences worth knowing before you edit it:
+
+   - Legacy mode ("Paper off") is untouched: no `.paper` class is on <body>,
+     so every token below is inert and `:root` / the Tailwind hex fallbacks
+     still resolve to the original Obsidian palette.
+   - `.paper-night` reuses the same variable NAMES as `.paper`, so a single
+     rule remaps both themes.
+   - This fixes COLOR ONLY.  Serif display type, `tk-*` utilities, hairline
+     rules, stamps and the restrained ember treatment remain per-view work
+     (Option B in ADR-0053).  A view that merely stops being dark is legible,
+     not canonical.
+   - Every value here is a `var()` reference into `paper-tokens.css`.  Do not
+     introduce hex literals: the palette must stay single-sourced so a Paper
+     token change propagates to legacy surfaces automatically.
+   - Delete this file (and the legacy substrate with it) once every view has
+     migrated to the Paper idiom.
+   ========================================================= */
+
+.paper,
+.paper-night {
+  /* ── Surface ladder ──────────────────────────────────────
+     Obsidian's ladder brightens as it rises: base #131313 is the page and
+     each tier above it is lighter.  On a light substrate that inverts —
+     emphasis reads as *more* contrast against the page, i.e. darker — with
+     one exception: the card, which Paper lifts by going lighter than the
+     page (`--paper-card` #fbf7ee vs `--paper` #f3eee5), exactly as `.card`
+     does in paper-tokens.css.
+
+     So the ladder below is monotonic *away from* the page in the Paper
+     direction: card (lighter) → page → panel → edge → line → whisper.  Each
+     step is a distinct value, so hover pairs that Obsidian expressed as
+     "one tier up" still read as a state change:
+       .td-card       rest bg-surface-container-low  → --paper-card
+                      hover bg-surface-container     → --paper-2   (darkens)
+       .td-btn--secondary rest bg-surface-container-highest → --line
+                      hover bg-surface-bright        → --whisper  (darkens)
+     Paper's own `.pbtn:hover` darkens rather than brightens, so this is the
+     idiom's direction, not an inversion of it.
+
+     `--td-surface-container` carries ~122 call sites (65 Tailwind
+     `bg-surface-container` + 57 `var()`), which makes it the dominant PANEL
+     surface and not merely the card-hover tier — hence `--paper-2`, a real
+     step off the page, rather than the page colour itself. */
+  --td-surface-base: var(--paper);
+  --td-surface-container-lowest: var(--paper-2);
+  --td-surface-container-low: var(--paper-card);
+  --td-surface-container: var(--paper-2);
+  --td-surface-container-high: var(--paper-edge);
+  --td-surface-container-highest: var(--line);
+  --td-surface-bright: var(--whisper);
+
+  /* Referenced-but-never-defined tokens.  `--td-surface-lowest`,
+     `--td-surface-sunken`, `--td-surface-elevated`, `--td-surface-low` and
+     `--td-surface-high` are consumed by 9+ components but declared NOWHERE —
+     not in design-tokens.css, not anywhere else.  Some call sites carry a
+     hex fallback and disagree with each other (#0e0e0e vs #f9f9f9/#f0f0f0);
+     `--td-surface-elevated` has no fallback at all, so `background` there is
+     invalid-at-computed-value-time and resolves to transparent.  Defining
+     them here fixes those surfaces under Paper without touching Legacy,
+     where they stay undefined exactly as before.  The `:root` gap is a
+     separate, pre-existing defect (see ADR-0053). */
+  --td-surface-lowest: var(--paper-2);
+  --td-surface-sunken: var(--paper-2);
+  --td-surface-low: var(--paper-card);
+  --td-surface-elevated: var(--paper-card);
+  --td-surface-high: var(--paper-edge);
+
+  /* ── Text (Argent hierarchy → Ink ladder) ── */
+  --td-text-primary: var(--ink);
+  --td-text-secondary: var(--ink-2);
+  --td-text-tertiary: var(--faint);
+  --td-text-inverse: var(--paper-card);
+  --td-text-ember: var(--ember);
+  --td-text-muted: var(--mute);
+
+  /* ── Accent ──────────────────────────────────────────────
+     Obsidian already collapsed "primary", "error" and "ember" onto three
+     near-identical reds (#ffb3ae / #ffb4ab / #ff4d4d).  Paper has one accent
+     hue, so they collapse onto `--ember` here too.  `--td-on-ember` is the
+     Paper-side token engineered to clear 4.5:1 on an ember fill (base and
+     under the `brightness(1.1)` hover) in BOTH `.paper` and `.paper-night`. */
+  --td-color-primary: var(--ember);
+  --td-color-primary-hover: var(--ember-deep);
+  --td-color-primary-light: var(--ember-bloom);
+
+  --td-color-ember: var(--ember);
+  --td-color-ember-glow: var(--ember-deep);
+  --td-color-ember-dim: var(--ember-bloom);
+
+  /* Earth-tone semantics — Paper's own status palette. */
+  --td-color-success: var(--applied);
+  --td-color-success-light: var(--applied-tint);
+  --td-color-warning: var(--overdue);
+  --td-color-warning-light: var(--overdue-tint);
+  --td-color-error: var(--ember);
+  --td-color-error-light: var(--ember-tint);
+  --td-color-info: var(--ember);
+  --td-color-info-light: var(--ember-bloom);
+
+  /* ── Borders & rules ── */
+  --td-border-default: var(--line);
+  --td-border-ghost: var(--line-soft);
+  --td-border-focus: var(--ember);
+  --td-border-ember: var(--ember-deep);
+
+  /* ── Focus ring ──────────────────────────────────────────
+     `style.css` applies `box-shadow: var(--td-focus-ring)` on every
+     `*:focus-visible`; paper-tokens.css adds an ember outline on the same
+     elements.  Re-pointing the ring at the Paper ember keeps the two
+     consistent instead of stacking a hot-red glow on a cream surface. */
+  --td-focus-ring: 0 0 0 2px var(--ember), 0 0 0 4px var(--ember-bloom);
+  --td-focus-ring-error: 0 0 0 2px var(--ember), 0 0 0 4px var(--ember-bloom);
+
+  /* ── Elevation ──────────────────────────────────────────
+     Paper ships three depths (card / lift / press); the four Obsidian
+     shadow steps fold onto the two that read on a light substrate. */
+  --td-shadow-sm: var(--shadow-card);
+  --td-shadow-md: var(--shadow-lift);
+  --td-shadow-lg: var(--shadow-lift);
+  --td-shadow-xl: var(--shadow-lift);
+
+  /* ── Glass ── */
+  --td-glass-bg: color-mix(in srgb, var(--paper-card) 88%, transparent);
+
+  /* ── Legacy aliases ─────────────────────────────────────
+     `design-tokens.css` defines these as `var(--td-surface-*)`, but the
+     computed value of a custom property is its specified value with
+     variables ALREADY substituted — so the aliases froze to the Obsidian
+     values at `:root` and would NOT follow the remap above.  They have to be
+     restated here.  Keep them in step with the surface ladder. */
+  --td-surface-primary: var(--paper-2);
+  --td-surface-secondary: var(--paper-card);
+  --td-surface-tertiary: var(--paper-edge);
+  --td-surface-hover: var(--whisper);
+
+  /* ── Tailwind semantic colors ───────────────────────────
+     `tailwind.config.js` emits every semantic color as
+     `var(--td-tw-<name>, <obsidian-hex>)`.  Nothing defines `--td-tw-*` at
+     `:root`, so Legacy resolves the fallback; defining them here is what
+     lightens `bg-surface-*`, `text-on-surface`, `border-outline-variant`
+     and friends inside the Paper shell. */
+
+  /* Surfaces — mirrors the --td-surface-* ladder above. */
+  --td-tw-surface: var(--paper);
+  --td-tw-surface-dim: var(--paper-2);
+  --td-tw-surface-bright: var(--whisper);
+  --td-tw-surface-container-lowest: var(--paper-2);
+  --td-tw-surface-container-low: var(--paper-card);
+  --td-tw-surface-container: var(--paper-2);
+  --td-tw-surface-container-high: var(--paper-edge);
+  --td-tw-surface-container-highest: var(--line);
+  --td-tw-surface-variant: var(--paper-edge);
+  --td-tw-surface-tint: var(--ember);
+  --td-tw-background: var(--paper);
+
+  /* On-surface text. */
+  --td-tw-on-surface: var(--ink);
+  --td-tw-on-surface-variant: var(--mute);
+  --td-tw-on-background: var(--ink);
+  --td-tw-inverse-surface: var(--ink);
+  --td-tw-inverse-on-surface: var(--paper-card);
+
+  /* Outlines. */
+  --td-tw-outline: var(--mute);
+  --td-tw-outline-variant: var(--line);
+
+  /* Primary / ember accents. `*-container` are FILLS, `on-*` is the text
+     that sits on them. */
+  --td-tw-primary: var(--ember);
+  --td-tw-primary-container: var(--ember);
+  --td-tw-on-primary: var(--td-on-ember);
+  --td-tw-on-primary-container: var(--td-on-ember);
+  --td-tw-primary-fixed: var(--ember-tint);
+  --td-tw-primary-fixed-dim: var(--ember-tint);
+  --td-tw-on-primary-fixed: var(--ember-ink);
+  --td-tw-on-primary-fixed-variant: var(--ember-deep);
+  --td-tw-inverse-primary: var(--ember-deep);
+
+  /* Neutral tonal families. */
+  --td-tw-secondary: var(--ink-2);
+  --td-tw-secondary-container: var(--paper-edge);
+  --td-tw-on-secondary: var(--paper-card);
+  --td-tw-on-secondary-container: var(--ink);
+  --td-tw-secondary-fixed: var(--paper-2);
+  --td-tw-secondary-fixed-dim: var(--paper-edge);
+  --td-tw-on-secondary-fixed: var(--ink-deep);
+  --td-tw-on-secondary-fixed-variant: var(--ink-2);
+
+  --td-tw-tertiary: var(--ink-2);
+  --td-tw-tertiary-container: var(--paper-edge);
+  --td-tw-on-tertiary: var(--paper-card);
+  --td-tw-on-tertiary-container: var(--ink);
+  --td-tw-tertiary-fixed: var(--paper-2);
+  --td-tw-tertiary-fixed-dim: var(--paper-edge);
+  --td-tw-on-tertiary-fixed: var(--ink-deep);
+  --td-tw-on-tertiary-fixed-variant: var(--ink-2);
+
+  /* Error — same collapse onto ember as --td-color-error above. */
+  --td-tw-error: var(--ember);
+  --td-tw-error-container: var(--ember-tint);
+  --td-tw-on-error: var(--td-on-ember);
+  --td-tw-on-error-container: var(--ember-ink);
+
+  /* Semantic shortcuts.  `obsidian` means "the substrate colour" — its only
+     consumer is `.td-btn--danger { bg-ember text-obsidian }`, where mapping
+     it to `--paper` keeps light text on the ember fill (5.2:1 in `.paper`)
+     instead of inverting to unreadable dark-on-dark. */
+  --td-tw-ember: var(--ember);
+  --td-tw-ember-glow: var(--ember-deep);
+  --td-tw-obsidian: var(--paper);
+  --td-tw-argent: var(--ink-2);
+}
+
+/* Obsidian's scrollbar thumbs are hardcoded in `style.css` (#5b403e / #ab8986)
+   and cannot be reached by a token remap. */
+.paper ::-webkit-scrollbar-thumb,
+.paper-night ::-webkit-scrollbar-thumb {
+  background: var(--whisper);
+}
+
+.paper ::-webkit-scrollbar-thumb:hover,
+.paper-night ::-webkit-scrollbar-thumb:hover {
+  background: var(--mute);
+}

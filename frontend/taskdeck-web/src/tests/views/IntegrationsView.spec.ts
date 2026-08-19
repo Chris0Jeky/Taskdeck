@@ -59,8 +59,8 @@ describe('IntegrationsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.')
-    expect(wrapper.get('.td-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
-    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+    expect(wrapper.get('.paper-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.paper-int__capture-link').text()).toContain('Markdown import and web clip capture')
   })
 
   it('keeps standalone content capture actionable when connectors are registered', async () => {
@@ -78,8 +78,8 @@ describe('IntegrationsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('.td-int__empty').exists()).toBe(false)
-    expect(wrapper.get('.td-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
-    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+    expect(wrapper.find('.paper-int__empty').exists()).toBe(false)
+    expect(wrapper.get('.paper-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.paper-int__capture-link').text()).toContain('Markdown import and web clip capture')
   })
 })
