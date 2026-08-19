@@ -239,11 +239,13 @@ by this change, and a later session should not read the Positive bullets above a
 > disagreement (`--td-surface-elevated` joins `--td-surface-high` on both substrates), and
 > `html { color-scheme: dark }` (the root element now follows the body skin via `:has()`).
 >
-> Still open and **not** fixed there: the eyebrow-token idiom split (`--ember` in `BoardAccessView`
-> and `SavedViewsView` vs `--mute` in the other Settings roots) needs a wave-wide ruling before a
-> sweep; and `CaptureModal`'s scoped `.td-alert--error` was corrected to `--ember-ink`, but the
-> global utility's original pairing (`--ember` on `--ember-tint`) measured **4.45:1** — a
-> pre-existing sub-AA hairline that this ledger had not recorded.
+> Closed since, under `#1842` (see the 2026-08-19 eyebrow-token amendment below): the eyebrow-token
+> idiom split, `typeBadgeClass`'s Tailwind palette hues, the `never :root` guard's overstated name,
+> and the unasserted contrast figures in permanent comments. `CaptureModal`'s scoped
+> `.td-alert--error` was corrected to `--ember-ink`; the global utility's original pairing
+> (`--ember` on `--ember-tint`) is a pre-existing sub-AA hairline this ledger had not recorded, and
+> re-measuring it under `#1842` put it at **4.46:1**, not the 4.45:1 recorded here and in two code
+> comments — corrected in all three places and now asserted exactly.
 
 1. **Six hardcoded Obsidian values in the `.td-*` utility layer are unreachable by the remap.**
    `src/style.css` (227 lines) contains exactly six colour literals outside any token — verified by
@@ -341,9 +343,55 @@ autofill dark inside the Paper shell (not introduced by this change).
   Scope note: this amendment rules on Legacy mode's *fate and contract* only. It changes nothing
   about Option A's bridge, and the "Known limitations" ledger (`#1817`) is untouched by it.
 
+- **2026-08-19 — The canonical eyebrow token is `--mute`, because that is what the core loop
+  already renders.** *(`#1842`, deferred from `#1817`/PR #1840. Autonomous ruling under the
+  ADR-0051 admission lane — flagged for maintainer review.)*
+
+  The Paper view roots had split on the page-header eyebrow: seven tinted it `--mute`, thirteen
+  `--ember`. PR #1808 declined to pick a side unilaterally, and picking one on taste would have
+  repeated that. The ruling instead followed the surfaces users spend their time in.
+
+  **Measured at `79428f0d`, before any change in this slice:**
+
+  | Where | Evidence |
+  | --- | --- |
+  | The shared utility | `frontend/taskdeck-web/src/paper-tokens.css:242-244` — `.paper .tk-eyebrow, .paper-night .tk-eyebrow { font-family: var(--mono); font-size: 10px; color: var(--mute); ... }` |
+  | Home | `src/views/paper/PaperHomeView.vue:337` (`class="tk-eyebrow paper-home__eyebrow"`), whose rule at `:540` sets only `text-transform: capitalize`; also `:414`, `:454` |
+  | Inbox | `src/views/paper/PaperInboxView.vue:194` — bare `class="tk-eyebrow"` |
+  | Boards | `src/views/paper/PaperBoardView.vue:256` — `paper-board-view__eyebrow` has **no CSS rule at all** |
+  | Review | `src/views/paper/PaperReviewView.vue:1325`, `:1332` — bare `class="tk-eyebrow"` |
+
+  Not one core-loop surface overrides the utility's colour, so all four already render the eyebrow
+  at `--mute`. The expected ruling held; no inversion was needed.
+
+  **Consequence.** Thirteen roots moved to `var(--mute, #635c4e)`: `AgentRunDetailView`,
+  `AgentRunsView`, `AgentsView`, `ArchiveView`, `AutomationQueueView`, `BoardAccessView`,
+  `CalendarView`, `IntegrationsView`, `MetricsView`, `NotFoundView`, `NotificationInboxView`,
+  `OpsConsoleView`, `SavedViewsView` — every deviating root, not just the two `#1817` named. All 20
+  Paper roots that have an eyebrow now agree (`AutomationChatView` and `DevToolsView` have none).
+
+  `--ember` stays reserved for genuine accent/emphasis elements and is deliberately **not** swept:
+  `ReviewChangeSection`'s "after" eyebrow, `ReviewKeysCard`, `PaperCardDetailView`'s banner eyebrow
+  — card-level accents rather than page wayfinding — and `LoginView`/`RegisterView`'s
+  `.td-auth-eyebrow`, which belongs to the pre-Paper auth shell rather than a Paper view root.
+
+  `frontend/taskdeck-web/tests/paper-eyebrow-token.spec.ts` pins both halves of the ruling — the
+  core-loop measurement and the 20 root rules — so the split cannot silently reopen. Reversible by
+  a one-line token swap per root plus the two constants at the top of that spec.
+
+  Shipped in the same slice, and needing no ruling: `typeBadgeClass`'s Tailwind palette hues moved
+  to `--td-notify-*-{bg,fg}` tokens (the treatment PR #1840 gave the stripes; the dead `dark:`
+  variants were dropped rather than translated, since `darkMode: 'class'` and nothing sets `dark`);
+  the bridge's `never :root` guard was tightened to exempt its two `:root:has(> body.paper*)`
+  color-scheme rules by name instead of by an accidental substring match; and every contrast figure
+  stated in a permanent comment is now asserted to two decimal places rather than against the
+  `>= 4.5` floor alone.
+
 ## References
 
 - `#1778` — this decision; `#1769` — the Paper-shell sweep that found the shared root cause
+- `#1842` — the per-token tuning follow-ups deferred from `#1817`/PR #1840 (eyebrow-token ruling,
+  `typeBadgeClass`, guard-name precision, pinned contrast figures)
 - `#1817` — the residuals ledger for every item under "Known limitations"; `#1815` — how far the
   Paper-idiom guard extends and Legacy mode's long-term fate; `#1814` — the undeclared
   `--td-surface-*` tokens as a `:root`-level defect
