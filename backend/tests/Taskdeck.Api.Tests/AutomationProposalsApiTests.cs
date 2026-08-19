@@ -141,6 +141,31 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         evidence.Label.Should().Be("Transcript evidence");
         evidence.SpanStart.Should().Be(8);
         evidence.SpanEnd.Should().Be(23);
+
+        // Issue #1837 item 1: the board collaborator is authorized for the proposal but not for
+        // the owner's transcript, so the evidence must not advertise a followable link.
+        evidence.Viewable.Should().BeFalse();
+
+        // The flag tells the truth: the same caller's direct read is a 404, and that 404 is
+        // indistinguishable from a nonexistent transcript (parity unchanged by this flag).
+        var viewerTranscriptResponse = await viewerClient.GetAsync($"/api/transcripts/{transcriptId}");
+        viewerTranscriptResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The owner sees the same row marked viewable, computed from their own claims.
+        var ownerResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance");
+        var ownerJson = await ownerResponse.Content.ReadAsStringAsync();
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {ownerJson}");
+        var ownerRows = JsonSerializer.Deserialize<List<ProvenanceRowDto>>(
+            ownerJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var ownerEvidence = ownerRows!
+            .SelectMany(row => row.EvidenceLinks ?? Array.Empty<ProvenanceEvidenceLinkDto>())
+            .Should()
+            .ContainSingle()
+            .Subject;
+        ownerEvidence.Viewable.Should().BeTrue();
+        // Still opaque for the owner too: the flag never carries transcript text.
+        ownerJson.Should().NotContain(privateTranscriptText);
     }
 
     [Fact]

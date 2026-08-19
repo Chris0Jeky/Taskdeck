@@ -442,7 +442,9 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _provenanceQueryService.GetProvenanceRowsAsync(id, cancellationToken);
+        // callerUserId comes from claims (never the request body); it only decides which evidence
+        // links are marked viewable, never which rows are returned.
+        var result = await _provenanceQueryService.GetProvenanceRowsAsync(id, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

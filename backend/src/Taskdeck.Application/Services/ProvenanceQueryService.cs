@@ -14,6 +14,7 @@ namespace Taskdeck.Application.Services;
 public class ProvenanceQueryService : IProvenanceQueryService
 {
     private readonly IProposalProvenanceRepository _provenanceRepository;
+    private readonly ITranscriptRepository _transcriptRepository;
 
     /// <summary>
     /// Stable mapping from canonical field name (lower-cased) to emoji icon.
@@ -56,19 +57,28 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// </summary>
     internal const string DefaultIcon = "\U0001F4C4"; // page facing up
 
-    public ProvenanceQueryService(IProposalProvenanceRepository provenanceRepository)
+    public ProvenanceQueryService(
+        IProposalProvenanceRepository provenanceRepository,
+        ITranscriptRepository transcriptRepository)
     {
         _provenanceRepository = provenanceRepository ?? throw new ArgumentNullException(nameof(provenanceRepository));
+        _transcriptRepository = transcriptRepository ?? throw new ArgumentNullException(nameof(transcriptRepository));
     }
 
     public async Task<Result<IReadOnlyList<ProvenanceRowDto>>> GetProvenanceRowsAsync(
         Guid proposalId,
+        Guid callerUserId,
         CancellationToken cancellationToken = default)
     {
         if (proposalId == Guid.Empty)
             return Result.Failure<IReadOnlyList<ProvenanceRowDto>>(
                 ErrorCodes.ValidationError,
                 "ProposalId cannot be empty");
+
+        if (callerUserId == Guid.Empty)
+            return Result.Failure<IReadOnlyList<ProvenanceRowDto>>(
+                ErrorCodes.ValidationError,
+                "CallerUserId cannot be empty");
 
         var provenance = await _provenanceRepository.GetByProposalIdAsync(proposalId, cancellationToken);
 
@@ -79,15 +89,62 @@ public class ProvenanceQueryService : IProvenanceQueryService
                 Array.Empty<ProvenanceRowDto>());
         }
 
+        // Which transcripts this caller may actually open is a claims-derived fact, resolved once
+        // for the whole payload. Provenance is board-authorized while transcript read is
+        // owner-only, so a board collaborator legitimately sees links they cannot follow.
+        var ownedTranscriptIds = await ResolveOwnedTranscriptIdsAsync(
+            provenance,
+            callerUserId,
+            cancellationToken);
+
         var rows = provenance.Fields
-            .Select(MapFieldToRow)
+            .Select(field => MapFieldToRow(field, ownedTranscriptIds))
             .ToList()
             .AsReadOnly();
 
         return Result.Success<IReadOnlyList<ProvenanceRowDto>>(rows);
     }
 
-    internal static ProvenanceRowDto MapFieldToRow(ProvenanceField field)
+    /// <summary>
+    /// Returns the transcript ids referenced by this provenance that <paramref name="callerUserId"/>
+    /// owns. Ids the caller does not own are absent, so nothing about another user's data is
+    /// disclosed beyond the caller's own access.
+    /// </summary>
+    private async Task<IReadOnlySet<Guid>> ResolveOwnedTranscriptIdsAsync(
+        ProposalProvenance provenance,
+        Guid callerUserId,
+        CancellationToken cancellationToken)
+    {
+        var referencedTranscriptIds = provenance.Fields
+            .SelectMany(field => field.EvidenceLinks)
+            .Where(IsTranscriptEvidence)
+            .Select(link => link.TranscriptId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (referencedTranscriptIds.Count == 0)
+            return EmptyTranscriptIds;
+
+        var owned = await _transcriptRepository.FilterOwnedIdsAsync(
+            referencedTranscriptIds,
+            callerUserId,
+            cancellationToken);
+
+        return owned.ToHashSet();
+    }
+
+    private static readonly IReadOnlySet<Guid> EmptyTranscriptIds = new HashSet<Guid>();
+
+    /// <summary>
+    /// True for a link that names a stored transcript with a typed transcript id — the only
+    /// evidence kind with a read endpoint behind the "view in transcript" affordance today.
+    /// </summary>
+    internal static bool IsTranscriptEvidence(ProvenanceEvidenceLink link) =>
+        string.Equals(link.SourceType, ProvenanceEvidenceLink.TranscriptSourceType, StringComparison.Ordinal)
+        && link.TranscriptId is { } transcriptId
+        && transcriptId != Guid.Empty;
+
+    internal static ProvenanceRowDto MapFieldToRow(ProvenanceField field, IReadOnlySet<Guid> ownedTranscriptIds)
     {
         var icon = ResolveIcon(field.FieldName);
         var key = field.FieldName;
@@ -104,7 +161,10 @@ public class ProvenanceQueryService : IProvenanceQueryService
                 link.SourceId,
                 link.Label,
                 link.SpanStart,
-                link.SpanEnd))
+                link.SpanEnd,
+                // Fails closed: an evidence kind with no reader, or a transcript this caller does
+                // not own, is never advertised as viewable.
+                IsTranscriptEvidence(link) && ownedTranscriptIds.Contains(link.TranscriptId!.Value)))
             .ToList()
             .AsReadOnly();
 

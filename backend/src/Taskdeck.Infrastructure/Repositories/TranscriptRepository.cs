@@ -39,6 +39,24 @@ public sealed class TranscriptRepository : Repository<Transcript>, ITranscriptRe
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<Guid>> FilterOwnedIdsAsync(
+        IReadOnlyCollection<Guid> transcriptIds,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (transcriptIds.Count == 0 || userId == Guid.Empty)
+            return Array.Empty<Guid>();
+
+        // Projects ids only: no transcript text is loaded to answer an ownership question.
+        var owned = await _dbSet
+            .AsNoTracking()
+            .Where(transcript => transcript.UserId == userId && transcriptIds.Contains(transcript.Id))
+            .Select(transcript => transcript.Id)
+            .ToListAsync(cancellationToken);
+
+        return owned;
+    }
+
     public async Task<long> GetEstimatedSerializedLengthByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
