@@ -388,15 +388,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      # NOT artifacts/ — the repo tracks an artifacts/ directory (artifacts/openapi), so the
+      # checkout above already populates it; downloading into it merged repo content into the
+      # release glob and `gh release create artifacts/*` failed on the directory ("read
+      # artifacts/openapi: is a directory", v0.1.0 run 32211340173). Rehearsals skip this job,
+      # so only a real tag push could surface it.
       - name: Download all release artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
-          path: artifacts/
+          path: release-assets/
 
       - name: Verify checksums
-        working-directory: artifacts
+        working-directory: release-assets
         run: |
           echo "=== Release artifacts ==="
           ls -la
@@ -425,7 +430,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            artifacts/* \
+            release-assets/* \
             --title "Taskdeck ${{ steps.version.outputs.tag }}" \
             --generate-notes \
             --verify-tag
