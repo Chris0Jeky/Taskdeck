@@ -202,24 +202,44 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   }))
   expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
 
+  // Measure the modal's own actions against the contracted visual bounds.
+  // `toBeVisible()` alone cannot carry this claim: Playwright treats any
+  // element with a non-empty rendered box as visible, including one the
+  // software keyboard covers.
+  const visualTop = 120
+  const visualBottom = visualTop + 420
   for (const name of ['Save Changes', 'Cancel', 'Delete Card']) {
     const action = editModal.getByRole('button', { name, exact: true })
     await action.scrollIntoViewIfNeeded()
     await expect(action).toBeVisible()
     await expect(action).toBeEnabled()
+
+    const actionBox = await action.boundingBox()
+    expect(actionBox).not.toBeNull()
+    // 1px tolerance for sub-pixel layout rounding.
+    expect(actionBox!.y).toBeGreaterThanOrEqual(visualTop - 1)
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
   }
 
+  // Nested Delete Card confirmation.
+  //
+  // SCOPE NOTE — this block is deliberately NOT keyboard-safety coverage.
+  // `TdDialog` teleports to <body> and positions itself against the LAYOUT
+  // viewport (`position: fixed; inset: 0`, plus `height: 100dvh` under its own
+  // 640px mobile breakpoint), so it is unaffected by the visual-viewport
+  // binding this test exercises on CardModal. Re-binding that shared primitive
+  // changes every dialog in the product and is tracked separately in #1821;
+  // the bounding-box assertions the nested case needs land there.
+  //
+  // What is asserted here: opening the confirmation from inside CardModal's new
+  // `overflow-hidden` viewport container still mounts and renders it. Focus
+  // assertions were removed on purpose — programmatic focus proves nothing
+  // about on-screen position and would have read as reachability coverage.
   await editModal.getByRole('button', { name: 'Delete Card', exact: true }).click()
   const deleteDialog = page.getByRole('dialog', { name: 'Delete Card', exact: true })
   await expect(deleteDialog).toBeVisible()
-  const deleteCancel = deleteDialog.getByRole('button', { name: 'Cancel', exact: true })
-  const deleteConfirm = deleteDialog.getByRole('button', { name: 'Delete', exact: true })
-  await expect(deleteCancel).toBeVisible()
-  await expect(deleteConfirm).toBeVisible()
-  await deleteCancel.focus()
-  await expect(deleteCancel).toBeFocused()
-  await deleteConfirm.focus()
-  await expect(deleteConfirm).toBeFocused()
+  await expect(deleteDialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+  await expect(deleteDialog.getByRole('button', { name: 'Delete', exact: true })).toBeVisible()
 })
 
 test('@mobile workspace views should render correctly on small screen', async ({ page }) => {
