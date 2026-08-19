@@ -116,7 +116,7 @@
      `elevated` and `high` deliberately share a tier: every `elevated` site is
      the hover partner of a `--td-surface-container` rest fill, which is the
      same "one tier up" step `high` expresses.  Alias, never literal, so the
-     `[data-theme="light"]` and `[data-density]` overrides below keep working.
+     `[data-density]` overrides below keep working.
      `.paper` / `.paper-night` restate all five in `paper-legacy-bridge.css`
      on <body>; a body-level declaration beats an inherited `:root` value, so
      Paper rendering is unchanged by these lines. */
@@ -125,84 +125,7 @@
   --td-surface-low: var(--td-surface-container-low);
   --td-surface-elevated: var(--td-surface-container-high);
   --td-surface-high: var(--td-surface-container-high);
-}
 
-/* ══════════════════════════════════════════════════
-   Light Theme — warm professional variant
-   Apply via <html data-theme="light">
-   Only overrides tokens that differ from the dark default.
-
-   DEAD CODE — DELETION CANDIDATE (ADR-0053 / #1778).
-   Nothing in the application sets `data-theme`: at commit a2ac87e8 a
-   repo-wide grep found the attribute in exactly one live source file, this
-   one (the selector below and the comment above it).  Every other match is
-   documentation or the design handoff.  The sibling [data-density] blocks
-   ARE live; this block has never activated in a shipped build, so its values
-   are unvalidated.  Paper-mode warming of the --td-* substrate is handled by
-   `paper-legacy-bridge.css`, scoped under `.paper` / `.paper-night`, NOT by
-   this block.  Removing it is deliberately a separate slice — do not extend
-   it; delete it.
-   ══════════════════════════════════════════════════ */
-[data-theme="light"] {
-  /* ── Internal accent aliases (single source for accent tweaks) ── */
-  --_td-light-accent: #d93636;
-  --_td-light-accent-rgb: 217 54 54;
-  --_td-light-accent-hover: #c12e2e;
-
-  /* ── Surface Tiers (warm gray / cream) ── */
-  --td-surface-base: #f5f3f1;
-  --td-surface-container-lowest: #ffffff;
-  --td-surface-container-low: #f0edeb;
-  --td-surface-container: #eae7e5;
-  --td-surface-container-high: #dfdcda;
-  --td-surface-container-highest: #d4d1cf;
-  --td-surface-bright: #c9c6c4;
-
-  /* ── Text Colors ── */
-  --td-text-primary: #1c1917;
-  --td-text-secondary: #6b4c48;
-  --td-text-tertiary: rgba(28, 25, 23, 0.45);
-  --td-text-inverse: #f5f3f1;
-  --td-text-ember: var(--_td-light-accent);
-  --td-text-muted: rgba(28, 25, 23, 0.55);
-
-  /* ── Semantic Colors (deeper for contrast on light bg) ── */
-  --td-color-primary: var(--_td-light-accent);
-  --td-color-primary-hover: var(--_td-light-accent-hover);
-  --td-color-primary-light: rgb(var(--_td-light-accent-rgb) / 0.1);
-
-  --td-color-ember: var(--_td-light-accent);
-  --td-color-ember-glow: var(--_td-light-accent-hover);
-  --td-color-ember-dim: rgb(var(--_td-light-accent-rgb) / 0.07);
-
-  --td-color-success: #16a34a;
-  --td-color-success-light: rgba(22, 163, 74, 0.1);
-  --td-color-warning: #d97706;
-  --td-color-warning-light: rgba(217, 119, 6, 0.1);
-  --td-color-error: #dc2626;
-  --td-color-error-light: rgba(220, 38, 38, 0.1);
-  --td-color-info: var(--_td-light-accent);
-  --td-color-info-light: rgb(var(--_td-light-accent-rgb) / 0.08);
-
-  /* ── Border & Outline ── */
-  --td-border-default: rgba(28, 25, 23, 0.12);
-  --td-border-ghost: rgba(28, 25, 23, 0.06);
-  --td-border-focus: var(--_td-light-accent);
-  --td-border-ember: var(--_td-light-accent-hover);
-
-  /* ── Focus Ring ── */
-  --td-focus-ring: 0 0 0 2px var(--_td-light-accent), 0 0 0 4px rgb(var(--_td-light-accent-rgb) / 0.2);
-  --td-focus-ring-error: 0 0 0 2px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.2);
-
-  /* ── Elevation (softer for light surfaces) ── */
-  --td-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --td-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --td-shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.06);
-  --td-shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.12);
-
-  /* ── Glass ── */
-  --td-glass-bg: rgba(245, 243, 241, 0.85);
-  --td-glass-blur: 16px;
 }
 
 /* ══════════════════════════════════════════════════
