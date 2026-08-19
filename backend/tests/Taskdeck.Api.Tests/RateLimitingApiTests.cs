@@ -270,10 +270,11 @@ public class RateLimitingApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = factory.CreateClient();
 
         await ApiTestHarness.AuthenticateAsync(client, "rate-triage");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "rate-triage-board");
 
         var createResponse = await client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "triage rate limited item"));
+            new CreateCaptureItemDto(board.Id, "triage rate limited item"));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         created.Should().NotBeNull();

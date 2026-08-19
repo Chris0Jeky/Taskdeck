@@ -48,27 +48,30 @@ function selectMode(mode: PaperMode) {
 </script>
 
 <template>
-  <div class="td-appearance-settings">
-    <h1 class="td-page-title">Appearance</h1>
-    <p class="td-description">
-      Choose how Taskdeck looks. Paper is the canonical theme; Off keeps the original Legacy (Obsidian) shell.
-    </p>
+  <div class="paper-appearance">
+    <header class="paper-appearance__hero">
+      <span class="tk-eyebrow paper-appearance__eyebrow">Settings</span>
+      <h1 class="tk-h1 paper-appearance__title">Appearance</h1>
+      <p class="tk-lede paper-appearance__subtitle">
+        Choose how Taskdeck looks. Paper is the canonical theme; Off keeps the original Legacy (Obsidian) shell.
+      </p>
+    </header>
 
-    <section class="td-panel">
-      <div id="td-appearance-theme-label" class="td-section-title">Theme</div>
+    <section class="paper-appearance__panel">
+      <div id="td-appearance-theme-label" class="tk-h3 paper-appearance__panel-title">Theme</div>
       <!--
         Single-select segmented control. Kept as <button> + aria-pressed to match
         the project-wide convention (PaperStyleGuideView, Today/Review rails, etc.
         all use aria-pressed; no role="radiogroup" exists anywhere in the app). The
         group is labelled by the visible "Theme" heading via aria-labelledby.
       -->
-      <div class="td-theme-segments" role="group" aria-labelledby="td-appearance-theme-label">
+      <div class="paper-appearance__segments" role="group" aria-labelledby="td-appearance-theme-label">
         <button
           v-for="option in options"
           :key="option.mode"
           type="button"
-          class="td-theme-segment"
-          :class="{ 'td-theme-segment--active': activeMode === option.mode }"
+          class="paper-appearance__segment"
+          :class="{ 'paper-appearance__segment--active': activeMode === option.mode }"
           :data-mode="option.mode"
           :aria-pressed="activeMode === option.mode"
           @click="selectMode(option.mode)"
@@ -76,80 +79,134 @@ function selectMode(mode: PaperMode) {
           {{ option.label }}
         </button>
       </div>
-      <p class="td-theme-hint">{{ activeHint }}</p>
+      <p class="paper-appearance__hint">{{ activeHint }}</p>
     </section>
   </div>
 </template>
 
 <style scoped>
-/*
- * Intentionally styled with the Legacy/Obsidian --td-* design tokens, matching
- * every other /workspace/settings/* view. Paper does not redefine --td-*, so
- * inside the Paper shell this panel renders in the Obsidian palette (readable,
- * just not Paper-skinned) until the settings surfaces are Paper-tokenized in a
- * later archive-pivot wave. Deliberately not re-skinned in this slice.
+/* ── Paper & Graphite — AppearanceSettingsView ──
+ *
+ * Styled against the Paper token system (--paper, --ink, --ember families),
+ * matching every other /workspace/settings/* view after #1779. This page was
+ * previously held back in the Legacy/Obsidian `--td-*` palette on purpose; that
+ * exception was retired by the #1779 ruling — the theme-control page wears the
+ * same Paper chrome as its neighbours.
+ *
+ * There are no theme-preview swatches on this surface to exempt: the segmented
+ * control is text-only (each mode is named, not colour-sampled), so nothing here
+ * has to render a specific theme's palette to do its job. If a real preview
+ * swatch is ever added it must render its own theme's colours literally and stay
+ * outside this Paper-token styling.
+ *
+ * Tokens live under `.paper` / `.paper-night` in paper-tokens.css and are NOT
+ * defined at :root, so once the user picks Off and the Legacy shell renders this
+ * page, every var() resolves to its literal fallback. The substrate line on the
+ * root — `background: var(--paper, #f3eee5)` painted alongside `color:
+ * var(--ink, #1a1814)` — is what keeps the text legible in Legacy: without it
+ * this page's own <h1> would land on AppShell's Obsidian `--td-surface-base`
+ * (#131313) at ~1.05:1 the moment Off is selected. It is a no-op under `.paper`
+ * / `.paper-night`, where `.td-shell--paper .td-content` already paints
+ * `var(--paper)`.
+ * Paper typography (the `tk-*` classes) is scoped as `.paper .tk-*` /
+ * `.paper-night .tk-*` and intentionally does NOT render in Legacy mode — only
+ * legibility is preserved there, not the Paper type ladder.
  */
-.td-appearance-settings {
-  max-width: 640px;
-}
-
-.td-description {
-  color: var(--td-text-secondary);
-  margin-bottom: var(--td-space-4);
-}
-
-.td-panel {
+.paper-appearance {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
-  background: var(--td-surface-primary);
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-lg);
-  padding: var(--td-space-5);
+  gap: var(--s-5, 20px);
+  max-width: 640px;
+  font-family: var(--sans, system-ui, sans-serif);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
 
-.td-section-title {
-  font-weight: 700;
-  color: var(--td-text-primary);
+/* ── Hero ── */
+
+.paper-appearance__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
 }
 
-.td-theme-segments {
+.paper-appearance__eyebrow {
+  color: var(--mute, #6c6557);
+}
+
+.paper-appearance__title {
+  margin: 0;
+  font-size: var(--t-h2, 32px);
+}
+
+.paper-appearance__subtitle {
+  margin: 0;
+  color: var(--ink-2, #3a352d);
+}
+
+/* ── Panel ── */
+
+.paper-appearance__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3, 12px);
+  padding: var(--s-5, 20px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+.paper-appearance__panel-title {
+  font-size: var(--t-lg, 18px);
+  color: var(--ink-deep, #0a0908);
+}
+
+/* ── Segmented control ── */
+
+.paper-appearance__segments {
   /* Grid (not flex-wrap) so segments keep equal widths and wrap cleanly
      instead of stretching a lone item to full width on the next row. */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--td-space-2);
+  gap: var(--s-2, 8px);
 }
 
-.td-theme-segment {
-  padding: var(--td-space-2) var(--td-space-3);
-  border-radius: var(--td-radius-md);
-  border: 1px solid var(--td-border-default);
-  background: var(--td-surface-primary);
-  color: var(--td-text-secondary);
+.paper-appearance__segment {
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  color: var(--ink-2, #3a352d);
   cursor: pointer;
-  font: inherit;
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease),
+    border-color var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-theme-segment:hover {
-  border-color: var(--td-color-primary);
+.paper-appearance__segment:hover {
+  background: var(--paper-2, #ebe5d8);
+  border-color: var(--ink-2, #3a352d);
 }
 
-.td-theme-segment:focus-visible {
+.paper-appearance__segment:focus-visible {
   outline: none;
-  box-shadow: var(--td-focus-ring);
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
-.td-theme-segment--active {
-  background: var(--td-color-primary);
-  color: var(--td-text-inverse);
-  border-color: var(--td-color-primary);
+.paper-appearance__segment--active {
+  background: var(--ember, #a8421f);
+  border-color: var(--ember, #a8421f);
+  color: var(--td-on-ember, #fefaf6);
   font-weight: 600;
 }
 
-.td-theme-hint {
-  color: var(--td-text-secondary);
+.paper-appearance__hint {
   margin: 0;
   min-height: 1.25rem;
+  color: var(--mute, #6c6557);
+  font-size: var(--t-sm, 12px);
 }
 </style>

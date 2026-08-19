@@ -13,6 +13,7 @@ import {
   ConnectorTypeLabels,
   ConnectorDirectionLabels,
 } from '../types/integration'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 
 const store = useIntegrationStore()
 
@@ -49,11 +50,11 @@ const connectorDirections: ConnectorDirection[] = ['Inbound', 'Context', 'Outbou
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'Active':
-      return 'td-int__badge--active'
+      return 'paper-int__badge--active'
     case 'Disabled':
-      return 'td-int__badge--disabled'
+      return 'paper-int__badge--disabled'
     case 'Error':
-      return 'td-int__badge--error'
+      return 'paper-int__badge--error'
     default:
       return ''
   }
@@ -62,11 +63,11 @@ function statusBadgeClass(status: string): string {
 function directionBadgeClass(direction: string): string {
   switch (direction) {
     case 'Inbound':
-      return 'td-int__dir--inbound'
+      return 'paper-int__dir--inbound'
     case 'Context':
-      return 'td-int__dir--context'
+      return 'paper-int__dir--context'
     case 'Outbound':
-      return 'td-int__dir--outbound'
+      return 'paper-int__dir--outbound'
     default:
       return ''
   }
@@ -151,35 +152,36 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="td-int">
-    <header class="td-int__hero">
-      <div class="td-int__hero-copy">
-        <span class="td-int__eyebrow">Platform</span>
-        <h1 class="td-page-title">Integrations</h1>
-        <p class="td-int__subtitle">
+  <div class="paper-int">
+    <header class="paper-int__hero">
+      <div class="paper-int__hero-copy">
+        <span class="tk-eyebrow paper-int__eyebrow">Platform</span>
+        <h1 class="tk-h2 paper-int__title">Integrations</h1>
+        <p class="tk-lede paper-int__subtitle">
           Register and manage connector definitions for future integrations.
           Registration, enablement, and configuration do not yet ingest external content.
         </p>
       </div>
-      <button
-        class="td-int__add-btn"
+      <PaperHLBtn
+        variant="ember"
+        class="paper-int__add-btn"
         :disabled="showAddForm"
         @click="showAddForm = true"
       >
         + Add Connector
-      </button>
+      </PaperHLBtn>
     </header>
 
-    <section class="td-int__capture-callout" aria-label="Standalone content capture">
+    <section class="paper-int__capture-callout" aria-label="Standalone content capture">
       <div>
-        <h2 class="td-int__capture-title">Capture content without a connector</h2>
-        <p class="td-int__capture-desc">
+        <h2 class="paper-int__capture-title">Capture content without a connector</h2>
+        <p class="paper-int__capture-desc">
           Use Markdown import or web clip capture in Settings → Export &amp; Import.
           Connector registry entries manage metadata and lifecycle only; they do not ingest content.
         </p>
       </div>
       <router-link
-        class="td-int__btn td-int__btn--primary td-int__capture-link"
+        class="paper-int__action paper-int__action--ember paper-int__capture-link"
         :to="{ name: 'workspace-settings-export-import' }"
       >
         Open Markdown import and web clip capture
@@ -189,108 +191,111 @@ onMounted(() => {
     <!-- Add connector form -->
     <section
       v-if="showAddForm"
-      class="td-int__form"
+      class="paper-int__form"
       aria-label="Register a new connector"
     >
-      <h2 class="td-int__form-title">Register Connector</h2>
+      <h2 class="tk-h3 paper-int__form-title">Register Connector</h2>
       <form @submit.prevent="handleRegister">
-        <div class="td-int__form-row">
-          <label for="connector-name" class="td-int__label">Name</label>
+        <div class="paper-int__form-row">
+          <label for="connector-name" class="paper-int__label">Name</label>
           <input
             id="connector-name"
             v-model="newName"
             type="text"
-            class="td-int__input"
+            class="paper-int__input"
             placeholder="My GitHub Connector"
             required
             maxlength="100"
           />
         </div>
-        <div class="td-int__form-row">
-          <label for="connector-type" class="td-int__label">Type</label>
-          <select id="connector-type" v-model="newType" class="td-int__select">
+        <div class="paper-int__form-row">
+          <label for="connector-type" class="paper-int__label">Type</label>
+          <select id="connector-type" v-model="newType" class="paper-int__select">
             <option v-for="ct in connectorTypes" :key="ct" :value="ct">
               {{ ConnectorTypeLabels[ct] }}
             </option>
           </select>
         </div>
-        <div class="td-int__form-row">
-          <label for="connector-direction" class="td-int__label">Direction</label>
-          <select id="connector-direction" v-model="newDirection" class="td-int__select">
+        <div class="paper-int__form-row">
+          <label for="connector-direction" class="paper-int__label">Direction</label>
+          <select id="connector-direction" v-model="newDirection" class="paper-int__select">
             <option v-for="cd in connectorDirections" :key="cd" :value="cd">
               {{ ConnectorDirectionLabels[cd] }}
             </option>
           </select>
         </div>
-        <div class="td-int__form-row">
-          <label for="connector-config" class="td-int__label">Configuration (JSON, optional)</label>
+        <div class="paper-int__form-row">
+          <label for="connector-config" class="paper-int__label">Configuration (JSON, optional)</label>
           <textarea
             id="connector-config"
             v-model="newConfig"
-            class="td-int__textarea"
+            class="paper-int__textarea"
             placeholder='{"url": "https://...", "token": "..."}'
             rows="3"
           />
         </div>
-        <div class="td-int__form-actions">
-          <button
+        <div class="paper-int__form-actions">
+          <PaperHLBtn
             type="submit"
-            class="td-int__btn td-int__btn--primary"
+            variant="ember"
+            class="paper-int__register"
             :disabled="registering || !newName.trim()"
           >
             {{ registering ? 'Registering...' : 'Register' }}
-          </button>
-          <button
+          </PaperHLBtn>
+          <PaperHLBtn
             type="button"
-            class="td-int__btn td-int__btn--secondary"
+            variant="ghost"
+            class="paper-int__cancel"
             @click="showAddForm = false"
           >
             Cancel
-          </button>
+          </PaperHLBtn>
         </div>
       </form>
     </section>
 
     <!-- Loading state -->
-    <div v-if="loading && !connectors.length" class="td-int__loading" role="status">
+    <div v-if="loading && !connectors.length" class="paper-int__loading" role="status">
       Loading integrations...
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error && !connectors.length" class="td-int__error" role="alert">
+    <div v-else-if="error && !connectors.length" class="paper-int__error" role="alert">
       {{ error }}
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="!loading && !connectors.length" class="td-int__empty">
-      <p class="td-int__empty-title">No connectors configured</p>
-      <p class="td-int__empty-desc">
+    <div v-else-if="!loading && !connectors.length" class="paper-int__empty">
+      <p class="paper-int__empty-title">No connectors configured</p>
+      <p class="paper-int__empty-desc">
         Register a connector definition to manage its type, direction, and configuration.
         Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.
       </p>
-      <button
+      <PaperHLBtn
         v-if="!showAddForm"
-        class="td-int__btn td-int__btn--primary"
+        variant="ember"
+        class="paper-int__add-first"
         @click="showAddForm = true"
       >
         + Add Your First Connector
-      </button>
+      </PaperHLBtn>
     </div>
 
     <!-- Connector list -->
     <section
       v-else
-      class="td-int__list"
+      class="paper-int__list"
       aria-label="Configured connectors"
     >
       <div
         v-for="connector in connectors"
         :key="connector.id"
-        class="td-int__card"
-        :class="{ 'td-int__card--selected': selectedId === connector.id }"
+        class="paper-int__card"
+        :class="{ 'paper-int__card--selected': selectedId === connector.id }"
       >
         <div
-          class="td-int__card-header"
+          class="paper-int__card-header"
           role="button"
           tabindex="0"
           :aria-expanded="selectedId === connector.id"
@@ -298,29 +303,29 @@ onMounted(() => {
           @keydown.enter.self="handleSelectConnector(connector)"
           @keydown.space.self.prevent="handleSelectConnector(connector)"
         >
-          <div class="td-int__card-info">
-            <h3 class="td-int__card-name">{{ connector.name }}</h3>
-            <div class="td-int__card-meta">
+          <div class="paper-int__card-info">
+            <h3 class="paper-int__card-name">{{ connector.name }}</h3>
+            <div class="paper-int__card-meta">
               <span
-                class="td-int__badge"
+                class="paper-int__badge"
                 :class="statusBadgeClass(connector.status)"
               >
                 {{ connector.status }}
               </span>
               <span
-                class="td-int__dir"
+                class="paper-int__dir"
                 :class="directionBadgeClass(connector.direction)"
               >
                 {{ ConnectorDirectionLabels[connector.direction] || connector.direction }}
               </span>
-              <span class="td-int__type">
+              <span class="paper-int__type">
                 {{ ConnectorTypeLabels[connector.connectorType] || connector.connectorType }}
               </span>
             </div>
           </div>
-          <div class="td-int__card-actions">
+          <div class="paper-int__card-actions">
             <button
-              class="td-int__toggle-btn"
+              class="paper-int__toggle-btn"
               :title="connector.status === 'Active' ? 'Disable' : 'Enable'"
               :aria-label="connector.status === 'Active' ? 'Disable connector' : 'Enable connector'"
               @click.stop="handleToggle(connector)"
@@ -328,7 +333,7 @@ onMounted(() => {
               {{ connector.status === 'Active' ? 'Disable' : 'Enable' }}
             </button>
             <button
-              class="td-int__delete-btn"
+              class="paper-int__delete-btn"
               title="Remove connector"
               aria-label="Remove connector"
               @click.stop="handleDelete(connector)"
@@ -341,34 +346,34 @@ onMounted(() => {
         <!-- Detail panel -->
         <div
           v-if="selectedId === connector.id"
-          class="td-int__detail"
+          class="paper-int__detail"
         >
-          <div v-if="detailLoading" class="td-int__detail-loading" role="status">
+          <div v-if="detailLoading" class="paper-int__detail-loading" role="status">
             Loading details...
           </div>
           <template v-else-if="detail">
-            <div class="td-int__detail-section">
-              <h4 class="td-int__detail-heading">Configuration</h4>
-              <pre v-if="detail.configuration" class="td-int__config-pre">{{ detail.configuration }}</pre>
-              <p v-else class="td-int__config-empty">No configuration set.</p>
+            <div class="paper-int__detail-section">
+              <h4 class="paper-int__detail-heading">Configuration</h4>
+              <pre v-if="detail.configuration" class="paper-int__config-pre">{{ detail.configuration }}</pre>
+              <p v-else class="paper-int__config-empty">No configuration set.</p>
             </div>
-            <div class="td-int__detail-section">
-              <h4 class="td-int__detail-heading">Recent Events</h4>
-              <div v-if="detail.recentEvents.length" class="td-int__events">
+            <div class="paper-int__detail-section">
+              <h4 class="paper-int__detail-heading">Recent Events</h4>
+              <div v-if="detail.recentEvents.length" class="paper-int__events">
                 <div
                   v-for="event in detail.recentEvents"
                   :key="event.id"
-                  class="td-int__event"
+                  class="paper-int__event"
                 >
-                  <span class="td-int__event-type">{{ event.eventType }}</span>
-                  <span class="td-int__event-date">{{ formatDate(event.createdAt) }}</span>
-                  <span v-if="event.payload" class="td-int__event-payload">{{ event.payload }}</span>
+                  <span class="paper-int__event-type">{{ event.eventType }}</span>
+                  <span class="paper-int__event-date">{{ formatDate(event.createdAt) }}</span>
+                  <span v-if="event.payload" class="paper-int__event-payload">{{ event.payload }}</span>
                 </div>
               </div>
-              <p v-else class="td-int__events-empty">No events recorded yet.</p>
+              <p v-else class="paper-int__events-empty">No events recorded yet.</p>
             </div>
-            <div class="td-int__detail-section">
-              <h4 class="td-int__detail-heading">Timestamps</h4>
+            <div class="paper-int__detail-section">
+              <h4 class="paper-int__detail-heading">Timestamps</h4>
               <p>Created: {{ formatDate(detail.createdAt) }}</p>
               <p>Updated: {{ formatDate(detail.updatedAt) }}</p>
             </div>
@@ -380,434 +385,382 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.td-int {
+/* ── Paper & Graphite — IntegrationsView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
+   surface legible if rendered outside the Paper shell.  The status and
+   direction badges previously used raw Tailwind-palette hexes; they now read
+   from the earth-tone semantic tokens instead. */
+
+.paper-int {
   max-width: 52rem;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: var(--s-6, 24px);
+  font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
 
-.td-int__hero {
+.paper-int__hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-6, 24px);
 }
 
-.td-int__eyebrow {
-  font-size: 0.75rem;
+.paper-int__hero-copy { display: flex; flex-direction: column; gap: var(--s-2, 8px); }
+.paper-int__eyebrow { color: var(--ember, #a8421f); }
+.paper-int__title { margin: 0; font-size: var(--t-h2, 32px); }
+.paper-int__subtitle { margin: 0; color: var(--ink-2, #3a352d); max-width: 32rem; }
+
+.paper-int__add-btn { flex-shrink: 0; white-space: nowrap; }
+
+/* Link styled as a Paper action (router-link cannot be a PaperHLBtn button). */
+.paper-int__action {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--s-2, 8px) var(--s-4, 16px);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+  font-size: var(--t-md, 13.5px);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--td-text-tertiary, #9ca3af);
+  text-decoration: none;
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-page-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0.25rem 0 0.5rem;
-  color: var(--td-text-primary, #111827);
+.paper-int__action--ember {
+  border-color: var(--ember, #a8421f);
+  background: var(--ember, #a8421f);
+  color: var(--td-on-ember, #fefaf6);
 }
 
-.td-int__subtitle {
-  font-size: 0.875rem;
-  color: var(--td-text-secondary, #6b7280);
-  line-height: 1.5;
-  max-width: 32rem;
-}
+.paper-int__action--ember:hover { filter: brightness(1.1); }
 
-.td-int__add-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 0.375rem;
-  background: var(--td-primary, #3b82f6);
-  color: white;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.td-int__add-btn:hover:not(:disabled) {
-  background: var(--td-primary-hover, #2563eb);
-}
-
-.td-int__add-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.td-int__capture-callout {
+.paper-int__capture-callout {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  border: 1px solid var(--td-border, #e5e7eb);
-  border-radius: 0.5rem;
-  background: var(--td-surface, #f9fafb);
+  gap: var(--s-4, 16px);
+  padding: var(--s-4, 16px);
+  margin-bottom: var(--s-6, 24px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
 }
 
-.td-int__capture-title {
-  font-size: 0.9375rem;
+.paper-int__capture-title {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-bd, 15px);
   font-weight: 600;
-  margin: 0 0 0.25rem;
-  color: var(--td-text-primary, #111827);
+  margin: 0 0 var(--s-1, 4px);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-int__capture-desc {
-  font-size: 0.8125rem;
+.paper-int__capture-desc {
+  font-size: var(--t-md, 13.5px);
   line-height: 1.5;
   margin: 0;
-  color: var(--td-text-secondary, #6b7280);
+  color: var(--ink-2, #3a352d);
 }
 
-.td-int__capture-link {
-  flex-shrink: 0;
-  text-decoration: none;
-}
+.paper-int__capture-link { flex-shrink: 0; }
 
 @media (max-width: 640px) {
-  .td-int__capture-callout {
+  .paper-int__capture-callout {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .td-int__capture-link {
+  .paper-int__capture-link {
     width: 100%;
     box-sizing: border-box;
+    justify-content: center;
     text-align: center;
   }
 }
 
 /* Form */
-.td-int__form {
-  background: var(--td-surface, #f9fafb);
-  border: 1px solid var(--td-border, #e5e7eb);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+.paper-int__form {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-5, 20px);
+  margin-bottom: var(--s-6, 24px);
 }
 
-.td-int__form-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0 0 1rem;
-}
+.paper-int__form-title { margin: 0 0 var(--s-4, 16px); font-size: var(--t-lg, 18px); }
 
-.td-int__form-row {
-  margin-bottom: 0.75rem;
-}
+.paper-int__form-row { margin-bottom: var(--s-3, 12px); }
 
-.td-int__label {
+.paper-int__label {
   display: block;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  margin-bottom: 0.25rem;
-  color: var(--td-text-secondary, #6b7280);
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: var(--s-1, 4px);
+  color: var(--mute, #6c6557);
 }
 
-.td-int__input,
-.td-int__select,
-.td-int__textarea {
+.paper-int__input,
+.paper-int__select,
+.paper-int__textarea {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--td-border, #d1d5db);
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  background: var(--td-bg, white);
-  color: var(--td-text-primary, #111827);
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
   box-sizing: border-box;
+  transition: border-color var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-int__textarea {
+.paper-int__input:focus,
+.paper-int__select:focus,
+.paper-int__textarea:focus {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
+}
+
+.paper-int__textarea {
   resize: vertical;
-  font-family: monospace;
+  font-family: var(--mono, ui-monospace, monospace);
 }
 
-.td-int__form-actions {
+.paper-int__form-actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.td-int__btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.td-int__btn--primary {
-  background: var(--td-primary, #3b82f6);
-  color: white;
-}
-
-.td-int__btn--primary:hover:not(:disabled) {
-  background: var(--td-primary-hover, #2563eb);
-}
-
-.td-int__btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.td-int__btn--secondary {
-  background: var(--td-surface, #f3f4f6);
-  color: var(--td-text-primary, #374151);
-  border: 1px solid var(--td-border, #d1d5db);
-}
-
-.td-int__btn--secondary:hover {
-  background: var(--td-surface-hover, #e5e7eb);
+  gap: var(--s-2, 8px);
+  margin-top: var(--s-4, 16px);
 }
 
 /* States */
-.td-int__loading,
-.td-int__error,
-.td-int__empty {
+.paper-int__loading,
+.paper-int__error,
+.paper-int__empty {
   text-align: center;
-  padding: 3rem 1rem;
-  color: var(--td-text-secondary, #6b7280);
+  padding: var(--s-12, 56px) var(--s-4, 16px);
+  color: var(--mute, #6c6557);
 }
 
-.td-int__error {
-  color: var(--td-error, #ef4444);
-}
+.paper-int__error { color: var(--overdue, #8c4a26); }
 
-.td-int__empty-title {
-  font-size: 1rem;
+.paper-int__empty-title {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-lg, 18px);
   font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: var(--td-text-primary, #374151);
+  margin: 0 0 var(--s-2, 8px);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-int__empty-desc {
-  font-size: 0.875rem;
+.paper-int__empty-desc {
+  font-size: var(--t-md, 13.5px);
   max-width: 28rem;
-  margin: 0 auto 1rem;
+  margin: 0 auto var(--s-4, 16px);
   line-height: 1.5;
 }
 
 /* Connector list */
-.td-int__list {
+.paper-int__list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--s-3, 12px);
 }
 
-.td-int__card {
-  border: 1px solid var(--td-border, #e5e7eb);
-  border-radius: 0.5rem;
-  background: var(--td-bg, white);
+.paper-int__card {
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
   overflow: hidden;
 }
 
-.td-int__card--selected {
-  border-color: var(--td-primary, #3b82f6);
-}
+.paper-int__card--selected { border-color: var(--ember, #a8421f); }
 
-.td-int__card-header {
+.paper-int__card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: var(--s-3, 12px) var(--s-4, 16px);
   cursor: pointer;
-  gap: 0.75rem;
+  gap: var(--s-3, 12px);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-int__card-header:hover {
-  background: var(--td-surface-hover, #f9fafb);
-}
+.paper-int__card-header:hover { background: var(--paper-2, #ebe5d8); }
 
-.td-int__card-name {
-  font-size: 0.9375rem;
+.paper-int__card-name {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-bd, 15px);
   font-weight: 600;
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--s-1, 4px);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-int__card-meta {
+.paper-int__card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
-  font-size: 0.75rem;
+  align-items: center;
+  gap: var(--s-2, 8px);
+  font-size: var(--t-xs, 10.5px);
 }
 
-.td-int__badge {
-  padding: 0.125rem 0.5rem;
-  border-radius: 999px;
-  font-weight: 500;
-  font-size: 0.6875rem;
+.paper-int__badge {
+  padding: 1px var(--s-2, 8px);
+  border-radius: var(--r-1, 2px);
+  font-weight: 600;
+  font-size: var(--t-xs, 10.5px);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.td-int__badge--active {
-  background: #d1fae5;
-  color: #065f46;
+.paper-int__badge--active { background: var(--applied-tint, #d8e0ce); color: var(--applied, #4a6b3f); }
+.paper-int__badge--disabled { background: var(--paper-2, #ebe5d8); color: var(--mute, #6c6557); }
+.paper-int__badge--error { background: var(--ember-bloom, #a8421f1a); color: var(--ember-deep, #7a2e15); }
+
+.paper-int__dir {
+  padding: 1px var(--s-2, 8px);
+  border-radius: var(--r-1, 2px);
+  font-weight: 600;
+  font-size: var(--t-xs, 10.5px);
 }
 
-.td-int__badge--disabled {
-  background: #f3f4f6;
-  color: #6b7280;
+.paper-int__dir--inbound { background: var(--ember-tint, #f0d9c8); color: var(--ember-ink, #6e2810); }
+.paper-int__dir--context { background: var(--overdue-tint, #ecd9c4); color: var(--overdue, #8c4a26); }
+.paper-int__dir--outbound { background: var(--paper-edge, #e3dac8); color: var(--ink-2, #3a352d); }
+
+.paper-int__type {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--mute, #6c6557);
 }
 
-.td-int__badge--error {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.td-int__dir {
-  padding: 0.125rem 0.5rem;
-  border-radius: 999px;
-  font-weight: 500;
-  font-size: 0.6875rem;
-}
-
-.td-int__dir--inbound {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.td-int__dir--context {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.td-int__dir--outbound {
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.td-int__type {
-  color: var(--td-text-tertiary, #9ca3af);
-}
-
-.td-int__card-actions {
+.paper-int__card-actions {
   display: flex;
-  gap: 0.375rem;
+  gap: var(--s-1, 4px);
   flex-shrink: 0;
 }
 
-.td-int__toggle-btn,
-.td-int__delete-btn {
-  padding: 0.25rem 0.625rem;
-  border: 1px solid var(--td-border, #d1d5db);
-  border-radius: 0.25rem;
-  background: var(--td-bg, white);
-  font-size: 0.75rem;
+.paper-int__toggle-btn,
+.paper-int__delete-btn {
+  padding: var(--s-1, 4px) var(--s-2, 8px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+  font-family: inherit;
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
   cursor: pointer;
-  color: var(--td-text-secondary, #374151);
+  color: var(--ink-2, #3a352d);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease),
+    border-color var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-int__toggle-btn:hover {
-  background: var(--td-surface, #f3f4f6);
-}
+.paper-int__toggle-btn:hover { background: var(--paper-2, #ebe5d8); }
 
-.td-int__delete-btn:hover {
-  background: #fee2e2;
-  color: #991b1b;
-  border-color: #fca5a5;
+.paper-int__delete-btn:hover {
+  background: var(--ember-bloom, #a8421f1a);
+  color: var(--ember-deep, #7a2e15);
+  border-color: var(--ember, #a8421f);
 }
 
 /* Detail panel */
-.td-int__detail {
-  border-top: 1px solid var(--td-border, #e5e7eb);
-  padding: 1rem;
-  background: var(--td-surface, #f9fafb);
+.paper-int__detail {
+  border-top: 1px solid var(--line, #d8d0bf);
+  padding: var(--s-4, 16px);
+  background: var(--paper, #f3eee5);
 }
 
-.td-int__detail-loading {
+.paper-int__detail-loading {
   text-align: center;
-  color: var(--td-text-secondary, #6b7280);
-  font-size: 0.875rem;
-  padding: 1rem 0;
+  color: var(--mute, #6c6557);
+  font-size: var(--t-md, 13.5px);
+  padding: var(--s-4, 16px) 0;
 }
 
-.td-int__detail-section {
-  margin-bottom: 1rem;
-}
+.paper-int__detail-section { margin-bottom: var(--s-4, 16px); }
+.paper-int__detail-section:last-child { margin-bottom: 0; }
 
-.td-int__detail-section:last-child {
-  margin-bottom: 0;
-}
-
-.td-int__detail-heading {
-  font-size: 0.8125rem;
+.paper-int__detail-heading {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
   font-weight: 600;
-  margin: 0 0 0.375rem;
-  color: var(--td-text-secondary, #6b7280);
+  margin: 0 0 var(--s-1, 4px);
+  color: var(--mute, #6c6557);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.1em;
 }
 
-.td-int__config-pre {
-  background: var(--td-bg, white);
-  border: 1px solid var(--td-border, #e5e7eb);
-  border-radius: 0.25rem;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8125rem;
+.paper-int__config-pre {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
   white-space: pre-wrap;
   word-break: break-all;
   overflow: auto;
   max-height: 10rem;
 }
 
-.td-int__config-empty {
-  font-size: 0.8125rem;
-  color: var(--td-text-tertiary, #9ca3af);
+.paper-int__config-empty {
+  font-size: var(--t-md, 13.5px);
+  color: var(--mute, #6c6557);
   font-style: italic;
 }
 
-.td-int__events {
+.paper-int__events {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--s-1, 4px);
 }
 
-.td-int__event {
+.paper-int__event {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--s-2, 8px);
   align-items: baseline;
-  font-size: 0.8125rem;
-  padding: 0.375rem 0;
-  border-bottom: 1px solid var(--td-border-light, #f3f4f6);
+  font-size: var(--t-md, 13.5px);
+  padding: var(--s-1, 4px) 0;
+  border-bottom: 1px solid var(--line-soft, #e3dcc9);
 }
 
-.td-int__event:last-child {
-  border-bottom: none;
+.paper-int__event:last-child { border-bottom: none; }
+
+.paper-int__event-type { font-weight: 600; color: var(--ink-deep, #0a0908); }
+
+.paper-int__event-date {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--mute, #6c6557);
+  font-size: var(--t-xs, 10.5px);
 }
 
-.td-int__event-type {
-  font-weight: 500;
-  color: var(--td-text-primary, #111827);
-}
-
-.td-int__event-date {
-  color: var(--td-text-tertiary, #9ca3af);
-  font-size: 0.75rem;
-}
-
-.td-int__event-payload {
-  color: var(--td-text-secondary, #6b7280);
-  font-size: 0.75rem;
+.paper-int__event-payload {
+  color: var(--ink-2, #3a352d);
+  font-size: var(--t-xs, 10.5px);
   word-break: break-all;
 }
 
-.td-int__events-empty {
-  font-size: 0.8125rem;
-  color: var(--td-text-tertiary, #9ca3af);
+.paper-int__events-empty {
+  font-size: var(--t-md, 13.5px);
+  color: var(--mute, #6c6557);
   font-style: italic;
 }
 
-.td-int__detail-section p {
-  font-size: 0.8125rem;
-  color: var(--td-text-secondary, #6b7280);
-  margin: 0.125rem 0;
+.paper-int__detail-section p {
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink-2, #3a352d);
+  margin: var(--s-1, 4px) 0;
 }
 </style>

@@ -330,7 +330,7 @@ describe('PaperInboxView', () => {
       {
         id: 'capture-triage',
         userId: 'u-1',
-        boardId: null,
+        boardId: 'board-x',
         status: 'New',
         source: 'Typed',
         textExcerpt: 'Triage me',
@@ -343,8 +343,38 @@ describe('PaperInboxView', () => {
     await wrapper.find('[data-action="accept"]').trigger('click')
     await flushPromises()
 
-    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-triage')
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-triage', 'board-x')
     expect(orchestratorState.selectedItemId.value).toBeNull()
+  })
+
+  it('requires a board before triaging a board-less capture, then triages the chosen board (#1764)', async () => {
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha' }]
+    orchestratorState.selectedItemId.value = null
+    orchestratorState.items.value = [
+      {
+        id: 'capture-boardless',
+        userId: 'u-1',
+        boardId: null,
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'No board yet',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    // Accept opens the picker instead of triaging immediately.
+    await wrapper.find('[data-action="accept"]').trigger('click')
+    await flushPromises()
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+
+    // Choose a board and confirm — now triage runs with the chosen board.
+    await wrapper.find('[data-testid="capture-board-pick"] select').setValue('board-alpha')
+    await wrapper.find('[data-action="accept-on-board"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-boardless', 'board-alpha')
   })
 
   it('calls captureStore.ignoreItem by ID without mutating selectedItemId', async () => {
@@ -376,7 +406,7 @@ describe('PaperInboxView', () => {
       {
         id: 'capture-poll',
         userId: 'u-1',
-        boardId: null,
+        boardId: 'board-x',
         status: 'New',
         source: 'Typed',
         textExcerpt: 'Poll me',
@@ -399,7 +429,7 @@ describe('PaperInboxView', () => {
       {
         id: 'capture-done',
         userId: 'u-1',
-        boardId: null,
+        boardId: 'board-x',
         status: 'New',
         source: 'Typed',
         textExcerpt: 'Already done',
@@ -421,7 +451,7 @@ describe('PaperInboxView', () => {
       {
         id: 'capture-accept',
         userId: 'u-1',
-        boardId: null,
+        boardId: 'board-x',
         status: 'New',
         source: 'Typed',
         textExcerpt: 'Accept me',

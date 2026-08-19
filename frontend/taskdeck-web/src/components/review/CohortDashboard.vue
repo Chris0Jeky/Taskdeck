@@ -52,7 +52,7 @@ onMounted(() => {
   <div class="cohort-dashboard">
     <header class="cohort-dashboard__header">
       <div>
-        <h2 class="cohort-dashboard__title">Cohort Performance</h2>
+        <h2 class="tk-h3 cohort-dashboard__title">Cohort Performance</h2>
         <p class="cohort-dashboard__subtitle">
           Acceptance, edit, and rejection rates by prompt version
         </p>
@@ -164,105 +164,122 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* ── Paper & Graphite — CohortDashboard ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
+   panel legible if rendered outside the Paper shell.  The accept/edit/reject
+   series previously used raw Tailwind-palette hexes (#16a34a / #d97706 /
+   #dc2626); they now read the earth-tone semantic tokens. */
+
 .cohort-dashboard {
-  background: var(--td-surface-container, #fff);
-  border: 1px solid var(--td-border-ghost, #eee);
-  border-radius: var(--td-radius-lg, 12px);
-  padding: 24px;
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-6, 24px);
+  font-family: var(--sans, system-ui, sans-serif);
+  color: var(--ink, #1a1814);
 }
 
 .cohort-dashboard__header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 20px;
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-5, 20px);
 }
 
 .cohort-dashboard__title {
-  font-size: 18px;
-  font-weight: 700;
   margin: 0;
-  color: var(--td-text-primary, #111);
+  font-size: var(--t-lg, 18px);
 }
 
 .cohort-dashboard__subtitle {
-  font-size: 13px;
-  color: var(--td-text-secondary, #666);
-  margin: 4px 0 0;
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink-2, #3a352d);
+  margin: var(--s-1, 4px) 0 0;
 }
 
 .cohort-dashboard__select {
-  padding: 6px 12px;
-  border: 1px solid var(--td-border-default, #ddd);
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--td-surface-container, #fff);
-  color: var(--td-text-primary, #333);
+  padding: var(--s-1, 4px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
+
+.cohort-dashboard__select:focus {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
 .cohort-dashboard__loading {
-  padding: 40px;
+  padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--td-text-secondary, #666);
+  color: var(--mute, #6c6557);
 }
 
 .cohort-dashboard__error {
-  padding: 24px;
+  padding: var(--s-6, 24px);
   text-align: center;
-  color: var(--td-error, #c00);
+  color: var(--overdue, #8c4a26);
 }
 
 .cohort-dashboard__retry {
-  margin-top: 8px;
-  padding: 6px 14px;
-  border: 1px solid var(--td-border-default, #ddd);
-  border-radius: 6px;
-  background: none;
+  margin-top: var(--s-2, 8px);
+  padding: var(--s-1, 4px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
   cursor: pointer;
-  font-size: 13px;
+  font-family: inherit;
+  font-size: var(--t-md, 13.5px);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
 }
+
+.cohort-dashboard__retry:hover { background: var(--paper-2, #ebe5d8); }
 
 .cohort-dashboard__summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-6, 24px);
 }
 
 .cohort-dashboard__stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px;
-  background: var(--td-surface-sunken, #f9f9f9);
-  border-radius: 8px;
+  padding: var(--s-4, 16px);
+  background: var(--paper, #f3eee5);
+  border: 1px solid var(--line-soft, #e3dcc9);
+  border-radius: var(--r-2, 4px);
 }
 
 .cohort-dashboard__stat-value {
-  font-size: 24px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-feature-settings: "tnum" 1;
+  font-size: var(--t-h3, 22px);
   font-weight: 700;
-  color: var(--td-text-primary, #111);
+  color: var(--ink-deep, #0a0908);
 }
 
-.cohort-dashboard__stat-value--accept {
-  color: var(--td-success, #16a34a);
-}
-
-.cohort-dashboard__stat-value--edit {
-  color: var(--td-warning, #d97706);
-}
-
-.cohort-dashboard__stat-value--reject {
-  color: var(--td-error, #dc2626);
-}
+.cohort-dashboard__stat-value--accept { color: var(--applied, #4a6b3f); }
+.cohort-dashboard__stat-value--edit { color: var(--overdue, #8c4a26); }
+.cohort-dashboard__stat-value--reject { color: var(--ember-deep, #7a2e15); }
 
 .cohort-dashboard__stat-label {
-  font-size: 11px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--td-text-secondary, #666);
-  margin-top: 4px;
+  letter-spacing: 0.1em;
+  color: var(--mute, #6c6557);
+  margin-top: var(--s-1, 4px);
 }
 
 .cohort-dashboard__table-wrap {
@@ -272,24 +289,25 @@ onMounted(() => {
 .cohort-dashboard__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--t-md, 13.5px);
 }
 
 .cohort-dashboard__table th {
   text-align: left;
-  padding: 10px 12px;
-  font-size: 11px;
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--td-text-tertiary, #999);
-  border-bottom: 1px solid var(--td-border-ghost, #eee);
+  letter-spacing: 0.1em;
+  color: var(--mute, #6c6557);
+  border-bottom: 1px solid var(--line, #d8d0bf);
 }
 
 .cohort-dashboard__table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--td-border-ghost, #f5f5f5);
-  color: var(--td-text-primary, #333);
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border-bottom: 1px solid var(--line-soft, #e3dcc9);
+  color: var(--ink, #1a1814);
 }
 
 .cohort-dashboard__table tbody tr:last-child td {
@@ -298,8 +316,8 @@ onMounted(() => {
 
 .cohort-dashboard__version {
   font-weight: 600;
-  font-family: monospace;
-  font-size: 12px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
 }
 
 .cohort-dashboard__bars {
@@ -309,42 +327,34 @@ onMounted(() => {
 .cohort-dashboard__bar-stack {
   display: flex;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--r-1, 2px);
   overflow: hidden;
-  background: var(--td-surface-sunken, #f0f0f0);
+  background: var(--paper-2, #ebe5d8);
 }
 
 .cohort-dashboard__bar {
   height: 100%;
-  transition: width 300ms ease;
+  transition: width var(--d-press, 320ms) var(--ease-paper, ease);
 }
 
-.cohort-dashboard__bar--accept {
-  background: var(--td-success, #16a34a);
-}
-
-.cohort-dashboard__bar--edit {
-  background: var(--td-warning, #d97706);
-}
-
-.cohort-dashboard__bar--reject {
-  background: var(--td-error, #dc2626);
-}
+.cohort-dashboard__bar--accept { background: var(--applied, #4a6b3f); }
+.cohort-dashboard__bar--edit { background: var(--overdue, #8c4a26); }
+.cohort-dashboard__bar--reject { background: var(--ember-deep, #7a2e15); }
 
 .cohort-dashboard__insight {
-  margin-top: 16px;
-  padding: 10px 14px;
-  background: rgba(22, 163, 74, 0.06);
-  border-left: 3px solid var(--td-success, #16a34a);
-  border-radius: 0 6px 6px 0;
-  font-size: 13px;
-  color: var(--td-text-secondary, #555);
+  margin-top: var(--s-4, 16px);
+  padding: var(--s-2, 8px) var(--s-4, 16px);
+  background: var(--applied-tint, #d8e0ce);
+  border-left: 3px solid var(--applied, #4a6b3f);
+  border-radius: 0 var(--r-2, 4px) var(--r-2, 4px) 0;
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink-2, #3a352d);
 }
 
 .cohort-dashboard__empty {
-  padding: 40px;
+  padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--td-text-secondary, #666);
+  color: var(--mute, #6c6557);
 }
 
 @media (max-width: 768px) {
@@ -354,7 +364,7 @@ onMounted(() => {
 
   .cohort-dashboard__header {
     flex-direction: column;
-    gap: 12px;
+    gap: var(--s-3, 12px);
   }
 }
 </style>

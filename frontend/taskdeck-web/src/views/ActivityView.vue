@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import ActivitySelector from '../components/activity/ActivitySelector.vue'
 import ActivityResults from '../components/activity/ActivityResults.vue'
 import { useActivityQuery } from '../composables/useActivityQuery'
@@ -39,20 +40,20 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="td-activity">
-    <header class="td-activity__hero">
-      <div class="td-activity__hero-copy">
-        <span class="td-activity__eyebrow">Advanced</span>
-        <h1 class="td-page-title">Activity</h1>
-        <p class="td-activity__subtitle">
+  <div class="paper-activity">
+    <header class="paper-activity__hero">
+      <div class="paper-activity__hero-copy">
+        <span class="tk-eyebrow paper-activity__eyebrow">Advanced</span>
+        <h1 class="tk-h1 paper-activity__title">Activity</h1>
+        <p class="tk-lede paper-activity__subtitle">
           Use activity to inspect what already happened. Review is where pending proposals get decided, and Boards is
           where most day-to-day work continues.
         </p>
       </div>
 
-      <div class="td-activity__hero-actions">
-        <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
-        <button class="td-btn td-btn--ghost td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+      <div class="paper-activity__hero-actions">
+        <PaperHLBtn variant="ember" @click="openRoute('/workspace/review')">Open Review</PaperHLBtn>
+        <PaperHLBtn variant="ghost" @click="openRoute('/workspace/boards')">Open Boards</PaperHLBtn>
       </div>
     </header>
 
@@ -62,8 +63,8 @@ onMounted(async () => {
       description="Board history shows all activity within a board — cards, columns, labels, and the board itself. Narrow down to entity history when you know exactly which item to inspect."
     >
       <template #actions>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/boards')">Open Boards</button>
+        <PaperHLBtn @click="openRoute('/workspace/review')">Open Review</PaperHLBtn>
+        <PaperHLBtn @click="openRoute('/workspace/boards')">Open Boards</PaperHLBtn>
       </template>
     </WorkspaceHelpCallout>
 
@@ -100,17 +101,60 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.td-activity { max-width: 860px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; color: var(--td-text-primary); }
-.td-activity__hero { display: flex; justify-content: space-between; gap: var(--td-space-6); align-items: flex-start; margin-bottom: var(--td-space-4); }
-.td-activity__hero-copy { display: flex; flex-direction: column; gap: var(--td-space-2); max-width: 720px; }
-.td-activity__eyebrow { font-size: var(--td-font-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-text-tertiary); }
-.td-activity__subtitle { color: var(--td-text-secondary); line-height: 1.6; }
-.td-activity__hero-actions,
-.td-empty__actions { display: flex; flex-wrap: wrap; gap: var(--td-space-2); }
+/* ── Paper & Graphite — ActivityView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   The tokens live under `.paper` / `.paper-night` (the canonical shell), so the
+   var() fallbacks keep this surface legible if it is ever rendered outside the
+   Paper shell (Legacy/Obsidian "off" mode). */
+
+.paper-activity {
+  max-width: 860px;
+  font-family: var(--sans, system-ui, sans-serif);
+  /* See MetricsView: paint the Paper substrate wherever --ink is set, so
+     Legacy ("off") mode does not render near-black ink on the Obsidian
+     --td-surface-base. No-op under .paper/.paper-night. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
+
+.paper-activity__hero {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-6, 24px);
+  align-items: flex-start;
+  margin-bottom: var(--s-4, 16px);
+}
+
+.paper-activity__hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  max-width: 720px;
+}
+
+.paper-activity__eyebrow {
+  color: var(--mute, #6c6557);
+}
+
+.paper-activity__title {
+  margin: 0;
+  font-size: var(--t-h2, 32px);
+}
+
+.paper-activity__subtitle {
+  margin: 0;
+  color: var(--ink-2, #3a352d);
+}
+
+.paper-activity__hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2, 8px);
+  flex-shrink: 0;
+}
 
 @media (max-width: 900px) {
-  .td-activity__hero {
+  .paper-activity__hero {
     flex-direction: column;
   }
 }

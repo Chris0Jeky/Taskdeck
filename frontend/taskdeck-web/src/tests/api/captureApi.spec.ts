@@ -72,9 +72,23 @@ describe('captureApi', () => {
 
     const result = await captureApi.enqueueTriage('capture-2')
 
-    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/triage')
+    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/triage', undefined)
     expect(result.status).toBe('Triaging')
     expect(result.alreadyTriaging).toBe(false)
+  })
+
+  it('posts triage action with a target board when supplied (#1764)', async () => {
+    vi.mocked(http.post).mockResolvedValue({
+      data: {
+        id: 'capture-3',
+        status: 'Triaging',
+        alreadyTriaging: false,
+      },
+    })
+
+    await captureApi.enqueueTriage('capture-3', 'board-9')
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-3/triage', { boardId: 'board-9' })
   })
 
   it('posts batch triage request', async () => {
