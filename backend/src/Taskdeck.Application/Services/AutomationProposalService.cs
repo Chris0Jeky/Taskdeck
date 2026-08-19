@@ -361,7 +361,11 @@ public class AutomationProposalService : IAutomationProposalService
             //      Deliberately NOT the diff path's 400 read-parity shape: approving is a state
             //      transition, so a 409 conflict is the correct refusal for an expired proposal.
             //   3. Permissions + operation contract → the same 400/403/404 results Apply produces,
-            //      via the same _policyEngine.ValidatePermissionsAsync call the diff path runs.
+            //      via the same _policyEngine.ValidatePermissionsAsync call — and, like Apply, at
+            //      the Write bar, because approving commits the reviewer to a board mutation. The
+            //      diff path calls the same method at the Read bar (#1836): that is the one
+            //      deliberate gate difference between preview and approve/apply, and it can only
+            //      make preview MORE permissive, never approve/apply.
             // Ordering mirrors the diff/apply sequence exactly (structure → expiry → permissions):
             // the permission gate is skipped for an expired proposal so the domain guard's 409 owns
             // expiry — an expired proposal with revoked access reports expiry, never Forbidden,
@@ -404,6 +408,7 @@ public class AutomationProposalService : IAutomationProposalService
                         proposal.RequestedByUserId,
                         proposal.BoardId,
                         effectiveOperations.Value,
+                        BoardAccessBar.Write,
                         cancellationToken);
                     if (!permissionValidation.IsSuccess)
                         return Result.Failure<ProposalDto>(permissionValidation.ErrorCode, permissionValidation.ErrorMessage);
@@ -900,10 +905,19 @@ public class AutomationProposalService : IAutomationProposalService
             // deleted mid-review, cannot preview a clean diff and then fail Apply after approval
             // (#1398 preview == apply). Ordering (structure → expiry → permissions+contract) matches
             // Apply's ValidatePolicy-then-ValidatePermissionsAsync sequence exactly.
+            //
+            // ONE deliberate difference from Apply: the Read bar (#1836). Reading the diff of a
+            // proposal you authored is not a mutation, so it is gated on membership, while approve
+            // and execute demand write-capable membership. The asymmetry only ever makes preview
+            // MORE permissive than Apply, so it cannot resurrect the #1398 class (a clean preview
+            // followed by a refused Apply is exactly what a Viewer-authored proposal SHOULD show:
+            // the change is readable, and the refusal comes from the API-side #1794/#1827
+            // CanWriteBoardAsync bar plus the Write bar below in approve/execute).
             var revisedValidation = await _policyEngine.ValidatePermissionsAsync(
                 proposal.RequestedByUserId,
                 proposal.BoardId,
                 revisedOperations,
+                BoardAccessBar.Read,
                 cancellationToken);
             if (!revisedValidation.IsSuccess)
                 return Result.Failure<string>(revisedValidation.ErrorCode, revisedValidation.ErrorMessage);
@@ -948,11 +962,13 @@ public class AutomationProposalService : IAutomationProposalService
         // cached-DiffPreview fast path below — so a revoked-access or deleted-board/requester
         // proposal cannot preview a clean diff (even a stored one) and then fail Apply after
         // approval (#1398 preview == apply). Structure → expiry → permissions+contract mirrors
-        // Apply's ValidatePolicy-then-ValidatePermissionsAsync order exactly.
+        // Apply's ValidatePolicy-then-ValidatePermissionsAsync order exactly — at the Read bar,
+        // for the reason spelled out on the revision-aware branch above (#1836).
         var originalValidation = await _policyEngine.ValidatePermissionsAsync(
             proposal.RequestedByUserId,
             proposal.BoardId,
             originalOperations,
+            BoardAccessBar.Read,
             cancellationToken);
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
@@ -990,9 +1006,15 @@ public class AutomationProposalService : IAutomationProposalService
         // than ValidatePermissionsAsync) precisely to skip that operation-contract validation;
         // both surface the identical access codes/messages for operation-less proposals now that
         // ValidatePermissionsAsync no longer short-circuits the board half on an empty list (#1426).
+        //
+        // The bar is Read (#1836). This is the read lane the write mirror must not capture: MCP
+        // proposal_detail THROWS on a failed preview result (ProposalResources.GetProposalDetail),
+        // so a write bar here would cost a board member demoted to Viewer the entire detail
+        // resource for proposals they authored themselves — not merely the preview field.
         var accessValidation = await _policyEngine.ValidateBoardAccessAsync(
             proposal.RequestedByUserId,
             proposal.BoardId,
+            BoardAccessBar.Read,
             cancellationToken);
         if (!accessValidation.IsSuccess)
             return Result.Failure<string>(accessValidation.ErrorCode, accessValidation.ErrorMessage);

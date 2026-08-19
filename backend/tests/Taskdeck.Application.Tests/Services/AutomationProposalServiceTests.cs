@@ -853,7 +853,7 @@ public class AutomationProposalServiceTests
 
         // Act (apply-side permission gate) on the equivalent operation DTOs.
         var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
-            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Write);
 
         // Assert: approve rejects, and rejects identically to Apply (403, same message).
         applyResult.IsSuccess.Should().BeFalse();
@@ -885,7 +885,7 @@ public class AutomationProposalServiceTests
 
         var approveResult = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
         var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
-            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Write);
 
         applyResult.IsSuccess.Should().BeFalse();
         applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
@@ -2721,17 +2721,24 @@ public class AutomationProposalServiceTests
         // Act (preview)
         var previewResult = await _service.GetProposalDiffAsync(proposalId);
 
-        // Act (apply-side permission gate) on the equivalent operation DTOs.
+        // Act (apply-side permission gate) on the equivalent operation DTOs. Apply is a mutation
+        // lane and runs the Write bar; the preview read runs the Read bar (#1836). This fixture
+        // revokes membership OUTRIGHT (HasAccessAsync false for every minimum role), so both bars
+        // deny and preview == apply still holds on the outcome that matters. Only the message
+        // names which bar refused, so the preview message is pinned against the Read-bar engine
+        // result rather than the Write-bar one — a stricter assertion than "some 403".
         var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
-            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Write);
+        var readBarResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Read);
 
-        // Assert: preview rejects, and rejects identically to Apply (403, same message).
+        // Assert: preview rejects, and rejects identically to Apply (403).
         applyResult.IsSuccess.Should().BeFalse();
         applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
 
         previewResult.IsSuccess.Should().BeFalse();
         previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
-        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+        previewResult.ErrorMessage.Should().Be(readBarResult.ErrorMessage);
     }
 
     [Fact]
@@ -2752,7 +2759,7 @@ public class AutomationProposalServiceTests
 
         var previewResult = await _service.GetProposalDiffAsync(proposalId);
         var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
-            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Write);
 
         applyResult.IsSuccess.Should().BeFalse();
         applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
@@ -2780,7 +2787,7 @@ public class AutomationProposalServiceTests
 
         var previewResult = await _service.GetProposalDiffAsync(proposalId);
         var applyResult = await new AutomationPolicyEngine(_unitOfWorkMock.Object).ValidatePermissionsAsync(
-            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId));
+            requesterId, boardId, BuildPermissionGateApplyOperations(proposalId, boardId), BoardAccessBar.Write);
 
         applyResult.IsSuccess.Should().BeFalse();
         applyResult.ErrorCode.Should().Be(ErrorCodes.NotFound);
@@ -2903,14 +2910,18 @@ public class AutomationProposalServiceTests
         var applyResult = await BuildRealApplyExecutor()
             .ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
 
-        // Assert: the real executor rejects 403 at its permission gate, and preview rejects
-        // identically — code AND message.
+        // Assert: the real executor rejects 403 at its permission gate, and preview rejects with
+        // the same code. Since #1836 the executor runs the Write bar and the preview read runs the
+        // Read bar, so the messages name different bars; this fixture revokes membership outright,
+        // so BOTH bars deny and the preview==apply property is intact. The messages are pinned
+        // exactly, each to its own bar, so a bar flip on either side still fails this test.
         applyResult.IsSuccess.Should().BeFalse();
         applyResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        applyResult.ErrorMessage.Should().Be($"User does not have write access to board {boardId}");
 
         previewResult.IsSuccess.Should().BeFalse();
         previewResult.ErrorCode.Should().Be(applyResult.ErrorCode);
-        previewResult.ErrorMessage.Should().Be(applyResult.ErrorMessage);
+        previewResult.ErrorMessage.Should().Be($"User does not have access to board {boardId}");
     }
 
     [Fact]
@@ -3055,6 +3066,101 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         result.Value.Should().BeNull();
+    }
+
+    // #1836 read/write bar split. The write mirror was ruled onto the MUTATION lanes only; these
+    // two tests are the read half of that ruling — the regression the PR #1861 review found, where
+    // a board member demoted to Viewer lost the detail of proposals they authored THEMSELVES
+    // (MCP proposal_detail throws on a failed preview, so the whole resource went with it).
+    //
+    // Fixture shape in both: membership YES (null minimum role), write-capable NO
+    // (UserRole.Editor) — i.e. exactly a Viewer row. Restoring UserRole.Editor on these read paths
+    // flips both tests to Forbidden, so they cannot pass against the reverted engine.
+
+    [Fact]
+    public async Task GetTerminalProposalStoredPreviewAsync_ShouldServeStoredPreview_ForReadOnlyMember()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildTerminalPreviewProposal(requesterId, boardId, "viewer-readable-preview");
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, UserRole.Editor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _service.GetTerminalProposalStoredPreviewAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be("viewer-readable-preview");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldServeDiff_ForReadOnlyMember()
+    {
+        // The pending-diff composition runs the same gate through ValidatePermissionsAsync, so it
+        // needs the same read bar — it is what MCP proposal_detail calls for an OPEN proposal.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+
+        // An update-board op clears the shared operation-contract validator (a create-card op would
+        // demand a columnId), so this test exercises the access bar rather than op-shape rejection.
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Rename board",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { name = "Renamed board", boardId });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board", parameters, Guid.NewGuid().ToString(),
+            targetId: boardId.ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, UserRole.Editor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ApproveProposalAsync_ShouldStillRejectReadOnlyMember_UnderTheSameFixture()
+    {
+        // The other half of the split, over the SAME Viewer fixture as the two reads above: the
+        // mutation lane keeps the write bar. Without this, a fix that simply reverted every call
+        // site to membership would still pass the read tests.
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var proposal = BuildPermissionGateProposal(requesterId, boardId);
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, UserRole.Editor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, requesterId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var approveResult = await _service.ApproveProposalAsync(proposalId, Guid.NewGuid());
+
+        approveResult.IsSuccess.Should().BeFalse();
+        approveResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        approveResult.ErrorMessage.Should().Be($"User does not have write access to board {boardId}");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]

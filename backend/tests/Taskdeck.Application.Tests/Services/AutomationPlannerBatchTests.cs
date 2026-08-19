@@ -72,7 +72,7 @@ public class AutomationPlannerBatchTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(CreateExpectedProposal(userId, boardId)));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
     }
 
@@ -267,7 +267,7 @@ public class AutomationPlannerBatchTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(CreateExpectedProposal(userId, boardId)));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         var instructions = new List<string>

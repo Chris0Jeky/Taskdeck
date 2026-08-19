@@ -1113,6 +1113,117 @@ public class CaptureServiceTests
         result.ErrorMessage.Should().Contain("50");
     }
 
+    [Fact]
+    public async Task BatchTriageAsync_ShouldAuthorizeOncePerDistinctBoard_NotOncePerItem()
+    {
+        // #1836: every board-linked item used to run its own CanWriteBoardAsync (a board fetch plus
+        // a membership read). The batch now spends one lookup per DISTINCT board, so five items
+        // across two boards cost two lookups, not five.
+        var userId = Guid.NewGuid();
+        var boardA = Guid.NewGuid();
+        var boardB = Guid.NewGuid();
+
+        var items = new[]
+        {
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a1", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a2", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a3", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b1", boardB),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b2", boardB),
+        };
+
+        foreach (var item in items)
+        {
+            _llmQueueRepositoryMock
+                .Setup(r => r.GetByIdAsync(item.Id, default))
+                .ReturnsAsync(item);
+        }
+
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
+
+        var request = new BatchTriageRequestDto(
+            items.Select(i => new BatchTriageItemActionDto(i.Id, "triage")).ToList());
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        // Behaviour is unchanged: every item still triages.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Succeeded.Should().Be(5);
+        result.Value.Failed.Should().Be(0);
+        items.Should().OnlyContain(i => i.Status == RequestStatus.Processing);
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardA), Times.Once);
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardB), Times.Once);
+        _authorizationServiceMock.Verify(
+            s => s.CanWriteBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldDenyEveryItemOnAReadOnlyBoard_WithOneLookup()
+    {
+        // The memoized outcome must be the FAILURE too, applied uniformly: a Viewer batching three
+        // captures on one read-only board gets three identical 403s off a single lookup (#1836).
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        var items = new[]
+        {
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "one", boardId),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "two", boardId),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "three", boardId),
+        };
+
+        foreach (var item in items)
+        {
+            _llmQueueRepositoryMock
+                .Setup(r => r.GetByIdAsync(item.Id, default))
+                .ReturnsAsync(item);
+        }
+
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var request = new BatchTriageRequestDto(
+            items.Select(i => new BatchTriageItemActionDto(i.Id, "triage")).ToList());
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Succeeded.Should().Be(0);
+        result.Value.Failed.Should().Be(3);
+        result.Value.Results.Should().OnlyContain(r => r.ErrorCode == ErrorCodes.Forbidden);
+        result.Value.Results.Should().OnlyContain(r => r.ErrorMessage!.Contains("write access"));
+        items.Should().OnlyContain(i => i.Status == RequestStatus.Pending);
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardId), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldNotShareAuthorizationAcrossSingleItemCalls()
+    {
+        // The memo is scoped to one batch call; the single-item path keeps its original
+        // one-lookup-per-call shape so a membership change between two accepts is still seen.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var first = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "first", boardId);
+        var second = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "second", boardId);
+
+        _llmQueueRepositoryMock.Setup(r => r.GetByIdAsync(first.Id, default)).ReturnsAsync(first);
+        _llmQueueRepositoryMock.Setup(r => r.GetByIdAsync(second.Id, default)).ReturnsAsync(second);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        (await _service.EnqueueTriageAsync(userId, first.Id)).IsSuccess.Should().BeTrue();
+        (await _service.EnqueueTriageAsync(userId, second.Id)).IsSuccess.Should().BeTrue();
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardId), Times.Exactly(2));
+    }
+
     // ── UpdateSuggestionAsync ──
 
     [Fact]

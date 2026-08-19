@@ -181,6 +181,7 @@ public class CaptureTriageService : ICaptureTriageService
         var boardAccessResult = await _policyEngine.ValidateBoardAccessAsync(
             userId,
             boardId,
+            BoardAccessBar.Write,
             cancellationToken);
         if (!boardAccessResult.IsSuccess)
         {
@@ -326,6 +327,7 @@ public class CaptureTriageService : ICaptureTriageService
             userId,
             boardId,
             operationDtos,
+            BoardAccessBar.Write,
             cancellationToken);
         if (!permissionResult.IsSuccess)
         {

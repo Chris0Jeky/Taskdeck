@@ -482,7 +482,7 @@ public class ChatServiceTests
             .Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _policyEngineMock
-            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _policyEngineMock
             .Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))

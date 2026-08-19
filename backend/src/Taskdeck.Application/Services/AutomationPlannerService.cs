@@ -448,7 +448,9 @@ public class AutomationPlannerService : IAutomationPlannerService
                 return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
             // Validate permissions
-            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
+            // Proposal creation is a mutation lane: the requester must be write-capable on the
+            // board the proposal targets (#1836).
+            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
             if (!permissionResult.IsSuccess)
             {
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
@@ -579,7 +581,9 @@ public class AutomationPlannerService : IAutomationPlannerService
             if (!result.IsSuccess)
                 return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
-            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
+            // Proposal creation is a mutation lane: the requester must be write-capable on the
+            // board the proposal targets (#1836).
+            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
             if (!permissionResult.IsSuccess)
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
 
