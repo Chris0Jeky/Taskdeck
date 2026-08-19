@@ -170,6 +170,10 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
 .paper-agent-runs {
   max-width: 860px;
   font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 
