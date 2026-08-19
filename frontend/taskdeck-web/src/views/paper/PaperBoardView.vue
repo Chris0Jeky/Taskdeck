@@ -185,6 +185,67 @@ function openCaptureBoard() {
     query: { boardId: boardId.value },
   })
 }
+
+/**
+ * Empty-board bootstrap (#1765).
+ *
+ * A board created from the Boards list starts with zero columns, and the paper
+ * board surface previously offered no way out of that state. Both actions below
+ * reuse `boardStore.createColumn` — the same path the legacy toolbar form uses —
+ * so persistence, toasts and realtime behaviour are unchanged.
+ */
+const STARTER_COLUMN_NAMES = ['To Do', 'In Progress', 'Done'] as const
+
+const firstColumnName = ref('')
+const creatingColumns = ref(false)
+const columnError = ref<string | null>(null)
+
+/**
+ * A loaded board that has no columns. The empty state takes precedence over the
+ * generic board error banner here so a failed column create keeps the recovery
+ * affordance on screen instead of replacing it with a bare error.
+ */
+const isEmptyBoard = computed(() => Boolean(boardStore.currentBoard) && sortedColumns.value.length === 0)
+
+const emptyStateError = computed(() => columnError.value ?? boardStore.error)
+
+const canSubmitFirstColumn = computed(
+  () => firstColumnName.value.trim().length > 0 && !creatingColumns.value,
+)
+
+async function createFirstColumn() {
+  const name = firstColumnName.value.trim()
+  if (!name || creatingColumns.value) return
+
+  creatingColumns.value = true
+  columnError.value = null
+  try {
+    await boardStore.createColumn(boardId.value, { name })
+    firstColumnName.value = ''
+  } catch (error) {
+    logError('Failed to create first column (paper):', error)
+    columnError.value = 'Could not create the column. Please try again.'
+  } finally {
+    creatingColumns.value = false
+  }
+}
+
+async function addStarterColumns() {
+  if (creatingColumns.value) return
+
+  creatingColumns.value = true
+  columnError.value = null
+  try {
+    for (const [index, name] of STARTER_COLUMN_NAMES.entries()) {
+      await boardStore.createColumn(boardId.value, { name, position: index })
+    }
+  } catch (error) {
+    logError('Failed to create starter columns (paper):', error)
+    columnError.value = 'Could not create the starter columns. Please try again.'
+  } finally {
+    creatingColumns.value = false
+  }
+}
 </script>
 
 <template>
@@ -207,7 +268,7 @@ function openCaptureBoard() {
       </header>
 
       <section
-        v-if="boardStore.error"
+        v-if="boardStore.error && !isEmptyBoard"
         class="paper-board-view__error"
         role="alert"
       >
@@ -225,8 +286,50 @@ function openCaptureBoard() {
       <section
         v-else-if="sortedColumns.length === 0"
         class="paper-board-view__empty"
+        data-testid="paper-board-empty"
       >
-        <p class="tk-meta">— no columns yet —</p>
+        <p class="paper-board-view__empty-lead tk-meta">— no columns yet —</p>
+        <p class="paper-board-view__empty-copy">
+          Columns are the lanes work moves through. Add the first one to make this board usable.
+        </p>
+
+        <form class="paper-board-view__empty-form" @submit.prevent="createFirstColumn">
+          <label class="sr-only" for="paper-board-first-column-name">Column name</label>
+          <input
+            id="paper-board-first-column-name"
+            v-model="firstColumnName"
+            type="text"
+            class="paper-board-view__empty-input"
+            placeholder="Column name"
+            :disabled="creatingColumns"
+            data-testid="paper-board-empty-column-name"
+          />
+          <PaperHLBtn
+            type="submit"
+            variant="primary"
+            label="Add first column"
+            :disabled="!canSubmitFirstColumn"
+            data-testid="paper-board-empty-add-column"
+          />
+        </form>
+
+        <div class="paper-board-view__empty-alt">
+          <PaperHLBtn
+            label="Add starter columns (To Do · In Progress · Done)"
+            :disabled="creatingColumns"
+            data-testid="paper-board-empty-starter-columns"
+            @click="addStarterColumns"
+          />
+        </div>
+
+        <p
+          v-if="emptyStateError"
+          class="paper-board-view__empty-error"
+          role="alert"
+          data-testid="paper-board-empty-error"
+        >
+          {{ emptyStateError }}
+        </p>
       </section>
 
       <div
@@ -339,6 +442,67 @@ function openCaptureBoard() {
   border: 1px dashed var(--line-soft);
   border-radius: var(--r-2);
   background: var(--paper-2);
+}
+
+.paper-board-view__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.paper-board-view__empty-lead {
+  margin: 0;
+}
+
+.paper-board-view__empty-copy {
+  margin: 0;
+  max-width: 46ch;
+  font-family: var(--serif);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.paper-board-view__empty-form {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.paper-board-view__empty-input {
+  min-width: 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.paper-board-view__empty-input::placeholder {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--mute);
+}
+
+.paper-board-view__empty-input:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.paper-board-view__empty-alt {
+  display: flex;
+  justify-content: center;
+}
+
+.paper-board-view__empty-error {
+  margin: 0;
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 .paper-board-view__lanes {

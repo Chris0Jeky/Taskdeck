@@ -17,8 +17,9 @@ import type { CommandItem } from '../shell/ShellCommandPalette.vue'
  *     paper backdrop.
  *   - 13px Inter input, no border, 16px padding inside the header.
  *   - Result rows: 40px height, hairline icon, label, mono kbd hint.
- *   - AI rows (`kind === 'action'` with `keywords` containing 'haiku') get an
- *     ember dot prefix and a "haiku" mono tag in the right-hand kbd column.
+ *   - AI rows (`kind === 'action'` with `keywords` containing 'assistant') get
+ *     an ember dot prefix and an "assistant" mono tag in the right-hand kbd
+ *     column.
  *
  * Behaviour:
  *   - Filters items locally on input.  Up/Down navigate; Enter activates;
@@ -76,7 +77,7 @@ const filteredCommandItems = computed(() => {
  * rest.
  */
 function isAiItem(item: CommandItem): boolean {
-  return item.kind === 'action' && /haiku|propose|split/i.test(`${item.label} ${item.keywords ?? ''}`)
+  return item.kind === 'action' && /assistant|propose|split/i.test(`${item.label} ${item.keywords ?? ''}`)
 }
 
 const aiItems = computed<PaperPaletteItem[]>(() =>
@@ -278,7 +279,7 @@ watch(orderedItems, (items) => {
                 <span class="paper-palette__row-label">{{ labelFor(item) }}</span>
                 <span v-if="keywordsFor(item)" class="paper-palette__row-sub">{{ keywordsFor(item) }}</span>
               </span>
-              <span class="paper-palette__row-tag paper-palette__row-tag--ember">haiku</span>
+              <span class="paper-palette__row-tag paper-palette__row-tag--ember">assistant</span>
             </button>
           </section>
 

@@ -30,14 +30,21 @@ const props = withDefaults(
     /** Disables the bulk file-away action while any review action is in flight. */
     busy?: boolean
     recentlyApplied: RecentlyAppliedRow[]
+    /**
+     * Real 7-day activity counts (oldest → newest). Omit when there is no
+     * decision history — the mini-cadence bars are hidden rather than invented.
+     */
     cadence?: number[]
+    /**
+     * Real apply rate (0–1) derived from decision history. Omit when there is
+     * no decision history so the rail shows an honest empty state instead of a
+     * fabricated percentage. There is intentionally no default value.
+     */
     applyRate?: number
   }>(),
   {
     dismissableCount: 0,
     busy: false,
-    cadence: () => [4, 3, 5, 2, 4, 1, 3],
-    applyRate: 0.71,
   },
 )
 
@@ -64,6 +71,20 @@ const visible = computed<QueueRailItem[]>(() => {
 function asPct(value: number): string {
   return `${Math.round(value * 100)}%`
 }
+
+/** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
+const hasCadence = computed<boolean>(
+  () => Array.isArray(props.cadence) && props.cadence.length > 0,
+)
+
+/**
+ * Formatted apply-rate percentage, or null when there is no decision history.
+ * Never falls back to a fabricated constant — an absent value renders the
+ * "No decisions yet" empty state instead of an invented percentage.
+ */
+const applyRatePct = computed<string | null>(() =>
+  typeof props.applyRate === 'number' ? asPct(props.applyRate) : null,
+)
 
 function setFilter(next: QueueFilter) {
   filter.value = next
@@ -124,9 +145,20 @@ function setFilter(next: QueueFilter) {
 
     <div class="paper-review-rail__cadence">
       <div class="tk-eyebrow paper-review-rail__cadence-heading">This week</div>
-      <ReviewMiniCadence :days="cadence" />
-      <div class="tk-meta paper-review-rail__cadence-meta">
-        Apply rate <b>{{ asPct(applyRate) }}</b>
+      <ReviewMiniCadence v-if="hasCadence" :days="cadence" />
+      <div
+        v-if="applyRatePct !== null"
+        class="tk-meta paper-review-rail__cadence-meta"
+        data-testid="paper-review-apply-rate"
+      >
+        Apply rate <b>{{ applyRatePct }}</b>
+      </div>
+      <div
+        v-else
+        class="tk-meta paper-review-rail__cadence-meta paper-review-rail__cadence-empty"
+        data-testid="paper-review-apply-rate-empty"
+      >
+        No decisions yet
       </div>
     </div>
   </aside>

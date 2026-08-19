@@ -367,12 +367,13 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
     }
 
     [Fact]
-    public async Task TriageFailure_NoBoardId_ShouldFailDeterministically()
+    public async Task TriageFailure_NoBoardId_ShouldRejectSynchronously()
     {
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "golden-fail");
 
-        // Capture without a board should fail during triage
+        // #1764: a board-less capture can never be triaged into a proposal, so the accept/queue
+        // endpoint rejects it synchronously with a 400 instead of creating a doomed async job.
         var captureResponse = await client.PostAsJsonAsync(
             "/api/capture/items",
             new CreateCaptureItemDto(null, "- [ ] Task without a board"));
@@ -380,12 +381,12 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         var capture = await captureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
 
         var triageResponse = await client.PostAsync($"/api/capture/items/{capture!.Id}/triage", null);
-        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        await ApiTestHarness.AssertErrorContractAsync(triageResponse, HttpStatusCode.BadRequest, "ValidationError");
 
-        var failed = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Failed);
-        failed.Status.Should().Be(CaptureStatus.Failed);
-        failed.Provenance.Should().NotBeNull();
-        failed.Provenance!.ProposalId.Should().BeNull();
+        // The capture is untouched — still New, never queued or failed.
+        var afterItem = await client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{capture.Id}");
+        afterItem.Should().NotBeNull();
+        afterItem!.Status.Should().Be(CaptureStatus.New);
     }
 
     private static async Task<CaptureItemDto> WaitForCaptureStatusAsync(

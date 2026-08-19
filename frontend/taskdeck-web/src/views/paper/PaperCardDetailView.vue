@@ -110,7 +110,7 @@ function handleOpenProposal() {
         <div class="paper-card-detail__banner-content">
           <span class="tk-eyebrow paper-card-detail__banner-eyebrow">Pending proposal</span>
           <p class="paper-card-detail__banner-text">
-            A haiku proposal is waiting in <em>Review</em> for this card.
+            An assistant proposal is waiting in <em>Review</em> for this card.
           </p>
         </div>
         <PaperHLBtn label="Open in Review" kbd="⏎" variant="ember" @click="handleOpenProposal" />
