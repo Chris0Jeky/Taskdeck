@@ -83,7 +83,9 @@ Render for an always-on host.
 ## 5. Share a board
 
 Boards → create or open a board → Settings → **Access** (`/workspace/settings/access`):
-grant your friend the `Editor` role by email or username (shipped with #1771).
+grant your friend the `Editor` role. On builds that include PR #1774 (issue
+#1771) the grant field takes their email or username; on older builds it takes
+their user ID, which they can read from `GET /api/users` after logging in.
 Realtime presence and updates are per-board and re-check read access on join.
 
 ## 6. Care and feeding
