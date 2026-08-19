@@ -52,6 +52,8 @@ internal static class ConsoleOutput
 
               taskdeck invite create [--expires <days>]
 
+              taskdeck --version
+
             Exit codes:
               0 success
               1 command failed

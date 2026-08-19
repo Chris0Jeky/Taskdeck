@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.Common;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -45,11 +46,23 @@ public class HealthController : ControllerBase
         _logger = logger;
     }
 
+    // Liveness probe. Also carries the stamped product version (#1804) so a self-hoster can
+    // answer "what version am I running?" from the cheapest anonymous endpoint. That discloses
+    // strictly less than the readiness probe beside it, which already reports queue depths,
+    // worker staleness, and circuit-breaker state anonymously.
+    // Deliberately a plain comment, not an XML doc comment: Swashbuckle is configured with
+    // IncludeXmlComments, so a <summary> here would drift artifacts/openapi/taskdeck-api.json
+    // and trip the OpenAPI guardrail.
     [HttpGet("live")]
     [AllowAnonymous]
     public IActionResult LiveCheck()
     {
-        return Ok(new { status = "Healthy", timestamp = DateTimeOffset.UtcNow });
+        return Ok(new
+        {
+            status = "Healthy",
+            version = ProductVersion.Value,
+            timestamp = DateTimeOffset.UtcNow
+        });
     }
 
     [HttpGet("ready")]
@@ -301,6 +314,7 @@ public class HealthController : ControllerBase
         return StatusCode(statusCode, new
         {
             status = isReady ? "Ready" : "NotReady",
+            version = ProductVersion.Value,
             timestamp = DateTimeOffset.UtcNow,
             checks
         });
