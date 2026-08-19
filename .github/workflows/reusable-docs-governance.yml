@@ -24,6 +24,10 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
 
+      - name: Validate read-only inventory command contract
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
   docs-governance:
     name: Docs Governance
     runs-on: ubuntu-latest

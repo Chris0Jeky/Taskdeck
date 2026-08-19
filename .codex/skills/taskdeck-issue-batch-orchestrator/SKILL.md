@@ -59,6 +59,28 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
 
 ## Read-only inventory hygiene
 
+- Route every delegated shell-backed Git or GitHub inventory command through
+  `scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1`; pass an argv array, for example
+  `& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @("gh", "pr", "list", "--state", "open")`.
+  Run its `-SelfTest` mode when changing the wrapper or this routing contract.
+- A purpose-built connector whose exposed operation is intrinsically read-only may be used directly.
+  Direct `git` or `gh` belongs to the coordinator's separately authorized mutation lane, not to a
+  delegated read-only inventory lane.
+- The wrapper is an opt-in routed entry point, not a project command-deny hook. It validates command
+  argv against an exact per-subcommand option allowlist and refuses anything unlisted, including
+  Git's unambiguous long-option abbreviations; never describe it as enforcement over commands that
+  bypass the entry point.
+- The allowlist is the only thing keeping the lane read-only, so do not widen it casually. A short
+  option that takes a value must be followed by a value that does not start with `-`, and an option
+  whose argument is optional is never listed as a short value flag: `git diff -U --output=<path>`
+  once passed validation and Git wrote the file. Use `--unified=<n>`, not `-U`. `git grep --no-index`
+  is unlisted because it reads untracked and gitignored working-tree files such as `.env.local`.
+- `git ls-remote` is the only remote-touching lane and requires an explicit lowercase `https://` URL.
+  A remote name, `ssh://`, `git://`, `file://`, `ext::`, or `user@host:path` operand is refused before
+  launch, and every Git launch pins `protocol.allow=never` with `protocol.https.allow=always` and
+  clears the `GIT_SSH*`, proxy, askpass, protocol, config-injection (`GIT_CONFIG_PARAMETERS`,
+  `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`), and `GIT_EXEC_PATH` environment
+  variables.
 - A read-only inventory lane is filesystem-read-only as well as GitHub-read-only. Process bounded Git, GitHub, CI, and ProjectV2 responses in memory or stream them directly to the coordinator; never redirect a snapshot into the primary checkout or any worktree.
 - This is detection and accountability for accidental same-account filesystem mutation, not an OS security boundary against a malicious same-account process. The coordinator must still keep the lane filesystem-read-only and compare checkout status before and after the wave.
 - Before launching every lane, capture the bounded non-ignored status-artifact fingerprint with one nonempty caller token. Capture creates an authenticated, direct-child OS-temp state file outside all linked worktrees; do not put the token, state payload, or its digest in a handoff.
