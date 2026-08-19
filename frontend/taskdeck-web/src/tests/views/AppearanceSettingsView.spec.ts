@@ -25,12 +25,24 @@ describe('AppearanceSettingsView', () => {
 
   it('renders all four theme options', () => {
     const wrapper = mount(AppearanceSettingsView)
-    const labels = wrapper.findAll('.td-theme-segment').map((b) => b.text())
+    const labels = wrapper.findAll('.paper-appearance__segment').map((b) => b.text())
     expect(labels).toHaveLength(4)
     expect(labels.some((l) => l.includes('Off (Legacy / Obsidian)'))).toBe(true)
     expect(labels.some((l) => l.includes('Paper (Light)'))).toBe(true)
     expect(labels.some((l) => l.includes('Paper Night (Dark)'))).toBe(true)
     expect(labels.some((l) => l.includes('Auto (match system)'))).toBe(true)
+  })
+
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', () => {
+    const wrapper = mount(AppearanceSettingsView)
+
+    // #1779 ruling: the theme-control page wears the same Paper chrome as every
+    // other settings surface. No legacy `td-appearance-settings`/`td-theme-*`
+    // hooks should survive.
+    expect(wrapper.find('.paper-appearance').exists()).toBe(true)
+    expect(wrapper.find('.paper-appearance__panel').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-appearance-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-theme-"]').exists()).toBe(false)
   })
 
   it('reflects the current mode via aria-pressed (default paper — ADR-0038)', () => {
