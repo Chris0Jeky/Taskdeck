@@ -652,11 +652,31 @@ Behaviour worth knowing before you tune it:
 - **Fail-closed.** If the snapshot cannot be written, `PreMigrationBackupException` propagates out
   of startup and the migration is **not** applied. Retention *pruning* failures are the exception:
   they log a warning and let startup continue, because the protective copy already exists.
+- **Naming and retention order (`#1839`).** Snapshots are named
+  `<db file name>-pre-migration-<UTC timestamp>-<sequence>.db`. Two details matter:
+  - The key is the database's **full file name**, extension included — not its stem. `taskdeck.db`
+    and `taskdeck.sqlite` sharing one backup directory therefore cannot prune each other's
+    snapshots.
+  - Retention orders by the **sequence** (one past the highest already on disk for that database),
+    not by the timestamp. The timestamp is descriptive only. A wall clock that steps backwards —
+    NTP correction, a VM resuming, a DST-naive host — could otherwise make the newest snapshot look
+    oldest and get it deleted first, which is exactly the file the user needs.
+  - Snapshots written by the earlier stem-keyed, sequence-less scheme (`<stem>-pre-migration-<UTC
+    timestamp>.db`) are still recognised and still pruned, so they age out rather than accumulating
+    forever. They sort oldest and are deleted first, which is correct: any sequenced snapshot was
+    necessarily written by newer code. That shape was never released — the feature landed in
+    `#1829`, after the `v0.1.0` tag — so only hosts tracking `main` between `#1829` and `#1839` can
+    hold one.
+- **Lock contention while reading.** The **source** connection (the live database being read) gets a
+  5000 ms `PRAGMA busy_timeout`, mirroring the `Database:BusyTimeoutMilliseconds` default, so a
+  moment of contention with an in-flight writer in another Taskdeck process does not fail startup
+  closed. This is a fixed value, not a configuration key. The destination connection deliberately
+  gets no timeout: it writes a freshly created `.tmp` file nothing else has opened.
 
 | Key | Type | Default | Range | Description | Required? |
 | --- | --- | --- | --- | --- | --- |
 | `Database:Backup:Enabled` | `bool` | `true` | — | Snapshot the SQLite file before applying pending migrations. Setting this to `false` removes the only automatic protection against a failed upgrade — do it only when an external system already snapshots the file, or for throwaway databases. | No |
-| `Database:Backup:RetainCount` | `int` | `5` | 1–100 | How many pre-migration snapshots to keep per database file. After a successful backup, older snapshots are deleted oldest-first. Only files matching the managed `<db>-pre-migration-<UTC timestamp>.db` pattern are ever deleted. | No |
+| `Database:Backup:RetainCount` | `int` | `5` | 1–100 | How many pre-migration snapshots to keep per database file. After a successful backup, older snapshots are deleted oldest-first. Only files matching the managed naming scheme below are ever deleted. | No |
 | `Database:Backup:Directory` | `string` | `""` (→ `backups/` next to the database file) | — | Where snapshots are written. A **relative** path resolves against the directory holding the database file, not the process working directory (the API, CLI, and MCP hosts do not share one). | No |
 
 ### `AuditRetention`

@@ -387,6 +387,17 @@ autofill dark inside the Paper shell (not introduced by this change).
   stated in a permanent comment is now asserted to two decimal places rather than against the
   `>= 4.5` floor alone.
 
+  **The mechanism, named once so it is not rediscovered** (PR #1865 review, finding N6): the build
+  runs Tailwind v4 (`@import "tailwindcss"` in `frontend/taskdeck-web/src/style.css:2`) but binds it
+  to the v3-style JavaScript config on the very next line — `@config "../tailwind.config.js"`. That
+  directive is what makes `tailwind.config.js`'s `darkMode: 'class'` govern the build, so every
+  `dark:` variant compiles to a rule gated on a `.dark` ancestor. Nothing in the app ever sets that
+  class — the skin switch is `paperThemeStore` toggling `body.paper` / `body.paper-night`, not
+  Tailwind's dark mode — so `dark:` utilities are **inert in Paper builds** and always have been.
+  Treat a `dark:` utility anywhere in this codebase as dead code, not as a night-mode affordance:
+  night styling belongs to the `--td-*` tokens under `.paper-night`. Removing the `@config` line, or
+  switching to v4's `@custom-variant dark`, would change that and is a decision, not a cleanup.
+
 ## References
 
 - `#1778` — this decision; `#1769` — the Paper-shell sweep that found the shared root cause

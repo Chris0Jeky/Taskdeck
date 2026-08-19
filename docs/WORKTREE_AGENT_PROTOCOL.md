@@ -1,6 +1,6 @@
 # Worktree Agent Protocol
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-19
 
 Use this protocol when running multiple agents or Codex sessions in parallel. The failure mode this prevents is simple: workers accidentally operate in the main checkout, switch branches under each other, or commit to the wrong branch.
 
@@ -11,10 +11,23 @@ Accepted agent worktree roots:
 - Codex: `.worktrees/codex-<issue>-<slug>/`
 - Claude Code: `.claude/worktrees/agent-<id>/`
 
-Other roots are allowed only when the coordinator explicitly names them and updates guard configuration.
-The Codex helper intentionally accepts only the exact lowercase repository `.worktrees/` root; a
-different spelling or approved root requires a separately reviewed creation path after the guard
-configuration changes.
+Those two are the *conventional* roots, not the guard's admission test. Since PR #1851 (`#1833`),
+`scripts/worktree_guard.{ps1,sh}` validates a worktree by **substance**, not by path shape: the
+toplevel's `.git` must be a *file* holding a `gitdir:` pointer, that pointer must resolve to the
+same directory Git itself reports, and it must live under `<main-repo>/.git/worktrees/<name>` — the
+things that actually make a checkout a linked worktree. A root outside the conventional directories
+that passes those checks is **accepted**, with an advisory `NOTE [worktree_guard]: root is outside
+the conventional worktree directories; accepted on linked-worktree substance` on stdout. A root that
+is genuinely not a linked worktree — the main checkout, a plain clone, a bare directory — still
+**FATALs** (exit 1) no matter where it sits. Path shape was never the safety property; a directory
+named `.worktrees/` proves nothing on its own.
+
+The advisory NOTE is a signal worth reading: an unconventional root usually means a worktree was
+created outside the standard helpers, so confirm it was intended rather than ignoring the line.
+
+The Codex *creation helper* is deliberately stricter than the guard: it accepts only the exact
+lowercase repository `.worktrees/` root, so a different spelling needs a separately reviewed
+creation path. That is a constraint on how worktrees are created, not on what the guard admits.
 
 ## Coordinator Rules
 
