@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -530,7 +531,7 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
     }
 
     [Fact]
-    public async Task GetByDueDateRangeAsync_SqlitePlan_UsesBoardLeadingIndexWithoutCorrelatedSubquery()
+    public async Task GetByDueDateRangeAsync_SqlitePlan_SearchesBoardIndexInsteadOfScanningIt()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -538,35 +539,50 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
 
         try
         {
-            await using var command = db.Database.GetDbConnection().CreateCommand();
-            command.CommandText = """
-                EXPLAIN QUERY PLAN
-                SELECT *
-                FROM Cards
-                WHERE BoardId IN (SELECT value FROM json_each($boardIds))
-                AND DueDate IS NOT NULL
-                ORDER BY BoardId, Id
-                LIMIT 500
-                """;
+            // EXPLAIN the constant the repository actually executes, with FromSqlRaw's
+            // positional {n} placeholders rewritten to named SQLite parameters. Anything
+            // else would let the production query drift away from what this test proves.
+            var sql = CardRepository.CalendarDueDateRangeSql
+                .Replace("{0}", "$boardIds", StringComparison.Ordinal)
+                .Replace("{1}", "$fromKey", StringComparison.Ordinal)
+                .Replace("{2}", "$toKey", StringComparison.Ordinal)
+                .Replace("{3}", "$limit", StringComparison.Ordinal);
 
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "$boardIds";
-            parameter.Value = JsonSerializer.Serialize(new[] { Guid.NewGuid().ToString("D").ToUpperInvariant() });
-            command.Parameters.Add(parameter);
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            command.CommandText = "EXPLAIN QUERY PLAN" + Environment.NewLine + sql;
+
+            AddParameter(command, "$boardIds", JsonSerializer.Serialize(new[] { Guid.NewGuid().ToString("D").ToUpperInvariant() }));
+            AddParameter(command, "$fromKey", 0L);
+            AddParameter(command, "$toKey", long.MaxValue);
+            AddParameter(command, "$limit", 500);
 
             var planDetails = new List<string>();
             await using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())
                 planDetails.Add(reader.GetString(3));
 
+            // The whole point of the IN (SELECT value FROM json_each(...)) form: SQLite
+            // seeks the board-leading index once per board id. The previous EXISTS form
+            // produced "SCAN Cards USING INDEX IX_Cards_BoardId_ColumnId" - every row of
+            // the index visited, with the membership test re-evaluated per row. SEARCH vs
+            // SCAN is the discriminator; the index name alone appears in both plans.
             planDetails.Should().Contain(detail =>
-                detail.Contains("IX_Cards_BoardId_ColumnId", StringComparison.OrdinalIgnoreCase));
+                detail.Contains("SEARCH Cards USING INDEX IX_Cards_BoardId_ColumnId", StringComparison.OrdinalIgnoreCase)
+                && detail.Contains("BoardId=?", StringComparison.OrdinalIgnoreCase));
             planDetails.Should().NotContain(detail =>
-                detail.Contains("CORRELATED SCALAR SUBQUERY", StringComparison.OrdinalIgnoreCase));
+                detail.Contains("SCAN Cards", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {
             await db.Database.CloseConnectionAsync();
+        }
+
+        static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
         }
     }
 

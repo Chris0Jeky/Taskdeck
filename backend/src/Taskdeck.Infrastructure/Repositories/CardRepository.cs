@@ -8,6 +8,34 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class CardRepository : Repository<Card>, ICardRepository
 {
+    /// <summary>
+    /// The SQLite calendar due-date-range query. Exposed via the existing
+    /// <c>InternalsVisibleTo("Taskdeck.Api.Tests")</c> so the EXPLAIN QUERY PLAN
+    /// regression test asserts against the query this repository actually runs.
+    /// Board membership must stay an <c>IN (SELECT value FROM json_each(...))</c>
+    /// list subquery: an <c>EXISTS</c> correlated form degrades the plan from
+    /// SEARCH Cards (BoardId=?) to a full SCAN of the board index.
+    /// </summary>
+    internal const string CalendarDueDateRangeSql = """
+        SELECT *
+        FROM Cards
+        WHERE BoardId IN (SELECT value FROM json_each({0}))
+        AND DueDate IS NOT NULL
+        AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+            + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                ELSE 0 END) >= {1}
+        AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+            + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                ELSE 0 END) < {2}
+        ORDER BY (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
+            + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
+                CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
+                ELSE 0 END), BoardId, Id
+        LIMIT {3}
+        """;
+
     public CardRepository(TaskdeckDbContext context) : base(context)
     {
     }
@@ -271,29 +299,10 @@ public class CardRepository : Repository<Card>, ICardRepository
             // text (whose lexical order changes with the offset). `strftime` converts the whole
             // second plus offset to Unix time; the separate 7-digit fractional component retains
             // .NET tick precision without julianday's floating-point rounding.
-            const string calendarSql = """
-                SELECT *
-                FROM Cards
-                WHERE BoardId IN (SELECT value FROM json_each({0}))
-                AND DueDate IS NOT NULL
-                AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
-                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
-                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
-                        ELSE 0 END) >= {1}
-                AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
-                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
-                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
-                        ELSE 0 END) < {2}
-                ORDER BY (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
-                    + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
-                        CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
-                        ELSE 0 END), BoardId, Id
-                LIMIT {3}
-                """;
 
             var rows = await _dbSet
                 .FromSqlRaw(
-                    calendarSql,
+                    CalendarDueDateRangeSql,
                     JsonSerializer.Serialize(materializedBoardIds.Select(id => id.ToString("D").ToUpperInvariant())),
                     GetSqliteInstantKey(from),
                     GetSqliteInstantKey(to),
