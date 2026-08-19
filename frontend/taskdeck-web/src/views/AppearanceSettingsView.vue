@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { usePaperThemeStore, type PaperMode } from '../store/paperThemeStore'
+import { useLocaleStore } from '../store/localeStore'
+import { LOCALE_LABELS, type SupportedLocale } from '../i18n'
 
+const { t } = useI18n()
 const paperTheme = usePaperThemeStore()
+const localeStore = useLocaleStore()
 
 interface ThemeOption {
   mode: PaperMode
@@ -10,55 +15,86 @@ interface ThemeOption {
   hint: string
 }
 
+// Static key map rather than a key assembled from `mode`: `paper-night` is not
+// a valid identifier segment, and runtime-built keys are invisible to grep and
+// fail silently (fallback is silent by design, ADR-0054 §5).
+const MODE_KEYS: Record<PaperMode, { label: string; hint: string }> = {
+  off: {
+    label: 'settings.appearance.modes.off.label',
+    hint: 'settings.appearance.modes.off.hint',
+  },
+  paper: {
+    label: 'settings.appearance.modes.paper.label',
+    hint: 'settings.appearance.modes.paper.hint',
+  },
+  'paper-night': {
+    label: 'settings.appearance.modes.paperNight.label',
+    hint: 'settings.appearance.modes.paperNight.hint',
+  },
+  auto: {
+    label: 'settings.appearance.modes.auto.label',
+    hint: 'settings.appearance.modes.auto.hint',
+  },
+}
+
+const MODE_ORDER: PaperMode[] = ['off', 'paper', 'paper-night', 'auto']
+
 // Single source of truth for the four selectable modes. `off` is the Legacy
 // (Obsidian) escape hatch: it removes the Paper body class so AppShell renders
 // the classic `.td-*` shell, not just a light palette.
-const options: ThemeOption[] = [
-  {
-    mode: 'off',
-    label: 'Off (Legacy / Obsidian)',
-    hint: 'The original Obsidian shell. Choosing this returns the whole interface to Legacy, not just the colours.',
-  },
-  {
-    mode: 'paper',
-    label: 'Paper (Light)',
-    hint: 'The canonical Paper theme — cream paper, ink, and a single ember accent.',
-  },
-  {
-    mode: 'paper-night',
-    label: 'Paper Night (Dark)',
-    hint: 'Paper after dark — the same layout in a low-light palette.',
-  },
-  {
-    mode: 'auto',
-    label: 'Auto (match system)',
-    hint: 'Follows your operating system’s light/dark preference and updates live when it changes.',
-  },
-]
+//
+// A computed, not a module const: the labels are now translated, so they have
+// to re-resolve when the language changes rather than freezing at import time.
+const options = computed<ThemeOption[]>(() =>
+  MODE_ORDER.map((mode) => ({
+    mode,
+    label: t(MODE_KEYS[mode].label),
+    hint: t(MODE_KEYS[mode].hint),
+  })),
+)
 
 const activeMode = computed(() => paperTheme.mode)
 const activeHint = computed(
-  () => options.find((option) => option.mode === activeMode.value)?.hint ?? '',
+  () => options.value.find((option) => option.mode === activeMode.value)?.hint ?? '',
 )
 
 function selectMode(mode: PaperMode) {
   // Pure UI: the store persists to localStorage and re-applies the body class.
   paperTheme.setMode(mode)
 }
+
+// ── Language ─────────────────────────────────────────────────────────────
+//
+// Same shape as the theme control, and the same persistence contract: the
+// store writes localStorage and re-applies to the runtime (ADR-0054 §7). The
+// option labels are ENDONYMS from a constant, not catalog keys — a Spanish
+// speaker scans a language list for "Español", whatever language the UI is in.
+
+const languageOptions = computed(() =>
+  localeStore.available.map((locale) => ({ locale, label: LOCALE_LABELS[locale] })),
+)
+
+const activeLocale = computed(() => localeStore.locale)
+
+function selectLocale(locale: SupportedLocale) {
+  localeStore.setLocale(locale)
+}
 </script>
 
 <template>
   <div class="paper-appearance">
     <header class="paper-appearance__hero">
-      <span class="tk-eyebrow paper-appearance__eyebrow">Settings</span>
-      <h1 class="tk-h1 paper-appearance__title">Appearance</h1>
+      <span class="tk-eyebrow paper-appearance__eyebrow">{{ $t('settings.appearance.eyebrow') }}</span>
+      <h1 class="tk-h1 paper-appearance__title">{{ $t('settings.appearance.title') }}</h1>
       <p class="tk-lede paper-appearance__subtitle">
-        Choose how Taskdeck looks. Paper is the canonical theme; Off keeps the original Legacy (Obsidian) shell.
+        {{ $t('settings.appearance.subtitle') }}
       </p>
     </header>
 
     <section class="paper-appearance__panel">
-      <div id="td-appearance-theme-label" class="tk-h3 paper-appearance__panel-title">Theme</div>
+      <div id="td-appearance-theme-label" class="tk-h3 paper-appearance__panel-title">
+        {{ $t('settings.appearance.themeLabel') }}
+      </div>
       <!--
         Single-select segmented control. Kept as <button> + aria-pressed to match
         the project-wide convention (PaperStyleGuideView, Today/Review rails, etc.
@@ -80,6 +116,39 @@ function selectMode(mode: PaperMode) {
         </button>
       </div>
       <p class="paper-appearance__hint">{{ activeHint }}</p>
+    </section>
+
+    <!--
+      Language. Same segmented-control idiom and the same aria-pressed
+      convention as Theme above (no role="radiogroup" exists anywhere in this
+      app). Switching applies immediately — the store writes localStorage and
+      pushes the locale into the i18n runtime, so this page re-renders in the
+      new language without a reload.
+    -->
+    <section class="paper-appearance__panel" data-testid="appearance-language">
+      <div id="td-appearance-language-label" class="tk-h3 paper-appearance__panel-title">
+        {{ $t('settings.language.label') }}
+      </div>
+      <div
+        class="paper-appearance__segments"
+        role="group"
+        aria-labelledby="td-appearance-language-label"
+      >
+        <button
+          v-for="option in languageOptions"
+          :key="option.locale"
+          type="button"
+          class="paper-appearance__segment"
+          :class="{ 'paper-appearance__segment--active': activeLocale === option.locale }"
+          :data-locale="option.locale"
+          :lang="option.locale"
+          :aria-pressed="activeLocale === option.locale"
+          @click="selectLocale(option.locale)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+      <p class="paper-appearance__hint">{{ $t('settings.language.hint') }}</p>
     </section>
   </div>
 </template>

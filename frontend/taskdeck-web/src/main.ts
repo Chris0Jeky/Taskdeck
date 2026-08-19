@@ -1,6 +1,8 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import router from './router'
+import { i18n } from './i18n'
+import { useLocaleStore } from './store/localeStore'
 import App from './App.vue'
 import './style.css'
 import './paper-fonts.css'
@@ -17,7 +19,16 @@ const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
+app.use(i18n)
 app.use(router)
+
+// Restore the persisted language preference (ADR-0054 §7) and push it into the
+// i18n runtime + `<html lang>`. Statically imported and called synchronously on
+// purpose: this must happen after `app.use(pinia)` (the store needs an active
+// Pinia) and BEFORE `app.mount` below, so the first paint is already in the
+// user's language instead of flashing English. A dynamic import would resolve
+// after mount and produce exactly that flash.
+useLocaleStore(pinia).apply()
 
 // Install global crash-prevention hooks before mount so early errors are
 // captured. The Vue handler is the top-level backstop for render/lifecycle

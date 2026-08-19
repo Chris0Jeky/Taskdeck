@@ -26,7 +26,11 @@ describe('AppearanceSettingsView', () => {
 
   it('renders all four theme options', () => {
     const wrapper = mount(AppearanceSettingsView)
-    const labels = wrapper.findAll('.paper-appearance__segment').map((b) => b.text())
+    // Scoped to `[data-mode]`, not the bare segment class: the page now carries
+    // a second segmented control (Language, #1770) built from the same class,
+    // and an unscoped selector would count those too. `data-mode` is the theme
+    // control's own hook, so this still asserts exactly four THEME options.
+    const labels = wrapper.findAll('.paper-appearance__segment[data-mode]').map((b) => b.text())
     expect(labels).toHaveLength(4)
     expect(labels.some((l) => l.includes('Off (Legacy / Obsidian)'))).toBe(true)
     expect(labels.some((l) => l.includes('Paper (Light)'))).toBe(true)

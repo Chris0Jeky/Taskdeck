@@ -20,6 +20,11 @@ import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
  * `⌘;` (or `Ctrl+;` on non-Mac) toggles between them globally.  Default is
  * the composer ledger, which is the variant the design handoff calls "the
  * structured/recommended path".
+ *
+ * Copy lives in the `inbox.*` catalogs (ADR-0054). "Nib" and "Composer" are
+ * Taskdeck's own names for the two variants and stay in English in every
+ * locale — they are keyed only so a translator sees them in context and can
+ * see they are deliberately untranslated.
  */
 type Variant = 'nib' | 'composer'
 
@@ -186,29 +191,32 @@ defineExpose({ variant, toggleVariant, setVariant })
   <div class="paper-inbox" :data-variant="variant">
     <header class="paper-inbox__header">
       <div>
-        <div class="tk-eyebrow">Inbox · capture surface · {{ items.length }} in queue</div>
+        <div class="tk-eyebrow">{{ $t('inbox.eyebrow', { count: items.length }) }}</div>
         <h1 class="tk-h1 paper-inbox__title">
-          What's on your mind, <em>quickly?</em>
+          {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>
         </h1>
         <p class="tk-lede paper-inbox__lede">
-          Drop the thought. It will sit here, untouched, until you triage it.
-          Nothing flows to the board without your approval.
+          {{ $t('inbox.lede') }}
         </p>
       </div>
 
-      <div class="paper-inbox__variant-toggle" role="tablist" aria-label="Capture variant">
+      <div
+        class="paper-inbox__variant-toggle"
+        role="tablist"
+        :aria-label="$t('inbox.variantToggle.label')"
+      >
         <PaperHLBtn
           role="tab"
           :aria-selected="variant === 'nib'"
           :variant="variant === 'nib' ? 'ember' : 'default'"
-          label="Nib"
+          :label="$t('inbox.variant.nib')"
           @click="setVariant('nib')"
         />
         <PaperHLBtn
           role="tab"
           :aria-selected="variant === 'composer'"
           :variant="variant === 'composer' ? 'ember' : 'default'"
-          label="Composer"
+          :label="$t('inbox.variant.composer')"
           kbd="⌘;"
           @click="setVariant('composer')"
         />
