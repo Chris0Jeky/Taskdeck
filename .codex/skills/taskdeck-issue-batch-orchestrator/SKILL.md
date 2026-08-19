@@ -135,7 +135,16 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
       $cleanupExit = $LASTEXITCODE
       if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
     }
-    if ($guardExit -ne 0) { exit $guardExit }
+    if ($guardExit -ne 0) {
+      # This `exit` unwinds the whole frame, so the statements after the
+      # try/catch — including `throw $laneError` — never run. Surface the lane
+      # exception text here or a lane that both threw and mutated the checkout
+      # is reported only as a mutation and its cause is lost.
+      if ($null -ne $laneError) {
+        [Console]::Error.WriteLine('Lane error superseded by guard disposition: ' + $laneError.Exception.Message)
+      }
+      exit $guardExit
+    }
   }
 
   if ($null -ne $laneError) { throw $laneError }
@@ -147,7 +156,8 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
   }
   ```
 
-- The fingerprint covers only exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation; any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.
+- The fingerprint covers the checkout's HEAD commit and symbolic ref plus exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation, and — because a clean-to-clean `git switch` or commit mutates the checkout without touching one status artifact — `ref-moved` and `head-moved`. Any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.
+- The final gate is `if (-not $laneSucceeded)` alone, not `-not $laneSucceeded -or $laneExit -ne 0`. `$LASTEXITCODE` is process-global and survives any native command the lane handled internally, so a lane that succeeded after probing with, say, a failing `git rev-parse` would be reported as failed on that stale code. `$?` is the only signal that describes the lane itself, and `$laneExit` is consulted only once `$?` has already said the lane failed.
 - Do not relocate Compare or Cleanup out of the `finally` block and do not add a bare `exit` between the lane call and that block. Guard finalization placed after the `try`/`catch` is skipped whenever a lane unwinds, which is the exact defect this recipe shape exists to prevent. A lane that terminates the session outside PowerShell control flow — `[Environment]::Exit`, a process kill — is outside the guarantee; the guard is accidental-mutation accountability, not a hostile-process boundary.
 
 ## Structured patch discipline
