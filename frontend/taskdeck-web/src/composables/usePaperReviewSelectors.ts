@@ -49,6 +49,12 @@ export interface EvidenceLink {
   sourceType?: string
   /** Identifier within that source; the transcript id for transcript evidence. */
   sourceId?: string
+  /**
+   * Server-computed: whether THIS caller can read the linked source. The client cannot
+   * derive it — provenance is board-authorized while transcript read is owner-only — so a
+   * missing value means "not viewable", never "assume yes".
+   */
+  viewable?: boolean
 }
 
 export interface SideEffectRow {
@@ -154,12 +160,16 @@ function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
  * Normalizes a wire span into an ordered pair, or null when either bound is
  * missing or incoherent. A malformed span must degrade to "no deep link"
  * rather than to a highlight over the wrong characters.
+ *
+ * An empty span (`spanEnd === spanStart`) is rejected along with an inverted one:
+ * it highlights nothing, so the affordance it would render can only open a viewer
+ * on an unresolved span (#1837 item 2).
  */
 function mapSpan(link: ProvenanceEvidenceLinkDto): [number, number] | null {
   const { spanStart, spanEnd } = link
   if (typeof spanStart !== 'number' || typeof spanEnd !== 'number') return null
   if (!Number.isInteger(spanStart) || !Number.isInteger(spanEnd)) return null
-  if (spanStart < 0 || spanEnd < spanStart) return null
+  if (spanStart < 0 || spanEnd <= spanStart) return null
   return [spanStart, spanEnd]
 }
 
@@ -178,6 +188,9 @@ function mapEvidenceLinks(dtos: ProvenanceRowDto[]): EvidenceLink[] {
       weight,
       sourceType: link.sourceType,
       sourceId: link.sourceId,
+      // Fails closed: anything but an explicit server `true` means this caller
+      // cannot open the source, so the deep-link affordance stays hidden.
+      viewable: link.viewable === true,
     }))
   })
 }

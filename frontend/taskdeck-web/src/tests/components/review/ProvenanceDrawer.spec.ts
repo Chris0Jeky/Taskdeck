@@ -367,6 +367,8 @@ describe('ProvenanceDrawer', () => {
       weight: 'primary',
       sourceType: 'Transcript',
       sourceId: transcriptId,
+      // Server-computed from the caller's claims; the owner of the transcript sees true.
+      viewable: true,
     }
 
     function mountWithLinks(evidenceLinks: EvidenceLink[]) {
@@ -420,6 +422,28 @@ describe('ProvenanceDrawer', () => {
       wrapper.unmount()
     })
 
+    it('withholds the affordance when the server says this caller cannot read the transcript', () => {
+      // Board collaborator: authorized for the proposal, not for the owner's transcript.
+      const wrapper = mountWithLinks([{ ...transcriptLink, viewable: false }])
+
+      expect(document.querySelector('[data-testid="provenance-view-in-transcript-0"]')).toBeNull()
+      // The evidence itself still reads normally — only the dead-end button is withheld.
+      const evidenceText = document.querySelector('.prov-drawer__evidence')?.textContent ?? ''
+      expect(evidenceText).toContain('ship the export fix')
+      expect(evidenceText).toContain('title')
+      wrapper.unmount()
+    })
+
+    it('withholds the affordance when the viewable flag is absent (fails closed)', () => {
+      const unflagged: EvidenceLink = { ...transcriptLink }
+      delete unflagged.viewable
+
+      const wrapper = mountWithLinks([unflagged])
+
+      expect(document.querySelector('[data-testid="provenance-view-in-transcript-0"]')).toBeNull()
+      wrapper.unmount()
+    })
+
     it('withholds the affordance for links that predate the typed evidence contract', () => {
       const wrapper = mountWithLinks(sampleEvidenceLinks)
 
@@ -462,6 +486,31 @@ describe('ProvenanceDrawer', () => {
         evidenceLinks: [{ ...transcriptLink, sourceKey: 'body', sourceId: transcriptId }],
       })
       expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('resets the viewer on ANY evidenceLinks reference change, even with identical contents', async () => {
+      // Documents the caller contract on `defineProps`: the reset keys off the prop REFERENCE,
+      // so a caller that mints a fresh array per render collapses an open viewer (#1837 item 4).
+      const wrapper = mountWithLinks([transcriptLink])
+
+      const button = document.querySelector(
+        '[data-testid="provenance-view-in-transcript-0"]',
+      ) as HTMLElement
+      button.click()
+      await wrapper.vm.$nextTick()
+      expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).not.toBeNull()
+
+      // Same values, new array AND new object identities — nothing the user can perceive changed.
+      await wrapper.setProps({ evidenceLinks: [{ ...transcriptLink }] })
+      await wrapper.vm.$nextTick()
+
+      expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).toBeNull()
+      // The affordance is back to its closed state, not merely hidden.
+      const reopened = document.querySelector(
+        '[data-testid="provenance-view-in-transcript-0"]',
+      ) as HTMLElement
+      expect(reopened.getAttribute('aria-expanded')).toBe('false')
       wrapper.unmount()
     })
   })

@@ -24,10 +24,22 @@ export interface ProvenanceMetadata {
  */
 export type EvidenceLink = ProvenanceEvidenceLink
 
+/**
+ * Provenance drawer for the Paper deep-Review surface: source rows, model metadata, and the
+ * evidence links behind a proposal, with an optional inline transcript viewer.
+ *
+ * CALLER CONTRACT — `evidenceLinks` must be a STABLE reference. An open transcript viewer is
+ * reset whenever the `evidenceLinks` REFERENCE changes (not its contents), because a different
+ * proposal's links occupy the same indices. A caller that mints a fresh array on every render
+ * therefore collapses the viewer on every render. Pass a `computed`/`ref` that only changes
+ * when the underlying data does — as `usePaperReviewSelectors().evidenceLinks` does today
+ * (#1837 item 4).
+ */
 const props = defineProps<{
   open: boolean
   rows: ProvenanceRow[]
   metadata: ProvenanceMetadata | null
+  /** Stable reference required — see the caller contract above. */
   evidenceLinks: EvidenceLink[]
   proposalId: string
 }>()
@@ -100,12 +112,19 @@ const provenanceJson = computed(() => {
 })
 
 /**
- * A transcript evidence link is deep-linkable only when it names a transcript and
- * carries a resolved character span; anything else renders as plain metadata.
+ * A transcript evidence link is deep-linkable only when it names a transcript, carries a
+ * resolved character span, and the server marked it viewable for THIS caller; anything else
+ * renders as plain metadata.
+ *
+ * `viewable` is server-computed from claims because the client cannot tell whether the caller
+ * owns the transcript: provenance is board-authorized while `GET /api/transcripts/{id}` is
+ * owner-only. Without this gate a board collaborator gets a button that can only land on
+ * "no longer available" (#1837 item 1). An absent flag is treated as not viewable.
  */
 function transcriptTargetOf(link: EvidenceLink): { transcriptId: string; span: [number, number] } | null {
   if (link.sourceType !== TRANSCRIPT_EVIDENCE_SOURCE_TYPE) return null
   if (!link.sourceId || !link.span) return null
+  if (link.viewable !== true) return null
   return { transcriptId: link.sourceId, span: link.span }
 }
 
@@ -126,6 +145,11 @@ function toggleTranscript(index: number) {
 
 // A different proposal's links occupy the same indices; close the viewer so it can
 // never show the previous proposal's transcript against the new list.
+//
+// This watcher fires on any REFERENCE change of the prop, contents identical or not — the
+// index-based viewer state has no cheaper way to know the list is a different one. Callers
+// must therefore pass a stable ref (see the caller contract on `defineProps`); a caller that
+// rebuilds the array each render would close the viewer under the user (#1837 item 4).
 watch(
   () => props.evidenceLinks,
   () => {

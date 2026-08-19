@@ -8,6 +8,13 @@ import { transcriptsApi, type TranscriptDto } from '../../api/transcriptsApi'
  * points at, scrolled into view. Read-only: nothing here mutates a proposal or a
  * board.
  *
+ * Render bound (NOT a code change — measurement task, #1837 item 3): the body below renders the
+ * whole transcript as three text nodes in one `<pre>`, with no truncation or virtualization, up
+ * to the documented cap of 200,000 characters (`Transcript.MaxTextLength`, mirrored by
+ * `CaptureModal`'s `MAX_TRANSCRIPT_LENGTH`). That is fine on modern engines by inspection but has
+ * never been measured. Measure once with a max-size transcript during dogfooding before adding
+ * any virtualization here; issue #1837 item 3 tracks the measurement.
+ *
  * Span arithmetic note: the backend records offsets as .NET `char` indices into the
  * transcript's LF-normalized text. .NET `char` and JavaScript string indices are both
  * UTF-16 code units, so `String.prototype.slice` reproduces the same substring for

@@ -12,6 +12,13 @@ export interface ProvenanceEvidenceLinkDto {
   label: string | null
   spanStart: number | null
   spanEnd: number | null
+  /**
+   * Server-computed from the caller's claims: true only when this caller can actually open
+   * the source through its read endpoint. Provenance is board-authorized while transcript
+   * read stays owner-only, so a board collaborator gets `false` here and must not be offered
+   * a deep link that can only 404. Absent on responses predating the flag — treat as false.
+   */
+  viewable?: boolean
 }
 
 export interface ProvenanceRowDto {
