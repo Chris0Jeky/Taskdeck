@@ -183,6 +183,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       // Triage post first, then GET for refresh
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/capture/items/c-5/triage'),
+        undefined,
       )
       expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/capture/items/c-5'))
       expect(store.detailById['c-5']?.status).toBe('Triaging')

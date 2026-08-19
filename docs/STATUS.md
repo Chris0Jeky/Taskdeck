@@ -1,6 +1,10 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-19
+
+Board-less capture triage now rejected at the seam (2026-08-19, `#1764`):
+- **Accepting a board-less capture no longer creates a doomed async triage job.** `POST /api/capture/items/{id}/triage` now resolves the target board synchronously: a capture with no board (Home quick-capture lands `BoardId = null`) is rejected up front with a `400 ValidationError` and a clear message, instead of returning `202` and letting the worker fail it permanently with a bare `FAILED` badge. This supersedes the CAP-05 line below that described board-less triage as failing deterministically at the worker under retry policy.
+- **The endpoint accepts an optional `{ "boardId": "…" }` body.** When supplied for a board-less capture, the server verifies board read access, links the board (`BackfillBoard`), then triages in one step. The worker-side board requirement in `CaptureTriageService` remains as defense in depth. The Paper Inbox now requires choosing a board (inline picker) before accepting a board-less capture and surfaces the reason on a `FAILED` capture; `CaptureItemSummaryDto`/`CaptureItemSummary` now carry `ErrorMessage`.
 
 Execution authority and backlog admission (2026-08-18, **ADR-0051** / `#1269`):
 - **Ordinary PR merge eligibility no longer depends on a human reviewer or owner click.** The live T3 declaration remains `push: free` / `merge: free` and now explicitly covers dependency, workflow, governance, and major-version PRs within task scope after exact-head `ci-required.yml`, DCO, canonical `review-and-ship`, and seam-specific proof. `CODEOWNERS` remains advisory review routing rather than merge eligibility. Blind check-only platform auto-merge is not enabled.
