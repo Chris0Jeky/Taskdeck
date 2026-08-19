@@ -116,12 +116,42 @@ jobs:
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln -r ${{ matrix.rid }}
 
+      # Product version stamped into the binaries (#1804). Derived from the v* tag with the
+      # leading "v" stripped; a rehearsal build (no tag ref, no tag input) gets the same
+      # 0.0.0-dev fallback backend/Directory.Build.props uses, so an unreleased artifact is
+      # recognisable. Deliberately separate from the later "Determine version tag" step,
+      # which resolves the ARTIFACT FILENAME tag and runs after publish.
+      - name: Resolve product version
+        id: product-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || '' }}"
+          if [ -z "$TAG" ] && [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ -z "$TAG" ]; then
+            VERSION="0.0.0-dev"
+            echo "No tag ref or tag input — stamping the rehearsal fallback $VERSION."
+          else
+            VERSION="${TAG#v}"
+          fi
+          # The value is passed to MSBuild as a property; refuse anything that is not a plain
+          # version token rather than letting it reach the build command.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.+-]*$'; then
+            echo "::error::Refusing product version '$VERSION' — not a plain version token."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Stamping product version $VERSION"
+
       - name: Publish self-contained executable
         run: >
           dotnet publish ${{ env.PUBLISH_PROJECT }}
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
+          -p:Version=${{ steps.product-version.outputs.version }}
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:PublishTrimmed=false
