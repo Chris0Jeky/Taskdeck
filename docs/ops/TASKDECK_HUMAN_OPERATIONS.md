@@ -2,10 +2,14 @@
 
 Last Updated: 2026-08-19
 
-This document captures the parts that are either:
-- not safe to delegate to an LLM (secrets, irreversible repo settings),
-- require product judgement (policies, UX decisions),
-- require manual verification (human-level UI correctness, security sanity).
+This document captures the irreducibly human parts of operating Taskdeck:
+- secrets and irreversible repository or production settings,
+- legal, release, or product decisions whose acceptance belongs to the maintainer,
+- real-world dogfooding and milestone verification that cannot be established by synthetic agent evidence.
+
+It is not an ordinary-PR merge gate. Within the declared T3 authority, agents may merge after the
+exact-head proving checks and canonical review-and-ship gate pass; no owner click, self-review, or
+repeat human test run is required unless a separately scoped human decision below actually applies.
 
 Use it alongside the Codex execution plan.
 
@@ -13,15 +17,15 @@ Use it alongside the Codex execution plan.
 
 ## How to use this (repeatable workflow)
 
-1) For each delivery unit Codex completes:
-   - Review diff like a PR (even if solo)
-   - Run the required checks locally once
-   - Do the manual break-it sanity checklist (below)
-   - Merge only when CI is green and docs are updated
+1) At a named human checkpoint (for example a release, legal decision, or real dogfooding milestone):
+   - Review the evidence and only the diffs relevant to that decision
+   - Perform the requested real-world or settings-level verification
+   - Record the decision or observed result in the owning issue/runbook
+   - Do not repeat agent proving checks merely to make an otherwise eligible ordinary PR wait
 
 2) Keep WIP low:
-   - One major branch at a time
-   - Prefer small merges over long-lived branches
+   - Respect the four-`Now` / eight-`Next` issue caps
+   - Keep one writer per isolated checkout and prefer small merges over long-lived branches
 
 3) Enforce thesis alignment before moving work to `Now`:
    - Does this slice reduce maintenance overhead/capture friction?
