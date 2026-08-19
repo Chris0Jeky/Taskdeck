@@ -1,0 +1,94 @@
+# =============================================================================
+# Release Container — GHCR image publish on version tags
+# =============================================================================
+#
+# Publishes deploy/Dockerfile.production to GHCR on v* tags (and on manual
+# dispatch for rehearsal, which builds without pushing unless a tag ref is
+# used). ADR-0044 selects GHCR as the required public image channel; this
+# closes REVIVAL-07 (#1303) AC2.
+#
+# Verify a published image with:
+#   docker run -v taskdeck-data:/app/data -p 5000:5000 ghcr.io/chris0jeky/taskdeck:<version>
+# =============================================================================
+
+name: Release Container
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-image:
+    name: Publish GHCR Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/taskdeck
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build (and push on tag refs)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.production
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the built image (tag refs)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          docker run -d --name taskdeck-smoke \
+            -e Jwt__SecretKey="$(openssl rand -base64 48)" \
+            -e Connectors__EncryptionKey="$(openssl rand -base64 32)" \
+            -e TASKDECK_HEADLESS=true \
+            -p 5000:5000 \
+            "ghcr.io/${{ github.repository_owner }}/taskdeck:${GITHUB_REF_NAME#v}"
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
+              echo "Health check passed."
+              docker rm -f taskdeck-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check FAILED — container logs:"
+          docker logs taskdeck-smoke
+          docker rm -f taskdeck-smoke
+          exit 1
