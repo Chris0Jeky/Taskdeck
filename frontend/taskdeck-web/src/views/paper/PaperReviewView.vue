@@ -397,7 +397,7 @@ const queueItems = computed<QueueRailItem[]>(() =>
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
       title: p.summary || '(no summary)',
-      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
+      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'assistant' : 'capture',
       // Per-item rail confidence is not yet wired per-proposal — leave null until
       // the gap lands. Not contradictory with `authorMeta` below, which shows the
       // REAL aggregate /confidence breakdown for the single active proposal.
@@ -631,7 +631,7 @@ const authorName = computed(() => {
   const source = activeProposal.value
     ? normalizeProposalSourceType(activeProposal.value.sourceType).toLowerCase()
     : 'proposal'
-  return `Haiku · ${source} proposal`
+  return `Assistant · ${source} proposal`
 })
 
 const whyNowBody = computed(() => {
@@ -1271,7 +1271,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         <div class="tk-eyebrow">Queue · 0 awaiting</div>
         <h2 class="tk-h2">Nothing waiting. Good.</h2>
         <p class="tk-lede">
-          When haiku has something to propose it will appear here for review.
+          When the assistant has something to propose it will appear here for review.
         </p>
         <p v-if="proposalsLoading" class="tk-meta">Loading proposals…</p>
       </template>
