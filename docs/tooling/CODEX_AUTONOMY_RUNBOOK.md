@@ -73,10 +73,30 @@ Delegated shell-backed Git and GitHub inventory must use the repository wrapper:
 )
 ```
 
-The wrapper accepts only allowlisted read operations, rejects known filesystem-write, process-launch,
-and GitHub-mutation argv, and disables Git's optional index locks while it runs. Use `-ValidateOnly`
-to inspect a constructed command without launching it and `-SelfTest` after changing the contract.
-A purpose-built connector with an intrinsically read-only operation may still be used directly.
+The wrapper accepts only allowlisted read operations, rejects GitHub-mutation argv, and disables
+Git's optional index locks while it runs. Use `-ValidateOnly` to inspect a constructed command
+without launching it and `-SelfTest` after changing the contract. A purpose-built connector with an
+intrinsically read-only operation may still be used directly.
+
+Git argv is accepted by an exact per-subcommand option allowlist, not a denylist. Git expands any
+unambiguous long-option abbreviation before it executes anything (`git status --shor` runs
+`--short`, and `--upl=<program>` reaches `--upload-pack`), so an option token is accepted only when
+it matches a listed name character-for-character. Long options that take a value must use the
+attached `--name=value` form, short options that take a value must be a lone `-x` token followed by
+its value, and every character of a short cluster must itself be allowlisted. An unlisted or
+abbreviated option is refused rather than passed through, so widening the lane means adding the
+exact option name to that subcommand's list and re-running `-SelfTest`.
+
+`ls-remote` is the only remote-touching subcommand. It requires an explicit lowercase `https://`
+repository URL as its first operand: a bare remote name, `ssh://`, `git://`, `file://`, an `ext::`
+helper, or `user@host:path` is refused before any process is launched, because those resolve
+through configuration into an external transport. Every launched Git process additionally pins
+`-c protocol.allow=never -c protocol.https.allow=always -c core.sshCommand= -c diff.external=`
+(command-line `-c` outranks repository, user, and `GIT_CONFIG_PARAMETERS` configuration, so an
+`insteadOf` rewrite cannot reintroduce another transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
+`GIT_SSH_VARIANT`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_ALLOW_PROTOCOL`,
+`GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, and `GIT_EXTERNAL_DIFF`.
+The validated URL is passed after `--end-of-options`.
 
 This is an opt-in routed entry point, not a Taskdeck command-deny hook. The coordinator keeps direct
 `git` and `gh` access for its separately authorized mutation lane and must not claim that the wrapper
