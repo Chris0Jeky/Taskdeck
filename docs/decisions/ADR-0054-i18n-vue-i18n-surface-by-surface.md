@@ -47,9 +47,9 @@ This is the only new runtime dependency this decision introduces.
 
 ```
 src/locales/
-  en/  index.ts  common.ts  home.ts  inbox.ts  boards.ts  settings.ts
-  it/  index.ts  common.ts  home.ts  inbox.ts  boards.ts  settings.ts
-  es/  index.ts  common.ts  home.ts  inbox.ts  boards.ts  settings.ts
+  en/  index.ts  home.ts  inbox.ts  boards.ts  settings.ts
+  it/  index.ts  home.ts  inbox.ts  boards.ts  settings.ts
+  es/  index.ts  home.ts  inbox.ts  boards.ts  settings.ts
 ```
 
 Each `<surface>.ts` default-exports a plain nested object; each `index.ts` composes them under a
@@ -62,12 +62,17 @@ TypeScript modules, not JSON: the guard spec and the type-checker both read them
 syntax validation at build time, and per-surface files mean two agents extracting two different
 surfaces do not conflict in the same file.
 
-**`common.ts` is deliberately small** and holds only strings whose meaning is genuinely surface-
-independent (`common.actions.cancel`, `common.actions.create`, `common.states.loading`). Sharing a
-key across surfaces is a translation hazard — "Create" is `Crea` as a button and `Creare` as a
-heading in Italian — so the default is to duplicate a key into its surface catalog and only promote
-it to `common` when the *same sentence in the same grammatical role* appears on three or more
-surfaces.
+**There is no `common.ts` yet, on purpose.** Sharing a key across surfaces is a translation hazard —
+"Create" is `Crea` as a button and `Creare` as a heading in Italian, and a shared key forces one of
+the two to be wrong. The default is therefore to keep a string in its own surface catalog even when
+it looks duplicated, and to introduce `common.ts` only when the *same sentence in the same
+grammatical role* has appeared on three or more surfaces. At the seed, nothing has; a `common.ts`
+created now would be speculative scaffolding that invites exactly the wrong kind of key reuse.
+
+Language display names are the one deliberate exception to "all user-visible text is a catalog key":
+they live as endonyms in a `LOCALE_LABELS` constant in `src/i18n/index.ts` (`English`, `Italiano`,
+`Español`), because a language picker should name each language in its own language regardless of
+the active locale — translating them would be the bug, not the feature.
 
 ### 3. Paper tone is a translation constraint, recorded in the catalogs
 
