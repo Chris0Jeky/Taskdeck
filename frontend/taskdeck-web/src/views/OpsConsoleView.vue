@@ -9,6 +9,7 @@ import type { CommandTemplate, LogEntry } from '../types/ops'
 import { normalizeCommandRunStatus } from '../utils/ops'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import InputAssistField from '../components/common/InputAssistField.vue'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import { normalizeBoardRole, toBoardRoleValue } from '../utils/roles'
 
@@ -330,46 +331,46 @@ function openRoute(path: string) {
 </script>
 
 <template>
-  <div class="td-ops">
-    <header class="td-ops__hero">
-      <div class="td-ops__hero-copy">
-        <span class="td-ops__eyebrow">Advanced</span>
-        <h1 class="td-page-title">Ops Console</h1>
-        <p class="td-ops__subtitle">
+  <div class="paper-ops">
+    <header class="paper-ops__hero">
+      <div class="paper-ops__hero-copy">
+        <span class="tk-eyebrow paper-ops__eyebrow">Advanced</span>
+        <h1 class="tk-h2 paper-ops__title">Ops Console</h1>
+        <p class="tk-lede paper-ops__subtitle">
           Ops Console is the operator surface for direct commands, endpoint probing, and low-level logs. Most users
           should stay in Review, Inbox, and Boards unless they are diagnosing a system-level problem.
         </p>
       </div>
 
-      <div class="td-ops__hero-actions">
-        <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="openRoute('/workspace/settings/preferences')">
+      <div class="paper-ops__hero-actions">
+        <PaperHLBtn variant="ember" @click="openRoute('/workspace/review')">Open Review</PaperHLBtn>
+        <PaperHLBtn @click="openRoute('/workspace/settings/preferences')">
           Open Settings
-        </button>
+        </PaperHLBtn>
       </div>
     </header>
 
-    <div class="td-role-context">
-      <div class="td-role-context__title">Current role: {{ currentRoleLabel }}</div>
-      <div class="td-role-context__body">
+    <div class="paper-ops__role-context">
+      <div class="paper-ops__role-title">Current role: {{ currentRoleLabel }}</div>
+      <div class="paper-ops__role-body">
         Runnable templates:
         <span v-if="runnableTemplates.length > 0">{{ runnableTemplates.map(template => template.name).join(', ') }}</span>
         <span v-else>none</span>
       </div>
-      <div v-if="restrictedTemplates.length > 0" class="td-role-context__hint">
+      <div v-if="restrictedTemplates.length > 0" class="paper-ops__role-hint">
         Restricted templates require a higher role. Open <strong>Workspace &gt; Settings</strong> to confirm your role,
         then ask an owner/admin for elevated access when needed.
       </div>
     </div>
 
-    <div class="td-tabs">
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'cli' }]" @click="activateTab('cli')">CLI Runner</button>
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'endpoints' }]" @click="activateTab('endpoints')">Endpoint Explorer</button>
-      <button :class="['td-tab', { 'td-tab--active': activeTab === 'logs' }]" @click="activateTab('logs')">Logs</button>
+    <div class="paper-ops__tabs">
+      <button :class="['paper-ops__tab', { 'paper-ops__tab--active': activeTab === 'cli' }]" @click="activateTab('cli')">CLI Runner</button>
+      <button :class="['paper-ops__tab', { 'paper-ops__tab--active': activeTab === 'endpoints' }]" @click="activateTab('endpoints')">Endpoint Explorer</button>
+      <button :class="['paper-ops__tab', { 'paper-ops__tab--active': activeTab === 'logs' }]" @click="activateTab('logs')">Logs</button>
     </div>
 
-    <div v-if="activeTab === 'cli'" class="td-ops-panel">
-      <div class="td-cli-toolbar">
+    <div v-if="activeTab === 'cli'" class="paper-ops__panel">
+      <div class="paper-ops__cli-toolbar">
         <InputAssistField
           v-model="selectedTemplate"
           :options="templateOptions"
@@ -377,11 +378,11 @@ function openRoute(path: string) {
           placeholder="Select template"
           no-results-text="No matching templates."
         />
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="loadTemplates">Reload Templates</button>
+        <PaperHLBtn @click="loadTemplates">Reload Templates</PaperHLBtn>
       </div>
-      <div v-if="selectedTemplateMeta" class="td-template-meta">
-        <div class="td-template-meta__title">{{ selectedTemplateMeta.description }}</div>
-        <div class="td-template-meta__details">
+      <div v-if="selectedTemplateMeta" class="paper-ops__template-meta">
+        <div class="paper-ops__template-title">{{ selectedTemplateMeta.description }}</div>
+        <div class="paper-ops__template-details">
           Role: {{ selectedTemplateMeta.requiredRole }} |
           Access: {{ selectedTemplateIsRunnable ? 'Runnable for your role' : 'Restricted for your role' }} |
           Timeout: {{ selectedTemplateMeta.timeoutSeconds }}s |
@@ -389,85 +390,85 @@ function openRoute(path: string) {
         </div>
       </div>
 
-      <div class="td-form-group">
-        <label for="cli-parameters" class="td-label">Parameters (JSON object)</label>
-        <textarea id="cli-parameters" v-model="cliParameters" class="td-textarea" rows="3" placeholder='{"query":"board"}'></textarea>
+      <div class="paper-ops__form-group">
+        <label for="cli-parameters" class="paper-ops__label">Parameters (JSON object)</label>
+        <textarea id="cli-parameters" v-model="cliParameters" class="paper-ops__textarea" rows="3" placeholder='{"query":"board"}'></textarea>
       </div>
 
-      <button class="td-btn td-btn--primary td-btn--sm" @click="handleCliRun" :disabled="cliRunning">
+      <PaperHLBtn variant="ember" :disabled="cliRunning" @click="handleCliRun">
         {{ cliRunning ? 'Running...' : 'Run Template' }}
-      </button>
-      <div v-if="selectedTemplateMeta && !selectedTemplateIsRunnable" class="td-cli-warning">
+      </PaperHLBtn>
+      <div v-if="selectedTemplateMeta && !selectedTemplateIsRunnable" class="paper-ops__cli-warning">
         This template is restricted for {{ currentRoleLabel }}. You can still run it to see full permission guidance.
       </div>
 
-      <div class="td-cli-output">
-        <div v-if="cliOutput.length === 0" class="td-cli-placeholder">Command output will appear here.</div>
-        <div v-for="(line, i) in cliOutput" :key="i" class="td-cli-line">{{ line }}</div>
+      <div class="paper-ops__cli-output">
+        <div v-if="cliOutput.length === 0" class="paper-ops__cli-placeholder">Command output will appear here.</div>
+        <div v-for="(line, i) in cliOutput" :key="i" class="paper-ops__cli-line">{{ line }}</div>
       </div>
 
-      <div v-if="lastRunId" class="td-run-ref">Last run ID: {{ lastRunId }}</div>
+      <div v-if="lastRunId" class="paper-ops__run-ref">Last run ID: {{ lastRunId }}</div>
     </div>
 
-    <div v-if="activeTab === 'endpoints'" class="td-ops-panel">
-      <div class="td-endpoint-form">
-        <select v-model="endpointMethod" class="td-input td-input--method" aria-label="HTTP method">
+    <div v-if="activeTab === 'endpoints'" class="paper-ops__panel">
+      <div class="paper-ops__endpoint-form">
+        <select v-model="endpointMethod" class="paper-ops__input paper-ops__input--method" aria-label="HTTP method">
           <option v-for="m in httpMethods" :key="m" :value="m">{{ m }}</option>
         </select>
-        <input v-model="endpointPath" type="text" aria-label="Request path" class="td-input td-input--path" placeholder="/boards" />
-        <button class="td-btn td-btn--primary td-btn--sm" @click="handleEndpointSend" :disabled="endpointSending">
+        <input v-model="endpointPath" type="text" aria-label="Request path" class="paper-ops__input paper-ops__input--path" placeholder="/boards" />
+        <PaperHLBtn variant="ember" :disabled="endpointSending" @click="handleEndpointSend">
           {{ endpointSending ? 'Sending...' : 'Send' }}
-        </button>
+        </PaperHLBtn>
       </div>
-      <div v-if="endpointMethod !== 'GET'" class="td-form-group">
-        <label for="endpoint-body" class="td-label">Request Body (JSON)</label>
-        <textarea id="endpoint-body" v-model="endpointBody" class="td-textarea" rows="4" placeholder='{"name":"example"}'></textarea>
+      <div v-if="endpointMethod !== 'GET'" class="paper-ops__form-group">
+        <label for="endpoint-body" class="paper-ops__label">Request Body (JSON)</label>
+        <textarea id="endpoint-body" v-model="endpointBody" class="paper-ops__textarea" rows="4" placeholder='{"name":"example"}'></textarea>
       </div>
-      <div v-if="endpointResponse !== null" class="td-response-panel">
-        <div class="td-response-header">
+      <div v-if="endpointResponse !== null" class="paper-ops__response-panel">
+        <div class="paper-ops__response-header">
           <span>Response</span>
-          <span :class="['td-status-code', endpointStatus && endpointStatus < 400 ? 'td-status-code--ok' : 'td-status-code--err']">
+          <span :class="['paper-ops__status-code', endpointStatus && endpointStatus < 400 ? 'paper-ops__status-code--ok' : 'paper-ops__status-code--err']">
             {{ endpointStatus }}
           </span>
         </div>
-        <pre class="td-response-body">{{ endpointResponse }}</pre>
+        <pre class="paper-ops__response-body">{{ endpointResponse }}</pre>
       </div>
     </div>
 
-    <div v-if="activeTab === 'logs'" class="td-ops-panel">
-      <div class="td-logs-toolbar">
-        <select v-model="logLevel" class="td-input" aria-label="Log level filter">
+    <div v-if="activeTab === 'logs'" class="paper-ops__panel">
+      <div class="paper-ops__logs-toolbar">
+        <select v-model="logLevel" class="paper-ops__input" aria-label="Log level filter">
           <option value="all">All levels</option>
           <option value="Info">Info</option>
           <option value="Warning">Warning</option>
           <option value="Error">Error</option>
         </select>
-        <input v-model="logSource" class="td-input" aria-label="Source filter" placeholder="Source filter (or all)" />
-        <input v-model="logCorrelationId" class="td-input" aria-label="Correlation ID" placeholder="Correlation ID (optional)" />
-        <button class="td-btn td-btn--secondary td-btn--sm" @click="loadLogs" :disabled="logLoading">Refresh</button>
-        <label class="td-autorefresh">
+        <input v-model="logSource" class="paper-ops__input" aria-label="Source filter" placeholder="Source filter (or all)" />
+        <input v-model="logCorrelationId" class="paper-ops__input" aria-label="Correlation ID" placeholder="Correlation ID (optional)" />
+        <PaperHLBtn :disabled="logLoading" @click="loadLogs">Refresh</PaperHLBtn>
+        <label class="paper-ops__autorefresh">
           <input v-model="autoRefreshLogs" type="checkbox" />
           Auto refresh
         </label>
       </div>
 
-      <div v-if="logLoading" class="td-loading">Loading logs...</div>
-      <div v-else-if="logEntries.length === 0" class="td-empty td-empty--panel">
-        <h2 class="td-empty__title">{{ logEmptyTitle }}</h2>
-        <p class="td-empty__body">{{ logEmptyBody }}</p>
-        <div class="td-empty__actions">
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="clearLogFilters">Clear Filters</button>
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="loadLogs">Refresh Logs</button>
-          <button class="td-btn td-btn--primary td-btn--sm" @click="openRoute('/workspace/review')">Open Review</button>
+      <div v-if="logLoading" class="paper-ops__loading">Loading logs...</div>
+      <div v-else-if="logEntries.length === 0" class="paper-ops__empty paper-ops__empty--panel">
+        <h2 class="tk-h3 paper-ops__empty-title">{{ logEmptyTitle }}</h2>
+        <p class="paper-ops__empty-body">{{ logEmptyBody }}</p>
+        <div class="paper-ops__empty-actions">
+          <PaperHLBtn @click="clearLogFilters">Clear Filters</PaperHLBtn>
+          <PaperHLBtn @click="loadLogs">Refresh Logs</PaperHLBtn>
+          <PaperHLBtn variant="ember" @click="openRoute('/workspace/review')">Open Review</PaperHLBtn>
         </div>
       </div>
-      <div v-else class="td-log-list">
-        <div v-for="entry in logEntries" :key="entry.id" class="td-log-entry">
-          <span class="td-log-time">{{ new Date(entry.timestamp).toLocaleString() }}</span>
-          <span class="td-log-level">{{ entry.level }}</span>
-          <span class="td-log-source">{{ entry.source }}</span>
-          <span class="td-log-message">{{ entry.message }}</span>
-          <span v-if="entry.correlationId" class="td-log-correlation">{{ entry.correlationId }}</span>
+      <div v-else class="paper-ops__log-list">
+        <div v-for="entry in logEntries" :key="entry.id" class="paper-ops__log-entry">
+          <span class="paper-ops__log-time">{{ new Date(entry.timestamp).toLocaleString() }}</span>
+          <span class="paper-ops__log-level">{{ entry.level }}</span>
+          <span class="paper-ops__log-source">{{ entry.source }}</span>
+          <span class="paper-ops__log-message">{{ entry.message }}</span>
+          <span v-if="entry.correlationId" class="paper-ops__log-correlation">{{ entry.correlationId }}</span>
         </div>
       </div>
     </div>
@@ -475,69 +476,291 @@ function openRoute(path: string) {
 </template>
 
 <style scoped>
-.td-ops { max-width: 980px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; color: var(--td-text-primary); }
-.td-ops__hero { display: flex; justify-content: space-between; gap: var(--td-space-6); align-items: flex-start; margin-bottom: var(--td-space-4); }
-.td-ops__hero-copy { display: flex; flex-direction: column; gap: var(--td-space-2); max-width: 720px; }
-.td-ops__eyebrow { font-size: var(--td-font-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-text-tertiary); }
-.td-ops__subtitle { color: var(--td-text-secondary); line-height: 1.6; }
-.td-ops__hero-actions,
-.td-empty__actions { display: flex; flex-wrap: wrap; gap: var(--td-space-2); }
-.td-role-context { margin-bottom: var(--td-space-4); padding: var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); background: var(--td-surface-secondary); }
-.td-role-context__title { font-size: var(--td-font-sm); font-weight: 600; color: var(--td-text-primary); }
-.td-role-context__body { margin-top: 2px; font-size: var(--td-font-xs); color: var(--td-text-secondary); }
-.td-role-context__hint { margin-top: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
-.td-tabs { display: flex; gap: 0; margin-bottom: var(--td-space-4); border-bottom: 2px solid var(--td-border-default); }
-.td-tab { padding: var(--td-space-2) var(--td-space-4); border: none; background: transparent; font-size: var(--td-font-sm); font-weight: 500; cursor: pointer; color: var(--td-text-secondary); border-bottom: 2px solid transparent; margin-bottom: -2px; }
-.td-tab--active { color: var(--td-color-primary); border-bottom-color: var(--td-color-primary); }
-.td-ops-panel { background: var(--td-surface-primary); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-lg); padding: var(--td-space-4); }
-.td-cli-toolbar { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-3); }
-.td-template-meta { margin-bottom: var(--td-space-3); padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); background: var(--td-surface-secondary); }
-.td-template-meta__title { font-size: var(--td-font-sm); color: var(--td-text-primary); }
-.td-template-meta__details { margin-top: 2px; font-size: var(--td-font-xs); color: var(--td-text-tertiary); }
-.td-form-group { display: flex; flex-direction: column; gap: var(--td-space-1); margin-bottom: var(--td-space-3); }
-.td-label { font-size: var(--td-font-sm); font-weight: 500; color: var(--td-text-secondary); }
-.td-input { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-size: var(--td-font-sm); }
-.td-input:focus { outline: none; border-color: var(--td-border-focus); box-shadow: var(--td-focus-ring); }
-.td-textarea { padding: var(--td-space-2) var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); font-family: monospace; font-size: var(--td-font-sm); resize: vertical; }
-.td-textarea:focus { outline: none; border-color: var(--td-border-focus); box-shadow: var(--td-focus-ring); }
-.td-btn { padding: var(--td-space-2) var(--td-space-4); border: none; border-radius: var(--td-radius-md); font-size: var(--td-font-sm); font-weight: 600; cursor: pointer; }
-.td-btn--sm { padding: var(--td-space-1) var(--td-space-3); font-size: var(--td-font-xs); }
-.td-btn--primary { background: var(--td-color-primary); color: var(--td-text-inverse); }
-.td-btn--primary:hover:not(:disabled) { background: var(--td-color-primary-hover); }
-.td-btn--secondary { background: var(--td-surface-tertiary); color: var(--td-text-primary); border: 1px solid var(--td-border-default); }
-.td-btn--secondary:hover:not(:disabled) { background: var(--td-surface-hover); }
-.td-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.td-cli-warning { margin-top: var(--td-space-2); font-size: var(--td-font-xs); color: var(--td-color-warning); }
-.td-cli-output { margin-top: var(--td-space-3); background: #0b1220; color: #dbe6ff; border-radius: var(--td-radius-md); padding: var(--td-space-3); font-family: monospace; min-height: 200px; max-height: 360px; overflow-y: auto; }
-.td-cli-line { white-space: pre-wrap; line-height: 1.5; }
-.td-cli-placeholder { color: #8fa3c8; }
-.td-run-ref { margin-top: var(--td-space-2); color: var(--td-text-tertiary); font-size: var(--td-font-xs); }
-.td-endpoint-form { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-3); }
-.td-input--method { width: 110px; }
-.td-input--path { flex: 1; }
-.td-response-panel { margin-top: var(--td-space-3); border: 1px solid var(--td-border-default); border-radius: var(--td-radius-md); overflow: hidden; }
-.td-response-header { display: flex; justify-content: space-between; padding: var(--td-space-2) var(--td-space-3); background: var(--td-surface-secondary); font-size: var(--td-font-sm); font-weight: 500; }
-.td-status-code { font-family: monospace; font-weight: 700; }
-.td-status-code--ok { color: var(--td-color-success); }
-.td-status-code--err { color: var(--td-color-error); }
-.td-response-body { padding: var(--td-space-3); font-family: monospace; font-size: var(--td-font-sm); overflow-x: auto; margin: 0; background: var(--td-surface-primary); }
-.td-logs-toolbar { display: flex; gap: var(--td-space-2); margin-bottom: var(--td-space-3); flex-wrap: wrap; }
-.td-autorefresh { display: inline-flex; align-items: center; gap: var(--td-space-1); font-size: var(--td-font-xs); color: var(--td-text-secondary); }
-.td-loading, .td-empty { text-align: center; padding: var(--td-space-6); color: var(--td-text-secondary); }
-.td-empty--panel { display: flex; flex-direction: column; gap: var(--td-space-2); align-items: center; justify-content: center; border: 1px dashed var(--td-border-default); border-radius: var(--td-radius-lg); background: var(--td-surface-secondary); }
-.td-empty__title { margin: 0; color: var(--td-text-primary); font-size: var(--td-font-lg); }
-.td-empty__body { margin: 0; max-width: 520px; line-height: 1.6; }
-.td-log-list { display: flex; flex-direction: column; gap: var(--td-space-1); }
-.td-log-entry { display: grid; grid-template-columns: 180px 90px 130px 1fr 220px; gap: var(--td-space-2); align-items: center; padding: var(--td-space-2); border-bottom: 1px solid var(--td-border-default); font-size: var(--td-font-xs); }
-.td-log-time { color: var(--td-text-tertiary); font-family: monospace; }
-.td-log-level { font-weight: 600; }
-.td-log-source { color: var(--td-text-secondary); }
-.td-log-message { color: var(--td-text-primary); }
-.td-log-correlation { color: var(--td-text-tertiary); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ── Paper & Graphite — OpsConsoleView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
+   surface legible if rendered outside the Paper shell.  The CLI output pane
+   was a hard-coded blue-black terminal (#0b1220 / #dbe6ff); it is now a
+   monospace ledger on the Paper substrate so it inverts correctly at night. */
+
+.paper-ops {
+  max-width: 980px;
+  font-family: var(--sans, system-ui, sans-serif);
+  color: var(--ink, #1a1814);
+}
+
+.paper-ops__hero {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-6, 24px);
+  align-items: flex-start;
+  margin-bottom: var(--s-4, 16px);
+}
+
+.paper-ops__hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  max-width: 720px;
+}
+
+.paper-ops__eyebrow { color: var(--ember, #a8421f); }
+.paper-ops__title { margin: 0; font-size: var(--t-h2, 32px); }
+.paper-ops__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
+
+.paper-ops__hero-actions,
+.paper-ops__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2, 8px);
+}
+
+.paper-ops__role-context {
+  margin-bottom: var(--s-4, 16px);
+  padding: var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+}
+
+.paper-ops__role-title { font-size: var(--t-md, 13.5px); font-weight: 600; color: var(--ink-deep, #0a0908); }
+.paper-ops__role-body { margin-top: 2px; font-size: var(--t-xs, 10.5px); color: var(--ink-2, #3a352d); }
+.paper-ops__role-hint { margin-top: var(--s-1, 4px); font-size: var(--t-xs, 10.5px); color: var(--mute, #6c6557); }
+
+.paper-ops__tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: var(--s-4, 16px);
+  border-bottom: 2px solid var(--line, #d8d0bf);
+}
+
+.paper-ops__tab {
+  padding: var(--s-2, 8px) var(--s-4, 16px);
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--t-md, 13.5px);
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--mute, #6c6557);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-ops__tab:hover { color: var(--ink, #1a1814); }
+
+.paper-ops__tab--active {
+  color: var(--ember, #a8421f);
+  border-bottom-color: var(--ember, #a8421f);
+}
+
+.paper-ops__panel {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-4, 16px);
+}
+
+.paper-ops__cli-toolbar {
+  display: flex;
+  gap: var(--s-2, 8px);
+  margin-bottom: var(--s-3, 12px);
+}
+
+.paper-ops__template-meta {
+  margin-bottom: var(--s-3, 12px);
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+}
+
+.paper-ops__template-title { font-size: var(--t-md, 13.5px); color: var(--ink-deep, #0a0908); }
+
+.paper-ops__template-details {
+  margin-top: 2px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #6c6557);
+}
+
+.paper-ops__form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+  margin-bottom: var(--s-3, 12px);
+}
+
+.paper-ops__label {
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #6c6557);
+}
+
+.paper-ops__input,
+.paper-ops__textarea {
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+  transition: border-color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-ops__textarea {
+  font-family: var(--mono, ui-monospace, monospace);
+  resize: vertical;
+}
+
+.paper-ops__input:focus,
+.paper-ops__textarea:focus {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
+}
+
+.paper-ops__cli-warning {
+  margin-top: var(--s-2, 8px);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--overdue, #8c4a26);
+}
+
+.paper-ops__cli-output {
+  margin-top: var(--s-3, 12px);
+  background: var(--paper-2, #ebe5d8);
+  color: var(--ink, #1a1814);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  padding: var(--s-3, 12px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+  min-height: 200px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.paper-ops__cli-line { white-space: pre-wrap; line-height: 1.5; }
+.paper-ops__cli-placeholder { color: var(--mute, #6c6557); }
+
+.paper-ops__run-ref {
+  margin-top: var(--s-2, 8px);
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--mute, #6c6557);
+  font-size: var(--t-xs, 10.5px);
+}
+
+.paper-ops__endpoint-form {
+  display: flex;
+  gap: var(--s-2, 8px);
+  margin-bottom: var(--s-3, 12px);
+}
+
+.paper-ops__input--method { width: 110px; }
+.paper-ops__input--path { flex: 1; }
+
+.paper-ops__response-panel {
+  margin-top: var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  overflow: hidden;
+}
+
+.paper-ops__response-header {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  background: var(--paper, #f3eee5);
+  font-size: var(--t-md, 13.5px);
+  font-weight: 600;
+}
+
+.paper-ops__status-code { font-family: var(--mono, ui-monospace, monospace); font-weight: 700; }
+.paper-ops__status-code--ok { color: var(--applied, #4a6b3f); }
+.paper-ops__status-code--err { color: var(--ember-deep, #7a2e15); }
+
+.paper-ops__response-body {
+  padding: var(--s-3, 12px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
+  overflow-x: auto;
+  margin: 0;
+  background: var(--paper-card, #fbf7ee);
+}
+
+.paper-ops__logs-toolbar {
+  display: flex;
+  gap: var(--s-2, 8px);
+  margin-bottom: var(--s-3, 12px);
+  flex-wrap: wrap;
+}
+
+.paper-ops__autorefresh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1, 4px);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ink-2, #3a352d);
+}
+
+.paper-ops__loading,
+.paper-ops__empty {
+  text-align: center;
+  padding: var(--s-6, 24px);
+  color: var(--mute, #6c6557);
+}
+
+.paper-ops__empty--panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  background: var(--paper, #f3eee5);
+}
+
+.paper-ops__empty-title { margin: 0; font-size: var(--t-lg, 18px); }
+.paper-ops__empty-body { margin: 0; max-width: 520px; line-height: 1.6; }
+
+.paper-ops__log-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1, 4px);
+}
+
+.paper-ops__log-entry {
+  display: grid;
+  grid-template-columns: 180px 90px 130px 1fr 220px;
+  gap: var(--s-2, 8px);
+  align-items: center;
+  padding: var(--s-2, 8px);
+  border-bottom: 1px solid var(--line-soft, #e3dcc9);
+  font-size: var(--t-xs, 10.5px);
+}
+
+.paper-ops__log-time { color: var(--mute, #6c6557); font-family: var(--mono, ui-monospace, monospace); }
+.paper-ops__log-level { font-weight: 700; color: var(--ink-deep, #0a0908); }
+.paper-ops__log-source { color: var(--ink-2, #3a352d); }
+.paper-ops__log-message { color: var(--ink, #1a1814); }
+
+.paper-ops__log-correlation {
+  color: var(--mute, #6c6557);
+  font-family: var(--mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 @media (max-width: 900px) {
-  .td-ops__hero {
+  .paper-ops__hero {
     flex-direction: column;
   }
 }
