@@ -24,7 +24,7 @@ import type {
  * ReviewMain — the centre column: header + decision rail + 5 sections.
  *
  * NOTE on ink-bleed: the header proposal dial would normally trigger the
- * ink-bleed motion while haiku is composing.  PAPER-10 (the bleed
+ * ink-bleed motion while the assistant is composing.  PAPER-10 (the bleed
  * primitive) is parallel work and not merged into this branch yet, so for
  * now we render the static dried/stamped state.  Once PAPER-10 ships, the
  * orchestrator can wire the bleed component above the header on awaiting

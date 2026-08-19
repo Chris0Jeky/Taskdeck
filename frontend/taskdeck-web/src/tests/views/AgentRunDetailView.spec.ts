@@ -128,7 +128,7 @@ describe('AgentRunDetailView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Not found')
-    expect(wrapper.find('.td-run-detail__state--error button').exists()).toBe(true)
+    expect(wrapper.find('.paper-run-detail__state--error button').exists()).toBe(true)
   })
 
   it('renders run header with objective, status, and metadata', async () => {
@@ -148,7 +148,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    const items = wrapper.findAll('.td-timeline__item')
+    const items = wrapper.findAll('.paper-timeline__item')
     expect(items).toHaveLength(3)
     expect(items[0].text()).toContain('Run started')
     expect(items[0].text()).toContain('Sequence 1')
@@ -163,7 +163,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    const payloads = wrapper.findAll('.td-timeline__payload')
+    const payloads = wrapper.findAll('.paper-timeline__payload')
     // Only event-2 has non-empty payload (captureCount: 5)
     expect(payloads).toHaveLength(1)
     expect(payloads[0].text()).toContain('captureCount')
@@ -174,7 +174,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    const proposalLink = wrapper.find('.td-run-detail__proposal-link')
+    const proposalLink = wrapper.find('.paper-run-detail__proposal-link')
     expect(proposalLink.exists()).toBe(true)
     expect(proposalLink.text()).toBe('View linked proposal')
   })
@@ -184,7 +184,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    await wrapper.find('.td-run-detail__proposal-link').trigger('click')
+    await wrapper.find('.paper-run-detail__proposal-link').trigger('click')
     expect(mockPush).toHaveBeenCalledWith({
       name: 'workspace-review',
       query: { boardId: 'board-1' },
@@ -197,7 +197,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    await wrapper.find('.td-run-detail__proposal-link').trigger('click')
+    await wrapper.find('.paper-run-detail__proposal-link').trigger('click')
 
     expect(mockPush).toHaveBeenCalledWith({
       name: 'workspace-review',
@@ -211,7 +211,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    expect(wrapper.find('.td-run-detail__proposal-link').exists()).toBe(false)
+    expect(wrapper.find('.paper-run-detail__proposal-link').exists()).toBe(false)
   })
 
   it('shows failure reason for failed runs', async () => {
@@ -231,7 +231,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    expect(wrapper.find('.td-run-detail__live-indicator').exists()).toBe(false)
+    expect(wrapper.find('.paper-run-detail__live-indicator').exists()).toBe(false)
   })
 
   it('shows live indicator for non-terminal status', async () => {
@@ -239,7 +239,7 @@ describe('AgentRunDetailView', () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    const indicator = wrapper.find('.td-run-detail__live-indicator')
+    const indicator = wrapper.find('.paper-run-detail__live-indicator')
     expect(indicator.exists()).toBe(true)
     expect(indicator.text()).toContain('Run is in progress')
   })
@@ -258,14 +258,14 @@ describe('AgentRunDetailView', () => {
 
     expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
     expect(wrapper.text()).toContain('Requested:')
-    expect(wrapper.find('.td-run-detail__live-indicator').exists()).toBe(false)
+    expect(wrapper.find('.paper-run-detail__live-indicator').exists()).toBe(false)
   })
 
   it('navigates back to runs list when back button is clicked', async () => {
     const wrapper = mount(AgentRunDetailView)
     await waitForUi()
 
-    await wrapper.find('.td-run-detail__back').trigger('click')
+    await wrapper.find('.paper-run-detail__back').trigger('click')
     expect(mockPush).toHaveBeenCalledWith('/workspace/agents/profile-1/runs')
   })
 

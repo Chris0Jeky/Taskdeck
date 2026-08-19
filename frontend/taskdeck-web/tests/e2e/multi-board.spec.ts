@@ -188,7 +188,7 @@ test('restoring a board from archive should make it appear in sidebar without re
 
   // Restore from archive
   await page.goto('/workspace/archive')
-  const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: boardName }).first()
+  const archivedBoardRow = page.locator('.paper-archive__row').filter({ hasText: boardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
   await expectDialog(page, () => archivedBoardRow.getByRole('button', { name: 'Restore Board' }).click(), {

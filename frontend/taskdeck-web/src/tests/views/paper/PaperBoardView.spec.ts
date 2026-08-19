@@ -72,8 +72,15 @@ const cardsByColumn = new Map<string, Card[]>([
 
 const allCards = [...cardsByColumn.values()].flat()
 
+const emptyBoard: BoardDetail = {
+  ...board,
+  id: 'board-1',
+  name: 'Fresh Board',
+  columns: [],
+}
+
 const mockBoardStore = reactive({
-  currentBoard: board,
+  currentBoard: board as BoardDetail | null,
   currentBoardCards: allCards,
   cardsByColumn,
   currentBoardLabels: [],
@@ -82,6 +89,7 @@ const mockBoardStore = reactive({
   fetchBoard: vi.fn(async () => {}),
   moveCard: vi.fn(async () => {}),
   reorderColumns: vi.fn(async () => {}),
+  createColumn: vi.fn(async (_boardId: string, dto: { name: string }) => makeColumn({ id: `col-${dto.name}`, name: dto.name })),
 })
 
 vi.mock('vue-router', () => ({
@@ -126,6 +134,8 @@ describe('PaperBoardView', () => {
     routerMock.push.mockClear()
     mockBoardStore.fetchBoard.mockClear()
     mockBoardStore.moveCard.mockClear()
+    mockBoardStore.createColumn.mockClear()
+    mockBoardStore.currentBoard = board
     mockBoardStore.currentBoardCards = allCards
     mockBoardStore.cardsByColumn = cardsByColumn
     mockBoardStore.error = null
@@ -285,5 +295,107 @@ describe('PaperBoardView', () => {
     const wrapper = mountView()
     const lanes = wrapper.find('[data-testid="paper-board-lanes"]')
     expect(lanes.classes()).not.toContain('paper-board-view__lanes--snap')
+  })
+})
+
+describe('PaperBoardView — empty board (#1765)', () => {
+  beforeEach(() => {
+    routerMock.push.mockClear()
+    mockBoardStore.createColumn.mockClear()
+    mockBoardStore.currentBoard = emptyBoard
+    mockBoardStore.currentBoardCards = []
+    mockBoardStore.cardsByColumn = new Map()
+    mockBoardStore.error = null
+    mockBoardStore.loading = false
+    mockViewportMode.value = 'desktop'
+  })
+
+  afterEach(() => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    document.body.innerHTML = ''
+  })
+
+  it('offers add-column affordances instead of a dead end when the board has no columns', () => {
+    const wrapper = mountView()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-column-name"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-add-column"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-starter-columns"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-lanes"]').exists()).toBe(false)
+  })
+
+  it('disables the add-column submit until a name is typed', async () => {
+    const wrapper = mountView()
+    const submit = wrapper.get('[data-testid="paper-board-empty-add-column"]')
+
+    expect(submit.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('Backlog')
+
+    expect(submit.attributes('disabled')).toBeUndefined()
+  })
+
+  it('creates the first column through boardStore.createColumn and clears the field', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('  Backlog  ')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).toHaveBeenCalledTimes(1)
+    expect(mockBoardStore.createColumn).toHaveBeenCalledWith('board-1', { name: 'Backlog' })
+    expect(
+      (wrapper.get('[data-testid="paper-board-empty-column-name"]').element as HTMLInputElement).value,
+    ).toBe('')
+  })
+
+  it('does not create a column for a whitespace-only name', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('   ')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).not.toHaveBeenCalled()
+  })
+
+  it('creates the three starter columns in order from one click', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-starter-columns"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn.mock.calls.map((call) => call[1])).toEqual([
+      { name: 'To Do', position: 0 },
+      { name: 'In Progress', position: 1 },
+      { name: 'Done', position: 2 },
+    ])
+  })
+
+  it('keeps the affordance on screen and surfaces an error when the create fails', async () => {
+    mockBoardStore.createColumn.mockRejectedValueOnce(new Error('boom'))
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('Backlog')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-board-empty-error"]').text()).toContain(
+      'Could not create the column',
+    )
+  })
+
+  it('still shows the board error banner when the board itself failed to load', () => {
+    mockBoardStore.currentBoard = null
+    mockBoardStore.error = 'Board not found'
+
+    const wrapper = mountView()
+
+    expect(wrapper.get('.paper-board-view__error').text()).toBe('Board not found')
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
   })
 })

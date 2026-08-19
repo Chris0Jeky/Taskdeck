@@ -203,7 +203,7 @@ const containerClass = computed(() => [
 const eyebrowText = computed(() =>
   currentPhase.value === 'dried' || currentPhase.value === 'stamp'
     ? 'Proposal · ready'
-    : 'haiku is composing…',
+    : 'Assistant is composing…',
 )
 
 /* --------------------------------------------------- droplet helpers ----- */

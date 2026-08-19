@@ -49,7 +49,7 @@ async function createChatSessionAndSendProposal(
   await page.getByPlaceholder('Board context (optional)').fill(boardId)
   await page.getByRole('button', { name: 'Create Session' }).click()
 
-  const sessionId = await page.locator('.td-chat-meta').first().getAttribute('data-session-id')
+  const sessionId = await page.locator('.paper-chat__meta').first().getAttribute('data-session-id')
   if (!sessionId) throw new Error('Expected chat session header to expose data-session-id')
 
   await page.getByPlaceholder('Describe an automation instruction...').fill(instruction)
