@@ -179,7 +179,7 @@ function isQueuedStatus(status: AgentRunStatus): boolean {
 
 .paper-agent-runs__header { margin-bottom: var(--s-6, 24px); }
 .paper-agent-runs__header-copy { display: flex; flex-direction: column; gap: var(--s-2, 8px); }
-.paper-agent-runs__eyebrow { color: var(--ember, #a8421f); }
+.paper-agent-runs__eyebrow { color: var(--mute, #635c4e); }
 .paper-agent-runs__title { margin: 0; font-size: var(--t-h2, 32px); }
 .paper-agent-runs__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
 

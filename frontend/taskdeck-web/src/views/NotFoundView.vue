@@ -44,7 +44,7 @@ const attemptedPath = computed(() => route.path)
 
 .paper-not-found__eyebrow {
   margin: 0 0 var(--s-2, 8px);
-  color: var(--ember, #a8421f);
+  color: var(--mute, #635c4e);
 }
 
 .paper-not-found__title {

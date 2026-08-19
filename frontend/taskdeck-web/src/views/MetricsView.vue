@@ -518,7 +518,7 @@ const maxWipCount = computed(() => {
 }
 
 .paper-metrics__eyebrow {
-  color: var(--ember, #a8421f);
+  color: var(--mute, #635c4e);
 }
 
 .paper-metrics__title {

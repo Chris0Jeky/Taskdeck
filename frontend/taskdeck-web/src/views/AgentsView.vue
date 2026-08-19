@@ -118,7 +118,7 @@ function openRuns(agentId: string) {
 
 .paper-agents__header { margin-bottom: var(--s-6, 24px); }
 .paper-agents__header-copy { display: flex; flex-direction: column; gap: var(--s-2, 8px); }
-.paper-agents__eyebrow { color: var(--ember, #a8421f); }
+.paper-agents__eyebrow { color: var(--mute, #635c4e); }
 .paper-agents__title { margin: 0; font-size: var(--t-h2, 32px); }
 .paper-agents__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
 

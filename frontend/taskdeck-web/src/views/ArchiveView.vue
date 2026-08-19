@@ -324,7 +324,7 @@ onMounted(() => {
   margin-bottom: var(--s-6, 24px);
 }
 
-.paper-archive__eyebrow { color: var(--ember, #a8421f); }
+.paper-archive__eyebrow { color: var(--mute, #635c4e); }
 .paper-archive__title { margin: 0; font-size: var(--t-h2, 32px); }
 
 .paper-archive__panel {

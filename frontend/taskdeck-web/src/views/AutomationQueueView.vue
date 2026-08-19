@@ -396,7 +396,7 @@ onMounted(() => {
   max-width: 720px;
 }
 
-.paper-queue__eyebrow { color: var(--ember, #a8421f); }
+.paper-queue__eyebrow { color: var(--mute, #635c4e); }
 .paper-queue__title { margin: 0; font-size: var(--t-h2, 32px); }
 .paper-queue__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
 

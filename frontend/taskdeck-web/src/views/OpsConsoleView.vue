@@ -508,7 +508,7 @@ function openRoute(path: string) {
   max-width: 720px;
 }
 
-.paper-ops__eyebrow { color: var(--ember, #a8421f); }
+.paper-ops__eyebrow { color: var(--mute, #635c4e); }
 .paper-ops__title { margin: 0; font-size: var(--t-h2, 32px); }
 .paper-ops__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
 

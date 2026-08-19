@@ -298,7 +298,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
   align-items: flex-start;
 }
 
-.paper-run-detail__eyebrow { color: var(--ember, #a8421f); }
+.paper-run-detail__eyebrow { color: var(--mute, #635c4e); }
 .paper-run-detail__title { margin: 0; font-size: var(--t-h2, 32px); }
 
 .paper-run-detail__back {
