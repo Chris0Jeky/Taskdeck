@@ -266,8 +266,9 @@
 
   /* Semantic shortcuts.  `obsidian` means "the substrate colour" — its only
      consumer is `.td-btn--danger { bg-ember text-obsidian }`, where mapping
-     it to `--paper` keeps light text on the ember fill (5.2:1 in `.paper`)
-     instead of inverting to unreadable dark-on-dark. */
+     it to `--paper` keeps light text on the ember fill (5.25:1 in `.paper`,
+     asserted in `tests/paper-ink-ladder-contrast.spec.ts`) instead of
+     inverting to unreadable dark-on-dark. */
   --td-tw-ember: var(--ember);
   --td-tw-ember-glow: var(--ember-deep);
   --td-tw-obsidian: var(--paper);
@@ -286,6 +287,27 @@
   --td-notify-board-change: var(--applied);
   --td-notify-assignment: var(--ink-2);
   --td-notify-system: var(--whisper);
+
+  /* ── Notification type badges ───────────────────────────
+     The stripes' companion (#1842).  Each badge is a filled chip, so the type
+     is carried by the BACKGROUND — five distinct Paper tints, one per type,
+     ordered to echo the stripe hues above (ochre / rust / green / edge /
+     page).  The foreground is `--ink` for all five rather than each tint's own
+     hue: `--applied` on `--applied-tint` measures 4.46:1 in `.paper`, just
+     under AA, while `--ink` clears 12.6:1 or better on every one of the five
+     tints in BOTH themes.  Pinned in
+     `tests/paper-ink-ladder-contrast.spec.ts`.  Colour is never the sole
+     signal either way — the badge also spells the type out. */
+  --td-notify-proposal-bg: var(--overdue-tint);
+  --td-notify-proposal-fg: var(--ink);
+  --td-notify-mention-bg: var(--ember-tint);
+  --td-notify-mention-fg: var(--ink);
+  --td-notify-board-change-bg: var(--applied-tint);
+  --td-notify-board-change-fg: var(--ink);
+  --td-notify-assignment-bg: var(--paper-edge);
+  --td-notify-assignment-fg: var(--ink);
+  --td-notify-system-bg: var(--paper-2);
+  --td-notify-system-fg: var(--ink);
 
   /* ── Document scrollbar ─────────────────────────────────
      `::-webkit-scrollbar-thumb` in `style.css` is unqualified, so it also
@@ -345,8 +367,10 @@
         declaration in `style.css`.
 
    `.td-alert--error` also gets its FOREGROUND here: `var(--td-color-ember)`
-   on `--ember-tint` measures 4.45:1, just under AA, so the global utility
-   uses `--ember-ink` (7.8:1 light / 9.5:1 night) instead. */
+   on `--ember-tint` measures 4.46:1, just under AA, so the global utility
+   uses `--ember-ink` (7.83:1 light / 9.53:1 night) instead.  All three figures
+   are asserted exactly in `tests/paper-ink-ladder-contrast.spec.ts` (#1842);
+   the 4.45:1 recorded here before was a rounding slip. */
 .paper .td-alert--error,
 .paper-night .td-alert--error {
   border-color: var(--ember-bloom);

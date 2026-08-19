@@ -99,17 +99,47 @@ describe('typeBorderClass', () => {
   })
 })
 
+/**
+ * The badge colours moved from the Tailwind palette to `--td-notify-*-bg` /
+ * `--td-notify-*-fg` tokens (#1842), the same move #1840 made for the stripes,
+ * so they follow the active skin. This function is still the single source of
+ * the type -> badge mapping, which is what these tests pin.
+ */
 describe('typeBadgeClass', () => {
-  it('returns amber badge for proposals', () => {
-    expect(typeBadgeClass('ProposalOutcome')).toContain('bg-amber-100')
+  it('returns the proposal badge for proposals', () => {
+    expect(typeBadgeClass('ProposalOutcome')).toBe('td-notify-badge--proposal')
   })
 
-  it('returns blue badge for mentions', () => {
-    expect(typeBadgeClass('Mention')).toContain('bg-blue-100')
+  it('returns the mention badge for mentions', () => {
+    expect(typeBadgeClass('Mention')).toBe('td-notify-badge--mention')
   })
 
-  it('includes dark mode variant', () => {
-    expect(typeBadgeClass('Mention')).toContain('dark:bg-blue-900')
+  it('returns the board-change badge for board changes', () => {
+    expect(typeBadgeClass('BoardChange')).toBe('td-notify-badge--board-change')
+  })
+
+  it('returns the assignment badge for assignments', () => {
+    expect(typeBadgeClass('Assignment')).toBe('td-notify-badge--assignment')
+  })
+
+  it('returns the system badge for system', () => {
+    expect(typeBadgeClass('System')).toBe('td-notify-badge--system')
+  })
+
+  it('gives every type a distinct badge class', () => {
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    expect(new Set(types.map(typeBadgeClass)).size).toBe(types.length)
+  })
+
+  it('emits no raw Tailwind palette hue and no dead dark: variant', () => {
+    // `darkMode: 'class'` with nothing ever setting `dark` meant the four
+    // `dark:` utilities never rendered; the light ones were Obsidian-era hues
+    // inside the cream Paper shell (#1842).
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    for (const t of types) {
+      expect(typeBadgeClass(t)).not.toMatch(/\bdark:/)
+      expect(typeBadgeClass(t)).not.toMatch(/\b(bg|text)-(amber|blue|green|purple|gray)-\d{3}\b/)
+    }
   })
 })
 
