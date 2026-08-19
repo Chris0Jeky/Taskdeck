@@ -89,6 +89,12 @@ jobs:
 
   gitleaks:
     name: Secrets Detection (Gitleaks)
+    # The called workflow declares pull-requests: read; a caller that grants less fails the
+    # whole workflow at plan time ("Invalid workflow file ... only allowed 'pull-requests: none'").
+    # Proven by the first-ever tag-push run (v0.1.0, run 32211340361, startup_failure).
+    permissions:
+      contents: read
+      pull-requests: read
     uses: ./.github/workflows/reusable-gitleaks.yml
     with:
       scan-mode: full

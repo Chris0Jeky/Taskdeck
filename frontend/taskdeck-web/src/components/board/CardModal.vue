@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import TdDialog from '../ui/TdDialog.vue'
@@ -22,6 +23,75 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updated'): void
 }>()
+
+const dialogRef = ref<HTMLElement | null>(null)
+let previouslyFocusedElement: HTMLElement | null = null
+
+const focusableSelector =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+function restoreFocus() {
+  if (previouslyFocusedElement?.isConnected) {
+    previouslyFocusedElement.focus()
+  }
+  previouslyFocusedElement = null
+}
+
+function focusInitialControl() {
+  const dialog = dialogRef.value
+  if (!dialog) return
+
+  const closeButton = dialog.querySelector<HTMLElement>('[aria-label="Close card editor"]')
+  const firstFocusable = dialog.querySelector<HTMLElement>(focusableSelector)
+  const initialControl = closeButton ?? firstFocusable ?? dialog
+  initialControl.focus()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Tab' || !dialogRef.value) return
+
+  const focusableElements = Array.from(
+    dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector),
+  )
+
+  if (focusableElements.length === 0) {
+    event.preventDefault()
+    return
+  }
+
+  const first = focusableElements[0]!
+  const last = focusableElements[focusableElements.length - 1]!
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(
+  () => props.isOpen,
+  async (isOpen, wasOpen) => {
+    if (isOpen) {
+      if (!wasOpen) {
+        previouslyFocusedElement = document.activeElement as HTMLElement | null
+      }
+      await nextTick()
+      focusInitialControl()
+    } else if (wasOpen) {
+      restoreFocus()
+    }
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  if (props.isOpen) {
+    restoreFocus()
+  }
+})
 
 function handleClose() {
   emit('close')
@@ -89,19 +159,21 @@ useEscapeToClose(() => props.isOpen, handleClose)
   <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- modal backdrop with dialog role and escape key handler; click-to-close is standard modal UX -->
   <div
     v-if="isOpen"
-    class="fixed inset-0 z-50 overflow-y-auto"
+    ref="dialogRef"
+    class="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-4"
     role="dialog"
     aria-label="Edit Card"
     aria-modal="true"
+    tabindex="-1"
     @click.self="handleClose"
     @keydown.escape="handleClose"
+    @keydown="handleKeydown"
   >
     <!-- Backdrop -->
     <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
 
     <!-- Modal -->
-    <div class="flex min-h-full items-center justify-center p-4">
-      <div class="relative bg-surface-container rounded-lg shadow-xl max-w-2xl w-full p-6 border border-outline-variant/30" @click.stop>
+    <div class="relative max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-lg border border-outline-variant/30 bg-surface-container p-6 shadow-xl" data-testid="card-modal-scroll-region" @click.stop>
         <CardModalHeader @close="handleClose" />
 
         <div class="space-y-4">
@@ -150,14 +222,13 @@ useEscapeToClose(() => props.isOpen, handleClose)
           />
         </div>
 
-        <CardModalActions
+      <CardModalActions
           :is-form-valid="isFormValid"
           :card="card"
           @save="handleSave"
           @close="handleClose"
-          @delete-click="handleDeleteClick"
-        />
-      </div>
+        @delete-click="handleDeleteClick"
+      />
     </div>
   </div>
 

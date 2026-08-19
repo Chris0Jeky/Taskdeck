@@ -143,6 +143,31 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
     }
 
     [Fact]
+    public async Task Calendar_ShouldReturnSuccessForAccessibleBoardWithoutDueDateCards()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-calendar-empty");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-calendar-empty-board");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var column = new Column(board.Id, "Calendar", 0);
+            db.AddRange(column, new Card(board.Id, column.Id, "No due date"));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync(
+            "/api/workspace/calendar?from=2026-08-01T00%3A00%3A00.0000000Z&to=2026-09-01T00%3A00%3A00.0000000Z");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var calendar = await response.Content.ReadFromJsonAsync<WorkspaceCalendarDto>();
+        calendar.Should().NotBeNull();
+        calendar!.TotalCards.Should().Be(0);
+        calendar.Cards.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Home_ShouldReturnCurrentUserSummaryOnly()
     {
         using var ownerClient = _factory.CreateClient();

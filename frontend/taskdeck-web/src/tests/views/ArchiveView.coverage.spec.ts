@@ -377,7 +377,7 @@ describe('ArchiveView — entity type badges', () => {
     const wrapper = mount(ArchiveView)
     await waitForAsyncUi()
 
-    const badges = wrapper.findAll('.td-badge')
+    const badges = wrapper.findAll('.paper-archive__badge')
     const badgeTexts = badges.map((b) => b.text().toLowerCase())
     expect(badgeTexts).toContain('card')
     expect(badgeTexts).toContain('column')

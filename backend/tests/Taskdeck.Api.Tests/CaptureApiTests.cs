@@ -311,10 +311,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Triage_ShouldReturnAcceptedAndTriagingState()
     {
         await AuthenticateAsAsync("capture-triage");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-triage-board");
 
         var createResponse = await _client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "triage payload"));
+            new CreateCaptureItemDto(board.Id, "triage payload"));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         created.Should().NotBeNull();
@@ -332,10 +333,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task Triage_ShouldBeIdempotent_WhenAlreadyTriaging()
     {
         await AuthenticateAsAsync("capture-triage-repeat");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-triage-repeat-board");
 
         var createResponse = await _client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "triage repeat payload"));
+            new CreateCaptureItemDto(board.Id, "triage repeat payload"));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         created.Should().NotBeNull();
@@ -467,8 +469,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Triage_ShouldFailDeterministically_WhenCaptureHasNoBoard()
+    public async Task Triage_ShouldRejectSynchronously_WhenCaptureHasNoBoard()
     {
+        // #1764: a board-less capture (Home quick-capture lands with BoardId=null) can never be
+        // triaged into a proposal. The accept/queue endpoint must reject it up front with a 400 and
+        // a clear reason, NOT create a doomed async job that dead-ends at a bare FAILED badge.
         await AuthenticateAsAsync("capture-triage-fail");
 
         var createResponse = await _client.PostAsJsonAsync(
@@ -484,21 +489,50 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         created.Should().NotBeNull();
 
         var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
-        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var failedItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.Failed);
-        failedItem.Status.Should().Be(CaptureStatus.Failed);
-        failedItem.Provenance.Should().NotBeNull();
-        failedItem.Provenance!.ProposalId.Should().BeNull();
-        failedItem.Provenance.TriageRunId.Should().BeNull();
-        failedItem.Provenance.PromptVersion.Should().BeNull();
+        await ApiTestHarness.AssertErrorContractAsync(triageResponse, HttpStatusCode.BadRequest, "ValidationError");
+
+        // No async job was created: the capture is untouched — still New, never queued or failed.
+        var afterItem = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        afterItem.Should().NotBeNull();
+        afterItem!.Status.Should().Be(CaptureStatus.New);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
-        persistedItem.Status.Should().Be(RequestStatus.Failed);
-        persistedItem.RetryCount.Should().Be(1);
-        persistedItem.ErrorMessage.Should().Contain("BoardId is required");
+        persistedItem.Status.Should().Be(RequestStatus.Pending);
+        persistedItem.RetryCount.Should().Be(0);
+        persistedItem.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Triage_ShouldLinkSuppliedBoardAndSucceed_WhenBoardlessCaptureSuppliesBoard()
+    {
+        // #1764: the accept flow may pass the chosen board in the triage body so a board-less
+        // capture is linked and triaged in one step (the Inbox board-picker path).
+        await AuthenticateAsAsync("capture-triage-link-board");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-triage-link-board-target");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "board-less capture to link"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+        created!.BoardId.Should().BeNull();
+
+        var triageResponse = await _client.PostAsJsonAsync(
+            $"/api/capture/items/{created.Id}/triage",
+            new EnqueueTriageRequestDto(board.Id));
+
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var triageResult = await triageResponse.Content.ReadFromJsonAsync<CaptureTriageEnqueueResultDto>();
+        triageResult.Should().NotBeNull();
+        triageResult!.Status.Should().Be(CaptureStatus.Triaging);
+
+        var linkedItem = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        linkedItem.Should().NotBeNull();
+        linkedItem!.BoardId.Should().Be(board.Id);
     }
 
     [Fact]
@@ -582,10 +616,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task BatchTriage_ShouldTriageMultipleItems()
     {
         await AuthenticateAsAsync("capture-batch-triage");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-batch-triage-board");
 
         var create1 = await _client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "batch item 1"));
+            new CreateCaptureItemDto(board.Id, "batch item 1"));
         create1.StatusCode.Should().Be(HttpStatusCode.Created);
         var item1 = await create1.Content.ReadFromJsonAsync<CaptureItemDto>();
 
@@ -615,10 +650,11 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task BatchTriage_ShouldReturnPartialSuccess_WhenSomeItemsFail()
     {
         await AuthenticateAsAsync("capture-batch-partial");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-batch-partial-board");
 
         var create1 = await _client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "batch partial item 1"));
+            new CreateCaptureItemDto(board.Id, "batch partial item 1"));
         create1.StatusCode.Should().Be(HttpStatusCode.Created);
         var item1 = await create1.Content.ReadFromJsonAsync<CaptureItemDto>();
 
@@ -718,14 +754,16 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging()
     {
         await AuthenticateAsAsync("capture-edit-conflict");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-edit-conflict-board");
 
         var createResponse = await _client.PostAsJsonAsync(
             "/api/capture/items",
-            new CreateCaptureItemDto(null, "triaging edit payload"));
+            new CreateCaptureItemDto(board.Id, "triaging edit payload"));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
 
-        await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         var response = await _client.PutAsJsonAsync(
             $"/api/capture/items/{created.Id}/suggestion",
@@ -822,5 +860,14 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
                 ErrorCodes.UnexpectedError,
                 "Authorization: Bearer triage-secret {\"text\":\"capture secret note\"} token=triage-token"));
         }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
     }
 }

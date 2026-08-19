@@ -185,7 +185,7 @@ describe('ArchiveView', () => {
 
     expect(mocks.updateBoard).toHaveBeenCalledWith('board-archived', { isArchived: false })
     expect(mocks.successToast).toHaveBeenCalledWith('Restored board "Archived Board"')
-    expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(0)
+    expect(wrapper.findAll('.paper-archive__list--section .paper-archive__row')).toHaveLength(0)
 
     confirmSpy.mockRestore()
   })
@@ -257,7 +257,7 @@ describe('ArchiveView', () => {
     expect(mocks.successToast).not.toHaveBeenCalled()
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to restore board')
     // Board remains in the list
-    expect(wrapper.findAll('.td-archive-list--section .td-archive-row')).toHaveLength(1)
+    expect(wrapper.findAll('.paper-archive__list--section .paper-archive__row')).toHaveLength(1)
 
     confirmSpy.mockRestore()
   })

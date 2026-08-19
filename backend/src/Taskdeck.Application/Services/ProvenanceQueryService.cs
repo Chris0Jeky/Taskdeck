@@ -93,8 +93,22 @@ public class ProvenanceQueryService : IProvenanceQueryService
         var key = field.FieldName;
         var value = BuildValue(field);
         var weight = MapWeight(field.Kind, field.Confidence);
+        var evidenceLinks = field.EvidenceLinks
+            .OrderBy(link => link.SourceType, StringComparer.Ordinal)
+            .ThenBy(link => link.SourceId, StringComparer.Ordinal)
+            .ThenBy(link => link.Label, StringComparer.Ordinal)
+            .ThenBy(link => link.SpanStart)
+            .ThenBy(link => link.SpanEnd)
+            .Select(link => new ProvenanceEvidenceLinkDto(
+                link.SourceType,
+                link.SourceId,
+                link.Label,
+                link.SpanStart,
+                link.SpanEnd))
+            .ToList()
+            .AsReadOnly();
 
-        return new ProvenanceRowDto(icon, key, value, weight);
+        return new ProvenanceRowDto(icon, key, value, weight, evidenceLinks);
     }
 
     /// <summary>

@@ -726,6 +726,38 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task TryClaimProcessingCaptureAsync_ShouldRefreshTrackedUpdatedAtToPersistedValue()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-claim-refresh-capture", "llm-claim-refresh-capture@example.com", "hash");
+            db.Users.Add(user);
+
+            var request = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"refresh-capture\"}");
+            request.MarkAsProcessing();
+            db.LlmRequests.Add(request);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            // Materialize the candidate through the tracking repository query, matching the worker path.
+            var tracked = (await repo.GetOldestProcessingCaptureAsync(limit: 1))
+                .Single(r => r.Id == request.Id);
+            var expectedUpdatedAt = tracked.UpdatedAt;
+
+            var claimed = await repo.TryClaimProcessingCaptureAsync(request.Id, expectedUpdatedAt);
+
+            claimed.Should().BeTrue();
+
+            // Read directly from SQLite to prove the tracked value matches what the raw UPDATE persisted.
+            var persisted = await db.LlmRequests
+                .AsNoTracking()
+                .SingleAsync(r => r.Id == request.Id);
+            persisted.UpdatedAt.Should().NotBe(expectedUpdatedAt);
+            tracked.UpdatedAt.Should().Be(persisted.UpdatedAt);
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldRejectNonCaptureRequestType()
     {
         using var scope = _factory.Services.CreateScope();

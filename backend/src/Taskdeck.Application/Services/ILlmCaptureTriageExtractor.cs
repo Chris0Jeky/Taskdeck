@@ -65,7 +65,8 @@ public sealed record LlmCaptureTriageExtraction(
     CaptureTriageOutputV2? Output = null,
     string? Provider = null,
     string? Model = null,
-    string? Detail = null)
+    string? Detail = null,
+    IReadOnlyList<(int Start, int End)?>? EvidenceSpans = null)
 {
     public bool Succeeded => Outcome == LlmCaptureTriageOutcome.Succeeded;
 }

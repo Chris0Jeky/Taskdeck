@@ -2005,6 +2005,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int?>("SpanStart")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TranscriptId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
@@ -2013,7 +2016,12 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasIndex("ProvenanceFieldId");
 
-                    b.ToTable("ProvenanceEvidenceLinks", (string)null);
+                    b.HasIndex("TranscriptId");
+
+                    b.ToTable("ProvenanceEvidenceLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProvenanceEvidenceLinks_TranscriptId", "(\"SourceType\" = 'Transcript' AND \"TranscriptId\" IS NOT NULL) OR (\"SourceType\" <> 'Transcript' AND \"TranscriptId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
@@ -2734,6 +2742,11 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("ProvenanceFieldId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Transcript", null)
+                        .WithMany()
+                        .HasForeignKey("TranscriptId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
