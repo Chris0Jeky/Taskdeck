@@ -300,7 +300,12 @@ function Assert-TrustedDirectory {
         # a volume root has no parent directory that could replace it.
         Assert-NoWeakAllow -Path $root -RightsMask $script:WriteMask -Boundary 'PATH volume root'
     }
-    foreach ($segment in $relative.Split([char]'\', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+    # The separator is cast to char[] deliberately. Windows PowerShell 5.1 has no
+    # String.Split(char, StringSplitOptions) overload, so passing a bare [char] silently binds to
+    # Split(params char[]) with RemoveEmptyEntries coerced to a SECOND separator character (U+0001,
+    # measured) - the options are never applied. PowerShell 7 does have that overload and behaves
+    # differently, which is what made the bare-drive-root gap above visible on one runtime only.
+    foreach ($segment in $relative.Split([char[]]'\', [System.StringSplitOptions]::RemoveEmptyEntries)) {
         $parent = $current
         $current = Join-Path $current $segment
         $item = Get-Item -LiteralPath $current -Force
@@ -578,10 +583,13 @@ try {
     }
 
     # Bare drive-root control (issue #1651 item 2). A volume-root PATH entry has no path segments
-    # for the per-segment walk to visit, so before the fix it reached ZERO ACL validation. The
-    # control is host-independent: it asserts the root is subject to the same weak-write evaluation
-    # every other PATH directory gets, whatever that evaluation concludes on this machine. (It
-    # concludes "weakly writable" on this box, where C:\ grants Authenticated Users Modify.)
+    # for the per-segment walk to visit, so without the explicit volume-root check it reaches ZERO
+    # ACL validation. Under Windows PowerShell 5.1 the miscast Split above happened to mask that
+    # (its stray empty segment made the walk re-check the root); the check no longer depends on
+    # which runtime is parsing the script. The control is host-independent: it asserts the root is
+    # subject to the same weak-write evaluation every other PATH directory gets, whatever that
+    # evaluation concludes here. (It concludes "weakly writable" on this box, where C:\ grants
+    # Authenticated Users Modify.)
     $volumeRootControl = [System.IO.Path]::GetPathRoot($env:SystemRoot)
     $volumeRootIsWeaklyWritable = Test-PathWeaklyWritable -Path $volumeRootControl
     $volumeRootRejected = $false
