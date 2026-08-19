@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -157,16 +159,135 @@ public sealed class PreMigrationBackupTests : IDisposable
     {
         CreateStandaloneWalDatabase();
         Directory.CreateDirectory(DefaultBackupDirectory);
+
+        // Decoy 1: a plainly unrelated file. Cheap, but it does not reach the naming check —
+        // the directory glob already excludes it.
         var manualCopy = Path.Combine(DefaultBackupDirectory, "my-own-manual-copy.db");
         File.WriteAllText(manualCopy, "not ours");
 
+        // Decoys 2 and 3 are the ones that discriminate (#1839): both are inside the glob
+        // `<db file name>-pre-migration-*.db`, so only the strict name pattern can save them.
+        // The first has no timestamp at all; the second has a valid timestamp but no sequence
+        // suffix — the shape a partially-implemented rename would produce.
+        var shapedDecoy = Path.Combine(
+            DefaultBackupDirectory,
+            Path.GetFileName(_dbPath) + SqlitePreMigrationBackup.FileNameMarker + "hand-made-copy"
+                + SqlitePreMigrationBackup.FileExtension);
+        File.WriteAllText(shapedDecoy, "not ours either");
+
+        var unsequencedDecoy = Path.Combine(
+            DefaultBackupDirectory,
+            Path.GetFileName(_dbPath) + SqlitePreMigrationBackup.FileNameMarker + "20200101T000000000Z"
+                + SqlitePreMigrationBackup.FileExtension);
+        File.WriteAllText(unsequencedDecoy, "still not ours");
+
         var settings = new DatabaseBackupSettings { RetainCount = 1 };
-        SqlitePreMigrationBackup.Create(_dbPath, settings, logger: null);
-        SqlitePreMigrationBackup.Create(_dbPath, settings, logger: null);
+        var first = SqlitePreMigrationBackup.Create(_dbPath, settings, logger: null);
+        var second = SqlitePreMigrationBackup.Create(_dbPath, settings, logger: null);
 
         File.Exists(manualCopy).Should().BeTrue(
             "pruning must only ever touch files matching the managed snapshot naming pattern");
-        ListBackups(DefaultBackupDirectory).Should().ContainSingle();
+        File.Exists(shapedDecoy).Should().BeTrue(
+            "a file inside the enumerate glob but outside the strict name pattern must survive");
+        File.Exists(unsequencedDecoy).Should().BeTrue(
+            "a well-formed timestamp is not enough — the managed pattern requires the sequence too");
+
+        File.Exists(first).Should().BeFalse("retention of 1 must prune the older managed snapshot");
+        File.Exists(second).Should().BeTrue("retention of 1 must keep the newest managed snapshot");
+    }
+
+    [Fact]
+    public void Retention_keys_on_the_full_file_name_so_a_sibling_database_is_not_pruned()
+    {
+        // `taskdeck.db` and `taskdeck.sqlite` share the stem "taskdeck" and, by default, the same
+        // `backups` folder. Keying retention on the stem (#1839) made each database's prune count
+        // the other's snapshots against its own RetainCount and delete them.
+        var siblingDbPath = Path.Combine(_root, "taskdeck.sqlite");
+        CreateStandaloneWalDatabase();
+        CreateStandaloneWalDatabase(siblingDbPath);
+
+        var settings = new DatabaseBackupSettings { RetainCount = 2 };
+        SqlitePreMigrationBackup.ResolveBackupDirectory(siblingDbPath, settings).Should().Be(
+            DefaultBackupDirectory,
+            "the fixture only proves anything if both databases share one backup directory");
+
+        var primary = new List<string>();
+        var sibling = new List<string>();
+        for (var i = 0; i < 2; i++)
+        {
+            primary.Add(SqlitePreMigrationBackup.Create(_dbPath, settings, logger: null));
+            sibling.Add(SqlitePreMigrationBackup.Create(siblingDbPath, settings, logger: null));
+        }
+
+        foreach (var path in primary.Concat(sibling))
+        {
+            File.Exists(path).Should().BeTrue(
+                "'{0}' is inside its OWN database's RetainCount and must not be pruned by the other's run",
+                Path.GetFileName(path));
+        }
+    }
+
+    [Fact]
+    public void Retention_still_recognises_and_ages_out_snapshots_from_the_previous_naming_scheme()
+    {
+        // Compatibility: snapshots left by the pre-#1839 scheme are stem-keyed and carry no
+        // sequence suffix. They must keep taking part in retention, or a host that updates would
+        // keep them forever. No RELEASED build wrote this shape — the feature landed in #1829,
+        // after the v0.1.0 tag — so the population is hosts that tracked `main` between #1829 and
+        // #1839. The behaviour is still worth pinning: it is what makes the legacy branch safe.
+        CreateStandaloneWalDatabase();
+        Directory.CreateDirectory(DefaultBackupDirectory);
+
+        var legacy = new[] { "20260101T000000000Z", "20260102T000000000Z", "20260103T000000000Z" }
+            .Select(stamp => Path.Combine(
+                DefaultBackupDirectory,
+                Path.GetFileNameWithoutExtension(_dbPath) + SqlitePreMigrationBackup.FileNameMarker
+                    + stamp + SqlitePreMigrationBackup.FileExtension))
+            .ToList();
+        foreach (var path in legacy)
+        {
+            File.WriteAllText(path, "snapshot written by the pre-#1839 naming scheme");
+        }
+
+        var fresh = SqlitePreMigrationBackup.Create(
+            _dbPath, new DatabaseBackupSettings { RetainCount = 2 }, logger: null);
+
+        File.Exists(fresh).Should().BeTrue("the newly written snapshot is always the newest");
+        File.Exists(legacy[2]).Should().BeTrue(
+            "legacy snapshots share one retention window with the new ones, newest first");
+        File.Exists(legacy[1]).Should().BeFalse("legacy snapshots must age out, not accumulate forever");
+        File.Exists(legacy[0]).Should().BeFalse("legacy snapshots must age out, not accumulate forever");
+    }
+
+    [Fact]
+    public void Retention_keeps_the_newest_snapshot_after_the_wall_clock_steps_backwards()
+    {
+        CreateStandaloneWalDatabase();
+        Directory.CreateDirectory(DefaultBackupDirectory);
+
+        // Stands in for "the host clock was far ahead when this snapshot was taken, then NTP (or
+        // a VM restore) corrected it backwards": an OLDER snapshot — sequence 1 — whose embedded
+        // timestamp sorts after anything UtcNow can produce. Ordering retention by the timestamp
+        // would call this the newest and delete the real newest first (#1839).
+        var clockSkewed = Path.Combine(
+            DefaultBackupDirectory,
+            Path.GetFileName(_dbPath) + SqlitePreMigrationBackup.FileNameMarker
+                + "29991231T235959999Z-000001" + SqlitePreMigrationBackup.FileExtension);
+        File.WriteAllText(clockSkewed, "written while the clock was ahead");
+
+        var fresh = SqlitePreMigrationBackup.Create(
+            _dbPath, new DatabaseBackupSettings { RetainCount = 1 }, logger: null);
+
+        Path.GetFileName(fresh).Should().Contain(
+            "-000002", "the sequence must continue from the highest already on disk, not restart");
+        string.CompareOrdinal(Path.GetFileName(fresh), Path.GetFileName(clockSkewed)).Should().BeNegative(
+            "the fixture only proves anything if the NEWEST snapshot sorts BEFORE the skewed one by name");
+
+        File.Exists(fresh).Should().BeTrue(
+            "the newest snapshot must survive a clock that stepped backwards — it is the one the " +
+            "user needs to recover the upgrade that just ran");
+        File.Exists(clockSkewed).Should().BeFalse(
+            "the older, future-timestamped snapshot is the one retention should have pruned");
     }
 
     // ── When NOT to back up ──────────────────────────────────────────────────
@@ -242,6 +363,48 @@ public sealed class PreMigrationBackupTests : IDisposable
             lastMigration, "the pending migration must NOT have been applied after a failed backup");
     }
 
+    [Fact]
+    public void A_backup_directory_that_cannot_be_listed_blocks_the_migration()
+    {
+        // The test above blocks Directory.CreateDirectory. This one covers the SECOND, newer
+        // abort path (#1839): the directory is created successfully and the failure happens
+        // afterwards, when ReserveDestinationPath ENUMERATES the directory to find the highest
+        // sequence already on disk. Before #1839 that step was File.Exists, which cannot throw,
+        // so this is a genuinely new way for startup to stop and it needs its own coverage.
+        var lastMigration = MigrateToOneBeforeLatest();
+        Directory.CreateDirectory(DefaultBackupDirectory);
+
+        using var unlistable = UnlistableDirectory.Deny(DefaultBackupDirectory);
+        if (!unlistable.IsEffective)
+        {
+            // The process can still list the directory (a root/Administrator process ignores the
+            // restriction, and some filesystems do not honour it). The condition under test does
+            // not exist here, so asserting would prove nothing about the code — bail out rather
+            // than record a false green.
+            return;
+        }
+
+        var logger = new InMemoryLogger<PreMigrationBackupTests>();
+        using var context = NewFileContext();
+
+        var act = () => SerializedMigrator.Migrate(context, new DatabaseBackupSettings(), logger);
+
+        var thrown = act.Should().Throw<PreMigrationBackupException>(
+            "a backup directory that cannot be listed must fail closed: without reading it we " +
+            "cannot pick a sequence that is guaranteed not to clobber an existing snapshot, and " +
+            "overwriting one would destroy the protection this feature exists to provide").Which;
+        thrown.InnerException.Should().BeOfType<UnauthorizedAccessException>(
+            "the real cause must be preserved, not replaced by a generic failure");
+        thrown.Message.Should().Contain(_dbPath, "the error must name the database at risk");
+        thrown.Message.Should().Contain(
+            "was NOT applied", "the error must tell the user the migration did not run");
+
+        ReadAppliedMigrationIds(_dbPath).Should().NotContain(
+            lastMigration,
+            "the pending migration must NOT have been applied when the snapshot name could not " +
+            "safely be chosen");
+    }
+
     // ── Directory resolution ─────────────────────────────────────────────────
 
     [Fact]
@@ -309,9 +472,11 @@ public sealed class PreMigrationBackupTests : IDisposable
     /// A minimal WAL-mode SQLite file, used by the tests that exercise the snapshot mechanics
     /// themselves and do not need Taskdeck's full migration chain.
     /// </summary>
-    private void CreateStandaloneWalDatabase()
+    private void CreateStandaloneWalDatabase() => CreateStandaloneWalDatabase(_dbPath);
+
+    private static void CreateStandaloneWalDatabase(string dbPath)
     {
-        using var connection = new SqliteConnection(TestSqlite.ConnectionString(_dbPath));
+        using var connection = new SqliteConnection(TestSqlite.ConnectionString(dbPath));
         connection.Open();
         Execute(connection, "PRAGMA journal_mode=WAL");
         Execute(connection, "CREATE TABLE IF NOT EXISTS Notes (Id INTEGER PRIMARY KEY, Body TEXT NOT NULL)");
@@ -365,6 +530,106 @@ public sealed class PreMigrationBackupTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM {table}";
         return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Makes a directory creatable-but-not-listable for the life of the instance, using whichever
+    /// mechanism the running OS actually has, and restores it on dispose.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Windows gets an explicit Deny ACE for the current user; Unix has its read bit removed while
+    /// keeping write and execute. Both produce the same seam: <see cref="Directory.CreateDirectory(string)"/>
+    /// still succeeds and <see cref="Directory.EnumerateFiles(string, string)"/> throws
+    /// <see cref="UnauthorizedAccessException"/>. Doing it per-OS rather than picking one platform
+    /// matters because the merge gate runs on Linux while this box is Windows — a single-platform
+    /// trick would leave the branch unexercised on one of them.
+    /// </para>
+    /// <para>
+    /// Restoring on dispose is NOT optional: a directory left unlistable cannot be deleted, so the
+    /// test would leak a temp tree on every run.
+    /// </para>
+    /// </remarks>
+    private sealed class UnlistableDirectory : IDisposable
+    {
+        private readonly Action _restore;
+
+        private UnlistableDirectory(Action restore, bool isEffective)
+        {
+            _restore = restore;
+            IsEffective = isEffective;
+        }
+
+        /// <summary>
+        /// Whether the restriction actually took hold. A root/Administrator process bypasses it,
+        /// and not every filesystem honours it, so the caller must check rather than assume.
+        /// </summary>
+        internal bool IsEffective { get; }
+
+        internal static UnlistableDirectory Deny(string path)
+        {
+            Action restore;
+            if (OperatingSystem.IsWindows())
+            {
+                restore = DenyOnWindows(path);
+            }
+            else
+            {
+                restore = DenyOnUnix(path);
+            }
+
+            return new UnlistableDirectory(restore, !CanList(path));
+        }
+
+        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+        private static Action DenyOnWindows(string path)
+        {
+            var info = new DirectoryInfo(path);
+            var security = info.GetAccessControl();
+            var rule = new FileSystemAccessRule(
+                WindowsIdentity.GetCurrent().User!,
+                FileSystemRights.ListDirectory | FileSystemRights.ReadData,
+                AccessControlType.Deny);
+
+            security.AddAccessRule(rule);
+            info.SetAccessControl(security);
+
+            return () =>
+            {
+                security.RemoveAccessRuleAll(rule);
+                info.SetAccessControl(security);
+            };
+        }
+
+        [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+        private static Action DenyOnUnix(string path)
+        {
+            var original = File.GetUnixFileMode(path);
+
+            // Write + execute but NOT read: the directory can still be traversed and written into
+            // (so Directory.CreateDirectory succeeds), but its entries cannot be listed.
+            File.SetUnixFileMode(path, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            return () => File.SetUnixFileMode(path, original);
+        }
+
+        private static bool CanList(string path)
+        {
+            try
+            {
+                foreach (var _ in Directory.EnumerateFiles(path))
+                {
+                }
+
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        public void Dispose() => _restore();
     }
 
     public void Dispose()
