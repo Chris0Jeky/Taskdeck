@@ -109,7 +109,13 @@ structure. Tone is a review responsibility.
   `vue-i18n`'s `datetimeFormats`/`numberFormats` catalogs. Rationale: `Intl` already has the CLDR
   data, needs no per-locale catalog maintenance, and is what the codebase already calls
   (`new Date(board.createdAt).toLocaleDateString()`). Adding a second formatting authority would
-  mean two places to keep in sync for zero gain.
+  mean two places to keep in sync for zero gain. Note the residual: the active *app* locale is not
+  the browser locale. `BoardsListView` preserves the browser's *region* only when the browser's
+  primary language subtag matches the active app locale (an `en-GB` browser on app-locale `en` still
+  formats `19/08/2026`). But the app locale defaults to `en` with no `navigator.language` detection,
+  so a user on a `de-DE`/`fr-FR`/`pt-BR` browser who never opens the language switcher moves from
+  their own date format to US format (`19.8.2026` → `8/19/2026`). Seeding the default locale from
+  `navigator.language` is a product decision, out of scope for this seed and tracked as follow-up.
 
 ### 5. `en` is the fallback, and missing keys fall back *silently*
 
@@ -118,8 +124,16 @@ explicitly incremental, a partially-translated surface is the *expected* state, 
 a user on `it` visiting a not-yet-extracted surface sees English, which is exactly right, and must
 not see a console full of warnings or a raw key path.
 
-The cost is that a genuinely missing key is invisible at runtime. That cost is paid off by the CI
-guard in §6, which makes it a build-time failure instead — the right place for it.
+The cost is that a genuinely missing key is invisible at runtime: it renders as its raw key path
+with no console warning (`missingWarn: false`). The §6 guard does **not** catch this. That guard
+proves the three catalogs are *structurally parallel to each other* — same keys, matching
+interpolation placeholders, no blanks — so a key that a view references but that is absent from
+**all three** catalogs (a typo, or an `en` string never added to any catalog) passes the guard,
+passes `vue-tsc` (message keys are untyped), emits no warning, and reaches the UI as the literal key
+path. The guard also does not flag an *unreferenced* catalog key. The real net for a
+missing-from-`en` key today is the per-surface view specs that assert the English copy — and those
+exist only for surfaces already extracted. A key-usage lint that cross-checks every referenced key
+against the catalogs is the proper guard for this gap, and is tracked as follow-up.
 
 ### 6. CI guard: structural parity across catalogs, enforced by a vitest spec
 

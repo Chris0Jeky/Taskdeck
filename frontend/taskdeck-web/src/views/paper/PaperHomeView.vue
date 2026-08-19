@@ -87,9 +87,14 @@ function periodFor(hour: number): Period {
 }
 
 // Static key maps, not `t(\`home.greeting.${period}\`)`. Message keys assembled
-// at runtime are invisible to grep and to any future extraction tooling, and a
-// typo in one of them fails silently (fallback is silent by design) instead of
-// failing the catalog guard.
+// at runtime are invisible to grep and to any future key-usage lint. A typo in a
+// static key here is NOT caught by the catalog guard either — that guard only
+// checks the en/it/es catalogs against each other, not view references against
+// the catalogs, so a key absent from all three still renders its raw path with
+// no warning (fallback warnings are off by design). What the static literals buy
+// is greppability: they keep every referenced key visible so a future key-usage
+// lint can cross-check them against the catalogs, which a runtime-assembled key
+// would defeat.
 const GREETING_KEYS: Record<Period, string> = {
   morning: 'home.greeting.morning',
   afternoon: 'home.greeting.afternoon',
