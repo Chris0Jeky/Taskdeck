@@ -221,25 +221,131 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
     expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
   }
 
-  // Nested Delete Card confirmation.
-  //
-  // SCOPE NOTE — this block is deliberately NOT keyboard-safety coverage.
-  // `TdDialog` teleports to <body> and positions itself against the LAYOUT
-  // viewport (`position: fixed; inset: 0`, plus `height: 100dvh` under its own
-  // 640px mobile breakpoint), so it is unaffected by the visual-viewport
-  // binding this test exercises on CardModal. Re-binding that shared primitive
-  // changes every dialog in the product and is tracked separately in #1821;
-  // the bounding-box assertions the nested case needs land there.
-  //
-  // What is asserted here: opening the confirmation from inside CardModal's new
-  // `overflow-hidden` viewport container still mounts and renders it. Focus
-  // assertions were removed on purpose — programmatic focus proves nothing
-  // about on-screen position and would have read as reachability coverage.
+  // Nested Delete Card confirmation — a `TdDialog`, the shared primitive behind
+  // every confirmation in the product. It teleports to <body>, so nothing in
+  // CardModal's tree can constrain it; #1821 bound it to the visual viewport in
+  // its own right and this block is that binding's keyboard-safety coverage.
   await editModal.getByRole('button', { name: 'Delete Card', exact: true }).click()
   const deleteDialog = page.getByRole('dialog', { name: 'Delete Card', exact: true })
   await expect(deleteDialog).toBeVisible()
-  await expect(deleteDialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
-  await expect(deleteDialog.getByRole('button', { name: 'Delete', exact: true })).toBeVisible()
+
+  // The dialog's own box must match the CONTRACTED visual bounds, not the
+  // layout viewport it used to span.
+  await expect.poll(async () => {
+    const box = await deleteDialog.boundingBox()
+    return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
+  }).toEqual({ y: visualTop, height: 420 })
+
+  const deleteDialogBox = await deleteDialog.boundingBox()
+  expect(deleteDialogBox).not.toBeNull()
+  expect(deleteDialogBox!.height).toBeLessThan(layoutViewportHeight)
+
+  // Footer actions measured against the contracted bounds. `toBeVisible()` /
+  // `toBeFocused()` cannot carry this claim: Playwright treats any element with
+  // a non-empty rendered box as visible, and focus is not a screen position —
+  // both pass for a control sitting under the software keyboard.
+  for (const name of ['Cancel', 'Delete']) {
+    const action = deleteDialog.getByRole('button', { name, exact: true })
+    await action.scrollIntoViewIfNeeded()
+    await expect(action).toBeEnabled()
+
+    const actionBox = await action.boundingBox()
+    expect(actionBox).not.toBeNull()
+    // 1px tolerance for sub-pixel layout rounding.
+    expect(actionBox!.y).toBeGreaterThanOrEqual(visualTop - 1)
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
+  }
+})
+
+test('@mobile confirmation dialog spans the full sheet without a contracted visual viewport', async ({
+  page,
+}) => {
+  // Deliberately NO synthetic viewport: this is the regression guard for the
+  // ordinary case, where the browser's real visual viewport still matches the
+  // layout viewport and the mobile sheet must keep spanning it.
+  const boardName = `Dialog Baseline Board ${Date.now()}`
+  const columnName = `Dialog Baseline Col ${Date.now()}`
+  const cardTitle = `Dialog Baseline Card ${Date.now()}`
+
+  await createBoard(page, boardName)
+  const columnLane = await addColumn(page, columnName)
+  await addCard(page, columnName, cardTitle)
+
+  const card = columnLane.locator('[data-card-id]').filter({
+    has: page.getByRole('heading', { name: cardTitle, exact: true }),
+  })
+  await card.getByRole('heading', { name: cardTitle, exact: true }).click()
+
+  const editModal = page.getByRole('dialog', { name: 'Edit Card' })
+  await expect(editModal).toBeVisible()
+
+  // CardModal's own body scrolls inside a clipped container, so the trigger has
+  // to be scrolled into that container before it is clickable.
+  const deleteTrigger = editModal.getByRole('button', { name: 'Delete Card', exact: true })
+  await deleteTrigger.scrollIntoViewIfNeeded()
+  await deleteTrigger.click()
+  const deleteDialog = page.getByRole('dialog', { name: 'Delete Card', exact: true })
+  await expect(deleteDialog).toBeVisible()
+
+  // Measure the dialog and the viewport in ONE evaluation: reading them in two
+  // round-trips lets a scroll settle in between and compares skewed samples.
+  const measure = () =>
+    page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-label="Delete Card"]')
+      if (!dialog) return null
+      const rect = dialog.getBoundingClientRect()
+      const visual = window.visualViewport
+      const visualHeight = visual?.height ?? window.innerHeight
+      const visualOffsetTop = visual?.offsetTop ?? 0
+      const footer = Array.from(dialog.querySelectorAll('button'))
+        .filter((button) => ['Cancel', 'Delete'].includes(button.textContent?.trim() ?? ''))
+        .map((button) => {
+          const buttonRect = button.getBoundingClientRect()
+          return { top: buttonRect.top, bottom: buttonRect.bottom }
+        })
+      return {
+        layoutHeight: window.innerHeight,
+        visualHeight,
+        visualOffsetTop,
+        // 1px tolerance for sub-pixel layout rounding, expressed as booleans so
+        // a poll can wait for the geometry to settle.
+        //
+        // WebKit's iPhone emulation reports a visual viewport a few pixels off
+        // `window.innerHeight` even with nothing contracting it, so "still a
+        // full sheet" is a ratio, not an equality.
+        spansMostOfLayoutViewport: rect.height >= window.innerHeight * 0.9,
+        topMatchesVisualTop: Math.abs(rect.top - visualOffsetTop) <= 1,
+        heightMatchesVisualHeight: Math.abs(rect.height - visualHeight) <= 1,
+        footerCount: footer.length,
+        footerInsideVisualBounds: footer.every(
+          (entry) =>
+            entry.top >= visualOffsetTop - 1 && entry.bottom <= visualOffsetTop + visualHeight + 1,
+        ),
+      }
+    })
+
+  await expect
+    .poll(async () => {
+      const measured = await measure()
+      return measured
+        ? {
+            spansMostOfLayoutViewport: measured.spansMostOfLayoutViewport,
+            topMatchesVisualTop: measured.topMatchesVisualTop,
+            heightMatchesVisualHeight: measured.heightMatchesVisualHeight,
+            footerCount: measured.footerCount,
+            footerInsideVisualBounds: measured.footerInsideVisualBounds,
+          }
+        : null
+    })
+    .toEqual({
+      // Nothing contracted this viewport, so the sheet must still span it top to
+      // bottom — the `100dvh` behaviour #1821 must not regress.
+      spansMostOfLayoutViewport: true,
+      topMatchesVisualTop: true,
+      heightMatchesVisualHeight: true,
+      footerCount: 2,
+      footerInsideVisualBounds: true,
+    })
 })
 
 test('@mobile workspace views should render correctly on small screen', async ({ page }) => {
