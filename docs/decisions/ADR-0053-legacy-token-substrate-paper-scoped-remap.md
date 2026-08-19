@@ -382,6 +382,10 @@ autofill dark inside the Paper shell (not introduced by this change).
   Shipped in the same slice, and needing no ruling: `typeBadgeClass`'s Tailwind palette hues moved
   to `--td-notify-*-{bg,fg}` tokens (the treatment PR #1840 gave the stripes; the dead `dark:`
   variants were dropped rather than translated, since `darkMode: 'class'` and nothing sets `dark`);
+  the bridge's `never :root` guard was tightened to exempt its two `:root:has(> body.paper*)`
+  color-scheme rules by name instead of by an accidental substring match; and every contrast figure
+  stated in a permanent comment is now asserted to two decimal places rather than against the
+  `>= 4.5` floor alone.
 
   **The mechanism, named once so it is not rediscovered** (PR #1865 review, finding N6): the build
   runs Tailwind v4 (`@import "tailwindcss"` in `frontend/taskdeck-web/src/style.css:2`) but binds it
@@ -393,10 +397,6 @@ autofill dark inside the Paper shell (not introduced by this change).
   Treat a `dark:` utility anywhere in this codebase as dead code, not as a night-mode affordance:
   night styling belongs to the `--td-*` tokens under `.paper-night`. Removing the `@config` line, or
   switching to v4's `@custom-variant dark`, would change that and is a decision, not a cleanup.
-  the bridge's `never :root` guard was tightened to exempt its two `:root:has(> body.paper*)`
-  color-scheme rules by name instead of by an accidental substring match; and every contrast figure
-  stated in a permanent comment is now asserted to two decimal places rather than against the
-  `>= 4.5` floor alone.
 
 ## References
 
