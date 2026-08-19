@@ -28,6 +28,10 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
 
+      - name: Validate checkout fingerprint guard
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1
+
   docs-governance:
     name: Docs Governance
     runs-on: ubuntu-latest

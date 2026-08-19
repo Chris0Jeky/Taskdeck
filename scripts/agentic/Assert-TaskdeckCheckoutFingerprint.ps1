@@ -19,7 +19,10 @@ param(
     [Int64]$MaxTotalBytes = 52428800,
 
     [ValidateRange(1024, 16777216)]
-    [Int64]$MaxGitOutputBytes = 16777216
+    [Int64]$MaxGitOutputBytes = 16777216,
+
+    [ValidateRange(1000, 3600000)]
+    [int]$GitTimeoutMs = 120000
 )
 
 Set-StrictMode -Version Latest
@@ -57,11 +60,42 @@ function Get-Utf8Text {
     return $encoding.GetString($Bytes)
 }
 
+function ConvertTo-DiagnosticText {
+    param([string]$Value)
+
+    # Diagnostics reach stderr as one line. Control characters would break that
+    # framing, so they are folded before the text is ever embedded in a message.
+    $text = ($Value -replace '[\x00-\x1f\x7f]', '?')
+    if ($text.Length -gt 200) {
+        $text = $text.Substring(0, 200) + '...'
+    }
+
+    return $text
+}
+
+function Get-ArtifactKindText {
+    param([object]$Item)
+
+    $kinds = New-Object 'System.Collections.Generic.List[string]'
+    if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        $kinds.Add('a reparse point (symlink or junction)')
+    }
+    if ($Item.PSIsContainer) {
+        $kinds.Add('a directory')
+    }
+    if ($kinds.Count -eq 0) {
+        $kinds.Add('an entry of an unexpected kind')
+    }
+
+    return ($kinds -join ' and ')
+}
+
 function Invoke-GitBytes {
     param(
         [string]$Checkout,
         [string]$Arguments,
-        [Int64]$OutputLimit = $MaxGitOutputBytes
+        [Int64]$OutputLimit = $MaxGitOutputBytes,
+        [int]$TimeoutMs = $GitTimeoutMs
     )
 
     if ($Checkout.Contains('"')) {
@@ -80,23 +114,48 @@ function Invoke-GitBytes {
     $process.StartInfo = $startInfo
     $output = New-Object System.IO.MemoryStream
     $started = $false
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    # Every wait below draws from one per-subprocess deadline. Without it a git
+    # that never writes and never exits blocks the guard forever, and a blocked
+    # guard is an unguarded lane.
+    $remaining = {
+        $left = $TimeoutMs - [int][Math]::Min([double]$clock.ElapsedMilliseconds, [double]$TimeoutMs)
+        if ($left -lt 1) { return 1 }
+        return $left
+    }
     try {
         $started = $process.Start()
         if (-not $started) {
             throw 'could not start git'
         }
 
-        $errorTask = $process.StandardError.ReadToEndAsync()
+        # Stderr is drained into Stream.Null: the guard never classifies on its
+        # text, and an unbounded in-memory ReadToEnd would let a verbose or
+        # wedged git exhaust memory even while stdout stayed under its own cap.
+        $errorTask = $process.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
         $buffer = New-Object byte[] 8192
-        while (($read = $process.StandardOutput.BaseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+        while ($true) {
+            $readTask = $process.StandardOutput.BaseStream.ReadAsync($buffer, 0, $buffer.Length)
+            if (-not $readTask.Wait((& $remaining))) {
+                try { $process.Kill() } catch { }
+                throw 'git exceeded the configured deadline'
+            }
+            $read = $readTask.Result
+            if ($read -le 0) { break }
             if ($output.Length -gt ($OutputLimit - $read)) {
                 try { $process.Kill() } catch { }
                 throw 'git output exceeds the configured byte limit'
             }
             $output.Write($buffer, 0, $read)
         }
-        $process.WaitForExit()
-        [void]$errorTask.GetAwaiter().GetResult()
+        if (-not $process.WaitForExit((& $remaining))) {
+            try { $process.Kill() } catch { }
+            throw 'git exceeded the configured deadline'
+        }
+        if (-not $errorTask.Wait((& $remaining))) {
+            try { $process.Kill() } catch { }
+            throw 'git exceeded the configured deadline'
+        }
         if ($process.ExitCode -ne 0) {
             throw 'git could not establish checkout identity'
         }
@@ -104,6 +163,7 @@ function Invoke-GitBytes {
         return ,$output.ToArray()
     }
     finally {
+        $clock.Stop()
         if ($started) {
             try {
                 if (-not $process.HasExited) { $process.Kill() }
@@ -143,12 +203,38 @@ function Get-CanonicalCheckout {
     return $rootFull
 }
 
+function Get-CheckoutHead {
+    param([string]$Checkout)
+
+    # A `git switch` or a commit between Capture and Compare leaves a clean
+    # worktree on both sides, so a status-artifact inventory alone reports
+    # `unchanged` for a checkout that now points at different content. HEAD and
+    # its symbolic ref are captured so that mutation is visible; anything the
+    # guard cannot read exactly fails closed like every other identity here.
+    $commit = (Get-Utf8Text (Invoke-GitBytes -Checkout $Checkout -Arguments 'rev-parse HEAD')).TrimEnd("`r", "`n")
+    if ($commit -notmatch '^[0-9a-f]{40}$' -and $commit -notmatch '^[0-9a-f]{64}$') {
+        throw 'checkout HEAD identity is uncertain'
+    }
+
+    # Detached HEAD (every worktree this guard was written for) reports the
+    # literal `HEAD`; an attached branch reports its full `refs/...` name.
+    $ref = (Get-Utf8Text (Invoke-GitBytes -Checkout $Checkout -Arguments 'rev-parse --symbolic-full-name HEAD')).TrimEnd("`r", "`n")
+    if ($ref -cne 'HEAD' -and -not $ref.StartsWith('refs/', [StringComparison]::Ordinal)) {
+        throw 'checkout HEAD reference identity is uncertain'
+    }
+    if ($ref -match '[\x00-\x1f\x7f]' -or $ref.Length -gt 512) {
+        throw 'checkout HEAD reference identity is uncertain'
+    }
+
+    return [pscustomobject]@{ commit = $commit; ref = $ref }
+}
+
 function Get-StatusPaths {
     param([string]$Checkout)
 
     $text = Get-Utf8Text (Invoke-GitBytes -Checkout $Checkout -Arguments 'status --porcelain=v1 -z --untracked-files=all --ignored=no')
     $parts = $text.Split([char]0)
-    $paths = New-Object 'System.Collections.Generic.List[string]'
+    $paths = New-Object 'System.Collections.Generic.List[object]'
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 
     for ($index = 0; $index -lt ($parts.Length - 1); $index++) {
@@ -178,7 +264,10 @@ function Get-StatusPaths {
             throw 'git status path identity is ambiguous'
         }
 
-        $paths.Add($relativePath)
+        # The two-letter code travels with the path so Compare can tell a lane
+        # that created a brand-new artifact from a lane that overwrote a file
+        # that was clean (and therefore outside the baseline) at capture time.
+        $paths.Add([pscustomobject]@{ path = $relativePath; code = $code })
     }
 
     if ($parts[$parts.Length - 1].Length -ne 0) {
@@ -215,7 +304,7 @@ function Get-ArtifactFingerprint {
 
     $item = Get-Item -LiteralPath $FullPath -Force -ErrorAction Stop
     if ($item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-        throw 'status artifact is not a regular file'
+        throw ('status artifact is not a regular file: found ' + (Get-ArtifactKindText -Item $item))
     }
 
     $stream = [IO.File]::Open($FullPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
@@ -256,8 +345,11 @@ function Get-Inventory {
     )
 
     $records = New-Object 'System.Collections.Generic.List[object]'
+    $observed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     [Int64]$total = 0
-    foreach ($relativePath in (Get-StatusPaths -Checkout $Checkout)) {
+    foreach ($entry in (Get-StatusPaths -Checkout $Checkout)) {
+        $relativePath = $entry.path
+        [void]$observed.Add($relativePath)
         if ($records.Count -ge $FileLimit) {
             throw 'status artifact count exceeds the configured limit'
         }
@@ -274,7 +366,9 @@ function Get-Inventory {
         }
 
         if ($statusItem.PSIsContainer -or (($statusItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-            throw 'status artifact is not a regular file'
+            throw ('status artifact is not a regular file: found ' + (Get-ArtifactKindText -Item $statusItem) +
+                ' at ' + (ConvertTo-DiagnosticText -Value $relativePath) +
+                ' (git status code ' + (ConvertTo-DiagnosticText -Value $entry.code) + ')')
         }
 
         $metadataLength = [Int64]$statusItem.Length
@@ -290,12 +384,79 @@ function Get-Inventory {
         $total += $fingerprint.length
         $records.Add([pscustomobject]@{
                 path = $relativePath
+                code = $entry.code
                 length = $fingerprint.length
                 hash = $fingerprint.hash
             })
     }
 
+    Assert-InventoryStability -Checkout $Checkout -Records $records -ObservedPaths $observed
     return ,$records.ToArray()
+}
+
+function Assert-InventoryStability {
+    param(
+        [string]$Checkout,
+        [object]$Records,
+        [object]$ObservedPaths
+    )
+
+    # The walk above fingerprints one artifact at a time, so a mutation that
+    # lands behind the cursor would otherwise be recorded as if it had always
+    # been there. Revalidate the completed inventory before anyone trusts it:
+    # nothing new may have entered status, and nothing already fingerprinted may
+    # have changed kind or length.
+    foreach ($entry in (Get-StatusPaths -Checkout $Checkout)) {
+        if (-not $ObservedPaths.Contains($entry.path)) {
+            throw ('status inventory changed while it was fingerprinted: ' +
+                (ConvertTo-DiagnosticText -Value $entry.path) + ' entered git status')
+        }
+    }
+
+    foreach ($record in $Records) {
+        $fullPath = Get-ArtifactPath -Checkout $Checkout -RelativePath $record.path
+        try {
+            $item = Get-Item -LiteralPath $fullPath -Force -ErrorAction Stop
+        }
+        catch [System.Management.Automation.ItemNotFoundException] {
+            throw ('status inventory changed while it was fingerprinted: ' +
+                (ConvertTo-DiagnosticText -Value $record.path) + ' disappeared')
+        }
+
+        if ($item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
+            [Int64]$item.Length -ne [Int64]$record.length) {
+            throw ('status inventory changed while it was fingerprinted: ' +
+                (ConvertTo-DiagnosticText -Value $record.path) + ' no longer matches its fingerprint')
+        }
+    }
+}
+
+function Assert-NoReparseAncestor {
+    param([string]$FullPath)
+
+    # A clean final directory proves nothing if any ancestor is a junction or
+    # symlink: the whole subtree can be re-aimed elsewhere without the leaf ever
+    # looking suspicious, which is exactly the containment this guard claims.
+    $current = $FullPath
+    $depth = 0
+    while (-not [string]::IsNullOrEmpty($current)) {
+        $depth++
+        if ($depth -gt 64) {
+            throw 'operating-system temp root ancestry is uncertain'
+        }
+
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if (-not $item.PSIsContainer -or (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            throw ('operating-system temp root ancestry is uncertain: ' +
+                (ConvertTo-DiagnosticText -Value $current) + ' is not a plain directory')
+        }
+
+        $parent = [IO.Path]::GetDirectoryName($current)
+        if ([string]::IsNullOrEmpty($parent) -or [string]::Equals($parent, $current, [StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+        $current = $parent
+    }
 }
 
 function Get-CanonicalTempRoot {
@@ -305,6 +466,7 @@ function Get-CanonicalTempRoot {
         throw 'operating-system temp root identity is uncertain'
     }
 
+    Assert-NoReparseAncestor -FullPath $root
     return $root
 }
 
@@ -460,9 +622,15 @@ function Read-AuthenticatedState {
         throw 'state payload is malformed'
     }
 
-    if (-not (Test-ExactPropertyNames -Object $payload -Names @('version', 'checkoutPath', 'files')) -or
-        $payload.version -ne 1 -or -not [string]::Equals($payload.checkoutPath, $Checkout, [StringComparison]::OrdinalIgnoreCase) -or
+    if (-not (Test-ExactPropertyNames -Object $payload -Names @('version', 'checkoutPath', 'head', 'headRef', 'files')) -or
+        $payload.version -ne 2 -or -not [string]::Equals($payload.checkoutPath, $Checkout, [StringComparison]::OrdinalIgnoreCase) -or
         $null -eq $payload.files) {
+        throw 'state payload identity is uncertain'
+    }
+
+    if (($payload.head -notmatch '^[0-9a-f]{40}$' -and $payload.head -notmatch '^[0-9a-f]{64}$') -or
+        [string]::IsNullOrEmpty($payload.headRef) -or
+        ($payload.headRef -cne 'HEAD' -and -not ([string]$payload.headRef).StartsWith('refs/', [StringComparison]::Ordinal))) {
         throw 'state payload identity is uncertain'
     }
 
@@ -485,17 +653,22 @@ function Read-AuthenticatedState {
         }
     }
 
-    return [pscustomobject]@{ path = $fullPath; files = $files }
+    return [pscustomobject]@{ path = $fullPath; files = $files; head = $payload.head; headRef = $payload.headRef }
 }
 
 function Invoke-Capture {
     param([string]$Checkout, [string]$Secret)
 
+    $head = Get-CheckoutHead -Checkout $Checkout
     $inventory = Get-Inventory -Checkout $Checkout -FileLimit $MaxFiles -PerFileLimit $MaxBytesPerFile -TotalLimit $MaxTotalBytes
+    # The status code is a Compare-time classification aid, not part of the
+    # authenticated identity; the persisted payload keeps its exact shape.
     $payload = [ordered]@{
-        version = 1
+        version = 2
         checkoutPath = $Checkout
-        files = @($inventory)
+        head = $head.commit
+        headRef = $head.ref
+        files = @($inventory | ForEach-Object { [ordered]@{ path = $_.path; length = $_.length; hash = $_.hash } })
     } | ConvertTo-Json -Compress -Depth 5
     $state = [IO.Path]::Combine((Get-CanonicalTempRoot), ('taskdeck-checkout-fingerprint-' + [Guid]::NewGuid().ToString('N') + '.json'))
     $state = Get-ValidatedStatePath -Checkout $Checkout -Candidate $state -MustExist $false
@@ -525,11 +698,22 @@ function Invoke-Compare {
     $state = Read-AuthenticatedState -Checkout $Checkout -Candidate $Candidate -Secret $Secret
     $before = @{}
     foreach ($file in $state.files) { $before[$file.path] = $file }
+    $head = Get-CheckoutHead -Checkout $Checkout
     $current = Get-Inventory -Checkout $Checkout -FileLimit $MaxFiles -PerFileLimit $MaxBytesPerFile -TotalLimit $MaxTotalBytes -MissingBaselinePaths $before
     $after = @{}
     foreach ($file in $current) { $after[$file.path] = $file }
 
     $changes = New-Object 'System.Collections.Generic.List[object]'
+    # HEAD first: a clean-to-clean `git switch` or commit moves the checkout
+    # without touching a single status artifact, and reporting `unchanged` for
+    # it is the exact blind spot this ordering closes.
+    if ($state.headRef -cne $head.ref) {
+        $changes.Add([pscustomobject]@{ path = 'HEAD'; classification = 'ref-moved' })
+    }
+    if ($state.head -cne $head.commit) {
+        $changes.Add([pscustomobject]@{ path = 'HEAD'; classification = 'head-moved' })
+    }
+
     foreach ($path in ($before.Keys | Sort-Object)) {
         if (-not $after.ContainsKey($path)) {
             $changes.Add([pscustomobject]@{ path = $path; classification = 'deleted' })
@@ -540,7 +724,17 @@ function Invoke-Compare {
     }
     foreach ($path in ($after.Keys | Sort-Object)) {
         if (-not $before.ContainsKey($path)) {
-            $changes.Add([pscustomobject]@{ path = $path; classification = 'created' })
+            # Absent from the baseline is not the same as new on disk: a file
+            # that was clean tracked content at capture time never entered the
+            # baseline, so the lane overwrote it rather than creating it. Only
+            # an untracked (`??`) or newly index-added (`A`) artifact is really
+            # a creation.
+            $code = [string]$after[$path].code
+            $classification = 'overwritten'
+            if ($code -eq '??' -or $code.StartsWith('A', [StringComparison]::Ordinal)) {
+                $classification = 'created'
+            }
+            $changes.Add([pscustomobject]@{ path = $path; classification = $classification })
         }
     }
 
