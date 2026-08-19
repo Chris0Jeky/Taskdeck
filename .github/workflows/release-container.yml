@@ -50,15 +50,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/taskdeck" >> "$GITHUB_OUTPUT"
+
       - name: Compute image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/taskdeck
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=rehearsal,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build (and push on tag refs)
         uses: docker/build-push-action@v6
@@ -79,7 +84,7 @@ jobs:
             -e Connectors__EncryptionKey="$(openssl rand -base64 32)" \
             -e TASKDECK_HEADLESS=true \
             -p 5000:5000 \
-            "ghcr.io/${{ github.repository_owner }}/taskdeck:${GITHUB_REF_NAME#v}"
+            "${{ steps.image.outputs.name }}:${GITHUB_REF_NAME#v}"
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
               echo "Health check passed."
