@@ -236,6 +236,45 @@ public sealed class CliTestHarnessTests
                 P.Start("dotnet");
                 """);
             File.WriteAllText(
+                Path.Combine(nestedDirectory, "VerbatimPathThenLaunch.cs"),
+                """
+                var directory = @"C:\temp\cli";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "VerbatimTextOnly.cs"),
+                """
+                var launchText = @"Process.Start(""dotnet"")";
+                var pathText = @"C:\tools\new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimDollarAtLaunch.cs"),
+                """
+                var directory = $@"C:\temp\{name}\";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimDollarAtTextOnly.cs"),
+                """
+                var launchText = $@"C:\temp\{name}\";
+                var other = $@"new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimAtDollarLaunch.cs"),
+                """
+                var directory = @$"C:\temp\{name}\";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimAtDollarTextOnly.cs"),
+                """
+                var launchText = @$"C:\temp\{name}\";
+                var other = @$"new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
                 Path.Combine(nestedDirectory, "bin", "Generated.cs"),
                 "System.Diagnostics.Process.Start(\"dotnet\");");
             File.WriteAllText(
@@ -245,8 +284,11 @@ public sealed class CliTestHarnessTests
             FindProcessLaunchFiles(sourceDirectory).Should().Equal(
                 [
                     Path.Combine("nested", "AlternateSyntax.cs"),
+                    Path.Combine("nested", "InterpolatedVerbatimAtDollarLaunch.cs"),
+                    Path.Combine("nested", "InterpolatedVerbatimDollarAtLaunch.cs"),
                     Path.Combine("nested", "ProcessAliases.cs"),
-                    Path.Combine("nested", "TargetTypedProcess.cs")
+                    Path.Combine("nested", "TargetTypedProcess.cs"),
+                    Path.Combine("nested", "VerbatimPathThenLaunch.cs")
                 ]);
         }
         finally
@@ -975,7 +1017,14 @@ public sealed class CliTestHarnessTests
                 continue;
             }
 
-            if (char.IsLetter(source[index]) || source[index] == '_' || source[index] == '@')
+            // '@' only starts an identifier when it actually prefixes one. Treating a bare '@'
+            // as an identifier start would consume the opening quote of a verbatim literal and
+            // tokenize the string body as code.
+            if (char.IsLetter(source[index])
+                || source[index] == '_'
+                || (source[index] == '@'
+                    && index + 1 < source.Length
+                    && (char.IsLetter(source[index + 1]) || source[index + 1] == '_')))
             {
                 var identifierStart = index;
                 if (source[index] == '@')
@@ -1026,7 +1075,11 @@ public sealed class CliTestHarnessTests
             return closingIndex < 0 ? source.Length : closingIndex + delimiterLength;
         }
 
-        var verbatim = quoteIndex > 0 && source[quoteIndex - 1] == '@';
+        // Verbatim literals are prefixed by '@', and interpolated verbatim literals by either
+        // ordering of the '@'/'$' pair, so look back over both characters.
+        var previous = quoteIndex > 0 ? source[quoteIndex - 1] : '\0';
+        var beforePrevious = quoteIndex > 1 ? source[quoteIndex - 2] : '\0';
+        var verbatim = previous == '@' || (previous == '$' && beforePrevious == '@');
         for (var index = quoteIndex + 1; index < source.Length; index++)
         {
             if (!verbatim && source[index] == '\\' && index + 1 < source.Length)
