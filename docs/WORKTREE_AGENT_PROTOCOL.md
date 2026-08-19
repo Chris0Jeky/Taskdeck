@@ -17,7 +17,7 @@ toplevel's `.git` must be a *file* holding a `gitdir:` pointer, that pointer mus
 same directory Git itself reports, and it must live under `<main-repo>/.git/worktrees/<name>` — the
 things that actually make a checkout a linked worktree. A root outside the conventional directories
 that passes those checks is **accepted**, with an advisory `NOTE [worktree_guard]: root is outside
-the conventional worktree directories; accepted on linked-worktree substance` on stderr. A root that
+the conventional worktree directories; accepted on linked-worktree substance` on stdout. A root that
 is genuinely not a linked worktree — the main checkout, a plain clone, a bare directory — still
 **FATALs** (exit 1) no matter where it sits. Path shape was never the safety property; a directory
 named `.worktrees/` proves nothing on its own.
