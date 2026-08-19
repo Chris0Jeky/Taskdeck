@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
-import type { ProvenanceRow, ProvenanceWeight } from '../../composables/usePaperReviewSelectors'
+import TranscriptEvidenceViewer from './TranscriptEvidenceViewer.vue'
+import {
+  TRANSCRIPT_EVIDENCE_SOURCE_TYPE,
+  type EvidenceLink as ProvenanceEvidenceLink,
+  type ProvenanceRow,
+  type ProvenanceWeight,
+} from '../../composables/usePaperReviewSelectors'
 
 export interface ProvenanceMetadata {
   model: string
@@ -11,12 +17,11 @@ export interface ProvenanceMetadata {
   promptVersion: string | null
 }
 
-export interface EvidenceLink {
-  sourceKey: string
-  span: [number, number] | null
-  reason: string
-  weight: ProvenanceWeight
-}
+/**
+ * Re-exported from its canonical home in `usePaperReviewSelectors` so existing
+ * importers keep resolving `EvidenceLink` from this component.
+ */
+export type EvidenceLink = ProvenanceEvidenceLink
 
 const props = defineProps<{
   open: boolean
@@ -91,6 +96,40 @@ const provenanceJson = computed(() => {
   )
 })
 
+/**
+ * A transcript evidence link is deep-linkable only when it names a transcript and
+ * carries a resolved character span; anything else renders as plain metadata.
+ */
+function transcriptTargetOf(link: EvidenceLink): { transcriptId: string; span: [number, number] } | null {
+  if (link.sourceType !== TRANSCRIPT_EVIDENCE_SOURCE_TYPE) return null
+  if (!link.sourceId || !link.span) return null
+  return { transcriptId: link.sourceId, span: link.span }
+}
+
+const openEvidenceIndex = ref<number | null>(null)
+
+const openEvidence = computed(() => {
+  const index = openEvidenceIndex.value
+  if (index === null) return null
+  const link = props.evidenceLinks[index]
+  if (!link) return null
+  const target = transcriptTargetOf(link)
+  return target === null ? null : { link, ...target }
+})
+
+function toggleTranscript(index: number) {
+  openEvidenceIndex.value = openEvidenceIndex.value === index ? null : index
+}
+
+// A different proposal's links occupy the same indices; close the viewer so it can
+// never show the previous proposal's transcript against the new list.
+watch(
+  () => props.evidenceLinks,
+  () => {
+    openEvidenceIndex.value = null
+  },
+)
+
 const copyError = ref(false)
 
 async function copyJson() {
@@ -147,6 +186,7 @@ watch(
       await nextTick()
       drawerRef.value?.focus()
     } else {
+      openEvidenceIndex.value = null
       unregisterEscape?.()
       unregisterEscape = null
       previouslyFocusedElement?.focus()
@@ -246,6 +286,25 @@ onUnmounted(() => {
                 chars {{ link.span[0] }}&ndash;{{ link.span[1] }}
               </span>
               <span class="prov-drawer__evidence-reason">{{ link.reason }}</span>
+              <button
+                v-if="transcriptTargetOf(link)"
+                type="button"
+                class="prov-drawer__evidence-open"
+                :aria-expanded="openEvidenceIndex === idx"
+                :data-testid="`provenance-view-in-transcript-${idx}`"
+                @click="toggleTranscript(idx)"
+              >
+                {{ openEvidenceIndex === idx ? 'Hide transcript' : 'View in transcript' }}
+              </button>
+              <TranscriptEvidenceViewer
+                v-if="openEvidence && openEvidenceIndex === idx"
+                class="prov-drawer__evidence-viewer"
+                :transcript-id="openEvidence.transcriptId"
+                :span-start="openEvidence.span[0]"
+                :span-end="openEvidence.span[1]"
+                :label="openEvidence.link.reason"
+                @close="openEvidenceIndex = null"
+              />
             </div>
           </section>
 
@@ -318,7 +377,7 @@ onUnmounted(() => {
 }
 
 .prov-drawer__meta {
-  background: var(--td-surface-sunken, #f9f9f9);
+  background: var(--td-surface-sunken, #0e0e0e);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 20px;
@@ -427,6 +486,25 @@ onUnmounted(() => {
 .prov-drawer__evidence-reason {
   color: var(--td-text-secondary, #666);
   flex: 1;
+}
+
+.prov-drawer__evidence-open {
+  border: 1px solid var(--td-border-default, #ddd);
+  background: var(--td-surface-container, #fff);
+  color: var(--td-text-primary, #333);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.prov-drawer__evidence-open:hover {
+  background: var(--td-surface-hover, #f5f5f5);
+}
+
+.prov-drawer__evidence-viewer {
+  flex-basis: 100%;
 }
 
 .prov-drawer__footer {

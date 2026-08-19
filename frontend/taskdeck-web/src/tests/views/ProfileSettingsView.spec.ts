@@ -88,6 +88,26 @@ describe('ProfileSettingsView', () => {
     expect(wrapper.text()).toContain('Can run all default Ops CLI templates.')
   })
 
+  // #1816: the no-legacy-hooks guard from #1808 landed in only 4 of the 6
+  // restyled Settings specs; this is Profile's copy.
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', () => {
+    const wrapper = mount(ProfileSettingsView)
+
+    // Root, hero, panel, and form are the view's own chrome and must use the
+    // Paper (`paper-profile__*`) idiom. Shared `components/ui/Td*` primitives
+    // are not used by this view, so no legacy hook should survive at all.
+    expect(wrapper.find('.paper-profile').exists()).toBe(true)
+    expect(wrapper.find('.paper-profile__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-profile__panel').exists()).toBe(true)
+    expect(wrapper.find('.paper-profile__form').exists()).toBe(true)
+    expect(wrapper.find('.paper-profile__info-grid').exists()).toBe(true)
+
+    expect(wrapper.find('[class*="td-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-info-"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-page-title"]').exists()).toBe(false)
+  })
+
   it('shows editor-specific ops capability summary for editor role', () => {
     sessionMocks.state.defaultRole = 2
     const wrapper = mount(ProfileSettingsView)

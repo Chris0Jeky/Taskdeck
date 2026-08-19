@@ -3,6 +3,7 @@ import ReviewAuthorCard from './ReviewAuthorCard.vue'
 import ReviewWhyNow from './ReviewWhyNow.vue'
 import ReviewSimilarPast from './ReviewSimilarPast.vue'
 import ReviewKeysCard from './ReviewKeysCard.vue'
+import type { ApplyPhase } from './ReviewDecisionRail.vue'
 import type {
   ConfidenceBreakdown,
   SimilarPastRow,
@@ -12,18 +13,23 @@ import type {
  * ReviewRightRail — the 320 px right column: author card with stamp,
  * why-now, similar-past, decide-with-keys.
  */
-defineProps<{
-  authorName: string
-  authorMeta: string
-  proposedDate: string
-  proposedTime: string
-  proposedNum: string
-  whyNowBody: string
-  whyNowHref?: string
-  breakdown: ConfidenceBreakdown
-  similarPast: SimilarPastRow[]
-  similarPastApplyRate: { applied: number; total: number; ratio: number }
-}>()
+withDefaults(
+  defineProps<{
+    authorName: string
+    authorMeta: string
+    proposedDate: string
+    proposedTime: string
+    proposedNum: string
+    whyNowBody: string
+    whyNowHref?: string
+    breakdown: ConfidenceBreakdown
+    similarPast: SimilarPastRow[]
+    similarPastApplyRate: { applied: number; total: number; ratio: number }
+    /** Passed through so the ⏎ row names the phase it will actually run (#1818). */
+    applyPhase?: ApplyPhase
+  }>(),
+  { applyPhase: 'approve' },
+)
 </script>
 
 <template>
@@ -38,7 +44,7 @@ defineProps<{
     />
     <ReviewWhyNow :body="whyNowBody" :tune-href="whyNowHref" />
     <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
-    <ReviewKeysCard />
+    <ReviewKeysCard :apply-phase="applyPhase" />
   </aside>
 </template>
 

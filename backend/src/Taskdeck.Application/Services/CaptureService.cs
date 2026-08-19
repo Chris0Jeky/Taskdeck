@@ -282,11 +282,11 @@ public class CaptureService : ICaptureService
         // async job that dead-ends at a bare FAILED badge with no reason (#1764).
         if (!effectiveBoardId.HasValue && targetBoardId.HasValue)
         {
-            var permission = await _authorizationService.CanReadBoardAsync(userId, targetBoardId.Value);
-            if (!permission.IsSuccess)
-                return Result.Failure<CaptureTriageEnqueueResultDto>(permission.ErrorCode, permission.ErrorMessage);
-            if (!permission.Value)
-                return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have access to this board");
+            // Gate the link on write access, not read (#1794): the board is only being attached so a
+            // proposal can be queued against it, so the same bar applies as to an already-linked board.
+            var linkPermission = await EnsureBoardProposalAccessAsync(userId, targetBoardId.Value);
+            if (!linkPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(linkPermission.ErrorCode, linkPermission.ErrorMessage);
 
             try
             {
@@ -299,6 +299,14 @@ public class CaptureService : ICaptureService
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             effectiveBoardId = targetBoardId;
+        }
+        else if (effectiveBoardId.HasValue)
+        {
+            // Same gate for a capture that already carries its board: the read-only injection vector
+            // is reachable through capture-with-board + accept, not only through the backfill body.
+            var boardPermission = await EnsureBoardProposalAccessAsync(userId, effectiveBoardId.Value);
+            if (!boardPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(boardPermission.ErrorCode, boardPermission.ErrorMessage);
         }
 
         if (!effectiveBoardId.HasValue)
@@ -328,6 +336,30 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Conflict, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Board-targeted triage generates an automation proposal into the target board's review queue,
+    /// so it requires write-capable membership on that board — the roles
+    /// <see cref="BoardAccess.CanWrite"/> admits (Owner, Admin, Editor), plus the board owner. A
+    /// Viewer can read the board but must not be able to inject proposals into a queue only
+    /// approvers can clear (#1794). Approval and execution authorization are unchanged: write access
+    /// buys the right to <em>suggest</em>; every board mutation still needs an explicit approve and
+    /// execute by an approver.
+    /// </summary>
+    private async Task<Result> EnsureBoardProposalAccessAsync(Guid userId, Guid boardId)
+    {
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        if (!permission.IsSuccess)
+            return Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+
+        return permission.Value
+            ? Result.Success()
+            : Result.Failure(ErrorCodes.Forbidden, BoardProposalAccessDeniedMessage);
+    }
+
+    private const string BoardProposalAccessDeniedMessage =
+        "You do not have permission to modify this board. Triaging a capture into a board queues an " +
+        "automation proposal there, which requires write access to that board.";
 
     private static readonly HashSet<string> ValidBatchActions = new(StringComparer.OrdinalIgnoreCase)
     {

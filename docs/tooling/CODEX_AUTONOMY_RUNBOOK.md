@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-18
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
@@ -62,6 +62,56 @@ Batch override does not remove discipline:
 - every implementation issue gets its own branch/worktree
 - each PR links its issue
 - project priority/status fields must be reconciled before handoff
+
+## Read-only inventory entry point
+
+Delegated shell-backed Git and GitHub inventory must use the repository wrapper:
+
+```powershell
+& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @(
+  "gh", "pr", "list", "--state", "open", "--json", "number,headRefOid,statusCheckRollup"
+)
+```
+
+The wrapper accepts only allowlisted read operations, rejects GitHub-mutation argv, and disables
+Git's optional index locks while it runs. Use `-ValidateOnly` to inspect a constructed command
+without launching it and `-SelfTest` after changing the contract. A purpose-built connector with an
+intrinsically read-only operation may still be used directly.
+
+Git argv is accepted by an exact per-subcommand option allowlist, not a denylist. Git expands any
+unambiguous long-option abbreviation before it executes anything (`git status --shor` runs
+`--short`, and `--upl=<program>` reaches `--upload-pack`), so an option token is accepted only when
+it matches a listed name character-for-character. Long options that take a value must use the
+attached `--name=value` form, short options that take a value must be a lone `-x` token followed by
+its value, and every character of a short cluster must itself be allowlisted. An unlisted or
+abbreviated option is refused rather than passed through, so widening the lane means adding the
+exact option name to that subcommand's list and re-running `-SelfTest`.
+
+A short value flag consumes the next token, so that token must not itself start with `-`: the
+wrapper refuses `-x -anything` rather than waving an unvalidated option through as a value. Git
+options whose argument is *optional* are read only in the attached form, so Git would parse such a
+token as a real option — this is why `git diff -U` is not a value flag at all (`--unified=<n>` is
+the allowlisted spelling) and why no short value flag may be added for an optional-argument option.
+For the same read-boundary reason `git grep --no-index` is unlisted: it drops the index boundary
+and reads untracked and gitignored working-tree files such as `.env.local`.
+
+`ls-remote` is the only remote-touching subcommand. It requires an explicit lowercase `https://`
+repository URL as its first operand: a bare remote name, `ssh://`, `git://`, `file://`, an `ext::`
+helper, or `user@host:path` is refused before any process is launched, because those resolve
+through configuration into an external transport. Every launched Git process additionally pins
+`-c protocol.allow=never -c protocol.https.allow=always -c core.sshCommand= -c diff.external=`
+(command-line `-c` outranks repository, user, and `GIT_CONFIG_PARAMETERS` configuration, so an
+`insteadOf` rewrite cannot reintroduce another transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
+`GIT_SSH_VARIANT`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_ALLOW_PROTOCOL`,
+`GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_SYSTEM`, `GIT_EXEC_PATH`, and `GIT_EXTERNAL_DIFF`. `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_SYSTEM` substitute whole configuration files and `GIT_EXEC_PATH` relocates the
+directory Git resolves its subcommand binaries from, so they are cleared alongside the transport
+variables. The validated URL is passed after `--end-of-options`.
+
+This is an opt-in routed entry point, not a Taskdeck command-deny hook. The coordinator keeps direct
+`git` and `gh` access for its separately authorized mutation lane and must not claim that the wrapper
+governs a command that bypasses it.
 
 ## Worktree Protocol
 

@@ -101,6 +101,30 @@
   --td-surface-secondary: var(--td-surface-container-low);
   --td-surface-tertiary: var(--td-surface-container-high);
   --td-surface-hover: var(--td-surface-bright);
+
+  /* ── Depth Aliases (issue #1814) ──
+     These five names were consumed by components but declared NOWHERE, so
+     `var(--td-surface-elevated)` was invalid-at-computed-value-time in Legacy
+     and its three call sites — MfaChallengeModal, MfaSetup and LoginView, all
+     `:hover` on a `--td-surface-container` rest fill — painted TRANSPARENT.
+     Each name is mapped onto the tier its call sites already assumed:
+
+       lowest / sunken  recessed below the page   → container-lowest #0e0e0e
+       low              the card tier             → container-low    #1c1b1b
+       elevated / high  one tier above container  → container-high   #2a2a2a
+
+     `elevated` and `high` deliberately share a tier: every `elevated` site is
+     the hover partner of a `--td-surface-container` rest fill, which is the
+     same "one tier up" step `high` expresses.  Alias, never literal, so the
+     `[data-theme="light"]` and `[data-density]` overrides below keep working.
+     `.paper` / `.paper-night` restate all five in `paper-legacy-bridge.css`
+     on <body>; a body-level declaration beats an inherited `:root` value, so
+     Paper rendering is unchanged by these lines. */
+  --td-surface-lowest: var(--td-surface-container-lowest);
+  --td-surface-sunken: var(--td-surface-container-lowest);
+  --td-surface-low: var(--td-surface-container-low);
+  --td-surface-elevated: var(--td-surface-container-high);
+  --td-surface-high: var(--td-surface-container-high);
 }
 
 /* ══════════════════════════════════════════════════

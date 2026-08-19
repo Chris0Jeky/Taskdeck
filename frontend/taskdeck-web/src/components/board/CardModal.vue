@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import TdDialog from '../ui/TdDialog.vue'
@@ -26,6 +26,34 @@ const emit = defineEmits<{
 
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocusedElement: HTMLElement | null = null
+
+const visualViewportState = ref({
+  height: typeof window === 'undefined' ? 0 : window.innerHeight,
+  offsetTop: 0,
+})
+let observedVisualViewport: VisualViewport | null = null
+
+function refreshVisualViewport() {
+  if (typeof window === 'undefined') return
+
+  const visualViewport = window.visualViewport
+  visualViewportState.value = {
+    height: visualViewport?.height ?? window.innerHeight,
+    offsetTop: visualViewport?.offsetTop ?? 0,
+  }
+}
+
+const visualViewportStyle = computed<Record<string, string>>(() => ({
+  '--card-modal-visual-viewport-height': `${visualViewportState.value.height}px`,
+  '--card-modal-visual-viewport-offset-top': `${visualViewportState.value.offsetTop}px`,
+}))
+
+onMounted(() => {
+  refreshVisualViewport()
+  observedVisualViewport = window.visualViewport ?? null
+  observedVisualViewport?.addEventListener('resize', refreshVisualViewport)
+  observedVisualViewport?.addEventListener('scroll', refreshVisualViewport)
+})
 
 const focusableSelector =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -88,6 +116,10 @@ watch(
 )
 
 onUnmounted(() => {
+  observedVisualViewport?.removeEventListener('resize', refreshVisualViewport)
+  observedVisualViewport?.removeEventListener('scroll', refreshVisualViewport)
+  observedVisualViewport = null
+
   if (props.isOpen) {
     restoreFocus()
   }
@@ -160,7 +192,8 @@ useEscapeToClose(() => props.isOpen, handleClose)
   <div
     v-if="isOpen"
     ref="dialogRef"
-    class="fixed inset-0 z-50 flex items-center justify-center overflow-hidden p-4"
+    class="card-modal-viewport fixed inset-x-0 z-50 flex overflow-hidden"
+    :style="visualViewportStyle"
     role="dialog"
     aria-label="Edit Card"
     aria-modal="true"
@@ -173,7 +206,7 @@ useEscapeToClose(() => props.isOpen, handleClose)
     <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
 
     <!-- Modal -->
-    <div class="relative max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-lg border border-outline-variant/30 bg-surface-container p-6 shadow-xl" data-testid="card-modal-scroll-region" @click.stop>
+    <div class="card-modal-scroll-region relative max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-lg border border-outline-variant/30 bg-surface-container p-6 shadow-xl" data-testid="card-modal-scroll-region" @click.stop>
         <CardModalHeader @close="handleClose" />
 
         <div class="space-y-4">
@@ -260,3 +293,36 @@ useEscapeToClose(() => props.isOpen, handleClose)
     </template>
   </TdDialog>
 </template>
+
+<style scoped>
+.card-modal-viewport {
+  top: var(--card-modal-visual-viewport-offset-top);
+  height: var(--card-modal-visual-viewport-height);
+  align-items: flex-start;
+  justify-content: stretch;
+  padding: max(1rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+}
+
+@media (max-width: 767px) {
+  .card-modal-scroll-region {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
+  }
+}
+
+@media (min-width: 768px) {
+  .card-modal-viewport {
+    inset: 0;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+}
+</style>

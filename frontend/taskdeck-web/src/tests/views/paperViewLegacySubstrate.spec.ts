@@ -1,12 +1,34 @@
 import { describe, expect, it } from 'vitest'
 
 import activitySource from '../../views/ActivityView.vue?raw'
+import agentRunDetailSource from '../../views/AgentRunDetailView.vue?raw'
+import agentRunsSource from '../../views/AgentRunsView.vue?raw'
+import agentsSource from '../../views/AgentsView.vue?raw'
+import apiKeysSource from '../../views/ApiKeySettingsView.vue?raw'
+import appearanceSource from '../../views/AppearanceSettingsView.vue?raw'
+import archiveSource from '../../views/ArchiveView.vue?raw'
+import automationChatSource from '../../views/AutomationChatView.vue?raw'
+import automationQueueSource from '../../views/AutomationQueueView.vue?raw'
+import boardAccessSource from '../../views/BoardAccessView.vue?raw'
 import boardsSource from '../../views/BoardsListView.vue?raw'
 import calendarSource from '../../views/CalendarView.vue?raw'
+import devToolsSource from '../../views/DevToolsView.vue?raw'
+import exportImportSource from '../../views/ExportImportView.vue?raw'
+import integrationsSource from '../../views/IntegrationsView.vue?raw'
 import metricsSource from '../../views/MetricsView.vue?raw'
+import notFoundSource from '../../views/NotFoundView.vue?raw'
+import notificationInboxSource from '../../views/NotificationInboxView.vue?raw'
+import notificationPrefsSource from '../../views/NotificationPreferencesView.vue?raw'
+import opsConsoleSource from '../../views/OpsConsoleView.vue?raw'
+import profileSource from '../../views/ProfileSettingsView.vue?raw'
+import savedViewsSource from '../../views/SavedViewsView.vue?raw'
 
 /**
- * Legacy ("off") mode substrate guard for the #1780 Paper view restyles.
+ * Legacy ("off") mode substrate guard for the #1769 Paper view restyle wave.
+ *
+ * Coverage was extended (#1815) from the four #1780 roots to every Paper-idiom
+ * view root in the wave: the #1775 Saved Views root (#1813), the six Settings
+ * roots from PR #1808, and the secondary roots from PR #1810.
  *
  * `src/paper-tokens.css` scopes every Paper variable under `.paper` /
  * `.paper-night` — they DO NOT apply at `:root`. With Appearance set to
@@ -29,11 +51,44 @@ import metricsSource from '../../views/MetricsView.vue?raw'
  */
 
 const VIEW_ROOTS: ReadonlyArray<{ view: string; selector: string; source: string }> = [
+  // #1780 / PR #1807 — the four high-traffic roots the guard was written for.
   { view: 'MetricsView.vue', selector: '.paper-metrics', source: metricsSource },
   { view: 'ActivityView.vue', selector: '.paper-activity', source: activitySource },
   { view: 'CalendarView.vue', selector: '.paper-calendar', source: calendarSource },
   { view: 'BoardsListView.vue', selector: '.paper-boards', source: boardsSource },
+  // #1775 / #1813 — the Saved Views restyle.
+  { view: 'SavedViewsView.vue', selector: '.paper-views', source: savedViewsSource },
+  // PR #1808 — the six Settings roots.
+  { view: 'ApiKeySettingsView.vue', selector: '.paper-api-keys', source: apiKeysSource },
+  { view: 'AppearanceSettingsView.vue', selector: '.paper-appearance', source: appearanceSource },
+  { view: 'BoardAccessView.vue', selector: '.paper-access', source: boardAccessSource },
+  { view: 'ExportImportView.vue', selector: '.paper-portability', source: exportImportSource },
+  { view: 'NotificationPreferencesView.vue', selector: '.paper-prefs', source: notificationPrefsSource },
+  { view: 'ProfileSettingsView.vue', selector: '.paper-profile', source: profileSource },
+  // PR #1810 — the secondary views.
+  { view: 'AgentRunDetailView.vue', selector: '.paper-run-detail', source: agentRunDetailSource },
+  { view: 'AgentRunsView.vue', selector: '.paper-agent-runs', source: agentRunsSource },
+  { view: 'AgentsView.vue', selector: '.paper-agents', source: agentsSource },
+  { view: 'ArchiveView.vue', selector: '.paper-archive', source: archiveSource },
+  { view: 'AutomationChatView.vue', selector: '.paper-chat', source: automationChatSource },
+  { view: 'AutomationQueueView.vue', selector: '.paper-queue', source: automationQueueSource },
+  { view: 'DevToolsView.vue', selector: '.paper-devtools', source: devToolsSource },
+  { view: 'IntegrationsView.vue', selector: '.paper-int', source: integrationsSource },
+  { view: 'NotFoundView.vue', selector: '.paper-not-found', source: notFoundSource },
+  { view: 'NotificationInboxView.vue', selector: '.paper-notifications', source: notificationInboxSource },
+  { view: 'OpsConsoleView.vue', selector: '.paper-ops', source: opsConsoleSource },
 ]
+
+/**
+ * A root satisfies the invariant by painting ANY Paper substrate token, not
+ * only `--paper`. Most roots are full-bleed pages and paint `--paper`; a few
+ * (e.g. `.paper-not-found`) are self-contained card panels whose substrate is
+ * `--paper-card`. Both leave the root's ink on a Paper-family ground in Legacy
+ * mode, and the contrast assertion below is measured against whichever literal
+ * fallback the root actually paints — so widening the token set does not weaken
+ * the legibility guarantee. What is still forbidden is painting nothing.
+ */
+const SUBSTRATE = /background(?:-color)?:\s*var\(--paper(?:-card|-2)?,\s*(#[0-9a-fA-F]{3,8})\s*\)/
 
 /** Read the first top-level rule body for `selector` (these blocks contain no nested braces). */
 function readRootRule(source: string, selector: string): string {
@@ -71,7 +126,7 @@ describe('Paper view roots stay legible in Legacy mode', () => {
     // Guard the guard: if the ink declaration is ever dropped or renamed, the
     // substrate assertion below would otherwise pass vacuously.
     expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
-    expect(rule).toMatch(/background(-color)?:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(SUBSTRATE)
   })
 
   it.each(VIEW_ROOTS)(
@@ -79,7 +134,7 @@ describe('Paper view roots stay legible in Legacy mode', () => {
     ({ view, selector, source }) => {
       const rule = readRootRule(source, selector)
       const ink = rule.match(/color:\s*var\(--ink,\s*(#[0-9a-fA-F]{3,8})\s*\)/)?.[1]
-      const paper = rule.match(/background(?:-color)?:\s*var\(--paper,\s*(#[0-9a-fA-F]{3,8})\s*\)/)?.[1]
+      const paper = rule.match(SUBSTRATE)?.[1]
       expect(ink, `${view} ${selector} ink fallback`).toBeTruthy()
       expect(paper, `${view} ${selector} paper fallback`).toBeTruthy()
 

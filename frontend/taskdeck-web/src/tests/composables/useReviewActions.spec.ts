@@ -127,25 +127,63 @@ describe('useReviewActions', () => {
     expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Not needed')
   })
 
-  it('should abort execute when confirm is cancelled', async () => {
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(false)
+  // --- #1818: phase-2 execute is gated by the in-app dialog, not confirm() ---
+
+  it('requesting execute opens the confirmation without calling the API', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    await nextTick()
+
+    expect(actions.executeConfirmProposalId.value).toBe('p-1')
+    expect(actions.executeConfirmProposal.value?.id).toBe('p-1')
+    // The invariant this test exists for: opening the gate must NOT execute.
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('should abort execute when the confirmation is cancelled', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    actions.cancelExecuteProposal()
+    await actions.confirmExecuteProposal()
+
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('should never use the native confirm() for execute', async () => {
+    const confirmSpy = vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
+    vi.mocked(automationApi.executeProposal).mockResolvedValue(makeProposal({ status: 'Applied' }))
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleExecuteProposal('p-1')
+    actions.requestExecuteProposal('p-1')
+    await actions.confirmExecuteProposal()
 
-    expect(automationApi.executeProposal).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
   })
 
   it('should execute a proposal when confirmed', async () => {
     const updated = makeProposal({ status: 'Applied' })
     vi.mocked(automationApi.executeProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleExecuteProposal('p-1')
+    actions.requestExecuteProposal('p-1')
+    await actions.confirmExecuteProposal()
 
     expect(automationApi.executeProposal).toHaveBeenCalled()
     expect(proposals.value[0].status).toBe('Applied')
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+  })
+
+  it('closes the confirmation without executing when the proposal leaves the list', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    proposals.value = []
+    await nextTick()
+
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+    await actions.confirmExecuteProposal()
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
   })
 
   it('should toggle diff on', async () => {

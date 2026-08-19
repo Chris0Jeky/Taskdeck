@@ -45,6 +45,49 @@ function captureLauncher(page: Page) {
     .first()
 }
 
+async function installSyntheticVisualViewport(page: Page) {
+  await page.addInitScript(() => {
+    const events = new EventTarget()
+    let height = window.innerHeight
+    let offsetTop = 0
+
+    const visualViewport = {
+      get height() {
+        return height
+      },
+      get offsetTop() {
+        return offsetTop
+      },
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+    }
+
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+    Object.defineProperty(window, '__taskdeckSetVisualViewport', {
+      configurable: true,
+      value: (next: { height: number; offsetTop: number }) => {
+        height = next.height
+        offsetTop = next.offsetTop
+        events.dispatchEvent(new Event('resize'))
+        events.dispatchEvent(new Event('scroll'))
+      },
+    })
+  })
+}
+
+async function contractSyntheticVisualViewport(page: Page, height: number, offsetTop: number) {
+  await page.evaluate(({ height: nextHeight, offsetTop: nextOffsetTop }) => {
+    const setter = (window as Window & {
+      __taskdeckSetVisualViewport?: (next: { height: number; offsetTop: number }) => void
+    }).__taskdeckSetVisualViewport
+    if (!setter) throw new Error('Synthetic visualViewport setter was not installed')
+    setter({ height: nextHeight, offsetTop: nextOffsetTop })
+  }, { height, offsetTop })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -113,6 +156,90 @@ test('@mobile card editing modal should fit within mobile viewport', async ({ pa
   // Close the modal
   await page.keyboard.press('Escape')
   await expect(editHeading).not.toBeVisible()
+})
+
+test('@mobile card editing modal follows a contracted visual viewport', async ({ page }) => {
+  await installSyntheticVisualViewport(page)
+
+  const boardName = `Visual Viewport Board ${Date.now()}`
+  const columnName = `Visual Viewport Col ${Date.now()}`
+  const cardTitle = `Visual Viewport Card ${Date.now()}`
+
+  await createBoard(page, boardName)
+  const columnLane = await addColumn(page, columnName)
+  await addCard(page, columnName, cardTitle)
+
+  const card = columnLane.locator('[data-card-id]').filter({
+    has: page.getByRole('heading', { name: cardTitle, exact: true }),
+  })
+  await card.getByRole('heading', { name: cardTitle, exact: true }).click()
+
+  const editModal = page.getByRole('dialog', { name: 'Edit Card' })
+  const scrollRegion = page.getByTestId('card-modal-scroll-region')
+  await expect(editModal).toBeVisible()
+
+  const layoutViewportHeight = await page.evaluate(() => window.innerHeight)
+  await contractSyntheticVisualViewport(page, 420, 120)
+
+  await expect.poll(async () => {
+    const box = await editModal.boundingBox()
+    return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
+  }).toEqual({ y: 120, height: 420 })
+
+  const viewportState = await page.evaluate(() => ({
+    layoutHeight: window.innerHeight,
+    visualHeight: window.visualViewport?.height,
+    visualOffsetTop: window.visualViewport?.offsetTop,
+  }))
+  expect(viewportState.layoutHeight).toBe(layoutViewportHeight)
+  expect(viewportState.visualHeight).toBe(420)
+  expect(viewportState.visualOffsetTop).toBe(120)
+
+  await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
+  const scrollMetrics = await scrollRegion.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }))
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
+
+  // Measure the modal's own actions against the contracted visual bounds.
+  // `toBeVisible()` alone cannot carry this claim: Playwright treats any
+  // element with a non-empty rendered box as visible, including one the
+  // software keyboard covers.
+  const visualTop = 120
+  const visualBottom = visualTop + 420
+  for (const name of ['Save Changes', 'Cancel', 'Delete Card']) {
+    const action = editModal.getByRole('button', { name, exact: true })
+    await action.scrollIntoViewIfNeeded()
+    await expect(action).toBeVisible()
+    await expect(action).toBeEnabled()
+
+    const actionBox = await action.boundingBox()
+    expect(actionBox).not.toBeNull()
+    // 1px tolerance for sub-pixel layout rounding.
+    expect(actionBox!.y).toBeGreaterThanOrEqual(visualTop - 1)
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
+  }
+
+  // Nested Delete Card confirmation.
+  //
+  // SCOPE NOTE — this block is deliberately NOT keyboard-safety coverage.
+  // `TdDialog` teleports to <body> and positions itself against the LAYOUT
+  // viewport (`position: fixed; inset: 0`, plus `height: 100dvh` under its own
+  // 640px mobile breakpoint), so it is unaffected by the visual-viewport
+  // binding this test exercises on CardModal. Re-binding that shared primitive
+  // changes every dialog in the product and is tracked separately in #1821;
+  // the bounding-box assertions the nested case needs land there.
+  //
+  // What is asserted here: opening the confirmation from inside CardModal's new
+  // `overflow-hidden` viewport container still mounts and renders it. Focus
+  // assertions were removed on purpose — programmatic focus proves nothing
+  // about on-screen position and would have read as reachability coverage.
+  await editModal.getByRole('button', { name: 'Delete Card', exact: true }).click()
+  const deleteDialog = page.getByRole('dialog', { name: 'Delete Card', exact: true })
+  await expect(deleteDialog).toBeVisible()
+  await expect(deleteDialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+  await expect(deleteDialog.getByRole('button', { name: 'Delete', exact: true })).toBeVisible()
 })
 
 test('@mobile workspace views should render correctly on small screen', async ({ page }) => {

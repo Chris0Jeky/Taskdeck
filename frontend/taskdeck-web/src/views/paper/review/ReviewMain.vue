@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
-import ReviewDecisionRail from './ReviewDecisionRail.vue'
+import ReviewDecisionRail, { type ApplyPhase } from './ReviewDecisionRail.vue'
 import ReviewChangeSection, {
   type ChangeBeforeCard,
   type ChangeAfterCard,
@@ -15,6 +15,7 @@ import ReviewHistory from './ReviewHistory.vue'
 import type {
   ConfidenceBreakdown,
   ConflictRow,
+  EvidenceLink,
   HistoryRow,
   ProvenanceRow,
   SideEffects,
@@ -32,29 +33,51 @@ import type {
  * TODO(#996): replace the static dial with the BleedStage motion when
  * PAPER-10 lands.
  */
-const props = defineProps<{
-  /** Pre-formatted serial like `#2026-04-25-014`. */
-  serial: string
-  /** Pre-formatted timestamp + status like `11:42 PT · awaiting decision`. */
-  meta: string
-  /** Title fragments — `text` parts render plain, `em` parts render in serif italic ember. */
-  titleParts: Array<{ text: string; emphasis?: boolean }>
-  lede: string
-  decisionSummary: string
-  busy?: boolean
-  confidence: ConfidenceBreakdown
-  before: ChangeBeforeCard
-  after: ChangeAfterCard[]
-  fields: FieldDiff[]
-  changeSubTitle: string
-  provenance: ProvenanceRow[]
-  proposalId: string
-  sideEffects: SideEffects
-  conflicts: ConflictRow[]
-  history: HistoryRow[]
-  /** When true the active proposal is settled; the rail offers "File away" only. */
-  dismissable?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** Pre-formatted serial like `#2026-04-25-014`. */
+    serial: string
+    /** Pre-formatted timestamp + status like `11:42 PT · awaiting decision`. */
+    meta: string
+    /** Title fragments — `text` parts render plain, `em` parts render in serif italic ember. */
+    titleParts: Array<{ text: string; emphasis?: boolean }>
+    lede: string
+    decisionSummary: string
+    busy?: boolean
+    confidence: ConfidenceBreakdown
+    before: ChangeBeforeCard
+    after: ChangeAfterCard[]
+    fields: FieldDiff[]
+    changeSubTitle: string
+    provenance: ProvenanceRow[]
+    /** Evidence links behind the provenance rows; drives the drawer's transcript deep link. */
+    evidenceLinks?: EvidenceLink[]
+    proposalId: string
+    sideEffects: SideEffects
+    conflicts: ConflictRow[]
+    history: HistoryRow[]
+    /** When true the active proposal is settled; the rail offers "File away" only. */
+    dismissable?: boolean
+    /**
+     * Which half of the ADR-0003 two-phase apply the primary action will run.
+     * `execute` means the proposal is already approved and the board has NOT been
+     * touched yet — the state the #1818 banner exists to make legible.
+     */
+    applyPhase?: ApplyPhase
+  }>(),
+  { applyPhase: 'approve' },
+)
+
+/**
+ * The keyboard hint must name the phase the key will actually run (#1818 AC2):
+ * ⏎ on an approved proposal opens the apply confirmation, it does not re-approve.
+ */
+const keyHint = computed(() => {
+  if (props.dismissable) return 'PRESS ⌫ TO FILE AWAY'
+  return props.applyPhase === 'execute'
+    ? 'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT'
+    : 'PRESS ⏎ TO APPROVE · ⌫ TO REJECT'
+})
 
 const emit = defineEmits<{
   (event: 'apply'): void
@@ -101,10 +124,25 @@ const dialSubline = computed(() =>
       </div>
     </header>
 
+    <!-- #1818: approve is phase 1 of 2 and does NOT touch the board. Without this
+         banner the only feedback was a quiet status-line change, so a first-run
+         user reasonably read "approved" as "applied". role="status" so the state
+         change is announced, not just drawn. -->
+    <p
+      v-if="!dismissable && applyPhase === 'execute'"
+      class="paper-review-main__approved-banner"
+      role="status"
+      data-testid="paper-review-approved-banner"
+    >
+      <strong>Approved — not yet applied to the board.</strong>
+      Press ⏎ (or “Confirm apply”) to execute it on the board; you will be asked to confirm.
+    </p>
+
     <ReviewDecisionRail
       :summary="decisionSummary"
       :busy="busy"
       :dismissable="dismissable"
+      :apply-phase="applyPhase"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
@@ -120,14 +158,19 @@ const dialSubline = computed(() =>
       :sub-title="changeSubTitle"
     />
 
-    <ReviewProvenance :rows="provenance" :proposal-id="proposalId" @report="emit('report', $event)" />
+    <ReviewProvenance
+      :rows="provenance"
+      :evidence-links="evidenceLinks"
+      :proposal-id="proposalId"
+      @report="emit('report', $event)"
+    />
     <ReviewSideEffects :data="sideEffects" />
     <ReviewConflicts :rows="conflicts" />
     <ReviewHistory :rows="history" />
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">REVIEW · {{ serial }} · LOCAL-FIRST · LEDGER</span>
-      <span class="tk-serial">{{ dismissable ? 'PRESS ⌫ TO FILE AWAY' : 'PRESS ⏎ TO APPLY · ⌫ TO REJECT' }}</span>
+      <span class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
     </footer>
   </div>
 </template>
@@ -166,6 +209,16 @@ const dialSubline = computed(() =>
 .paper-review-main__dial-threshold {
   font-size: 10px;
   margin-top: 2px;
+}
+.paper-review-main__approved-banner {
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-left-width: 4px;
+  background: var(--ember-tint);
+  color: var(--ember-ink);
+  font-size: 13px;
+  line-height: 1.45;
 }
 .paper-review-main__footer {
   margin-top: 36px;

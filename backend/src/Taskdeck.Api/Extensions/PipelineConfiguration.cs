@@ -3,6 +3,7 @@ using System.Net;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Application.Services;
@@ -29,11 +30,14 @@ public static class PipelineConfiguration
         }
 
         // Apply EF Core migrations serialized across processes via a cross-process file lock
-        // so concurrent API/MCP/CLI startups apply the schema exactly once (#1164).
+        // so concurrent API/MCP/CLI startups apply the schema exactly once (#1164), taking a
+        // fail-closed snapshot of the SQLite file first when migrations are pending (#1803).
         using (var scope = app.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            SerializedMigrator.Migrate(dbContext, app.Logger);
+            var backupSettings = scope.ServiceProvider
+                .GetRequiredService<IOptions<DatabaseBackupSettings>>().Value;
+            SerializedMigrator.Migrate(dbContext, backupSettings, app.Logger);
         }
 
         if (app.Environment.IsDevelopment())

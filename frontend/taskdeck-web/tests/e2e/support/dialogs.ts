@@ -34,9 +34,13 @@ import { expect } from '@playwright/test'
  *
  *   await expectDialog(
  *     page,
- *     () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(),
- *     { type: 'confirm', message: 'Apply this approved proposal to the board now?' },
+ *     () => page.getByRole('button', { name: 'Move to Archive' }).click(),
+ *     { type: 'confirm', message: /archive/i },
  *   )
+ *
+ * NOTE: this handles NATIVE browser dialogs only. The apply-to-board
+ * confirmation moved to the app's own TdDialog in #1818 — use
+ * `expectApplyConfirmDialog` from `./applyConfirm` for that one.
  */
 export interface ExpectDialogOptions {
   /** Accept the dialog (default) or dismiss it once observed. */
