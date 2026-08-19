@@ -361,6 +361,7 @@ onMounted(loadAllCards)
   display: flex;
   flex-direction: column;
   gap: var(--s-5, 20px);
+  background: var(--paper, #f3eee5);
   font-family: var(--sans, system-ui, sans-serif);
   color: var(--ink, #1a1814);
 }

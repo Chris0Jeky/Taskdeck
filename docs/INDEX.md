@@ -29,6 +29,8 @@ Stable reference material belongs in topical subfolders.
   - Human verification checklist for product, security, and ops flows.
 - `START_HERE.md`
   - Audience-first first-entry product guide.
+- `../UPGRADING.md` (repository root)
+  - Per-version upgrade notes for self-hosters: where the SQLite file lives, "backup = copy this one file", the automatic pre-migration snapshot, and the shipped export surfaces.
 - `USER_MANUAL.md`
   - Manual index for the shipped product shell and chapter map.
 - `GITHUB_PROJECT_AUTOMATION.md`

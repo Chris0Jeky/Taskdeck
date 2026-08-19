@@ -30,6 +30,16 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // Pre-migration SQLite auto-backup (#1803). Registered for every host mode (API, CLI,
+        // MCP) because every one of them applies migrations on startup. ValidateOnStart fails
+        // fast on an out-of-range RetainCount rather than silently retaining the wrong number of
+        // recovery copies. Note this is a nested section: DatabaseSettings binds "Database" and
+        // deliberately does not carry a nested object, so the two validate independently.
+        services.AddOptions<DatabaseBackupSettings>()
+            .Bind(configuration.GetSection("Database:Backup"))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         // Command timeout + WAL/busy_timeout interceptor live in UseTaskdeckSqlite —
         // the single shared helper the API test factory also calls, so the test
         // registration cannot drift from this one (#1282).

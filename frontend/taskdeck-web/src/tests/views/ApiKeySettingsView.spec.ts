@@ -119,6 +119,31 @@ describe('ApiKeySettingsView', () => {
     expect(wrapper.find('[class*="td-key-"]').exists()).toBe(false)
   })
 
+  // #1816 / #1808 review: the mixed-surface residual was recorded only in the
+  // PR body, so nothing would notice it changing. This spec pins it: the page
+  // deliberately still composes the shared Obsidian-styled `Td*` primitives
+  // inside Paper chrome, because none of them has a Paper variant and
+  // `PaperHLBtn` has no `:loading` equivalent (swapping TdButton would leave
+  // the Create Key button clickable mid-request). When the shared primitives
+  // gain a Paper variant, this test is the thing that must be updated -- flip
+  // it to assert the absence of `td-btn` / `td-badge`, and drop it.
+  it('pins the known mixed-surface residual: shared Td* primitives inside Paper chrome', async () => {
+    mocks.listKeys.mockResolvedValue([activeKey])
+
+    wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+    await waitForUi()
+
+    // Paper chrome around ...
+    expect(wrapper.find('.paper-api-keys__panel').exists()).toBe(true)
+    // ... Obsidian-styled shared primitives.
+    expect(wrapper.find('.td-btn').exists()).toBe(true)
+    expect(wrapper.find('.td-badge').exists()).toBe(true)
+
+    // The scope note in the view's style block is the human-readable half of
+    // this residual; keep it and the assertion above in step.
+    expect(apiKeysSource).toMatch(/components\/ui\/Td\*|shared .*primitive/i)
+  })
+
   it('shows error state with retry button on load failure', async () => {
     mocks.listKeys.mockRejectedValue(new Error('network failure'))
 

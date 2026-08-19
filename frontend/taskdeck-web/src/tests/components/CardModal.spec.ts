@@ -121,6 +121,39 @@ describe('CardModal', () => {
     expect(wrapper.find('#card-title').exists()).toBe(true)
   })
 
+  it('should fall back to the layout viewport when visualViewport is unavailable', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+
+    try {
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: undefined,
+      })
+
+      const wrapper = mount(CardModal, {
+        props: {
+          card,
+          isOpen: true,
+          labels,
+        },
+      })
+      const style = (wrapper.find('[role="dialog"]').element as HTMLElement).style
+
+      expect(style.getPropertyValue('--card-modal-visual-viewport-height')).toBe(
+        `${window.innerHeight}px`,
+      )
+      expect(style.getPropertyValue('--card-modal-visual-viewport-offset-top')).toBe('0px')
+
+      wrapper.unmount()
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window, 'visualViewport', descriptor)
+      } else {
+        Reflect.deleteProperty(window, 'visualViewport')
+      }
+    }
+  })
+
   it('should focus the close control when opened and restore the invoking card focus', async () => {
     const opener = document.createElement('button')
     opener.type = 'button'
