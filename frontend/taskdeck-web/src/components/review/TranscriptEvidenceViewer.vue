@@ -34,8 +34,17 @@ const { t } = useI18n()
 
 const transcript = ref<TranscriptDto | null>(null)
 const loading = ref(false)
-const errorMessage = ref<string | null>(null)
+/**
+ * The catalog KEY of the current failure, not its rendered copy. Storing the
+ * translated string here would freeze the locale that was active when the
+ * request failed, so a language switch with an error on screen would keep the
+ * old language (ADR-0054 decision 2, #1857).
+ */
+const errorKey = ref<string | null>(null)
 const highlightRef = ref<HTMLElement | null>(null)
+
+/** Derived, so `t()` re-runs on a locale change. */
+const errorMessage = computed(() => (errorKey.value ? t(errorKey.value) : null))
 
 let requestGeneration = 0
 let abortController: AbortController | null = null
@@ -84,7 +93,7 @@ async function load() {
   abortController = controller
 
   loading.value = true
-  errorMessage.value = null
+  errorKey.value = null
   transcript.value = null
 
   try {
@@ -94,7 +103,7 @@ async function load() {
   } catch (error) {
     if (generation !== requestGeneration) return
     if (controller.signal.aborted) return
-    errorMessage.value = describeError(error)
+    errorKey.value = describeErrorKey(error)
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
@@ -104,11 +113,12 @@ async function load() {
   highlightRef.value?.scrollIntoView?.({ block: 'center' })
 }
 
-function describeError(error: unknown): string {
+/** Maps a transport failure to a catalog key; the `t()` call happens at render. */
+function describeErrorKey(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status
-  if (status === 404) return t('review.transcript.error.notFound')
-  if (status === 401 || status === 403) return t('review.transcript.error.unauthorized')
-  return t('review.transcript.error.generic')
+  if (status === 404) return 'review.transcript.error.notFound'
+  if (status === 401 || status === 403) return 'review.transcript.error.unauthorized'
+  return 'review.transcript.error.generic'
 }
 
 watch(() => props.transcriptId, load, { immediate: true })

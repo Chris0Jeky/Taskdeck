@@ -7,6 +7,7 @@ import {
   type ConflictRowDto,
 } from '../../api/proposalDeepReviewApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
+import { i18n } from '../../i18n'
 
 vi.mock('../../api/proposalDeepReviewApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/proposalDeepReviewApi')>()
@@ -552,5 +553,35 @@ describe('usePaperReviewSelectors', () => {
         { key: 'Operation safety', value: 0.75 },
       ])
     })
+  })
+
+  it('re-resolves the confidence label when the locale changes after the fetch (#1857)', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
+      overall: 0.8,
+      // The second key is server-supplied text this client cannot localise; it
+      // must survive the switch verbatim.
+      components: [
+        { key: 'Reversibility', value: 0.75 },
+        { key: 'Evidence density', value: 0.4 },
+      ],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
+    const selectors = usePaperReviewSelectors(computed(() => makeProposal()))
+
+    await vi.waitFor(() => {
+      expect(selectors.confidenceBreakdown.value.components[0]?.key).toBe('Operation safety')
+    })
+
+    // Switch AFTER the value was produced — a label resolved at fetch time
+    // would stay English here.
+    i18n.global.locale.value = 'it'
+    await nextTick()
+    expect(selectors.confidenceBreakdown.value.components).toEqual([
+      { key: 'Sicurezza delle operazioni', value: 0.75 },
+      { key: 'Evidence density', value: 0.4 },
+    ])
   })
 })
