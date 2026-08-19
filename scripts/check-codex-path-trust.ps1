@@ -74,11 +74,20 @@ $script:DeleteChildMask =
 
 # Generic-rights bits (winnt.h) and the standard file-object GENERIC_MAPPING they expand to.
 # An ACE that grants only GENERIC_WRITE or GENERIC_ALL carries none of the file-specific write
-# bits, so a raw -band against $script:WriteMask false-passes it. Windows maps generic bits when a
-# DACL is applied through SetSecurityInfo, but ACEs can still reach a DACL with the generic bits
-# intact (native/backup-restore writers, security templates copied verbatim, descriptors authored
-# as SDDL by another resource manager), and the managed ACL reader hands back the raw AccessMask
-# unexpanded. Map defensively before every mask test rather than trusting the writer.
+# bits, so a raw -band against $script:WriteMask false-passes it.
+#
+# Provenance, measured on this host rather than assumed. Windows maps generic bits when a DACL is
+# APPLIED to a file object, so an effective ACE written through Set-Acl reads back already mapped:
+# `(A;;GW;;;WD)` goes in as 0x40000000 and comes back as 0x00120116. Generic bits still reach the
+# managed reader verbatim in two shapes that were measured here:
+#   * ACEs stored for propagation rather than applied to the object - `Get-Acl C:\` returns
+#     `(A;OICIIOID;SDGXGWGR;;;AU)` (raw 0xE0010000) and `(A;OICIIOID;GA;;;BA)` (raw 0x10000000);
+#   * descriptors materialised in memory from SDDL - SetSecurityDescriptorSddlForm keeps
+#     0x40000000 until Set-Acl applies it, which is also how the regression controls below build
+#     their synthetic ACEs.
+# Whether any given ACE reached its DACL pre-mapped is a property of the writer and the resource
+# manager, which this verifier cannot observe from the mask alone. Map defensively before every
+# mask test rather than assuming the reader's masks are already expanded.
 $script:GenericAllBit = 0x10000000
 $script:GenericExecuteBit = 0x20000000
 $script:GenericWriteBit = 0x40000000
@@ -270,15 +279,33 @@ function Assert-TrustedDirectory {
         Throw-TrustFailure "PATH entry must be an existing directory: $Path"
     }
 
-    $root = [System.IO.Path]::GetPathRoot($fullPath)
+    # $fullPath has had its trailing separator trimmed, so a bare drive-root entry is 'C:' here and
+    # GetPathRoot('C:') returns 'C:' - a drive-RELATIVE path, not the volume root. Normalise to the
+    # rooted form before touching the filesystem or slicing the remainder off it.
+    $root = [System.IO.Path]::GetPathRoot($fullPath + '\')
     $rootItem = Get-Item -LiteralPath $root -Force
     if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
         Throw-TrustFailure "PATH root is a reparse point: $root"
     }
 
     $current = $root
-    $relative = $fullPath.Substring($root.Length).Trim('\')
-    foreach ($segment in $relative.Split([char]'\', [System.StringSplitOptions]::RemoveEmptyEntries)) {
+    $relative = ''
+    if ($fullPath.Length -gt $root.Length) {
+        $relative = $fullPath.Substring($root.Length).Trim('\')
+    }
+    if ([string]::IsNullOrEmpty($relative)) {
+        # A bare drive root IS the PATH entry, and the per-segment loop below has no segment to walk
+        # for it, so without this the entry would reach zero ACL validation (issue #1651 item 2).
+        # Nested entries keep the narrower delete-child check on the root as a replacement boundary;
+        # a volume root has no parent directory that could replace it.
+        Assert-NoWeakAllow -Path $root -RightsMask $script:WriteMask -Boundary 'PATH volume root'
+    }
+    # The separator is cast to char[] deliberately. Windows PowerShell 5.1 has no
+    # String.Split(char, StringSplitOptions) overload, so passing a bare [char] silently binds to
+    # Split(params char[]) with RemoveEmptyEntries coerced to a SECOND separator character (U+0001,
+    # measured) - the options are never applied. PowerShell 7 does have that overload and behaves
+    # differently, which is what made the bare-drive-root gap above visible on one runtime only.
+    foreach ($segment in $relative.Split([char[]]'\', [System.StringSplitOptions]::RemoveEmptyEntries)) {
         $parent = $current
         $current = Join-Path $current $segment
         $item = Get-Item -LiteralPath $current -Force
@@ -383,7 +410,34 @@ function Select-PythonInterpreterFromInventory {
     Throw-TrustFailure "Python launcher did not enumerate a Python 3 interpreter: $($Inventory -join ' ')"
 }
 
-$script:PythonLauncherSelectionVariables = @('PY_PYTHON', 'PY_PYTHON3')
+# Environment inputs that steer `py -3` away from the interpreter `py -0p` enumerated and this
+# verifier validated.
+#   PY_PYTHON / PY_PYTHON3          pick a different installed version.
+#   PYLAUNCHER_ALLOW_INSTALL        lets an unsatisfied request install from the Microsoft Store.
+#   PYLAUNCHER_ALWAYS_INSTALL       forces that install path even when a matching version exists,
+#                                   so `py -3` can run an interpreter that was never in the
+#                                   validated inventory.
+#   PYLAUNCHER_DRYRUN               makes the launcher PRINT the command instead of running it.
+#                                   Measured on this host: with it set, `py -3 -c "print(...)"`
+#                                   emitted `C:\Python314\python.exe -c ...` and exited 0 without
+#                                   executing - a validated execution silently becomes a no-op
+#                                   that still looks successful to its caller.
+# The PYLAUNCHER_* trio are documented as "if set" switches rather than value-carrying settings, so
+# they are treated as divertive whenever they are PRESENT, including with an empty or whitespace
+# value; PY_PYTHON* only divert when they actually carry a version. The stricter reading is the
+# fail-closed one, and neither reading is cheap to observe from outside the launcher.
+# py.ini has no equivalent of the PYLAUNCHER_* trio - its [defaults] keys mirror PY_PYTHON* only -
+# and the py.ini check below fails closed on the presence of the whole file, so any ini-side
+# selection key is already covered wholesale. Deliberately NOT gated: PYLAUNCHER_DEBUG (diagnostic
+# output only) and PYLAUNCHER_NO_SEARCH_PATH (narrows the launcher's search instead of redirecting
+# it); neither can point `py -3` at a different interpreter.
+$script:PythonLauncherSelectionVariables = @(
+    [pscustomobject]@{ Name = 'PY_PYTHON';                 TripsWhenSetEmpty = $false },
+    [pscustomobject]@{ Name = 'PY_PYTHON3';                TripsWhenSetEmpty = $false },
+    [pscustomobject]@{ Name = 'PYLAUNCHER_ALLOW_INSTALL';  TripsWhenSetEmpty = $true },
+    [pscustomobject]@{ Name = 'PYLAUNCHER_ALWAYS_INSTALL'; TripsWhenSetEmpty = $true },
+    [pscustomobject]@{ Name = 'PYLAUNCHER_DRYRUN';         TripsWhenSetEmpty = $true }
+)
 
 function Get-PythonLauncherConfigCandidates {
     param(
@@ -414,20 +468,27 @@ function Get-PythonLauncherDiversions {
         [string[]]$AdditionalConfigDirectories = @()
     )
 
-    # `py -0p` enumerates installs, but execution-time selection is user-controllable: PY_PYTHON /
-    # PY_PYTHON3 and a user-writable py.ini both override which interpreter `py -3` launches, so the
-    # inventory-validated path would not be the one that runs. Fail closed on any such input rather
-    # than trusting that the launcher will pick what the verifier just validated.
+    # `py -0p` enumerates installs, but execution-time selection is user-controllable: the launcher
+    # environment inputs listed in $script:PythonLauncherSelectionVariables and a user-writable
+    # py.ini both change what `py -3` actually runs, so the inventory-validated path would not be
+    # the one that executes. Fail closed on any such input rather than trusting that the launcher
+    # will pick what the verifier just validated.
     $diversions = New-Object 'System.Collections.Generic.List[string]'
 
-    foreach ($name in $script:PythonLauncherSelectionVariables) {
+    foreach ($variable in $script:PythonLauncherSelectionVariables) {
         foreach ($scope in @('Process', 'User', 'Machine')) {
             $value = [System.Environment]::GetEnvironmentVariable(
-                $name,
+                $variable.Name,
                 [System.EnvironmentVariableTarget]$scope
             )
-            if (-not [string]::IsNullOrWhiteSpace($value)) {
-                $diversions.Add("$name is set in the $scope environment ('$value')")
+            $isDivertive = if ($variable.TripsWhenSetEmpty) {
+                $null -ne $value
+            }
+            else {
+                -not [string]::IsNullOrWhiteSpace($value)
+            }
+            if ($isDivertive) {
+                $diversions.Add("$($variable.Name) is set in the $scope environment ('$value')")
             }
         }
     }
@@ -519,6 +580,30 @@ try {
     }
     if (-not $canaryRejected) {
         Throw-TrustFailure "Verifier did not reject the writable canary directory: $forgedBin"
+    }
+
+    # Bare drive-root control (issue #1651 item 2). A volume-root PATH entry has no path segments
+    # for the per-segment walk to visit, so without the explicit volume-root check it reaches ZERO
+    # ACL validation. Under Windows PowerShell 5.1 the miscast Split above happened to mask that
+    # (its stray empty segment made the walk re-check the root); the check no longer depends on
+    # which runtime is parsing the script. The control is host-independent: it asserts the root is
+    # subject to the same weak-write evaluation every other PATH directory gets, whatever that
+    # evaluation concludes here. (It concludes "weakly writable" on this box, where C:\ grants
+    # Authenticated Users Modify.)
+    $volumeRootControl = [System.IO.Path]::GetPathRoot($env:SystemRoot)
+    $volumeRootIsWeaklyWritable = Test-PathWeaklyWritable -Path $volumeRootControl
+    $volumeRootRejected = $false
+    try {
+        Assert-TrustedDirectory -Path $volumeRootControl
+    }
+    catch {
+        $volumeRootRejected = $_.Exception.Message -match 'owned by a weak identity|writable by a weak identity'
+    }
+    if ($volumeRootRejected -ne $volumeRootIsWeaklyWritable) {
+        Throw-TrustFailure (
+            "Bare drive-root PATH entry '$volumeRootControl' bypassed the directory ACL evaluation " +
+            "(weakly writable: $volumeRootIsWeaklyWritable, rejected: $volumeRootRejected)."
+        )
     }
 
     $canarySource = 'C:\Windows\System32\where.exe'
@@ -659,33 +744,64 @@ try {
         Throw-TrustFailure "Python inventory selection ignored the launcher's default marker: $markedSelection"
     }
 
-    $launcherIniCanary = Join-Path $forgedBin 'py.ini'
-    Set-Content -LiteralPath $launcherIniCanary -Value '[defaults]' -Encoding ASCII
-    $plantedIniDiversions = @(Get-PythonLauncherDiversions `
+    # Planted-py.ini control. Both halves assert on the PLANTED path specifically: a bare "at least
+    # one diversion was reported" check passes for the wrong reason on a host that already has a
+    # real PY_PYTHON* / PYLAUNCHER_* value or a real user-writable py.ini (issue #1651 item 4).
+    $launcherIniCanary = [System.IO.Path]::GetFullPath((Join-Path $forgedBin 'py.ini'))
+    $expectedIniDiversion = "a user-writable py.ini exists at $launcherIniCanary"
+    $preplantIniDiversions = @(Get-PythonLauncherDiversions `
             -LauncherPath $pythonLauncher `
             -AdditionalConfigDirectories @($forgedBin))
-    if ($plantedIniDiversions.Count -eq 0) {
-        Throw-TrustFailure "Verifier did not reject a py.ini planted in a user-writable directory: $launcherIniCanary"
+    if ($preplantIniDiversions -contains $expectedIniDiversion) {
+        Throw-TrustFailure "py.ini control is not a regression test: $launcherIniCanary was reported before it was planted."
     }
-    Remove-Item -LiteralPath $launcherIniCanary -Force
-
-    # The control must RESTORE any pre-existing value, not clear it: clearing would erase a real
-    # diversion from the process environment before Assert-TrustedPythonLauncherInputs reads it,
-    # and the verifier would report "clean" on a host that is not.
-    $previousPyPython = [System.Environment]::GetEnvironmentVariable('PY_PYTHON', 'Process')
-    $env:PY_PYTHON = '3.0-codex-path-trust-canary'
+    Set-Content -LiteralPath $launcherIniCanary -Value '[defaults]' -Encoding ASCII
     try {
-        $envDiversions = @(Get-PythonLauncherDiversions -LauncherPath $pythonLauncher)
-        if ($envDiversions.Count -eq 0) {
-            Throw-TrustFailure 'Verifier did not reject PY_PYTHON diverting py -3 interpreter selection.'
+        $plantedIniDiversions = @(Get-PythonLauncherDiversions `
+                -LauncherPath $pythonLauncher `
+                -AdditionalConfigDirectories @($forgedBin))
+        if ($plantedIniDiversions -notcontains $expectedIniDiversion) {
+            Throw-TrustFailure "Verifier did not reject a py.ini planted in a user-writable directory: $launcherIniCanary"
         }
     }
     finally {
-        if ([string]::IsNullOrEmpty($previousPyPython)) {
-            Remove-Item -LiteralPath 'Env:PY_PYTHON' -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $launcherIniCanary -Force
+    }
+
+    # Launcher-input mutation controls, one per gated variable (issue #1651 item 1 extends these to
+    # the PYLAUNCHER_* trio). Each asserts that setting the variable produces the diversion FOR THAT
+    # VARIABLE, not merely that the host has some diversion, so the control still discriminates when
+    # a real one is already present. Each control must also RESTORE any pre-existing value rather
+    # than clear it: clearing would erase a real diversion from the process environment before
+    # Assert-TrustedPythonLauncherInputs reads it, and the verifier would report "clean" on a host
+    # that is not.
+    $launcherCanaryValue = '3.0-codex-path-trust-canary'
+    foreach ($launcherVariable in $script:PythonLauncherSelectionVariables) {
+        $launcherVariableName = $launcherVariable.Name
+        $expectedEnvDiversion =
+            "$launcherVariableName is set in the Process environment ('$launcherCanaryValue')"
+        $previousLauncherValue = [System.Environment]::GetEnvironmentVariable(
+            $launcherVariableName,
+            'Process'
+        )
+        try {
+            [System.Environment]::SetEnvironmentVariable(
+                $launcherVariableName,
+                $launcherCanaryValue,
+                'Process'
+            )
+            $envDiversions = @(Get-PythonLauncherDiversions -LauncherPath $pythonLauncher)
+            if ($envDiversions -notcontains $expectedEnvDiversion) {
+                Throw-TrustFailure "Verifier did not reject $launcherVariableName diverting py -3 interpreter selection."
+            }
         }
-        else {
-            $env:PY_PYTHON = $previousPyPython
+        finally {
+            # A $null value removes the variable, which is the correct restore when it was unset.
+            [System.Environment]::SetEnvironmentVariable(
+                $launcherVariableName,
+                $previousLauncherValue,
+                'Process'
+            )
         }
     }
 
@@ -750,9 +866,9 @@ print(json.dumps({
     # and execute the resulting ABSOLUTE interpreter path with -I -B. The documented contract stays
     # `py -3`; the verifier is what proves `py -3` cannot be steered elsewhere.
     # Residual (accepted, TOCTOU): this proves the launcher inputs are clean at verification time.
-    # A py.ini written into %LOCALAPPDATA%, or a PY_PYTHON/PY_PYTHON3 set in a shell started after
-    # this run, would divert a LATER `py -3` invocation. Re-run the verifier after any change to the
-    # tool environment; it is a gate on the configuration, not a continuous runtime monitor.
+    # A py.ini written into %LOCALAPPDATA%, or any of the gated launcher variables set in a shell
+    # started after this run, would divert a LATER `py -3` invocation. Re-run the verifier after any
+    # change to the tool environment; it is a gate on the configuration, not a runtime monitor.
     Assert-TrustedPythonLauncherInputs -LauncherPath $pythonLauncher
     $selectedPython = Get-SelectedPythonInterpreter -LauncherPath $pythonLauncher
     Assert-TrustedFile -Path $selectedPython
@@ -786,7 +902,11 @@ print(json.dumps({
     Write-Host "OK [codex-path-trust]: $($pathEntries.Count) existing PATH roots are protected."
     Write-Host 'OK [codex-path-trust]: untrusted Python selection was rejected before execution.'
     Write-Host 'OK [codex-path-trust]: GENERIC_ALL/GENERIC_WRITE ACEs are mapped before the weak-write evaluation.'
-    Write-Host 'OK [codex-path-trust]: py -3 selection inputs (PY_PYTHON, PY_PYTHON3, user-writable py.ini) are clean.'
+    Write-Host (
+        'OK [codex-path-trust]: py -3 selection inputs ({0}, user-writable py.ini) are clean.' -f
+            (($script:PythonLauncherSelectionVariables | ForEach-Object { $_.Name }) -join ', ')
+    )
+    Write-Host 'OK [codex-path-trust]: a bare drive-root PATH entry is ACL-validated, not silently accepted.'
     Write-Host "OK [codex-path-trust]: enabled-group ACL mutation and deny-only-group control passed."
     Write-Host 'OK [codex-path-trust]: forged writable-bin executables cannot participate in the configured PATH.'
     Write-Host 'OK [codex-path-trust]: jq, python, and python3 fail closed; use py -3 for Windows Python.'
