@@ -6,7 +6,18 @@
 # for win-x64, linux-x64, osx-x64, osx-arm64 and publishes them as a GitHub
 # Release with SHA256 checksums and auto-generated release notes.
 #
-# Tracked by: #535 (PKG-03)
+# Dispatch-path invariants (#1795) — regression-tested by
+# `scripts/ci/release-desktop-dispatch.test.mjs`:
+#   * the untrusted `inputs.tag` reaches Bash only through a step `env:` var and
+#     must clear `scripts/ci/validate-release-tag.sh` before ANY use;
+#   * `resolve-source` resolves one (tag, commit) pair and every downstream
+#     checkout is pinned to that commit and fails closed on a HEAD mismatch;
+#   * no checkout persists Git credentials — release writes go through `gh`.
+#
+# Publish is resumable (#1806): draft -> per-asset `--clobber` upload with
+# retries -> flip to published.
+#
+# Tracked by: #535 (PKG-03), #1795, #1806
 # =============================================================================
 
 name: Release Desktop
@@ -37,15 +48,157 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Resolve ONE release source (tag + commit) before anything is built (#1795)
+  #
+  # Every downstream job builds from `outputs.sha` and fails closed if its own
+  # checkout lands anywhere else, so the bytes published under a tag provably
+  # come from that tag's own commit. Before this job existed, `inputs.tag` named
+  # the release while the artifact checkouts used the event's default ref: a
+  # dispatch from branch B naming tag T published B's bytes as T.
+  #
+  # The untrusted dispatch input reaches Bash ONLY through a step `env:` var and
+  # clears `scripts/ci/validate-release-tag.sh` before it is used in any path,
+  # ref, output or `gh release` argument.
+  # ---------------------------------------------------------------------------
+  resolve-source:
+    name: Resolve Release Source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      publish: ${{ steps.resolve.outputs.publish }}
+    steps:
+      # Only the tag validator is needed here; nothing in this job writes to Git.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve release tag and source commit
+        id: resolve
+        shell: bash
+        env:
+          # UNTRUSTED. Passed through the environment and assigned inside Bash —
+          # never interpolated into shell source, where a crafted value could
+          # close the assignment or trigger command substitution before the
+          # grammar check runs. The job that consumes it holds `contents: write`.
+          RAW_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          raw_tag="${RAW_TAG:-}"
+          publish="false"
+          tag=""
+          sha=""
+
+          # --- 1. Decide the tag, refusing anything outside the grammar -------
+          if [ -n "${raw_tag}" ]; then
+            tag="$(bash scripts/ci/validate-release-tag.sh "${raw_tag}")"
+            publish="true"
+            printf 'Dispatch named release tag %s.\n' "${tag}"
+          elif [ "${GITHUB_REF#refs/tags/}" != "${GITHUB_REF}" ]; then
+            tag="$(bash scripts/ci/validate-release-tag.sh "${GITHUB_REF#refs/tags/}")"
+            publish="true"
+            printf 'Tag push for release tag %s.\n' "${tag}"
+          fi
+
+          # --- 2. Resolve the tag to its OWN commit --------------------------
+          if [ "${publish}" = "true" ]; then
+            # `git/ref/tags/<tag>` matches exactly and 404s (fail closed) when the
+            # tag does not exist, so a branch or raw SHA cannot masquerade as a
+            # tag even if it somehow cleared the grammar. Annotated tags are
+            # dereferenced through the tag object to the commit.
+            # ONE read of the ref, parsed once for both fields: two separate
+            # calls could straddle a force-moved tag and pair the type from
+            # before the move with the SHA from after it.
+            ref_fields="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" \
+              --jq '[.object.type, .object.sha] | @tsv')"
+            IFS=$'\t' read -r object_type object_sha <<< "${ref_fields}"
+            case "${object_type}" in
+              commit)
+                sha="${object_sha}"
+                ;;
+              tag)
+                sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}" --jq '.object.sha')"
+                ;;
+              *)
+                printf '::error::Tag %s points at an unsupported object type %s.\n' "${tag}" "${object_type}"
+                exit 1
+                ;;
+            esac
+            # GITHUB_SHA is the tag OBJECT for an annotated tag push, so it is
+            # logged for context only — the tag's own commit is authoritative.
+            if [ "${sha}" != "${GITHUB_SHA}" ]; then
+              printf 'Note: GITHUB_SHA (%s) differs from the tag commit (%s); building the tag commit.\n' \
+                "${GITHUB_SHA}" "${sha}"
+            fi
+          else
+            sha="${GITHUB_SHA}"
+            if [[ ! ${sha} =~ ^[0-9a-f]{40}$ ]]; then
+              printf '::error::GITHUB_SHA %q is not a 40-character commit SHA.\n' "${sha}"
+              exit 1
+            fi
+            tag="v0.0.0-dryrun+${sha:0:7}"
+            printf 'No tag ref or tag input — rehearsal build, versioned %s (no release will be published).\n' "${tag}"
+          fi
+
+          # --- 3. Fail closed on anything that is not a clean commit SHA -----
+          if [[ ! ${sha} =~ ^[0-9a-f]{40}$ ]]; then
+            printf '::error::Resolved release commit %q is not a 40-character commit SHA.\n' "${sha}"
+            exit 1
+          fi
+          # Re-validate the final tag, which also covers the generated rehearsal name.
+          tag="$(bash scripts/ci/validate-release-tag.sh "${tag}")"
+
+          {
+            printf 'tag=%s\n' "${tag}"
+            printf 'sha=%s\n' "${sha}"
+            printf 'publish=%s\n' "${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+          # The Markdown code-span delimiter is held in a variable and passed as a
+          # printf argument: a literal backtick inside a single-quoted format
+          # string trips ShellCheck SC2016, which the Workflow Lint job treats as
+          # a failure. The rendered summary is byte-identical either way.
+          bt="\`"
+          {
+            printf '### Release source\n\n'
+            printf '| field | value |\n| --- | --- |\n'
+            printf '| tag | %s%s%s |\n' "${bt}" "${tag}" "${bt}"
+            printf '| commit | %s%s%s |\n' "${bt}" "${sha}" "${bt}"
+            printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  # ---------------------------------------------------------------------------
   # Build frontend assets (shared by all platform builds)
   # ---------------------------------------------------------------------------
   build-frontend:
     name: Build Frontend
+    needs: resolve-source
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout matches the resolved release commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            printf '::error::Checkout HEAD %s does not match the resolved release commit %s.\n' \
+              "${actual_sha}" "${EXPECTED_SHA}"
+            exit 1
+          fi
+          printf 'Release source commit verified: %s\n' "${actual_sha}"
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -74,7 +227,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-backend:
     name: Build ${{ matrix.rid }}
-    needs: build-frontend
+    needs: [resolve-source, build-frontend]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -96,6 +249,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout matches the resolved release commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            printf '::error::Checkout HEAD %s does not match the resolved release commit %s.\n' \
+              "${actual_sha}" "${EXPECTED_SHA}"
+            exit 1
+          fi
+          printf 'Release source commit verified: %s\n' "${actual_sha}"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -311,49 +481,42 @@ jobs:
             exit 1
           fi
 
-      # A bare workflow_dispatch (no tag input, run from a branch) is the REHEARSAL path:
-      # it must build, smoke-test and package without publishing anything. Previously the
-      # `${GITHUB_REF#refs/tags/}` strip silently no-op'd on `refs/heads/main`, so TAG became
-      # "refs/heads/main" and the slashes broke packaging — meaning the pipeline could only
-      # ever be exercised by pushing a real tag (`#1123`).
-      - name: Determine version tag
-        id: version
-        shell: bash
-        run: |
-          TAG="${{ inputs.tag || '' }}"
-          if [ -z "$TAG" ] && [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          if [ -z "$TAG" ]; then
-            TAG="v0.0.0-dryrun+${GITHUB_SHA:0:7}"
-            echo "No tag ref or tag input — rehearsal build, versioned $TAG (no release will be published)."
-          fi
-          case "$TAG" in
-            */*|*' '*)
-              echo "::error::Refusing version tag '$TAG' — it would produce an invalid artifact path."
-              exit 1
-              ;;
-          esac
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
+      # The version tag is resolved ONCE in `resolve-source` (grammar-validated
+      # there) and reaches these steps through `env:`, never as raw shell source.
+      # A bare workflow_dispatch (no tag input, run from a branch) is the REHEARSAL
+      # path: it builds, smoke-tests and packages as `v0.0.0-dryrun+<sha7>` and
+      # publishes nothing (`#1123`).
       - name: Package artifact (zip — Windows)
         if: matrix.archive_ext == 'zip'
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_RID: ${{ matrix.rid }}
         run: |
-          Compress-Archive -Path "publish/${{ matrix.rid }}/*" `
-            -DestinationPath "taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path "publish/${env:RELEASE_RID}/*" `
+            -DestinationPath "taskdeck-${env:RELEASE_TAG}-${env:RELEASE_RID}.zip"
 
       - name: Package artifact (tar.gz — Linux/macOS)
         if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_RID: ${{ matrix.rid }}
         run: |
-          tar -czf "taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.tar.gz" \
-            -C publish/${{ matrix.rid }} .
+          set -euo pipefail
+          tar -czf "taskdeck-${RELEASE_TAG}-${RELEASE_RID}.tar.gz" \
+            -C "publish/${RELEASE_RID}" .
 
       - name: Generate SHA256 checksum
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_RID: ${{ matrix.rid }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
         run: |
-          ARCHIVE="taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}"
-          if command -v sha256sum &>/dev/null; then
+          set -euo pipefail
+          ARCHIVE="taskdeck-${RELEASE_TAG}-${RELEASE_RID}.${ARCHIVE_EXT}"
+          if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
           else
             shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
@@ -364,8 +527,8 @@ jobs:
         with:
           name: release-${{ matrix.rid }}
           path: |
-            taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}
-            taskdeck-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}.sha256
+            taskdeck-${{ needs.resolve-source.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}
+            taskdeck-${{ needs.resolve-source.outputs.tag }}-${{ matrix.rid }}.${{ matrix.archive_ext }}.sha256
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -373,20 +536,38 @@ jobs:
   # ---------------------------------------------------------------------------
   create-release:
     name: Create GitHub Release
-    needs: build-backend
+    needs: [resolve-source, build-backend]
     # Publish ONLY for a real release: a tag push, or a dispatch that names an existing tag.
     # A bare dispatch is a rehearsal and must stop after artifacts — without this guard it
     # reached `gh release create` and failed there, which is not a safe place to rely on.
-    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    # `publish` is decided in resolve-source, alongside the grammar check.
+    if: needs.resolve-source.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      # Pinned to the resolved release commit, and credentials are NOT persisted:
+      # every write here goes through `gh` with an explicit GH_TOKEN.
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          ref: ${{ needs.resolve-source.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout matches the resolved release commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            printf '::error::Checkout HEAD %s does not match the resolved release commit %s.\n' \
+              "${actual_sha}" "${EXPECTED_SHA}"
+            exit 1
+          fi
+          printf 'Release source commit verified: %s\n' "${actual_sha}"
 
       # NOT artifacts/ — the repo tracks an artifacts/ directory (artifacts/openapi), so the
       # checkout above already populates it; downloading into it merged repo content into the
@@ -401,8 +582,10 @@ jobs:
           path: release-assets/
 
       - name: Verify checksums
+        shell: bash
         working-directory: release-assets
         run: |
+          set -euo pipefail
           echo "=== Release artifacts ==="
           ls -la
           echo ""
@@ -412,25 +595,139 @@ jobs:
           echo "=== Verifying checksums ==="
           sha256sum -c ./*.sha256
 
-      - name: Determine version tag
-        id: version
+      # Release evidence: the resolved commit ships WITH the assets, so anyone
+      # holding a downloaded archive can tie it back to one commit and one run.
+      - name: Write release provenance asset
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_SHA: ${{ needs.resolve-source.outputs.sha }}
         run: |
-          TAG="${{ inputs.tag || '' }}"
-          if [ -z "$TAG" ] && [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          if [ -z "$TAG" ]; then
-            echo "::error::No release tag resolved; this job must not run for a rehearsal build."
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          provenance="release-assets/taskdeck-${RELEASE_TAG}-provenance.txt"
+          {
+            printf 'Taskdeck release provenance\n'
+            printf 'tag: %s\n' "${RELEASE_TAG}"
+            printf 'commit: %s\n' "${RELEASE_SHA}"
+            printf 'repository: %s\n' "${GITHUB_REPOSITORY}"
+            printf 'workflow: %s\n' "${GITHUB_WORKFLOW}"
+            printf 'run: %s/%s/actions/runs/%s\n' "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
+            printf 'run attempt: %s\n' "${GITHUB_RUN_ATTEMPT}"
+          } > "${provenance}"
+          cat "${provenance}"
+          cat "${provenance}" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Create GitHub Release
+      # Re-check server-side, immediately before publishing, that the tag still
+      # points at the commit that was actually built. A tag moved mid-run must
+      # not silently publish stale bytes.
+      - name: Verify the release tag still points at the built commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        shell: bash
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            release-assets/* \
-            --title "Taskdeck ${{ steps.version.outputs.tag }}" \
-            --generate-notes \
-            --verify-tag
+          set -euo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${RELEASE_TAG}" --jq '.sha')"
+          if [ "${current_sha}" != "${RELEASE_SHA}" ]; then
+            printf '::error::Tag %s now resolves to %s but the artifacts were built from %s. Refusing to publish.\n' \
+              "${RELEASE_TAG}" "${current_sha}" "${RELEASE_SHA}"
+            exit 1
+          fi
+          printf 'Tag %s still resolves to the built commit %s.\n' "${RELEASE_TAG}" "${current_sha}"
+
+      # -----------------------------------------------------------------------
+      # Resumable publish (#1806)
+      #
+      # `gh release create <tag> <assets...>` is all-or-nothing: the v0.1.0 run
+      # created release 372777600, died mid-upload and rolled the release back,
+      # leaving nothing and forcing a manual completion from the run artifacts.
+      # The publish is therefore split into three idempotent phases:
+      #   1. create a DRAFT (or adopt whatever a previous attempt left behind),
+      #   2. upload each asset with `--clobber` and bounded retries,
+      #   3. flip the draft to published only once every asset is up.
+      # A re-run at any point resumes instead of restarting, and a failure never
+      # leaves a published release with missing assets.
+      # -----------------------------------------------------------------------
+      - name: Create or adopt draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Adoption MUST see drafts: a previous failed attempt leaves exactly a
+          # draft behind, and that is the case this step exists for. The REST
+          # `releases/tags/{tag}` lookup does NOT return drafts, so detection goes
+          # through the release LISTING (which does, for a token with push access)
+          # rather than depending on any client-side draft fallback.
+          release_rows="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | [.tag_name, (.id | tostring), (.draft | tostring)] | @tsv')"
+          existing_row="$(printf '%s\n' "${release_rows}" \
+            | awk -F'\t' -v tag="${RELEASE_TAG}" '$1 == tag { print; exit }')"
+          if [ -n "${existing_row}" ]; then
+            IFS=$'\t' read -r _ release_id release_is_draft <<< "${existing_row}"
+            printf 'Release %s already exists (id %s, draft=%s) — adopting it; assets are re-uploaded with --clobber.\n' \
+              "${RELEASE_TAG}" "${release_id}" "${release_is_draft}"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --draft \
+              --title "Taskdeck ${RELEASE_TAG}" \
+              --generate-notes \
+              --verify-tag
+            printf 'Draft release %s created.\n' "${RELEASE_TAG}"
+          fi
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            printf '::error::No release assets found under release-assets/.\n'
+            exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            # Directories are the v0.1.0 failure mode ("is a directory"); refuse
+            # them loudly rather than letting gh fail deep inside the upload.
+            if [ ! -f "${asset}" ]; then
+              printf '::error::Refusing to upload %s — not a regular file.\n' "${asset}"
+              exit 1
+            fi
+          done
+          for asset in "${assets[@]}"; do
+            uploaded=0
+            for attempt in 1 2 3; do
+              if gh release upload "${RELEASE_TAG}" "${asset}" --clobber; then
+                uploaded=1
+                printf 'Uploaded %s (attempt %s).\n' "${asset}" "${attempt}"
+                break
+              fi
+              printf '::warning::Upload of %s failed (attempt %s/3).\n' "${asset}" "${attempt}"
+              if [ "${attempt}" -lt 3 ]; then
+                sleep "$((attempt * 10))"
+              fi
+            done
+            if [ "${uploaded}" -ne 1 ]; then
+              printf '::error::Failed to upload %s after 3 attempts; the release stays a draft.\n' "${asset}"
+              exit 1
+            fi
+          done
+          printf 'All %s release assets uploaded.\n' "${#assets[@]}"
+
+      # `--draft=false` leaves the "latest release" choice to GitHub's default
+      # (semver/date based), which is what the previous single `gh release create`
+      # did too — this step does not change which release is marked latest.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release edit "${RELEASE_TAG}" --draft=false
+          printf 'Published release %s.\n' "${RELEASE_TAG}"
