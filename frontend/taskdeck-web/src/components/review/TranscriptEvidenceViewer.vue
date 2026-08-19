@@ -164,7 +164,12 @@ onScopeDispose(() => {
   border: 1px solid var(--td-border-default, #ddd);
   border-radius: 8px;
   padding: 12px;
-  background: var(--td-surface-sunken, #f9f9f9);
+  /* Fallback must equal what `--td-surface-sunken` resolves to at `:root`
+     (the Obsidian container-lowest hex) — guarded by
+     tests/legacy-surface-depth-tokens.spec.ts (#1814). Paper re-declares the
+     alias on its own scope, so the light surface comes from the bridge, not
+     from this fallback. */
+  background: var(--td-surface-sunken, #0e0e0e);
 }
 
 .transcript-evidence__header {
