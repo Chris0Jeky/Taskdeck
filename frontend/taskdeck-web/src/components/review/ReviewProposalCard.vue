@@ -103,9 +103,14 @@ function getOperationHeadlines(proposal: Proposal): string[] {
   void displayVersion.value
   const operations = proposal.operations ?? []
   const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
-  return operations.map((operation, index) =>
-    suppliedHeadlines[index]?.trim() || proposalDisplayNames.operationHeadline(proposal, operation),
-  )
+  const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
+  return Array.from({ length: headlineCount }, (_, index) => {
+    const suppliedHeadline = suppliedHeadlines[index]?.trim()
+    if (suppliedHeadline) return suppliedHeadline
+
+    const operation = operations[index]
+    return operation ? proposalDisplayNames.operationHeadline(proposal, operation) : ''
+  }).filter((headline) => headline.length > 0)
 }
 
 function getAffectedEntities(proposal: Proposal) {
