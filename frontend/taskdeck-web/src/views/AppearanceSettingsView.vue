@@ -99,8 +99,18 @@ function selectMode(mode: PaperMode) {
  * swatch is ever added it must render its own theme's colours literally and stay
  * outside this Paper-token styling.
  *
- * Tokens are defined under `.paper` / `.paper-night`, so var() fallbacks keep the
- * surface legible when the user picks Off and the Legacy shell renders it.
+ * Tokens live under `.paper` / `.paper-night` in paper-tokens.css and are NOT
+ * defined at :root, so once the user picks Off and the Legacy shell renders this
+ * page, every var() resolves to its literal fallback. The substrate line on the
+ * root — `background: var(--paper, #f3eee5)` painted alongside `color:
+ * var(--ink, #1a1814)` — is what keeps the text legible in Legacy: without it
+ * this page's own <h1> would land on AppShell's Obsidian `--td-surface-base`
+ * (#131313) at ~1.05:1 the moment Off is selected. It is a no-op under `.paper`
+ * / `.paper-night`, where `.td-shell--paper .td-content` already paints
+ * `var(--paper)`.
+ * Paper typography (the `tk-*` classes) is scoped as `.paper .tk-*` /
+ * `.paper-night .tk-*` and intentionally does NOT render in Legacy mode — only
+ * legibility is preserved there, not the Paper type ladder.
  */
 .paper-appearance {
   display: flex;
@@ -108,6 +118,7 @@ function selectMode(mode: PaperMode) {
   gap: var(--s-5, 20px);
   max-width: 640px;
   font-family: var(--sans, system-ui, sans-serif);
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 

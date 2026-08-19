@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import ApiKeySettingsView from '../../views/ApiKeySettingsView.vue'
+import apiKeysSource from '../../views/ApiKeySettingsView.vue?raw'
 
 const mocks = vi.hoisted(() => ({
   listKeys: vi.fn(),
@@ -429,5 +430,25 @@ describe('ApiKeySettingsView', () => {
 
     expect(bodyText()).toContain('MCP server HTTP transport authentication')
     expect(bodyText()).toContain('tdsk_')
+  })
+})
+
+// ── #1808 review (MEDIUM): Legacy ("off") mode substrate guard ──
+// Paper tokens exist only under `.paper` / `.paper-night` (paper-tokens.css), so
+// in Legacy mode this view's `color: var(--ink, …)` resolves to the near-black
+// literal while AppShell's `.td-content` still paints `--td-surface-base`
+// (#131313) — ~1.05:1 on the hero. A root that sets the Paper ink MUST therefore
+// also paint the Paper substrate; that is a no-op under `.paper`/`.paper-night`.
+// Source is read through Vite's `?raw` rather than `node:fs` because
+// `tsconfig.vitest.json` deliberately omits the "node" types.
+// #1815 tracks unifying these per-view assertions into one wave-wide spec.
+describe('ApiKeySettingsView Legacy-mode substrate', () => {
+  it('paints --paper on the root wherever it sets --ink', () => {
+    const rule = apiKeysSource.match(/^\.paper-api-keys \{([\s\S]*?)\}/m)?.[1]
+    expect(rule, '.paper-api-keys root rule').toBeTruthy()
+    // Guard the guard: if the ink declaration were dropped or renamed, the
+    // substrate assertion below would otherwise pass vacuously.
+    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })

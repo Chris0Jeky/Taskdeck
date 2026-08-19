@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import AppearanceSettingsView from '../../views/AppearanceSettingsView.vue'
+import appearanceSource from '../../views/AppearanceSettingsView.vue?raw'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 
 const STORAGE_KEY = 'td.paper.mode.v2'
@@ -88,5 +89,27 @@ describe('AppearanceSettingsView', () => {
     expect(store.isOn).toBe(false)
     expect(document.body.classList.contains('paper')).toBe(false)
     expect(document.body.classList.contains('paper-night')).toBe(false)
+  })
+})
+
+// ── #1808 review (MEDIUM): Legacy ("off") mode substrate guard ──
+// Paper tokens exist only under `.paper` / `.paper-night` (paper-tokens.css), so
+// in Legacy mode this view's `color: var(--ink, …)` resolves to the near-black
+// literal while AppShell's `.td-content` still paints `--td-surface-base`
+// (#131313) — ~1.05:1 on the hero. This is the sharpest case in the wave: the
+// user selects "Off (Legacy / Obsidian)" on THIS page, so its own <h1> is the
+// first thing that would disappear. A root that sets the Paper ink MUST also
+// paint the Paper substrate; that is a no-op under `.paper`/`.paper-night`.
+// Source is read through Vite's `?raw` rather than `node:fs` because
+// `tsconfig.vitest.json` deliberately omits the "node" types.
+// #1815 tracks unifying these per-view assertions into one wave-wide spec.
+describe('AppearanceSettingsView Legacy-mode substrate', () => {
+  it('paints --paper on the root wherever it sets --ink', () => {
+    const rule = appearanceSource.match(/^\.paper-appearance \{([\s\S]*?)\}/m)?.[1]
+    expect(rule, '.paper-appearance root rule').toBeTruthy()
+    // Guard the guard: if the ink declaration were dropped or renamed, the
+    // substrate assertion below would otherwise pass vacuously.
+    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })

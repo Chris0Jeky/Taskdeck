@@ -305,9 +305,17 @@ function openRoute(path: string) {
 <style scoped>
 /* ── Paper & Graphite — BoardAccessView ──
    Styled against the Paper token system (--paper, --ink, --ember families).
-   Tokens are defined under `.paper` / `.paper-night` (the canonical shell), so
-   var() fallbacks keep the surface legible if the view is ever rendered outside
-   the Paper shell (Legacy/Obsidian "off" mode).
+   Tokens live under `.paper` / `.paper-night` in paper-tokens.css and are NOT
+   defined at :root, so outside the Paper shell (Legacy/Obsidian "off" mode)
+   every var() resolves to its literal fallback. The substrate line on the root —
+   `background: var(--paper, #f3eee5)` painted alongside `color: var(--ink,
+   #1a1814)` — is what keeps the text legible in Legacy: without it the near-black
+   ink lands on AppShell's Obsidian `--td-surface-base` (#131313) at ~1.05:1. It
+   is a no-op under `.paper` / `.paper-night`, where `.td-shell--paper
+   .td-content` already paints `var(--paper)`.
+   Paper typography (the `tk-*` classes) is scoped as `.paper .tk-*` /
+   `.paper-night .tk-*` and intentionally does NOT render in Legacy mode — only
+   legibility is preserved there, not the Paper type ladder.
 
    WorkspaceHelpCallout is a shared component with its own chrome and is not
    restyled here; only the buttons this view passes into its #actions slot
@@ -319,6 +327,7 @@ function openRoute(path: string) {
   gap: var(--s-4, 16px);
   max-width: 960px;
   font-family: var(--sans, system-ui, sans-serif);
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 
