@@ -59,7 +59,7 @@ const items: CommandItem[] = [
     id: 'action:propose-split',
     label: 'Propose: split into 3 cards',
     icon: '◆',
-    keywords: 'haiku ai split',
+    keywords: 'assistant ai split',
     kind: 'action',
     action: () => {},
   },
@@ -136,7 +136,7 @@ describe('PaperCommandPalette', () => {
     expect(visibleLabels.some((t) => t.includes('Go to New Capture'))).toBe(false)
   })
 
-  it('separates AI (haiku) actions into their own section with the haiku tag', async () => {
+  it('separates AI actions into their own section with the model-neutral assistant tag (#1767)', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },
       attachTo: document.body,
@@ -151,7 +151,9 @@ describe('PaperCommandPalette', () => {
     const aiRows = aiSection!.querySelectorAll('.paper-palette__row--ai')
     expect(aiRows.length).toBe(1)
     expect(aiRows[0].textContent).toContain('Propose: split into 3 cards')
-    expect(aiRows[0].textContent).toContain('haiku')
+    expect(aiRows[0].textContent).toContain('assistant')
+    // No user-facing surface may name a specific LLM model or persona (#1767).
+    expect(aiRows[0].textContent).not.toContain('haiku')
   })
 
   it('navigates rows with ArrowDown / ArrowUp and emits activate on Enter', async () => {

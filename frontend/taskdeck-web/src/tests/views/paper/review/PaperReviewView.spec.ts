@@ -435,6 +435,9 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Nothing waiting')
+    // The empty state describes the actor model-neutrally, never a persona (#1767).
+    expect(wrapper.text()).toContain('When the assistant has something to propose')
+    expect(wrapper.text().toLowerCase()).not.toContain('haiku')
   })
 
   it('emphasizes every quoted phrase in the proposal title', async () => {
@@ -473,7 +476,9 @@ describe('PaperReviewView', () => {
     expect(mainText).not.toContain('No data left this device')
 
     const viewText = wrapper.text()
-    expect(viewText).not.toContain('Haiku · local')
+    expect(viewText).not.toContain('Assistant · local')
+    // No user-facing surface may name a specific LLM model or persona (#1767).
+    expect(viewText.toLowerCase()).not.toContain('haiku')
     expect(viewText).not.toContain('crossed your "split this" threshold')
   })
 
@@ -570,7 +575,8 @@ describe('PaperReviewView', () => {
     ])
 
     const railText = wrapper.find('[data-testid="paper-review-queue-rail"]').text()
-    expect(railText).toContain('haiku')
+    expect(railText).toContain('assistant')
+    expect(railText.toLowerCase()).not.toContain('haiku')
     expect(railText).not.toContain('capture')
   })
 
