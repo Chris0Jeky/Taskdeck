@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-07-27
+Last Updated: 2026-08-20
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -13,15 +13,24 @@ This guide defines what is now shipped and how to run configured LLM demos witho
 Backend provider runtime now supports:
 
 - `Mock` provider (default)
-- `OpenAI` provider (config-gated)
+- `OpenAI` provider (config-gated; the supported live provider — default model `gpt-5.6-luna`)
 - `OpenAICompatible` provider (config-gated; OpenRouter, Groq, and DeepSeek-compatible chat endpoints)
-- `Gemini` provider (config-gated)
+- `Gemini` provider (config-gated; **deprecated 2026-08-20** — kept functional for explicit opt-in only, full removal is tracked follow-up work and needs its own ADR)
 - `Ollama` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
   - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
   - provider adapters receive standardized attribution headers (`x-taskdeck-*`)
   - OpenAI adapter maps pseudonymous end-user token to provider `user` field
   - capture queue payload provenance now persists actor/correlation/source attribution metadata for audit follow-through
+
+The OpenAI adapter sends `max_completion_tokens` (never the legacy `max_tokens`) and omits
+`temperature` for reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`), which reject
+non-default temperature values on chat completions. Reasoning effort is left at the model
+default (`medium` for the GPT-5.6 family). Note that on a reasoning model the token budget
+covers reasoning **and** visible output together, so a `MaxTokens` that was ample for
+`gpt-4o-mini` can truncate here; the adapter logs a warning and reports a degraded result on
+`finish_reason=length`. This applies to the `OpenAI` provider only — `OpenAICompatible` still
+sends `max_tokens`, which is what third-party gateways expect.
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
@@ -70,7 +79,7 @@ in Development.
     "OpenAi": {
       "ApiKey": "",
       "BaseUrl": "https://api.openai.com/v1",
-      "Model": "gpt-4o-mini",
+      "Model": "gpt-5.6-luna",
       "TimeoutSeconds": 30
     },
     "OpenAiCompatible": {
@@ -114,7 +123,10 @@ Optional:
 - `Llm__OpenAi__BaseUrl=https://api.openai.com/v1`
 - `Llm__OpenAi__TimeoutSeconds=30`
 
-## Demo Setup (Gemini)
+## Demo Setup (Gemini) — deprecated
+
+Gemini is deprecated and no longer the recommended live provider; use OpenAI.
+These settings remain functional only for explicit opt-in until the provider is removed.
 
 Set:
 
@@ -231,12 +243,13 @@ body reads after headers. `MaxResponseBytes`, `MaxSseLineBytes`, and
 For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed`):
 
 - if LLM steps are enabled and a usable live-provider key is present, the demo web server now auto-enables live providers for that run
-- Gemini is preferred when any of these are present:
-  - `GEMINI_API_KEY`
-  - `TASKDECK_DEMO_GEMINI_API_KEY`
-  - `Llm__Gemini__ApiKey`
-- use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead of Gemini for a specific demo run
-- use `TASKDECK_DEMO_LLM_PROVIDER=Gemini` to force Gemini even when the base environment is pinned to `Llm__Provider=Mock`
+- OpenAI is preferred when any of these are present:
+  - `OPENAI_API_KEY`
+  - `TASKDECK_DEMO_OPENAI_API_KEY`
+  - `Llm__OpenAi__ApiKey`
+- deprecated Gemini is used only when it is explicitly forced, pinned as the base provider, or holds the only available key
+- use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI for a specific demo run
+- use `TASKDECK_DEMO_LLM_PROVIDER=Gemini` to force deprecated Gemini even when the base environment is pinned to `Llm__Provider=Mock`
 - use `TASKDECK_DEMO_LLM_PROVIDER=Mock` to keep the demo on mock explicitly even when live keys are present
 - use `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force demo runs back to mock even when keys are present
 - use `TASKDECK_DEMO_SKIP_LLM=1` when the scenario/recorder should skip LLM-required steps and keep the backend on mock

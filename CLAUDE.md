@@ -69,7 +69,8 @@ explicit execute (needs an Idempotency-Key). Preview == Apply (both materialize 
 is LLM-backed for transcript-source captures (`LlmCaptureTriageExtractor` — kill switch → provider health
 → quota → completion → usage recording, every failure returned as an outcome, never thrown) and degrades
 to the deterministic extractor otherwise. Realtime is **per-board** SignalR, not global.
-LLM providers: mock by default; OpenAI/Gemini behind config gates (`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
+LLM providers: mock by default; OpenAI behind config gates, default model `gpt-5.6-luna`
+(Gemini deprecated 2026-08-20, pending removal) — `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`.
 
 ## Repo-specific pitfalls
 

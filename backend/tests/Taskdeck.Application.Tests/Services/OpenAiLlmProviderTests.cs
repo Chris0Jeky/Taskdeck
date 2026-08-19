@@ -375,6 +375,95 @@ public class OpenAiLlmProviderTests
         OpenAiLlmProvider.LooksLikeTruncatedJson(input).Should().Be(expected);
     }
 
+    [Fact]
+    public async Task CompleteAsync_ShouldUseMaxCompletionTokensAndOmitTemperature_ForReasoningModels()
+    {
+        var settings = BuildSettings();
+        settings.OpenAi.Model = "gpt-5.6-luna";
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            capturedBody = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return BuildMinimalCompletionResponse();
+        });
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, NullLogger<OpenAiLlmProvider>.Instance);
+
+        await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "hello") }));
+
+        capturedBody.Should().NotBeNull();
+        using var json = JsonDocument.Parse(capturedBody!);
+        json.RootElement.TryGetProperty("max_completion_tokens", out var maxCompletionTokens).Should().BeTrue();
+        maxCompletionTokens.GetInt32().Should().Be(2048);
+        json.RootElement.TryGetProperty("max_tokens", out _).Should().BeFalse();
+        json.RootElement.TryGetProperty("temperature", out _).Should().BeFalse(
+            "reasoning models reject non-default temperature values");
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ShouldKeepTemperature_ForNonReasoningModels()
+    {
+        var settings = BuildSettings();
+        settings.OpenAi.Model = "gpt-4o-mini";
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            capturedBody = request.Content is null
+                ? "{}"
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return BuildMinimalCompletionResponse();
+        });
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, NullLogger<OpenAiLlmProvider>.Instance);
+
+        await provider.CompleteAsync(new ChatCompletionRequest(
+            new List<ChatCompletionMessage> { new("User", "hello") }));
+
+        capturedBody.Should().NotBeNull();
+        using var json = JsonDocument.Parse(capturedBody!);
+        json.RootElement.TryGetProperty("max_completion_tokens", out _).Should().BeTrue();
+        json.RootElement.TryGetProperty("max_tokens", out _).Should().BeFalse();
+        json.RootElement.TryGetProperty("temperature", out var temperature).Should().BeTrue();
+        temperature.GetDouble().Should().Be(0.7);
+    }
+
+    [Theory]
+    [InlineData("gpt-5.6-luna", true)]
+    [InlineData("gpt-5.6-terra", true)]
+    [InlineData(" GPT-5.6 ", true)]
+    [InlineData("o3-mini", true)]
+    [InlineData("gpt-4o-mini", false)]
+    [InlineData("gpt-4.1", false)]
+    public void IsReasoningModel_ShouldClassifyModelFamilies(string model, bool expected)
+    {
+        OpenAiLlmProvider.IsReasoningModel(model).Should().Be(expected);
+    }
+
+    private static HttpResponseMessage BuildMinimalCompletionResponse()
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "ok"
+                      }
+                    }
+                  ],
+                  "usage": {
+                    "total_tokens": 1
+                  }
+                }
+                """,
+                Encoding.UTF8,
+                "application/json")
+        };
+    }
+
     private static LlmProviderSettings BuildSettings()
     {
         return new LlmProviderSettings

@@ -54,7 +54,7 @@ export Llm__Provider=OpenAI
 export Llm__OpenAi__ApiKey=<your_openai_key>
 ```
 
-Default models: `gemini-2.5-flash` (Gemini), `gpt-4o-mini` (OpenAI). Override with `Llm__Gemini__Model` or `Llm__OpenAi__Model`.
+Default models: `gpt-5.6-luna` (OpenAI), `gemini-2.5-flash` (Gemini — deprecated 2026-08-20, see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`). Override with `Llm__OpenAi__Model` or `Llm__Gemini__Model`.
 
 Verify provider health after startup:
 ```

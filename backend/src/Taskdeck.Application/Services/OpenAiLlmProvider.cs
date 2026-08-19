@@ -71,7 +71,7 @@ public class OpenAiLlmProvider : ILlmProvider
             }
 
             // Detect truncation: OpenAI returns finish_reason "length" when the
-            // response was cut off by the max_tokens limit.
+            // response was cut off by the max_completion_tokens limit.
             if (string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("OpenAI response was truncated (finish_reason=length).");
@@ -276,12 +276,16 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             ["model"] = _settings.OpenAi.Model.Trim(),
             ["messages"] = messages.ToArray(),
-            ["max_tokens"] = request.MaxTokens,
-            ["temperature"] = request.Temperature,
+            ["max_completion_tokens"] = request.MaxTokens,
             ["stream"] = false,
             ["tools"] = openAiTools,
             ["tool_choice"] = "auto"
         };
+
+        if (!IsReasoningModel(_settings.OpenAi.Model))
+        {
+            payload["temperature"] = request.Temperature;
+        }
 
         if (request.Attribution is not null)
         {
@@ -533,10 +537,14 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             ["model"] = _settings.OpenAi.Model.Trim(),
             ["messages"] = messages.ToArray(),
-            ["max_tokens"] = request.MaxTokens,
-            ["temperature"] = request.Temperature,
+            ["max_completion_tokens"] = request.MaxTokens,
             ["stream"] = false
         };
+
+        if (!IsReasoningModel(_settings.OpenAi.Model))
+        {
+            payload["temperature"] = request.Temperature;
+        }
 
         if (useInstructionExtraction)
         {
@@ -549,6 +557,17 @@ public class OpenAiLlmProvider : ILlmProvider
         }
 
         return payload;
+    }
+
+    // GPT-5-family and o-series reasoning models reject any non-default
+    // temperature on chat completions; the parameter must be omitted for them.
+    internal static bool IsReasoningModel(string model)
+    {
+        var normalized = model.Trim();
+        return normalized.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("o4", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseResponse(string responseBody, out string content, out int tokensUsed, out string? finishReason)
