@@ -15,7 +15,9 @@ Use this file when starting backlog work. It prevents out-of-order development a
 2. Read `docs/IMPLEMENTATION_MASTERPLAN.md`.
 3. Read `docs/GITHUB_PROJECT_AUTOMATION.md`.
 4. Confirm current branch is clean and based on `main`.
-5. Pick the highest-priority acceptance-ready existing issue admitted by the active plan or an Accepted ADR whose dependencies are complete.
+5. Pick the highest-priority acceptance-ready existing issue admitted by the active plan or an
+   Accepted ADR. A `Now` candidate must have complete dependencies; a `Next` candidate may be
+   explicitly sequenced behind a named `Now` dependency.
 6. Verify the issue has exactly one priority label (`Priority I` to `Priority V`) and that the Project `Priority` field matches it before promotion.
 7. Use the project `No Status` view (`no:status`) and assign `Now` or `Next` before active work, respecting the four-`Now`/eight-`Next` caps.
 

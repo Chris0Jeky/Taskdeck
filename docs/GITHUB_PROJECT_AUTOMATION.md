@@ -194,7 +194,8 @@ Goal:
 
 Weekly process:
 1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TaskdeckNextWorkChecklist.md`.
-2. Select the highest-priority items whose dependencies are complete.
+2. Select the highest-priority acceptance-ready items: `Now` candidates must have complete
+   dependencies, while a `Next` candidate may be explicitly sequenced behind a named `Now` item.
 3. Create/update issues with explicit acceptance criteria and required labels.
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
 5. For product-facing slices, include thesis-alignment notes:

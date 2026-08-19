@@ -41,18 +41,25 @@ Codex cannot reliably configure GitHub repository settings unless you explicitly
 
 Do in GitHub UI:
 - Protect `main` without requiring PR approval or a CODEOWNERS/owner click. `CODEOWNERS` is advisory routing only; the absence of a requested owner is not merge eligibility.
-- There is no aggregate required-check context. If branch protection is configured, select the current `CI` workflow job contexts individually:
-  - `CI / Docs Governance`
-  - `CI / Backend Architecture`
-  - `CI / Backend Unit`
-  - `CI / API Integration`
-  - `CI / Migration Validation`
-  - `CI / Frontend Unit`
-  - `CI / Paper Color Audit`
-  - `CI / Container Images`
-  - `CI / Secret Scan` (pull-request events; enforcing)
-  - `CI / E2E Smoke`
-- `CI / Dependency Security` and `CI / SAST Scan` are current advisory contexts: they run in the required workflow but remain non-blocking while their baselines are remediated. `CI / DCO (advisory)` is also non-blocking.
+- There is no aggregate required-check context. If branch protection is configured, select the exact
+  check-run contexts emitted by the current `CI` workflow (including matrix suffixes):
+  - `Docs Governance / Docs Governance`
+  - `Docs Governance / Worktree Helper (Windows PowerShell)`
+  - `Backend Architecture / Backend Architecture`
+  - `Backend Unit / Backend Unit (ubuntu-latest)`
+  - `Backend Unit / Backend Unit (windows-latest)`
+  - `API Integration / API Integration (ubuntu-latest)`
+  - `API Integration / API Integration (windows-latest)`
+  - `Migration Validation / Migration Validation`
+  - `Frontend Unit / Frontend Unit (ubuntu-latest)`
+  - `Frontend Unit / Frontend Unit (windows-latest)`
+  - `Paper Color Audit / Paper Color Audit`
+  - `Container Images / Container Images`
+  - `Secret Scan / Gitleaks Scan` (pull-request events; enforcing)
+  - `E2E Smoke / E2E Smoke`
+- `Dependency Security / Dependency Security Signals` and `SAST Scan / SAST Scan (Semgrep)` are
+  current advisory contexts: they run in the required workflow but remain non-blocking while their
+  baselines are remediated. `DCO (advisory)` is also non-blocking.
 - Require up-to-date branches before merge only if desired; it does not replace the exact-head CI, DCO, canonical review-pipeline, or seam-specific evidence requirements.
 
 ## A2) GitHub Project / Execution Board setup
