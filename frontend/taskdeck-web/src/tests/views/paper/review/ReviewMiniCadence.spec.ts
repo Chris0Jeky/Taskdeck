@@ -11,7 +11,12 @@ describe('ReviewMiniCadence', () => {
     expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
     expect(wrapper.find('.paper-review-cadence').exists()).toBe(false)
     expect(wrapper.findAll('.paper-review-cadence__bar')).toHaveLength(0)
-    expect(wrapper.html()).toBe('<!--v-if-->')
+    // #1816 item 5: assert USER-VISIBLE absence, not Vue's `<!--v-if-->`
+    // placeholder string. The placeholder is a render internal that a Vue
+    // upgrade may rename without any change in what a reader sees; "no element
+    // and no text" is the property the no-fabrication contract actually needs.
+    expect(wrapper.find('div').exists()).toBe(false)
+    expect(wrapper.text()).toBe('')
   })
 
   it('renders nothing when the cadence data is an explicitly empty array', () => {

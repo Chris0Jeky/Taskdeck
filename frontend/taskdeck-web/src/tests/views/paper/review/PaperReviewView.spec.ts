@@ -2257,4 +2257,81 @@ describe('PaperReviewView', () => {
 
     wrapper.unmount()
   })
+
+  describe('mini-cadence wiring (#1802)', () => {
+    function decidedDaysAgo(daysAgo: number, overrides: Partial<Proposal> = {}): Proposal {
+      const d = new Date()
+      d.setHours(12, 0, 0, 0)
+      d.setDate(d.getDate() - daysAgo)
+      const iso = d.toISOString()
+      return makeProposal({
+        id: `decided-${daysAgo}`,
+        status: 'Applied',
+        decidedAt: iso,
+        decidedByUserId: 'u-1',
+        appliedAt: iso,
+        ...overrides,
+      })
+    }
+
+    it("renders real cadence bars from the current user's decided proposals", async () => {
+      const wrapper = await mountView([
+        makeProposal({ id: 'pending' }),
+        decidedDaysAgo(0, { id: 'a' }),
+        decidedDaysAgo(0, { id: 'b' }),
+        decidedDaysAgo(3, { id: 'c' }),
+      ])
+
+      const cadence = wrapper.find('[data-testid="paper-review-mini-cadence"]')
+      expect(cadence.exists()).toBe(true)
+      expect(cadence.attributes('aria-label')).toBe('Activity for the last 7 days')
+
+      const bars = wrapper.findAll('.paper-review-cadence__bar')
+      // Two decisions today (tallest, and the only "today" bar), one three days
+      // ago at half height, the remaining days measured zero — not invented.
+      expect(bars.map((bar) => (bar.element as HTMLElement).style.height)).toEqual([
+        '0%',
+        '0%',
+        '0%',
+        '50%',
+        '0%',
+        '0%',
+        '100%',
+      ])
+      expect(bars[6].classes()).toContain('paper-review-cadence__bar--today')
+      expect(bars[3].classes()).not.toContain('paper-review-cadence__bar--today')
+    })
+
+    it('hides the cadence when only other users have decided proposals', async () => {
+      const wrapper = await mountView([
+        makeProposal({ id: 'pending' }),
+        decidedDaysAgo(1, { id: 'theirs', decidedByUserId: 'u-2' }),
+      ])
+
+      expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
+      expect(wrapper.findAll('.paper-review-cadence__bar')).toHaveLength(0)
+    })
+
+    it('hides the cadence when nothing has been decided at all', async () => {
+      const wrapper = await mountView([makeProposal({ id: 'pending' })])
+
+      expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
+      // The rail still shows the honest apply-rate empty state beneath the heading.
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').text()).toBe(
+        'No decisions yet',
+      )
+    })
+
+    it('scopes the cadence to the active board filter', async () => {
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'pending', boardId: 'board-1' }),
+          decidedDaysAgo(1, { id: 'other-board', boardId: 'board-2' }),
+        ],
+        '/workspace/review?boardId=board-1',
+      )
+
+      expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
+    })
+  })
 })

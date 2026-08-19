@@ -9,6 +9,7 @@ import ReviewMain from './review/ReviewMain.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
+import { useReviewCadence } from '../../composables/useReviewCadence'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
@@ -426,6 +427,23 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
     }))
     .slice(0, 4)
 })
+
+/**
+ * Real 7-day cadence for the rail: how many proposals the CURRENT user decided
+ * on each of the last seven calendar days, projected from the review-queue
+ * payload already loaded (`decidedAt` / `decidedByUserId` on `ProposalDto`).
+ * Board-scoped through the same `matchesActiveBoardFilter` the queue uses, so
+ * the bars never describe a board the rail is not showing.
+ *
+ * `undefined` when there is nothing honest to draw — the mini-cadence then
+ * hides itself rather than inventing a week (#1782 / #1796 contract).
+ */
+const cadence = useReviewCadence(
+  proposals,
+  nowMs,
+  () => session.userId,
+  matchesActiveBoardFilter,
+)
 
 // --- Main column data --------------------------------------------------
 
@@ -1098,6 +1116,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :dismissable-count="bulkDismissableCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
+      :cadence="cadence"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
