@@ -2,32 +2,48 @@
 import { computed } from 'vue'
 
 /**
- * ReviewMiniCadence — 7-bar week-cadence sparkline. The last bar (today)
+ * ReviewMiniCadence — week-cadence sparkline. The last bar (today)
  * is rendered in ember; preceding days in ink-deep at 0.65 opacity.
+ *
+ * There is intentionally no default for `days`: without real activity counts
+ * the component renders nothing rather than inventing a plausible-looking
+ * week. Callers pass real history or omit the prop.
  */
-const props = withDefaults(
-  defineProps<{
-    /** 7 numbers, oldest → newest. Heights are normalised to the maximum. */
-    days?: number[]
-  }>(),
-  {
-    days: () => [4, 3, 5, 2, 4, 1, 3],
-  },
-)
+const props = defineProps<{
+  /**
+   * Real per-day activity counts, oldest → newest. Heights are normalised to
+   * the maximum. Omit (or pass an empty array) when there is no history.
+   */
+  days?: number[]
+}>()
 
-const max = computed(() => Math.max(1, ...props.days))
+/** Real counts to render; empty when the caller supplied no history. */
+const bars = computed<number[]>(() => (Array.isArray(props.days) ? props.days : []))
+
+const max = computed(() => Math.max(1, ...bars.value))
+
+/** Describes the actual number of rendered days, never an assumed week. */
+const label = computed(() =>
+  `Activity for the last ${bars.value.length} ${bars.value.length === 1 ? 'day' : 'days'}`,
+)
 </script>
 
 <template>
-  <div class="paper-review-cadence" role="img" aria-label="Activity for the last 7 days">
+  <div
+    v-if="bars.length > 0"
+    class="paper-review-cadence"
+    role="img"
+    :aria-label="label"
+    data-testid="paper-review-mini-cadence"
+  >
     <div
-      v-for="(d, i) in days"
+      v-for="(d, i) in bars"
       :key="i"
       class="paper-review-cadence__col"
     >
       <div
         class="paper-review-cadence__bar"
-        :class="{ 'paper-review-cadence__bar--today': i === days.length - 1 }"
+        :class="{ 'paper-review-cadence__bar--today': i === bars.length - 1 }"
         :style="{ height: `${(d / max) * 100}%` }"
       />
     </div>

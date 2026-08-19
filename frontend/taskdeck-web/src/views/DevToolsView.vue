@@ -221,18 +221,18 @@ function formatDuration(ms: number): string {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-1 text-zinc-100">Dev Tools</h1>
-    <p class="text-sm text-zinc-400 mb-6">Internal tooling for trace replay and scenario authoring.</p>
+  <div class="paper-devtools max-w-5xl mx-auto p-6">
+    <h1 class="tk-h2 paper-devtools__title mb-1">Dev Tools</h1>
+    <p class="tk-lede paper-devtools__subtitle mb-6">Internal tooling for trace replay and scenario authoring.</p>
 
     <!-- Tab bar -->
-    <div class="flex gap-2 mb-6 border-b border-zinc-700 pb-2">
+    <div class="flex gap-2 mb-6 border-b paper-dt-line pb-2">
       <button
         :class="[
           'px-4 py-2 rounded-t text-sm font-medium',
           activeTab === 'trace'
-            ? 'bg-zinc-700 text-zinc-100'
-            : 'text-zinc-400 hover:text-zinc-200',
+            ? 'paper-dt-raise paper-dt-ink-deep'
+            : 'paper-dt-mute paper-dt-hover-ink',
         ]"
         @click="activeTab = 'trace'"
       >
@@ -242,8 +242,8 @@ function formatDuration(ms: number): string {
         :class="[
           'px-4 py-2 rounded-t text-sm font-medium',
           activeTab === 'scenario'
-            ? 'bg-zinc-700 text-zinc-100'
-            : 'text-zinc-400 hover:text-zinc-200',
+            ? 'paper-dt-raise paper-dt-ink-deep'
+            : 'paper-dt-mute paper-dt-hover-ink',
         ]"
         @click="activeTab = 'scenario'"
       >
@@ -254,64 +254,64 @@ function formatDuration(ms: number): string {
     <!-- Trace Tab -->
     <div v-if="activeTab === 'trace'">
       <!-- Recorder controls -->
-      <div class="bg-zinc-800 rounded-lg p-4 mb-6">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-3">Trace Recorder</h2>
+      <div class="paper-dt-card rounded-lg p-4 mb-6">
+        <h2 class="text-lg font-semibold paper-dt-ink mb-3">Trace Recorder</h2>
         <div class="flex items-center gap-3 mb-3">
           <input
             v-model="traceName"
             type="text"
             aria-label="Trace name"
             placeholder="Trace name"
-            class="bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200 w-64"
+            class="paper-dt-field border paper-dt-line rounded px-3 py-1.5 text-sm paper-dt-ink w-64"
             :disabled="recorder.isRecording.value"
           />
           <button
             v-if="!recorder.isRecording.value"
-            class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded"
+            class="px-4 py-1.5 paper-dt-accent-ember paper-dt-hover-accent paper-dt-on-accent text-sm rounded"
             @click="startRecording"
           >
             Start Recording
           </button>
           <button
             v-else
-            class="px-4 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white text-sm rounded"
+            class="px-4 py-1.5 paper-dt-raise paper-dt-hover-raise paper-dt-on-accent text-sm rounded"
             @click="stopRecording"
           >
             Stop Recording ({{ recorder.actionCount.value }} actions)
           </button>
           <button
-            class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm rounded"
+            class="px-3 py-1.5 paper-dt-raise paper-dt-hover-raise paper-dt-ink-2 text-sm rounded"
             @click="importTrace"
           >
             Import Trace
           </button>
         </div>
-        <p v-if="recorder.isRecording.value" class="text-xs text-amber-400">
+        <p v-if="recorder.isRecording.value" class="text-xs paper-dt-warn">
           Recording in progress. Use the app normally; actions will be captured.
         </p>
-        <p v-if="traceError" class="text-xs text-red-400 mt-1">{{ traceError }}</p>
+        <p v-if="traceError" class="text-xs paper-dt-danger mt-1">{{ traceError }}</p>
       </div>
 
       <!-- Completed traces -->
       <div v-if="completedTraces.length > 0">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-3">Recorded Traces</h2>
+        <h2 class="text-lg font-semibold paper-dt-ink mb-3">Recorded Traces</h2>
         <div class="space-y-3">
           <div
             v-for="(trace, index) in completedTraces"
             :key="trace.id"
-            class="bg-zinc-800 rounded-lg p-4"
+            class="paper-dt-card rounded-lg p-4"
           >
             <div class="flex items-center justify-between mb-2">
               <div>
-                <span class="font-medium text-zinc-200">{{ trace.name }}</span>
-                <span class="text-xs text-zinc-400 ml-2">
+                <span class="font-medium paper-dt-ink">{{ trace.name }}</span>
+                <span class="text-xs paper-dt-mute ml-2">
                   {{ trace.actions.length }} actions, {{ formatDuration(trace.durationMs) }}
                 </span>
               </div>
               <div class="flex gap-2">
                 <button
                   v-if="replayTraceIndex !== index"
-                  class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded"
+                  class="px-3 py-1 paper-dt-accent-applied paper-dt-hover-accent paper-dt-on-accent text-xs rounded"
                   @click="startReplay(index)"
                 >
                   Replay
@@ -319,33 +319,33 @@ function formatDuration(ms: number): string {
                 <template v-else>
                   <button
                     v-if="replayState?.status === 'playing'"
-                    class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded"
+                    class="px-3 py-1 paper-dt-accent-warn paper-dt-hover-accent paper-dt-on-accent text-xs rounded"
                     @click="pauseReplay"
                   >
                     Pause
                   </button>
                   <button
                     v-else-if="replayState?.status === 'paused'"
-                    class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded"
+                    class="px-3 py-1 paper-dt-accent-applied paper-dt-hover-accent paper-dt-on-accent text-xs rounded"
                     @click="resumeReplay"
                   >
                     Resume
                   </button>
                   <button
-                    class="px-3 py-1 bg-zinc-600 hover:bg-zinc-500 text-white text-xs rounded"
+                    class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-on-accent text-xs rounded"
                     @click="stopReplay"
                   >
                     Stop
                   </button>
                 </template>
                 <button
-                  class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded"
+                  class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-ink-2 text-xs rounded"
                   @click="exportTrace(trace)"
                 >
                   Export
                 </button>
                 <button
-                  class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-red-400 text-xs rounded"
+                  class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-danger text-xs rounded"
                   @click="deleteTrace(index)"
                 >
                   Delete
@@ -355,12 +355,12 @@ function formatDuration(ms: number): string {
 
             <!-- Replay progress bar -->
             <div v-if="replayTraceIndex === index && replayState" class="mb-2">
-              <div class="w-full bg-zinc-700 rounded-full h-2">
+              <div class="w-full paper-dt-raise rounded-full h-2">
                 <div
-                  class="td-devtools-progress-fill bg-emerald-500 h-2 rounded-full transition-all"
+                  class="paper-devtools__progress-fill paper-dt-accent-applied h-2 rounded-full transition-all"
                 />
               </div>
-              <div class="flex justify-between text-xs text-zinc-400 mt-1">
+              <div class="flex justify-between text-xs paper-dt-mute mt-1">
                 <span>{{ replayState.currentIndex }}/{{ replayState.totalActions }}</span>
                 <span>{{ replayState.status }}</span>
               </div>
@@ -368,13 +368,13 @@ function formatDuration(ms: number): string {
 
             <!-- Action list -->
             <details class="mt-2">
-              <summary class="text-xs text-zinc-400 cursor-pointer hover:text-zinc-300">
+              <summary class="text-xs paper-dt-mute cursor-pointer paper-dt-hover-ink">
                 Show actions
               </summary>
               <div class="mt-2 max-h-60 overflow-y-auto">
                 <table class="w-full text-xs">
                   <thead>
-                    <tr class="text-zinc-500 border-b border-zinc-700">
+                    <tr class="paper-dt-faint border-b paper-dt-line">
                       <th class="text-left py-1 px-2">#</th>
                       <th class="text-left py-1 px-2">Type</th>
                       <th class="text-left py-1 px-2">Label</th>
@@ -386,10 +386,10 @@ function formatDuration(ms: number): string {
                       v-for="(action, ai) in trace.actions"
                       :key="action.id"
                       :class="[
-                        'border-b border-zinc-800',
+                        'border-b paper-dt-line',
                         replayTraceIndex === index && replayState && ai < replayState.currentIndex
-                          ? 'text-zinc-300'
-                          : 'text-zinc-500',
+                          ? 'paper-dt-ink-2'
+                          : 'paper-dt-faint',
                       ]"
                     >
                       <td class="py-1 px-2">{{ ai + 1 }}</td>
@@ -405,7 +405,7 @@ function formatDuration(ms: number): string {
         </div>
       </div>
 
-      <p v-else class="text-sm text-zinc-500">
+      <p v-else class="text-sm paper-dt-faint">
         No traces recorded yet. Start a recording or import a trace file.
       </p>
     </div>
@@ -413,80 +413,80 @@ function formatDuration(ms: number): string {
     <!-- Scenario Tab -->
     <div v-if="activeTab === 'scenario'">
       <!-- Scenario metadata -->
-      <div class="bg-zinc-800 rounded-lg p-4 mb-6">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-3">Scenario Editor</h2>
+      <div class="paper-dt-card rounded-lg p-4 mb-6">
+        <h2 class="text-lg font-semibold paper-dt-ink mb-3">Scenario Editor</h2>
         <div class="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label for="scenario-name" class="block text-xs text-zinc-400 mb-1">Name</label>
+            <label for="scenario-name" class="block text-xs paper-dt-mute mb-1">Name</label>
             <input
               id="scenario-name"
               v-model="scenario.name"
               type="text"
               placeholder="Scenario name"
-              class="w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200"
+              class="w-full paper-dt-field border paper-dt-line rounded px-3 py-1.5 text-sm paper-dt-ink"
             />
           </div>
           <div>
-            <label for="scenario-tags" class="block text-xs text-zinc-400 mb-1">Tags (comma-separated)</label>
+            <label for="scenario-tags" class="block text-xs paper-dt-mute mb-1">Tags (comma-separated)</label>
             <input
               id="scenario-tags"
               :value="(scenario.tags ?? []).join(', ')"
               type="text"
               placeholder="demo, onboarding"
-              class="w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200"
+              class="w-full paper-dt-field border paper-dt-line rounded px-3 py-1.5 text-sm paper-dt-ink"
               @input="scenario.tags = ($event.target as HTMLInputElement).value.split(',').map(t => t.trim()).filter(Boolean)"
             />
           </div>
         </div>
         <div class="mb-4">
-          <label for="scenario-description" class="block text-xs text-zinc-400 mb-1">Description</label>
+          <label for="scenario-description" class="block text-xs paper-dt-mute mb-1">Description</label>
           <textarea
             id="scenario-description"
             v-model="scenario.description"
             placeholder="What does this scenario demonstrate?"
             rows="2"
-            class="w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200"
+            class="w-full paper-dt-field border paper-dt-line rounded px-3 py-1.5 text-sm paper-dt-ink"
           />
         </div>
 
         <!-- Actions row -->
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs text-zinc-400">Add step:</span>
+          <span class="text-xs paper-dt-mute">Add step:</span>
           <button
             v-for="st in STEP_TYPES"
             :key="st"
-            class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded"
+            class="px-2 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-ink-2 text-xs rounded"
             @click="addStep(st)"
           >
             {{ st }}
           </button>
           <div class="flex-1" />
           <button
-            class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded"
+            class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-ink-2 text-xs rounded"
             @click="toggleJsonView"
           >
             {{ scenarioJsonView ? 'Form View' : 'JSON View' }}
           </button>
           <button
-            class="px-3 py-1 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded"
+            class="px-3 py-1 paper-dt-accent-ember paper-dt-hover-accent paper-dt-on-accent text-xs rounded"
             @click="validateCurrentScenario"
           >
             Validate
           </button>
           <button
-            class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded"
+            class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-ink-2 text-xs rounded"
             @click="importScenario"
           >
             Import
           </button>
           <button
-            class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded"
+            class="px-3 py-1 paper-dt-accent-applied paper-dt-hover-accent paper-dt-on-accent text-xs rounded"
             @click="exportScenario"
           >
             Export
           </button>
           <button
-            class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-red-400 text-xs rounded"
+            class="px-3 py-1 paper-dt-raise paper-dt-hover-raise paper-dt-danger text-xs rounded"
             @click="resetScenario"
           >
             Reset
@@ -495,11 +495,11 @@ function formatDuration(ms: number): string {
       </div>
 
       <!-- Validation errors -->
-      <div v-if="scenarioErrors.length > 0" class="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-4">
-        <h3 class="text-sm font-medium text-red-400 mb-2">Validation Errors</h3>
-        <ul class="list-disc list-inside text-xs text-red-300 space-y-1">
+      <div v-if="scenarioErrors.length > 0" class="paper-dt-danger-wash border paper-dt-line-danger rounded-lg p-3 mb-4">
+        <h3 class="text-sm font-medium paper-dt-danger mb-2">Validation Errors</h3>
+        <ul class="list-disc list-inside text-xs paper-dt-danger space-y-1">
           <li v-for="(err, ei) in scenarioErrors" :key="ei">
-            <span v-if="err.path" class="font-mono text-red-400">{{ err.path }}:</span>
+            <span v-if="err.path" class="font-mono paper-dt-danger">{{ err.path }}:</span>
             {{ err.message }}
           </li>
         </ul>
@@ -511,52 +511,52 @@ function formatDuration(ms: number): string {
           v-model="scenarioJsonText"
           aria-label="Scenario JSON"
           rows="20"
-          class="w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-2 text-xs font-mono text-zinc-200"
+          class="w-full paper-dt-field border paper-dt-line rounded px-3 py-2 text-xs font-mono paper-dt-ink"
         />
       </div>
 
       <!-- Steps form view -->
       <div v-else>
-        <div v-if="scenario.steps.length === 0" class="text-sm text-zinc-500 py-8 text-center">
+        <div v-if="scenario.steps.length === 0" class="text-sm paper-dt-faint py-8 text-center">
           No steps yet. Add a step using the buttons above.
         </div>
         <div v-else class="space-y-3">
           <div
             v-for="(step, si) in scenario.steps"
             :key="step.id"
-            class="bg-zinc-800 rounded-lg p-4 border-l-4"
+            class="paper-dt-step-card rounded-lg p-4 border-l-4"
             :class="{
-              'border-blue-500': step.type === 'navigate',
-              'border-amber-500': step.type === 'click',
-              'border-emerald-500': step.type === 'fill',
-              'border-zinc-500': step.type === 'wait',
-              'border-purple-500': step.type === 'assert',
-              'border-cyan-500': step.type === 'api-seed',
-              'border-orange-500': step.type === 'store-dispatch',
+              'paper-dt-line-ember': step.type === 'navigate',
+              'paper-dt-line-warn': step.type === 'click',
+              'paper-dt-line-applied': step.type === 'fill',
+              'paper-dt-line': step.type === 'wait',
+              'paper-dt-line-ink': step.type === 'assert',
+              'paper-dt-line-mute': step.type === 'api-seed',
+              'paper-dt-line-ember-deep': step.type === 'store-dispatch',
             }"
           >
             <div class="flex items-center justify-between mb-2">
               <div class="flex items-center gap-2">
-                <span class="text-xs font-mono text-zinc-500">#{{ si + 1 }}</span>
-                <span class="text-xs font-medium text-zinc-300 bg-zinc-700 px-2 py-0.5 rounded">{{ step.type }}</span>
+                <span class="text-xs font-mono paper-dt-faint">#{{ si + 1 }}</span>
+                <span class="text-xs font-medium paper-dt-ink-2 paper-dt-raise px-2 py-0.5 rounded">{{ step.type }}</span>
               </div>
               <div class="flex gap-1">
                 <button
-                  class="px-2 py-0.5 text-zinc-400 hover:text-zinc-200 text-xs"
+                  class="px-2 py-0.5 paper-dt-mute paper-dt-hover-ink text-xs"
                   :disabled="si === 0"
                   @click="moveStep(si, 'up')"
                 >
                   Up
                 </button>
                 <button
-                  class="px-2 py-0.5 text-zinc-400 hover:text-zinc-200 text-xs"
+                  class="px-2 py-0.5 paper-dt-mute paper-dt-hover-ink text-xs"
                   :disabled="si === scenario.steps.length - 1"
                   @click="moveStep(si, 'down')"
                 >
                   Down
                 </button>
                 <button
-                  class="px-2 py-0.5 text-red-400 hover:text-red-300 text-xs"
+                  class="px-2 py-0.5 paper-dt-danger paper-dt-hover-danger text-xs"
                   @click="removeStep(si)"
                 >
                   Remove
@@ -566,23 +566,23 @@ function formatDuration(ms: number): string {
 
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label :for="`step-${si}-desc`" class="block text-xs text-zinc-400 mb-1">Description</label>
+                <label :for="`step-${si}-desc`" class="block text-xs paper-dt-mute mb-1">Description</label>
                 <input
                   :id="`step-${si}-desc`"
                   v-model="step.description"
                   type="text"
                   placeholder="What does this step do?"
-                  class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-zinc-200"
+                  class="w-full paper-dt-field border paper-dt-line rounded px-2 py-1 text-xs paper-dt-ink"
                 />
               </div>
               <div>
-                <label :for="`step-${si}-delay`" class="block text-xs text-zinc-400 mb-1">Delay (ms)</label>
+                <label :for="`step-${si}-delay`" class="block text-xs paper-dt-mute mb-1">Delay (ms)</label>
                 <input
                   :id="`step-${si}-delay`"
                   v-model.number="step.delayMs"
                   type="number"
                   min="0"
-                  class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-zinc-200"
+                  class="w-full paper-dt-field border paper-dt-line rounded px-2 py-1 text-xs paper-dt-ink"
                 />
               </div>
             </div>
@@ -590,12 +590,12 @@ function formatDuration(ms: number): string {
             <!-- Dynamic params -->
             <div class="mt-2 grid grid-cols-2 gap-3">
               <div v-for="key in getStepParamKeys(step)" :key="key">
-                <label :for="`step-${si}-param-${key}`" class="block text-xs text-zinc-400 mb-1">{{ key }}</label>
+                <label :for="`step-${si}-param-${key}`" class="block text-xs paper-dt-mute mb-1">{{ key }}</label>
                 <input
                   :id="`step-${si}-param-${key}`"
                   :value="(step.params as unknown as Record<string, unknown>)[key]"
                   :type="typeof (step.params as unknown as Record<string, unknown>)[key] === 'number' ? 'number' : 'text'"
-                  class="w-full bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-xs text-zinc-200"
+                  class="w-full paper-dt-field border paper-dt-line rounded px-2 py-1 text-xs paper-dt-ink"
                   @input="(step.params as unknown as Record<string, unknown>)[key] = typeof (step.params as unknown as Record<string, unknown>)[key] === 'number' ? Number(($event.target as HTMLInputElement).value) : ($event.target as HTMLInputElement).value"
                 />
               </div>
@@ -608,7 +608,90 @@ function formatDuration(ms: number): string {
 </template>
 
 <style scoped>
-.td-devtools-progress-fill {
+/* ── Paper & Graphite — DevToolsView ──
+   Internal tooling (flag `devTools`).  This view was written in raw Tailwind
+   `zinc-*` dark utilities plus Tailwind-palette accents, so it rendered a
+   slate-grey panel inside the Paper shell and never followed Paper night.
+   The colour utilities are replaced by the scoped `paper-dt-*` skin classes
+   below, which read Paper tokens; every layout utility is untouched.  Tokens
+   live under `.paper` / `.paper-night`, so var() fallbacks keep the surface
+   legible outside the Paper shell. */
+
+.paper-devtools {
+  font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
+
+.paper-devtools__title { margin: 0; font-size: var(--t-h2, 32px); }
+.paper-devtools__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
+
+.paper-devtools__progress-fill {
   width: v-bind("replayProgress + '%'");
+}
+
+/* ── Ink ladder ── */
+.paper-dt-ink-deep { color: var(--ink-deep, #0a0908); }
+.paper-dt-ink { color: var(--ink, #1a1814); }
+.paper-dt-ink-2 { color: var(--ink-2, #3a352d); }
+.paper-dt-mute { color: var(--mute, #6c6557); }
+.paper-dt-faint { color: var(--faint, #6c6557); }
+.paper-dt-on-accent { color: var(--td-on-ember, #fefaf6); }
+.paper-dt-danger { color: var(--ember-deep, #7a2e15); }
+.paper-dt-warn { color: var(--overdue, #8c4a26); }
+
+.paper-dt-hover-ink:hover { color: var(--ink-deep, #0a0908); }
+.paper-dt-hover-danger:hover { color: var(--ember, #a8421f); }
+
+/* ── Substrate ── */
+.paper-dt-card {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+.paper-dt-field {
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
+
+.paper-dt-raise { background: var(--paper-2, #ebe5d8); }
+.paper-dt-hover-raise:hover { background: var(--paper-edge, #e3dac8); }
+.paper-dt-danger-wash { background: var(--ember-bloom, #a8421f1a); }
+
+/* ── Accents ── */
+.paper-dt-accent-ember { background: var(--ember, #a8421f); }
+.paper-dt-accent-applied { background: var(--applied, #4a6b3f); }
+.paper-dt-accent-warn { background: var(--overdue, #8c4a26); }
+.paper-dt-hover-accent:hover { filter: brightness(1.1); }
+
+/* ── Hairlines ── */
+.paper-dt-line { border-color: var(--line, #d8d0bf); }
+.paper-dt-line-danger { border-color: var(--ember, #a8421f); }
+.paper-dt-line-applied { border-color: var(--applied, #4a6b3f); }
+.paper-dt-line-warn { border-color: var(--overdue, #8c4a26); }
+.paper-dt-line-ember { border-color: var(--ember, #a8421f); }
+.paper-dt-line-ember-deep { border-color: var(--ember-deep, #7a2e15); }
+.paper-dt-line-ink { border-color: var(--ink-2, #3a352d); }
+.paper-dt-line-mute { border-color: var(--mute, #6c6557); }
+
+/* Scenario step card: keeps the original left-accent rule (Tailwind supplies
+   the 4px width, the accent class the colour) so no shorthand border fights it. */
+.paper-dt-step-card {
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  border-left-style: solid;
+}
+
+/* Inputs and textareas keep their Tailwind box metrics but take Paper focus. */
+.paper-devtools input:focus,
+.paper-devtools textarea:focus,
+.paper-devtools select:focus {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 </style>

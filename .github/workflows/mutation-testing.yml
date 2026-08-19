@@ -1,15 +1,17 @@
 # =============================================================================
-# Mutation Testing — manual/nightly lane for mutation score tracking.
-# NOT a PR gate. Runs on manual dispatch and weekly schedule.
-# Reports uploaded as artifacts for triage, not enforcement.
+# Mutation Testing — manual-dispatch lane for mutation score tracking.
+# NOT a PR gate. Runs on manual dispatch only (weekly schedule removed 2026-08-19,
+# ADR-0052). Reports uploaded as artifacts for triage, not enforcement.
 # =============================================================================
 
 name: Mutation Testing
 
 on:
-  schedule:
-    # Weekly on Sunday at 04:00 UTC — avoids overlap with nightly CI at 03:25.
-    - cron: '0 4 * * 0'
+  # Schedule removed 2026-08-19 (ARCHIVE-07 / #1275, ADR-0052 CI estate right-sizing):
+  # the mutation score is a non-blocking calibration signal, not a merge gate, and the
+  # backend lane carries a 180-minute ceiling. Run it on demand via workflow_dispatch
+  # instead of on a weekly cron. The #1500 repair (pinned Stryker.NET 4.16.0 + preflight)
+  # remains intact and provable on manual dispatch.
   workflow_dispatch:
     inputs:
       backend_only:

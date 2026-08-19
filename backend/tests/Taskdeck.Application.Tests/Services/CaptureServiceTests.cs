@@ -734,7 +734,8 @@ public class CaptureServiceTests
     public async Task EnqueueTriageAsync_ShouldTransitionNewCaptureToTriaging()
     {
         var userId = Guid.NewGuid();
-        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload", boardId);
 
         _llmQueueRepositoryMock
             .Setup(r => r.GetByIdAsync(item.Id, default))
@@ -747,6 +748,73 @@ public class CaptureServiceTests
         result.Value.AlreadyTriaging.Should().BeFalse();
         item.Status.Should().Be(RequestStatus.Processing);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnValidationError_WhenBoardlessAndNoTargetBoard()
+    {
+        // Home quick-capture lands board-less. Accepting it must be rejected synchronously (400),
+        // not queued into a doomed async job that fails permanently with a bare FAILED badge (#1764).
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("board");
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldLinkTargetBoardAndTriage_WhenBoardlessCaptureSuppliesBoard()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeFalse();
+        item.BoardId.Should().Be(boardId);
+        item.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenTargetBoardNotAccessible()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        item.BoardId.Should().BeNull();
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -889,7 +957,7 @@ public class CaptureServiceTests
     public async Task BatchTriageAsync_ShouldProcessMultipleItems_WithPartialFailure()
     {
         var userId = Guid.NewGuid();
-        var item1 = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture 1");
+        var item1 = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture 1", Guid.NewGuid());
         var item2Id = Guid.NewGuid(); // Non-existent item
 
         _llmQueueRepositoryMock

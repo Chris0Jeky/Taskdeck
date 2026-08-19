@@ -338,10 +338,36 @@ describe('captureStore', () => {
 
     await store.triageItem('c7')
 
-    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7')
+    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7', undefined)
     expect(captureApi.getItem).toHaveBeenCalledWith('c7')
     expect(store.detailById.c7?.status).toBe('Triaging')
     expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
+  })
+
+  it('forwards the chosen board id to the API when triaging a board-less capture (#1764)', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7b',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c7b',
+      userId: 'u1',
+      boardId: 'board-picked',
+      status: 'Triaging',
+      source: 'Typed',
+      textExcerpt: 'triaging',
+      rawText: 'triage me',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    await store.triageItem('c7b', 'board-picked')
+
+    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7b', 'board-picked')
   })
 
   it('optimistically updates cached detail status without overwriting a fresher summary when triage starts from an open item', async () => {

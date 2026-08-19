@@ -50,6 +50,19 @@ describe('InkBleed', () => {
     expect(wrapper.find('.ink-bleed__stamp').exists()).toBe(true)
   })
 
+  it('labels the composing eyebrow without naming a specific LLM model (#1767)', async () => {
+    // onMounted applies the controlled phase, so wait a tick before reading the
+    // rendered eyebrow (initial markup is the dried/no-JS fallback).
+    const composing = mount(InkBleed, { props: { phase: 'bloom' } })
+    await composing.vm.$nextTick()
+    expect(composing.find('.ink-bleed__eyebrow').text()).toBe('Assistant is composing…')
+    expect(composing.find('.ink-bleed__eyebrow').text().toLowerCase()).not.toContain('haiku')
+
+    const done = mount(InkBleed, { props: { phase: 'dried' } })
+    await done.vm.$nextTick()
+    expect(done.find('.ink-bleed__eyebrow').text()).toBe('Proposal · ready')
+  })
+
   it('advances through every phase at its scheduled time (auto)', async () => {
     const wrapper = mount(InkBleed, { props: { phase: 'auto' } })
     // onMounted has already kicked off the sequence at t=0 → drop.
