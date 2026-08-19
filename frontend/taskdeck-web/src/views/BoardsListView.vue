@@ -7,7 +7,9 @@ import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 
-const { t, locale } = useI18n()
+// Only `locale` is needed in script — this surface's copy is all template-side
+// via `$t`; the locale drives the Intl date formatter below.
+const { locale } = useI18n()
 const router = useRouter()
 const boardStore = useBoardStore()
 
