@@ -377,7 +377,7 @@ onUnmounted(() => {
 }
 
 .prov-drawer__meta {
-  background: var(--td-surface-sunken, #f9f9f9);
+  background: var(--td-surface-sunken, #0e0e0e);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 20px;

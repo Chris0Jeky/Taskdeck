@@ -48,7 +48,12 @@ const history: HistoryRow[] = []
 
 function mountMain(
   confidence: Partial<ConfidenceBreakdown> = {},
-  deepReview: { conflicts?: ConflictRow[]; history?: HistoryRow[] } = {},
+  deepReview: {
+    conflicts?: ConflictRow[]
+    history?: HistoryRow[]
+    applyPhase?: 'approve' | 'execute'
+    dismissable?: boolean
+  } = {},
 ) {
   return mount(ReviewMain, {
     props: {
@@ -77,6 +82,8 @@ function mountMain(
       sideEffects,
       conflicts: deepReview.conflicts ?? conflicts,
       history: deepReview.history ?? history,
+      applyPhase: deepReview.applyPhase ?? 'approve',
+      dismissable: deepReview.dismissable ?? false,
     },
   })
 }
@@ -131,6 +138,44 @@ describe('ReviewMain', () => {
   it('shows "Below your apply threshold" when confidence < threshold', () => {
     const wrapper = mountMain({ overall: 0.4, threshold: 0.7 })
     expect(wrapper.text()).toContain('Below your apply threshold')
+  })
+
+  // --- #1818: approved-but-not-executed must read differently from pending ---
+
+  describe('two-phase apply feedback', () => {
+    it('shows no approved banner while the proposal is still pending', () => {
+      const wrapper = mountMain()
+      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
+        'PRESS ⏎ TO APPROVE · ⌫ TO REJECT',
+      )
+    })
+
+    it('states "Approved — not yet applied to the board" once approved', () => {
+      const wrapper = mountMain({}, { applyPhase: 'execute' })
+      const banner = wrapper.get('[data-testid="paper-review-approved-banner"]')
+      expect(banner.text()).toContain('Approved — not yet applied to the board.')
+      // The banner must name the NEXT action, not just the state.
+      expect(banner.text()).toContain('Confirm apply')
+      expect(banner.attributes('role')).toBe('status')
+    })
+
+    it('makes the keyboard hint name the phase ⏎ will actually run', () => {
+      const wrapper = mountMain({}, { applyPhase: 'execute' })
+      expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
+        'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT',
+      )
+    })
+
+    it('shows the filing hint and no approved banner once the proposal is settled', () => {
+      // Applied (or otherwise terminal): distinct from BOTH pending and approved.
+      const wrapper = mountMain({}, { dismissable: true, applyPhase: 'execute' })
+      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
+        'PRESS ⌫ TO FILE AWAY',
+      )
+      expect(wrapper.text()).toContain('SETTLED')
+    })
   })
 
   it('renders malformed enum fallbacks as user-visible attention states', () => {

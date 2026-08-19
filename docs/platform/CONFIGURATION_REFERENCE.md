@@ -52,6 +52,7 @@ Source files used to build this reference:
   - [`Analytics`](#analytics)
 - [Database](#database)
   - [`Database`](#database-1)
+  - [`Database:Backup`](#databasebackup)
   - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
@@ -599,6 +600,32 @@ Registered via `RegisterValidatedOptions<DatabaseSettings>` with
 | --- | --- | --- | --- | --- | --- |
 | `Database:CommandTimeoutSeconds` | `int` | `30` | 1–300 | EF Core command timeout applied to the SQLite `DbContext`. Affects all queries including `Database.Migrate()` calls — avoid very low values if migrations are expected. | No |
 | `Database:BusyTimeoutMilliseconds` | `int` | `5000` | 0–60000 | SQLite `busy_timeout` applied to every connection (alongside WAL journal mode). When the single writer slot is contended (UI + MCP + CLI share one file), a waiting connection retries for up to this long before surfacing `SQLITE_BUSY`. `0` fails immediately (not recommended). | No |
+
+### `Database:Backup`
+
+Bound to `DatabaseBackupSettings` (`Taskdeck.Application.Services.DatabaseBackupSettings`).
+Registered in `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure` with
+`ValidateDataAnnotations().ValidateOnStart()`, so it applies to **every** host mode (API, CLI,
+MCP HTTP, MCP stdio) — all four apply migrations on startup.
+
+Before applying any pending EF Core migration, `SerializedMigrator` writes a consistent snapshot
+of the SQLite database file via SQLite's online backup API (WAL-safe: it folds uncheckpointed WAL
+frames in, and the resulting file needs no `-wal`/`-shm` sidecar). The snapshot is written to a
+`.tmp` sibling and moved into place only once complete.
+
+Behaviour worth knowing before you tune it:
+
+- **Only when migrations are pending.** An ordinary boot against an up-to-date schema copies
+  nothing, and a first run that creates the database copies nothing (there is no prior state).
+- **Fail-closed.** If the snapshot cannot be written, `PreMigrationBackupException` propagates out
+  of startup and the migration is **not** applied. Retention *pruning* failures are the exception:
+  they log a warning and let startup continue, because the protective copy already exists.
+
+| Key | Type | Default | Range | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Database:Backup:Enabled` | `bool` | `true` | — | Snapshot the SQLite file before applying pending migrations. Setting this to `false` removes the only automatic protection against a failed upgrade — do it only when an external system already snapshots the file, or for throwaway databases. | No |
+| `Database:Backup:RetainCount` | `int` | `5` | 1–100 | How many pre-migration snapshots to keep per database file. After a successful backup, older snapshots are deleted oldest-first. Only files matching the managed `<db>-pre-migration-<UTC timestamp>.db` pattern are ever deleted. | No |
+| `Database:Backup:Directory` | `string` | `""` (→ `backups/` next to the database file) | — | Where snapshots are written. A **relative** path resolves against the directory holding the database file, not the process working directory (the API, CLI, and MCP hosts do not share one). | No |
 
 ### `AuditRetention`
 

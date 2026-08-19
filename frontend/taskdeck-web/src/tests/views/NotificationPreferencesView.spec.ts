@@ -62,6 +62,25 @@ describe('NotificationPreferencesView', () => {
     expect(mockNotificationStore.fetchPreferences).toHaveBeenCalledTimes(1)
   })
 
+  // #1816: the no-legacy-hooks guard from #1808 landed in only 4 of the 6
+  // restyled Settings specs; this is NotificationPreferences' copy.
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(NotificationPreferencesView)
+    await waitForUi()
+
+    expect(wrapper.find('.paper-prefs').exists()).toBe(true)
+    expect(wrapper.find('.paper-prefs__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-prefs__panel').exists()).toBe(true)
+    // The toggle rows are the bulk of the restyled markup; pin one so the
+    // negative assertions below cannot pass on an unrendered form.
+    expect(wrapper.find('.paper-prefs__toggle-row').exists()).toBe(true)
+
+    expect(wrapper.find('[class*="td-notification-preferences"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-toggle-row"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-btn"]').exists()).toBe(false)
+  })
+
   it('submits updated preference values', async () => {
     const wrapper = mount(NotificationPreferencesView)
     await waitForUi()

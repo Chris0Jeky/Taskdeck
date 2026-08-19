@@ -1,4 +1,4 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { automationApi } from '../api/automationApi'
 import { proposalRevisionsApi } from '../api/proposalRevisionsApi'
 import { useToastStore } from '../store/toastStore'
@@ -218,9 +218,66 @@ export function useReviewActions(
     }
   }
 
-  async function handleExecuteProposal(proposalId: string) {
-    if (!confirm('Apply this approved proposal to the board now?')) return
+  // --- Phase 2 (execute) confirmation --------------------------------------
+  //
+  // #1818: the approve→execute split is the ADR-0003 product invariant and does
+  // NOT change here — only its feedback does. The second phase used to be gated
+  // by a native `confirm()`, which cannot carry the proposal summary, is not
+  // styled by either surface, and is invisible to component specs. It is now a
+  // declarative request: the surface renders the app's own dialog (TdDialog, the
+  // #1407 hardening idiom) bound to `executeConfirmProposalId`, and only
+  // `confirmExecuteProposal()` reaches the API. `handleExecuteProposal` is
+  // deliberately NOT exported so no caller can execute without that gate.
+  const executeConfirmProposalId = ref<string | null>(null)
 
+  /** The proposal awaiting the phase-2 confirmation, so the dialog can show its summary. */
+  const executeConfirmProposal = computed<ApiProposal | null>(() => {
+    const id = executeConfirmProposalId.value
+    if (!id) return null
+    return proposals.value.find((p) => p.id === id) ?? null
+  })
+
+  function requestExecuteProposal(proposalId: string) {
+    // Another decision is mid-flight; opening the gate now would let the user
+    // confirm against state that is already changing.
+    if (proposalActionBusyId.value !== null) return
+    executeConfirmProposalId.value = proposalId
+  }
+
+  function cancelExecuteProposal() {
+    executeConfirmProposalId.value = null
+  }
+
+  async function confirmExecuteProposal() {
+    const proposalId = executeConfirmProposalId.value
+    if (!proposalId) return
+    // Confirming against a proposal that vanished from the list (refresh, filter
+    // change, dismissed elsewhere) would apply something no longer on screen —
+    // and the dialog has already closed itself, since its `open` is derived from
+    // this same computed. Load-bearing guard, not a tidy-up.
+    const stillPresent = executeConfirmProposal.value !== null
+    // Close the gate BEFORE awaiting so a double-confirm cannot fire two
+    // executes; the Idempotency-Key would make the second a no-op server-side,
+    // but the surface must not depend on that to stay honest.
+    executeConfirmProposalId.value = null
+    if (!stillPresent) return
+    await handleExecuteProposal(proposalId)
+  }
+
+  // Keep the pending id from lingering after its proposal leaves the list, so a
+  // later refresh that re-adds it cannot silently re-open the dialog. Sync flush:
+  // a pre-flush watcher would miss a set-then-remove that happens in one tick.
+  watch(
+    executeConfirmProposal,
+    (proposal) => {
+      if (executeConfirmProposalId.value !== null && proposal === null) {
+        executeConfirmProposalId.value = null
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  async function handleExecuteProposal(proposalId: string) {
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.executeProposal(proposalId, createRequestId())
@@ -357,10 +414,14 @@ export function useReviewActions(
     selectedDiffMode,
     selectedDiffInvalidReason,
     selectedDiffRevised,
+    executeConfirmProposalId,
+    executeConfirmProposal,
     handleApproveProposal,
     handleRejectProposal,
     handleDeferProposal,
-    handleExecuteProposal,
+    requestExecuteProposal,
+    cancelExecuteProposal,
+    confirmExecuteProposal,
     handleToggleDiff,
     handleDismissProposal,
     handleDismissApplied,

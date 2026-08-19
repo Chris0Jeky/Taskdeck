@@ -19,6 +19,7 @@ import { expect, test } from '@playwright/test'
 import type { StarterPackManifest } from '../../src/types/starter-packs'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
 
@@ -110,10 +111,7 @@ test('V-02: register to create board to capture to triage to approve to board st
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
   // Step 9: Apply the approved proposal (S1 board mutation)
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
   await expect(proposalCard).not.toBeVisible()
 
   // Step 10: Verify card appeared on the board (S1 board state)
