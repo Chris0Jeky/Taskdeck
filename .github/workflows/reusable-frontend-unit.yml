@@ -57,7 +57,7 @@ jobs:
       # (no extra install/build), so it is the "cheap" check the issue asks for. Runs AFTER the
       # unit tests so a bundle regression does not mask test results. Linux-only to avoid a
       # redundant second run on the Windows matrix leg. Error thresholds (entry 150 / single 250 /
-      # total-js 1200 KB) are the defaults in scripts/ci/check-bundle-size.mjs, matching the
+      # total-js 1250 KB) are the defaults in scripts/ci/check-bundle-size.mjs, matching the
       # existing performance-regression gate.
       - name: Check frontend bundle size
         if: runner.os == 'Linux'
