@@ -550,7 +550,7 @@ const maxWipCount = computed(() => {
 .paper-metrics__label {
   font-size: var(--t-xs, 10.5px);
   font-weight: 600;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -579,7 +579,7 @@ const maxWipCount = computed(() => {
 }
 
 .paper-metrics__select:disabled {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   cursor: not-allowed;
 }
 
@@ -661,7 +661,7 @@ const maxWipCount = computed(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-metrics__card-value {
@@ -738,7 +738,7 @@ const maxWipCount = computed(() => {
 .paper-metrics__bar-label {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   margin-top: var(--s-1, 4px);
   white-space: nowrap;
 }
@@ -817,7 +817,7 @@ const maxWipCount = computed(() => {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   background: var(--paper-2, #ebe5d8);
   border-bottom: 1px solid var(--line, #d8d0bf);
 }
@@ -932,7 +932,7 @@ const maxWipCount = computed(() => {
 
 .paper-metrics__confidence-rate {
   font-family: var(--mono, ui-monospace, monospace);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
 }
 
@@ -969,7 +969,7 @@ const maxWipCount = computed(() => {
 
 .paper-metrics__assumptions {
   font-size: var(--t-sm, 12px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-metrics__assumptions-summary {

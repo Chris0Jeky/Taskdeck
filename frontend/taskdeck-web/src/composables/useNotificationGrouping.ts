@@ -28,18 +28,26 @@ export function typeLabel(value: number | string): string {
 }
 
 /**
- * Tailwind border-left color class for a notification type.
- * Returns a left-border class. Also includes an aria-compatible
- * label via the type badge so color is not the sole differentiator.
+ * Left-border accent stripe class for a notification type.
+ *
+ * This function stays the single source of truth for WHICH stripe each type
+ * gets. The colour itself moved out of the Tailwind palette and into
+ * `--td-notify-*` tokens (#1817): `.td-notify-stripe--*` in `src/style.css`
+ * paints them, `design-tokens.css` holds the original Tailwind hues at `:root`
+ * so Legacy is unchanged, and `paper-legacy-bridge.css` re-tints all five onto
+ * Paper hues inside the Paper shell.
+ *
+ * Colour is never the sole differentiator — each row also carries a text type
+ * badge (`typeBadgeClass` / `typeLabel`).
  */
 export function typeBorderClass(value: number | string): string {
   const t = normalizeType(value)
   switch (t) {
-    case 'ProposalOutcome': return 'border-l-4 border-l-amber-500'
-    case 'Mention': return 'border-l-4 border-l-blue-500'
-    case 'BoardChange': return 'border-l-4 border-l-green-500'
-    case 'Assignment': return 'border-l-4 border-l-purple-500'
-    case 'System': return 'border-l-4 border-l-gray-400'
+    case 'ProposalOutcome': return 'td-notify-stripe td-notify-stripe--proposal'
+    case 'Mention': return 'td-notify-stripe td-notify-stripe--mention'
+    case 'BoardChange': return 'td-notify-stripe td-notify-stripe--board-change'
+    case 'Assignment': return 'td-notify-stripe td-notify-stripe--assignment'
+    case 'System': return 'td-notify-stripe td-notify-stripe--system'
   }
 }
 

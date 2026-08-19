@@ -435,7 +435,7 @@ onMounted(() => {
 
 .paper-queue__stat-label {
   margin-top: var(--s-1, 4px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-sm, 12px);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -500,7 +500,7 @@ onMounted(() => {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-queue__input,
@@ -528,12 +528,12 @@ onMounted(() => {
 }
 
 .paper-queue__helper {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
   line-height: 1.5;
 }
 
-.paper-queue__loading { color: var(--mute, #6c6557); }
+.paper-queue__loading { color: var(--mute, #635c4e); }
 
 .paper-queue__empty {
   display: flex;
@@ -575,14 +575,14 @@ onMounted(() => {
   padding: var(--s-1, 4px) var(--s-2, 8px);
   font-size: var(--t-xs, 10.5px);
   font-weight: 700;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-queue__status-badge--warning { color: var(--overdue, #8c4a26); }
 .paper-queue__status-badge--info { color: var(--ember, #a8421f); }
 .paper-queue__status-badge--success { color: var(--applied, #4a6b3f); }
 .paper-queue__status-badge--error { color: var(--ember-deep, #7a2e15); }
-.paper-queue__status-badge--muted { color: var(--mute, #6c6557); }
+.paper-queue__status-badge--muted { color: var(--mute, #635c4e); }
 
 .paper-queue__request-meta {
   display: flex;
@@ -591,7 +591,7 @@ onMounted(() => {
   margin-top: var(--s-2, 8px);
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-queue__request-error {

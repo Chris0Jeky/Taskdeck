@@ -637,7 +637,7 @@ function formatDuration(ms: number): string {
 .paper-dt-ink-deep { color: var(--ink-deep, #0a0908); }
 .paper-dt-ink { color: var(--ink, #1a1814); }
 .paper-dt-ink-2 { color: var(--ink-2, #3a352d); }
-.paper-dt-mute { color: var(--mute, #6c6557); }
+.paper-dt-mute { color: var(--mute, #635c4e); }
 .paper-dt-faint { color: var(--faint, #6c6557); }
 .paper-dt-on-accent { color: var(--td-on-ember, #fefaf6); }
 .paper-dt-danger { color: var(--ember-deep, #7a2e15); }
@@ -676,7 +676,7 @@ function formatDuration(ms: number): string {
 .paper-dt-line-ember { border-color: var(--ember, #a8421f); }
 .paper-dt-line-ember-deep { border-color: var(--ember-deep, #7a2e15); }
 .paper-dt-line-ink { border-color: var(--ink-2, #3a352d); }
-.paper-dt-line-mute { border-color: var(--mute, #6c6557); }
+.paper-dt-line-mute { border-color: var(--mute, #635c4e); }
 
 /* Scenario step card: keeps the original left-accent rule (Tailwind supplies
    the 4px width, the accent class the colour) so no shorthand border fights it. */

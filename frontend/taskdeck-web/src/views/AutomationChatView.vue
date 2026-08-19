@@ -170,7 +170,7 @@ const {
 .paper-chat__session-title { margin: 0 0 var(--s-1, 4px); font-size: var(--t-lg, 18px); }
 
 .paper-chat__meta {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
 }
 
@@ -200,7 +200,7 @@ const {
   margin: 0;
   max-width: 420px;
   line-height: 1.5;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-chat__empty-actions {

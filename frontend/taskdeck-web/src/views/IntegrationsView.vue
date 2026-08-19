@@ -507,7 +507,7 @@ onMounted(() => {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   margin-bottom: var(--s-1, 4px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-int__input,
@@ -550,7 +550,7 @@ onMounted(() => {
 .paper-int__empty {
   text-align: center;
   padding: var(--s-12, 56px) var(--s-4, 16px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-int__error { color: var(--overdue, #8c4a26); }
@@ -625,7 +625,7 @@ onMounted(() => {
 }
 
 .paper-int__badge--active { background: var(--applied-tint, #d8e0ce); color: var(--applied, #4a6b3f); }
-.paper-int__badge--disabled { background: var(--paper-2, #ebe5d8); color: var(--mute, #6c6557); }
+.paper-int__badge--disabled { background: var(--paper-2, #ebe5d8); color: var(--mute, #635c4e); }
 .paper-int__badge--error { background: var(--ember-bloom, #a8421f1a); color: var(--ember-deep, #7a2e15); }
 
 .paper-int__dir {
@@ -641,7 +641,7 @@ onMounted(() => {
 
 .paper-int__type {
   font-family: var(--mono, ui-monospace, monospace);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-int__card-actions {
@@ -682,7 +682,7 @@ onMounted(() => {
 
 .paper-int__detail-loading {
   text-align: center;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-md, 13.5px);
   padding: var(--s-4, 16px) 0;
 }
@@ -695,7 +695,7 @@ onMounted(() => {
   font-size: var(--t-xs, 10.5px);
   font-weight: 600;
   margin: 0 0 var(--s-1, 4px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -716,7 +716,7 @@ onMounted(() => {
 
 .paper-int__config-empty {
   font-size: var(--t-md, 13.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-style: italic;
 }
 
@@ -742,7 +742,7 @@ onMounted(() => {
 
 .paper-int__event-date {
   font-family: var(--mono, ui-monospace, monospace);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-size: var(--t-xs, 10.5px);
 }
 
@@ -754,7 +754,7 @@ onMounted(() => {
 
 .paper-int__events-empty {
   font-size: var(--t-md, 13.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
   font-style: italic;
 }
 

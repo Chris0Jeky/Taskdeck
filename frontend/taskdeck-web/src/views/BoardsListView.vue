@@ -194,7 +194,7 @@ function goToBoard(id: string) {
 }
 
 .paper-boards__eyebrow {
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-boards__title {
@@ -314,7 +314,7 @@ function goToBoard(id: string) {
 
 .paper-boards__card-desc--empty {
   font-style: italic;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-boards__card-meta {
@@ -323,7 +323,7 @@ function goToBoard(id: string) {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: var(--t-xs, 10.5px);
   letter-spacing: 0.04em;
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 /* ── Skeleton ── */
@@ -380,7 +380,7 @@ function goToBoard(id: string) {
 .paper-boards__empty-hint {
   margin: var(--s-1, 4px) 0 0;
   font-size: var(--t-md, 13.5px);
-  color: var(--mute, #6c6557);
+  color: var(--mute, #635c4e);
 }
 
 .paper-boards__empty-actions {

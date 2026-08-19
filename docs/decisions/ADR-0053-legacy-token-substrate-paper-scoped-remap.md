@@ -209,15 +209,41 @@ every property of every view without delivering the Paper idiom.
 **Neutral**
 
 - `[data-theme="light"]` stays in the tree as documented dead code with a deletion candidate on
-  record.
+  record. *(Superseded 2026-08-19 by `#1817`: the block was deleted after the `data-theme` grep was
+  re-run and came back empty. See the status table under "Known limitations".)*
 - The Paper Color Audit is unaffected: it scans `components/paper/**`, the AppShell paper region,
   and the `paper-tokens.css` hex count (70/70 baseline, unchanged). The bridge adds no hex outside
-  comments and no tokens to `paper-tokens.css`.
+  comments and no tokens to `paper-tokens.css`. *(Still 70/70 after `#1817`: `--mute` changed value,
+  not count, and the bridge's new rules are `var()` references.)*
 
 ## Known limitations
 
 Measured at `53406cfd`. All of these are tracked in **`#1817`** unless noted; none of them is fixed
 by this change, and a later session should not read the Positive bullets above as covering them.
+
+> **Status update — 2026-08-19, `#1817`.** Every item below has since been dispositioned. The
+> descriptions are kept as the record of what the interim floor shipped with; the current state is:
+>
+> | # | Disposition |
+> |---|---|
+> | 1 | **Split.** `.td-alert--error` and `.td-btn--ghost` are reached by Paper surfaces and now carry `.paper`-scoped overrides in the bridge; `.td-card` is Legacy-only (its one consumer renders under `BoardCanvas`, which `BoardView` swaps for `PaperBoardView`) and `.ghost-border` is dead (zero consumers repo-wide) — both recorded as permanent Legacy-only styling, not fixed. |
+> | 2 | **Fixed**, but not by the extra selector this section predicted: `style.css` styles `::-webkit-scrollbar-thumb` on `<html>` too, which blocks the usual `<body>`→viewport propagation, so `.paper::-webkit-scrollbar-thumb` would not have reached it either. The standard `scrollbar-color` property does propagate and now carries the skin, with descendants reset to `auto` so in-page containers keep the webkit treatment. |
+> | 3 | **Fixed.** `frontend/taskdeck-web/tests/paper-legacy-bridge-invariants.spec.ts` pins both invariants against tables read out of git at `0f6f9a5d^`, plus the scoping and single-source contracts. Mutation-checked. |
+> | 4 | **Deleted.** The `[data-theme="light"]` block is gone; the `data-theme` grep was re-run first and now returns nothing in `src/` or `index.html`. The `[data-density]` siblings are untouched. |
+> | 5 | **Fixed.** `--td-color-info` maps to `--ink-2`: Paper reserves its one accent hue for attention, so an informational foreground is neutral ink. |
+> | 6 | **Fixed.** All four `*-light` tints are opaque Paper palette entries (`--td-color-info-light` → `--paper-edge`), and `--td-shadow-lg`/`-xl` are distinct steps again, composed from existing Paper tokens so `.paper-night` still inverts. |
+>
+> Also closed under `#1817`: the light-Paper ink ladder (`--mute` darkened to `#635c4e` so it is a
+> real rung above `--faint`), the five notification accent stripes (now `--td-notify-*` tokens,
+> Tailwind hues at `:root`, Paper hues in the bridge), the `:root`-vs-bridge depth-ladder
+> disagreement (`--td-surface-elevated` joins `--td-surface-high` on both substrates), and
+> `html { color-scheme: dark }` (the root element now follows the body skin via `:has()`).
+>
+> Still open and **not** fixed there: the eyebrow-token idiom split (`--ember` in `BoardAccessView`
+> and `SavedViewsView` vs `--mute` in the other Settings roots) needs a wave-wide ruling before a
+> sweep; and `CaptureModal`'s scoped `.td-alert--error` was corrected to `--ember-ink`, but the
+> global utility's original pairing (`--ember` on `--ember-tint`) measured **4.45:1** — a
+> pre-existing sub-AA hairline that this ledger had not recorded.
 
 1. **Six hardcoded Obsidian values in the `.td-*` utility layer are unreachable by the remap.**
    `src/style.css` (227 lines) contains exactly six colour literals outside any token — verified by
