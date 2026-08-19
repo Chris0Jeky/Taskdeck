@@ -73,6 +73,22 @@ public sealed class TranscriptsApiTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task GetById_ShouldRejectTheEmptyGuidAsAValidationError()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "transcript-read-empty-id");
+
+        // The all-zero GUID satisfies the route constraint but can never identify a
+        // transcript; it is rejected as malformed input rather than searched for.
+        var response = await client.GetAsync($"/api/transcripts/{Guid.Empty}");
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
+    [Fact]
     public async Task GetById_ShouldNotRevealAnotherUsersTranscript()
     {
         using var ownerClient = _factory.CreateClient();
