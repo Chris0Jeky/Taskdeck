@@ -54,3 +54,4 @@
 | [0050](ADR-0050-gplv3-copyleft-core.md) | Adopt GPLv3-only for the Taskdeck Core | Accepted | 2026-08-12 |
 | [0051](ADR-0051-autonomous-backlog-admission-and-merge-authority.md) | Autonomous Backlog Admission and Agent-Executable Merge Authority | Accepted | 2026-08-18 |
 | [0052](ADR-0052-ci-estate-right-sizing.md) | CI Estate Right-Sizing — Keep/Fix/Kill/Gate Verdict Per Scheduled Lane | Accepted | 2026-08-19 |
+| [0053](ADR-0053-legacy-token-substrate-paper-scoped-remap.md) | Legacy Obsidian Token Substrate — Paper-Scoped Remap as an Interim Floor, Per-View Migration as the Fix | Accepted | 2026-08-19 |
