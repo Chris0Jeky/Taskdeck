@@ -20,6 +20,12 @@ set -uo pipefail
 _tests_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SH_GUARD="${WT_GUARD_SH:-$_tests_dir/worktree_guard.sh}"
 PS_GUARD="${WT_GUARD_PS:-$_tests_dir/worktree_guard.ps1}"
+# PowerShell resolves an argument path itself, but a path embedded in a
+# -Command string must already be native (MSYS /c/... is not resolvable).
+PS_GUARD_NATIVE="$PS_GUARD"
+if command -v cygpath >/dev/null 2>&1; then
+    PS_GUARD_NATIVE="$(cygpath -w "$PS_GUARD" 2>/dev/null || printf '%s' "$PS_GUARD")"
+fi
 
 PASS=0
 FAIL=0
@@ -111,6 +117,28 @@ expect_ps() {
     fi
 }
 
+# The printed worker handoff calls the PowerShell guard IN PROCESS and gates on
+# `$?` plus `$LASTEXITCODE`, so success must leave both clean even though the
+# guard runs git commands that legitimately exit non-zero (symbolic-ref on a
+# detached HEAD). expect_ps_inprocess <name> <dir>
+expect_ps_inprocess() {
+    local name="$1" dir="$2"
+    if [ -z "$PS_EXE" ]; then
+        skip "ps: $name (no PowerShell on PATH)"
+        return 0
+    fi
+    local script="& '$PS_GUARD_NATIVE'; if (-not \$?) { exit 91 }; if (\$LASTEXITCODE -ne 0) { exit 92 }; exit 0"
+    local output
+    output="$(cd -- "$dir" && "$PS_EXE" -NoLogo -NoProfile -NonInteractive -Command "$script" 2>&1)"
+    local code=$?
+    if [ "$code" -eq 0 ]; then
+        pass "ps: $name (in-process, exit $code)"
+    else
+        fail "ps: $name (in-process guard left \$?/\$LASTEXITCODE dirty, exit $code)"
+        printf '%s\n' "$output" | sed 's/^/        /'
+    fi
+}
+
 # expect_sh_output <name> <needle> <dir>
 expect_sh_output() {
     local name="$1" needle="$2" dir="$3"
@@ -155,6 +183,8 @@ expect_sh "short out-of-repo root accepted" 0 "$FIXTURE_ROOT/short"
 expect_ps "short out-of-repo root accepted" 0 "$FIXTURE_ROOT/short"
 expect_sh_output "out-of-repo root reports the advisory NOTE" \
     "NOTE [worktree_guard]:" "$FIXTURE_ROOT/short"
+expect_ps_inprocess "detached worktree leaves a clean in-process exit code" "$FIXTURE_ROOT/short"
+expect_ps_inprocess "in-repo worktree leaves a clean in-process exit code" "$FIXTURE_ROOT/primary/.worktrees/inrepo"
 
 # --- rejected: non-worktree roots ----------------------------------------
 echo "rejected roots"

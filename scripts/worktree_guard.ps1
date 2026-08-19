@@ -306,3 +306,8 @@ foreach ($marker in $AllowedMarkers) {
 if (-not $isConventionalRoot) {
     Write-Host "NOTE [worktree_guard]: root is outside the conventional worktree directories; accepted on linked-worktree substance."
 }
+
+# Success must leave a zero exit code for in-process callers (`& guard; $?;
+# $LASTEXITCODE`). Probing git for HEAD state runs commands that legitimately
+# exit non-zero (symbolic-ref on a detached HEAD), so clear it explicitly.
+$global:LASTEXITCODE = 0
