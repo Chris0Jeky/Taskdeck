@@ -48,7 +48,7 @@
     "pinia": "^3.0.4",
     "vue": "^3.5.41",
     "vue-router": "^5.2.0",
-    "ws": "^8.21.2"
+    "ws": "^8.21.3"
   },
   "overrides": {
     "vite-plugin-pwa": {
