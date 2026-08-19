@@ -10,7 +10,7 @@ function makeItem(overrides: Partial<QueueRailItem> = {}): QueueRailItem {
     id: 'p-1',
     serial: '#0001',
     title: 'A proposal',
-    who: 'haiku',
+    who: 'assistant',
     confidence: 0.84,
     age: '4s',
     reach: '3 cards · 1 board',
