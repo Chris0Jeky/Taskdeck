@@ -103,7 +103,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -163,7 +163,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -323,7 +323,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -386,7 +386,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -437,7 +437,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -492,7 +492,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -541,7 +541,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -590,7 +590,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -662,7 +662,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -754,7 +754,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "No access"));
 
         // Act
@@ -896,7 +896,7 @@ public class AutomationPlannerServiceTests
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
                 null, null, null, null, Guid.NewGuid().ToString(),
                 new List<ProposalOperationDto>())));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         var result = await _service.ParseInstructionAsync(instruction, userId, boardId);
@@ -1043,7 +1043,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act — use the short 8-char ID, not the full GUID
@@ -1093,7 +1093,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -1143,7 +1143,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -1191,7 +1191,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act — use the full GUID, not a short ID

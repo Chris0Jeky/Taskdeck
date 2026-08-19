@@ -1024,7 +1024,8 @@ public class ChatService : IChatService
             o.IdempotencyKey,
             o.ExpectedVersion)).ToList();
 
-        var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, ct);
+        // Creating a proposal is a mutation lane: write-capable membership required (#1836).
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, ct);
         if (!permissionResult.IsSuccess)
             return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
 

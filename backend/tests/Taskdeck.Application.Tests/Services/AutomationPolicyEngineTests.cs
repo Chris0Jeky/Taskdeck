@@ -192,7 +192,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync(user);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -214,7 +214,7 @@ public class AutomationPolicyEngineTests
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
 
-        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations, BoardAccessBar.Write);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
@@ -228,7 +228,7 @@ public class AutomationPolicyEngineTests
         var operations = new List<ProposalOperationDto>();
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(Guid.Empty, null, operations);
+        var result = await _engine.ValidatePermissionsAsync(Guid.Empty, null, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -249,7 +249,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync((User?)null);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, null, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, null, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -274,7 +274,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync((Board?)null);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -302,7 +302,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync(false);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -328,7 +328,7 @@ public class AutomationPolicyEngineTests
         _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync((Board?)null);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -343,7 +343,7 @@ public class AutomationPolicyEngineTests
         var userId = Guid.NewGuid();
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, null, null!);
+        var result = await _engine.ValidatePermissionsAsync(userId, null, null!, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -362,7 +362,7 @@ public class AutomationPolicyEngineTests
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync((User?)null);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -386,7 +386,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync(false);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeFalse();
@@ -411,7 +411,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync(true);
 
         // Act
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
@@ -419,11 +419,14 @@ public class AutomationPolicyEngineTests
 
     #endregion
 
-    #region ValidateBoardAccess write-mirror Tests (#1836)
+    #region ValidateBoardAccess read/write bar Tests (#1836)
 
-    // #1836: the board half of the gate mirrors the API-side #1794/#1827 write bar. Everything
-    // routed through here is a proposal lane, so read-capable-but-not-write-capable membership
-    // (Viewer) must be refused at validation rather than at execute.
+    // #1836: the board half of the gate takes an explicit BoardAccessBar because one gate serves
+    // two lanes. BoardAccessBar.Write mirrors the API-side #1794/#1827 write bar for the MUTATION
+    // lanes (proposal creation, approve, execute), so read-capable-but-not-write-capable
+    // membership (Viewer) is refused at validation rather than at execute. BoardAccessBar.Read
+    // keeps plain membership for the READ lanes (pending diff, terminal stored preview behind MCP
+    // proposal_detail, #1415) so a member demoted to Viewer can still read their own proposals.
 
     [Fact]
     public async Task ValidateBoardAccess_ShouldRequireWriteCapableMembership_NotMereReadAccess()
@@ -444,7 +447,7 @@ public class AutomationPolicyEngineTests
             .ReturnsAsync(false);
 
         // Act
-        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write);
 
         // Assert — an explicit Forbidden outcome, never an exception (the LLM-lane convention).
         result.IsSuccess.Should().BeFalse();
@@ -453,7 +456,7 @@ public class AutomationPolicyEngineTests
     }
 
     [Fact]
-    public async Task ValidateBoardAccess_ShouldQueryWithEditorAsMinimumRole()
+    public async Task ValidateBoardAccess_ShouldQueryWithEditorAsMinimumRole_UnderWriteBar()
     {
         // Pins the minimum role actually sent to the repository: UserRole.Editor is the exact
         // membership set BoardAccess.CanWrite() admits, and HasAccessAsync short-circuits the owner
@@ -469,7 +472,7 @@ public class AutomationPolicyEngineTests
             .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
             .ReturnsAsync(true);
 
-        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write);
 
         result.IsSuccess.Should().BeTrue();
         _boardAccessRepoMock.Verify(
@@ -481,10 +484,122 @@ public class AutomationPolicyEngineTests
     }
 
     [Fact]
+    public async Task ValidateBoardAccess_ShouldQueryWithNullMinimumRole_UnderReadBar()
+    {
+        // The mirror image of the write-bar pin: the Read bar must send `null` (any membership),
+        // the literal pre-#1836 argument. Sending UserRole.Editor here is exactly the regression
+        // that cost a demoted-to-Viewer member their own proposals' detail (#1836 amendment).
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("viewer", "viewer@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(true);
+
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Read);
+
+        result.IsSuccess.Should().BeTrue();
+        _boardAccessRepoMock.Verify(
+            r => r.HasAccessAsync(boardId, userId, null, default),
+            Times.Once);
+        _boardAccessRepoMock.Verify(
+            r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldAdmitReadOnlyMember_UnderReadBar()
+    {
+        // THE regression this split exists to prevent: a Viewer — write-denied, membership-allowed
+        // — reading a board-scoped proposal gate. Under the Read bar they are admitted.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("viewer", "viewer@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, null, default))
+            .ReturnsAsync(true);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(false);
+
+        var readResult = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Read);
+        var writeResult = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write);
+
+        // Same user, same board, same fixture — the bar is the only difference.
+        readResult.IsSuccess.Should().BeTrue();
+        writeResult.IsSuccess.Should().BeFalse();
+        writeResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldDenyNonMember_UnderReadBar()
+    {
+        // The Read bar is membership, not "anyone": a user with no BoardAccess row at all is
+        // still Forbidden, with the pre-#1836 message the MCP/HTTP surfaces already assert on.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("stranger", "stranger@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(false);
+
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Read);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be($"User does not have access to board {boardId}");
+        result.ErrorMessage.Should().NotContain("write access");
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldAdmitReadOnlyMember_UnderReadBar()
+    {
+        // The composed gate must carry the bar through, since the pending-diff read path calls
+        // THIS method (not ValidateBoardAccessAsync) at BoardAccessBar.Read.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("viewer", "viewer@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>
+        {
+            new ProposalOperationDto(Guid.NewGuid(), Guid.NewGuid(), 0, "update", "board", boardId.ToString(), $"{{\"name\":\"Renamed\",\"boardId\":\"{boardId}\"}}", "key1", null)
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, null, default))
+            .ReturnsAsync(true);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(false);
+
+        var readResult = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Read);
+        var writeResult = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
+
+        readResult.IsSuccess.Should().BeTrue();
+        writeResult.IsSuccess.Should().BeFalse();
+        writeResult.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
     public async Task ValidatePermissions_ShouldReturnForbidden_ForReadOnlyMember()
     {
         // The mirror has to hold through the composed gate too, which is what the approve/apply
-        // and stored-preview chains actually call.
+        // and creation chains actually call.
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var user = new User("viewer", "viewer@example.com", "hashedPassword");
@@ -503,7 +618,7 @@ public class AutomationPolicyEngineTests
             .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
             .ReturnsAsync(false);
 
-        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
@@ -523,7 +638,7 @@ public class AutomationPolicyEngineTests
             .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
             .ReturnsAsync(true);
 
-        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write);
 
         result.IsSuccess.Should().BeTrue();
     }
@@ -531,13 +646,13 @@ public class AutomationPolicyEngineTests
     [Fact]
     public async Task ValidateBoardAccess_ShouldSkipBoardGate_WhenBoardIdIsNull()
     {
-        // Unchanged by the mirror: a board-less requester check touches no board repository at all.
+        // Unchanged by either bar: a board-less requester check touches no board repository at all.
         var userId = Guid.NewGuid();
         var user = new User("someone", "someone@example.com", "hashedPassword");
 
         _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
 
-        var result = await _engine.ValidateBoardAccessAsync(userId, null);
+        var result = await _engine.ValidateBoardAccessAsync(userId, null, BoardAccessBar.Write);
 
         result.IsSuccess.Should().BeTrue();
         _boardAccessRepoMock.Verify(
