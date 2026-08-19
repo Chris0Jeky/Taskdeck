@@ -51,6 +51,10 @@ protection settings.
   - `Dependency Security / Dependency Security Signals`
   - `SAST Scan / SAST Scan (Semgrep)`
   - `Secret Scan / Gitleaks Scan`
+- Of those three, only `Secret Scan` actually enforces its findings: under ADR-0035 phased
+  enforcement, `dependency-security` and `sast-scan` run with `enforce-findings: false`, so they
+  report advisory findings and still pass (tracked in `#1175` / `#1174`). They remain required
+  contexts, so they must complete successfully — but a finding alone does not block a merge.
 - CodeQL default setup is currently **disabled** (turned off 2026-08-19 after its checks hung).
   No CodeQL context may be listed as required or expected until re-enablement lands; that is
   tracked in `#1819`.
