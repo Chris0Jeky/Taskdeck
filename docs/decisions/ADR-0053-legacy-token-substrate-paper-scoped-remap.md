@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-19
 - Deciders: Coordinating agent under maintainer-delegated authority (ADR-0051 autonomous-admission lane), 2026-08-19
-- Related: `#1778` (this decision), `#1769` (Paper-shell sweep that found the shared root cause), `#1775` (first Option-B cluster: Saved Views), `#1779`/`#1780`/`#1781` (Option-B clusters in flight), ADR-0011 (Obsidian & Ember token system), ADR-0038 (Paper UI is canonical, legacy frozen)
+- Related: `#1778` (this decision), `#1769` (Paper-shell sweep that found the shared root cause), `#1775` (first Option-B cluster: Saved Views), `#1779`/`#1780`/`#1781` (Option-B clusters in flight), `#1817` (residuals ledger for "Known limitations"), `#1815` (Paper-idiom guard scope / Legacy mode's fate), `#1814` (undeclared `--td-surface-*` tokens), ADR-0011 (Obsidian & Ember token system), ADR-0038 (Paper UI is canonical, legacy frozen)
 
 ## Context
 
@@ -34,8 +34,8 @@ Paper variables "DO NOT apply at `:root`, so existing Obsidian (`--td-*`) tokens
 ADR-0038 then made Paper the canonical UI and flipped its default to on — but substrate 1 was never
 scoped to match. The result is the defect `#1769` swept up: **a view that has not been migrated to
 the Paper idiom renders its Obsidian colours inside the cream Paper shell.** Measured at `a2ac87e8`,
-28 of the 33 top-level route views reference substrate 1, and **23 of them have no Paper-variant
-switch at all** (method: `grep -lE "var\(--td-|\b(bg|text|border|placeholder|ring|divide)-(surface|on-surface|on-background|background|outline|primary|secondary|tertiary|error|ember|obsidian|argent)" *.vue` in `src/views`, minus the files matching `paperTheme\.isOn`). Those 23 are black-panel-and-red-button surfaces sitting on cream paper.
+28 of the 33 top-level route views reference substrate 1, and **23 of those make no reference to the
+Paper theme store at all** (method: `grep -lE "var\(--td-|\b(bg|text|border|placeholder|ring|divide)-(surface|on-surface|on-background|background|outline|primary|secondary|tertiary|error|ember|obsidian|argent)" *.vue` in `src/views` → 28 files, minus the 5 of those 28 that also match `grep -l paperTheme` → **23**. Subtracting `paperTheme\.isOn` instead yields 25, not 23: only `BoardView`, `HomeView` and `TodayView` carry a real `paperTheme.isOn` Paper/Legacy switch, while `AppearanceSettingsView` and `PaperStyleGuideView` reference the store without being one. All three figures — 33 / 28 / 23 — re-reproduced at `53406cfd`.) Those 23 are black-panel-and-red-button surfaces sitting on cream paper.
 
 Two views already worked around this by hand: `LoginView.vue` and `RegisterView.vue` write
 `background: var(--paper, var(--td-surface-base))` — a per-view, per-property bridge. That pattern
@@ -78,7 +78,9 @@ shell classes, in a new `frontend/taskdeck-web/src/paper-legacy-bridge.css`:
   `var()`s *already substituted*, so aliases declared as `var(--td-surface-container)` on `:root`
   froze to the Obsidian value there and would not have followed the remap.
 - Two `::-webkit-scrollbar-thumb` rules are scoped alongside, because `style.css` hardcodes those
-  colours outside any token.
+  colours outside any token. Both use a descendant combinator (`.paper ::-webkit-scrollbar-thumb`),
+  so they reach in-page scroll containers but **not** the document scrollbar — see
+  "Known limitations".
 
 **Option B — per-view migration to the Paper idiom.** Unchanged as the real fix, and unblocked by
 Option A rather than replaced by it. `#1775` (Saved Views) is the reference pattern; `#1779`,
@@ -110,7 +112,7 @@ visual regression harder. Track and remove it separately.
   `background` is invalid-at-computed-value-time and resolves to transparent. The bridge defines all
   five under Paper. **The `:root` gap is a separate pre-existing defect and is deliberately not
   fixed here** — defining them at `:root` would change Legacy rendering, which this slice's whole
-  safety argument rests on not doing.
+  safety argument rests on not doing. Filed as `#1814`.
 - **Accent collapse.** Obsidian already collapsed "primary", "error" and "ember" onto three
   near-identical reds (`#ffb3ae` / `#ffb4ab` / `#ff4d4d`). Paper has one accent hue, so they
   collapse onto `--ember` here too. This is faithful to the palette being replaced, not a new
@@ -153,9 +155,30 @@ every property of every view without delivering the Paper idiom.
 **Positive**
 
 - Every not-yet-migrated view stops rendering black/red inside the Paper shell, in both `.paper` and
-  `.paper-night`, from one file.
-- Legacy mode is provably untouched: no `.paper` class on `<body>` means every token in the bridge
-  is inert and the Tailwind fallbacks resolve to the original hex.
+  `.paper-night`, from one file — **for every colour that resolves through a token**. That is the
+  large majority of the surface, but not all of it: six declarations in the `.td-*` utility layer
+  hardcode Obsidian colour outside any token and are structurally unreachable by a token remap.
+  They are enumerated under "Known limitations" and tracked in `#1817`.
+- Legacy mode is untouched wherever the Paper classes are absent, which is every route a user
+  actually browses in Legacy. The bridge declares nothing at `:root`, so outside a
+  `.paper` / `.paper-night` subtree the `--td-*` tokens are undeclared and every Tailwind
+  `var(--td-tw-x, #hex)` resolves to the original hex. **The correct quantifier is "no element
+  carrying `.paper`/`.paper-night`", not "no `.paper` on `<body>`"** — two elements carry the class
+  independently of `<body>`:
+  - `views/paper/PaperReviewView.vue:1087` (`class="paper paper-review-deep"`) renders only behind
+    `paperTheme.isOn` (`views/ReviewView.vue:10`), so it is unreachable in Legacy mode.
+  - `views/PaperStyleGuideView.vue` frames both preview panes as `.paper` / `.paper-night`
+    *regardless of the global mode* (line 76 `:class="['sg-frame', previewClass]"`, line 327 the
+    opposite-theme mini frame), on a reachable route. So the style-guide route **does** change in
+    Legacy — by exactly one declaration: `.sg-frame`'s `border: 1px solid var(--td-border-default)`
+    (line 412) now resolves the bridge's `var(--line)` instead of `:root`'s `#2a2a2a`. Verified that
+    every primitive rendered inside those frames (`PaperStamp`, `PaperHLBtn`, `PaperTagstamp`,
+    `PaperStatusPill`, `PaperConfidenceDial`, `PaperCard`, `PaperIcon`, `PaperKbd`,
+    `PaperLedgerRow`, `InkBleed`) consumes zero `--td-*` and zero Tailwind semantic colours, and the
+    page chrome outside the frames (`.sg-root`, `.sg-toolbar`, `.sg-divider` — the file's other
+    eight `--td-*` reads) sits outside both classes and is unaffected. The systemic question this
+    raises — how far the Paper-idiom guard should extend, and what Legacy mode is ultimately for —
+    is `#1815`.
 - The remap is structural, not enumerated. A legacy view added or edited tomorrow inherits the floor
   without anyone remembering to add it — which a hand-written list of utility overrides would not
   have given.
@@ -186,9 +209,77 @@ every property of every view without delivering the Paper idiom.
   and the `paper-tokens.css` hex count (70/70 baseline, unchanged). The bridge adds no hex outside
   comments and no tokens to `paper-tokens.css`.
 
+## Known limitations
+
+Measured at `53406cfd`. All of these are tracked in **`#1817`** unless noted; none of them is fixed
+by this change, and a later session should not read the Positive bullets above as covering them.
+
+1. **Six hardcoded Obsidian values in the `.td-*` utility layer are unreachable by the remap.**
+   `src/style.css` (227 lines) contains exactly six colour literals outside any token — verified by
+   grepping hex, `rgb()`/`rgba()`, `hsl()`, `oklch()` and named colours across the whole file:
+   - L41 `::-webkit-scrollbar-thumb` — `background: #5b403e`
+   - L45 `::-webkit-scrollbar-thumb:hover` — `background: #ab8986`
+   - L76 `.ghost-border` — `border: 0.5px solid rgba(91, 64, 62, 0.15)`
+   - L88 `.td-card` — `border: 0.5px solid rgba(91, 64, 62, 0.05)`
+   - L134 `.td-btn--ghost` — `border: 0.5px solid rgba(91, 64, 62, 0.2)`
+   - L200 `.td-alert--error` — `border-color: rgba(255, 77, 77, 0.2)`
+
+   L41/L45 are partly addressed by the bridge's scoped scrollbar rules (see 2). The other four are
+   not addressed at all: warm-brown hairlines (`rgba(91,64,62,.15)` over `#f3eee5` ≈ `#e3dcd4`) and
+   a hot-red alert border survive on cream, on primitives that the legacy views share. The blend is
+   mild enough to read as a warm hairline rather than an Obsidian artefact, so this is an accuracy
+   limit of the floor, not a legibility defect — but it is why the Positive bullet is qualified.
+   Fixing it means either `.paper`-scoped overrides in the bridge
+   (`.paper .td-card { border-color: var(--line-soft) }` and friends) or a decision to keep them as
+   permanent Legacy-only styling. Note the two scoped-style call sites often cited alongside these
+   (`components/inbox/InboxDetailPanel.vue`, `components/inbox/InboxListPanel.vue`) are **not** in
+   this class: their Obsidian hex are `var(--td-*, #hex)` fallbacks, and the bridge defines every
+   one of those tokens under Paper, so the fallbacks never fire there.
+
+2. **The scoped scrollbar rules miss the document scrollbar.** `.paper` sits on `<body>`, and the
+   viewport scrollbar is painted from `body` itself, so the descendant combinator in
+   `.paper ::-webkit-scrollbar-thumb` cannot match it. The main page scrollbar therefore keeps
+   `#5b403e` under Paper — the most visible surviving Obsidian artefact. The fix is one extra
+   no-space selector per rule (`.paper::-webkit-scrollbar-thumb`), for both the base and `:hover`
+   pairs.
+
+3. **No automated guard for the two invariants the safety argument rests on.** "Legacy is
+   byte-identical" and "every `--td-tw-*` the Tailwind config emits is defined in the bridge" are
+   both true today, and both were established by hand, once. Nothing stops a later edit to
+   `tailwind.config.js` from adding a colour with no bridge definition (an Obsidian hex leaks back
+   in under Paper) or dropping a fallback (Legacy changes silently). Both are mechanical,
+   file-parsing properties — the same shape as the existing `tests/theme/paperEmberContrast.spec.ts`
+   — and a small spec asserting them would hold them permanently.
+
+4. **`error` and `info` collapse to the same foreground under Paper.** `--td-color-error` and
+   `--td-color-info` both map to `--ember`; Obsidian distinguished them (`#ff4d4d` vs `#ffb3ae`).
+   The "Accent collapse" rationale above covers primary/error/ember and does *not* extend to `info`.
+   Backgrounds still differ (`--ember-tint` vs `--ember-bloom`), so the two are not
+   indistinguishable, but an info banner's foreground now reads as an error. Live consumers:
+   `components/shell/AppShell.vue`, `components/review/ReviewProposalCard.vue`,
+   `components/chat/ChatMessageList.vue`, `components/board/starter-pack/starter-pack-tokens.css`.
+
+5. **`*-light` status tokens change from translucent to opaque, inconsistently.** Obsidian's
+   `--td-color-{success,warning,error}-light` were `rgba(..., 0.15)`; the Paper mappings
+   (`--applied-tint`, `--overdue-tint`, `--ember-tint`) are fully opaque, while
+   `--td-color-info-light` → `--ember-bloom` keeps 10% alpha. Call sites that layered these over a
+   non-default surface lose the blend, and the four are no longer consistent with one another.
+
+6. **Modal/popover elevation flattens.** `--td-shadow-lg` and `--td-shadow-xl` both fold onto
+   `--shadow-lift`. Paired with `--td-surface-container-high` (`#e3dac8`) sitting close to the page
+   (`#f3eee5`), legacy dropdowns and popovers may lose separation from the page. This is the mapping
+   most likely to produce the first per-view tuning report.
+
+Items 4–6 are the per-token tuning pass; `#1817` also carries the pre-existing
+`html { color-scheme: dark }` in `style.css`, which keeps native `<select>` popups, date pickers and
+autofill dark inside the Paper shell (not introduced by this change).
+
 ## References
 
 - `#1778` — this decision; `#1769` — the Paper-shell sweep that found the shared root cause
+- `#1817` — the residuals ledger for every item under "Known limitations"; `#1815` — how far the
+  Paper-idiom guard extends and Legacy mode's long-term fate; `#1814` — the undeclared
+  `--td-surface-*` tokens as a `:root`-level defect
 - `#1775` — Saved Views, the Option-B reference pattern; `#1779`/`#1780`/`#1781` — Option-B clusters
 - ADR-0011 — Design Token System (Obsidian & Ember); ADR-0038 — Paper UI Is the Canonical Frontend
 - `frontend/taskdeck-web/src/paper-legacy-bridge.css` — the Option A implementation
