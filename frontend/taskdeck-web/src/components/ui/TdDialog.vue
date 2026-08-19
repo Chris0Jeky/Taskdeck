@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useVisualViewport } from '../../composables/useVisualViewport'
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +24,15 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocusedElement: HTMLElement | null = null
 let unregisterEscape: (() => void) | null = null
+
+// The backdrop teleports to <body>, so no ancestor can constrain it — a software
+// keyboard would otherwise leave the footer actions underneath itself. The
+// `'unset'` fallback keeps the `100dvh` mobile sheet intact on browsers without
+// a VisualViewport API (see the `var(..., 100dvh)` declarations below).
+const { style: visualViewportStyle } = useVisualViewport({
+  prefix: '--td-dialog',
+  fallback: 'unset',
+})
 
 function requestClose() {
   emit('close')
@@ -99,6 +109,7 @@ onUnmounted(() => {
       <div
         v-if="props.open"
         class="td-dialog-backdrop"
+        :style="visualViewportStyle"
         @click.self="handleBackdropClick"
         @keydown.escape="handleBackdropClick"
       >
@@ -139,7 +150,19 @@ onUnmounted(() => {
 <style scoped>
 .td-dialog-backdrop {
   position: fixed;
-  inset: 0;
+  /* Bound to the VISUAL viewport, not the layout viewport: a software keyboard
+   * contracts the visual viewport only, and `inset: 0` would keep the dialog
+   * (and its footer actions) spanning the full layout viewport underneath it.
+   * `--td-dialog-visual-viewport-*` come from `useVisualViewport`; when the
+   * browser has no VisualViewport API they are never set and the `100dvh`
+   * fallback below applies. */
+  left: 0;
+  right: 0;
+  top: var(--td-dialog-visual-viewport-offset-top, 0px);
+  /* vh fallback for browsers without custom properties (they drop the next
+   * declaration outright); those browsers also predate dvh. */
+  height: 100vh;
+  height: var(--td-dialog-visual-viewport-height, 100dvh);
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
@@ -151,6 +174,7 @@ onUnmounted(() => {
 .td-dialog {
   width: min(560px, 100%);
   max-height: calc(100vh - 2 * var(--td-space-8));
+  max-height: calc(var(--td-dialog-visual-viewport-height, 100dvh) - 2 * var(--td-space-8));
   overflow-y: auto;
   background: var(--td-surface-container);
   border: 1px solid var(--td-border-default);
@@ -240,6 +264,11 @@ onUnmounted(() => {
     height: 100vh;
     max-height: 100dvh;
     height: 100dvh;
+    /* The backdrop is already sized to the visual viewport (or 100dvh when the
+     * VisualViewport API is missing), so fill it rather than re-deriving a
+     * layout-viewport height here. */
+    max-height: 100%;
+    height: 100%;
     border-radius: 0;
     /* Respect iOS safe-area insets so footer actions don't sit under the
      * home indicator and the header doesn't collide with the notch. */
