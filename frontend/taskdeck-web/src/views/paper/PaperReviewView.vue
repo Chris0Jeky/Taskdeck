@@ -6,6 +6,8 @@ import ReviewQueueRail, {
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
+import type { ApplyPhase } from './review/ReviewDecisionRail.vue'
+import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
@@ -108,10 +110,13 @@ const ownedDismissableIds = computed(() =>
 const {
   proposalActionBusyId,
   bulkDismissBusy,
+  executeConfirmProposal,
   handleApproveProposal,
   handleRejectProposal,
   handleDeferProposal,
-  handleExecuteProposal,
+  requestExecuteProposal,
+  cancelExecuteProposal,
+  confirmExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
 } = useReviewActions(proposals, ownedDismissableIds, loadProposals, isProposalExpired)
@@ -682,6 +687,16 @@ const activeDismissable = computed(
 // per-proposal rail in Paper) is never left unclearable. #1161
 const bulkDismissableCount = computed(() => ownedDismissableIds.value.length)
 
+// #1818: which half of the two-phase apply the ⏎ / primary button will run.
+// `execute` is the state the walkthrough found illegible — approved, but the
+// board is untouched until the second explicit call. A settled proposal (the
+// filing rail) has no apply phase at all, so it reports `approve`.
+const applyPhase = computed<ApplyPhase>(() => {
+  const p = activeProposal.value
+  if (!p || activeDismissable.value) return 'approve'
+  return normalizeProposalStatus(p.status) === 'Approved' ? 'execute' : 'approve'
+})
+
 function onFileAway() {
   const p = activeProposal.value
   if (!p) return
@@ -766,7 +781,9 @@ async function onApply() {
   }
   const status = normalizeProposalStatus((activeProposal.value ?? p).status)
   if (status === 'Approved') {
-    void handleExecuteProposal(p.id)
+    // Phase 2 — opens the in-app confirmation (#1818); only its accept button
+    // reaches executeProposal, preserving the explicit second step of ADR-0003.
+    requestExecuteProposal(p.id)
     return
   }
   void handleApproveProposal(p.id)
@@ -1057,7 +1074,11 @@ useReviewKeymap(
     onPreviewDiff,
   },
   {
-    enabled: () => !busy.value && activeProposal.value !== null,
+    // #1818: while the apply confirmation is open the dialog owns the keyboard —
+    // ⏎ must not re-dispatch onApply behind it, and ⌫/D/E must not decide on a
+    // proposal the user is being asked to confirm.
+    enabled: () =>
+      !busy.value && activeProposal.value !== null && executeConfirmProposal.value === null,
   },
 )
 
@@ -1129,6 +1150,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
         :dismissable="activeDismissable"
+        :apply-phase="applyPhase"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1293,8 +1315,19 @@ function onQueueFilterChange(filter: QueueFilter) {
       :breakdown="selectors.confidenceBreakdown.value"
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :apply-phase="applyPhase"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
+
+    <!-- Phase-2 confirmation (#1818) — the app dialog idiom replacing the native
+         confirm(); it carries the proposal summary so the user confirms what
+         they are about to write to the board. -->
+    <ApplyToBoardDialog
+      :proposal="executeConfirmProposal"
+      :busy="busy"
+      @confirm="confirmExecuteProposal"
+      @cancel="cancelExecuteProposal"
+    />
   </div>
 </template>
 

@@ -1,19 +1,35 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import PaperKbd from '../../../components/paper/PaperKbd.vue'
+import type { ApplyPhase } from './ReviewDecisionRail.vue'
 
 /**
  * ReviewKeysCard — Decide-with-keys quick-reference rendered in the
  * ember-tint card. The shortcuts are static; behaviour is owned by
  * `useReviewKeymap`.
+ *
+ * ⏎ is the one row that is NOT static: it runs whichever half of the
+ * ADR-0003 two-phase apply the active proposal is in, so its description
+ * follows the phase (#1818 AC2).
  */
-const rows: Array<{ key: string; label: string }> = [
-  { key: '⏎', label: 'Apply proposal' },
+const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase }>(), {
+  applyPhase: 'approve',
+})
+
+const rows = computed<Array<{ key: string; label: string }>>(() => [
+  {
+    key: '⏎',
+    label:
+      props.applyPhase === 'execute'
+        ? 'Confirm apply to board · step 2 of 2'
+        : 'Approve proposal · step 1 of 2',
+  },
   { key: 'E', label: 'Request edit · opens composer' },
   { key: '⌫', label: 'Reject · with optional reason' },
   { key: 'D', label: 'Defer 1h' },
   { key: 'P', label: 'Toggle provenance pane' },
   { key: 'space', label: 'Preview diff in card detail' },
-]
+])
 </script>
 
 <template>
