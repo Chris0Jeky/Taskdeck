@@ -1,16 +1,50 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
 import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 const boardStore = useBoardStore()
 
 const newBoardName = ref('')
 const showCreateForm = ref(false)
+
+/**
+ * Date formatting goes through `Intl` against the ACTIVE locale, not through a
+ * per-locale catalog of date patterns (ADR-0054 §4) — `Intl` already carries
+ * the CLDR data.
+ *
+ * Region is preserved where it agrees with the chosen language: if the browser
+ * asks for `en-GB` and the app language is `en`, we format as `en-GB`, exactly
+ * as the previous bare `toLocaleDateString()` did. Only when the chosen
+ * language has no matching browser region do we fall back to the bare language
+ * tag. Without this, turning i18n on would silently switch every en-GB user
+ * from 19/08/2026 to 8/19/2026 — a regression dressed up as a feature.
+ */
+const dateLocale = computed(() => {
+  const active = locale.value
+  const preferred =
+    typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language])
+  const regional = preferred.find(
+    (tag) => typeof tag === 'string' && tag.toLowerCase().split('-')[0] === active,
+  )
+  return regional ?? active
+})
+
+// A computed, so switching language re-formats the rows already on screen.
+const dateFormatter = computed(() => new Intl.DateTimeFormat(dateLocale.value))
+
+function formatCreatedAt(createdAt: string): string {
+  const parsed = new Date(createdAt)
+  // An unparseable timestamp would render "Invalid Date" through Intl; show the
+  // raw value instead so the card still says something truthful.
+  return Number.isNaN(parsed.getTime()) ? createdAt : dateFormatter.value.format(parsed)
+}
 
 onMounted(async () => {
   // Catch the rethrown error — boardStore.error is already set by handleApiError
@@ -33,6 +67,7 @@ async function createBoard() {
     // Navigate to the new board
     router.push(`/boards/${board.id}`)
   } catch (error) {
+    // Developer-facing log line, not user copy — deliberately not a catalog key.
     logError('Failed to create board:', error)
   }
 }
@@ -47,39 +82,41 @@ function goToBoard(id: string) {
     <div class="paper-boards__inner">
       <header class="paper-boards__hero">
         <div class="paper-boards__hero-copy">
-          <span class="tk-eyebrow paper-boards__eyebrow">Workspace</span>
-          <h1 class="tk-h1 paper-boards__title">My Boards</h1>
+          <span class="tk-eyebrow paper-boards__eyebrow">{{ $t('boards.eyebrow') }}</span>
+          <h1 class="tk-h1 paper-boards__title">{{ $t('boards.title') }}</h1>
         </div>
         <div class="paper-boards__hero-actions">
           <PaperHLBtn
             :variant="showCreateForm ? 'default' : 'ember'"
             @click="showCreateForm = !showCreateForm"
           >
-            + New Board
+            {{ $t('boards.newBoard') }}
           </PaperHLBtn>
         </div>
       </header>
 
       <!-- Create Board Form -->
       <section v-if="showCreateForm" class="paper-boards__panel paper-boards__create">
-        <h2 class="tk-h3 paper-boards__panel-title">Create New Board</h2>
+        <h2 class="tk-h3 paper-boards__panel-title">{{ $t('boards.create.title') }}</h2>
         <form @submit.prevent="createBoard" class="paper-boards__form">
-          <label for="new-board-name" class="sr-only">Board name</label>
+          <label for="new-board-name" class="sr-only">{{ $t('boards.create.nameLabel') }}</label>
           <input
             id="new-board-name"
             v-model="newBoardName"
             type="text"
-            placeholder="Board name"
+            :placeholder="$t('boards.create.namePlaceholder')"
             class="paper-boards__input"
           />
-          <PaperHLBtn type="submit" variant="ember">Create</PaperHLBtn>
-          <PaperHLBtn variant="ghost" @click="showCreateForm = false">Cancel</PaperHLBtn>
+          <PaperHLBtn type="submit" variant="ember">{{ $t('boards.create.submit') }}</PaperHLBtn>
+          <PaperHLBtn variant="ghost" @click="showCreateForm = false">
+            {{ $t('boards.create.cancel') }}
+          </PaperHLBtn>
         </form>
       </section>
 
       <!-- Loading State -->
       <div v-if="boardStore.loading" class="paper-boards__skeleton" role="status" aria-live="polite">
-        <span class="sr-only">Loading boards...</span>
+        <span class="sr-only">{{ $t('boards.loading') }}</span>
         <div class="paper-boards__grid">
           <div v-for="n in 6" :key="n" class="paper-boards__skeleton-card">
             <TdSkeleton width="70%" height="20px" />
@@ -113,10 +150,12 @@ function goToBoard(id: string) {
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
           />
         </svg>
-        <h3 class="paper-boards__empty-title">No boards</h3>
-        <p class="paper-boards__empty-hint">Get started by creating a new board.</p>
+        <h3 class="paper-boards__empty-title">{{ $t('boards.empty.title') }}</h3>
+        <p class="paper-boards__empty-hint">{{ $t('boards.empty.hint') }}</p>
         <div class="paper-boards__empty-actions">
-          <PaperHLBtn variant="ember" @click="showCreateForm = true">+ Create Board</PaperHLBtn>
+          <PaperHLBtn variant="ember" @click="showCreateForm = true">
+            {{ $t('boards.empty.cta') }}
+          </PaperHLBtn>
         </div>
       </div>
 
@@ -133,7 +172,7 @@ function goToBoard(id: string) {
           :key="board.id"
           role="button"
           tabindex="0"
-          :aria-label="`Open board: ${board.name}`"
+          :aria-label="$t('boards.card.openLabel', { name: board.name })"
           class="paper-boards__card cursor-pointer"
           @click="goToBoard(board.id)"
           @keydown.enter="goToBoard(board.id)"
@@ -145,9 +184,11 @@ function goToBoard(id: string) {
           <p v-if="board.description" class="paper-boards__card-desc">
             {{ board.description }}
           </p>
-          <div v-else class="paper-boards__card-desc paper-boards__card-desc--empty">No description</div>
+          <div v-else class="paper-boards__card-desc paper-boards__card-desc--empty">
+            {{ $t('boards.card.noDescription') }}
+          </div>
           <div class="paper-boards__card-meta">
-            Created {{ new Date(board.createdAt).toLocaleDateString() }}
+            {{ $t('boards.card.created', { date: formatCreatedAt(board.createdAt) }) }}
           </div>
         </div>
       </div>
