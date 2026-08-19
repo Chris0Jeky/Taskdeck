@@ -54,6 +54,36 @@ jobs:
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/taskdeck" >> "$GITHUB_OUTPUT"
 
+      # Product version stamped into the image's binaries and its OCI version label (#1804).
+      #
+      # Derived from the v* tag. This workflow takes NO dispatch input, so GITHUB_REF_NAME is
+      # a real Git ref rather than attacker-influenced text; a rehearsal dispatch from a
+      # branch gets the same 0.0.0-dev fallback backend/Directory.Build.props uses.
+      #
+      # Any "+<build>" metadata is stripped, because `ProductVersion.Normalize` drops it
+      # before reporting: without this, a v1.2.3+meta tag would stamp "1.2.3+meta" while
+      # /health/live echoed "1.2.3", and the version-stamp assertion in the smoke step below
+      # would fail on two spellings of the same version. The validation regex refuses "+" for
+      # the same reason — admitting a character we have just stripped would only hide a bug
+      # in the stripping.
+      - name: Resolve product version
+        id: product-version
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF#refs/tags/v}" != "$GITHUB_REF" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            VERSION="${VERSION%%+*}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          # The value reaches MSBuild as a property; refuse anything that is not a plain token.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "$VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Stamping product version $VERSION"
+
       - name: Compute image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -71,6 +101,8 @@ jobs:
           context: .
           file: deploy/Dockerfile.production
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          build-args: |
+            TASKDECK_VERSION=${{ steps.product-version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -85,9 +117,28 @@ jobs:
             -e TASKDECK_HEADLESS=true \
             -p 5000:5000 \
             "${{ steps.image.outputs.name }}:${GITHUB_REF_NAME#v}"
+          EXPECTED_VERSION="${{ steps.product-version.outputs.version }}"
+          IMAGE_REF="${{ steps.image.outputs.name }}:${GITHUB_REF_NAME#v}"
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
               echo "Health check passed."
+              # Version stamp assertions (#1804): the running binaries and the image
+              # metadata must both report the tag-derived version, not the 0.0.0-dev
+              # fallback that an un-injected build would carry.
+              REPORTED_VERSION="$(curl -fsS http://localhost:5000/health/live \
+                | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+              LABEL_VERSION="$(docker inspect \
+                --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+                "$IMAGE_REF")"
+              if [ "$REPORTED_VERSION" != "$EXPECTED_VERSION" ] \
+                || [ "$LABEL_VERSION" != "$EXPECTED_VERSION" ]; then
+                echo "Version stamp MISMATCH — expected '$EXPECTED_VERSION',"
+                echo "  /health/live reported '$REPORTED_VERSION'"
+                echo "  OCI image label reported '$LABEL_VERSION'"
+                docker rm -f taskdeck-smoke
+                exit 1
+              fi
+              echo "Version stamp verified: $EXPECTED_VERSION (binary and OCI label)."
               docker rm -f taskdeck-smoke
               exit 0
             fi

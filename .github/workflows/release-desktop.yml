@@ -286,12 +286,62 @@ jobs:
       - name: Restore backend
         run: dotnet restore backend/Taskdeck.sln -r ${{ matrix.rid }}
 
+      # Product version stamped into the binaries (#1804).
+      #
+      # The tag comes from `resolve-source` (#1795), NOT from `inputs.tag`: that job is the
+      # single place the untrusted dispatch input is grammar-checked, and it is the same
+      # (tag, commit) pair this job's checkout is pinned to. Re-deriving from `inputs.tag`
+      # here would both re-open the injection seam and let the stamped version disagree with
+      # the commit actually being built. A rehearsal dispatch gets resolve-source's generated
+      # `v0.0.0-dryrun+<sha7>`, so an unreleased artifact stays recognisable.
+      #
+      # Two suffixes are stripped:
+      #   * the leading "v"      — MSBuild versions are bare.
+      #   * any "+<build>" meta  — `ProductVersion.Normalize` drops build metadata before
+      #     reporting, so keeping it here would stamp a value the running binary can never
+      #     echo back, and the container smoke test would compare mismatched strings.
+      # The validation regex therefore refuses "+" too: admitting a character we have just
+      # stripped would only hide a bug in the stripping.
+      #
+      # Deliberately separate from the later "Determine version tag" step, which resolves the
+      # ARTIFACT FILENAME tag and runs after publish.
+      - name: Resolve product version
+        id: product-version
+        shell: bash
+        env:
+          # Already grammar-checked by scripts/ci/validate-release-tag.sh in resolve-source;
+          # passed through the environment anyway so this step reads the same for a reviewer
+          # as every other tag consumer in this workflow.
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          tag="${RELEASE_TAG:-}"
+          if [ -z "${tag}" ]; then
+            printf '::error::resolve-source produced no release tag.\n'
+            exit 1
+          fi
+
+          version="${tag#v}"
+          version="${version%%+*}"
+
+          # The value is passed to MSBuild as a property; refuse anything that is not a plain
+          # version token rather than letting it reach the build command. No "+" — see above.
+          if ! printf '%s' "${version}" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "${version}"
+            exit 1
+          fi
+
+          printf 'version=%s\n' "${version}" >> "${GITHUB_OUTPUT}"
+          printf 'Stamping product version %s (from release tag %s).\n' "${version}" "${tag}"
+
       - name: Publish self-contained executable
         run: >
           dotnet publish ${{ env.PUBLISH_PROJECT }}
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
+          -p:Version=${{ steps.product-version.outputs.version }}
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:PublishTrimmed=false

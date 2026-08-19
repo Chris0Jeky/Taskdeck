@@ -21,6 +21,7 @@ Source files used to build this reference:
 ## Table of contents
 
 - [Conventions](#conventions)
+- [Product version](#product-version)
 - [JWT and authentication](#jwt-and-authentication)
   - [`Jwt`](#jwt)
   - [`GitHubOAuth`](#githuboauth)
@@ -82,6 +83,37 @@ Source files used to build this reference:
 - Arrays may be provided either as a JSON array or a comma-separated string
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
+
+## Product version
+
+The product version is **not configurable** — it is stamped into the assemblies
+at build time and only read at runtime. It is documented here because it is the
+answer to "what version am I running?" for a self-hoster.
+
+`backend/Directory.Build.props` sets `Version` for every backend project.
+Release workflows override it from the `v*` release tag, stripping the leading
+`v` and any `+<build>` metadata (the runtime reader drops build metadata before
+reporting, so stamping it would make the reported value un-comparable with the
+value injected):
+
+| Build | Injection | Reported version |
+| --- | --- | --- |
+| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
+| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
+| Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
+
+Where to read it:
+
+- `GET /health/live` → `version` (anonymous, cheapest probe)
+- `GET /health/ready` → `version`
+- `taskdeck --version` → `{"version":"…"}` (answered before any configuration,
+  database, or migration work, so it still works on a broken data directory)
+- Container image OCI labels → `org.opencontainers.image.version`
+  (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <image>`)
+
+A reported `0.0.0-dev` or `0.0.0-dryrun` means the binary was not cut from a
+release tag — it is not a released artefact.
 
 ## Startup validation
 

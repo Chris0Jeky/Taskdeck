@@ -13,6 +13,14 @@ using Taskdeck.Infrastructure.Persistence;
 var startupTrace = CliStartupTrace.CreateFromTestHarnessEnvironment();
 startupTrace.Record(CliStartupTrace.ManagedEntryPhase);
 
+// `taskdeck --version` answers before anything else is touched: no configuration,
+// no encryption-key bootstrap, no database, no migrations (#1804). It must stay
+// answerable on a machine whose data directory is missing or corrupt.
+if (VersionCommand.IsVersionRequest(args))
+{
+    return VersionCommand.Execute();
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // CLI stdout must be clean JSON. Remove all default logging providers so EF Core
