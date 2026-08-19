@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import TranscriptEvidenceViewer from './TranscriptEvidenceViewer.vue'
 import {
@@ -35,6 +36,8 @@ const emit = defineEmits<{
   close: []
   report: [proposalId: string]
 }>()
+
+const { t } = useI18n()
 
 const drawerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
@@ -154,13 +157,13 @@ function reportBadSuggestion() {
 function weightLabel(weight: ProvenanceWeight): string {
   switch (weight) {
     case 'primary':
-      return 'Primary Sources'
+      return t('review.provenanceDrawer.weight.primary')
     case 'contextual':
-      return 'Contextual'
+      return t('review.provenanceDrawer.weight.contextual')
     case 'inferred':
-      return 'Inferred'
+      return t('review.provenanceDrawer.weight.inferred')
     case 'excluded':
-      return 'Excluded'
+      return t('review.provenanceDrawer.weight.excluded')
   }
 }
 
@@ -219,15 +222,15 @@ onUnmounted(() => {
           class="prov-drawer"
           role="dialog"
           aria-modal="true"
-          aria-label="Provenance details"
+          :aria-label="$t('review.provenanceDrawer.ariaLabel')"
           tabindex="-1"
           @keydown="trapFocus"
         >
           <header class="prov-drawer__header">
-            <h2 class="prov-drawer__title">Provenance</h2>
+            <h2 class="prov-drawer__title">{{ $t('review.provenanceDrawer.title') }}</h2>
             <button
               class="prov-drawer__close"
-              aria-label="Close provenance drawer"
+              :aria-label="$t('review.provenanceDrawer.close')"
               @click="emit('close')"
             >
               &times;
@@ -236,19 +239,31 @@ onUnmounted(() => {
 
           <div v-if="metadata" class="prov-drawer__meta">
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Model</span>
+              <span class="prov-drawer__meta-label">{{ $t('review.provenanceDrawer.meta.model') }}</span>
               <span class="prov-drawer__meta-value">{{ metadata.provider }}/{{ metadata.model }}</span>
             </div>
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Confidence</span>
-              <span class="prov-drawer__meta-value">{{ (metadata.confidence * 100).toFixed(0) }}%</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.confidence')
+              }}</span>
+              <span class="prov-drawer__meta-value">{{
+                $t('review.provenanceDrawer.meta.confidenceValue', {
+                  value: (metadata.confidence * 100).toFixed(0),
+                })
+              }}</span>
             </div>
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Latency</span>
-              <span class="prov-drawer__meta-value">{{ metadata.latencyMs }}ms</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.latency')
+              }}</span>
+              <span class="prov-drawer__meta-value">{{
+                $t('review.provenanceDrawer.meta.latencyValue', { value: metadata.latencyMs })
+              }}</span>
             </div>
             <div v-if="metadata.promptVersion" class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Prompt version</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.promptVersion')
+              }}</span>
               <span class="prov-drawer__meta-value">{{ metadata.promptVersion }}</span>
             </div>
           </div>
@@ -273,7 +288,9 @@ onUnmounted(() => {
           </div>
 
           <section v-if="evidenceLinks.length > 0" class="prov-drawer__evidence">
-            <h3 class="prov-drawer__section-title">Evidence Links</h3>
+            <h3 class="prov-drawer__section-title">
+              {{ $t('review.provenanceDrawer.evidenceTitle') }}
+            </h3>
             <div
               v-for="(link, idx) in evidenceLinks"
               :key="idx"
@@ -283,7 +300,12 @@ onUnmounted(() => {
                 {{ link.sourceKey }}
               </span>
               <span v-if="link.span" class="prov-drawer__evidence-span">
-                chars {{ link.span[0] }}&ndash;{{ link.span[1] }}
+                {{
+                  $t('review.provenanceDrawer.evidenceSpan', {
+                    start: link.span[0],
+                    end: link.span[1],
+                  })
+                }}
               </span>
               <span class="prov-drawer__evidence-reason">{{ link.reason }}</span>
               <button
@@ -294,7 +316,11 @@ onUnmounted(() => {
                 :data-testid="`provenance-view-in-transcript-${idx}`"
                 @click="toggleTranscript(idx)"
               >
-                {{ openEvidenceIndex === idx ? 'Hide transcript' : 'View in transcript' }}
+                {{
+                  openEvidenceIndex === idx
+                    ? $t('review.provenanceDrawer.hideTranscript')
+                    : $t('review.provenanceDrawer.viewTranscript')
+                }}
               </button>
               <TranscriptEvidenceViewer
                 v-if="openEvidence && openEvidenceIndex === idx"
@@ -310,10 +336,16 @@ onUnmounted(() => {
 
           <footer class="prov-drawer__footer">
             <button class="prov-drawer__action prov-drawer__action--copy" @click="copyJson">
-              {{ copyError ? 'Copy failed' : copied ? 'Copied!' : 'Copy JSON' }}
+              {{
+                copyError
+                  ? $t('review.provenanceDrawer.copyFailed')
+                  : copied
+                    ? $t('review.provenanceDrawer.copied')
+                    : $t('review.provenanceDrawer.copyJson')
+              }}
             </button>
             <button class="prov-drawer__action prov-drawer__action--report" @click="reportBadSuggestion">
-              Report bad suggestion
+              {{ $t('review.provenanceDrawer.report') }}
             </button>
           </footer>
         </aside>
