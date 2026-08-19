@@ -255,9 +255,27 @@ test('the publish decision comes from resolve-source, not a re-read of the raw i
 
 test('the release is created as a draft, or an existing one is adopted', () => {
   const job = jobBlock('create-release')
-  assert.match(job, /gh release view "\$\{RELEASE_TAG\}"/, 'an existing release is detected first')
   assert.match(job, /gh release create "\$\{RELEASE_TAG\}" \\\n\s+--draft\b/, 'creation is a draft')
   assert.match(job, /--verify-tag/, 'the tag must already exist')
+})
+
+test('adoption detects DRAFT releases, which is the whole resumability case', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/releases" --paginate/,
+    'detection reads the release listing, which includes drafts',
+  )
+  assert.match(job, /\.draft \| tostring/, 'the draft flag is read for the log line')
+  assert.doesNotMatch(
+    job,
+    /gh release view "\$\{RELEASE_TAG\}"/,
+    'the releases/tags/{tag}-backed lookup, which does not return drafts, must not come back',
+  )
+  const detectAt = job.indexOf('gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate')
+  const createAt = job.indexOf('gh release create "${RELEASE_TAG}"')
+  assert.ok(detectAt !== -1 && createAt !== -1)
+  assert.ok(detectAt < createAt, 'an existing release is detected before create is attempted')
 })
 
 test('assets are uploaded per file with --clobber and bounded retries', () => {

@@ -110,8 +110,12 @@ jobs:
             # tag does not exist, so a branch or raw SHA cannot masquerade as a
             # tag even if it somehow cleared the grammar. Annotated tags are
             # dereferenced through the tag object to the commit.
-            object_type="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.type')"
-            object_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq '.object.sha')"
+            # ONE read of the ref, parsed once for both fields: two separate
+            # calls could straddle a force-moved tag and pair the type from
+            # before the move with the SHA from after it.
+            ref_fields="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" \
+              --jq '[.object.type, .object.sha] | @tsv')"
+            IFS=$'\t' read -r object_type object_sha <<< "${ref_fields}"
             case "${object_type}" in
               commit)
                 sha="${object_sha}"
@@ -154,12 +158,17 @@ jobs:
             printf 'publish=%s\n' "${publish}"
           } >> "${GITHUB_OUTPUT}"
 
+          # The Markdown code-span delimiter is held in a variable and passed as a
+          # printf argument: a literal backtick inside a single-quoted format
+          # string trips ShellCheck SC2016, which the Workflow Lint job treats as
+          # a failure. The rendered summary is byte-identical either way.
+          bt="\`"
           {
             printf '### Release source\n\n'
             printf '| field | value |\n| --- | --- |\n'
-            printf '| tag | `%s` |\n' "${tag}"
-            printf '| commit | `%s` |\n' "${sha}"
-            printf '| publishes a release | `%s` |\n' "${publish}"
+            printf '| tag | %s%s%s |\n' "${bt}" "${tag}" "${bt}"
+            printf '| commit | %s%s%s |\n' "${bt}" "${sha}" "${bt}"
+            printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
@@ -647,8 +656,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            printf 'Release %s already exists — adopting it; assets are re-uploaded with --clobber.\n' "${RELEASE_TAG}"
+          # Adoption MUST see drafts: a previous failed attempt leaves exactly a
+          # draft behind, and that is the case this step exists for. The REST
+          # `releases/tags/{tag}` lookup does NOT return drafts, so detection goes
+          # through the release LISTING (which does, for a token with push access)
+          # rather than depending on any client-side draft fallback.
+          release_rows="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq '.[] | [.tag_name, (.id | tostring), (.draft | tostring)] | @tsv')"
+          existing_row="$(printf '%s\n' "${release_rows}" \
+            | awk -F'\t' -v tag="${RELEASE_TAG}" '$1 == tag { print; exit }')"
+          if [ -n "${existing_row}" ]; then
+            IFS=$'\t' read -r _ release_id release_is_draft <<< "${existing_row}"
+            printf 'Release %s already exists (id %s, draft=%s) — adopting it; assets are re-uploaded with --clobber.\n' \
+              "${RELEASE_TAG}" "${release_id}" "${release_is_draft}"
           else
             gh release create "${RELEASE_TAG}" \
               --draft \
