@@ -185,23 +185,119 @@ public sealed class CliTestHarnessTests
     public void CliTestProject_ProcessLaunchesStayBehindSharedHarness()
     {
         var sourceDirectory = GetSourceDirectory();
-        var directLaunchTokens = new[]
-        {
-            $"new {nameof(ProcessStartInfo)}",
-            $"new {nameof(Process)} {{",
-            $"{nameof(Process)}.Start("
-        };
-
-        var directLaunchFiles = Directory
-            .EnumerateFiles(sourceDirectory, "*.cs", SearchOption.TopDirectoryOnly)
-            .Where(path => directLaunchTokens.Any(token =>
-                File.ReadAllText(path).Contains(token, StringComparison.Ordinal)))
-            .Select(Path.GetFileName)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var directLaunchFiles = FindProcessLaunchFiles(sourceDirectory);
 
         directLaunchFiles.Should().Equal(["CliTestHarness.cs"],
             "every real CLI root must share the bounded launch, timeout, and reap policy");
+    }
+
+    [Fact]
+    public void ProcessLaunchInvariant_InspectsNestedSourcesAndIgnoresBuildOutput()
+    {
+        var sourceDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-cli-source-invariant-{Guid.NewGuid():N}");
+        var nestedDirectory = Path.Combine(sourceDirectory, "nested");
+        Directory.CreateDirectory(Path.Combine(nestedDirectory, "bin"));
+        Directory.CreateDirectory(Path.Combine(nestedDirectory, "obj"));
+
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "CommentsAndStrings.cs"),
+                "// new ProcessStartInfo(\"ignored\");\nvar text = \"Process.Start(\\\"ignored\\\")\";");
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "AlternateSyntax.cs"),
+                """
+                using System.Diagnostics;
+
+                var process = new Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo("dotnet")
+                };
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "TargetTypedProcess.cs"),
+                """
+                using Process child = new()
+                {
+                    StartInfo = new() { FileName = "dotnet" }
+                };
+
+                child.Start();
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "ProcessAliases.cs"),
+                """
+                using P = System.Diagnostics.Process;
+                using PSI = System.Diagnostics.ProcessStartInfo;
+
+                var startInfo = new PSI();
+                P.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "VerbatimPathThenLaunch.cs"),
+                """
+                var directory = @"C:\temp\cli";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "VerbatimTextOnly.cs"),
+                """
+                var launchText = @"Process.Start(""dotnet"")";
+                var pathText = @"C:\tools\new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimDollarAtLaunch.cs"),
+                """
+                var directory = $@"C:\temp\{name}\";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimDollarAtTextOnly.cs"),
+                """
+                var launchText = $@"C:\temp\{name}\";
+                var other = $@"new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimAtDollarLaunch.cs"),
+                """
+                var directory = @$"C:\temp\{name}\";
+
+                System.Diagnostics.Process.Start("dotnet");
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "InterpolatedVerbatimAtDollarTextOnly.cs"),
+                """
+                var launchText = @$"C:\temp\{name}\";
+                var other = @$"new ProcessStartInfo(x)";
+                """);
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "bin", "Generated.cs"),
+                "System.Diagnostics.Process.Start(\"dotnet\");");
+            File.WriteAllText(
+                Path.Combine(nestedDirectory, "obj", "Generated.cs"),
+                "new ProcessStartInfo(\"dotnet\");");
+
+            FindProcessLaunchFiles(sourceDirectory).Should().Equal(
+                [
+                    Path.Combine("nested", "AlternateSyntax.cs"),
+                    Path.Combine("nested", "InterpolatedVerbatimAtDollarLaunch.cs"),
+                    Path.Combine("nested", "InterpolatedVerbatimDollarAtLaunch.cs"),
+                    Path.Combine("nested", "ProcessAliases.cs"),
+                    Path.Combine("nested", "TargetTypedProcess.cs"),
+                    Path.Combine("nested", "VerbatimPathThenLaunch.cs")
+                ]);
+        }
+        finally
+        {
+            if (Directory.Exists(sourceDirectory))
+            {
+                Directory.Delete(sourceDirectory, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -727,6 +823,306 @@ public sealed class CliTestHarnessTests
     private static string GetSourceDirectory([CallerFilePath] string sourceFilePath = "") =>
         Path.GetDirectoryName(sourceFilePath)
         ?? throw new InvalidOperationException("Could not resolve the CLI test source directory.");
+
+    private static string[] FindProcessLaunchFiles(string sourceDirectory) =>
+        Directory
+            .EnumerateFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutputPath(sourceDirectory, path))
+            .Where(path => ContainsProcessLaunch(File.ReadAllText(path)))
+            .Select(path => Path.GetRelativePath(sourceDirectory, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static bool IsBuildOutputPath(string sourceDirectory, string path) =>
+        Path
+            .GetRelativePath(sourceDirectory, path)
+            .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase));
+
+    private static bool ContainsProcessLaunch(string source)
+    {
+        var tokens = TokenizeCSharp(source);
+        var typeAliases = FindTypeAliases(tokens);
+        var processTypeNames = GetTypeNames(typeAliases, "Process");
+        var processStartInfoTypeNames = GetTypeNames(typeAliases, "ProcessStartInfo");
+        var processVariables = FindTargetTypedProcessVariables(tokens, processTypeNames);
+
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            if (tokens[index] == "new"
+                && TryReadQualifiedType(tokens, index + 1, out var constructedType, out _)
+                && (processTypeNames.Contains(constructedType)
+                    || processStartInfoTypeNames.Contains(constructedType)))
+            {
+                return true;
+            }
+
+            if ((processTypeNames.Contains(tokens[index]) || processVariables.Contains(tokens[index]))
+                && index + 3 < tokens.Count
+                && tokens[index + 1] == "."
+                && tokens[index + 2] == "Start"
+                && tokens[index + 3] == "(")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Dictionary<string, string> FindTypeAliases(IReadOnlyList<string> tokens)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index + 3 < tokens.Count; index++)
+        {
+            if (tokens[index] != "using"
+                || !IsIdentifier(tokens[index + 1])
+                || tokens[index + 2] != "=")
+            {
+                continue;
+            }
+
+            if (TryReadQualifiedType(tokens, index + 3, out var targetType, out var typeEnd)
+                && typeEnd < tokens.Count
+                && tokens[typeEnd] == ";")
+            {
+                aliases[tokens[index + 1]] = targetType;
+                index = typeEnd;
+            }
+        }
+
+        return aliases;
+    }
+
+    private static HashSet<string> GetTypeNames(
+        IReadOnlyDictionary<string, string> aliases,
+        string targetType)
+    {
+        var typeNames = new HashSet<string>(StringComparer.Ordinal) { targetType };
+        foreach (var (alias, resolvedType) in aliases)
+        {
+            if (resolvedType == targetType)
+            {
+                typeNames.Add(alias);
+            }
+        }
+
+        return typeNames;
+    }
+
+    private static HashSet<string> FindTargetTypedProcessVariables(
+        IReadOnlyList<string> tokens,
+        IReadOnlySet<string> processTypeNames)
+    {
+        var processVariables = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < tokens.Count; index++)
+        {
+            if (!TryReadQualifiedType(tokens, index, out var declaredType, out var typeEnd)
+                || !processTypeNames.Contains(declaredType)
+                || typeEnd + 3 >= tokens.Count
+                || !IsIdentifier(tokens[typeEnd])
+                || tokens[typeEnd + 1] != "="
+                || tokens[typeEnd + 2] != "new"
+                || tokens[typeEnd + 3] != "(")
+            {
+                continue;
+            }
+
+            processVariables.Add(tokens[typeEnd]);
+            index = typeEnd;
+        }
+
+        return processVariables;
+    }
+
+    private static bool TryReadQualifiedType(
+        IReadOnlyList<string> tokens,
+        int startIndex,
+        out string typeName,
+        out int typeEnd)
+    {
+        typeName = string.Empty;
+        typeEnd = startIndex;
+        if (startIndex >= tokens.Count)
+        {
+            return false;
+        }
+
+        var index = startIndex;
+        if (tokens[index] == "global" && index + 1 < tokens.Count && tokens[index + 1] == "::")
+        {
+            index += 2;
+        }
+
+        if (index >= tokens.Count || !IsIdentifier(tokens[index]))
+        {
+            return false;
+        }
+
+        typeName = tokens[index++];
+        while (index + 1 < tokens.Count && tokens[index] == "." && IsIdentifier(tokens[index + 1]))
+        {
+            typeName = tokens[index + 1];
+            index += 2;
+        }
+
+        typeEnd = index;
+        return true;
+    }
+
+    private static bool IsIdentifier(string token) =>
+        token.Length > 0 && (char.IsLetter(token[0]) || token[0] == '_');
+
+    private static List<string> TokenizeCSharp(string source)
+    {
+        var tokens = new List<string>();
+        var index = 0;
+        while (index < source.Length)
+        {
+            if (char.IsWhiteSpace(source[index]))
+            {
+                index++;
+                continue;
+            }
+
+            if (source[index] == '/' && index + 1 < source.Length && source[index + 1] == '/')
+            {
+                index = source.IndexOf('\n', index + 2);
+                if (index < 0)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
+            if (source[index] == '/' && index + 1 < source.Length && source[index + 1] == '*')
+            {
+                index = source.IndexOf("*/", index + 2, StringComparison.Ordinal);
+                index = index < 0 ? source.Length : index + 2;
+                continue;
+            }
+
+            if (source[index] == '"')
+            {
+                index = SkipQuotedLiteral(source, index);
+                continue;
+            }
+
+            if (source[index] == '\'')
+            {
+                index = SkipCharacterLiteral(source, index);
+                continue;
+            }
+
+            // '@' only starts an identifier when it actually prefixes one. Treating a bare '@'
+            // as an identifier start would consume the opening quote of a verbatim literal and
+            // tokenize the string body as code.
+            if (char.IsLetter(source[index])
+                || source[index] == '_'
+                || (source[index] == '@'
+                    && index + 1 < source.Length
+                    && (char.IsLetter(source[index + 1]) || source[index + 1] == '_')))
+            {
+                var identifierStart = index;
+                if (source[index] == '@')
+                {
+                    index++;
+                }
+
+                while (index < source.Length
+                    && (char.IsLetterOrDigit(source[index]) || source[index] == '_'))
+                {
+                    index++;
+                }
+
+                if (index > identifierStart + (source[identifierStart] == '@' ? 1 : 0))
+                {
+                    tokens.Add(source[(source[identifierStart] == '@' ? identifierStart + 1 : identifierStart)..index]);
+                    continue;
+                }
+            }
+
+            if (source[index] == ':' && index + 1 < source.Length && source[index + 1] == ':')
+            {
+                tokens.Add("::");
+                index += 2;
+                continue;
+            }
+
+            tokens.Add(source[index].ToString());
+            index++;
+        }
+
+        return tokens;
+    }
+
+    private static int SkipQuotedLiteral(string source, int quoteIndex)
+    {
+        var delimiterLength = 1;
+        while (quoteIndex + delimiterLength < source.Length
+            && source[quoteIndex + delimiterLength] == '"')
+        {
+            delimiterLength++;
+        }
+
+        if (delimiterLength >= 3)
+        {
+            var closingDelimiter = new string('"', delimiterLength);
+            var closingIndex = source.IndexOf(closingDelimiter, quoteIndex + delimiterLength, StringComparison.Ordinal);
+            return closingIndex < 0 ? source.Length : closingIndex + delimiterLength;
+        }
+
+        // Verbatim literals are prefixed by '@', and interpolated verbatim literals by either
+        // ordering of the '@'/'$' pair, so look back over both characters.
+        var previous = quoteIndex > 0 ? source[quoteIndex - 1] : '\0';
+        var beforePrevious = quoteIndex > 1 ? source[quoteIndex - 2] : '\0';
+        var verbatim = previous == '@' || (previous == '$' && beforePrevious == '@');
+        for (var index = quoteIndex + 1; index < source.Length; index++)
+        {
+            if (!verbatim && source[index] == '\\' && index + 1 < source.Length)
+            {
+                index++;
+                continue;
+            }
+
+            if (source[index] != '"')
+            {
+                continue;
+            }
+
+            if (verbatim && index + 1 < source.Length && source[index + 1] == '"')
+            {
+                index++;
+                continue;
+            }
+
+            return index + 1;
+        }
+
+        return source.Length;
+    }
+
+    private static int SkipCharacterLiteral(string source, int quoteIndex)
+    {
+        for (var index = quoteIndex + 1; index < source.Length; index++)
+        {
+            if (source[index] == '\\' && index + 1 < source.Length)
+            {
+                index++;
+                continue;
+            }
+
+            if (source[index] == '\'')
+            {
+                return index + 1;
+            }
+        }
+
+        return source.Length;
+    }
 
     private static TaskdeckDbContext CreateDatabaseContext(string databasePath)
     {
