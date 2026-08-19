@@ -364,4 +364,119 @@ public class AuthorizationServiceTests
     }
 
     #endregion
+
+    #region GetWritableBoardIdsAsync Tests
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldAdmitOwnerAndWriteCapableRoles_AndRejectViewerAndNonMember()
+    {
+        // The admitted set must be exactly what BoardAccess.CanWrite() admits, plus ownership.
+        var userId = Guid.NewGuid();
+        var grantedBy = Guid.NewGuid();
+        var otherOwner = Guid.NewGuid();
+
+        var ownedBoard = new Board("Owned", ownerId: userId);
+        var adminBoard = new Board("Admin member", ownerId: otherOwner);
+        var editorBoard = new Board("Editor member", ownerId: otherOwner);
+        var ownerRoleBoard = new Board("Owner-role member", ownerId: otherOwner);
+        var viewerBoard = new Board("Viewer member", ownerId: otherOwner);
+        var strangerBoard = new Board("No membership at all", ownerId: otherOwner);
+
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Guid> { ownedBoard.Id });
+        _boardAccessRepoMock.Setup(r => r.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(new List<BoardAccess>
+            {
+                new(adminBoard.Id, userId, UserRole.Admin, grantedBy),
+                new(editorBoard.Id, userId, UserRole.Editor, grantedBy),
+                new(ownerRoleBoard.Id, userId, UserRole.Owner, grantedBy),
+                new(viewerBoard.Id, userId, UserRole.Viewer, grantedBy),
+            });
+
+        var result = await _service.GetWritableBoardIdsAsync(
+            userId,
+            new[] { ownedBoard.Id, adminBoard.Id, editorBoard.Id, ownerRoleBoard.Id, viewerBoard.Id, strangerBoard.Id });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(new[]
+        {
+            ownedBoard.Id,
+            adminBoard.Id,
+            editorBoard.Id,
+            ownerRoleBoard.Id,
+        });
+        result.Value.Should().NotContain(viewerBoard.Id);
+        result.Value.Should().NotContain(strangerBoard.Id);
+    }
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldUseOneBatchedLookupPerRepository_NotOnePerBoard()
+    {
+        // The whole point of the batched form: six candidate boards must still cost one
+        // ownership query and one membership read.
+        var userId = Guid.NewGuid();
+        var grantedBy = Guid.NewGuid();
+        var boardIds = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Guid> { boardIds[0] });
+        _boardAccessRepoMock.Setup(r => r.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(new List<BoardAccess> { new(boardIds[1], userId, UserRole.Editor, grantedBy) });
+
+        var result = await _service.GetWritableBoardIdsAsync(userId, boardIds);
+
+        result.IsSuccess.Should().BeTrue();
+        _boardRepoMock.Verify(
+            r => r.GetOwnedBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Once);
+        _boardAccessRepoMock.Verify(r => r.GetByUserIdAsync(userId, default), Times.Once);
+        // Never the per-board path: a single-board fetch is the N+1 this method exists to avoid.
+        _boardRepoMock.Verify(
+            r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldSkipMembershipRead_WhenEveryCandidateIsOwned()
+    {
+        var userId = Guid.NewGuid();
+        var boardIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(boardIds.ToList());
+
+        var result = await _service.GetWritableBoardIdsAsync(userId, boardIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(boardIds);
+        _boardAccessRepoMock.Verify(r => r.GetByUserIdAsync(userId, default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldReturnEmpty_AndTouchNoRepository_ForEmptyCandidateSet()
+    {
+        var userId = Guid.NewGuid();
+
+        var result = await _service.GetWritableBoardIdsAsync(userId, Array.Empty<Guid>());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEmpty();
+        _boardRepoMock.Verify(
+            r => r.GetOwnedBoardIdsAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Never);
+        _boardAccessRepoMock.Verify(r => r.GetByUserIdAsync(It.IsAny<Guid>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldReturnValidationError_WhenUserIdIsEmpty()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+
+        var result = await _service.GetWritableBoardIdsAsync(Guid.Empty, new[] { board.Id });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    #endregion
 }

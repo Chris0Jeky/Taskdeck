@@ -54,7 +54,8 @@ public class BoardService
 
     public async Task<Result<BoardDto>> UpdateBoardAsync(Guid id, UpdateBoardDto dto, CancellationToken cancellationToken = default)
     {
-        return await UpdateBoardInternalAsync(id, dto, cancellationToken);
+        // No acting user in hand — CanWrite fails closed (see BoardDto.CanWrite).
+        return await UpdateBoardInternalAsync(id, dto, canWrite: false, cancellationToken);
     }
 
     public async Task<Result<BoardDto>> UpdateBoardAsync(Guid id, UpdateBoardDto dto, Guid actingUserId, CancellationToken cancellationToken = default)
@@ -68,7 +69,8 @@ public class BoardService
         if (!permission.IsSuccess)
             return Result.Failure<BoardDto>(permission.ErrorCode, permission.ErrorMessage);
 
-        return await UpdateBoardInternalAsync(id, dto, cancellationToken);
+        // The write check above just passed for this caller.
+        return await UpdateBoardInternalAsync(id, dto, canWrite: true, cancellationToken);
     }
 
     public async Task<Result<BoardDetailDto>> GetBoardDetailAsync(Guid id, CancellationToken cancellationToken = default)
@@ -108,7 +110,8 @@ public class BoardService
     public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         var boards = await _unitOfWork.Boards.SearchAsync(searchText, includeArchived, cancellationToken);
-        return Result.Success(boards.Select(MapToDto));
+        // No acting user in hand — CanWrite fails closed (see BoardDto.CanWrite).
+        return Result.Success(boards.Select(board => MapToDto(board, canWrite: false)));
     }
 
     public async Task<Result<IEnumerable<BoardDto>>> ListBoardsAsync(Guid actingUserId, string? searchText = null, bool includeArchived = false, CancellationToken cancellationToken = default)
@@ -192,7 +195,31 @@ public class BoardService
 
         var pageIdList = pageIds.ToList();
         var boards = await _unitOfWork.Boards.GetByIdsAsync(pageIdList, cancellationToken);
-        var dtos = boards.Select(MapToDto).ToList();
+
+        // Write capability for the CALLING user, stamped on each board so the client never has
+        // to guess (and never has to ask per board). Exactly ONE batched lookup for the whole
+        // page — calling CanWriteBoardAsync per board would be an N+1 of a board fetch plus a
+        // membership read each. The owner short-circuit lives inside the batched lookup.
+        IReadOnlySet<Guid>? writableBoardIds = null;
+        if (_authorizationService is not null)
+        {
+            var writableResult = await _authorizationService.GetWritableBoardIdsAsync(
+                actingUserId,
+                pageIdList,
+                cancellationToken);
+
+            if (!writableResult.IsSuccess)
+                return Result.Failure<PaginatedResult<BoardDto>>(writableResult.ErrorCode, writableResult.ErrorMessage);
+
+            writableBoardIds = writableResult.Value;
+        }
+
+        // No authorization service configured (CLI / unauthenticated composition) means no
+        // authorization is being enforced at all — the same convention EnsureBoardPermissionAsync
+        // follows when it short-circuits to Success.
+        var dtos = boards
+            .Select(board => MapToDto(board, canWrite: writableBoardIds?.Contains(board.Id) ?? true))
+            .ToList();
 
         var hasMore = limit.HasValue && (offset + pageIdList.Count) < totalCount;
 
@@ -241,7 +268,8 @@ public class BoardService
             if (ownerId.HasValue)
                 await InvalidateBoardListCacheAsync(ownerId.Value, cancellationToken);
 
-            return Result.Success(MapToDto(board));
+            // The creator is the owner, and an owner can always write its own board.
+            return Result.Success(MapToDto(board, canWrite: ownerId.HasValue));
         }
         catch (DomainException ex)
         {
@@ -249,7 +277,7 @@ public class BoardService
         }
     }
 
-    private async Task<Result<BoardDto>> UpdateBoardInternalAsync(Guid id, UpdateBoardDto dto, CancellationToken cancellationToken)
+    private async Task<Result<BoardDto>> UpdateBoardInternalAsync(Guid id, UpdateBoardDto dto, bool canWrite, CancellationToken cancellationToken)
     {
         try
         {
@@ -291,7 +319,7 @@ public class BoardService
             if (board.OwnerId.HasValue)
                 await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
 
-            return Result.Success(MapToDto(board));
+            return Result.Success(MapToDto(board, canWrite));
         }
         catch (DomainException ex)
         {
@@ -361,7 +389,12 @@ public class BoardService
             : Result.Failure(ErrorCodes.Forbidden, forbiddenMessage);
     }
 
-    private static BoardDto MapToDto(Board board)
+    /// <param name="canWrite">
+    /// Whether the caller this DTO is being produced for may write the board. Defaults to
+    /// <c>false</c> so a mapping with no acting user in hand fails closed rather than
+    /// advertising a capability it never checked.
+    /// </param>
+    private static BoardDto MapToDto(Board board, bool canWrite = false)
     {
         return new BoardDto(
             board.Id,
@@ -369,7 +402,8 @@ public class BoardService
             board.Description,
             board.IsArchived,
             board.CreatedAt,
-            board.UpdatedAt
+            board.UpdatedAt,
+            canWrite
         );
     }
 

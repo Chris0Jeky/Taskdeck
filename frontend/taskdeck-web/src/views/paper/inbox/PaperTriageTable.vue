@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import { useBoardStore } from '../../../store/boardStore'
 import { canMutateSelection, sourceLabel, statusLabel } from '../../../components/inbox/inboxUtils'
+import type { Board } from '../../../types/board'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
 /**
@@ -34,10 +36,38 @@ const emit = defineEmits<{
 }>()
 
 const boardStore = useBoardStore()
+const { t } = useI18n()
 
 // Item currently awaiting a board choice before its triage can be accepted.
 const boardPickItemId = ref<string | null>(null)
 const pickedBoardId = ref<string | null>(null)
+
+/**
+ * Write capability comes from the server (`BoardDto.CanWrite`, #1836) — a board
+ * the user can only read would 403 at accept, so it is shown DISABLED and
+ * annotated rather than filtered away: a Viewer should see why a board is
+ * unavailable, not wonder where it went.
+ *
+ * Only an explicit `false` gates. A payload without the field (older cache,
+ * a non-caller-scoped source) behaves as it did before the field existed.
+ */
+function isBoardWritable(board: Board): boolean {
+  return board.canWrite !== false
+}
+
+function boardOptionLabel(board: Board): string {
+  return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
+}
+
+const hasReadOnlyBoard = computed(() => boardStore.boards.some((board) => !isBoardWritable(board)))
+
+const pickedBoardIsWritable = computed(() => {
+  if (!pickedBoardId.value) return false
+  const picked = boardStore.boards.find((board) => board.id === pickedBoardId.value)
+  // An id that is not in the loaded list is left alone: the server remains the
+  // authority, and this gate exists to stop a KNOWN read-only pick.
+  return picked ? isBoardWritable(picked) : true
+})
 
 const hasItems = computed(() => props.items.length > 0)
 const hasMutationInFlight = computed(
@@ -81,6 +111,9 @@ async function onAccept(item: CaptureItemSummary) {
 function confirmBoardAndAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
   if (!pickedBoardId.value) return
+  // Belt and braces behind the disabled option: never emit an accept the server
+  // would answer with a 403.
+  if (!pickedBoardIsWritable.value) return
   emit('accept', item.id, pickedBoardId.value)
   cancelBoardPick()
 }
@@ -193,16 +226,25 @@ function formatTime(iso: string): string {
               aria-label="Choose a board for this capture"
             >
               <option :value="null" disabled>Select a board…</option>
-              <option v-for="board in boardStore.boards" :key="board.id" :value="board.id">
-                {{ board.name }}
+              <option
+                v-for="board in boardStore.boards"
+                :key="board.id"
+                :value="board.id"
+                :disabled="!isBoardWritable(board)"
+                :data-writable="isBoardWritable(board)"
+              >
+                {{ boardOptionLabel(board) }}
               </option>
             </select>
           </label>
+          <p v-if="hasReadOnlyBoard" class="paper-triage__board-hint" data-testid="board-pick-view-only-hint">
+            {{ t('inbox.boardPicker.viewOnlyHint') }}
+          </p>
           <div class="paper-triage__actions">
             <PaperHLBtn
               label="Accept on board"
               variant="ember"
-              :disabled="isActionDisabled(item) || !pickedBoardId"
+              :disabled="isActionDisabled(item) || !pickedBoardId || !pickedBoardIsWritable"
               data-action="accept-on-board"
               @click="confirmBoardAndAccept(item)"
             />
@@ -354,6 +396,12 @@ function formatTime(iso: string): string {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.paper-triage__board-hint {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
 }
 .paper-triage__board-select {
   padding: 6px 8px;

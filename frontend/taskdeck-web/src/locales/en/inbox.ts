@@ -21,4 +21,11 @@ export default {
     nib: 'Nib',
     composer: 'Composer',
   },
+  // Board pickers (the inline triage picker and the composer's board select).
+  // Read-only boards stay VISIBLE but disabled and annotated (#1836): silently
+  // filtering them would leave a Viewer wondering where a board went.
+  boardPicker: {
+    viewOnlyOption: '{name} · view-only',
+    viewOnlyHint: 'Boards marked view-only need write access before anything can be triaged into them.',
+  },
 }

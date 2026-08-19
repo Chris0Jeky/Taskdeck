@@ -4,11 +4,15 @@ import { reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
 
+type MockBoard = { id: string; name: string; canWrite?: boolean }
+
+const defaultBoards = (): MockBoard[] => [
+  { id: 'board-alpha', name: 'Alpha' },
+  { id: 'board-beta', name: 'Beta' },
+]
+
 const mockBoardStore = reactive({
-  boards: [
-    { id: 'board-alpha', name: 'Alpha' },
-    { id: 'board-beta', name: 'Beta' },
-  ] as Array<{ id: string; name: string }>,
+  boards: defaultBoards() as MockBoard[],
   fetchBoards: vi.fn<() => Promise<void>>(),
 })
 
@@ -45,6 +49,7 @@ function makeItems(): CaptureItemSummary[] {
 describe('PaperTriageTable', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockBoardStore.boards = defaultBoards()
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
   })
 
@@ -269,6 +274,78 @@ describe('PaperTriageTable', () => {
     await secondRejectBtn.trigger('click')
     expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-2', 'board-alpha'])
     expect(wrapper.emitted('reject')?.[0]).toEqual(['capture-2'])
+  })
+
+  // --- board picker write capability (#1836) -------------------------------
+
+  async function openBoardPicker(boards: MockBoard[]) {
+    mockBoardStore.boards = boards
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    return wrapper
+  }
+
+  it('renders a read-only board visible but disabled and annotated view-only', async () => {
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+      { id: 'board-readonly', name: 'Archive', canWrite: false },
+    ])
+
+    const options = wrapper.findAll('[data-testid="capture-board-pick"] option')
+    const readOnly = options.find((option) => option.attributes('value') === 'board-readonly')
+
+    // Visible, NOT filtered away.
+    expect(readOnly).toBeDefined()
+    expect(readOnly!.attributes('disabled')).toBeDefined()
+    expect(readOnly!.text()).toContain('Archive')
+    expect(readOnly!.text()).toContain('view-only')
+    expect(wrapper.find('[data-testid="board-pick-view-only-hint"]').exists()).toBe(true)
+  })
+
+  it('leaves a write-capable board enabled and unannotated', async () => {
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+    ])
+
+    const option = wrapper
+      .findAll('[data-testid="capture-board-pick"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+    expect(option!.text()).not.toContain('view-only')
+    // The hint is only shown when there IS something to explain.
+    expect(wrapper.find('[data-testid="board-pick-view-only-hint"]').exists()).toBe(false)
+  })
+
+  it('treats a board with no canWrite field as writable (older payloads unchanged)', async () => {
+    const wrapper = await openBoardPicker([{ id: 'board-alpha', name: 'Alpha' }])
+
+    const option = wrapper
+      .findAll('[data-testid="capture-board-pick"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+  })
+
+  it('refuses to accept onto a board that turns read-only after it was picked', async () => {
+    // Access can be revoked between the list load and the confirm click; the
+    // picker must not emit an accept the server would answer with a 403.
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+    ])
+    await wrapper.find('[data-testid="capture-board-pick"] select').setValue('board-alpha')
+
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: false }]
+    await wrapper.vm.$nextTick()
+
+    const confirmBtn = wrapper.find('button[data-action="accept-on-board"]')
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    await confirmBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
   })
 
   it('emits open when an item row excerpt is clicked', async () => {

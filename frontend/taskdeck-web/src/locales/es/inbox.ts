@@ -20,4 +20,8 @@ export default {
     nib: 'Nib',
     composer: 'Composer',
   },
+  boardPicker: {
+    viewOnlyOption: '{name} · solo lectura',
+    viewOnlyHint: 'Los tableros de solo lectura necesitan acceso de escritura antes de poder clasificar nada en ellos.',
+  },
 }
