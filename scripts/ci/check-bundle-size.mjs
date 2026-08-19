@@ -45,8 +45,9 @@ const MAX_SINGLE_KB = Number(process.env.BUNDLE_MAX_SINGLE_KB || "250");
 // or externalize bytes, not move them into another chunk.
 //
 // The remaining surfaces in the rollout are larger than Review, so this
-// headroom is not expected to last; sizing the budget for the whole rollout is
-// tracked separately rather than guessed at here.
+// headroom is not expected to last. Sizing the budget for the whole rollout —
+// and deciding whether this gate should measure the eager graph instead, which
+// would make lazy loading a real lever — is #1858, not a guess made here.
 const MAX_TOTAL_JS_KB = Number(process.env.BUNDLE_MAX_TOTAL_JS_KB || "1250");
 const WARN_ENTRY_KB = Number(process.env.BUNDLE_WARN_ENTRY_KB || "120");
 const WARN_SINGLE_KB = Number(process.env.BUNDLE_WARN_SINGLE_KB || "200");
