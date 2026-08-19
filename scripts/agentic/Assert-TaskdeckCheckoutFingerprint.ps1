@@ -564,6 +564,14 @@ function Invoke-Cleanup {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
+    # Structured exit-code propagation. No branch below calls `exit` while the
+    # guard is mid-flight: a PowerShell `exit` raises a flow-control exception
+    # that `catch` cannot see and that skips every remaining statement, so an
+    # `exit` inside the dispatch would make any future `finally` the only
+    # survivable place to put disposition work. Every mode instead assigns a
+    # code and the single `exit` below runs after the try/catch has settled.
+    # The initial value is nonzero so an unmatched mode fails closed.
+    $exitCode = 1
     try {
         if ([string]::IsNullOrWhiteSpace($Mode) -or [string]::IsNullOrWhiteSpace($Token)) {
             throw 'mode and a nonempty caller token are required'
@@ -571,13 +579,18 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         $checkout = Get-CanonicalCheckout -Candidate $CheckoutPath
         switch ($Mode) {
-            'Capture' { Invoke-Capture -Checkout $checkout -Secret $Token; exit 0 }
-            'Compare' { exit (Invoke-Compare -Checkout $checkout -Candidate $StatePath -Secret $Token) }
-            'Cleanup' { Invoke-Cleanup -Checkout $checkout -Candidate $StatePath -Secret $Token; exit 0 }
+            # Invoke-Capture emits its record on the success pipeline, so it must
+            # stay a bare statement here; only Invoke-Compare returns a code.
+            'Capture' { Invoke-Capture -Checkout $checkout -Secret $Token; $exitCode = 0 }
+            'Compare' { $exitCode = [int](Invoke-Compare -Checkout $checkout -Candidate $StatePath -Secret $Token) }
+            'Cleanup' { Invoke-Cleanup -Checkout $checkout -Candidate $StatePath -Secret $Token; $exitCode = 0 }
+            default { throw 'mode is not supported' }
         }
     }
     catch {
         [Console]::Error.WriteLine('Checkout fingerprint failed: ' + $_.Exception.Message)
-        exit 1
+        $exitCode = 1
     }
+
+    exit $exitCode
 }

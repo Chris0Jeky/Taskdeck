@@ -429,6 +429,245 @@ Run-Test 'emits one JSON-safe record for newline and pipe paths without secrets 
     Assert-True (([string]$record -notmatch '[0-9a-f]{64}') -and -not ([string]$record).Contains('test-token')) 'record writer exposed a digest or token'
 }
 
+function Get-FencedPowerShellBlock {
+    param([string]$Text)
+
+    $fence = $Text.IndexOf('```powershell', [StringComparison]::Ordinal)
+    Assert-True ($fence -ge 0) 'the skill has no fenced PowerShell recipe'
+    $start = $Text.IndexOf("`n", $fence) + 1
+    $end = $Text.IndexOf('```', $start, [StringComparison]::Ordinal)
+    Assert-True ($end -gt $start) 'the fenced PowerShell recipe is unterminated'
+    return $Text.Substring($start, $end - $start)
+}
+
+function Get-MatchingBraceIndex {
+    param([string]$Text, [int]$OpenIndex)
+
+    Assert-True ($Text[$OpenIndex] -eq '{') 'brace scan did not start on an opening brace'
+    $depth = 0
+    for ($index = $OpenIndex; $index -lt $Text.Length; $index++) {
+        if ($Text[$index] -eq '{') { $depth++ }
+        elseif ($Text[$index] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { return $index }
+        }
+    }
+
+    throw 'the recipe block has unbalanced braces'
+}
+
+function Get-BatchSkillPath {
+    return @(
+        (Join-Path $PSScriptRoot '..\..\.codex\skills\taskdeck-issue-batch-orchestrator\SKILL.md'),
+        (Join-Path $PSScriptRoot '..\..\.claude\skills\taskdeck-issue-batch-orchestrator\SKILL.md')
+    )
+}
+
+Run-Test 'keeps guard finalization inside a finally no lane exit can skip' {
+    foreach ($skill in (Get-BatchSkillPath)) {
+        $recipe = Get-FencedPowerShellBlock -Text (Get-Content -LiteralPath $skill -Raw)
+        $lane = $recipe.IndexOf('& $laneCommand', [StringComparison]::Ordinal)
+        Assert-True ($lane -ge 0) ('the lane invocation is missing from ' + $skill)
+
+        $finallyKeyword = $recipe.IndexOf('finally {', $lane, [StringComparison]::Ordinal)
+        Assert-True ($finallyKeyword -gt $lane) ('guard finalization is not in a finally block in ' + $skill)
+        $open = $recipe.IndexOf('{', $finallyKeyword)
+        $close = Get-MatchingBraceIndex -Text $recipe -OpenIndex $open
+
+        $compare = $recipe.IndexOf('& $fingerprintTool -Mode Compare', [StringComparison]::Ordinal)
+        $cleanup = $recipe.IndexOf('& $fingerprintTool -Mode Cleanup', [StringComparison]::Ordinal)
+        Assert-True ($compare -gt $open -and $compare -lt $close) ('Compare is outside the finally block in ' + $skill)
+        Assert-True ($cleanup -gt $compare -and $cleanup -lt $close) ('Cleanup is outside the finally block in ' + $skill)
+
+        # A statement-position exit between the lane and the finally would unwind
+        # past guard finalization exactly like the lane exit this shape defends.
+        $between = $recipe.Substring($lane, $finallyKeyword - $lane)
+        Assert-True (-not ($between -cmatch '(?m)^\s*(exit|return|break|continue)\b')) ('an unwinding statement precedes guard finalization in ' + $skill)
+
+        Assert-True ($recipe.IndexOf('$global:LASTEXITCODE = 255', [StringComparison]::Ordinal) -ge 0) ('the fail-closed guard exit sentinel is missing from ' + $skill)
+        Assert-True ($recipe.IndexOf('if ($guardExit -ne 0) { exit $guardExit }', $open, [StringComparison]::Ordinal) -lt $close) ('the guard disposition does not supersede the lane exit in ' + $skill)
+    }
+}
+
+Run-Test 'dispatches the guard through structured exit-code propagation' {
+    $text = Get-Content -LiteralPath $toolPath -Raw
+    $entry = $text.IndexOf("if (`$MyInvocation.InvocationName -ne '.')", [StringComparison]::Ordinal)
+    Assert-True ($entry -ge 0) 'the guard entrypoint is missing'
+    $tryIndex = $text.IndexOf('try {', $entry, [StringComparison]::Ordinal)
+    $catchEnd = $text.IndexOf('$exitCode = 1', $text.IndexOf('catch {', $tryIndex, [StringComparison]::Ordinal), [StringComparison]::Ordinal)
+    $body = $text.Substring($tryIndex, $catchEnd - $tryIndex)
+    Assert-True (-not ($body -cmatch '(?m)^\s*exit\b') -and -not $body.Contains('; exit ')) 'the guard dispatch still exits mid-flight instead of assigning a code'
+    Assert-True ($text.IndexOf('exit $exitCode', $catchEnd, [StringComparison]::Ordinal) -gt $catchEnd) 'the guard has no single structured exit after its try/catch'
+}
+
+$script:wrapperSource = @'
+[CmdletBinding()]
+param(
+    [string]$Repo,
+    [string]$Tool,
+    [string]$Token,
+    # Deliberately not named $LaneExit: PowerShell variable names are
+    # case-insensitive, so it would be clobbered by the recipe's own $laneExit.
+    [int]$RequestedLaneExitCode,
+    [string]$MutatePath = ''
+)
+
+# This mirrors the documented coordinator recipe. The static test above pins the
+# recipe's shape; this executable copy proves the shape actually survives a lane
+# that terminates the session with `exit`.
+$global:LASTEXITCODE = 255
+$capture = & $Tool -Mode Capture -CheckoutPath $Repo -Token $Token
+$captureExit = $LASTEXITCODE
+if ($captureExit -ne 0) { exit $captureExit }
+$inventoryState = ([string]$capture | ConvertFrom-Json).path
+[Console]::Out.WriteLine('STATE ' + $inventoryState)
+
+$laneCommand = {
+    if (-not [string]::IsNullOrEmpty($MutatePath)) {
+        [IO.File]::WriteAllText($MutatePath, 'the lane overwrote this artifact')
+    }
+    [Console]::Out.WriteLine('LANE-RAN')
+    exit $RequestedLaneExitCode
+}
+
+$laneSucceeded = $false
+$laneExit = $null
+$laneError = $null
+$guardExit = 0
+try {
+    & $laneCommand
+    $laneSucceeded = $?
+    $laneExit = $LASTEXITCODE
+}
+catch {
+    $laneError = $_
+}
+finally {
+    [Console]::Out.WriteLine('FINALLY-RAN')
+    $global:LASTEXITCODE = 255
+    & $Tool -Mode Compare -CheckoutPath $Repo -Token $Token -StatePath $inventoryState
+    $compareExit = $LASTEXITCODE
+    if ($compareExit -ne 0) {
+        $guardExit = $compareExit
+    }
+    else {
+        $global:LASTEXITCODE = 255
+        & $Tool -Mode Cleanup -CheckoutPath $Repo -Token $Token -StatePath $inventoryState
+        $cleanupExit = $LASTEXITCODE
+        if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
+    }
+    if ($guardExit -ne 0) { exit $guardExit }
+}
+
+[Console]::Out.WriteLine('AFTER-TRY-RAN')
+if ($null -ne $laneError) { throw $laneError }
+if (-not $laneSucceeded) {
+    if ($null -ne $laneExit -and $laneExit -ne 0) { exit $laneExit }
+    exit 1
+}
+'@
+
+function Invoke-ExitingLaneWrapper {
+    param(
+        [string]$Repo,
+        [string]$Token,
+        [int]$LaneExit,
+        [string]$MutatePath = ''
+    )
+
+    $wrapper = Join-Path ([IO.Path]::GetTempPath()) ('taskdeck-fingerprint-wrapper-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+    [IO.File]::WriteAllText($wrapper, $script:wrapperSource, (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $arguments = @('-Repo', $Repo, '-Tool', $toolPath, '-Token', $Token, '-RequestedLaneExitCode', [string]$LaneExit)
+        if (-not [string]::IsNullOrEmpty($MutatePath)) {
+            $arguments += @('-MutatePath', $MutatePath)
+        }
+
+        $result = Invoke-FingerprintTool -Arguments $arguments -Tool $wrapper
+        $state = ''
+        foreach ($line in ($result.stdout -split "`r?`n")) {
+            if ($line.StartsWith('STATE ', [StringComparison]::Ordinal)) { $state = $line.Substring(6).Trim() }
+        }
+
+        return [pscustomobject]@{
+            exitCode = $result.exitCode
+            stdout = $result.stdout
+            stderr = $result.stderr
+            state = $state
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $wrapper -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Run-Test 'compares and preserves state when an exiting lane mutated the checkout' {
+    New-TestRepository {
+        param($repo)
+        $token = 'exiting-lane-token'
+        $artifact = Join-Path $repo 'artifact.txt'
+        [IO.File]::WriteAllText($artifact, 'before the lane')
+        $run = Invoke-ExitingLaneWrapper -Repo $repo -Token $token -LaneExit 0 -MutatePath $artifact
+        try {
+            Assert-True ($run.stdout.Contains('LANE-RAN')) ('the lane never ran: ' + $run.stderr)
+            # The lane's own `exit 0` proves the unwind really happened: nothing
+            # after the try/catch executed, yet the finally still did.
+            Assert-True (-not $run.stdout.Contains('AFTER-TRY-RAN')) 'the lane exit did not unwind, so this is not the early-exit path'
+            Assert-True ($run.stdout.Contains('FINALLY-RAN')) 'guard finalization was skipped by the lane exit'
+            Assert-True ($run.stdout.Contains('"classification":"overwritten"')) ('Compare did not run or did not detect the mutation: ' + $run.stdout)
+            Assert-True ($run.exitCode -eq 2) ('the lane exit code masked the guard disposition: ' + $run.exitCode)
+            Assert-True (-not [string]::IsNullOrWhiteSpace($run.state)) 'the wrapper did not report its state path'
+            Assert-True (Test-Path -LiteralPath $run.state) 'a failed comparison did not preserve its authenticated state'
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($run.state)) {
+                Cleanup-State -Repo $repo -State $run.state -Token $token
+            }
+        }
+    }
+}
+
+Run-Test 'compares and cleans up when an exiting lane left the checkout alone' {
+    New-TestRepository {
+        param($repo)
+        $token = 'clean-exiting-lane-token'
+        [IO.File]::WriteAllText((Join-Path $repo 'artifact.txt'), 'untouched by the lane')
+        $run = Invoke-ExitingLaneWrapper -Repo $repo -Token $token -LaneExit 0
+        try {
+            Assert-True ($run.stdout.Contains('LANE-RAN')) ('the lane never ran: ' + $run.stderr)
+            Assert-True (-not $run.stdout.Contains('AFTER-TRY-RAN')) 'the lane exit did not unwind, so this is not the early-exit path'
+            Assert-True ($run.stdout.Contains('"classification":"unchanged"')) ('Compare was skipped by the lane exit: ' + $run.stdout)
+            Assert-True ($run.stdout.Contains('"classification":"cleaned"')) ('Cleanup was skipped by the lane exit: ' + $run.stdout)
+            Assert-True (-not [string]::IsNullOrWhiteSpace($run.state)) 'the wrapper did not report its state path'
+            Assert-True (-not (Test-Path -LiteralPath $run.state)) 'Cleanup left the authenticated state behind on the exit path'
+            Assert-True ($run.exitCode -eq 0) ('a clean guarded exit lane did not preserve its own exit code: ' + $run.exitCode)
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($run.state)) {
+                Cleanup-State -Repo $repo -State $run.state -Token $token
+            }
+        }
+    }
+}
+
+Run-Test 'lets a nonzero exiting lane keep its code once the guard is clean' {
+    New-TestRepository {
+        param($repo)
+        $token = 'failing-exiting-lane-token'
+        $run = Invoke-ExitingLaneWrapper -Repo $repo -Token $token -LaneExit 7
+        try {
+            Assert-True ($run.stdout.Contains('FINALLY-RAN')) 'guard finalization was skipped by the failing lane exit'
+            Assert-True ($run.stdout.Contains('"classification":"cleaned"')) ('Cleanup was skipped by the failing lane exit: ' + $run.stdout)
+            Assert-True ($run.exitCode -eq 7) ('the failing lane exit code was lost: ' + $run.exitCode)
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($run.state)) {
+                Cleanup-State -Repo $repo -State $run.state -Token $token
+            }
+        }
+    }
+}
+
 Write-Output ("Fingerprint tests: {0} passed, {1} failed" -f $script:passed, $script:failed)
 if ($script:failed -ne 0) {
     exit 1
