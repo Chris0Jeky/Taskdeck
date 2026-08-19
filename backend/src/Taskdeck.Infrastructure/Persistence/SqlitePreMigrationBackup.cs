@@ -41,8 +41,10 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// the database's full file name so two databases in one backup directory cannot prune each
 /// other, and the sequence — one past the highest already on disk — is what retention orders by,
 /// so a wall clock that steps backwards cannot make the newest snapshot look oldest and get it
-/// deleted first. Snapshots written by the earlier, stem-keyed, sequence-less v0.1.0 scheme are
-/// still recognised and still age out; see <see cref="EnumerateSnapshots"/>.
+/// deleted first. Snapshots written by the earlier, stem-keyed, sequence-less scheme are still
+/// recognised and still age out; see <see cref="EnumerateSnapshots"/>. That earlier scheme was
+/// never released: this whole feature landed in #1829, after the v0.1.0 tag, so the only hosts
+/// that can hold such a file are ones tracking <c>main</c> between #1829 and #1839.
 /// </para>
 /// <para>
 /// <b>Fail-closed.</b> Any failure to produce the snapshot throws
@@ -172,18 +174,35 @@ internal static class SqlitePreMigrationBackup
     /// The retention key for a database file: its FULL file name, extension included.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Keying on <see cref="Path.GetFileNameWithoutExtension(string)"/> (the pre-#1839 scheme)
     /// made <c>taskdeck.db</c> and <c>taskdeck.sqlite</c> share the key <c>taskdeck</c>, so two
     /// databases sitting in one directory — or pointed at one configured
-    /// <see cref="DatabaseBackupSettings.Directory"/> — pruned each other's snapshots. The full
-    /// file name is unique within a directory by definition, so it cannot collide.
+    /// <see cref="DatabaseBackupSettings.Directory"/> — pruned each other's snapshots. Two
+    /// databases in ONE directory necessarily have different file names, so for them the full
+    /// file name cannot collide.
+    /// </para>
+    /// <para>
+    /// This does NOT make the key globally unique, and the limitation is worth stating plainly:
+    /// the key is applied in the BACKUP directory, not the database's own. Two deployments whose
+    /// database files are both named <c>taskdeck.db</c> in different directories, both pointed at
+    /// one shared absolute <see cref="DatabaseBackupSettings.Directory"/>, still produce the same
+    /// key and still prune each other. Hashing the database's full path would close that too; it
+    /// is tracked, not done here.
+    /// </para>
     /// </remarks>
     internal static string BuildKey(string databaseFilePath) => Path.GetFileName(databaseFilePath);
 
     /// <summary>
-    /// The pre-#1839 retention key (the file name stem), still recognised so snapshots written by
-    /// shipped v0.1.0 code are pruned instead of accumulating forever.
+    /// The pre-#1839 retention key (the file name stem), still recognised so snapshots left behind
+    /// by the earlier scheme are pruned instead of accumulating forever.
     /// </summary>
+    /// <remarks>
+    /// No released build ever wrote this shape — the feature landed in #1829, after v0.1.0 — so
+    /// the population this serves is hosts that tracked <c>main</c> between #1829 and #1839, which
+    /// may be empty. It is kept because recognising the shape only ever ADDS files to retention's
+    /// view and costs nothing when none exist.
+    /// </remarks>
     internal static string BuildLegacyKey(string databaseFilePath) =>
         Path.GetFileNameWithoutExtension(databaseFilePath);
 
@@ -289,13 +308,19 @@ internal static class SqlitePreMigrationBackup
     /// order the code that wrote them used.
     /// </para>
     /// <para>
-    /// <b>Legacy compatibility.</b> Recognising the old shape is what stops v0.1.0's snapshots
-    /// from accumulating forever once a host upgrades. One wart is inherited rather than
-    /// introduced: because the old shape keys on the stem, a legacy snapshot of
-    /// <c>taskdeck.db</c> is indistinguishable from a legacy snapshot of <c>taskdeck.sqlite</c>,
-    /// so in the (rare) two-databases-one-directory case both databases will count the same
-    /// legacy files as theirs. That ambiguity is bounded and self-clearing: no new file is ever
-    /// written in the legacy shape, so it disappears as the old snapshots age out.
+    /// <b>Legacy compatibility.</b> Recognising the old shape stops snapshots written before
+    /// #1839 from accumulating forever once a host updates. Scope it honestly: the feature landed
+    /// in #1829, AFTER the v0.1.0 tag, so no released build ever wrote that shape and the affected
+    /// population is only hosts tracking <c>main</c> between the two PRs.
+    /// </para>
+    /// <para>
+    /// That makes the following wart a deliberate cost, not an inherited one: because the old
+    /// shape keys on the stem, a legacy snapshot of <c>taskdeck.db</c> is indistinguishable from a
+    /// legacy snapshot of <c>taskdeck.sqlite</c>, so in the (rare) two-databases-one-directory case
+    /// both databases count the same legacy files as theirs — the very ambiguity <see cref="BuildKey"/>
+    /// exists to remove. It is accepted because it is bounded and self-clearing: no new file is
+    /// ever written in the legacy shape, so it disappears as the old snapshots age out. Dropping
+    /// the legacy branch outright would also have been defensible.
     /// </para>
     /// </remarks>
     private static List<Snapshot> EnumerateSnapshots(string directory, string key, string legacyKey)

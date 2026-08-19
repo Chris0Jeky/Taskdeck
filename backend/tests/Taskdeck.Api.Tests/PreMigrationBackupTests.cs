@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -228,9 +230,11 @@ public sealed class PreMigrationBackupTests : IDisposable
     [Fact]
     public void Retention_still_recognises_and_ages_out_snapshots_from_the_previous_naming_scheme()
     {
-        // Compatibility: snapshots already on disk from shipped v0.1.0 are stem-keyed and carry
-        // no sequence suffix. They must keep taking part in retention, or a host that upgrades
-        // would keep them forever.
+        // Compatibility: snapshots left by the pre-#1839 scheme are stem-keyed and carry no
+        // sequence suffix. They must keep taking part in retention, or a host that updates would
+        // keep them forever. No RELEASED build wrote this shape — the feature landed in #1829,
+        // after the v0.1.0 tag — so the population is hosts that tracked `main` between #1829 and
+        // #1839. The behaviour is still worth pinning: it is what makes the legacy branch safe.
         CreateStandaloneWalDatabase();
         Directory.CreateDirectory(DefaultBackupDirectory);
 
@@ -242,7 +246,7 @@ public sealed class PreMigrationBackupTests : IDisposable
             .ToList();
         foreach (var path in legacy)
         {
-            File.WriteAllText(path, "snapshot written by the v0.1.0 naming scheme");
+            File.WriteAllText(path, "snapshot written by the pre-#1839 naming scheme");
         }
 
         var fresh = SqlitePreMigrationBackup.Create(
@@ -357,6 +361,48 @@ public sealed class PreMigrationBackupTests : IDisposable
 
         ReadAppliedMigrationIds(_dbPath).Should().NotContain(
             lastMigration, "the pending migration must NOT have been applied after a failed backup");
+    }
+
+    [Fact]
+    public void A_backup_directory_that_cannot_be_listed_blocks_the_migration()
+    {
+        // The test above blocks Directory.CreateDirectory. This one covers the SECOND, newer
+        // abort path (#1839): the directory is created successfully and the failure happens
+        // afterwards, when ReserveDestinationPath ENUMERATES the directory to find the highest
+        // sequence already on disk. Before #1839 that step was File.Exists, which cannot throw,
+        // so this is a genuinely new way for startup to stop and it needs its own coverage.
+        var lastMigration = MigrateToOneBeforeLatest();
+        Directory.CreateDirectory(DefaultBackupDirectory);
+
+        using var unlistable = UnlistableDirectory.Deny(DefaultBackupDirectory);
+        if (!unlistable.IsEffective)
+        {
+            // The process can still list the directory (a root/Administrator process ignores the
+            // restriction, and some filesystems do not honour it). The condition under test does
+            // not exist here, so asserting would prove nothing about the code — bail out rather
+            // than record a false green.
+            return;
+        }
+
+        var logger = new InMemoryLogger<PreMigrationBackupTests>();
+        using var context = NewFileContext();
+
+        var act = () => SerializedMigrator.Migrate(context, new DatabaseBackupSettings(), logger);
+
+        var thrown = act.Should().Throw<PreMigrationBackupException>(
+            "a backup directory that cannot be listed must fail closed: without reading it we " +
+            "cannot pick a sequence that is guaranteed not to clobber an existing snapshot, and " +
+            "overwriting one would destroy the protection this feature exists to provide").Which;
+        thrown.InnerException.Should().BeOfType<UnauthorizedAccessException>(
+            "the real cause must be preserved, not replaced by a generic failure");
+        thrown.Message.Should().Contain(_dbPath, "the error must name the database at risk");
+        thrown.Message.Should().Contain(
+            "was NOT applied", "the error must tell the user the migration did not run");
+
+        ReadAppliedMigrationIds(_dbPath).Should().NotContain(
+            lastMigration,
+            "the pending migration must NOT have been applied when the snapshot name could not " +
+            "safely be chosen");
     }
 
     // ── Directory resolution ─────────────────────────────────────────────────
@@ -484,6 +530,106 @@ public sealed class PreMigrationBackupTests : IDisposable
         using var command = connection.CreateCommand();
         command.CommandText = $"SELECT COUNT(*) FROM {table}";
         return Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Makes a directory creatable-but-not-listable for the life of the instance, using whichever
+    /// mechanism the running OS actually has, and restores it on dispose.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Windows gets an explicit Deny ACE for the current user; Unix has its read bit removed while
+    /// keeping write and execute. Both produce the same seam: <see cref="Directory.CreateDirectory(string)"/>
+    /// still succeeds and <see cref="Directory.EnumerateFiles(string, string)"/> throws
+    /// <see cref="UnauthorizedAccessException"/>. Doing it per-OS rather than picking one platform
+    /// matters because the merge gate runs on Linux while this box is Windows — a single-platform
+    /// trick would leave the branch unexercised on one of them.
+    /// </para>
+    /// <para>
+    /// Restoring on dispose is NOT optional: a directory left unlistable cannot be deleted, so the
+    /// test would leak a temp tree on every run.
+    /// </para>
+    /// </remarks>
+    private sealed class UnlistableDirectory : IDisposable
+    {
+        private readonly Action _restore;
+
+        private UnlistableDirectory(Action restore, bool isEffective)
+        {
+            _restore = restore;
+            IsEffective = isEffective;
+        }
+
+        /// <summary>
+        /// Whether the restriction actually took hold. A root/Administrator process bypasses it,
+        /// and not every filesystem honours it, so the caller must check rather than assume.
+        /// </summary>
+        internal bool IsEffective { get; }
+
+        internal static UnlistableDirectory Deny(string path)
+        {
+            Action restore;
+            if (OperatingSystem.IsWindows())
+            {
+                restore = DenyOnWindows(path);
+            }
+            else
+            {
+                restore = DenyOnUnix(path);
+            }
+
+            return new UnlistableDirectory(restore, !CanList(path));
+        }
+
+        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+        private static Action DenyOnWindows(string path)
+        {
+            var info = new DirectoryInfo(path);
+            var security = info.GetAccessControl();
+            var rule = new FileSystemAccessRule(
+                WindowsIdentity.GetCurrent().User!,
+                FileSystemRights.ListDirectory | FileSystemRights.ReadData,
+                AccessControlType.Deny);
+
+            security.AddAccessRule(rule);
+            info.SetAccessControl(security);
+
+            return () =>
+            {
+                security.RemoveAccessRuleAll(rule);
+                info.SetAccessControl(security);
+            };
+        }
+
+        [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+        private static Action DenyOnUnix(string path)
+        {
+            var original = File.GetUnixFileMode(path);
+
+            // Write + execute but NOT read: the directory can still be traversed and written into
+            // (so Directory.CreateDirectory succeeds), but its entries cannot be listed.
+            File.SetUnixFileMode(path, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            return () => File.SetUnixFileMode(path, original);
+        }
+
+        private static bool CanList(string path)
+        {
+            try
+            {
+                foreach (var _ in Directory.EnumerateFiles(path))
+                {
+                }
+
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        public void Dispose() => _restore();
     }
 
     public void Dispose()

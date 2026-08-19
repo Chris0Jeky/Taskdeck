@@ -45,10 +45,18 @@ change, the host takes a consistent snapshot of your database file **before** ap
 migration:
 
 - Snapshots land in a `backups/` folder next to the database file, named
-  `taskdeck-pre-migration-<UTC timestamp>.db`. Each one is a complete, standalone SQLite file —
-  copy it back over `taskdeck.db` to return to the pre-upgrade state.
+  `<database file name>-pre-migration-<UTC timestamp>-<sequence>.db` — for the default database
+  that is `taskdeck.db-pre-migration-20260819T101530000Z-000001.db`. Each one is a complete,
+  standalone SQLite file — copy it back over `taskdeck.db` to return to the pre-upgrade state.
+  **The highest sequence number is the newest snapshot**; prefer it over the timestamp, which is
+  only descriptive and can move backwards if the host clock is corrected.
 - It runs **only when migrations are actually pending.** Ordinary restarts copy nothing.
-- The last **5** snapshots are kept; older ones are pruned automatically.
+- The last **5** snapshots are kept; older ones are pruned automatically. Only files matching the
+  managed name above are ever deleted — your own copies in the same folder are left alone.
+- If you tracked `main` during the v0.1.1 development window, you may also have snapshots in the
+  older `taskdeck-pre-migration-<UTC timestamp>.db` shape (no sequence). Those are still
+  recognised and still pruned, so they age out instead of accumulating; no released version wrote
+  them, so a host upgrading from v0.1.0 will not have any.
 - **If the snapshot cannot be written, the upgrade stops.** Taskdeck refuses to migrate a database
   it could not back up, and the error names the file, the directory, and the cause. Free some disk
   space or fix directory permissions, then start again.
