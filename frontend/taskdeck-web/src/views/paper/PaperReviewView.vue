@@ -23,6 +23,7 @@ import {
   sortProposalsByRisk,
 } from '../../utils/automation'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
+import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -69,12 +70,26 @@ const {
   clearProposalDeepLink,
   loadProposals,
   loadBoardOptions,
+  availableBoards,
   startClock,
   stopClock,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
+const displayVersion = ref(0)
+const technicalDetailsCopied = ref(false)
+
+watch(
+  [proposals, availableBoards],
+  ([currentProposals, boards]) => {
+    if (currentProposals.length === 0 && boards.length === 0) return
+    void proposalDisplayNames.ensure(currentProposals, boards).then(() => {
+      displayVersion.value += 1
+    })
+  },
+  { deep: true, immediate: true },
+)
 
 // The dismiss endpoint rejects the WHOLE request with 403 if any id isn't owned
 // by the caller, and a board-filtered proposal list deliberately includes other
@@ -238,6 +253,7 @@ const previewReadOnlyLabel = computed(() => {
 // a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
 // for these proposals (#1397).
 const storedOperationsFallback = computed(() => {
+  void displayVersion.value
   if (previewDiffMode.value !== 'stored' || previewDiff.value) return null
   const ops = activeProposal.value?.operations ?? []
   if (ops.length === 0) return null
@@ -245,7 +261,7 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${formatActionLabel(op.actionType)} · ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+        `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
 })
@@ -381,7 +397,7 @@ const queueItems = computed<QueueRailItem[]>(() =>
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
       title: p.summary || '(no summary)',
-      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
+      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'assistant' : 'capture',
       // Per-item rail confidence is not yet wired per-proposal — leave null until
       // the gap lands. Not contradictory with `authorMeta` below, which shows the
       // REAL aggregate /confidence breakdown for the single active proposal.
@@ -484,51 +500,34 @@ function formatActionLabel(actionType: string): string {
     .trim()
 }
 
-function parseOperationParameters(operation: ProposalOperation): Record<string, unknown> | null {
-  if (!operation.parameters) return null
-  try {
-    const parsed = JSON.parse(operation.parameters) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch {
-    return null
-  }
-}
-
-function formatParameterValue(value: unknown): string {
-  if (value === null || value === undefined) return 'null'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-  return JSON.stringify(value) ?? String(value)
-}
-
 function summarizeOperation(operation: ProposalOperation): string {
-  const params = parseOperationParameters(operation)
-  if (!params) return 'No parameter preview supplied for this operation.'
-  const entries = Object.entries(params).slice(0, 4)
-  if (entries.length === 0) return 'No parameter preview supplied for this operation.'
-  return entries.map(([key, value]) => `${key}: ${formatParameterValue(value)}`).join(' · ')
+  const proposal = activeProposal.value
+  if (!proposal) return 'No parameter preview supplied for this operation.'
+  void displayVersion.value
+  return proposalDisplayNames.summarizeOperation(proposal, operation)
 }
 
-const before = computed<ChangeBeforeCard>(() => ({
-  serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
-  title: activeProposal.value?.summary ?? 'No proposal selected',
-  body:
-    activeProposal.value?.presentation?.impactSummary ??
-    `Review ${activeProposal.value?.operations?.length ?? 0} proposal operations before applying.`,
-  meta: `${activeProposal.value?.boardId ?? 'Inbox'} · ${activeProposal.value?.sourceType ?? 'proposal'}`,
-}))
+const before = computed<ChangeBeforeCard>(() => {
+  void displayVersion.value
+  return {
+    serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
+    title: activeProposal.value?.summary ?? 'No proposal selected',
+    body:
+      activeProposal.value?.presentation?.impactSummary ??
+      `Review ${activeProposal.value?.operations?.length ?? 0} proposal operations before applying.`,
+    meta: `${proposalDisplayNames.boardLabel(activeProposal.value?.boardId)} · ${activeProposal.value?.sourceType ?? 'proposal'}`,
+  }
+})
 
 const after = computed<ChangeAfterCard[]>(() => {
+  void displayVersion.value
   const p = activeProposal.value
   const operations = p?.operations ?? []
   if (operations.length === 0) {
     return [{
       serial: p ? `#${p.id.slice(0, 8)}.0` : '—',
       title: 'No operation preview',
-      body: p?.diffPreview ?? 'The proposal did not include operation details.',
+      body: p?.diffPreview ? proposalDisplayNames.displayDiff(p, p.diffPreview) : 'The proposal did not include operation details.',
       status: 'kept',
     }]
   }
@@ -544,24 +543,54 @@ const after = computed<ChangeAfterCard[]>(() => {
 })
 
 const fields = computed<FieldDiff[]>(() => {
+  void displayVersion.value
   const p = activeProposal.value
   const operations = p?.operations ?? []
   if (operations.length === 0) {
-    return [{ key: 'operations', before: 'none', after: p?.diffPreview ?? 'not provided', same: !p?.diffPreview }]
+    return [{
+      key: 'operations',
+      before: 'none',
+      after: p?.diffPreview ? proposalDisplayNames.displayDiff(p, p.diffPreview) : 'not provided',
+      same: !p?.diffPreview,
+    }]
   }
 
   return [...operations]
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation) => ({
       key: formatActionLabel(operation.actionType),
-      before: operation.targetId ?? operation.targetType,
+      before: proposalDisplayNames.operationTargetLabel(p!, operation) ?? operation.targetType,
       after: summarizeOperation(operation),
     }))
 })
 
 const changeSubTitle = computed(() => {
+  void displayVersion.value
   const ops = activeProposal.value?.operations?.length ?? 0
-  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · ${activeProposal.value?.boardId ?? 'this board'}`
+  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · ${proposalDisplayNames.boardLabel(activeProposal.value?.boardId)}`
+})
+
+const technicalDetails = computed(() => {
+  void displayVersion.value
+  return activeProposal.value ? proposalDisplayNames.technicalDetails(activeProposal.value) : ''
+})
+
+async function copyTechnicalDetails() {
+  if (!technicalDetails.value || !navigator.clipboard?.writeText) return
+  try {
+    await navigator.clipboard.writeText(technicalDetails.value)
+    technicalDetailsCopied.value = true
+  } catch {
+    technicalDetailsCopied.value = false
+  }
+}
+
+const displayedPreviewDiff = computed(() => {
+  void displayVersion.value
+  const proposal = activeProposal.value
+  return proposal && previewDiff.value
+    ? proposalDisplayNames.displayDiff(proposal, previewDiff.value)
+    : previewDiff.value
 })
 
 // --- Right rail data ---------------------------------------------------
@@ -599,10 +628,15 @@ const authorMeta = computed(() => {
 })
 
 const authorName = computed(() => {
-  const source = activeProposal.value
-    ? normalizeProposalSourceType(activeProposal.value.sourceType).toLowerCase()
-    : 'proposal'
-  return `Haiku · ${source} proposal`
+  const normalized = activeProposal.value
+    ? normalizeProposalSourceType(activeProposal.value.sourceType)
+    : null
+  if (!normalized) return 'Proposal'
+  // Same actor split as the queue rail above: only chat-driven proposals come from
+  // the configured AI provider; capture triage may be the deterministic extractor
+  // (see ReviewProvenance), so it must not be attributed to "Assistant".
+  const actor = normalized === 'Chat' ? 'Assistant' : 'Capture'
+  return `${actor} · ${normalized.toLowerCase()} proposal`
 })
 
 const whyNowBody = computed(() => {
@@ -1102,6 +1136,21 @@ function onQueueFilterChange(filter: QueueFilter) {
         @dismiss="onFileAway"
         @report="onReportBadSuggestion"
       />
+      <details
+        class="paper-review-deep__technical-details"
+        data-testid="paper-review-technical-details"
+      >
+        <summary>Technical details</summary>
+        <button
+          type="button"
+          class="td-btn td-btn--secondary td-btn--sm"
+          :disabled="!technicalDetails"
+          @click="copyTechnicalDetails"
+        >
+          {{ technicalDetailsCopied ? 'Copied' : 'Copy technical details' }}
+        </button>
+        <pre aria-label="Proposal technical details">{{ technicalDetails }}</pre>
+      </details>
       <section
         v-if="previewDiffProposalId === activeProposal.id"
         ref="previewDiffSection"
@@ -1204,7 +1253,7 @@ function onQueueFilterChange(filter: QueueFilter) {
             role="region"
             :aria-label="previewDiffMode === 'stored' ? 'Stored proposal preview' : 'Proposal operation diff'"
             data-testid="paper-review-diff-pre"
-          >{{ previewDiff }}</pre>
+          >{{ displayedPreviewDiff }}</pre>
         </div>
       </section>
       <ReviewRevisionEditor
@@ -1227,7 +1276,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         <div class="tk-eyebrow">Queue · 0 awaiting</div>
         <h2 class="tk-h2">Nothing waiting. Good.</h2>
         <p class="tk-lede">
-          When haiku has something to propose it will appear here for review.
+          When the assistant has something to propose it will appear here for review.
         </p>
         <p v-if="proposalsLoading" class="tk-meta">Loading proposals…</p>
       </template>

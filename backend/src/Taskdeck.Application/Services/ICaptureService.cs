@@ -33,6 +33,7 @@ public interface ICaptureService
     Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,
+        Guid? targetBoardId = null,
         CancellationToken cancellationToken = default);
 
     Task<Result<BatchTriageResultDto>> BatchTriageAsync(

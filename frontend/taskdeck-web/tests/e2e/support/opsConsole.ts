@@ -1,10 +1,10 @@
 import { expect, type Page } from '@playwright/test'
 
 export async function selectOpsTemplate(page: Page, templateName: string): Promise<void> {
-  const toolbar = page.locator('.td-cli-toolbar')
+  const toolbar = page.locator('.paper-ops__cli-toolbar')
   const templateInput = toolbar.getByRole('combobox', { name: 'Command template' })
 
-  await expect(page.locator('.td-template-meta')).toBeVisible()
+  await expect(page.locator('.paper-ops__template-meta')).toBeVisible()
   await templateInput.fill(templateName)
 
   if (await templateInput.getAttribute('aria-expanded') === 'true') {

@@ -107,6 +107,17 @@
    Light Theme — warm professional variant
    Apply via <html data-theme="light">
    Only overrides tokens that differ from the dark default.
+
+   DEAD CODE — DELETION CANDIDATE (ADR-0053 / #1778).
+   Nothing in the application sets `data-theme`: at commit a2ac87e8 a
+   repo-wide grep found the attribute in exactly one live source file, this
+   one (the selector below and the comment above it).  Every other match is
+   documentation or the design handoff.  The sibling [data-density] blocks
+   ARE live; this block has never activated in a shipped build, so its values
+   are unvalidated.  Paper-mode warming of the --td-* substrate is handled by
+   `paper-legacy-bridge.css`, scoped under `.paper` / `.paper-night`, NOT by
+   this block.  Removing it is deliberately a separate slice — do not extend
+   it; delete it.
    ══════════════════════════════════════════════════ */
 [data-theme="light"] {
   /* ── Internal accent aliases (single source for accent tweaks) ── */
