@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
 import ReviewView from '../../views/ReviewView.vue'
+import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
 
 const vueHelpers = vi.hoisted(async () => {
   const { computed, ref, shallowRef } = await import('vue')
@@ -59,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   dismissProposals: vi.fn(),
   getRevisions: vi.fn(),
   getBoards: vi.fn(),
+  getColumns: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
   infoToast: vi.fn(),
@@ -81,6 +83,10 @@ vi.mock('../../api/boardsApi', () => ({
   boardsApi: {
     getBoards: mocks.getBoards,
   },
+}))
+
+vi.mock('../../api/columnsApi', () => ({
+  columnsApi: { getColumns: mocks.getColumns },
 }))
 
 vi.mock('../../store/toastStore', () => ({
@@ -225,8 +231,7 @@ async function mountAt(path: string) {
     },
   })
 
-  await Promise.resolve()
-  await Promise.resolve()
+  await flushPromises()
   await wrapper.vm.$nextTick()
 
   mountedWrapper = wrapper
@@ -240,6 +245,7 @@ let originalPrompt: typeof window.prompt
 describe('ReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetProposalDisplayNamesForTests()
     localStorage.clear()
     // Wave-3 (ADR-0038): default is now 'paper'; pin Legacy so this spec keeps asserting Legacy DOM.
     localStorage.setItem('td.paper.mode.v2', 'off')
@@ -257,6 +263,7 @@ describe('ReviewView', () => {
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
     mocks.getProposalDiff.mockResolvedValue('diff')
     mocks.getRevisions.mockResolvedValue([])
+    mocks.getColumns.mockResolvedValue([])
     mocks.dismissProposals.mockResolvedValue({ dismissed: 1 })
     mocks.createRequestId.mockReturnValue('request-1')
   })
@@ -657,7 +664,7 @@ describe('ReviewView', () => {
     expect(entitiesToggle).toBeDefined()
     await entitiesToggle!.trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).toContain('Board board-12 · 1 change')
+    expect(wrapper.text()).toContain('Content Calendar · 1 change')
 
     // Planned changes are collapsed by default -- expand to verify
     const operationsToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Planned changes'))
@@ -772,7 +779,7 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
 
     expect(wrapper.text()).toContain('Support Triage')
-    expect(wrapper.text()).not.toContain('board-7')
+    expect(wrapper.get('#proposal-proposal-1').find('.td-review-card__header').text()).not.toContain('board-7')
     expect(wrapper.text()).toContain('Show all boards')
   })
 

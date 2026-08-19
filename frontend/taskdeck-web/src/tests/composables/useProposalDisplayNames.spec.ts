@@ -1,0 +1,128 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Proposal } from '../../types/automation'
+import type { Board } from '../../types/board'
+import {
+  createProposalDisplayNameResolver,
+  PROPOSAL_COLUMN_LOAD_CONCURRENCY,
+} from '../../composables/useProposalDisplayNames'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
+const mocks = vi.hoisted(() => ({
+  getBoards: vi.fn(),
+  getColumns: vi.fn(),
+}))
+
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: { getBoards: mocks.getBoards },
+}))
+
+vi.mock('../../api/columnsApi', () => ({
+  columnsApi: { getColumns: mocks.getColumns },
+}))
+
+function makeProposal(boardId: string, columnId: string): Proposal {
+  const now = new Date().toISOString()
+  return {
+    id: `proposal-${boardId}`,
+    sourceType: 'Chat',
+    sourceReferenceId: null,
+    boardId,
+    requestedByUserId: 'user-1',
+    status: 'PendingReview',
+    riskLevel: 'Low',
+    summary: `Proposal for ${boardId}`,
+    diffPreview: null,
+    validationIssues: null,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    decidedAt: null,
+    decidedByUserId: null,
+    appliedAt: null,
+    failureReason: null,
+    correlationId: `correlation-${boardId}`,
+    operations: [{
+      id: `operation-${boardId}`,
+      proposalId: `proposal-${boardId}`,
+      sequence: 0,
+      actionType: 'MoveCard',
+      targetType: 'Column',
+      targetId: columnId,
+      parameters: JSON.stringify({ boardId, columnId }),
+      idempotencyKey: `key-${boardId}`,
+      expectedVersion: null,
+    }],
+    approvedRevisionId: null,
+  }
+}
+
+describe('useProposalDisplayNames column loading', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('bounds column requests while resolving every board name', async () => {
+    const boardIds = Array.from(
+      { length: PROPOSAL_COLUMN_LOAD_CONCURRENCY + 3 },
+      (_, index) => `board-${index + 1}`,
+    )
+    const columnRequests = new Map<string, ReturnType<typeof createDeferred<Array<{ id: string; boardId: string; name: string }>>>>()
+    let activeRequests = 0
+    let maxActiveRequests = 0
+
+    mocks.getColumns.mockImplementation((boardId: string) => {
+      const deferred = createDeferred<Array<{ id: string; boardId: string; name: string }>>()
+      columnRequests.set(boardId, deferred)
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      return deferred.promise.finally(() => {
+        activeRequests -= 1
+      })
+    })
+
+    const resolver = createProposalDisplayNameResolver()
+    const proposals = boardIds.map((boardId, index) => makeProposal(boardId, `column-${index + 1}`))
+    const now = new Date().toISOString()
+    const boards: Board[] = boardIds.map((id, index) => ({
+      id,
+      name: `Board ${index + 1}`,
+      description: null,
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+    }))
+    const ensurePromise = resolver.ensure(proposals, boards)
+
+    await Promise.resolve()
+    expect(mocks.getColumns).toHaveBeenCalledTimes(PROPOSAL_COLUMN_LOAD_CONCURRENCY)
+    expect(maxActiveRequests).toBe(PROPOSAL_COLUMN_LOAD_CONCURRENCY)
+
+    for (const [index, boardId] of boardIds.entries()) {
+      const request = columnRequests.get(boardId)
+      expect(request).toBeDefined()
+      request!.resolve([{
+        id: `column-${index + 1}`,
+        boardId,
+        name: `Column ${index + 1}`,
+      }])
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(activeRequests).toBeLessThanOrEqual(PROPOSAL_COLUMN_LOAD_CONCURRENCY)
+    }
+
+    await ensurePromise
+    expect(mocks.getColumns).toHaveBeenCalledTimes(boardIds.length)
+    expect(maxActiveRequests).toBe(PROPOSAL_COLUMN_LOAD_CONCURRENCY)
+    for (const [index, boardId] of boardIds.entries()) {
+      expect(resolver.boardLabel(boardId)).toBe(`Board ${index + 1}`)
+      expect(resolver.columnLabel(boardId, `column-${index + 1}`)).toBe(`Column ${index + 1}`)
+    }
+  })
+})
