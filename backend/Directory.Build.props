@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    Product version stamping (#1804).
+
+    The release workflows inject the tag-derived version explicitly:
+      dotnet publish ... /p:Version=<tag with the leading "v" stripped>
+    (.github/workflows/release-desktop.yml and deploy/Dockerfile.production's
+    TASKDECK_VERSION build arg, fed by .github/workflows/release-container.yml).
+
+    Any build that does NOT inject one — a developer machine, ordinary CI, a
+    local `docker build` — falls back to a deliberately implausible 0.0.0-dev so
+    an unstamped binary is recognisable instead of silently reporting a
+    believable number. `Taskdeck.Application.Common.ProductVersion` reads the
+    resulting AssemblyInformationalVersion at runtime and surfaces it on
+    /health/live, /health/ready, and the CLI version command.
+
+    This file sits at backend/ so every project in Taskdeck.sln — src and tests
+    alike — is stamped from one place. Keep it in sync with the COPY line for it
+    in deploy/Dockerfile.production, which needs it present before restore.
+  -->
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <Product>Taskdeck</Product>
+    <Company>Taskdeck</Company>
+    <!--
+      Keep AssemblyInformationalVersion exactly equal to $(Version). Without this
+      the SDK appends "+<SourceRevisionId>" whenever a build sets one, which would
+      make the reported version drift from the release tag it was cut from.
+    -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>
