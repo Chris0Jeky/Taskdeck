@@ -167,19 +167,39 @@ profile — that is a separate decision, and this one does not block it.
 
 ### 8. Rollout order: surface by surface, core loop first
 
-1. **Now (`#1770`)** — Home, Inbox, Boards, plus the Preferences language switcher itself.
-2. **Next** — **Review**. Deliberately deferred out of the seed: three Review-surface PRs
-   (`#1830`, `#1825`, `#1835`) landed or were landing the same day, and a parallel copy extraction
-   there would have collided line-for-line for no gain. Review completes the core loop and is the
-   named next slice.
-3. **Then** — the secondary surfaces (Today, Calendar, Activity, Archive, Settings sub-views,
-   Notifications, Agents, and the shared `components/ui/Td*` primitives).
+1. **Step 1 — SHIPPED** (PR `#1841`, `#1770`): Home, Inbox, Boards, plus the Preferences language
+   switcher itself.
+2. **Step 2 — SHIPPED** (PR `#1852`, hardened by PR `#1869`/`#1857`): **Review**. Deliberately
+   deferred out of the seed because three Review-surface PRs (`#1830`, `#1825`, `#1835`) landed or
+   were landing the same day and a parallel copy extraction there would have collided line-for-line
+   for no gain; those settled and Review shipped later the same day — 258 keys per locale, and it
+   completes the core loop. `#1869` fixed the two strings that were resolved *once* into a plain
+   `ref` at fetch/error time and therefore froze whichever locale produced them: per decision 2,
+   the fetch path stores the raw wire key and the relabel happens inside the exposed `computed`.
+3. **Step 3 — BLOCKED on `#1858`**: the secondary surfaces (Today, Calendar, Activity, Archive,
+   Settings sub-views, Notifications, Agents, `CohortDashboard`, and the shared
+   `components/ui/Td*` primitives). The blocker is budget, not design. Step 2 alone took total JS
+   from 1163.18 KB to 1201.15 KB, and the CI gate in `scripts/ci/check-bundle-size.mjs` was
+   **deliberately raised 1200 → 1250 KB** to admit it — a recorded budget decision with its
+   rationale in a dated comment on the `MAX_TOTAL_JS_KB` constant, not a threshold quietly moved to
+   make a build pass. That headroom is not expected to survive the remaining surfaces, so how the
+   rollout is budgeted against this gate — including whether the gate should measure the *eager*
+   graph instead, which would make lazy loading a real lever — is decided in `#1858` **before**
+   step 3 starts.
 4. **Legacy (Obsidian) shells are not extracted.** ADR-0038 froze them; spending translation budget
    on a frozen skin is waste. If Legacy is ever unfrozen, it inherits the catalogs the Paper
-   surfaces already built.
+   surfaces already built. Note that three *shared* components extracted in step 2
+   (`ApplyToBoardDialog.vue`, `useReviewActions.ts`, `useReviewProposals.ts`) are mounted by the
+   Legacy Review shell too, so Legacy inherits translated copy at those seams already; `en` is
+   byte-identical, so the default-locale rendering is unchanged.
 
 Within a surface, extraction is all-or-nothing for that surface's *own* copy: half-extracted
 surfaces are how catalogs rot.
+
+**Still open regardless of rollout position:** translation *quality*. Per Consequences below, the
+catalog guard proves structural parity only — nothing mechanical proves the Italian and Spanish are
+good. Native review of `src/locales/{it,es}/*` remains a human item tracked on `#1770`, and the
+locales should not be advertised as finished until it happens.
 
 ## Alternatives Considered
 
