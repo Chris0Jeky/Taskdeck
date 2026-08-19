@@ -310,7 +310,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
         <div class="sg-row" style="gap: 28px;">
           <PaperConfidenceDial :value="0.18" subline="router · v3" />
           <PaperConfidenceDial :value="0.5" subline="assistant" />
-          <PaperConfidenceDial :value="0.84" subline="opus" />
+          <PaperConfidenceDial :value="0.84" subline="provider" />
           <PaperConfidenceDial :value="1" caption="LIVE" subline="local" />
         </div>
 

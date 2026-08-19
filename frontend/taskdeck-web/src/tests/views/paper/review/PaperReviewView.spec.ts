@@ -476,7 +476,6 @@ describe('PaperReviewView', () => {
     expect(mainText).not.toContain('No data left this device')
 
     const viewText = wrapper.text()
-    expect(viewText).not.toContain('Assistant · local')
     // No user-facing surface may name a specific LLM model or persona (#1767).
     expect(viewText.toLowerCase()).not.toContain('haiku')
     expect(viewText).not.toContain('crossed your "split this" threshold')
@@ -578,6 +577,21 @@ describe('PaperReviewView', () => {
     expect(railText).toContain('assistant')
     expect(railText.toLowerCase()).not.toContain('haiku')
     expect(railText).not.toContain('capture')
+    // The author card must make the same actor split as the rail (#1767 review).
+    expect(wrapper.text()).toContain('Assistant · chat proposal')
+  })
+
+  it('attributes non-chat proposals to Capture, not the assistant (#1767)', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        sourceType: 'Queue',
+        summary: 'Queue-sourced proposal',
+      }),
+    ])
+
+    const viewText = wrapper.text()
+    expect(viewText).toContain('Capture · queue proposal')
+    expect(viewText).not.toContain('Assistant · queue proposal')
   })
 
   it('renders a filter-empty state when another queue filter still has work', async () => {

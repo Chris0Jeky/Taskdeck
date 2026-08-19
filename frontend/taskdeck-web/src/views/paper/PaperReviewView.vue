@@ -628,10 +628,15 @@ const authorMeta = computed(() => {
 })
 
 const authorName = computed(() => {
-  const source = activeProposal.value
-    ? normalizeProposalSourceType(activeProposal.value.sourceType).toLowerCase()
-    : 'proposal'
-  return `Assistant · ${source} proposal`
+  const normalized = activeProposal.value
+    ? normalizeProposalSourceType(activeProposal.value.sourceType)
+    : null
+  if (!normalized) return 'Proposal'
+  // Same actor split as the queue rail above: only chat-driven proposals come from
+  // the configured AI provider; capture triage may be the deterministic extractor
+  // (see ReviewProvenance), so it must not be attributed to "Assistant".
+  const actor = normalized === 'Chat' ? 'Assistant' : 'Capture'
+  return `${actor} · ${normalized.toLowerCase()} proposal`
 })
 
 const whyNowBody = computed(() => {

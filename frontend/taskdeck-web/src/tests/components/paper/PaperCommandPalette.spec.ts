@@ -151,7 +151,10 @@ describe('PaperCommandPalette', () => {
     const aiRows = aiSection!.querySelectorAll('.paper-palette__row--ai')
     expect(aiRows.length).toBe(1)
     expect(aiRows[0].textContent).toContain('Propose: split into 3 cards')
-    expect(aiRows[0].textContent).toContain('assistant')
+    // Pin the tag element itself: the row subtitle renders the fixture's keywords,
+    // which also contain "assistant", so a row-wide toContain would pass off the
+    // fixture even if the tag regressed (#1767 review).
+    expect(aiRows[0].querySelector('.paper-palette__row-tag')?.textContent).toContain('assistant')
     // No user-facing surface may name a specific LLM model or persona (#1767).
     expect(aiRows[0].textContent).not.toContain('haiku')
   })
