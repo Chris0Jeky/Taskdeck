@@ -102,6 +102,22 @@ describe('ApiKeySettingsView', () => {
     expect(skeletons.length).toBeGreaterThanOrEqual(1)
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    mocks.listKeys.mockResolvedValue([activeKey])
+
+    wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+    await waitForUi()
+
+    // The page's own chrome uses the Paper (`paper-api-keys__*`) idiom. The
+    // shared `components/ui/Td*` primitives it composes are out of scope and
+    // keep their own class hooks.
+    expect(wrapper.find('.paper-api-keys').exists()).toBe(true)
+    expect(wrapper.find('.paper-api-keys__panel').exists()).toBe(true)
+    expect(wrapper.find('.paper-api-keys__card').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-key-"]').exists()).toBe(false)
+  })
+
   it('shows error state with retry button on load failure', async () => {
     mocks.listKeys.mockRejectedValue(new Error('network failure'))
 
