@@ -1,10 +1,26 @@
 import http from './http'
 
+/**
+ * Opaque evidence-link metadata attached to a provenance row. `sourceType` is
+ * `'Transcript'` when `sourceId` is a transcript id readable through
+ * `transcriptsApi`; span bounds are character offsets into that transcript's
+ * LF-normalized text.
+ */
+export interface ProvenanceEvidenceLinkDto {
+  sourceType: string
+  sourceId: string
+  label: string | null
+  spanStart: number | null
+  spanEnd: number | null
+}
+
 export interface ProvenanceRowDto {
   icon: string
   key: string
   value: string
   weight: string
+  /** Absent on responses predating the typed evidence-link contract. */
+  evidenceLinks?: ProvenanceEvidenceLinkDto[] | null
 }
 
 export interface ConfidenceComponentDto {

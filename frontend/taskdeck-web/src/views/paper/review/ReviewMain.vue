@@ -15,6 +15,7 @@ import ReviewHistory from './ReviewHistory.vue'
 import type {
   ConfidenceBreakdown,
   ConflictRow,
+  EvidenceLink,
   HistoryRow,
   ProvenanceRow,
   SideEffects,
@@ -49,6 +50,8 @@ const props = withDefaults(
     fields: FieldDiff[]
     changeSubTitle: string
     provenance: ProvenanceRow[]
+    /** Evidence links behind the provenance rows; drives the drawer's transcript deep link. */
+    evidenceLinks?: EvidenceLink[]
     proposalId: string
     sideEffects: SideEffects
     conflicts: ConflictRow[]
@@ -155,7 +158,12 @@ const dialSubline = computed(() =>
       :sub-title="changeSubTitle"
     />
 
-    <ReviewProvenance :rows="provenance" :proposal-id="proposalId" @report="emit('report', $event)" />
+    <ReviewProvenance
+      :rows="provenance"
+      :evidence-links="evidenceLinks"
+      :proposal-id="proposalId"
+      @report="emit('report', $event)"
+    />
     <ReviewSideEffects :data="sideEffects" />
     <ReviewConflicts :rows="conflicts" />
     <ReviewHistory :rows="history" />

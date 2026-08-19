@@ -357,6 +357,115 @@ describe('ProvenanceDrawer', () => {
     wrapper.unmount()
   })
 
+  describe('view-in-transcript affordance', () => {
+    const transcriptId = '3f1c6a2e-9d55-4a10-8f22-2b6f9a1c7d40'
+
+    const transcriptLink: EvidenceLink = {
+      sourceKey: 'title',
+      span: [5, 24],
+      reason: 'ship the export fix',
+      weight: 'primary',
+      sourceType: 'Transcript',
+      sourceId: transcriptId,
+    }
+
+    function mountWithLinks(evidenceLinks: EvidenceLink[]) {
+      return mount(ProvenanceDrawer, {
+        props: {
+          open: true,
+          rows: [primaryRow],
+          metadata: null,
+          evidenceLinks,
+          proposalId: 'test-proposal-1',
+        },
+        attachTo: document.body,
+        global: {
+          stubs: {
+            TranscriptEvidenceViewer: {
+              props: ['transcriptId', 'spanStart', 'spanEnd', 'label'],
+              template:
+                '<div data-testid="transcript-viewer-stub">{{ transcriptId }}:{{ spanStart }}-{{ spanEnd }}</div>',
+            },
+          },
+        },
+      })
+    }
+
+    it('offers the affordance for a transcript link that carries a span', () => {
+      const wrapper = mountWithLinks([transcriptLink])
+
+      const button = document.querySelector('[data-testid="provenance-view-in-transcript-0"]')
+      expect(button).not.toBeNull()
+      expect(button?.textContent?.trim()).toBe('View in transcript')
+      // The evidence quote stays visible alongside the affordance.
+      expect(document.querySelector('.prov-drawer__evidence')?.textContent).toContain(
+        'ship the export fix',
+      )
+      wrapper.unmount()
+    })
+
+    it('withholds the affordance when the link is not transcript evidence', () => {
+      const wrapper = mountWithLinks([
+        { ...transcriptLink, sourceType: 'Capture', sourceId: 'c-1' },
+      ])
+
+      expect(document.querySelector('[data-testid="provenance-view-in-transcript-0"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('withholds the affordance when a transcript link has no resolved span', () => {
+      const wrapper = mountWithLinks([{ ...transcriptLink, span: null }])
+
+      expect(document.querySelector('[data-testid="provenance-view-in-transcript-0"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('withholds the affordance for links that predate the typed evidence contract', () => {
+      const wrapper = mountWithLinks(sampleEvidenceLinks)
+
+      expect(document.querySelector('[data-testid="provenance-view-in-transcript-0"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('opens the transcript at the linked span and toggles closed again', async () => {
+      const wrapper = mountWithLinks([transcriptLink])
+
+      const button = document.querySelector(
+        '[data-testid="provenance-view-in-transcript-0"]',
+      ) as HTMLElement
+      button.click()
+      await wrapper.vm.$nextTick()
+
+      const viewer = document.querySelector('[data-testid="transcript-viewer-stub"]')
+      expect(viewer?.textContent).toBe(`${transcriptId}:5-24`)
+      expect(button.textContent?.trim()).toBe('Hide transcript')
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+
+      button.click()
+      await wrapper.vm.$nextTick()
+      expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('closes an open transcript when the evidence list changes proposal', async () => {
+      const wrapper = mountWithLinks([transcriptLink])
+
+      const button = document.querySelector(
+        '[data-testid="provenance-view-in-transcript-0"]',
+      ) as HTMLElement
+      button.click()
+      await wrapper.vm.$nextTick()
+      expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).not.toBeNull()
+
+      // A different proposal's links reuse index 0; the previous transcript must not persist.
+      await wrapper.setProps({
+        evidenceLinks: [{ ...transcriptLink, sourceKey: 'body', sourceId: transcriptId }],
+      })
+      expect(document.querySelector('[data-testid="transcript-viewer-stub"]')).toBeNull()
+      wrapper.unmount()
+    })
+  })
+
   it('report button emits report event with an empty proposalId', async () => {
     const wrapper = mount(ProvenanceDrawer, {
       props: {

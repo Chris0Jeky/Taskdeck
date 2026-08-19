@@ -55,6 +55,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<IProposalConflictDetector, ProposalConflictDetector>();
         services.AddScoped<IProvenanceQueryService, ProvenanceQueryService>();
+        services.AddScoped<ITranscriptQueryService, TranscriptQueryService>();
         services.AddScoped<IConfidenceBreakdownService, ConfidenceBreakdownService>();
         services.AddScoped<ICardHistoryService, CardHistoryService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();

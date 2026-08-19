@@ -128,6 +128,104 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.provenance.value[1].weight).toBe('excluded')
   })
 
+  it('flattens provenance evidence links onto the field they justify', async () => {
+    mockAllEndpointsEmpty()
+    const transcriptId = '3f1c6a2e-9d55-4a10-8f22-2b6f9a1c7d40'
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'Extracted: "ship the export fix" (92% match)',
+        weight: 'Primary',
+        evidenceLinks: [
+          {
+            sourceType: 'Transcript',
+            sourceId: transcriptId,
+            label: 'ship the export fix',
+            spanStart: 5,
+            spanEnd: 24,
+          },
+        ],
+      },
+      // No links at all, and a link whose span the backend could not resolve.
+      { icon: '📄', key: 'description', value: 'Inferred by model (60% confidence)', weight: 'Inferred' },
+      {
+        icon: '📥',
+        key: 'capture',
+        value: 'Source field (80% confidence)',
+        weight: 'Contextual',
+        evidenceLinks: [
+          {
+            sourceType: 'Transcript',
+            sourceId: transcriptId,
+            label: null,
+            spanStart: null,
+            spanEnd: null,
+          },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(2)
+    })
+
+    expect(selectors.evidenceLinks.value[0]).toEqual({
+      sourceKey: 'title',
+      span: [5, 24],
+      reason: 'ship the export fix',
+      weight: 'primary',
+      sourceType: 'Transcript',
+      sourceId: transcriptId,
+    })
+    // A link without a label falls back to the row's rendered value.
+    expect(selectors.evidenceLinks.value[1]).toEqual({
+      sourceKey: 'capture',
+      span: null,
+      reason: 'Source field (80% confidence)',
+      weight: 'contextual',
+      sourceType: 'Transcript',
+      sourceId: transcriptId,
+    })
+  })
+
+  it('drops an incoherent evidence span rather than deep-linking to wrong characters', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 40, spanEnd: 12 },
+          { sourceType: 'Transcript', sourceId: 't-2', label: null, spanStart: -3, spanEnd: 12 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(2)
+    })
+
+    expect(selectors.evidenceLinks.value.map((link) => link.span)).toEqual([null, null])
+  })
+
+  it('clears evidence links when no proposal is active', async () => {
+    const activeProposal = computed(() => null)
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await nextTick()
+
+    expect(selectors.evidenceLinks.value).toEqual([])
+  })
+
   it('maps serialized numeric conflict tones from the API wire contract', async () => {
     mockAllEndpointsEmpty()
     const serializedRows = JSON.parse(`[
