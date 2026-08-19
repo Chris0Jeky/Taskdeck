@@ -200,6 +200,28 @@
     border-color: rgba(255, 77, 77, 0.2);
   }
 
+  /* ── Notification accent stripe (#1817) ──
+     Replaces the `border-l-4 border-l-<tailwind-hue>` pair that
+     `composables/useNotificationGrouping.ts` used to emit, so the five stripes
+     follow the active skin instead of the Tailwind palette.  The composable
+     still owns the type → stripe mapping; only the colour moves into tokens
+     (`--td-notify-*`, Obsidian defaults at `:root`, Paper values in
+     `paper-legacy-bridge.css`).
+
+     Kept to ONE class per colour (specificity 0,1,0), exactly like the
+     utilities it replaces, so `NotificationInboxView`'s scoped card rules —
+     which declare borders per side and leave the left edge undeclared — still
+     let the stripe through. */
+  .td-notify-stripe {
+    border-left-width: 4px;
+    border-left-style: solid;
+  }
+  .td-notify-stripe--proposal { border-left-color: var(--td-notify-proposal); }
+  .td-notify-stripe--mention { border-left-color: var(--td-notify-mention); }
+  .td-notify-stripe--board-change { border-left-color: var(--td-notify-board-change); }
+  .td-notify-stripe--assignment { border-left-color: var(--td-notify-assignment); }
+  .td-notify-stripe--system { border-left-color: var(--td-notify-system); }
+
   /* ── Virtual-scroll layout helpers (SEC-29: replaces inline :style bindings) ── */
   .td-virtual-scroll-sizer {
     width: 100%;

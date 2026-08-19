@@ -428,11 +428,11 @@ describe('NotificationInboxView', () => {
     const rows = wrapper.findAll('.paper-notifications__row')
     expect(rows).toHaveLength(2)
 
-    const stripes = rows.map((row) => row.classes().filter((c) => c.startsWith('border-l-')))
-    expect(stripes[0]).toContain('border-l-4')
-    expect(stripes[1]).toContain('border-l-4')
+    const stripes = rows.map((row) => row.classes().filter((c) => c.startsWith('td-notify-stripe')))
+    expect(stripes[0]).toContain('td-notify-stripe')
+    expect(stripes[1]).toContain('td-notify-stripe')
 
-    const colours = stripes.map((classes) => classes.find((c) => c !== 'border-l-4'))
+    const colours = stripes.map((classes) => classes.find((c) => c !== 'td-notify-stripe'))
     expect(colours[0]).toBeTruthy()
     expect(colours[1]).toBeTruthy()
     expect(colours[0]).not.toBe(colours[1])
@@ -442,7 +442,7 @@ describe('NotificationInboxView', () => {
 /**
  * Scoped-CSS guard for the per-type accent stripe (#1781 Paper restyle).
  *
- * `typeBorderClass` puts Tailwind's `border-l-4 border-l-<colour>` on each
+ * `typeBorderClass` puts `td-notify-stripe td-notify-stripe--<type>` on each
  * notification card, and that stripe is the type signal — information, not
  * decoration. Vue compiles `<style scoped>` rules to `.selector[data-v-…]`
  * (specificity 0,2,0), which outranks those single-class utilities (0,1,0), so

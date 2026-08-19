@@ -61,30 +61,41 @@ describe('typeLabel', () => {
   })
 })
 
+/**
+ * The stripe colours moved from the Tailwind palette to `--td-notify-*` tokens
+ * (#1817) so they follow the active skin; this function is still the single
+ * source of the type -> stripe mapping, which is what these tests pin.
+ */
 describe('typeBorderClass', () => {
-  it('returns amber border for proposals', () => {
-    expect(typeBorderClass('ProposalOutcome')).toContain('border-l-amber-500')
+  it('returns the proposal stripe for proposals', () => {
+    expect(typeBorderClass('ProposalOutcome')).toContain('td-notify-stripe--proposal')
   })
 
-  it('returns blue border for mentions', () => {
-    expect(typeBorderClass('Mention')).toContain('border-l-blue-500')
+  it('returns the mention stripe for mentions', () => {
+    expect(typeBorderClass('Mention')).toContain('td-notify-stripe--mention')
   })
 
-  it('returns green border for board changes', () => {
-    expect(typeBorderClass('BoardChange')).toContain('border-l-green-500')
+  it('returns the board-change stripe for board changes', () => {
+    expect(typeBorderClass('BoardChange')).toContain('td-notify-stripe--board-change')
   })
 
-  it('returns purple border for assignments', () => {
-    expect(typeBorderClass('Assignment')).toContain('border-l-purple-500')
+  it('returns the assignment stripe for assignments', () => {
+    expect(typeBorderClass('Assignment')).toContain('td-notify-stripe--assignment')
   })
 
-  it('returns gray border for system', () => {
-    expect(typeBorderClass('System')).toContain('border-l-gray-400')
+  it('returns the system stripe for system', () => {
+    expect(typeBorderClass('System')).toContain('td-notify-stripe--system')
   })
 
-  it('all classes include border-l-4', () => {
-    expect(typeBorderClass('Mention')).toContain('border-l-4')
-    expect(typeBorderClass('System')).toContain('border-l-4')
+  it('all classes include the shared stripe geometry class', () => {
+    expect(typeBorderClass('Mention')).toContain('td-notify-stripe ')
+    expect(typeBorderClass('System')).toContain('td-notify-stripe ')
+  })
+
+  it('gives every type a distinct stripe modifier', () => {
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    const modifiers = types.map((t) => typeBorderClass(t).split(' ').find((c) => c.includes('--')))
+    expect(new Set(modifiers).size).toBe(types.length)
   })
 })
 

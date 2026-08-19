@@ -126,6 +126,23 @@
   --td-surface-elevated: var(--td-surface-container-high);
   --td-surface-high: var(--td-surface-container-high);
 
+  /* ── Notification accent stripes (issue #1817) ──
+     `composables/useNotificationGrouping.ts` decides WHICH stripe a
+     notification type gets and stays the single source of that mapping; the
+     `.td-notify-stripe--*` rules in `style.css` paint it, and these tokens are
+     the only thing that changes per skin.
+
+     The values are the exact Tailwind v4 palette entries the stripes used as
+     literal utility classes before (`border-l-amber-500` / `-blue-500` /
+     `-green-500` / `-purple-500` / `-gray-400`), copied from
+     `tailwindcss@4.3.3/theme.css`, so Legacy rendering is unchanged.
+     `paper-legacy-bridge.css` re-tints all five onto Paper hues under
+     `.paper` / `.paper-night`. */
+  --td-notify-proposal: oklch(76.9% 0.188 70.08);        /* was amber-500  */
+  --td-notify-mention: oklch(62.3% 0.214 259.815);       /* was blue-500   */
+  --td-notify-board-change: oklch(72.3% 0.219 149.579);  /* was green-500  */
+  --td-notify-assignment: oklch(62.7% 0.265 303.9);      /* was purple-500 */
+  --td-notify-system: oklch(70.7% 0.022 261.325);        /* was gray-400   */
 }
 
 /* ══════════════════════════════════════════════════
