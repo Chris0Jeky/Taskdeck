@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch, onScopeDispose } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { transcriptsApi, type TranscriptDto } from '../../api/transcriptsApi'
 
 /**
@@ -21,6 +22,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+const { t } = useI18n()
 
 const transcript = ref<TranscriptDto | null>(null)
 const loading = ref(false)
@@ -96,9 +99,9 @@ async function load() {
 
 function describeError(error: unknown): string {
   const status = (error as { response?: { status?: number } })?.response?.status
-  if (status === 404) return 'This transcript is no longer available.'
-  if (status === 401 || status === 403) return 'You are not signed in to view this transcript.'
-  return 'The transcript could not be loaded. Try again.'
+  if (status === 404) return t('review.transcript.error.notFound')
+  if (status === 401 || status === 403) return t('review.transcript.error.unauthorized')
+  return t('review.transcript.error.generic')
 }
 
 watch(() => props.transcriptId, load, { immediate: true })
@@ -113,22 +116,24 @@ onScopeDispose(() => {
 <template>
   <section class="transcript-evidence" data-testid="transcript-evidence-viewer">
     <header class="transcript-evidence__header">
-      <h4 class="transcript-evidence__title">In transcript</h4>
+      <h4 class="transcript-evidence__title">{{ $t('review.transcript.title') }}</h4>
       <button
         type="button"
         class="transcript-evidence__close"
         data-testid="transcript-evidence-close"
         @click="emit('close')"
       >
-        Close
+        {{ $t('review.transcript.close') }}
       </button>
     </header>
 
     <p v-if="label" class="transcript-evidence__label">{{ label }}</p>
-    <p v-if="speakerLabel" class="transcript-evidence__speaker">Speaker: {{ speakerLabel }}</p>
+    <p v-if="speakerLabel" class="transcript-evidence__speaker">
+      {{ $t('review.transcript.speaker', { name: speakerLabel }) }}
+    </p>
 
     <p v-if="loading" class="transcript-evidence__status" data-testid="transcript-evidence-loading">
-      Loading transcript…
+      {{ $t('review.transcript.loading') }}
     </p>
     <p
       v-else-if="errorMessage"
@@ -144,7 +149,7 @@ onScopeDispose(() => {
         class="transcript-evidence__status"
         data-testid="transcript-evidence-unresolved"
       >
-        This evidence span no longer resolves against the stored transcript.
+        {{ $t('review.transcript.unresolved') }}
       </p>
       <pre class="transcript-evidence__body" data-testid="transcript-evidence-body"><span>{{
         before

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 
@@ -39,12 +40,18 @@ const props = withDefaults(
   { applyPhase: 'approve' },
 )
 
+const { t } = useI18n()
+
 // The button must never claim to do what the other phase does. #1818
-const applyLabel = computed(() => (props.applyPhase === 'execute' ? 'Confirm apply' : 'Approve'))
+const applyLabel = computed(() =>
+  props.applyPhase === 'execute'
+    ? t('review.decisionRail.apply.execute')
+    : t('review.decisionRail.apply.approve'),
+)
 const applyAriaLabel = computed(() =>
   props.applyPhase === 'execute'
-    ? 'Confirm apply to board — step 2 of 2, writes this change to the board'
-    : 'Approve proposal — step 1 of 2, does not change the board yet',
+    ? t('review.decisionRail.apply.executeLabel')
+    : t('review.decisionRail.apply.approveLabel'),
 )
 
 const emit = defineEmits<{
@@ -60,10 +67,18 @@ const emit = defineEmits<{
   <div
     class="card-lift halo-ember paper-review-decision"
     role="toolbar"
-    :aria-label="dismissable ? 'Filing actions' : 'Decision actions'"
+    :aria-label="
+      dismissable
+        ? $t('review.decisionRail.toolbar.filing')
+        : $t('review.decisionRail.toolbar.decision')
+    "
     :data-apply-phase="dismissable ? 'settled' : applyPhase"
   >
-    <PaperTagstamp :tone="dismissable ? 'mute' : 'ember'">{{ dismissable ? 'SETTLED' : 'DECISION' }}</PaperTagstamp>
+    <PaperTagstamp :tone="dismissable ? 'mute' : 'ember'">{{
+      dismissable
+        ? $t('review.decisionRail.stamp.settled')
+        : $t('review.decisionRail.stamp.decision')
+    }}</PaperTagstamp>
     <span class="tk-meta paper-review-decision__summary">{{ summary }}</span>
     <span
       v-if="!dismissable"
@@ -71,38 +86,38 @@ const emit = defineEmits<{
       data-testid="decision-step-hint"
     >{{
       applyPhase === 'execute'
-        ? 'Step 2 of 2 · confirm to write it to the board'
-        : 'Step 1 of 2 · approving does not change the board'
+        ? $t('review.decisionRail.step.execute')
+        : $t('review.decisionRail.step.approve')
     }}</span>
     <span class="paper-review-decision__spacer" />
 
     <template v-if="dismissable">
       <PaperHLBtn
-        label="File away"
+        :label="$t('review.decisionRail.fileAway.label')"
         kbd="⌫"
         :disabled="busy"
         data-testid="decision-file-away"
-        aria-label="File away proposal"
+        :aria-label="$t('review.decisionRail.fileAway.ariaLabel')"
         @click="emit('dismiss')"
       />
     </template>
     <template v-else>
       <PaperHLBtn
-        label="Reject"
+        :label="$t('review.decisionRail.reject')"
         kbd="⌫"
         :disabled="busy"
         data-testid="decision-reject"
         @click="emit('reject')"
       />
       <PaperHLBtn
-        label="Request edit"
+        :label="$t('review.decisionRail.requestEdit')"
         kbd="E"
         :disabled="busy"
         data-testid="decision-edit"
         @click="emit('request-edit')"
       />
       <PaperHLBtn
-        label="Defer"
+        :label="$t('review.decisionRail.defer')"
         kbd="D"
         :disabled="busy"
         data-testid="decision-defer"

@@ -13,8 +13,8 @@ defineProps<{ data: SideEffects }>()
   <section class="paper-review-se">
     <header class="paper-review-se__header">
       <span class="tk-serial paper-review-se__serial">§ III</span>
-      <h3 class="tk-h3 paper-review-se__title">Side effects</h3>
-      <span class="tk-meta paper-review-se__sub">What lands · what doesn't · what archives</span>
+      <h3 class="tk-h3 paper-review-se__title">{{ $t('review.sideEffects.title') }}</h3>
+      <span class="tk-meta paper-review-se__sub">{{ $t('review.sideEffects.sub') }}</span>
     </header>
     <div class="paper-review-se__grid">
       <div class="card paper-review-se__rows">
@@ -28,12 +28,14 @@ defineProps<{ data: SideEffects }>()
           <span class="paper-review-se__row-value">{{ row.value }}</span>
         </div>
         <div v-if="data.rows.length === 0" class="paper-review-se__empty tk-meta">
-          No declared side-effects.
+          {{ $t('review.sideEffects.empty') }}
         </div>
       </div>
 
       <aside class="card paper-review-se__risk" data-testid="apply-risk-posture">
-        <div class="tk-eyebrow paper-review-se__risk-eyebrow">Apply considerations</div>
+        <div class="tk-eyebrow paper-review-se__risk-eyebrow">
+          {{ $t('review.sideEffects.riskEyebrow') }}
+        </div>
         <div class="paper-review-se__risk-summary">{{ data.applyRisk.summary }}</div>
         <p class="paper-review-se__risk-desc">{{ data.applyRisk.description }}</p>
       </aside>

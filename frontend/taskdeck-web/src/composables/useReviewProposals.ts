@@ -2,6 +2,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
+import { i18n } from '../i18n'
 import type { ReviewSummaryCard } from '../components/review/ReviewSummaryCards.vue'
 import { useToastStore } from '../store/toastStore'
 import {
@@ -100,6 +101,10 @@ export function useReviewProposals() {
   const router = useRouter()
   const toast = useToastStore()
   const reviewLoadPerf = usePerformanceMark('review-load')
+  // Module-scoped i18n rather than `useI18n()` — see the note in
+  // useReviewActions.ts. This composable is shared with the Legacy shell and is
+  // exercised by specs that never mount a component.
+  const t = i18n.global.t
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
@@ -250,11 +255,34 @@ export function useReviewProposals() {
       if (hasProvenanceContext(proposal)) captureLinked += 1
     }
 
+    // The card ids are stable DOM/test contracts and never translate; only the
+    // label and helper are copy. This computed re-runs on a language switch
+    // because `t` reads the active locale.
     return [
-      { id: 'pending-review', label: 'Pending review', value: pendingReview, helper: 'Changes waiting for an explicit decision.' },
-      { id: 'ready-to-execute', label: 'Ready to execute', value: readyToExecute, helper: 'Approved proposals that can now land on boards.' },
-      { id: 'capture-linked', label: 'Capture-linked', value: captureLinked, helper: 'Review items that came through the inbox loop.' },
-      { id: 'applied', label: 'Applied', value: appliedRecently, helper: 'Proposals already executed successfully.' },
+      {
+        id: 'pending-review',
+        label: t('review.summary.pendingReview.label'),
+        value: pendingReview,
+        helper: t('review.summary.pendingReview.helper'),
+      },
+      {
+        id: 'ready-to-execute',
+        label: t('review.summary.readyToExecute.label'),
+        value: readyToExecute,
+        helper: t('review.summary.readyToExecute.helper'),
+      },
+      {
+        id: 'capture-linked',
+        label: t('review.summary.captureLinked.label'),
+        value: captureLinked,
+        helper: t('review.summary.captureLinked.helper'),
+      },
+      {
+        id: 'applied',
+        label: t('review.summary.applied.label'),
+        value: appliedRecently,
+        helper: t('review.summary.applied.helper'),
+      },
     ]
   })
 
@@ -361,7 +389,7 @@ export function useReviewProposals() {
         await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
-      toast.error(getErrorDisplay(e, 'Failed to load proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
     }
   }
 
@@ -391,7 +419,7 @@ export function useReviewProposals() {
       proposals.value = loadedProposals
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return
-      toast.error(getErrorDisplay(e, 'Failed to load proposals').message)
+      toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
     } finally {
       if (requestId === latestProposalLoadRequestId) proposalsLoading.value = false
       reviewLoadPerf.end()

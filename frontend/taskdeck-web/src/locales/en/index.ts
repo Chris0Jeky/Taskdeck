@@ -13,11 +13,13 @@
 import boards from './boards'
 import home from './home'
 import inbox from './inbox'
+import review from './review'
 import settings from './settings'
 
 export default {
   home,
   inbox,
   boards,
+  review,
   settings,
 }

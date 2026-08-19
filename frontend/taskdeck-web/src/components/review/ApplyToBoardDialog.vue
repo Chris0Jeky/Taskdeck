@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import TdDialog from '../ui/TdDialog.vue'
 import type { Proposal } from '../../types/automation'
 
@@ -34,6 +35,8 @@ const emit = defineEmits<{
   (event: 'cancel'): void
 }>()
 
+const { t } = useI18n()
+
 const open = computed(() => props.proposal !== null)
 
 /**
@@ -46,7 +49,7 @@ const summary = computed(() => {
   const plain = p.presentation?.plainSummary?.trim()
   if (plain) return plain
   const raw = p.summary?.trim()
-  return raw || 'This proposal has no summary.'
+  return raw || t('review.applyDialog.noSummary')
 })
 
 const operationCount = computed(() => props.proposal?.operations?.length ?? 0)
@@ -82,31 +85,29 @@ const showOperationCount = computed(
  */
 const operationLabel = computed(() => {
   if (!showOperationCount.value) {
-    return 'The approved contents of this proposal will be applied.'
+    return t('review.applyDialog.contentsWillApply')
   }
   const n = operationCount.value
-  return `${n} ${n === 1 ? 'operation' : 'operations'} will be applied.`
+  return t('review.applyDialog.operationsWillApply', { count: n }, n)
 })
 </script>
 
 <template>
   <TdDialog
     :open="open"
-    title="Apply to the board?"
+    :title="$t('review.applyDialog.title')"
     :close-on-backdrop="!busy"
     @close="emit('cancel')"
   >
     <div class="td-apply-confirm" data-testid="apply-confirm-dialog">
       <p class="td-apply-confirm__lede">
-        This is the second and final step: it executes the approved proposal on your board.
-        Nothing has been written to the board yet.
+        {{ $t('review.applyDialog.lede') }}
       </p>
       <blockquote class="td-apply-confirm__summary" data-testid="apply-confirm-summary">
         {{ summary }}
       </blockquote>
       <p v-if="hasRevisions" class="td-apply-confirm__meta" data-testid="apply-confirm-revision">
-        This proposal was edited — its latest saved revision is what will be applied, not the
-        original operations.
+        {{ $t('review.applyDialog.revisionNote') }}
       </p>
       <p v-else class="td-apply-confirm__meta" data-testid="apply-confirm-operations">
         {{ operationLabel }}
@@ -120,7 +121,7 @@ const operationLabel = computed(() => {
         data-testid="apply-confirm-cancel"
         @click="emit('cancel')"
       >
-        Cancel
+        {{ $t('review.applyDialog.cancel') }}
       </button>
       <button
         type="button"
@@ -129,7 +130,7 @@ const operationLabel = computed(() => {
         :disabled="busy"
         @click="emit('confirm')"
       >
-        Apply to board
+        {{ $t('review.applyDialog.confirm') }}
       </button>
     </template>
   </TdDialog>
