@@ -18,4 +18,8 @@ export default {
     nib: 'Nib',
     composer: 'Composer',
   },
+  boardPicker: {
+    viewOnlyOption: '{name} · sola lettura',
+    viewOnlyHint: 'Le bacheche in sola lettura richiedono un accesso in scrittura prima di poterci smistare qualcosa.',
+  },
 }
