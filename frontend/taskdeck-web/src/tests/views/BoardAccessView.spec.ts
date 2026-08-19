@@ -228,6 +228,51 @@ describe('BoardAccessView', () => {
     expect(wrapper.findAll('button').some((node) => node.text() === 'Create or Open Boards')).toBe(true)
   })
 
+  it('grants access by email or username identifier instead of a raw user id', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    const addMember = wrapper.findAll('button').find((node) => node.text() === '+ Add Member')
+    expect(addMember).toBeTruthy()
+    await addMember!.trigger('click')
+    await waitForUi()
+
+    const identifierInput = wrapper.get('#grant-user')
+    expect(identifierInput.attributes('placeholder')).toBe('Enter email or username')
+    // The old raw user-id affordance must be gone.
+    expect(wrapper.find('input[placeholder="Enter user ID"]').exists()).toBe(false)
+
+    await identifierInput.setValue('friend@example.com')
+
+    const grantButton = wrapper.findAll('button').find((node) => node.text().includes('Grant Access'))
+    await grantButton!.trigger('click')
+    await waitForUi()
+
+    expect(permissionsStore.grantAccess).toHaveBeenCalledTimes(1)
+    expect(permissionsStore.grantAccess).toHaveBeenCalledWith('board-1', {
+      identifier: 'friend@example.com',
+      role: 'Viewer',
+    })
+  })
+
+  it('warns and does not grant when the identifier is blank', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    const addMember = wrapper.findAll('button').find((node) => node.text() === '+ Add Member')
+    await addMember!.trigger('click')
+    await waitForUi()
+
+    const grantButton = wrapper.findAll('button').find((node) => node.text().includes('Grant Access'))
+    await grantButton!.trigger('click')
+    await waitForUi()
+
+    expect(toastMocks.warning).toHaveBeenCalledWith('Please enter an email or username.')
+    expect(permissionsStore.grantAccess).not.toHaveBeenCalled()
+  })
+
   it('surfaces the mapped board-load error details', async () => {
     boardsApiMocks.getBoards.mockRejectedValueOnce(new Error('boom'))
 

@@ -167,6 +167,123 @@ public class BoardAccessServiceTests
     }
 
     [Fact]
+    public async Task GrantAccessAsync_ShouldResolveByEmail_WhenIdentifierIsAnEmail()
+    {
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: granter.Id);
+        var dto = new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: targetUser.Email);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByEmailAsync(targetUser.Email, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+        _boardAccessRepoMock.Setup(r => r.AddAsync(It.IsAny<BoardAccess>(), default))
+            .ReturnsAsync((BoardAccess a, CancellationToken _) => a);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserId.Should().Be(targetUser.Id);
+        _userRepoMock.Verify(r => r.GetByEmailAsync(targetUser.Email, default), Times.Once);
+        _userRepoMock.Verify(r => r.GetByUsernameAsync(It.IsAny<string>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldResolveByUsername_WhenIdentifierHasNoAtSign()
+    {
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: granter.Id);
+        var dto = new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: targetUser.Username);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByUsernameAsync(targetUser.Username, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+        _boardAccessRepoMock.Setup(r => r.AddAsync(It.IsAny<BoardAccess>(), default))
+            .ReturnsAsync((BoardAccess a, CancellationToken _) => a);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.UserId.Should().Be(targetUser.Id);
+        _userRepoMock.Verify(r => r.GetByUsernameAsync(targetUser.Username, default), Times.Once);
+        _userRepoMock.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldReturnNotFound_WhenIdentifierMatchesNoUser()
+    {
+        var granter = CreateUser("granter");
+        var board = new Board("Test Board", ownerId: granter.Id);
+        var dto = new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: "ghost");
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByUsernameAsync("ghost", default)).ReturnsAsync((User?)null);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        // Uniform not-found must not echo the supplied identifier.
+        result.ErrorMessage.Should().NotContain("ghost");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldReturnConflict_WhenIdentifierResolvesToUserWithExistingAccess()
+    {
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: granter.Id);
+        var existingAccess = new BoardAccess(board.Id, targetUser.Id, UserRole.Viewer, granter.Id);
+        var dto = new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: targetUser.Email);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByEmailAsync(targetUser.Email, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
+            .ReturnsAsync(existingAccess);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldReturnForbiddenAndNotResolveIdentifier_WhenGranterCannotManage()
+    {
+        var owner = CreateUser("owner");
+        var granter = CreateUser("viewer");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var granterAccess = new BoardAccess(board.Id, granter.Id, UserRole.Viewer, owner.Id);
+        var dto = new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: targetUser.Email);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, granter.Id, default))
+            .ReturnsAsync(granterAccess);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        // Resolution must happen only after the manage-access gate passes.
+        _userRepoMock.Verify(r => r.GetByEmailAsync(It.IsAny<string>(), default), Times.Never);
+        _userRepoMock.Verify(r => r.GetByUsernameAsync(It.IsAny<string>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task GrantAccessAsync_ShouldReturnForbidden_WhenOwnerlessBoardHasExistingAccessAndGranterCannotManage()
     {
         var granter = CreateUser("granter");
