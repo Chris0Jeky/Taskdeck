@@ -13,6 +13,21 @@
 # Review this file periodically to remove entries for deleted code.
 # =============================================================================
 
-# No fingerprints yet. Add entries here as the full-history scan surfaces
-# false positives that cannot be suppressed via .gitleaks.toml allowlists.
-# Format: one fingerprint per line, with a comment explaining why it is safe.
+# The six findings below are from the first full-history scan ever executed
+# (ci-release dispatch run 32212936430, 2026-08-19, scan-mode: full). Each was
+# reviewed at its historical commit; none exists in the current tree.
+
+# Dev-only Connectors:EncryptionKey default that was committed to
+# appsettings.Development.json and later removed (the field is "" at HEAD, and
+# first-run bootstrap now generates keys into appsettings.local.json). It only
+# ever encrypted local dev connector data; not a live service credential.
+12bf091fafd2b520d38831c46e29dc436a137db5:backend/src/Taskdeck.Api/appsettings.Development.json:generic-api-key:14
+
+# Documentation examples: an illustrative webhook signing secret
+# ("whsec_a1b2c3d4e5f6...") and truncated sample JWTs ("eyJhbGciOiJIUzI1NiIs...")
+# in API docs. Placeholders, never real credentials.
+de67130fb58f2a349934504e02013f7fa82217ec:docs/api/WEBHOOKS.md:generic-api-key:44
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:curl-auth-header:65
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:generic-api-key:23
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:36
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:54
