@@ -536,6 +536,137 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Triage_ShouldReturnForbidden_WhenTargetBoardMemberIsReadOnly()
+    {
+        // #1794: read access lets a member see a shared board; it must not let them queue automation
+        // proposals into a review queue only approvers can clear.
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-triage-write-gate-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "capture-triage-write-gate-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "capture-triage-write-gate-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var createResponse = await viewerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "viewer capture aimed at a shared board"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await viewerClient.PostAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/triage",
+            new EnqueueTriageRequestDto(board.Id));
+
+        await ApiTestHarness.AssertErrorContractAsync(triageResponse, HttpStatusCode.Forbidden, "Forbidden");
+
+        // The rejected link must not be persisted, and no proposal may reach the board's queue.
+        var unchanged = await viewerClient.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        unchanged.Should().NotBeNull();
+        unchanged!.BoardId.Should().BeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        persisted.BoardId.Should().BeNull();
+        persisted.Status.Should().Be(RequestStatus.Pending);
+        (await db.AutomationProposals.CountAsync(proposal => proposal.BoardId == board.Id))
+            .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Triage_ShouldSucceed_WhenTargetBoardMemberIsEditor()
+    {
+        // The other half of the #1794 gate: write-capable membership (Editor) may still suggest.
+        var ownerClient = _factory.CreateClient();
+        var editorClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-triage-write-gate-owner2");
+        var editor = await ApiTestHarness.AuthenticateAsync(editorClient, "capture-triage-write-gate-editor");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "capture-triage-write-gate-board2");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, editor.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var createResponse = await editorClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "editor capture aimed at a shared board"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await editorClient.PostAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/triage",
+            new EnqueueTriageRequestDto(board.Id));
+
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var linked = await editorClient.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        linked.Should().NotBeNull();
+        linked!.BoardId.Should().Be(board.Id);
+    }
+
+    [Fact]
+    public async Task Triage_ShouldReturnForbidden_WhenAlreadyLinkedBoardIsReadOnlyForCaller()
+    {
+        // The gate has to sit on the effective board, not only on the triage body: a capture created
+        // with a readable board (create is read-gated) and accepted with no body is the same vector.
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "capture-triage-linked-gate-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "capture-triage-linked-gate-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "capture-triage-linked-gate-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var createResponse = await viewerClient.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, "viewer capture already linked to a shared board"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+        created!.BoardId.Should().Be(board.Id);
+
+        var triageResponse = await viewerClient.PostAsync($"/api/capture/items/{created.Id}/triage", null);
+
+        await ApiTestHarness.AssertErrorContractAsync(triageResponse, HttpStatusCode.Forbidden, "Forbidden");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+        persisted.Status.Should().Be(RequestStatus.Pending);
+        (await db.AutomationProposals.CountAsync(proposal => proposal.BoardId == board.Id))
+            .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Triage_ShouldStillReturnValidationError_WhenCaptureHasNoBoardAndNoTargetSupplied()
+    {
+        // The #1794 write gate must not turn the board-less path into a 403: with no board there is
+        // no board to authorize against, so the pre-existing 400 stands for every user.
+        await AuthenticateAsAsync("capture-triage-no-board-unaffected");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "board-less capture stays a 400"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+
+        await ApiTestHarness.AssertErrorContractAsync(triageResponse, HttpStatusCode.BadRequest, "ValidationError");
+    }
+
+    [Fact]
     public async Task Triage_ShouldPersistRedactedFailureMessage_WhenWorkerFailureContainsSensitiveDetails()
     {
         await using var factory = new SensitiveFailureCaptureWebApplicationFactory();
