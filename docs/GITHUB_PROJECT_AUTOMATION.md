@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-08-18
+Last Updated: 2026-08-19
 
 ## Canonical Status Model
 
@@ -123,7 +123,7 @@ Project: `Taskdeck Execution`
 - Action: set `Status=Done`.
 
 Optional:
-- `Code review approved` can set `Status=Review`.
+- A code-review event may set `Status=Review`, but human approval is not required for ordinary merge eligibility.
 - `Code changes requested` can set `Status=Now` or `Status=Blocked`.
 
 ## Drift Controls
@@ -211,9 +211,11 @@ WIP-aware intake limits:
 - Remaining seeded issues stay in `Pending` until promoted.
 
 Promotion and override rules:
-- An authorized coordinator may promote existing issues under `docs/REVIVAL_PLAN.md` §5 without a
-  separate maintainer decision. `Now` items must be unblocked; a `Next` item may be explicitly
-  sequenced behind a named `Now` item.
+- An authorized coordinator may promote an acceptance-ready existing issue under ADR-0051 and
+  `docs/REVIVAL_PLAN.md` §5 without a separate maintainer request. `Now` items must have complete
+  dependencies; a `Next` item may be explicitly sequenced behind a named `Now` item.
+- Before promotion, the issue must have exactly one Priority label and a matching Project `Priority`
+  field value. Repair label/field parity before changing the Project status.
 - Finish or deliberately park an existing conflicting lane before promoting its successor to `Now`.
 - Explicit owner direction may waive the numeric intake or queue cap for a bounded reconciliation
   event. Record the waiver and exact resulting queue; it does not waive dependency, ownership,

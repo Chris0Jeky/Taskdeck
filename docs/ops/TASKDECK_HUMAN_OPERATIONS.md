@@ -1,5 +1,7 @@
 # Taskdeck - Human Operations Document (What YOU should do by hand)
 
+Last Updated: 2026-08-19
+
 This document captures the parts that are either:
 - not safe to delegate to an LLM (secrets, irreversible repo settings),
 - require product judgement (policies, UX decisions),
@@ -34,22 +36,26 @@ Use it alongside the Codex execution plan.
 Codex cannot reliably configure GitHub repository settings unless you explicitly delegate admin access, and it's risky.
 
 Do in GitHub UI:
-- Protect `main`:
-  - require PR reviews (even 1 self-review is fine)
-  - require status checks to pass:
-    - docs-governance
-    - backend-architecture
-    - backend-unit (ubuntu/windows)
-    - api-integration (ubuntu/windows)
-    - frontend-unit (ubuntu/windows)
-    - e2e-smoke
-  - require up-to-date branches before merge (optional)
+- Protect `main` without requiring PR approval or a CODEOWNERS/owner click. `CODEOWNERS` is advisory routing only; the absence of a requested owner is not merge eligibility.
+- There is no aggregate required-check context. If branch protection is configured, select the current `CI` workflow job contexts individually:
+  - `CI / Docs Governance`
+  - `CI / Backend Architecture`
+  - `CI / Backend Unit`
+  - `CI / API Integration`
+  - `CI / Migration Validation`
+  - `CI / Frontend Unit`
+  - `CI / Paper Color Audit`
+  - `CI / Container Images`
+  - `CI / Secret Scan` (pull-request events; enforcing)
+  - `CI / E2E Smoke`
+- `CI / Dependency Security` and `CI / SAST Scan` are current advisory contexts: they run in the required workflow but remain non-blocking while their baselines are remediated. `CI / DCO (advisory)` is also non-blocking.
+- Require up-to-date branches before merge only if desired; it does not replace the exact-head CI, DCO, canonical review-pipeline, or seam-specific evidence requirements.
 
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`, `No Status`, `WIP Audit`
-- WIP: cap Now/In Progress to 1 major item
+- WIP: cap issue items at 4 in `Now` and 8 in `Next`; `Now` requires complete dependencies and `Next` may be sequenced behind a named `Now` item
 - Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`, `feature`, `automation`, `worker`, `performance`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
@@ -60,6 +66,7 @@ Create a Project (or use Issues):
   - `Pull request merged` -> set `Status=Done`
 
 See `docs/GITHUB_PROJECT_AUTOMATION.md` for the canonical setup and verification checklist.
+Before promoting an issue, confirm its single Priority label matches the Project `Priority` field. Correct parity before setting `Now` or `Next`; do not infer a priority or owner approval.
 
 ## A3) Secrets: GitHub PAT and environment variables (for GitHub MCP)
 You must create and manage tokens:
