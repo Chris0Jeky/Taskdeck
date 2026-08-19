@@ -178,4 +178,4 @@ Found a vulnerability? Follow the private reporting process in [SECURITY.md](SEC
 
 ---
 
-[First 15 minutes](docs/START_HERE.md) | [Documentation index](docs/INDEX.md) | [Issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues)
+[First 15 minutes](docs/START_HERE.md) | [Upgrading and backups](UPGRADING.md) | [Documentation index](docs/INDEX.md) | [Issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues)

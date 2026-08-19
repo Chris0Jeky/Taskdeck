@@ -154,12 +154,15 @@ if (args.Contains("--mcp"))
         Program.OnStandaloneMcpHttpAppBuilt?.Invoke(mcpHttpApp);
 
         // Apply EF Core migrations before starting, serialized across processes via a
-        // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
+        // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164), with a
+        // fail-closed pre-migration snapshot of the SQLite file when migrations are pending (#1803).
         using (var scope = mcpHttpApp.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
             var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-            Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
+            var backupSettings = scope.ServiceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<Taskdeck.Application.Services.DatabaseBackupSettings>>().Value;
+            Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
         }
 
         // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
@@ -267,13 +270,16 @@ if (args.Contains("--mcp"))
         .Build();
 
     // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour),
-    // serialized across processes via a cross-process file lock (#1164). In stdio mode logs
-    // go to stderr, so the logger never corrupts the stdout JSON-RPC stream.
+    // serialized across processes via a cross-process file lock (#1164), with a fail-closed
+    // pre-migration snapshot of the SQLite file when migrations are pending (#1803). In stdio
+    // mode logs go to stderr, so the logger never corrupts the stdout JSON-RPC stream.
     using (var scope = mcpHost.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
         var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
+        var backupSettings = scope.ServiceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Taskdeck.Application.Services.DatabaseBackupSettings>>().Value;
+        Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
     }
 
     await mcpHost.RunAsync();
