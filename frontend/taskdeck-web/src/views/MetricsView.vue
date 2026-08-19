@@ -501,6 +501,13 @@ const maxWipCount = computed(() => {
   margin: 0 auto;
   padding: var(--s-6, 24px);
   font-family: var(--sans, system-ui, sans-serif);
+  /* Substrate must be painted alongside --ink: outside the Paper shell the
+     Paper variables are unscoped (paper-tokens.css), so `--ink` falls back to
+     near-black while AppShell's .td-content keeps the Obsidian
+     --td-surface-base (#131313). Painting --paper with the same fallback keeps
+     the page legible in Legacy ("off") mode and is a no-op under
+     .paper/.paper-night, where .td-shell--paper .td-content already paints it. */
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 

@@ -110,6 +110,10 @@ onMounted(async () => {
 .paper-activity {
   max-width: 860px;
   font-family: var(--sans, system-ui, sans-serif);
+  /* See MetricsView: paint the Paper substrate wherever --ink is set, so
+     Legacy ("off") mode does not render near-black ink on the Obsidian
+     --td-surface-base. No-op under .paper/.paper-night. */
+  background: var(--paper, #f3eee5);
   color: var(--ink, #1a1814);
 }
 
