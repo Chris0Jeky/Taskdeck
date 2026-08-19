@@ -122,13 +122,19 @@ function goToBoard(id: string) {
 
       <!-- Boards Grid -->
       <div v-else class="paper-boards__grid">
+        <!--
+          `cursor-pointer` is retained alongside the Paper hook: it is a
+          behavioral (not color) Tailwind utility, and tests/e2e/stakeholder-demo
+          .spec.ts selects the board card with `div.cursor-pointer`.  Dropping it
+          would break that walkthrough for no styling gain.
+        -->
         <div
           v-for="board in boardStore.boards"
           :key="board.id"
           role="button"
           tabindex="0"
           :aria-label="`Open board: ${board.name}`"
-          class="paper-boards__card"
+          class="paper-boards__card cursor-pointer"
           @click="goToBoard(board.id)"
           @keydown.enter="goToBoard(board.id)"
           @keydown.space.prevent="goToBoard(board.id)"
