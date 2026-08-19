@@ -123,7 +123,7 @@ describe('AutomationQueueView', () => {
 
     await wrapper.get('input[placeholder="instruction"]').setValue(' instruction ')
     await wrapper.get('input[aria-label="Board for queue request"]').setValue('123e4567-e89b-12d3-a456-426614174000')
-    await wrapper.get('textarea.td-textarea').setValue('  rename board to "Roadmap"  ')
+    await wrapper.get('textarea.paper-queue__textarea').setValue('  rename board to "Roadmap"  ')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
     if (!submitButton) {
@@ -146,7 +146,7 @@ describe('AutomationQueueView', () => {
 
     await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
     await wrapper.get('input[aria-label="Board for queue request"]').setValue('not-a-guid')
-    await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
+    await wrapper.get('textarea.paper-queue__textarea').setValue('rename board to "Roadmap"')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
     if (!submitButton) {
@@ -168,7 +168,7 @@ describe('AutomationQueueView', () => {
 
     await wrapper.get('input[placeholder="instruction"]').setValue('instruction')
     await wrapper.get('input[aria-label="Board for queue request"]').setValue('   ')
-    await wrapper.get('textarea.td-textarea').setValue('rename board to "Roadmap"')
+    await wrapper.get('textarea.paper-queue__textarea').setValue('rename board to "Roadmap"')
 
     const submitButton = wrapper.findAll('button').find((button) => button.text() === 'Submit Request')
     if (!submitButton) {
