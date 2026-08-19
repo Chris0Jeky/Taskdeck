@@ -3,6 +3,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -64,16 +65,32 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
         if (user == null)
             return Result.Failure(ErrorCodes.NotFound, $"User with ID {requesterUserId} not found");
 
-        // If board-scoped, verify board exists and user has access
+        // If board-scoped, verify board exists and the requester can WRITE to it.
+        //
+        // #1836 (defense-in-depth mirror of the #1794/#1827 API-side bar): every caller of this
+        // gate is on a proposal lane — a proposal targets a board and, once approved, mutates it.
+        // A requester who cannot write the board would fail at execute anyway, so failing at
+        // validation is earlier and clearer. `UserRole.Editor` as the minimum role is the exact
+        // membership set BoardAccess.CanWrite() admits (Owner, Admin, Editor) plus the board owner,
+        // which HasAccessAsync short-circuits on separately.
+        //
+        // Behaviour note: a capture enqueued BEFORE #1827 by a read-only member reaches
+        // CaptureTriageService with a board it may no longer target. It is now rejected here — as
+        // an explicit Result outcome propagated by the caller, never thrown (the LLM-lane
+        // convention). That is the intended tightening.
         if (boardId.HasValue)
         {
             var board = await _unitOfWork.Boards.GetByIdAsync(boardId.Value, cancellationToken);
             if (board == null)
                 return Result.Failure(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
-            var hasAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(boardId.Value, requesterUserId, null, cancellationToken);
-            if (!hasAccess)
-                return Result.Failure(ErrorCodes.Forbidden, $"User does not have access to board {boardId}");
+            var hasWriteAccess = await _unitOfWork.BoardAccesses.HasAccessAsync(
+                boardId.Value,
+                requesterUserId,
+                UserRole.Editor,
+                cancellationToken);
+            if (!hasWriteAccess)
+                return Result.Failure(ErrorCodes.Forbidden, $"User does not have write access to board {boardId}");
         }
 
         return Result.Success();

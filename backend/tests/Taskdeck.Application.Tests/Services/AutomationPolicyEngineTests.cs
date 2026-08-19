@@ -419,6 +419,134 @@ public class AutomationPolicyEngineTests
 
     #endregion
 
+    #region ValidateBoardAccess write-mirror Tests (#1836)
+
+    // #1836: the board half of the gate mirrors the API-side #1794/#1827 write bar. Everything
+    // routed through here is a proposal lane, so read-capable-but-not-write-capable membership
+    // (Viewer) must be refused at validation rather than at execute.
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldRequireWriteCapableMembership_NotMereReadAccess()
+    {
+        // Arrange: a Viewer — HasAccessAsync says yes for "any role", no for "Editor or better".
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("viewer", "viewer@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, null, default))
+            .ReturnsAsync(true);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(false);
+
+        // Act
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+
+        // Assert — an explicit Forbidden outcome, never an exception (the LLM-lane convention).
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("write access");
+    }
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldQueryWithEditorAsMinimumRole()
+    {
+        // Pins the minimum role actually sent to the repository: UserRole.Editor is the exact
+        // membership set BoardAccess.CanWrite() admits, and HasAccessAsync short-circuits the owner
+        // separately. A `null` minimum role here would silently re-open the Viewer lane.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("editor", "editor@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), default))
+            .ReturnsAsync(true);
+
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        _boardAccessRepoMock.Verify(
+            r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default),
+            Times.Once);
+        _boardAccessRepoMock.Verify(
+            r => r.HasAccessAsync(boardId, userId, null, default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ValidatePermissions_ShouldReturnForbidden_ForReadOnlyMember()
+    {
+        // The mirror has to hold through the composed gate too, which is what the approve/apply
+        // and stored-preview chains actually call.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("viewer", "viewer@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>
+        {
+            new ProposalOperationDto(Guid.NewGuid(), Guid.NewGuid(), 0, "create", "card", null, "{}", "key1", null)
+        };
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, null, default))
+            .ReturnsAsync(true);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(false);
+
+        var result = await _engine.ValidatePermissionsAsync(userId, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldSucceed_ForWriteCapableMember()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var user = new User("editor", "editor@example.com", "hashedPassword");
+        var board = TestDataBuilder.CreateBoard();
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
+        _boardAccessRepoMock
+            .Setup(r => r.HasAccessAsync(boardId, userId, Taskdeck.Domain.Enums.UserRole.Editor, default))
+            .ReturnsAsync(true);
+
+        var result = await _engine.ValidateBoardAccessAsync(userId, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ValidateBoardAccess_ShouldSkipBoardGate_WhenBoardIdIsNull()
+    {
+        // Unchanged by the mirror: a board-less requester check touches no board repository at all.
+        var userId = Guid.NewGuid();
+        var user = new User("someone", "someone@example.com", "hashedPassword");
+
+        _userRepoMock.Setup(r => r.GetByIdAsync(userId, default)).ReturnsAsync(user);
+
+        var result = await _engine.ValidateBoardAccessAsync(userId, null);
+
+        result.IsSuccess.Should().BeTrue();
+        _boardAccessRepoMock.Verify(
+            r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Taskdeck.Domain.Enums.UserRole?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    #endregion
+
     #region ValidatePolicy Tests
 
     [Fact]

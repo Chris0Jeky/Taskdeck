@@ -11,7 +11,10 @@ public interface IAutomationPolicyEngine
     /// <summary>
     /// The shared requester/board half of the permission gate: requester non-empty
     /// (ValidationError), requester exists (NotFound), and — when <paramref name="boardId"/> is
-    /// set — board exists (NotFound) and requester has board access (Forbidden). This is the
+    /// set — board exists (NotFound) and requester has <em>write</em> access to the board
+    /// (Forbidden). The write bar (#1836) mirrors the API-side #1794/#1827 bar as
+    /// defense-in-depth: everything gated here is a proposal lane, and a proposal its author
+    /// cannot write would fail at execute anyway. This is the
     /// single source of the access-gate codes and messages: <see cref="ValidatePermissionsAsync"/>
     /// composes it with the operation-contract validator for live previews and Apply, and the
     /// terminal stored-preview read (#1415) calls it directly because a decided proposal's
