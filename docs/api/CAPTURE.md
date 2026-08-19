@@ -87,6 +87,34 @@ curl -s -X POST "http://localhost:5000/api/capture/items/$CAPTURE_ID/triage" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+### Optional request body
+
+A proposal always targets a board, so triage needs one. Captures created without a `boardId` (quick capture from Home) can supply the target board at accept time with an optional JSON body:
+
+```bash
+curl -s -X POST "http://localhost:5000/api/capture/items/$CAPTURE_ID/triage" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{ "boardId": "f5e6d7c8-..." }'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `boardId` | GUID | no | Target board to link before triage. Only applies when the capture has no board yet; ignored when it already carries one. |
+
+The body itself is optional -- an empty request body is accepted and behaves exactly as before. A capture that has no board and receives no `boardId` is rejected synchronously with `400 Bad Request` rather than queueing a job that could only fail later.
+
+### Board access requirement
+
+Triage requires **write-capable membership** on the target board -- the roles `BoardAccess.CanWrite()` admits (`Owner`, `Admin`, `Editor`), plus the board owner. A `Viewer` can read a board but cannot triage a capture into it, and gets `403 Forbidden`. The gate applies to both shapes:
+
+- the `boardId` supplied in the request body, before the board is linked, and
+- the board a capture already carries (a board can be attached at create time under read access alone, so the write bar is enforced here, not only on the body).
+
+Triaging a capture into a board queues an automation proposal into that board's review queue, which only approvers can clear -- read access is not enough to put work there. Approval and execution authorization are unchanged: write access buys the right to *suggest*; every board mutation still needs an explicit approve and execute.
+
+The same write bar is re-checked in the worker before proposal generation, so a capture enqueued while its author still had write access is rejected if that access was revoked in the meantime.
+
 Response (`202 Accepted`):
 
 ```json
@@ -98,6 +126,15 @@ Response (`202 Accepted`):
 ```
 
 If the item is already being triaged, `alreadyTriaging` will be `true`.
+
+| Status | When |
+|--------|------|
+| `202 Accepted` | Triage enqueued (or already in flight). |
+| `400 Bad Request` | The capture has no target board and none was supplied. |
+| `403 Forbidden` | The caller lacks write access to the target board, or the capture belongs to another user. |
+| `404 Not Found` | Capture item (or the supplied board) not found. |
+| `409 Conflict` | The capture cannot transition to `Triaging` from its current status. |
+| `429 Too Many Requests` | Rate limit exceeded. |
 
 ## Ignore a capture item
 
