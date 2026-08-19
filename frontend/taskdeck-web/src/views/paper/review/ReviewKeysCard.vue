@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperKbd from '../../../components/paper/PaperKbd.vue'
 import type { ApplyPhase } from './ReviewDecisionRail.vue'
 
@@ -16,25 +17,28 @@ const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase }>(), {
   applyPhase: 'approve',
 })
 
+const { t } = useI18n()
+
+// The key glyphs are physical keys and never translate; only `space` is a word.
 const rows = computed<Array<{ key: string; label: string }>>(() => [
   {
     key: '⏎',
     label:
       props.applyPhase === 'execute'
-        ? 'Confirm apply to board · step 2 of 2'
-        : 'Approve proposal · step 1 of 2',
+        ? t('review.keys.enter.execute')
+        : t('review.keys.enter.approve'),
   },
-  { key: 'E', label: 'Request edit · opens composer' },
-  { key: '⌫', label: 'Reject · with optional reason' },
-  { key: 'D', label: 'Defer 1h' },
-  { key: 'P', label: 'Toggle provenance pane' },
-  { key: 'space', label: 'Preview diff in card detail' },
+  { key: 'E', label: t('review.keys.edit') },
+  { key: '⌫', label: t('review.keys.reject') },
+  { key: 'D', label: t('review.keys.defer') },
+  { key: 'P', label: t('review.keys.provenance') },
+  { key: t('review.keys.spaceKey'), label: t('review.keys.preview') },
 ])
 </script>
 
 <template>
   <section class="card paper-review-keys">
-    <div class="tk-eyebrow paper-review-keys__eyebrow">Decide with keys</div>
+    <div class="tk-eyebrow paper-review-keys__eyebrow">{{ $t('review.keys.heading') }}</div>
     <div
       v-for="row in rows"
       :key="row.key"

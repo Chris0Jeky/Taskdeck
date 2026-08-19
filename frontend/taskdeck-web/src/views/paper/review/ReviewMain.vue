@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import ReviewDecisionRail, { type ApplyPhase } from './ReviewDecisionRail.vue'
@@ -68,15 +69,17 @@ const props = withDefaults(
   { applyPhase: 'approve' },
 )
 
+const { t } = useI18n()
+
 /**
  * The keyboard hint must name the phase the key will actually run (#1818 AC2):
  * ⏎ on an approved proposal opens the apply confirmation, it does not re-approve.
  */
 const keyHint = computed(() => {
-  if (props.dismissable) return 'PRESS ⌫ TO FILE AWAY'
+  if (props.dismissable) return t('review.main.keyHint.fileAway')
   return props.applyPhase === 'execute'
-    ? 'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT'
-    : 'PRESS ⏎ TO APPROVE · ⌫ TO REJECT'
+    ? t('review.main.keyHint.confirmApply')
+    : t('review.main.keyHint.approve')
 })
 
 const emit = defineEmits<{
@@ -90,8 +93,8 @@ const emit = defineEmits<{
 
 const dialSubline = computed(() =>
   props.confidence.overall >= props.confidence.threshold
-    ? 'Above your apply threshold'
-    : 'Below your apply threshold',
+    ? t('review.main.dial.above')
+    : t('review.main.dial.below'),
 )
 </script>
 
@@ -100,7 +103,7 @@ const dialSubline = computed(() =>
     <header class="paper-review-main__header">
       <div class="paper-review-main__header-text">
         <div class="paper-review-main__tagrow">
-          <PaperTagstamp tone="ember">PROPOSED · DIFF</PaperTagstamp>
+          <PaperTagstamp tone="ember">{{ $t('review.main.tagstamp') }}</PaperTagstamp>
           <span class="tk-meta">{{ serial }} · {{ meta }}</span>
         </div>
         <h1 class="tk-h1 paper-review-main__title">
@@ -114,12 +117,12 @@ const dialSubline = computed(() =>
       <div class="paper-review-main__dial card">
         <PaperConfidenceDial
           :value="confidence.overall"
-          caption="CONF"
+          :caption="$t('review.main.dial.caption')"
           :subline="dialSubline"
           data-testid="paper-review-confidence-dial"
         />
         <div class="tk-meta paper-review-main__dial-threshold">
-          (set {{ confidence.threshold.toFixed(2) }} · Settings)
+          {{ $t('review.main.dial.threshold', { value: confidence.threshold.toFixed(2) }) }}
         </div>
       </div>
     </header>
@@ -134,8 +137,12 @@ const dialSubline = computed(() =>
       role="status"
       data-testid="paper-review-approved-banner"
     >
-      <strong>Approved — not yet applied to the board.</strong>
-      Press ⏎ (or “Confirm apply”) to execute it on the board; you will be asked to confirm.
+      <strong>{{ $t('review.main.approvedBanner.title') }}</strong>
+      {{
+        $t('review.main.approvedBanner.body', {
+          action: $t('review.decisionRail.apply.execute'),
+        })
+      }}
     </p>
 
     <ReviewDecisionRail
@@ -169,7 +176,7 @@ const dialSubline = computed(() =>
     <ReviewHistory :rows="history" />
 
     <footer class="paper-review-main__footer">
-      <span class="tk-serial">REVIEW · {{ serial }} · LOCAL-FIRST · LEDGER</span>
+      <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
       <span class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
     </footer>
   </div>

@@ -12,12 +12,12 @@ defineProps<{
 
 <template>
   <section class="card paper-review-whynow">
-    <div class="tk-eyebrow paper-review-whynow__eyebrow">Why now</div>
+    <div class="tk-eyebrow paper-review-whynow__eyebrow">{{ $t('review.whyNow.heading') }}</div>
     <p class="paper-review-whynow__body">{{ body }}</p>
     <a
       :href="tuneHref ?? '#'"
       class="paper-review-whynow__link"
-    >Tune heuristics →</a>
+    >{{ $t('review.whyNow.tune') }}</a>
   </section>
 </template>
 

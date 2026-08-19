@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 /**
  * ReviewMiniCadence — week-cadence sparkline. The last bar (today)
@@ -17,6 +18,8 @@ const props = defineProps<{
   days?: number[]
 }>()
 
+const { t } = useI18n()
+
 /** Real counts to render; empty when the caller supplied no history. */
 const bars = computed<number[]>(() => (Array.isArray(props.days) ? props.days : []))
 
@@ -24,7 +27,7 @@ const max = computed(() => Math.max(1, ...bars.value))
 
 /** Describes the actual number of rendered days, never an assumed week. */
 const label = computed(() =>
-  `Activity for the last ${bars.value.length} ${bars.value.length === 1 ? 'day' : 'days'}`,
+  t('review.cadence.ariaLabel', { count: bars.value.length }, bars.value.length),
 )
 </script>
 
