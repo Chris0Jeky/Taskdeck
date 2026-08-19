@@ -220,11 +220,28 @@ public class CaptureService : ICaptureService
         return CancelInternalAsync(userId, itemId, cancellationToken);
     }
 
-    public async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+    public Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,
         Guid? targetBoardId = null,
         CancellationToken cancellationToken = default)
+        => EnqueueTriageAsync(userId, itemId, targetBoardId, boardAccessCache: null, cancellationToken);
+
+    /// <param name="boardAccessCache">
+    /// Optional per-call-group memo of board authorization outcomes, keyed by board id. Supplied by
+    /// <see cref="BatchTriageAsync"/> so a batch spends one <c>CanWriteBoardAsync</c> lookup per
+    /// DISTINCT board instead of one per item (#1836): that lookup is a board fetch plus a
+    /// membership read, so a 50-item batch on one board previously paid 50 of each. Board
+    /// membership cannot change within a single batch call, so the memo is behaviour-identical;
+    /// failure outcomes are memoized too, for the same reason. Null on the single-item path, which
+    /// keeps its original one-lookup-per-call shape.
+    /// </param>
+    private async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+        Guid userId,
+        Guid itemId,
+        Guid? targetBoardId,
+        Dictionary<Guid, Result>? boardAccessCache,
+        CancellationToken cancellationToken)
     {
         if (userId == Guid.Empty)
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
@@ -284,7 +301,7 @@ public class CaptureService : ICaptureService
         {
             // Gate the link on write access, not read (#1794): the board is only being attached so a
             // proposal can be queued against it, so the same bar applies as to an already-linked board.
-            var linkPermission = await EnsureBoardProposalAccessAsync(userId, targetBoardId.Value);
+            var linkPermission = await EnsureBoardProposalAccessAsync(userId, targetBoardId.Value, boardAccessCache);
             if (!linkPermission.IsSuccess)
                 return Result.Failure<CaptureTriageEnqueueResultDto>(linkPermission.ErrorCode, linkPermission.ErrorMessage);
 
@@ -304,7 +321,7 @@ public class CaptureService : ICaptureService
         {
             // Same gate for a capture that already carries its board: the read-only injection vector
             // is reachable through capture-with-board + accept, not only through the backfill body.
-            var boardPermission = await EnsureBoardProposalAccessAsync(userId, effectiveBoardId.Value);
+            var boardPermission = await EnsureBoardProposalAccessAsync(userId, effectiveBoardId.Value, boardAccessCache);
             if (!boardPermission.IsSuccess)
                 return Result.Failure<CaptureTriageEnqueueResultDto>(boardPermission.ErrorCode, boardPermission.ErrorMessage);
         }
@@ -346,15 +363,25 @@ public class CaptureService : ICaptureService
     /// buys the right to <em>suggest</em>; every board mutation still needs an explicit approve and
     /// execute by an approver.
     /// </summary>
-    private async Task<Result> EnsureBoardProposalAccessAsync(Guid userId, Guid boardId)
+    private async Task<Result> EnsureBoardProposalAccessAsync(
+        Guid userId,
+        Guid boardId,
+        Dictionary<Guid, Result>? boardAccessCache = null)
     {
-        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
-        if (!permission.IsSuccess)
-            return Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+        if (boardAccessCache is not null && boardAccessCache.TryGetValue(boardId, out var memoized))
+            return memoized;
 
-        return permission.Value
-            ? Result.Success()
-            : Result.Failure(ErrorCodes.Forbidden, BoardProposalAccessDeniedMessage);
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        var outcome = !permission.IsSuccess
+            ? Result.Failure(permission.ErrorCode, permission.ErrorMessage)
+            : permission.Value
+                ? Result.Success()
+                : Result.Failure(ErrorCodes.Forbidden, BoardProposalAccessDeniedMessage);
+
+        if (boardAccessCache is not null)
+            boardAccessCache[boardId] = outcome;
+
+        return outcome;
     }
 
     private const string BoardProposalAccessDeniedMessage =
@@ -399,13 +426,18 @@ public class CaptureService : ICaptureService
 
         var results = new List<BatchTriageItemResultDto>(request.Items.Count);
 
+        // One board-authorization lookup per DISTINCT board for the whole batch, not one per item
+        // (#1836). Shared across every triage item below; see the boardAccessCache parameter on
+        // EnqueueTriageAsync for why memoizing inside a single batch is behaviour-identical.
+        var boardAccessCache = new Dictionary<Guid, Result>();
+
         foreach (var itemAction in request.Items)
         {
             try
             {
                 var actionResult = itemAction.Action.ToLowerInvariant() switch
                 {
-                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, cancellationToken),
+                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, boardAccessCache, cancellationToken),
                     "ignore" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     "cancel" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     _ => Result.Failure(ErrorCodes.ValidationError, $"Unknown action: {itemAction.Action}")
@@ -440,9 +472,10 @@ public class CaptureService : ICaptureService
     private async Task<Result> ExecuteBatchItemTriageAsync(
         Guid userId,
         Guid itemId,
+        Dictionary<Guid, Result> boardAccessCache,
         CancellationToken cancellationToken)
     {
-        var triageResult = await EnqueueTriageAsync(userId, itemId, targetBoardId: null, cancellationToken);
+        var triageResult = await EnqueueTriageAsync(userId, itemId, targetBoardId: null, boardAccessCache, cancellationToken);
         return triageResult.IsSuccess
             ? Result.Success()
             : Result.Failure(triageResult.ErrorCode, triageResult.ErrorMessage);
