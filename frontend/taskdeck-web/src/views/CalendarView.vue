@@ -446,7 +446,9 @@ watch(viewDate, fetchCalendar)
   flex-shrink: 0;
 }
 
-.paper-calendar__mode-btn--active {
+/* Compound selector so this beats the global `.paper .pbtn` rule (0,2,0)
+   regardless of stylesheet injection order. */
+.paper-calendar__mode-btn.paper-calendar__mode-btn--active {
   background: var(--ember-tint, #f0d9c8);
   border-color: var(--ember, #a8421f);
   color: var(--ember-ink, #6e2810);
