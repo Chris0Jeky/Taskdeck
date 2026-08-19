@@ -5,7 +5,36 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $toolPath = Join-Path $PSScriptRoot 'Assert-TaskdeckCheckoutFingerprint.ps1'
-$powerShellPath = Join-Path $PSHOME 'powershell.exe'
+
+function Resolve-PowerShellHostPath {
+    # $PSHOME\powershell.exe does not exist under PowerShell 7, where the host
+    # is pwsh, so relaunch through the host actually running this harness.
+    $current = ''
+    try {
+        $current = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    }
+    catch {
+        $current = ''
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($current)) {
+        $name = [IO.Path]::GetFileNameWithoutExtension($current)
+        if (($name -eq 'pwsh' -or $name -eq 'powershell') -and (Test-Path -LiteralPath $current -PathType Leaf)) {
+            return $current
+        }
+    }
+
+    foreach ($candidate in @('pwsh.exe', 'powershell.exe', 'pwsh', 'powershell')) {
+        $path = Join-Path $PSHOME $candidate
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            return $path
+        }
+    }
+
+    throw 'could not resolve a PowerShell host to relaunch the guard under'
+}
+
+$powerShellPath = Resolve-PowerShellHostPath
 $script:passed = 0
 $script:failed = 0
 
@@ -485,7 +514,19 @@ Run-Test 'keeps guard finalization inside a finally no lane exit can skip' {
         Assert-True (-not ($between -cmatch '(?m)^\s*(exit|return|break|continue)\b')) ('an unwinding statement precedes guard finalization in ' + $skill)
 
         Assert-True ($recipe.IndexOf('$global:LASTEXITCODE = 255', [StringComparison]::Ordinal) -ge 0) ('the fail-closed guard exit sentinel is missing from ' + $skill)
-        Assert-True ($recipe.IndexOf('if ($guardExit -ne 0) { exit $guardExit }', $open, [StringComparison]::Ordinal) -lt $close) ('the guard disposition does not supersede the lane exit in ' + $skill)
+
+        # IndexOf returns -1 when the text is absent, and -1 is less than any
+        # $close, so a bare `-lt $close` assertion passes whether or not the
+        # disposition exists. Both bounds are required for it to discriminate.
+        $disposition = $recipe.IndexOf('if ($guardExit -ne 0) {', $open, [StringComparison]::Ordinal)
+        Assert-True ($disposition -gt $cleanup -and $disposition -lt $close) ('the guard disposition does not supersede the lane exit in ' + $skill)
+        $guardExitStatement = $recipe.IndexOf('exit $guardExit', $disposition, [StringComparison]::Ordinal)
+        Assert-True ($guardExitStatement -gt $disposition -and $guardExitStatement -lt $close) ('the guard disposition never exits with the guard code in ' + $skill)
+
+        # That `exit` unwinds past `throw $laneError`, so the recipe has to
+        # surface the lane exception before the frame is discarded.
+        $preserved = $recipe.IndexOf('$laneError.Exception.Message', $disposition, [StringComparison]::Ordinal)
+        Assert-True ($preserved -gt $disposition -and $preserved -lt $guardExitStatement) ('the guard disposition discards the lane error text in ' + $skill)
     }
 }
 
@@ -509,7 +550,8 @@ param(
     # Deliberately not named $LaneExit: PowerShell variable names are
     # case-insensitive, so it would be clobbered by the recipe's own $laneExit.
     [int]$RequestedLaneExitCode,
-    [string]$MutatePath = ''
+    [string]$MutatePath = '',
+    [string]$ThrowMessage = ''
 )
 
 # This mirrors the documented coordinator recipe. The static test above pins the
@@ -527,6 +569,7 @@ $laneCommand = {
         [IO.File]::WriteAllText($MutatePath, 'the lane overwrote this artifact')
     }
     [Console]::Out.WriteLine('LANE-RAN')
+    if (-not [string]::IsNullOrEmpty($ThrowMessage)) { throw $ThrowMessage }
     exit $RequestedLaneExitCode
 }
 
@@ -556,7 +599,12 @@ finally {
         $cleanupExit = $LASTEXITCODE
         if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
     }
-    if ($guardExit -ne 0) { exit $guardExit }
+    if ($guardExit -ne 0) {
+        if ($null -ne $laneError) {
+            [Console]::Error.WriteLine('Lane error superseded by guard disposition: ' + $laneError.Exception.Message)
+        }
+        exit $guardExit
+    }
 }
 
 [Console]::Out.WriteLine('AFTER-TRY-RAN')
@@ -572,7 +620,8 @@ function Invoke-ExitingLaneWrapper {
         [string]$Repo,
         [string]$Token,
         [int]$LaneExit,
-        [string]$MutatePath = ''
+        [string]$MutatePath = '',
+        [string]$ThrowMessage = ''
     )
 
     $wrapper = Join-Path ([IO.Path]::GetTempPath()) ('taskdeck-fingerprint-wrapper-' + [Guid]::NewGuid().ToString('N') + '.ps1')
@@ -581,6 +630,9 @@ function Invoke-ExitingLaneWrapper {
         $arguments = @('-Repo', $Repo, '-Tool', $toolPath, '-Token', $Token, '-RequestedLaneExitCode', [string]$LaneExit)
         if (-not [string]::IsNullOrEmpty($MutatePath)) {
             $arguments += @('-MutatePath', $MutatePath)
+        }
+        if (-not [string]::IsNullOrEmpty($ThrowMessage)) {
+            $arguments += @('-ThrowMessage', $ThrowMessage)
         }
 
         $result = Invoke-FingerprintTool -Arguments $arguments -Tool $wrapper
@@ -659,6 +711,123 @@ Run-Test 'lets a nonzero exiting lane keep its code once the guard is clean' {
             Assert-True ($run.stdout.Contains('FINALLY-RAN')) 'guard finalization was skipped by the failing lane exit'
             Assert-True ($run.stdout.Contains('"classification":"cleaned"')) ('Cleanup was skipped by the failing lane exit: ' + $run.stdout)
             Assert-True ($run.exitCode -eq 7) ('the failing lane exit code was lost: ' + $run.exitCode)
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($run.state)) {
+                Cleanup-State -Repo $repo -State $run.state -Token $token
+            }
+        }
+    }
+}
+
+Run-Test 'detects a clean-to-clean branch switch between capture and compare' {
+    New-TestRepository {
+        param($repo)
+        $beforeStatus = (& git -C $repo status --porcelain)
+        $state = Capture-State -Repo $repo
+        try {
+            Invoke-Git -Repo $repo -Arguments @('switch', '-q', '-c', 'guard-switch-fixture')
+            $afterStatus = (& git -C $repo status --porcelain)
+            Assert-True ([string]::IsNullOrWhiteSpace($beforeStatus) -and [string]::IsNullOrWhiteSpace($afterStatus)) 'the switch fixture was not clean on both sides'
+            $result = Compare-State -Repo $repo -State $state
+            Assert-True ($result.exitCode -eq 2) ('a clean-to-clean branch switch was reported as unchanged: ' + $result.stdout + $result.stderr)
+            $records = @($result.stdout.Trim() -split "`r?`n" | ForEach-Object { $_ | ConvertFrom-Json })
+            Assert-True (@($records | Where-Object { $_.classification -eq 'ref-moved' }).Count -eq 1) ('the moved symbolic ref was not reported: ' + $result.stdout)
+        }
+        finally { Cleanup-State -Repo $repo -State $state }
+    }
+}
+
+Run-Test 'detects a clean-to-clean commit between capture and compare' {
+    New-TestRepository {
+        param($repo)
+        $state = Capture-State -Repo $repo
+        try {
+            Invoke-Git -Repo $repo -Arguments @('commit', '-q', '--allow-empty', '-m', 'lane advanced the checkout')
+            Assert-True ([string]::IsNullOrWhiteSpace((& git -C $repo status --porcelain))) 'the commit fixture left status artifacts behind'
+            $result = Compare-State -Repo $repo -State $state
+            Assert-True ($result.exitCode -eq 2) ('a clean-to-clean commit was reported as unchanged: ' + $result.stdout + $result.stderr)
+            $records = @($result.stdout.Trim() -split "`r?`n" | ForEach-Object { $_ | ConvertFrom-Json })
+            Assert-True (@($records | Where-Object { $_.classification -eq 'head-moved' }).Count -eq 1) ('the moved HEAD commit was not reported: ' + $result.stdout)
+            Assert-True (@($records | Where-Object { $_.classification -eq 'ref-moved' }).Count -eq 0) ('a commit on the same branch reported a moved ref: ' + $result.stdout)
+        }
+        finally { Cleanup-State -Repo $repo -State $state }
+    }
+}
+
+Run-Test 'classifies an overwrite of a clean tracked file as overwritten, not created' {
+    New-TestRepository {
+        param($repo)
+        $state = Capture-State -Repo $repo
+        try {
+            # tracked.txt is committed and clean, so it is deliberately absent
+            # from the baseline; absence must not be read as "did not exist".
+            [IO.File]::WriteAllText((Join-Path $repo 'tracked.txt'), 'the lane overwrote clean tracked content')
+            $result = Compare-State -Repo $repo -State $state
+            Assert-True ($result.exitCode -eq 2) 'a clean tracked overwrite did not fail comparison'
+            $records = @($result.stdout.Trim() -split "`r?`n" | ForEach-Object { $_ | ConvertFrom-Json })
+            $tracked = @($records | Where-Object { $_.path -eq 'tracked.txt' })
+            Assert-True ($tracked.Count -eq 1) ('the clean tracked overwrite was not reported: ' + $result.stdout)
+            Assert-True ($tracked[0].classification -eq 'overwritten') ('a clean tracked overwrite was misclassified as ' + $tracked[0].classification)
+        }
+        finally { Cleanup-State -Repo $repo -State $state }
+    }
+}
+
+Run-Test 'names what it found when a status artifact is not a regular file' {
+    New-TestRepository {
+        param($repo)
+        $nested = Join-Path $repo 'nested-repository'
+        New-Item -ItemType Directory -Path $nested | Out-Null
+        Invoke-Git -Repo $nested -Arguments @('init', '-q')
+        [IO.File]::WriteAllText((Join-Path $nested 'inner.txt'), 'inner')
+        $result = Invoke-FingerprintTool -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'test-token')
+        Assert-True ($result.exitCode -ne 0) 'a directory status entry was accepted as a regular file'
+        Assert-True ($result.stderr -match 'is not a regular file: found a directory') ('the diagnostic did not name what was found: ' + $result.stderr)
+        Assert-True ($result.stderr -match 'nested-repository') ('the diagnostic did not name where it was found: ' + $result.stderr)
+    }
+}
+
+Run-Test 'revalidates the completed inventory before anyone trusts it' {
+    New-TestRepository {
+        param($repo)
+        $artifact = Join-Path $repo 'artifact.txt'
+        [IO.File]::WriteAllText($artifact, 'first')
+        $outcome = & {
+            . $toolPath
+            $observed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+            [void]$observed.Add('artifact.txt')
+            $records = @([pscustomobject]@{ path = 'artifact.txt'; code = '??'; length = [Int64]5; hash = ('0' * 64) })
+            [IO.File]::WriteAllText($artifact, 'grew behind the walking cursor')
+            $mutated = 'stability revalidation accepted a mutated artifact'
+            try { Assert-InventoryStability -Checkout $repo -Records $records -ObservedPaths $observed }
+            catch { $mutated = $_.Exception.Message }
+
+            [IO.File]::WriteAllText($artifact, 'first')
+            $empty = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+            $entered = 'stability revalidation accepted a late arrival'
+            try { Assert-InventoryStability -Checkout $repo -Records @() -ObservedPaths $empty }
+            catch { $entered = $_.Exception.Message }
+
+            return [pscustomobject]@{ mutated = $mutated; entered = $entered }
+        }
+        Assert-True ($outcome.mutated -like 'status inventory changed while it was fingerprinted*') ('unexpected mutated-artifact outcome: ' + $outcome.mutated)
+        Assert-True ($outcome.entered -like 'status inventory changed while it was fingerprinted*') ('unexpected late-arrival outcome: ' + $outcome.entered)
+    }
+}
+
+Run-Test 'preserves the lane error text when the guard disposition supersedes it' {
+    New-TestRepository {
+        param($repo)
+        $token = 'throwing-lane-token'
+        $artifact = Join-Path $repo 'artifact.txt'
+        [IO.File]::WriteAllText($artifact, 'before the throwing lane')
+        $run = Invoke-ExitingLaneWrapper -Repo $repo -Token $token -LaneExit 0 -MutatePath $artifact -ThrowMessage 'lane-specific failure detail'
+        try {
+            Assert-True ($run.stdout.Contains('LANE-RAN')) ('the lane never ran: ' + $run.stderr)
+            Assert-True (-not $run.stdout.Contains('AFTER-TRY-RAN')) 'the guard disposition did not supersede the lane, so this is not the discard path'
+            Assert-True ($run.exitCode -eq 2) ('the guard disposition did not win: ' + $run.exitCode)
+            Assert-True ($run.stderr.Contains('lane-specific failure detail')) ('the lane error text was discarded by the guard exit: ' + $run.stderr)
         }
         finally {
             if (-not [string]::IsNullOrWhiteSpace($run.state)) {
