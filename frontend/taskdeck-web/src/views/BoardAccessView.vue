@@ -23,7 +23,7 @@ const toast = useToastStore()
 const activeBoardId = ref<string>(normalizeBoardIdQueryParam(props.boardId ?? route.query.boardId))
 const availableBoards = ref<Board[]>([])
 const loadingBoards = ref(false)
-const newUserId = ref('')
+const newIdentifier = ref('')
 const newRole = ref<BoardRole>('Viewer')
 const showGrantForm = ref(false)
 const granting = ref(false)
@@ -125,18 +125,18 @@ async function handleGrant() {
     toast.warning('Choose a board first.')
     return
   }
-  if (!newUserId.value.trim()) {
-    toast.warning('Please enter a user ID.')
+  if (!newIdentifier.value.trim()) {
+    toast.warning('Please enter an email or username.')
     return
   }
 
   try {
     granting.value = true
     await permissions.grantAccess(activeBoardId.value.trim(), {
-      userId: newUserId.value.trim(),
+      identifier: newIdentifier.value.trim(),
       role: newRole.value,
     })
-    newUserId.value = ''
+    newIdentifier.value = ''
     showGrantForm.value = false
   } catch {
     // Store handles toast + error state.
@@ -234,8 +234,15 @@ function openRoute(path: string) {
 
       <div v-if="showGrantForm" class="td-grant-form">
         <div class="td-form-group">
-          <label for="grant-user" class="td-label">User ID</label>
-          <input id="grant-user" v-model="newUserId" type="text" class="td-input" placeholder="Enter user ID" />
+          <label for="grant-user" class="td-label">Email or username</label>
+          <input
+            id="grant-user"
+            v-model="newIdentifier"
+            type="text"
+            class="td-input"
+            placeholder="Enter email or username"
+            autocomplete="off"
+          />
         </div>
         <div class="td-form-group">
           <label for="grant-role" class="td-label">Role</label>

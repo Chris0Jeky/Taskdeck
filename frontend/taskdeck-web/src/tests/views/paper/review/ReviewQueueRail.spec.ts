@@ -26,6 +26,8 @@ function mountRail(props?: Partial<{
   recentlyApplied: RecentlyAppliedRow[]
   dismissableCount: number
   busy: boolean
+  applyRate: number
+  cadence: number[]
 }>) {
   return mount(ReviewQueueRail, {
     props: {
@@ -36,6 +38,8 @@ function mountRail(props?: Partial<{
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
       recentlyApplied: props?.recentlyApplied ?? [],
+      ...(props?.applyRate !== undefined ? { applyRate: props.applyRate } : {}),
+      ...(props?.cadence !== undefined ? { cadence: props.cadence } : {}),
     },
   })
 }
@@ -162,5 +166,53 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.text()).toContain('5h ago')
     expect(wrapper.text()).not.toContain('undo')
     expect(wrapper.text()).not.toContain('sealed')
+  })
+
+  describe('This week apply-rate stat', () => {
+    it('shows the empty state and never a fabricated percentage when no apply rate is provided', () => {
+      // A fresh account with zero decision history: the rail must not invent a
+      // statistic. This is the mutation guard for the old `applyRate: 0.71`
+      // default — restoring it would render "71%" and hide the empty state,
+      // failing both assertions below.
+      const wrapper = mountRail()
+      const empty = wrapper.find('[data-testid="paper-review-apply-rate-empty"]')
+      expect(empty.exists()).toBe(true)
+      expect(empty.text()).toBe('No decisions yet')
+      expect(wrapper.find('[data-testid="paper-review-apply-rate"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Apply rate')
+      expect(wrapper.text()).not.toContain('71%')
+      expect(wrapper.text()).not.toMatch(/\d+%/)
+    })
+
+    it('renders the real apply rate as a rounded percentage when provided', () => {
+      const wrapper = mountRail({ applyRate: 0.5 })
+      const stat = wrapper.find('[data-testid="paper-review-apply-rate"]')
+      expect(stat.exists()).toBe(true)
+      expect(stat.text()).toContain('Apply rate')
+      expect(stat.text()).toContain('50%')
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+    })
+
+    it('renders a real apply rate of zero as 0%, not the empty state', () => {
+      // 0 is a real decision-history value (nothing applied yet), distinct from
+      // "no history at all" — it must render honestly, not fall through to the
+      // empty state or a fabricated default.
+      const wrapper = mountRail({ applyRate: 0 })
+      const stat = wrapper.find('[data-testid="paper-review-apply-rate"]')
+      expect(stat.exists()).toBe(true)
+      expect(stat.text()).toContain('0%')
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+    })
+
+    it('hides the mini-cadence bars when no real cadence data is provided', () => {
+      const wrapper = mountRail()
+      expect(wrapper.find('.paper-review-cadence').exists()).toBe(false)
+    })
+
+    it('renders the mini-cadence bars from real cadence data when provided', () => {
+      const wrapper = mountRail({ cadence: [1, 2, 3, 4, 5, 6, 7] })
+      const bars = wrapper.findAll('.paper-review-cadence__bar')
+      expect(bars).toHaveLength(7)
+    })
   })
 })
