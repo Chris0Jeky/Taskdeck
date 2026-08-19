@@ -1,4 +1,5 @@
 import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { i18n } from '../i18n'
 import type { Proposal as ApiProposal } from '../types/automation'
 import {
   proposalDeepReviewApi,
@@ -108,13 +109,25 @@ const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[])
 const EMPTY_CONFLICTS: ConflictRow[] = Object.freeze([] as ConflictRow[]) as ConflictRow[]
 const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as HistoryRow[]
 const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]
-const EMPTY_SIDE_EFFECTS: SideEffects = Object.freeze({
-  rows: Object.freeze([] as SideEffectRow[]) as SideEffectRow[],
-  applyRisk: Object.freeze({
-    summary: 'Risk details unavailable',
-    description: 'Review the declared side effects before applying.',
-  }) as SideEffects['applyRisk'],
-}) as SideEffects
+/**
+ * The empty side-effects shape is BUILT PER CALL, not frozen at module load,
+ * because its copy comes from the catalogs: a module-level constant would pin
+ * the fallback to whatever locale was active when this module first evaluated
+ * and never follow a language switch. `i18n.global.t` reads `i18n.global.locale`
+ * internally, so building it inside a `computed` keeps it reactive (ADR-0054).
+ */
+function emptySideEffects(): SideEffects {
+  return {
+    rows: EMPTY_SIDE_EFFECT_ROWS,
+    applyRisk: {
+      summary: i18n.global.t('review.sideEffects.fallback.summary'),
+      description: i18n.global.t('review.sideEffects.fallback.description'),
+    },
+  }
+}
+const EMPTY_SIDE_EFFECT_ROWS: SideEffectRow[] = Object.freeze(
+  [] as SideEffectRow[],
+) as SideEffectRow[]
 const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
   overall: 0,
   components: Object.freeze([] as ConfidenceBreakdown['components']) as ConfidenceBreakdown['components'],
@@ -208,7 +221,10 @@ function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
   return {
     overall: clamp01(dto.overall),
     components: dto.components.map((c) => ({
-      key: c.key === 'Reversibility' ? 'Operation safety' : c.key,
+      // `Reversibility` is a backend WIRE VALUE — the comparison is never
+      // translated. Only its display relabel is catalog material; every other
+      // `c.key` is server-supplied text this client cannot localise.
+      key: c.key === 'Reversibility' ? i18n.global.t('review.author.component.operationSafety') : c.key,
       value: clamp01(c.value),
     })),
     note: dto.note ?? undefined,
@@ -255,7 +271,9 @@ export function usePaperReviewSelectors(
 ): PaperReviewSelectors {
   const provenanceData: Ref<ProvenanceRow[]> = ref([])
   const evidenceLinksData: Ref<EvidenceLink[]> = ref([])
-  const sideEffectsData: Ref<SideEffects> = ref(EMPTY_SIDE_EFFECTS)
+  // null means "nothing loaded" — the computed below then renders the
+  // catalog-driven empty shape, so a language switch re-renders the fallback.
+  const sideEffectsData: Ref<SideEffects | null> = ref(null)
   const confidenceData: Ref<ConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
   const conflictsData: Ref<ConflictRow[]> = ref([])
   const historyData: Ref<HistoryRow[]> = ref([])
@@ -278,7 +296,7 @@ export function usePaperReviewSelectors(
         isLoading.value = false
         provenanceData.value = EMPTY_PROVENANCE
         evidenceLinksData.value = EMPTY_EVIDENCE_LINKS
-        sideEffectsData.value = EMPTY_SIDE_EFFECTS
+        sideEffectsData.value = null
         confidenceData.value = EMPTY_CONFIDENCE
         conflictsData.value = EMPTY_CONFLICTS
         historyData.value = EMPTY_HISTORY
@@ -317,8 +335,7 @@ export function usePaperReviewSelectors(
       confidenceData.value =
         conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
 
-      sideEffectsData.value =
-        side.status === 'fulfilled' ? mapSideEffects(side.value) : EMPTY_SIDE_EFFECTS
+      sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
 
       conflictsData.value =
         confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS
@@ -333,7 +350,7 @@ export function usePaperReviewSelectors(
 
   const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
   const evidenceLinks = computed<EvidenceLink[]>(() => evidenceLinksData.value)
-  const sideEffects = computed<SideEffects>(() => sideEffectsData.value)
+  const sideEffects = computed<SideEffects>(() => sideEffectsData.value ?? emptySideEffects())
   const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
   const conflicts = computed<ConflictRow[]>(() => conflictsData.value)
   const history = computed<HistoryRow[]>(() => historyData.value)
