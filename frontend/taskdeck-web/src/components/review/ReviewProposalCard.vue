@@ -102,17 +102,15 @@ function impactSummary(proposal: Proposal): string {
 function getOperationHeadlines(proposal: Proposal): string[] {
   void displayVersion.value
   const operations = proposal.operations ?? []
-  const hasBoardOrColumnTarget = operations.some((operation) => {
-    const target = operation.targetType.trim().toLowerCase()
-    return target === 'board' || target === 'column' || /(?:board|column)id/i.test(operation.parameters ?? '')
-  })
-  if (hasBoardOrColumnTarget) {
-    return operations.map((operation) => proposalDisplayNames.operationHeadline(proposal, operation))
-  }
-  if (proposal.presentation?.operationHeadlines?.length) {
-    return proposal.presentation.operationHeadlines
-  }
-  return operations.map((operation) => proposalDisplayNames.operationHeadline(proposal, operation))
+  const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
+  const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
+  return Array.from({ length: headlineCount }, (_, index) => {
+    const suppliedHeadline = suppliedHeadlines[index]?.trim()
+    if (suppliedHeadline) return suppliedHeadline
+
+    const operation = operations[index]
+    return operation ? proposalDisplayNames.operationHeadline(proposal, operation) : ''
+  }).filter((headline) => headline.length > 0)
 }
 
 function getAffectedEntities(proposal: Proposal) {
