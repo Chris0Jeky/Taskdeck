@@ -141,6 +141,20 @@ describe('BoardAccessView', () => {
     expect(wrapper.text()).toContain('Why use the board selector here?')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(BoardAccessView)
+    mountedWrapper = wrapper
+    await waitForUi()
+
+    // Root, hero, and panel should use the Paper (`paper-access__*`) idiom, and
+    // none of the legacy Obsidian (`td-access*`) hooks should survive. The
+    // shared WorkspaceHelpCallout keeps its own chrome and is out of scope.
+    expect(wrapper.find('.paper-access').exists()).toBe(true)
+    expect(wrapper.find('.paper-access__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-access__panel').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-access"]').exists()).toBe(false)
+  })
+
   it('fetches the selected board access list when the selector changes', async () => {
     const wrapper = mount(BoardAccessView)
     mountedWrapper = wrapper
