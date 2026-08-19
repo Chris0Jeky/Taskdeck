@@ -151,7 +151,7 @@ describe('NotificationInboxView', () => {
     const wrapper = mount(NotificationInboxView)
     await waitForUi()
 
-    const action = wrapper.get('button.td-btn--primary')
+    const action = wrapper.get('button.paper-notifications__mark-read')
     await action.trigger('click')
 
     expect(mockNotificationStore.markAsRead).toHaveBeenCalledWith('n1')
