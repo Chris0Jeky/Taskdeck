@@ -6,6 +6,7 @@ import ReviewHeader from '../components/review/ReviewHeader.vue'
 import ReviewSummaryCards from '../components/review/ReviewSummaryCards.vue'
 import ReviewEmptyState from '../components/review/ReviewEmptyState.vue'
 import ReviewProposalCard from '../components/review/ReviewProposalCard.vue'
+import ApplyToBoardDialog from '../components/review/ApplyToBoardDialog.vue'
 import { TdSkeleton } from '../components/ui'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
@@ -44,9 +45,12 @@ const {
   selectedDiffMode,
   selectedDiffInvalidReason,
   selectedDiffRevised,
+  executeConfirmProposal,
   handleApproveProposal,
   handleRejectProposal,
-  handleExecuteProposal,
+  requestExecuteProposal,
+  cancelExecuteProposal,
+  confirmExecuteProposal,
   handleToggleDiff,
   handleDismissProposal,
   handleDismissApplied,
@@ -230,7 +234,7 @@ onUnmounted(() => {
               :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
               @approve="handleApproveProposal"
               @reject="handleRejectProposal"
-              @execute="handleExecuteProposal"
+              @execute="requestExecuteProposal"
               @toggle-diff="handleToggleDiff"
               @dismiss="handleDismissProposal"
               @open-board="openBoard"
@@ -239,6 +243,15 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+
+    <!-- Phase-2 confirmation (#1818): the app dialog idiom, carrying the proposal
+         summary, in place of the native confirm(). -->
+    <ApplyToBoardDialog
+      :proposal="executeConfirmProposal"
+      :busy="proposalActionBusyId !== null"
+      @confirm="confirmExecuteProposal"
+      @cancel="cancelExecuteProposal"
+    />
   </div>
 </template>
 
