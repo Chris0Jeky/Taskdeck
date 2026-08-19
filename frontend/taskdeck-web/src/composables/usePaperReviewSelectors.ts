@@ -7,6 +7,7 @@ import {
 } from '../api/proposalDeepReviewApi'
 import type {
   ProvenanceRowDto,
+  ProvenanceEvidenceLinkDto,
   ConfidenceBreakdownDto,
   ProposalSideEffectsDto,
   ConflictRowDto,
@@ -23,6 +24,30 @@ export interface ProvenanceRow {
   key: string
   value: string
   weight: ProvenanceWeight
+}
+
+/**
+ * `sourceType` value the backend stamps on evidence that points into a stored
+ * transcript (`ProvenanceEvidenceLink.TranscriptSourceType`). Such a link's
+ * `sourceId` is the transcript id readable through `transcriptsApi`.
+ */
+export const TRANSCRIPT_EVIDENCE_SOURCE_TYPE = 'Transcript'
+
+/**
+ * One provenance evidence link, flattened onto the field it justifies so the
+ * drawer can render source, quote, and span together.
+ */
+export interface EvidenceLink {
+  /** The provenance field this evidence supports. */
+  sourceKey: string
+  /** Character offsets into the source text, or null when the span is unresolved. */
+  span: [number, number] | null
+  reason: string
+  weight: ProvenanceWeight
+  /** Backend source discriminator; `'Transcript'` for transcript evidence. */
+  sourceType?: string
+  /** Identifier within that source; the transcript id for transcript evidence. */
+  sourceId?: string
 }
 
 export interface SideEffectRow {
@@ -68,6 +93,7 @@ export interface SimilarPastRow {
 
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
+  evidenceLinks: ComputedRef<EvidenceLink[]>
   sideEffects: ComputedRef<SideEffects>
   confidenceBreakdown: ComputedRef<ConfidenceBreakdown>
   conflicts: ComputedRef<ConflictRow[]>
@@ -78,6 +104,7 @@ export interface PaperReviewSelectors {
 }
 
 const EMPTY_PROVENANCE: ProvenanceRow[] = Object.freeze([] as ProvenanceRow[]) as ProvenanceRow[]
+const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = Object.freeze([] as EvidenceLink[]) as EvidenceLink[]
 const EMPTY_CONFLICTS: ConflictRow[] = Object.freeze([] as ConflictRow[]) as ConflictRow[]
 const EMPTY_HISTORY: HistoryRow[] = Object.freeze([] as HistoryRow[]) as HistoryRow[]
 const EMPTY_SIMILAR: SimilarPastRow[] = Object.freeze([] as SimilarPastRow[]) as SimilarPastRow[]
@@ -96,14 +123,50 @@ const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
 
 const VALID_WEIGHTS = new Set<ProvenanceWeight>(['primary', 'contextual', 'excluded', 'inferred'])
 
-function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
+function resolveWeight(dto: ProvenanceRowDto): ProvenanceWeight {
   const weight = dto.weight.toLowerCase() as ProvenanceWeight
+  return VALID_WEIGHTS.has(weight) ? weight : 'contextual'
+}
+
+function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
   return {
     icon: dto.icon,
     key: dto.key,
     value: dto.value,
-    weight: VALID_WEIGHTS.has(weight) ? weight : 'contextual',
+    weight: resolveWeight(dto),
   }
+}
+
+/**
+ * Normalizes a wire span into an ordered pair, or null when either bound is
+ * missing or incoherent. A malformed span must degrade to "no deep link"
+ * rather than to a highlight over the wrong characters.
+ */
+function mapSpan(link: ProvenanceEvidenceLinkDto): [number, number] | null {
+  const { spanStart, spanEnd } = link
+  if (typeof spanStart !== 'number' || typeof spanEnd !== 'number') return null
+  if (!Number.isInteger(spanStart) || !Number.isInteger(spanEnd)) return null
+  if (spanStart < 0 || spanEnd < spanStart) return null
+  return [spanStart, spanEnd]
+}
+
+/**
+ * Flattens each row's evidence links into drawer rows, carrying the field name
+ * as the source key and falling back to the row's rendered value when the link
+ * has no label of its own.
+ */
+function mapEvidenceLinks(dtos: ProvenanceRowDto[]): EvidenceLink[] {
+  return dtos.flatMap((dto) => {
+    const weight = resolveWeight(dto)
+    return (dto.evidenceLinks ?? []).map((link) => ({
+      sourceKey: dto.key,
+      span: mapSpan(link),
+      reason: link.label ?? dto.value,
+      weight,
+      sourceType: link.sourceType,
+      sourceId: link.sourceId,
+    }))
+  })
 }
 
 function unexpectedWireEnum<T>(name: string, value: unknown, fallback: T): T {
@@ -191,6 +254,7 @@ export function usePaperReviewSelectors(
   activeProposal: ComputedRef<ApiProposal | null>,
 ): PaperReviewSelectors {
   const provenanceData: Ref<ProvenanceRow[]> = ref([])
+  const evidenceLinksData: Ref<EvidenceLink[]> = ref([])
   const sideEffectsData: Ref<SideEffects> = ref(EMPTY_SIDE_EFFECTS)
   const confidenceData: Ref<ConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
   const conflictsData: Ref<ConflictRow[]> = ref([])
@@ -213,6 +277,7 @@ export function usePaperReviewSelectors(
       if (!proposalId) {
         isLoading.value = false
         provenanceData.value = EMPTY_PROVENANCE
+        evidenceLinksData.value = EMPTY_EVIDENCE_LINKS
         sideEffectsData.value = EMPTY_SIDE_EFFECTS
         confidenceData.value = EMPTY_CONFIDENCE
         conflictsData.value = EMPTY_CONFLICTS
@@ -246,6 +311,9 @@ export function usePaperReviewSelectors(
       provenanceData.value =
         prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
 
+      evidenceLinksData.value =
+        prov.status === 'fulfilled' ? mapEvidenceLinks(prov.value) : EMPTY_EVIDENCE_LINKS
+
       confidenceData.value =
         conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
 
@@ -264,6 +332,7 @@ export function usePaperReviewSelectors(
   )
 
   const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
+  const evidenceLinks = computed<EvidenceLink[]>(() => evidenceLinksData.value)
   const sideEffects = computed<SideEffects>(() => sideEffectsData.value)
   const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
   const conflicts = computed<ConflictRow[]>(() => conflictsData.value)
@@ -293,6 +362,7 @@ export function usePaperReviewSelectors(
 
   return {
     provenance,
+    evidenceLinks,
     sideEffects,
     confidenceBreakdown,
     conflicts,
