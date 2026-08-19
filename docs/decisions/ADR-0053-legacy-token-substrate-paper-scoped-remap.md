@@ -274,6 +274,42 @@ Items 4–6 are the per-token tuning pass; `#1817` also carries the pre-existing
 `html { color-scheme: dark }` in `style.css`, which keeps native `<select>` popups, date pickers and
 autofill dark inside the Paper shell (not introduced by this change).
 
+## Amendments
+
+- **2026-08-19 — Legacy ("off") mode is KEPT for the open beta as a supported plain skin, with the
+  substrate legibility guarantee as its contract.** *(Autonomous coordinator ruling under the
+  ADR-0051 admission lane — flagged for maintainer review. It settles the second half of `#1815`,
+  the systemic question this ADR's Consequences section raised and deferred.)*
+
+  The question `#1815` posed was what Legacy mode is ultimately *for*, given that the `tk-*` type
+  utilities and the rest of the Paper idiom are inert there: a view migrated under Option B gets its
+  Paper typography only inside `.paper` / `.paper-night`, so in Legacy the same component renders as
+  plain, unstyled-display text on a plain ground. Two answers were live — keep the toggle as a
+  supported skin, or retire it post-beta and make Paper the only shell.
+
+  **Ruling: keep it, and define what "supported" means so the guarantee is testable.**
+
+  - Legacy mode is a **supported plain skin**, not a second design system. Its contract is exactly
+    one property: **every Paper-idiom view root that sets `--ink` also paints a Paper substrate**, so
+    the root's literal fallbacks land together and clear WCAG AA. That is the invariant
+    `frontend/taskdeck-web/src/tests/views/paperViewLegacySubstrate.spec.ts` pins mechanically, and
+    as of this amendment it covers every Paper-idiom view root in the `#1769` wave — the four
+    `#1780` roots, the `#1775` Saved Views root (`#1813`), the six Settings roots from PR #1808, and
+    the secondary roots from PR #1810. That closes the first half of `#1815`.
+  - **`tk-*` type utilities remain intentionally inert in Legacy, and that is not a defect.** They
+    are Paper-scoped by construction. Legacy renders legible system-sans text; it does not render
+    Paper's serif display type, hairlines or stamps, and no issue should be filed asking it to.
+    Chasing typographic parity would recreate the second design system this project already decided
+    against in ADR-0038.
+  - **Retirement is deferred until post-beta usage data exists.** The free open beta (ADR-0044) is
+    the first time real users will exercise the Appearance toggle; retiring an escape hatch before
+    knowing whether anyone reaches for it would be a guess. Revisit once the beta yields usage data
+    on the "off" setting — the removal is cheap and reversible either way, and none of the Option-B
+    per-view migration work is wasted under either outcome, since it targets the Paper shell.
+
+  Scope note: this amendment rules on Legacy mode's *fate and contract* only. It changes nothing
+  about Option A's bridge, and the "Known limitations" ledger (`#1817`) is untouched by it.
+
 ## References
 
 - `#1778` — this decision; `#1769` — the Paper-shell sweep that found the shared root cause
