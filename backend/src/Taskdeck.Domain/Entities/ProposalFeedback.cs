@@ -38,9 +38,9 @@ public class ProposalFeedback : Entity
     }
 
     /// <summary>
-    /// Refines the reason on an existing feedback row (last-specific-wins): a first one-click
-    /// report stores <see cref="ProposalFeedbackReason.Unspecified"/>; a later categorized
-    /// report can upgrade it without creating a second row.
+    /// Updates the reason on an existing feedback row. The report flow applies
+    /// first-specific-wins: a first one-click report stores <see cref="ProposalFeedbackReason.Unspecified"/>;
+    /// the first later categorized report can upgrade it without creating a second row.
     /// </summary>
     public void UpdateReason(ProposalFeedbackReason reason)
     {
