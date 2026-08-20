@@ -1,10 +1,10 @@
 # =============================================================================
-# Release Desktop — cross-platform self-contained executable builds
+# Release Desktop — Windows x64 self-contained executable builds
 # =============================================================================
 #
-# Triggers on version tags (v*). Builds self-contained single-file executables
-# for win-x64, linux-x64, osx-x64, osx-arm64 and publishes them as a GitHub
-# Release with SHA256 checksums and auto-generated release notes.
+# Triggers on version tags (v*). The public 0.1.x train builds one
+# self-contained win-x64 executable on windows-latest and publishes its ZIP as
+# a GitHub Release with a SHA256 checksum and auto-generated release notes.
 #
 # Dispatch-path invariants (#1795) — regression-tested by
 # `scripts/ci/release-desktop-dispatch.test.mjs`:
@@ -17,7 +17,7 @@
 # Publish is resumable (#1806): draft -> per-asset `--clobber` upload with
 # retries -> flip to published.
 #
-# Tracked by: #535 (PKG-03), #1795, #1806
+# Tracked by: #535 (PKG-03), #1795, #1806, #1878
 # =============================================================================
 
 name: Release Desktop
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing version tag to build and PUBLISH (e.g. v0.2.0). Leave BLANK when dispatching from a BRANCH for a rehearsal: builds, smoke-tests the runner-native platforms, uploads artifacts, publishes nothing. Dispatching from a TAG ref publishes that tag even with this left blank."
+        description: "Existing version tag to build and PUBLISH (e.g. v0.1.1). Leave BLANK when dispatching from a BRANCH for a rehearsal: builds and smoke-tests the Windows x64 archive, uploads artifacts, and publishes nothing. Dispatching from a TAG ref publishes that tag even with this left blank."
         required: false
         type: string
   push:
@@ -172,7 +172,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
-  # Build frontend assets (shared by all platform builds)
+  # Build frontend assets for the desktop archive
   # ---------------------------------------------------------------------------
   build-frontend:
     name: Build Frontend
@@ -223,7 +223,7 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Build self-contained executables per platform
+  # Build the supported Windows x64 self-contained executable
   # ---------------------------------------------------------------------------
   build-backend:
     name: Build ${{ matrix.rid }}
@@ -237,15 +237,6 @@ jobs:
           - rid: win-x64
             os: windows-latest
             archive_ext: zip
-          - rid: linux-x64
-            os: ubuntu-latest
-            archive_ext: tar.gz
-          - rid: osx-x64
-            os: macos-latest
-            archive_ext: tar.gz
-          - rid: osx-arm64
-            os: macos-latest
-            archive_ext: tar.gz
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -397,13 +388,8 @@ jobs:
       # The process is always killed (trap ... EXIT) so it never leaks, and any
       # failure (no boot, never ready, / not HTML) fails the release job.
       #
-      # Runner-native RIDs only: the GitHub macos-latest runner is arm64, so the
-      # osx-x64 binary is cross-arch and may not launch there. It is SKIPPED via
-      # the `if:` gate below; osx-arm64 is the macOS RID exercised instead.
-      # win-x64 (windows-latest) and linux-x64 (ubuntu-latest) are native.
-      #
-      # shell: bash so one script covers Windows + Linux + macOS (bash ships on
-      # the Windows runner). curl + openssl are available on all three runners.
+      # The 0.1.x release matrix contains one runner-native target: win-x64 on
+      # windows-latest. Git Bash, curl and openssl are available on that runner.
       #
       # Secrets: a downloaded desktop exe runs with ASPNETCORE_ENVIRONMENT unset,
       # which defaults to Production. First-run auto-generates the JWT secret, but
@@ -416,7 +402,6 @@ jobs:
       # publish dir, and the DB is pointed at a temp dir, so nothing pollutes the
       # archive built in the next step.
       - name: Smoke test published executable
-        if: matrix.rid != 'osx-x64'  # cross-arch on the arm64 macOS runner — not launchable there
         shell: bash
         run: |
           set -euo pipefail
@@ -536,8 +521,7 @@ jobs:
       # A bare workflow_dispatch (no tag input, run from a branch) is the REHEARSAL
       # path: it builds, smoke-tests and packages as `v0.0.0-dryrun+<sha7>` and
       # publishes nothing (`#1123`).
-      - name: Package artifact (zip — Windows)
-        if: matrix.archive_ext == 'zip'
+      - name: Package artifact (zip — Windows x64)
         shell: pwsh
         env:
           RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
@@ -545,17 +529,6 @@ jobs:
         run: |
           Compress-Archive -Path "publish/${env:RELEASE_RID}/*" `
             -DestinationPath "taskdeck-${env:RELEASE_TAG}-${env:RELEASE_RID}.zip"
-
-      - name: Package artifact (tar.gz — Linux/macOS)
-        if: matrix.archive_ext == 'tar.gz'
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
-          RELEASE_RID: ${{ matrix.rid }}
-        run: |
-          set -euo pipefail
-          tar -czf "taskdeck-${RELEASE_TAG}-${RELEASE_RID}.tar.gz" \
-            -C "publish/${RELEASE_RID}" .
 
       - name: Generate SHA256 checksum
         shell: bash
@@ -582,7 +555,7 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Create GitHub Release with all platform artifacts
+  # Create GitHub Release with the Windows x64 artifact
   # ---------------------------------------------------------------------------
   create-release:
     name: Create GitHub Release

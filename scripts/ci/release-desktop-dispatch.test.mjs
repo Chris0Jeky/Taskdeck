@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — dispatch-path regressions for #1795/#1806
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1878
 // =============================================================================
 //
 // Two classes of check:
@@ -187,6 +187,15 @@ function jobBlock(name) {
   return next === -1 ? rest : rest.slice(0, next)
 }
 
+function matrixBlock(jobName) {
+  const job = jobBlock(jobName)
+  const start = job.indexOf('\n      matrix:\n')
+  assert.notEqual(start, -1, `job ${jobName} must declare a strategy matrix`)
+  const steps = job.indexOf('\n    steps:\n', start)
+  assert.notEqual(steps, -1, `job ${jobName} matrix must end before its steps`)
+  return job.slice(start, steps)
+}
+
 test('resolve-source publishes the tag, commit and publish decision as job outputs', () => {
   const job = jobBlock('resolve-source')
   assert.match(job, /tag: \$\{\{ steps\.resolve\.outputs\.tag \}\}/)
@@ -250,7 +259,31 @@ test('the publish decision comes from resolve-source, not a re-read of the raw i
 })
 
 // -----------------------------------------------------------------------------
-// 5. Workflow structure — resumable publish (#1806)
+// 5. Workflow structure — Windows-only 0.1.x release policy (#1878)
+// -----------------------------------------------------------------------------
+
+test('the 0.1.x release matrix and packaging are Windows x64 zip only', () => {
+  const matrix = matrixBlock('build-backend')
+  const job = jobBlock('build-backend')
+  const rids = [...matrix.matchAll(/^\s+- rid:\s*(\S+)[ \t]*$/gm)].map((match) => match[1])
+  const runners = [...matrix.matchAll(/^\s+os:\s*(\S+)[ \t]*$/gm)].map((match) => match[1])
+  const archiveTypes = [...matrix.matchAll(/^\s+archive_ext:\s*(\S+)[ \t]*$/gm)].map(
+    (match) => match[1],
+  )
+
+  assert.deepEqual(rids, ['win-x64'], 'another RID requires an explicit support-policy change')
+  assert.deepEqual(
+    runners,
+    ['windows-latest'],
+    'a non-Windows release runner requires equivalent packaged acceptance evidence',
+  )
+  assert.deepEqual(archiveTypes, ['zip'], 'the supported Windows release archive is a ZIP')
+  assert.doesNotMatch(matrix, /\b(?:linux|osx|macos|ubuntu)\b/i)
+  assert.doesNotMatch(job, /tar\.gz|\btar\s+-czf\b/, 'dead Linux/macOS packaging must stay absent')
+})
+
+// -----------------------------------------------------------------------------
+// 6. Workflow structure — resumable publish (#1806)
 // -----------------------------------------------------------------------------
 
 test('the release is created as a draft, or an existing one is adopted', () => {
@@ -311,7 +344,7 @@ test('release assets download to release-assets/, never the repo-tracked artifac
 })
 
 // -----------------------------------------------------------------------------
-// 6. Workflow structure — provenance evidence
+// 7. Workflow structure — provenance evidence
 // -----------------------------------------------------------------------------
 
 test('the resolved commit ships as release evidence', () => {
