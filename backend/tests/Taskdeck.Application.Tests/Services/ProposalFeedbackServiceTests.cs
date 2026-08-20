@@ -65,7 +65,7 @@ public class ProposalFeedbackServiceTests
     }
 
     [Fact]
-    public async Task ReportBadSuggestion_ShouldRefineReason_WhenExistingUnspecified()
+    public async Task ReportBadSuggestion_ShouldKeepFirstSpecificReason_WhenExistingUnspecified()
     {
         var proposal = CreateProposal();
         var userId = Guid.NewGuid();
@@ -74,9 +74,11 @@ public class ProposalFeedbackServiceTests
         SetupExistingFeedback(proposal.Id, userId, existing);
 
         var result = await _service.ReportBadSuggestionAsync(proposal.Id, userId, ProposalFeedbackReason.Incorrect);
+        var repeatedResult = await _service.ReportBadSuggestionAsync(proposal.Id, userId, ProposalFeedbackReason.TooRisky);
 
         result.IsSuccess.Should().BeTrue();
-        existing.Reason.Should().Be(ProposalFeedbackReason.Incorrect, "an earlier Unspecified report is refined by a later specific one (last-specific-wins)");
+        repeatedResult.IsSuccess.Should().BeTrue();
+        existing.Reason.Should().Be(ProposalFeedbackReason.Incorrect, "the first specific reason wins after an Unspecified report");
         _feedbackRepoMock.Verify(r => r.AddAsync(It.IsAny<ProposalFeedback>(), It.IsAny<CancellationToken>()), Times.Never);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
