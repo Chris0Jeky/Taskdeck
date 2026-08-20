@@ -49,6 +49,34 @@ public sealed class LocalConfigPathMigrationTests
     }
 
     [Fact]
+    public void ResolveAppDataPath_RejectsRelativeLocalAppDataOverride()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            FirstRunBootstrapper.ResolveAppDataPath("relative-localappdata", string.Empty));
+    }
+
+    [Fact]
+    public void ResolveLocalConfigPath_TwoPackageExtractionsShareTheSameDurableProfile()
+    {
+        using var temp = new TempDirectory();
+        var appData = Path.Combine(temp.Path, "local-app-data", "Taskdeck");
+
+        var first = FirstRunBootstrapper.ResolveLocalConfigPath(
+            isProduction: true,
+            isHeadless: false,
+            executableDirectory: Path.Combine(temp.Path, "extract-one"),
+            appDataDirectory: appData);
+        var second = FirstRunBootstrapper.ResolveLocalConfigPath(
+            isProduction: true,
+            isHeadless: false,
+            executableDirectory: Path.Combine(temp.Path, "extract-two"),
+            appDataDirectory: appData);
+
+        Assert.Equal(first, second);
+        Assert.StartsWith(Path.GetFullPath(appData), first, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ImportLegacyLocalConfigIfNeeded_CopiesCompleteFileAndRetainsSource()
     {
         using var temp = new TempDirectory();
@@ -521,9 +549,10 @@ public sealed class LocalConfigPathMigrationTests
         Assert.Contains("var environmentName = context.HostingEnvironment.EnvironmentName", source);
         Assert.Contains("mcpStdioLocalConfigPath ??= FirstRunBootstrapper.ResolveLocalConfigPath", source);
         Assert.Contains("config.AddJsonFile(mcpStdioLocalConfigPath, optional: true)", source);
+        Assert.Contains("bootstrapHeadless = DesktopRuntime.IsBootstrapHeadlessEnvironment", source);
         Assert.Contains("localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath", source);
-        Assert.Contains("builder.AddLocalConfigFile(localConfigPath)", source);
-        Assert.Contains("builder.RunFirstRunChecks(bootstrapLogger, localConfigPath)", source);
+        Assert.Contains("builder.AddLocalConfigFile(localConfigPath, bootstrapHeadless)", source);
+        Assert.Contains("builder.RunFirstRunChecks(bootstrapLogger, localConfigPath, bootstrapHeadless)", source);
         Assert.Contains("builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath)", source);
     }
 

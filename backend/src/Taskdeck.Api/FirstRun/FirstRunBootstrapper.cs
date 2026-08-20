@@ -395,6 +395,15 @@ public static class FirstRunBootstrapper
     public static WebApplicationBuilder AddLocalConfigFile(
         this WebApplicationBuilder builder,
         string localConfigPath)
+        => AddLocalConfigFile(
+            builder,
+            localConfigPath,
+            IsHeadlessEnvironment());
+
+    public static WebApplicationBuilder AddLocalConfigFile(
+        this WebApplicationBuilder builder,
+        string localConfigPath,
+        bool isBootstrapHeadless)
     {
         // Prepare before the provider reads: import a valid legacy file into an absent durable path, enforce
         // owner-only permissions, and validate the durable Production file without replacing corrupt
@@ -403,7 +412,7 @@ public static class FirstRunBootstrapper
         PrepareLocalConfigFile(
             exactPath,
             LegacyLocalConfigPath,
-            requireOwnerOnly: builder.Environment.IsProduction() && !IsHeadlessEnvironment());
+            requireOwnerOnly: builder.Environment.IsProduction() && !isBootstrapHeadless);
 
         var sources = builder.Configuration.Sources;
 
@@ -530,11 +539,21 @@ public static class FirstRunBootstrapper
         this WebApplicationBuilder builder,
         ILogger logger,
         string localConfigPath)
+        => RunFirstRunChecks(
+            builder,
+            logger,
+            localConfigPath,
+            IsHeadlessEnvironment());
+
+    public static WebApplicationBuilder RunFirstRunChecks(
+        this WebApplicationBuilder builder,
+        ILogger logger,
+        string localConfigPath,
+        bool isBootstrapHeadless)
     {
         var exactPath = Path.GetFullPath(localConfigPath);
         var isProduction = builder.Environment.IsProduction();
-        var isHeadless = IsHeadlessEnvironment();
-        var resolveDatabaseToAppData = !builder.Environment.IsDevelopment() && !isHeadless;
+        var resolveDatabaseToAppData = !builder.Environment.IsDevelopment() && !isBootstrapHeadless;
         var databaseAppDataPath = resolveDatabaseToAppData
             ? isProduction
                 ? Path.GetDirectoryName(exactPath)
@@ -548,7 +567,7 @@ public static class FirstRunBootstrapper
             logger,
             exactPath,
             isProduction,
-            isHeadless,
+            isBootstrapHeadless,
             resolveDatabaseToAppData,
             databaseAppDataPath);
 
@@ -1092,12 +1111,7 @@ public static class FirstRunBootstrapper
     }
 
     internal static bool IsHeadlessEnvironment()
-    {
-        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TF_BUILD"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"))
-            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TASKDECK_HEADLESS"));
-    }
+        => DesktopRuntime.IsBrowserSuppressedEnvironment();
 
     internal static string GetAppDataPath()
     {

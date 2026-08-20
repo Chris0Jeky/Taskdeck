@@ -12,13 +12,38 @@ public sealed class FirstRunService
 {
     private readonly ILogger<FirstRunService> _logger;
     private readonly FirstRunSettings _settings;
+    private readonly Action<string> _browserLauncher;
+    private readonly Func<string, CancellationToken, Task<bool>> _readinessProbe;
+    private readonly bool _isPackagedDesktop;
+    private readonly Func<bool> _browserSuppressed;
 
     public FirstRunService(
         ILogger<FirstRunService> logger,
         FirstRunSettings settings)
+        : this(
+            logger,
+            settings,
+            LaunchBrowser,
+            WaitForReadinessAsync,
+            DesktopRuntime.IsPackagedDesktop,
+            DesktopRuntime.IsBrowserSuppressedEnvironment)
+    {
+    }
+
+    internal FirstRunService(
+        ILogger<FirstRunService> logger,
+        FirstRunSettings settings,
+        Action<string> browserLauncher,
+        Func<string, CancellationToken, Task<bool>> readinessProbe,
+        bool isPackagedDesktop,
+        Func<bool> browserSuppressed)
     {
         _logger = logger;
         _settings = settings;
+        _browserLauncher = browserLauncher;
+        _readinessProbe = readinessProbe;
+        _isPackagedDesktop = isPackagedDesktop;
+        _browserSuppressed = browserSuppressed;
     }
 
     /// <summary>
@@ -30,32 +55,107 @@ public sealed class FirstRunService
     /// obtained from <c>IServerAddressesFeature</c>.</param>
     public void TryOpenBrowser(string url)
     {
-        if (!_settings.AutoOpenBrowser)
+        if (!DesktopRuntime.ShouldOpenBrowser(
+                _isPackagedDesktop,
+                _settings.AutoOpenBrowser,
+                _browserSuppressed()))
         {
             return;
         }
 
-        if (FirstRunBootstrapper.IsHeadlessEnvironment())
+        OpenBrowser(url);
+    }
+
+    internal async Task ReportPackagedReadyAndOpenBrowserAsync(
+        string url,
+        CancellationToken cancellationToken)
+    {
+        bool isReady;
+        try
         {
-            _logger.LogDebug(
-                "First-run: AutoOpenBrowser skipped (headless/CI environment detected).");
+            isReady = await _readinessProbe(url, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch
+        {
+            DesktopRuntime.WriteReadinessFailure();
             return;
         }
 
+        if (!isReady)
+        {
+            DesktopRuntime.WriteReadinessFailure();
+            return;
+        }
+
+        DesktopRuntime.WriteReady(url);
+        TryOpenBrowser(url);
+    }
+
+    private void OpenBrowser(string url)
+    {
         _logger.LogInformation("First-run: Opening browser at {Url}", url);
 
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = url,
-                UseShellExecute = true
-            });
+            _browserLauncher(url);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_isPackagedDesktop)
         {
-            // Non-fatal: the user can always open the browser manually.
             _logger.LogWarning(ex, "First-run: Failed to open browser at {Url}.", url);
         }
+        catch
+        {
+            // Packaged output must remain stable and redacted. The printed URL is sufficient for recovery.
+            _logger.LogWarning("First-run: The default browser could not be opened. Open {Url} manually.", url);
+        }
+    }
+
+    private static void LaunchBrowser(string url)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = url,
+            UseShellExecute = true
+        });
+    }
+
+    private static async Task<bool> WaitForReadinessAsync(
+        string baseUrl,
+        CancellationToken cancellationToken)
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        var readyUri = new Uri(new Uri(baseUrl.EndsWith('/') ? baseUrl : $"{baseUrl}/"), "health/ready");
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+
+        while (DateTimeOffset.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var response = await client.GetAsync(
+                    readyUri,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return true;
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // The listener may be live before the readiness endpoint accepts requests.
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // A per-request timeout is retryable until the bounded startup deadline.
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+        }
+
+        return false;
     }
 }
