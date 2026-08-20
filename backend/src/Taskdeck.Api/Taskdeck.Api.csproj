@@ -18,6 +18,10 @@
     <InternalsVisibleTo Include="Taskdeck.Api.Tests" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TaskdeckDesktopPackage)' == 'true'">
+    <AssemblyMetadata Include="TaskdeckDesktopPackage" Value="true" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
