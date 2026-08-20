@@ -355,15 +355,26 @@ jobs:
           -o publish/${{ matrix.rid }}
           --no-restore
 
-      - name: Copy frontend dist into publish output
+      - name: Stage Windows archive contents
         shell: bash
         run: |
-          mkdir -p publish/${{ matrix.rid }}/wwwroot
-          cp -r frontend-dist/* publish/${{ matrix.rid }}/wwwroot/
-          cp LICENSE publish/${{ matrix.rid }}/LICENSE
-          cp RELICENSING.md publish/${{ matrix.rid }}/RELICENSING.md
-          mkdir -p publish/${{ matrix.rid }}/LICENSES
-          cp LICENSES/MIT.txt publish/${{ matrix.rid }}/LICENSES/MIT.txt
+          set -euo pipefail
+          stage="publish/${{ matrix.rid }}"
+          mkdir -p "${stage}/wwwroot" "${stage}/LICENSES"
+          cp -r frontend-dist/* "${stage}/wwwroot/"
+          cp docs/releases/WINDOWS_QUICK_START.md "${stage}/QUICK_START.md"
+          cp LICENSE "${stage}/LICENSE"
+          cp RELICENSING.md "${stage}/RELICENSING.md"
+          cp LICENSES/MIT.txt "${stage}/LICENSES/MIT.txt"
+
+          # Swagger can consume XML docs in source/developer builds, but release users do not
+          # need build-host symbols, IIS scaffolding, or Development configuration.
+          find "${stage}" -type f \( \
+            -iname 'appsettings.Development.json' -o \
+            -iname '*.pdb' -o \
+            -iname '*.xml' -o \
+            -iname 'web.config' \
+          \) -delete
 
       - name: Verify frontend assets present
         shell: bash
@@ -389,6 +400,45 @@ jobs:
           fi
           test -f "publish/${{ matrix.rid }}/RELICENSING.md"
           echo "GPLv3 licence and transition notices verified in the desktop distribution"
+
+      - name: Verify Windows archive content contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="publish/${{ matrix.rid }}"
+          required=(
+            'Taskdeck.Api.exe'
+            'appsettings.json'
+            'QUICK_START.md'
+            'wwwroot/index.html'
+            'LICENSE'
+            'RELICENSING.md'
+            'LICENSES/MIT.txt'
+          )
+          for relative_path in "${required[@]}"; do
+            if [ ! -f "${stage}/${relative_path}" ]; then
+              printf '::error::Windows archive is missing required file %s.\n' "${relative_path}"
+              exit 1
+            fi
+          done
+
+          if ! cmp -s docs/releases/WINDOWS_QUICK_START.md "${stage}/QUICK_START.md"; then
+            printf '::error::Archive QUICK_START.md does not match the reviewed source guide.\n'
+            exit 1
+          fi
+
+          forbidden="$(find "${stage}" -type f \( \
+            -iname 'appsettings.Development.json' -o \
+            -iname '*.pdb' -o \
+            -iname '*.xml' -o \
+            -iname 'web.config' \
+          \) -print)"
+          if [ -n "${forbidden}" ]; then
+            printf '::error::Windows archive contains forbidden development/build artifacts:\n%s\n' \
+              "${forbidden}"
+            exit 1
+          fi
+          printf 'Windows archive content contract verified (%s required files).\n' "${#required[@]}"
 
       # The version tag is resolved ONCE in `resolve-source` (grammar-validated
       # there) and reaches these steps through `env:`, never as raw shell source.
