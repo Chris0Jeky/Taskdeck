@@ -3,24 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { resolveDemoBackendLlmEnv, resolvePlaywrightBackendLlmEnv } from '../playwright.demo-llm'
 
 describe('demo live llm env resolution', () => {
-  it('auto-enables Gemini for full demo runs when a Gemini key is present', () => {
+  it('auto-enables OpenAI for full demo runs when an OpenAI key is present', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
-      GEMINI_API_KEY: 'gemini-key',
-    })
-
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
-  })
-
-  it('prefers OpenAI over deprecated Gemini when both keys are present', () => {
-    const env = resolveDemoBackendLlmEnv({
-      TASKDECK_RUN_DEMO: '1',
-      GEMINI_API_KEY: 'gemini-key',
       OPENAI_API_KEY: 'openai-key',
     })
 
@@ -32,22 +17,12 @@ describe('demo live llm env resolution', () => {
     })
   })
 
-  it('keeps deterministic demo smoke runs on mock by skipping live overrides when llm steps are disabled', () => {
-    const env = resolveDemoBackendLlmEnv({
-      TASKDECK_RUN_DEMO: '1',
-      TASKDECK_DEMO_SKIP_LLM: '1',
-      GEMINI_API_KEY: 'gemini-key',
-    })
-
-    expect(env).toEqual({})
-  })
-
-  it('allows forcing OpenAI for full demos through the demo provider override', () => {
+  it('allows an explicit OpenAI demo provider and model', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
       TASKDECK_DEMO_LLM_PROVIDER: 'OpenAI',
-      OPENAI_API_KEY: 'openai-key',
-      TASKDECK_DEMO_OPENAI_MODEL: 'gpt-4o-mini',
+      TASKDECK_DEMO_OPENAI_API_KEY: 'openai-key',
+      TASKDECK_DEMO_OPENAI_MODEL: 'gpt-5.6-luna',
     })
 
     expect(env).toEqual({
@@ -55,96 +30,85 @@ describe('demo live llm env resolution', () => {
       Llm__AllowLiveProvidersInDevelopment: 'true',
       Llm__Provider: 'OpenAI',
       Llm__OpenAi__ApiKey: 'openai-key',
-      Llm__OpenAi__Model: 'gpt-4o-mini',
+      Llm__OpenAi__Model: 'gpt-5.6-luna',
     })
   })
 
-  it('auto-enables a demo-specific Gemini key even when the base development provider is mock', () => {
+  it('auto-enables a demo-specific OpenAI key even when the base provider is Mock', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
       Llm__Provider: 'Mock',
-      TASKDECK_DEMO_GEMINI_API_KEY: 'gemini-key',
+      TASKDECK_DEMO_OPENAI_API_KEY: 'openai-key',
     })
 
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
+    expect(env.Llm__Provider).toBe('OpenAI')
+    expect(env.Llm__OpenAi__ApiKey).toBe('openai-key')
   })
 
-  it('lets an explicit demo provider override take precedence over a mock base environment', () => {
-    const env = resolveDemoBackendLlmEnv({
-      TASKDECK_RUN_DEMO: '1',
-      TASKDECK_DEMO_LLM_PROVIDER: 'Gemini',
-      Llm__Provider: 'Mock',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
-
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
-  })
-
-  it('auto-enables Gemini for demo-director runs when the shell provides Llm__Gemini__ApiKey', () => {
-    const env = resolveDemoBackendLlmEnv({
-      TASKDECK_DEMO_DIRECTOR: '1',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'shell-gemini-key',
-    })
-
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'shell-gemini-key',
-    })
-  })
-
-  it('respects an explicit mock demo-provider override even when live keys are present', () => {
+  it('respects an explicit Mock override even when an OpenAI key is present', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
       TASKDECK_DEMO_LLM_PROVIDER: 'Mock',
-      GEMINI_API_KEY: 'gemini-key',
       OPENAI_API_KEY: 'openai-key',
     })
 
     expect(env).toEqual({})
   })
 
-  it('falls back to another available live provider when the configured base provider has no key', () => {
+  it('ignores an ambient Gemini CLI key instead of treating it as Taskdeck configuration', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
-      Llm__Provider: 'OpenAI',
-      TASKDECK_DEMO_GEMINI_API_KEY: 'gemini-key',
-    })
-
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
-  })
-
-  it('does not enable live providers outside demo runs', () => {
-    const env = resolveDemoBackendLlmEnv({
-      GEMINI_API_KEY: 'gemini-key',
+      GEMINI_API_KEY: 'ambient-cli-key',
     })
 
     expect(env).toEqual({})
   })
+
+  it('does not enable live providers outside demo or explicit live-test runs', () => {
+    const env = resolveDemoBackendLlmEnv({
+      OPENAI_API_KEY: 'openai-key',
+      GEMINI_API_KEY: 'ambient-cli-key',
+    })
+
+    expect(env).toEqual({})
+  })
+
+  it('rejects an explicit retired demo selector before a skip override', () => {
+    expect(() =>
+      resolveDemoBackendLlmEnv({
+        TASKDECK_RUN_DEMO: '1',
+        TASKDECK_DEMO_SKIP_LLM: '1',
+        TASKDECK_DEMO_LLM_PROVIDER: 'Gemini',
+      }),
+    ).toThrow(/Gemini provider support was removed/)
+  })
+
+  it('rejects a retired base selector instead of silently forcing Mock', () => {
+    expect(() =>
+      resolvePlaywrightBackendLlmEnv({
+        Llm__Provider: 'gemini',
+      }),
+    ).toThrow(/Gemini provider support was removed/)
+  })
+
+  it.each(['Llm__Gemini__ApiKey', 'TASKDECK_DEMO_GEMINI_API_KEY', 'TASKDECK_LLM_GEMINI_API_KEY'])(
+    'rejects the Taskdeck-specific retired provider setting %s without reading its value',
+    (settingName) => {
+      expect(() =>
+        resolveDemoBackendLlmEnv({
+          Llm__Provider: 'Mock',
+          [settingName]: 'stale-test-key',
+        }),
+      ).toThrow(/remove Taskdeck-specific Gemini provider settings/)
+    },
+  )
 })
 
 describe('playwright backend llm env resolution', () => {
-  it('forces deterministic mock mode for non-demo Playwright runs even when shell keys exist', () => {
+  it('forces deterministic Mock mode for non-demo runs even when an OpenAI key exists', () => {
     const env = resolvePlaywrightBackendLlmEnv({
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
+      Llm__Provider: 'OpenAI',
+      Llm__OpenAi__ApiKey: 'openai-key',
     })
 
     expect(env).toEqual({
@@ -154,45 +118,27 @@ describe('playwright backend llm env resolution', () => {
     })
   })
 
-  it('keeps deterministic mock mode for demo smoke runs that skip llm steps', () => {
+  it('lets full demo runs override Mock mode with OpenAI settings', () => {
     const env = resolvePlaywrightBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',
-      TASKDECK_DEMO_SKIP_LLM: '1',
-      GEMINI_API_KEY: 'gemini-key',
-    })
-
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'false',
-      Llm__AllowLiveProvidersInDevelopment: 'false',
-      Llm__Provider: 'Mock',
-    })
-  })
-
-  it('lets full demo runs override mock mode with live Gemini settings', () => {
-    const env = resolvePlaywrightBackendLlmEnv({
-      TASKDECK_RUN_DEMO: '1',
-      GEMINI_API_KEY: 'gemini-key',
+      OPENAI_API_KEY: 'openai-key',
     })
 
     expect(env).toEqual({
       Llm__EnableLiveProviders: 'true',
       Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
+      Llm__Provider: 'OpenAI',
+      Llm__OpenAi__ApiKey: 'openai-key',
     })
   })
 
-  it('lets opt-in live llm e2e runs enable live Gemini settings outside demo mode', () => {
+  it('lets opt-in live llm e2e runs enable OpenAI outside demo mode', () => {
     const env = resolvePlaywrightBackendLlmEnv({
       TASKDECK_RUN_LIVE_LLM_TESTS: '1',
-      GEMINI_API_KEY: 'gemini-key',
+      OPENAI_API_KEY: 'openai-key',
     })
 
-    expect(env).toEqual({
-      Llm__EnableLiveProviders: 'true',
-      Llm__AllowLiveProvidersInDevelopment: 'true',
-      Llm__Provider: 'Gemini',
-      Llm__Gemini__ApiKey: 'gemini-key',
-    })
+    expect(env.Llm__Provider).toBe('OpenAI')
+    expect(env.Llm__OpenAi__ApiKey).toBe('openai-key')
   })
 })
