@@ -3,7 +3,25 @@
 - Status: Accepted
 - Date: 2026-06-20
 - Deciders: Repository maintainers
-- Related: #1131 (CLI/fresh-machine bootstrap), ADR-0038 (Paper UI canonical / self-contained exe is the personal run path), the archive-pivot run-story
+- Related: #1131 (CLI/fresh-machine bootstrap), #1241 (owner-only secret files), #1242 (durable desktop config), ADR-0038 (Paper UI canonical / self-contained exe is the personal run path), the archive-pivot run-story
+
+## Amendment (2026-08-20, #1242)
+
+Non-headless Production now stores `appsettings.local.json` beside the default
+SQLite database in the durable per-user Taskdeck app-data directory, not beside
+the executable. Web, MCP HTTP, and MCP stdio resolve one exact path using the
+same environment/headless policy. Development and headless Production retain
+the executable-local compatibility path.
+
+A valid v0.1 executable-local file is imported whole only when the durable file
+is absent; the source is retained, the durable file wins on conflict, and both
+files are owner-only. The import is locked, atomic, and non-overwriting. An
+existing database without a supplied or recoverable connector key fails before
+either connector or JWT identity is generated. A missing durable database plus
+an executable-local v0.1 database also fails closed rather than silently creating
+a blank replacement. This amendment implements durable identity selection while
+preserving the original headless-Production decision; the packaged Explorer and
+unrelated-working-directory proof remains tracked by #1242 and #1876.
 
 ## Context
 
@@ -47,11 +65,10 @@ internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHe
 ```
 
 - **Desktop exe (Production, NOT headless):** generate a 256-bit key and persist it to
-  `appsettings.local.json`, reloaded on the next launch via `AddLocalConfigFile`. The exe becomes
-  runnable with no manual configuration. On Unix the file is created `0600` before the secret is written;
-  **on Windows (the primary desktop target) the file is NOT permission-restricted** — at-rest protection
-  relies on the user-profile / disk security. Hardening the Windows ACL is tracked in #1241. If the write
-  fails (e.g. a read-only install directory), startup **fails loudly** (throws) rather than running with
+  the durable per-user `appsettings.local.json`, reloaded on the next launch via `AddLocalConfigFile`.
+  The exe becomes runnable with no manual configuration. The file is created owner-only (`0600` on Unix;
+  protected current-user DACL on Windows) before the secret is written. If the write fails, startup
+  **fails loudly** (throws) rather than running with
   an ephemeral in-memory key that would be lost on restart and orphan stored connector credentials.
 - **Headless Production (CI / cloud container):** detected via `CI` / `TF_BUILD` / `GITHUB_ACTIONS` /
   `TASKDECK_HEADLESS`. The key is **not** generated; the deployment must supply a stable key, and
@@ -84,38 +101,37 @@ generates the key first and then passes validation.
 
 - The self-contained desktop exe runs on first launch with no manual key configuration (pivot goal:
   trivially easy to run).
-- The generated connector key lives in `appsettings.local.json` next to the exe. **Operationally:** that
+- The generated connector key lives in the durable per-user `appsettings.local.json`. **Operationally:** that
   file must be backed up alongside the SQLite database — deleting it makes previously-stored connector
   credentials undecryptable (the encrypted data remains but cannot be read). The runtime log emitted at
   generation states this. The JWT secret shares the same persistence/backup model, **but not the headless
   behavior:** `EnsureJwtSecret` runs unconditionally (it auto-generates even in headless Production, where
   an ephemeral JWT secret only forces re-login), whereas the connector key is deliberately *not*
   auto-generated in headless Production because an ephemeral one would cause data loss, not just re-login.
-- **At rest, the key file is only `0600`-restricted on Unix; on Windows it inherits default NTFS ACLs**
-  (tracked in #1241). For the single-user desktop target this relies on the user's profile security.
-- **The key persists next to the exe (`AppContext.BaseDirectory`), not in the app-data directory where
-  the database lives.** Moving or upgrading the exe to a *different folder* therefore orphans the key
-  while the database (in `%LOCALAPPDATA%/Taskdeck`) is reused — the new exe regenerates a different key and
-  cannot decrypt the reused credentials. Until this is addressed (relocate persisted secrets to the durable
-  app-data location, tracked in #1242), back up `appsettings.local.json` and prefer in-place upgrades.
+- **At rest, the key file is owner-only on both Unix and Windows.** A filesystem that cannot enforce the
+  required mode/DACL fails closed instead of receiving plaintext secrets.
+- **The key and default database now share the durable per-user Taskdeck directory.** Moving or upgrading
+  the executable does not rotate identity. A complete v0.1 executable-local config is imported once when
+  the durable target is absent and retained for recovery; an existing durable file is authoritative.
 - **An empty higher-priority `Connectors__EncryptionKey` reuses the persisted key — it never overwrites or
   churns it.** Because `appsettings.local.json` loads *before* environment variables (so env vars win), an
   env var set to an empty/whitespace value (e.g. a copied service/env template) would mask the persisted key.
-  Critically, the generate path must not regenerate in that case: `PersistValue` overwrites the file in
-  place, so a new key would *destroy* the masked one before any after-the-fact check could fire. Instead,
-  before generating, the bootstrapper reads the key directly from the file
+  Critically, the generate path must not regenerate in that case. Before generating, the bootstrapper reads
+  the key directly from the file
   (`TryReadPersistedConnectorKey`, bypassing source precedence) and, when one exists, **reuses it** for this
   process — so the original key (and the credentials it protects) is never destroyed and the app keeps
   working across restarts despite the misconfigured variable. A warning names the remediation (unset the
-  empty variable). `TryReadPersistedConnectorKey` is unit-tested over present/missing/corrupt/empty content.
-- **A corrupt `appsettings.local.json` self-heals; the corrupt file is preserved, not silently discarded.**
-  If the file exists but is unparsable (an interrupted write or a hand-edit) it may still hold the only
-  recoverable copy of the connector key — *and* a malformed optional JSON source throws at config-build time,
-  which would crash startup on every launch. `AddLocalConfigFile` therefore quarantines it first
-  (`QuarantineCorruptLocalConfig`): it copies the file to a timestamped `.corrupt-*` sibling for operator
-  recovery, then removes the original so the optional source loads as "missing" and the app starts fresh
-  (regenerating a key) rather than failing to launch. The same preservation also guards an in-process
-  overwrite in `PersistValue`.
+  empty variable). The final read-or-create is also serialized under the path lock, so concurrent fresh
+  launches reuse one persisted winner. `TryReadPersistedConnectorKey` is unit-tested over
+  present/missing/corrupt/empty content.
+- **A corrupt `appsettings.local.json` is preserved, not silently discarded.**
+  If the durable Production file exists but is unparsable (an interrupted write or a hand-edit), startup
+  fails closed with the original left in place because it may hold the only recoverable connector key.
+  Development and compatibility hosts retain `QuarantineCorruptLocalConfig`: it copies malformed input to
+  an owner-only timestamped `.corrupt-*` sibling before removing the original. If a database already exists
+  and no connector key remains recoverable, bootstrap stops before generating either secret. A recovery
+  copy that cannot be created securely also stops startup. The same preservation guards an in-process
+  overwrite.
 - **Staging (and any non-Production environment) auto-generates the key and is never validated**
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
@@ -144,3 +160,5 @@ generates the key first and then passes validation.
 - `backend/src/Taskdeck.Api/FirstRun/FirstRunBootstrapper.cs` — `RunFirstRunChecks`,
   `ShouldAutoGenerateConnectorKey`, `EnsureConnectorEncryptionKey`, `ValidateProductionSecrets`
 - `backend/tests/Taskdeck.Api.Tests/FirstRun/FirstRunBootstrapperTests.cs` — policy unit test
+- `backend/tests/Taskdeck.Api.Tests/FirstRun/LocalConfigPathMigrationTests.cs` — durable-path, import,
+  concurrency, permission, and database-identity regression tests
