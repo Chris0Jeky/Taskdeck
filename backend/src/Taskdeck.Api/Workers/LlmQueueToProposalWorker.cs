@@ -367,7 +367,7 @@ public class LlmQueueToProposalWorker : BackgroundService
         // marked Failed and requeued purely because the host was stopping.
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await ReleaseClaimOnShutdownAsync(unitOfWork, item);
+            await ReleaseClaimOnShutdownAsync(item);
             throw;
         }
         catch (Exception ex)
@@ -403,7 +403,7 @@ public class LlmQueueToProposalWorker : BackgroundService
     /// Processing already is their queued state and returning one to Pending would drop it back to
     /// "untriaged in the inbox" — the wrong state, and one no worker drains.
     /// </remarks>
-    private async Task ReleaseClaimOnShutdownAsync(IUnitOfWork unitOfWork, LlmRequest item)
+    private async Task ReleaseClaimOnShutdownAsync(LlmRequest item)
     {
         // The failure path may already have moved the row on (Failed, or Pending/Processing once
         // HandleFailureWithRetryAsync completed its own interrupted transition); only a still-claimed row
@@ -415,16 +415,24 @@ public class LlmQueueToProposalWorker : BackgroundService
 
         try
         {
-            item.ReleaseClaim();
+            // Use a fresh scope so this shutdown cleanup cannot flush proposal or other state tracked
+            // by the planner's scope. Reloading also preserves the domain transition's status guard
+            // without duplicating it in a targeted SQL update.
+            using var scope = _scopeFactory.CreateScope();
+            var shutdownUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(item.Id, CancellationToken.None);
+            if (shutdownItem == null || shutdownItem.Status != RequestStatus.Processing)
+            {
+                return;
+            }
+
+            shutdownItem.ReleaseClaim();
             // CancellationToken.None: ct is already cancelled, and forwarding it would throw before the
             // release could commit — leaving exactly the stale-Processing row this exists to avoid. Same
             // deliberate shutdown-write idiom as AgentRuntime and OutboundWebhookDeliveryWorker's own
-            // ReturnToPending. Not a single-row write: IUnitOfWork shares this scope's DbContext with the
-            // planner, so the flush commits everything the scope still tracks -- e.g. a proposal graph
-            // left Added when cancellation hit CreateProposalAsync's own save. Deliberate and benign:
-            // that graph is complete (AddAsync on client-generated GUID keys makes no cancellable
-            // round-trip), and the restart's idempotency guard above then completes the item off it.
-            await unitOfWork.SaveChangesAsync(CancellationToken.None);
+            // ReturnToPending. The fresh scope's DbContext tracks only this cleanup read, so unrelated
+            // proposal state from the planner scope is not included in this flush.
+            await shutdownUnitOfWork.SaveChangesAsync(CancellationToken.None);
             _logger.LogInformation(
                 "Queue item {ItemId} released back to Pending during shutdown; no retry charged",
                 item.Id);
@@ -713,16 +721,13 @@ public class LlmQueueToProposalWorker : BackgroundService
         // nothing else re-enqueues a Failed row. Cancellation can land either in the backoff wait or in
         // the write itself, so both are inside this guard. Finish the transition with
         // CancellationToken.None -- the retry was already decided and the budget already charged above;
-        // only the waiting is being cut short, and the shutdown must not change the outcome. As in
-        // ReleaseClaimOnShutdownAsync, that flush is not scoped to this row: the scope's DbContext is
-        // shared, so it commits whatever else the scope still tracks. Benign for the same reason -- any
-        // such graph is complete, and the restart's idempotency guard completes the item off it.
+        // only the waiting is being cut short, and the shutdown must not change the outcome. The
+        // completion below uses a fresh scope so it cannot flush unrelated state from the planner scope.
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             try
             {
-                ApplyRetryTransition(item, retryAsProcessing);
-                await unitOfWork.SaveChangesAsync(CancellationToken.None);
+                await CompleteRetryTransitionOnShutdownAsync(item.Id, retryAsProcessing);
                 _logger.LogInformation(
                     "Queue item {ItemId} requeued for retry attempt {RetryCount} during shutdown",
                     item.Id,
@@ -746,6 +751,20 @@ public class LlmQueueToProposalWorker : BackgroundService
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    private async Task CompleteRetryTransitionOnShutdownAsync(Guid itemId, bool retryAsProcessing)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var shutdownUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(itemId, CancellationToken.None);
+        if (shutdownItem == null)
+        {
+            return;
+        }
+
+        ApplyRetryTransition(shutdownItem, retryAsProcessing);
+        await shutdownUnitOfWork.SaveChangesAsync(CancellationToken.None);
     }
 
     /// <summary>
