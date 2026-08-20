@@ -80,6 +80,39 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", environment)
         self.assertEqual("operator-value", environment["Llm__OpenAi__ApiKey"])
 
+    def test_app_environment_canonicalizes_ci_and_keeps_operator_key_out_of_playwright(self) -> None:
+        local_app_data = Path(tempfile.gettempdir()).resolve() / "taskdeck-unit-localappdata"
+        for label, source_ci in (("absent", {}), ("mixed-case false", {"cI": "false"})):
+            with self.subTest(label=label):
+                source = {
+                    **source_ci,
+                    "TASKDECK_RELEASE_OPENAI_API_KEY": "operator-value",
+                }
+                operator_key = harness.resolve_operator_key(source)
+                app_environment = harness.build_app_environment(
+                    source,
+                    local_app_data,
+                    operator_key,
+                )
+                playwright_environment = harness.build_playwright_environment(
+                    source,
+                    base_url="http://127.0.0.1:54321",
+                    evidence_path=Path(tempfile.gettempdir()) / "evidence.json",
+                    journey_id="release-123456-789",
+                    phase="create",
+                    live_openai=True,
+                    live_skip_reason="none",
+                )
+
+                self.assertEqual(
+                    [("CI", "true")],
+                    [(key, value) for key, value in app_environment.items() if key.upper() == "CI"],
+                )
+                self.assertEqual("operator-value", app_environment["Llm__OpenAi__ApiKey"])
+                self.assertNotIn("TASKDECK_RELEASE_OPENAI_API_KEY", app_environment)
+                self.assertNotIn("TASKDECK_HEADLESS", app_environment)
+                self.assertNotIn("operator-value", playwright_environment.values())
+
     def test_playwright_environment_never_receives_operator_key(self) -> None:
         source = {
             "CI": "true",

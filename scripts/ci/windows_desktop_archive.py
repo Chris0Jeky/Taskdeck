@@ -201,6 +201,8 @@ def build_app_environment(
     if not local_app_data.is_absolute():
         raise AcceptanceFailure("LOCALAPPDATA isolation must be absolute.")
     environment = _remove_environment_prefixes(source, APP_ENV_PREFIXES_TO_REMOVE)
+    environment = {key: value for key, value in environment.items() if key.upper() != "CI"}
+    environment["CI"] = "true"
     environment["LOCALAPPDATA"] = str(local_app_data)
     if operator_key:
         environment["Llm__EnableLiveProviders"] = "true"
