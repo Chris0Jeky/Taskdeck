@@ -8,14 +8,13 @@ public sealed class LlmProviderSettings
     public bool AllowLiveProvidersInDevelopment { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(?i)(Mock|OpenAi|OpenAiCompatible|Gemini|Ollama)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', 'OpenAiCompatible', 'Gemini', or 'Ollama' (case-insensitive).")]
+    [RegularExpression(
+        "^(?i)(Mock|OpenAi|OpenAiCompatible|Ollama)$",
+        ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', 'OpenAiCompatible', or 'Ollama' (case-insensitive).")]
     public string Provider { get; set; } = "Mock";
 
     [Required]
     public OpenAiProviderSettings OpenAi { get; set; } = new();
-
-    [Required]
-    public GeminiProviderSettings Gemini { get; set; } = new();
 
     /// <summary>
     /// Settings for an OpenAI chat-completions compatible endpoint such as
@@ -45,24 +44,6 @@ public sealed class OpenAiProviderSettings
 
     [Required(AllowEmptyStrings = false)]
     public string Model { get; set; } = "gpt-5.6-luna";
-
-    [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
-    public int TimeoutSeconds { get; set; } = 30;
-}
-
-public sealed class GeminiProviderSettings
-{
-    /// <summary>
-    /// API key for Gemini. Only required when the provider is set to "Gemini".
-    /// </summary>
-    public string ApiKey { get; set; } = string.Empty;
-
-    [Required(AllowEmptyStrings = false)]
-    [Url]
-    public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
-
-    [Required(AllowEmptyStrings = false)]
-    public string Model { get; set; } = "gemini-2.5-flash";
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;

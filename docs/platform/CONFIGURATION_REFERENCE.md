@@ -277,16 +277,16 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `OpenAiCompatible`, `Gemini`, `Ollama`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `OpenAiCompatible`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Gemini, Ollama) only run when this is true. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Ollama) only run when this is true. | No |
 | `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in `Development`, `Test`, or `Testing` unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, or `Ollama`. The retired `Gemini` value fails startup with migration guidance instead of falling back to Mock. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Use `OpenAiCompatible` for third-party compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-5.6-luna` | Model identifier sent in chat requests. Reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`, excluding `-chat` variants) are detected by `OpenAiLlmProvider.IsReasoningModel`; for them the outbound payload omits `temperature`, which those models reject, and adds a fixed 4096-token headroom to `max_completion_tokens` because that cap covers reasoning and visible output together. Every model receives `max_completion_tokens` (not the legacy `max_tokens`). | No |
@@ -299,21 +299,20 @@ default and the only one that ships enabled. See
 | `Llm:OpenAiCompatible:MaxSseLineBytes` | `int` | `65536` | Maximum UTF-8 bytes in one SSE line. Valid range: 256--262144. | No |
 | `Llm:OpenAiCompatible:MaxSseEventBytes` | `int` | `131072` | Maximum UTF-8 bytes in one assembled SSE event. Valid range: 512--524288 and cannot exceed `MaxResponseBytes`. | No |
 | `Llm:OpenAiCompatible:ExtraHeaders:<HeaderName>` | `object` (map) | `{}` | Optional non-secret gateway headers, for example `HTTP-Referer` and `X-Title` for OpenRouter. Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and `x-taskdeck-*` headers are reserved; values with line breaks are rejected. | No |
-| `Llm:Gemini:ApiKey` | `string` | `""` | Gemini API key. Required to use the Gemini provider. Store as a secret. | Only for `Llm:Provider = Gemini` |
-| `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
-| `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
-| `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
 | `Llm:Ollama:BaseUrl` | `string` | Production: `null`; Development: `http://localhost:11434` | Ollama API base URL. The production configuration intentionally leaves Ollama unconfigured; the development override supplies exact `localhost`, which is accepted only by the development-localhost policy below. | No |
 | `Llm:Ollama:Model` | `string` | `llama3.2` | Model identifier sent to Ollama chat requests. | No |
 | `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
 | `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
 
-**Outbound transport boundary:** the OpenAI, OpenAICompatible, Gemini, and
+Any remaining `Llm:Gemini:*` section is also a fatal startup error, even when
+`Llm:Provider=Mock`, so obsolete secrets/configuration cannot be ignored silently.
+
+**Outbound transport boundary:** the OpenAI, OpenAICompatible, and
 Ollama primary clients set `UseProxy = false`. They ignore ambient/system proxy
 settings so the configured provider origin remains the target inspected by
 `OutboundWebhookConnectCallback`. The existing development-localhost opt-ins
 remain unchanged. There is no proxy-aware provider setting: corporate
-proxy-only deployments fail closed. OpenAI, Gemini, and Ollama retain the
+proxy-only deployments fail closed. OpenAI and Ollama retain the
 dedicated connect-callback boundary without `EgressEnvelopeHandler`;
 OpenAICompatible additionally uses a fixed-origin `EgressEnvelopeHandler` and
 rejects all redirects. Default `IHttpClientFactory` request logging is removed
@@ -539,7 +538,7 @@ Bound to `CircuitBreakerSettings`. Consumed by
 `Taskdeck.Api.Extensions.LlmProviderRegistration.AddLlmProviders` and
 `Taskdeck.Api.Extensions.AuthenticationRegistration.AddTaskdeckAuthentication`.
 Polly circuit breaker policies are applied to LLM provider HTTP clients
-(OpenAI, OpenAICompatible, Gemini, and Ollama) and OAuth/OIDC backchannel handlers.
+(OpenAI, OpenAICompatible, and Ollama) and OAuth/OIDC backchannel handlers.
 
 | Key | Type | Default | Env override | Description | Restart required? |
 |-----|------|---------|--------------|-------------|-------------------|
@@ -621,7 +620,7 @@ Sentry is fully off until explicitly opted in.
 
 When enabled, Taskdeck keeps Sentry's server-side exception tracking and removes
 Sentry's automatic outbound `IHttpClientFactory` handler only from the registered
-OpenAI, OpenAICompatible, Gemini, Ollama, and `OutboundWebhookDelivery` clients. Those protected
+OpenAI, OpenAICompatible, Ollama, and `OutboundWebhookDelivery` clients. Those protected
 clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
 or failed-request capture outside their dedicated telemetry boundary. Unrelated
 factory clients retain normal Sentry instrumentation.
@@ -924,7 +923,6 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_EVENT_BYTES` | `Llm__OpenAiCompatible__MaxSseEventBytes` | `131072` | Per-event SSE budget |
 | `TASKDECK_LLM_OPENAI_COMPATIBLE_HTTP_REFERER` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` | `""` | Optional non-secret OpenRouter attribution header |
 | `TASKDECK_LLM_OPENAI_COMPATIBLE_X_TITLE` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` | `""` | Optional non-secret OpenRouter application title |
-| `TASKDECK_LLM_GEMINI_API_KEY` | `Llm__Gemini__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=Gemini` |
 | `TASKDECK_PROXY_PORT` | Host port mapped to the nginx reverse proxy | `8080` | No |
 | `TASKDECK_VITE_API_BASE_URL` | Build-time `VITE_API_BASE_URL` for the web image | `/api` | No |
 

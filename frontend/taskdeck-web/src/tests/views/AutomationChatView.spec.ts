@@ -261,9 +261,9 @@ describe('AutomationChatView', () => {
   it('shows a configured banner when a live provider is available', async () => {
     mocks.getHealth.mockResolvedValue({
       isAvailable: true,
-      providerName: 'Gemini',
+      providerName: 'OpenAI',
       errorMessage: null,
-      model: 'gemini-2.5-flash',
+      model: 'gpt-5.6-luna',
       isMock: false,
       isProbed: false,
       verificationStatus: 'unverified',
@@ -273,7 +273,7 @@ describe('AutomationChatView', () => {
     await waitForAsyncUi()
 
     expect(wrapper.text()).toContain('Live LLM configured')
-    expect(wrapper.text()).toContain('Gemini (gemini-2.5-flash)')
+    expect(wrapper.text()).toContain('OpenAI (gpt-5.6-luna)')
     expect(wrapper.text()).toContain('does not prove the upstream provider accepted a live request yet')
     expect(wrapper.get('[data-llm-health-state="configured"]').exists()).toBe(true)
   })
@@ -319,9 +319,9 @@ describe('AutomationChatView', () => {
   it('shows failed banner with generic message when no error detail is provided', async () => {
     mocks.getHealth.mockResolvedValue({
       isAvailable: false,
-      providerName: 'Gemini',
+      providerName: 'OpenAI',
       errorMessage: null,
-      model: 'gemini-2.5-flash',
+      model: 'gpt-5.6-luna',
       isMock: false,
       isProbed: true,
       verificationStatus: 'failed',

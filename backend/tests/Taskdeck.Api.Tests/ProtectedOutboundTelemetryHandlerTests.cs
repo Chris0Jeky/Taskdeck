@@ -264,7 +264,6 @@ public class ProtectedOutboundTelemetryHandlerTests
             {
                 nameof(OpenAiLlmProvider),
                 LlmProviderRegistration.OpenAiCompatibleHttpClientName,
-                nameof(GeminiLlmProvider),
                 nameof(OllamaLlmProvider),
                 "OutboundWebhookDelivery"
             };

@@ -18,7 +18,7 @@ Related docs:
 2. **Least privilege.** Each environment and service receives only the credentials it needs. IAM roles, scoped tokens, and per-environment parameter paths enforce this.
 3. **Review-first rotation.** Secret rotation follows an explicit operator-reviewed procedure. Automated rotation is permitted only when the full rollback path is documented and tested.
 4. **Auditability.** Every secret access and rotation event must be traceable through infrastructure audit logs (CloudTrail, SSM parameter history, application audit logs).
-5. **Safe degradation.** Missing or invalid credentials must cause deterministic, safe failure (e.g., fallback to Mock provider) rather than silent misbehavior.
+5. **Safe degradation.** Missing or invalid credentials for a supported live provider cause deterministic Mock fallback. Retired Gemini selectors/settings fail startup explicitly so obsolete configuration cannot be ignored silently.
 
 ## Secret Inventory
 
@@ -26,7 +26,6 @@ Related docs:
 | --- | --- | --- | --- | --- |
 | `Jwt:SecretKey` | JWT signing for auth tokens | Auto-generated to `appsettings.local.json` by `FirstRunBootstrapper`; or `dotnet user-secrets` / env var | AWS SSM SecureString via `jwt_secret_ssm_parameter_name` | Scheduled (90 days) or on compromise |
 | `Llm:OpenAi:ApiKey` | OpenAI API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
-| `Llm:Gemini:ApiKey` | Gemini API access | Environment variable or user secrets | SSM SecureString or CI-injected env var | On compromise or key expiry |
 | `TASKDECK_JWT_SECRET` | Compose-level JWT secret injection | `deploy/.env` (untracked) | SSM SecureString pulled at boot | Scheduled (90 days) or on compromise |
 | `GITHUB_PAT` | GitHub MCP / CI access | `.env` (untracked, user-local) | GitHub Actions secrets | On compromise or PAT expiry |
 | Webhook signing keys | Per-subscription outbound webhook HMAC | Generated at subscription creation | Same (stored in DB, per-subscription) | Explicit rotation via API (`POST /api/outbound-webhooks/{id}/rotate-secret`) |
@@ -37,7 +36,7 @@ Related docs:
 ### Local Development
 
 - **JWT secret**: Auto-generated to `appsettings.local.json` on first run by `FirstRunBootstrapper`. No hardcoded secret in committed files. Alternatively, use `dotnet user-secrets set "Jwt:SecretKey" "<value>"` or the `Jwt__SecretKey` environment variable.
-- **LLM API keys**: Not required (Mock provider is default). When needed for live-provider demos, set via environment variables (`Llm__OpenAi__ApiKey`, `Llm__Gemini__ApiKey`) or .NET user secrets (`dotnet user-secrets set "Llm:OpenAi:ApiKey" "<key>"`).
+- **LLM API keys**: Not required (Mock provider is default). When needed for live-provider demos, set the OpenAI key via `Llm__OpenAi__ApiKey` or .NET user secrets (`dotnet user-secrets set "Llm:OpenAi:ApiKey" "<key>"`).
 - **GitHub PAT**: Set in user environment or root `.env` (gitignored).
 - **No secrets required in committed files.** `appsettings.json` contains only empty placeholder values for optional provider keys.
 
@@ -66,7 +65,6 @@ The following committed files contain secret-shaped keys. All values are empty p
 | File | Key | Value | Status |
 | --- | --- | --- | --- |
 | `appsettings.json` | `Llm:OpenAi:ApiKey` | `""` (empty) | Safe -- placeholder only |
-| `appsettings.json` | `Llm:Gemini:ApiKey` | `""` (empty) | Safe -- placeholder only |
 | `appsettings.Development.json` | `Jwt:SecretKey` | Removed (no longer present) | Safe -- secret auto-generated at runtime |
 | `deploy/.env.example` | `TASKDECK_JWT_SECRET` | `""` (empty) | Safe -- template only |
 | `.env.example` | `GITHUB_PAT` | `""` (empty) | Safe -- template only |
@@ -116,13 +114,13 @@ The `.gitignore` excludes all files that could contain real secrets:
 
 **Trigger**: On compromise, key expiry, or provider-mandated rotation.
 
-1. Generate a new API key in the provider dashboard (OpenAI / Google AI Studio).
+1. Generate a new API key in the OpenAI dashboard (or the dashboard for an explicitly configured compatible endpoint).
 2. Update the key in the target environment:
    - Local: environment variable or `dotnet user-secrets`
    - Compose: `deploy/.env`
    - Staging/Prod: SSM SecureString parameter or deployment env file
 3. Restart the application or wait for config reload.
-4. Verify via the health probe endpoint (`GET /health/ready?probe=true`) which exercises provider connectivity.
+4. Verify via the authenticated provider health endpoint (`GET /api/llm/chat/health?probe=true`) which exercises provider connectivity.
 5. Revoke the old key in the provider dashboard only after confirming the new key works.
 
 **Rollback**: Restore the previous key value before revoking it. The provider dashboard retains key history.
@@ -187,7 +185,7 @@ An empty result confirms no real secrets are committed. This check can be added 
 
 ### Provider Config Validation
 
-The `LlmProviderSelectionPolicy` performs runtime validation of provider configuration. If `EnableLiveProviders` is true but the selected provider's `ApiKey` is empty or config is invalid, the system degrades safely to the Mock provider. The `/health/ready?probe=true` endpoint exercises this path.
+The `LlmProviderSelectionPolicy` performs runtime validation of supported provider configuration. If `EnableLiveProviders` is true but the selected supported provider's `ApiKey` is empty or config is invalid, the system degrades safely to Mock. A retired Gemini selector or settings section instead fails startup with migration guidance. The authenticated `/api/llm/chat/health?probe=true` endpoint exercises live connectivity.
 
 ## Operational Checklist
 

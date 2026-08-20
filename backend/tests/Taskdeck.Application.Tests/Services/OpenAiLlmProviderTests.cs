@@ -491,6 +491,54 @@ public class OpenAiLlmProviderTests
         json.RootElement.TryGetProperty("temperature", out _).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ProbeAsync_ShouldSanitizeUnexpectedCancellationDetails()
+    {
+        var settings = BuildSettings();
+        var logger = new InMemoryLogger<OpenAiLlmProvider>();
+        var handler = new StubHttpMessageHandler(_ =>
+            throw new OperationCanceledException(
+                "Authorization: Bearer probe-secret {\"text\":\"private capture\"} api_key=test-key"));
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, logger);
+
+        var health = await provider.ProbeAsync();
+
+        health.IsAvailable.Should().BeFalse();
+        health.ErrorMessage.Should().Be("Provider probe failed. Check provider connectivity and configuration.");
+        health.ErrorMessage.Should().NotContain("probe-secret");
+        health.ErrorMessage.Should().NotContain("private capture");
+        health.ErrorMessage.Should().NotContain("test-key");
+
+        var entry = logger.Entries.Should().ContainSingle(item =>
+            item.Level == Microsoft.Extensions.Logging.LogLevel.Warning).Subject;
+        entry.Exception.Should().BeNull("the logger must not receive the raw exception object");
+        entry.Message.Should().Contain("OpenAI probe failed.");
+        entry.Message.Should().Contain(SensitiveDataRedactor.RedactedValue);
+        entry.Message.Should().NotContain("probe-secret");
+        entry.Message.Should().NotContain("private capture");
+        entry.Message.Should().NotContain("test-key");
+    }
+
+    [Fact]
+    public async Task ProbeAsync_ShouldPreserveCallerCancellation()
+    {
+        var settings = BuildSettings();
+        var logger = new InMemoryLogger<OpenAiLlmProvider>();
+        var handler = new StubHttpMessageHandler((_, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(BuildMinimalCompletionResponse());
+        });
+        var provider = new OpenAiLlmProvider(new HttpClient(handler), settings, logger);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = () => provider.ProbeAsync(cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        logger.Entries.Should().BeEmpty();
+    }
+
     private static HttpResponseMessage BuildMinimalCompletionResponse()
     {
         return new HttpResponseMessage(HttpStatusCode.OK)

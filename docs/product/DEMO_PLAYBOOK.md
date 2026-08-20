@@ -97,9 +97,9 @@ Other repository-local DB files are per-purpose:
 
 ## Managed-Key Mode Disclosure
 
-When running demos with a platform-managed LLM provider key (any configuration where `Llm__Provider` is set to `OpenAI` or `Gemini` with a shared key), presenters should be aware:
+When running demos with an operator-managed, deployment-global OpenAI key, presenters should be aware:
 
-- User chat messages and capture content are sent to the configured third-party provider
+- User chat messages and bounded transcript-source triage chunks are sent to OpenAI
 - Per-user quota limits apply (default: 60 requests/hour, 100K tokens/day)
 - Operator kill switches can throttle or block LLM access per user, per surface, or globally
 
@@ -111,8 +111,8 @@ Full policy details: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
 - Non-local API targets are rejected unless you explicitly set `TASKDECK_DEMO_ALLOW_NON_LOCAL_API=1`.
 - UI links and Playwright bootstrap default to `http://localhost:5173`; local fallback ports `4173` and `5001` are also supported.
 - Demo harness credentials default to `demo` / `demo123` and `collab` / `demo123` unless you override the `TASKDECK_DEMO_*` / `TASKDECK_COLLAB_*` environment variables.
-- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) now auto-enable a live provider when LLM steps are enabled and a usable key is present.
-- Gemini is preferred for full demos when `GEMINI_API_KEY`, `TASKDECK_DEMO_GEMINI_API_KEY`, or `Llm__Gemini__ApiKey` is set. Use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead.
+- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) auto-enable OpenAI when LLM steps are enabled and a usable OpenAI key is present.
+- An ambient `GEMINI_API_KEY` is ignored because it may belong to CLI tooling. A retired Taskdeck Gemini selector or provider-specific setting fails fast with migration guidance.
 - Demo-specific live keys now take effect even when the base development environment is pinned to `Llm__Provider=Mock`; use `TASKDECK_DEMO_LLM_PROVIDER=Mock` or `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force mock instead.
 - When a full demo injects live-provider overrides, Playwright also disables existing-server reuse by default so the intended backend process is launched instead of silently inheriting a stale mock server.
 - `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` still need a usable live-provider key. Use `--skip-llm` for deterministic local or CI runs.

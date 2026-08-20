@@ -16,7 +16,7 @@ describe('playwright server reuse resolution', () => {
       resolveReuseExistingServer(
         {
           TASKDECK_RUN_DEMO: '1',
-          Llm__Gemini__ApiKey: 'gemini-key',
+          Llm__OpenAi__ApiKey: 'openai-key',
         },
         { requiresFreshServer: true },
       ),

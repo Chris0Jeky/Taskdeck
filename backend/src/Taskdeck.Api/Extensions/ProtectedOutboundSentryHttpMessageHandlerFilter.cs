@@ -15,7 +15,6 @@ internal sealed class ProtectedOutboundSentryHttpMessageHandlerFilter : IHttpMes
     {
         nameof(OpenAiLlmProvider),
         LlmProviderRegistration.OpenAiCompatibleHttpClientName,
-        nameof(GeminiLlmProvider),
         nameof(OllamaLlmProvider),
         "OutboundWebhookDelivery"
     };

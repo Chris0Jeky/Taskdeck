@@ -1010,7 +1010,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 **Cloud Cost Observability (PR #798):**
 6. [ ] Verify all cross-references between cost docs are valid (ADR links, ops doc mutual references).
 7. [ ] Verify ADR appears in `docs/decisions/INDEX.md` with correct number and status.
-8. [ ] Verify LLM cost estimates reference actual supported providers (OpenAI GPT-4o-mini, Gemini 2.5 Flash).
+8. [ ] Verify LLM cost estimates reference the supported vendor provider and current configured model; re-check current pricing before deployment.
 9. [ ] Verify mitigation actions reference actual Taskdeck config keys and API endpoints.
 10. [ ] Verify runbook phases are actionable given the current architecture (single-node, SQLite, in-process workers).
 

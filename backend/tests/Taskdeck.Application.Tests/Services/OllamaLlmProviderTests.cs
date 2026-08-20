@@ -151,7 +151,7 @@ public class OllamaLlmProviderTests
     }
 
     // -----------------------------------------------------------------------
-    // LooksLikeTruncatedJson — shared static, same contract as OpenAI/Gemini
+    // LooksLikeTruncatedJson — shared static, same contract as OpenAI
     // -----------------------------------------------------------------------
 
     [Theory]
@@ -792,13 +792,6 @@ public class OllamaLlmProviderTests
                 ApiKey = "test-key",
                 BaseUrl = "https://api.openai.com/v1",
                 Model = "gpt-4o-mini",
-                TimeoutSeconds = 30
-            },
-            Gemini = new GeminiProviderSettings
-            {
-                ApiKey = "test-gemini-key",
-                BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                Model = "gemini-2.5-flash",
                 TimeoutSeconds = 30
             },
             Ollama = new OllamaProviderSettings

@@ -1,6 +1,6 @@
 # Feature Cost Hotspot Registry
 
-Last Updated: 2026-04-09
+Last Updated: 2026-08-20
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
 Parent: `docs/ops/CLOUD_COST_OBSERVABILITY.md`
 
@@ -29,42 +29,43 @@ Each hotspot follows this structure:
 
 ---
 
-## Hotspot 1: LLM API Usage (Chat and Tool-Calling)
+## Hotspot 1: LLM API Usage (Chat, Transcript Triage, and Tool-Calling)
 
-> **Capture triage is not an LLM cost.** Turning a capture into a proposal is a deterministic, offline extractor that never calls a provider, so it contributes $0 to this hotspot in every mode. The LLM cost of `LlmQueueToProposalWorker` comes only from **non-capture** queue requests.
+> Ordinary short-form capture is deterministic and adds no provider cost. Transcript-source triage has a separately gated live extraction leg that can call the provider for bounded chunks; its deterministic fallback adds no provider cost.
 
 | Attribute | Detail |
 |---|---|
-| Feature | Automation Chat (`ChatService`), LLM queue processing (`LlmQueueToProposalWorker`, non-capture requests only), tool-calling orchestrator |
-| Cost dimension | LLM API (OpenAI / Gemini) |
-| Estimated cost range | $5-50/month (10-50 users, light chat) to $200-500/month (100+ users, heavy tool-calling) |
-| Scaling behavior | **Superlinear** — each chat message may trigger 1-5 tool-calling rounds, each round is a full API call with growing context window. A single complex conversation can cost 5-10x a simple one. Capture triage adds **no** LLM cost — it is a deterministic, offline extractor. |
+| Feature | Automation Chat (`ChatService`), LLM queue processing (`LlmQueueToProposalWorker`), transcript-source extraction (`LlmCaptureTriageExtractor`), tool-calling orchestrator |
+| Cost dimension | LLM API (OpenAI or operator-configured compatible endpoint) |
+| Estimated cost range | Variable; calculate from measured token usage and the current configured-model rates |
+| Scaling behavior | **Superlinear** — each chat message may trigger 1-5 tool-calling rounds, each round is a full API call with growing context. Transcript-source triage scales with the number and size of bounded chunks; ordinary short capture and deterministic fallback add no provider cost. |
 | Current guardrails | Per-user rate limit: 60 req/60s. Per-user token limit: 100K tokens/day. Global budget ceiling config (`LlmQuota:GlobalBudgetCeilingTokens`). Tool-calling loop cap: 5 rounds, 60s total timeout, 30s per-round timeout. Tool result truncation: 8KB max. Kill-switch (global/surface/per-user). Mock provider default (zero cost). |
-| Mitigation levers | 1. Lower global `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` defaults. 2. Block abusive users entirely via per-user kill-switch. 3. Switch high-volume users to Mock provider. 4. Activate the surface-level kill-switch for an LLM-consuming surface (Chat, or non-capture queue processing — killing capture triage saves $0). 5. Reduce context window size (`BoardContextBuilder` budget). 6. Switch from GPT-4o-mini to a cheaper model. 7. Enable clarification detection to reduce wasted rounds (`ClarificationDetector`). |
+| Mitigation levers | 1. Lower global `LlmQuota:RequestsPerHour` or `LlmQuota:TokensPerDay` defaults. 2. Block abusive users via per-user kill-switch. 3. Switch high-volume work to Mock. 4. Activate the surface-level kill-switch for Chat, Worker, or CaptureTriage. 5. Reduce board-context or transcript-chunk budgets. 6. Choose a lower-cost supported model after checking current pricing. 7. Enable clarification detection to reduce wasted rounds (`ClarificationDetector`). |
 | Action owner | Product/backend lead |
 | Risk level | **High** — highest variance cost component with no natural ceiling per conversation |
 
-### Per-Request Cost Estimates (as of 2026-04)
+### Per-Request Cost Shape (verify current pricing before use)
 
-| Scenario | Input tokens | Output tokens | Estimated cost (GPT-4o-mini) |
+| Scenario | Input tokens | Output tokens | Cost treatment |
 |---|---|---|---|
-| Simple chat (no tools) | ~500 | ~200 | ~$0.00020 |
-| Chat with 1 read tool | ~1,200 | ~400 | ~$0.00042 |
-| Chat with 3 tool rounds | ~3,000 | ~800 | ~$0.00093 |
-| Chat with 5 tool rounds (max) | ~5,500 | ~1,200 | ~$0.00155 |
-| Capture triage (per item) | — | — | **$0** (deterministic, no provider call) |
+| Simple chat (no tools) | ~500 | ~200 | Apply current configured-model rates |
+| Chat with 1 read tool | ~1,200 | ~400 | Apply current configured-model rates |
+| Chat with 3 tool rounds | ~3,000 | ~800 | Apply current configured-model rates |
+| Chat with 5 tool rounds (max) | ~5,500 | ~1,200 | Apply current configured-model rates |
+| Ordinary short-form capture triage | — | — | **$0** (deterministic, no provider call) |
+| Transcript-source triage | Varies by bounded chunks | Small structured extraction per chunk | Apply current configured-model rates only when the live leg runs |
 
-These estimates assume approximate GPT-4o-mini pricing ($0.15/1M input, $0.60/1M output) as a reference baseline. Gemini 2.5 Flash pricing differs and should be checked against current Google pricing. All provider prices should be verified against the current pricing pages at deployment time — LLM pricing changes frequently. Actual costs depend on conversation length, board context size, and tool result sizes.
+Taskdeck's OpenAI default is `gpt-5.6-luna`. Provider prices change frequently, so verify current input/output rates for the configured model at deployment time. Actual costs depend on conversation length, board context size, tool result sizes, and transcript chunk count.
 
-### Monthly Projections
+### Monthly Projection Inputs
 
-| Usage level | Users | Messages/user/day | Tool rounds/msg | Monthly LLM cost |
-|---|---|---|---|---|
-| Light | 10 | 5 | 1.5 avg | ~$8 |
-| Moderate | 50 | 10 | 2.0 avg | ~$85 |
-| Heavy | 100 | 15 | 2.5 avg | ~$350 |
+| Usage level | Users | Messages/user/day | Tool rounds/msg |
+|---|---|---|---|
+| Light | 10 | 5 | 1.5 avg |
+| Moderate | 50 | 10 | 2.0 avg |
+| Heavy | 100 | 15 | 2.5 avg |
 
-(Capture triage volume is intentionally omitted — it adds no LLM cost regardless of triage throughput.)
+Multiply measured input/output tokens by current configured-model rates. Add transcript-source triage volume when its live extraction leg is enabled; ordinary short-form triage remains zero-cost.
 
 ---
 

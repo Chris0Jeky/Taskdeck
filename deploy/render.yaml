@@ -81,9 +81,6 @@ services:
       #   value: https://your-taskdeck-url.example.com
       # - key: Llm__OpenAiCompatible__ExtraHeaders__X-Title
       #   value: Taskdeck
-      # - key: Llm__Gemini__ApiKey
-      #   sync: false
-
     # Persistent disk for SQLite database
     disk:
       name: taskdeck-data

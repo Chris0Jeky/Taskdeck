@@ -10,7 +10,7 @@
 
 > **⚠️ NOT IN USE — parked by the 2026-06-13 archive pivot.** This hosted-instance legal package is no longer planned — Taskdeck is personal-use only, never distributed or hosted as a service. Retained only as a template; any self-hosted deployment is the operator’s sole responsibility. See `docs/STATUS.md`.
 
-**Last updated:** 2026-04-23 (draft)
+**Last updated:** 2026-08-20 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 
 ## How to read this register
@@ -45,9 +45,11 @@ SLA directly determine what the Privacy Policy can truthfully claim.
 
 ## 2. LLM providers (optional, off by default)
 
-Taskdeck supports three provider modes: `Mock` (deterministic local, default),
-`OpenAI`, and `Gemini`. The latter two are enabled only by explicit
-configuration (see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
+Taskdeck's supported vendor-hosted provider is `OpenAI`; it is disabled by
+default and enabled only by explicit configuration. `Mock` is deterministic and
+local. An operator who selects an `OpenAICompatible` endpoint must identify and
+register that vendor as an additional sub-processor before use. Local Ollama
+does not create a third-party sub-processor by itself.
 
 ### 2a. OpenAI
 
@@ -55,27 +57,15 @@ configuration (see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`).
 |---|---|
 | Name | OpenAI, L.L.C. |
 | Purpose | Generates chat responses, automation proposals, and tool-call arguments when the operator configures the OpenAI provider. |
-| Data categories | User chat messages, capture content, and bounded board context (column names, card titles, card ID prefixes) constructed by `BoardContextBuilder`. Sent only for requests that route through the LLM flow. |
+| Data categories | User chat messages and bounded board context for Automation Chat; bounded transcript chunks, extraction instructions, and pseudonymous attribution metadata for transcript-source triage. Sent only for requests that route through a live LLM flow. |
 | Region | Subject to OpenAI's processing regions under its DPA. |
 | Gated by | `Llm:Provider = OpenAI` and a configured API key (see `docs/platform/CONFIGURATION_REFERENCE.md`). |
 | Default state | **Off.** Out-of-the-box deployments use the `Mock` provider and do not call OpenAI. |
 | DPA | `[REQUIRED BEFORE LAUNCH if OpenAI is enabled]` |
 
-### 2b. Google (Gemini)
-
-| Field | Value |
-|---|---|
-| Name | Google LLC / Google Ireland Limited, depending on user region. |
-| Purpose | Same as OpenAI above, when the operator configures the Gemini provider. |
-| Data categories | Same as OpenAI above. |
-| Region | Subject to Google's processing regions under its DPA. |
-| Gated by | `Llm:Provider = Gemini` and a configured API key. |
-| Default state | **Off.** |
-| DPA | `[REQUIRED BEFORE LAUNCH if Gemini is enabled]` |
-
-**Notes for the operator:** because LLM providers see user content, the Privacy
+**Notes for the operator:** because a live LLM provider sees user content, the Privacy
 Policy and Cookie/Terms drafts in this directory already call out that LLM
-providers are opt-in by the operator. Do not enable these in production without
+provider is opt-in by the operator. Do not enable it in production without
 a DPA and without verifying that your users are on notice.
 
 ## 3. Identity / OAuth providers (optional)

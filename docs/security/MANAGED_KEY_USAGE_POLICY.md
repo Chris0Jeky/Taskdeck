@@ -1,20 +1,20 @@
 # Managed-Key LLM Usage Policy
 
-Last Updated: 2026-03-28
+Last Updated: 2026-08-20
 Owner: Taskdeck maintainers
 Linked issue: `#240` (DOC-05)
-Version: 1.0
+Version: 1.1
 
 ## Purpose
 
-When Taskdeck operates with a platform-managed LLM provider key (managed-key mode), all users share a single provider API key owned by the Taskdeck operator. This document defines:
+When Taskdeck operates with an operator-managed, deployment-global LLM provider key (managed-key mode), all users share a single provider API key owned by the Taskdeck operator. This document defines:
 
 - fair-use boundaries for managed-key LLM access
 - privacy and attribution disclosures
 - prohibited abuse patterns
 - enforcement consequences (throttle, restrict, block)
 
-This policy applies only when users consume LLM features (Automation Chat, LLM queue processing) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits. Note: **capture triage is deterministic and offline — it never invokes a provider**, so it is not a managed-key LLM feature and consumes no managed-key quota.
+This policy applies only when users consume LLM features (Automation Chat, LLM queue processing, or the live extraction leg of transcript-source triage) through a managed key. Provider configuration is currently deployment-global: users cannot add or manage a per-user provider key in Taskdeck, and **Settings -> API Keys** manages MCP `tdsk_` credentials only. A future BYOK experience requires a separate design decision and is not described by this policy. Ordinary short-form capture triage is deterministic and offline. Transcript-source triage may call the configured live provider and falls back deterministically if that leg is unavailable.
 
 ## Fair-Use Boundaries
 
@@ -38,31 +38,33 @@ These values are operator-configurable and may be adjusted based on deployment s
 
 - Each Automation Chat message that triggers a provider completion
 - Each LLM queue processing request that invokes the provider
+- Each transcript-source triage extraction request that invokes the provider
 
 ### What does not count
 
-- Capture triage — deterministic and offline; it never invokes a provider
+- Ordinary short-form capture triage and deterministic transcript fallback work
 - Requests served by the Mock provider
 - Read-only operations (viewing chat history, checking quota status, health checks without `?probe=true`)
 - Board operations, card edits, and other non-LLM features
 
 ## Privacy and Attribution Disclosure
 
-When you use managed-key LLM features, Taskdeck transmits information to the configured third-party LLM provider (e.g., OpenAI, Google Gemini). You should be aware of the following:
+When you use managed-key LLM features, Taskdeck transmits information to OpenAI or an explicitly configured compatible endpoint. You should be aware of the following:
 
 ### What is sent to the provider
 
-- The text content of your Automation Chat messages (and any non-capture LLM queue request you submit)
+- The text content of your Automation Chat messages and any LLM queue request you submit
+- For transcript-source triage: bounded transcript chunks and extraction instructions
 - A pseudonymous user token derived from your Taskdeck user ID (not your actual user ID, email, or name)
 - Attribution metadata headers (`x-taskdeck-*`) identifying the request surface and correlation context
 
 ### What is NOT sent to the provider
 
-- **Your capture text or board context during capture triage** — triage is deterministic and offline; it never calls the provider
+- Ordinary short-form capture text. Transcript-source content is sent only through the separately gated live extraction leg described above.
 - Your Taskdeck password or authentication credentials
 - Your email address or display name
 - Your raw Taskdeck user ID
-- Board content beyond what you explicitly submit for Automation Chat
+- Board content beyond the bounded context used by the LLM feature you invoke
 
 ### What Taskdeck records locally
 
@@ -76,7 +78,8 @@ When you use managed-key LLM features, Taskdeck transmits information to the con
 Managed-key requests are subject to the upstream provider's terms of service and data handling policies. Operators should review:
 
 - [OpenAI Usage Policies](https://openai.com/policies/usage-policies)
-- [Google Gemini Terms of Service](https://ai.google.dev/gemini-api/terms)
+
+Operators using an OpenAI-compatible endpoint must add that vendor's current terms and privacy documentation before enabling it.
 
 ## Prohibited Abuse Patterns
 

@@ -4,7 +4,7 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// Shared system prompt and response parser for LLM-assisted instruction extraction.
-/// Used by OpenAI and Gemini providers to extract structured instructions from
+/// Used by OpenAI and compatible providers to extract structured instructions from
 /// natural language chat messages.
 /// </summary>
 public static class LlmInstructionExtractionPrompt

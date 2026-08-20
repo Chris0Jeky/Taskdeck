@@ -385,7 +385,7 @@ public class SsrfProtectionServiceTests
 
     [Theory]
     [InlineData("https://api.openai.com/v1")]
-    [InlineData("https://generativelanguage.googleapis.com/v1beta")]
+    [InlineData("https://api.groq.com/openai/v1")]
     public void ValidateLlmProviderUrl_ShouldAllowLegitimateProviderUrls(string url)
     {
         var result = SsrfProtectionService.ValidateLlmProviderUrl(url);

@@ -15,7 +15,6 @@ Backend provider runtime now supports:
 - `Mock` provider (default)
 - `OpenAI` provider (config-gated; the supported live provider — default model `gpt-5.6-luna`)
 - `OpenAICompatible` provider (config-gated; OpenRouter, Groq, and DeepSeek-compatible chat endpoints)
-- `Gemini` provider (config-gated; **deprecated 2026-08-20** — kept functional for explicit opt-in only, full removal is tracked follow-up work and needs its own ADR)
 - `Ollama` provider (config-gated)
 - managed-key attribution baseline for provider-bound chat/capture requests (`#236`):
   - server-derived actor/scope attribution is attached to `ChatCompletionRequest`
@@ -42,17 +41,18 @@ which is what third-party gateways expect.
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
-- to use live providers (`OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
+- to use live providers (`OpenAI`, `OpenAICompatible`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
 - to use live providers in `Development`, `Test`, or `Testing`, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
-- provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, `Gemini`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
+- provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
+- the retired `Gemini` selector or any remaining `Llm:Gemini` settings section is a fatal startup error with migration guidance; it never silently falls back to `Mock`
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
-- the OpenAI, OpenAICompatible, Gemini, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
+- the OpenAI, OpenAICompatible, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
 
-These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. OpenAI, Gemini, and Ollama retain their dedicated connect-callback boundary without `EgressEnvelopeHandler`; OpenAICompatible additionally passes through a fixed-origin `EgressEnvelopeHandler` immediately inside the protected telemetry handler and rejects every observed 3xx response rather than following an allowlisted redirect. Registered protected clients mask their configured URI immediately before send, then the protected inner handler restores it for validation and transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
+These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. OpenAI and Ollama retain their dedicated connect-callback boundary without `EgressEnvelopeHandler`; OpenAICompatible additionally passes through a fixed-origin `EgressEnvelopeHandler` immediately inside the protected telemetry handler and rejects every observed 3xx response rather than following an allowlisted redirect. Registered protected clients mask their configured URI immediately before send, then the protected inner handler restores it for validation and transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
 
-If any live-provider condition fails, runtime degrades safely to `Mock`.
+If a supported live-provider condition fails, runtime degrades safely to `Mock`. Retired Gemini configuration instead fails startup so an operator cannot mistake Mock fallback for the selected live path.
 
 ### Development-mode localhost bypass (Ollama / LM Studio)
 
@@ -100,12 +100,6 @@ in Development.
       "MaxSseEventBytes": 131072,
       "ExtraHeaders": {}
     },
-    "Gemini": {
-      "ApiKey": "",
-      "BaseUrl": "https://generativelanguage.googleapis.com/v1beta",
-      "Model": "gemini-2.5-flash",
-      "TimeoutSeconds": 30
-    },
     "Ollama": {
       "BaseUrl": "http://localhost:11434",
       "Model": "llama3.2",
@@ -130,24 +124,6 @@ Optional:
 - `Llm__OpenAi__Model=<model_name>`
 - `Llm__OpenAi__BaseUrl=https://api.openai.com/v1`
 - `Llm__OpenAi__TimeoutSeconds=30`
-
-## Demo Setup (Gemini) — deprecated
-
-Gemini is deprecated and no longer the recommended live provider; use OpenAI.
-These settings remain functional only for explicit opt-in until the provider is removed.
-
-Set:
-
-- `Llm__EnableLiveProviders=true`
-- `Llm__AllowLiveProvidersInDevelopment=true`
-- `Llm__Provider=Gemini`
-- `Llm__Gemini__ApiKey=<your_gemini_key>`
-
-Optional:
-
-- `Llm__Gemini__Model=<model_name>`
-- `Llm__Gemini__BaseUrl=https://generativelanguage.googleapis.com/v1beta`
-- `Llm__Gemini__TimeoutSeconds=30`
 
 ## Demo Setup (Ollama)
 
@@ -250,18 +226,16 @@ body reads after headers. `MaxResponseBytes`, `MaxSseLineBytes`, and
 
 For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=1 npx playwright test tests/e2e/stakeholder-demo.spec.ts --headed`):
 
-- if LLM steps are enabled and a usable live-provider key is present, the demo web server now auto-enables live providers for that run
-- OpenAI is preferred when any of these are present:
+- if LLM steps are enabled and a usable OpenAI key is present, the demo web server auto-enables OpenAI for that run
+- these OpenAI key sources are recognized:
   - `OPENAI_API_KEY`
   - `TASKDECK_DEMO_OPENAI_API_KEY`
   - `Llm__OpenAi__ApiKey`
-- deprecated Gemini is used only when it is explicitly forced, pinned as the base provider, or holds the only available key
 - use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI for a specific demo run
-- use `TASKDECK_DEMO_LLM_PROVIDER=Gemini` to force deprecated Gemini even when the base environment is pinned to `Llm__Provider=Mock`
 - use `TASKDECK_DEMO_LLM_PROVIDER=Mock` to keep the demo on mock explicitly even when live keys are present
 - use `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force demo runs back to mock even when keys are present
 - use `TASKDECK_DEMO_SKIP_LLM=1` when the scenario/recorder should skip LLM-required steps and keep the backend on mock
-- if the configured base provider has no usable key, demo auto-enable falls back to another available live-provider key instead of silently staying on mock
+- an ambient `GEMINI_API_KEY` is ignored because it may belong to Gemini CLI tooling; an explicit retired Taskdeck Gemini selector or provider-specific setting fails before skip/no-key fallbacks
 - deterministic smoke runs still remain mock-backed because `demo:director:smoke` sets `--skip-llm`
 - when the demo runtime injects live-provider overrides, Playwright also disables existing-server reuse by default so a stale mock backend is not silently reused; set `TASKDECK_E2E_REUSE_EXISTING_SERVER=1` only if you intentionally want reuse anyway
 
@@ -303,7 +277,7 @@ This is intentionally separate from the broader demo tooling so an operator can 
 ## Behavior Guarantees
 
 - LLM-consuming application services remain provider-agnostic (`ChatService` and `LlmCaptureTriageExtractor` depend on `ILlmProvider`, not a concrete adapter).
-- invalid/missing live-provider configuration does not crash requests
+- invalid/missing supported live-provider configuration does not crash requests; retired Gemini configuration fails startup with migration guidance
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
 - managed-key attribution metadata is server-derived and spoof-resistant:
@@ -313,11 +287,10 @@ This is intentionally separate from the broader demo tooling so an operator can 
 
 ## Test Coverage Expectations (Implemented)
 
-- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Gemini`/`Ollama` and invalid-config fallback
+- selection-policy unit coverage for `Mock`/`OpenAI`/`OpenAICompatible`/`Ollama`, invalid-config fallback, and retired-selector rejection
 - provider adapter unit coverage:
   - OpenAI: success/failure + metadata checks
   - OpenAICompatible: true SSE delta parsing, strict UTF-8 byte ceilings, malformed/mid-stream error, cancellation, zero/known usage, content-filter/refusal handling, fixed-origin egress, registered transport, and explicit buffered-fallback metadata
-  - Gemini: success/failure/invalid-response/invalid-config/cancellation + health + attribution header mapping
   - Ollama: success/failure/streaming/structured extraction + localhost-policy checks
 - API integration coverage:
   - capture triage provenance includes provider/model
@@ -352,5 +325,3 @@ Continue tracked work in:
 
 - OpenAI API reference: https://platform.openai.com/docs/api-reference/introduction
 - OpenAI responses migration guidance: https://developers.openai.com/api/docs/guides/migrate-to-responses/
-- Gemini API key docs: https://ai.google.dev/gemini-api/docs/api-key
-- Gemini generateContent docs: https://ai.google.dev/gemini-api/docs/text-generation

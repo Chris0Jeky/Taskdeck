@@ -62,10 +62,10 @@ public class EgressDisclosureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetDisclosure_ShouldContainGeminiProvider()
+    public async Task GetDisclosure_ShouldNotContainRetiredGeminiProvider()
     {
         using var client = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(client, "egress-gemini");
+        await ApiTestHarness.AuthenticateAsync(client, "egress-retired-provider");
 
         var response = await client.GetAsync("/api/privacy/egress");
 
@@ -74,11 +74,9 @@ public class EgressDisclosureApiTests : IClassFixture<TestWebApplicationFactory>
         using var doc = JsonDocument.Parse(body);
         var destinations = doc.RootElement.GetProperty("destinations");
 
-        var geminiEntry = destinations.EnumerateArray()
+        var retiredEntry = destinations.EnumerateArray()
             .FirstOrDefault(d => d.GetProperty("host").GetString() == "generativelanguage.googleapis.com");
-        geminiEntry.ValueKind.Should().NotBe(JsonValueKind.Undefined, "Gemini should be in egress disclosure");
-        geminiEntry.GetProperty("toolOrAgent").GetString().Should().Be("GeminiLlmProvider");
-        geminiEntry.GetProperty("dataClassification").GetString().Should().Be("UserContent");
+        retiredEntry.ValueKind.Should().Be(JsonValueKind.Undefined);
     }
 
     [Fact]
