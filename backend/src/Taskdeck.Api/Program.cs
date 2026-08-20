@@ -314,26 +314,50 @@ if (args.Contains("--mcp"))
 }
 // ── End MCP modes ───────────────────────────────────────────────────────────
 
-var builder = WebApplication.CreateBuilder(args);
+DesktopRuntime.InstallPackagedFatalHandler();
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteStarting();
+}
+
+try
+{
+var builder = DesktopRuntime.CreateWebApplicationBuilder(args);
+DesktopRuntime.ConfigurePackagedListenUrl(builder);
+var bootstrapHeadless = DesktopRuntime.IsBootstrapHeadlessEnvironment(DesktopRuntime.IsPackagedDesktop);
 var localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(
     builder.Environment.IsProduction(),
-    FirstRunBootstrapper.IsHeadlessEnvironment());
+    bootstrapHeadless);
+
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteDataLocation(Path.GetDirectoryName(localConfigPath)!);
+}
 
 // Taskdeck is a local-first app — the Windows EventLog provider added by
 // CreateBuilder() causes ObjectDisposedException crashes in background
 // workers when it is disposed before EF Core finishes logging.
 builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.AddDebug();
+if (!DesktopRuntime.IsPackagedDesktop)
+{
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+}
 
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
-builder.AddLocalConfigFile(localConfigPath);
-using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+builder.AddLocalConfigFile(localConfigPath, bootstrapHeadless);
+using (var bootstrapLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
-    builder.RunFirstRunChecks(bootstrapLogger, localConfigPath);
+    builder.RunFirstRunChecks(bootstrapLogger, localConfigPath, bootstrapHeadless);
     // Hard-fail if a placeholder JWT secret reaches Production (cloud containers).
     builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath);
 }
@@ -343,7 +367,13 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 builder.Services.AddControllers();
 
 // SignalR with optional Redis backplane (see ADR-0023)
-using (var signalRLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+using (var signalRLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var signalRLogger = signalRLoggerFactory.CreateLogger("SignalR");
     builder.Services.AddTaskdeckSignalR(builder.Configuration, signalRLogger);
@@ -469,7 +499,13 @@ builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
 
 // Add CORS (bootstrap logger threaded in so the fail-closed warning is structured + filterable,
 // matching the AddTaskdeckSignalR pattern above).
-using (var corsLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+using (var corsLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var corsLogger = corsLoggerFactory.CreateLogger("Cors");
     builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDevelopment(), corsLogger);
@@ -503,18 +539,40 @@ appLifetime.ApplicationStarted.Register(() =>
 
     var server = app.Services.GetRequiredService<IServer>();
     var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-    var browserUrl = addresses?.FirstOrDefault(u => u.Contains("://localhost"))
-        ?? addresses?.FirstOrDefault()
-        ?? $"http://localhost:{firstRunSettings.Port}";
+    var browserUrl = DesktopRuntime.IsPackagedDesktop
+        ? DesktopRuntime.ResolveUserFacingUrl(addresses)
+        : addresses?.FirstOrDefault(u => u.Contains("://localhost"))
+            ?? addresses?.FirstOrDefault()
+            ?? $"http://localhost:{firstRunSettings.Port}";
 
     startupLogger.LogInformation("Taskdeck API is running at {Url}", browserUrl);
     startupLogger.LogInformation("Swagger UI available at {SwaggerUrl}", $"{browserUrl}/swagger");
 
-    fr.TryOpenBrowser(browserUrl);
+    if (DesktopRuntime.IsPackagedDesktop)
+    {
+        _ = fr.ReportPackagedReadyAndOpenBrowserAsync(browserUrl, appLifetime.ApplicationStopping);
+    }
+    else
+    {
+        fr.TryOpenBrowser(browserUrl);
+    }
 });
+
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    appLifetime.ApplicationStopping.Register(DesktopRuntime.WriteStopping);
+    appLifetime.ApplicationStopped.Register(DesktopRuntime.WriteStopped);
+}
 
 app.Run();
 return 0;
+}
+catch (Exception) when (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteFatalStartup();
+    DesktopRuntime.WaitForFailureAcknowledgement();
+    return 1;
+}
 
 public partial class Program
 {

@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1878
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878
 // =============================================================================
 //
 // Two classes of check:
@@ -26,10 +26,12 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
+const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
 // Normalised to LF: a Windows checkout with core.autocrlf=true would otherwise
 // break every structural assertion for a reason that has nothing to do with the
 // workflow's content.
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
+const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
 
 const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
 
@@ -280,6 +282,105 @@ test('the 0.1.x release matrix and packaging are Windows x64 zip only', () => {
   assert.deepEqual(archiveTypes, ['zip'], 'the supported Windows release archive is a ZIP')
   assert.doesNotMatch(matrix, /\b(?:linux|osx|macos|ubuntu)\b/i)
   assert.doesNotMatch(job, /tar\.gz|\btar\s+-czf\b/, 'dead Linux/macOS packaging must stay absent')
+})
+
+test('the desktop package marker is publish-only and the false pre-ZIP proof stays removed', () => {
+  const job = jobBlock('build-backend')
+  assert.match(job, /-p:TaskdeckDesktopPackage=true/)
+  assert.match(jobBlock('build-frontend'), /VITE_API_BASE_URL: \/api/)
+  assert.doesNotMatch(job, /Smoke test published executable/)
+  assert.doesNotMatch(job, /ConnectionStrings__DefaultConnection/)
+  assert.doesNotMatch(job, /Jwt__SecretKey/)
+  assert.doesNotMatch(job, /Connectors__EncryptionKey/)
+  assert.doesNotMatch(job, /FirstRun__AutoOpenBrowser/)
+  assert.doesNotMatch(job, /taskkill \/\/F \/\/IM Taskdeck\.Api\.exe/)
+})
+
+test('the untouched ZIP is checksummed, accepted, and only then uploaded', () => {
+  const job = jobBlock('build-backend')
+  const packageAt = job.indexOf('Package artifact (zip')
+  const checksumAt = job.indexOf('Generate SHA256 checksum')
+  const acceptanceAt = job.indexOf('Test untouched Windows desktop ZIP')
+  const uploadAt = job.indexOf('Upload release artifact')
+
+  assert.ok(packageAt !== -1 && checksumAt !== -1 && acceptanceAt !== -1 && uploadAt !== -1)
+  assert.ok(packageAt < checksumAt, 'the immutable archive exists before its checksum')
+  assert.ok(checksumAt < acceptanceAt, 'acceptance verifies the generated checksum')
+  assert.ok(acceptanceAt < uploadAt, 'only an accepted untouched ZIP can be uploaded')
+  assert.match(job, /Test-WindowsDesktopArchive\.ps1/)
+  assert.match(job, /npx playwright install chromium/)
+  assert.match(job, /TASKDECK_RELEASE_OPENAI_API_KEY: \$\{\{ secrets\.TASKDECK_RELEASE_OPENAI_API_KEY \}\}/)
+  assert.match(job, /-LiveOpenAI/)
+})
+
+test('the Windows archive stages the reviewed quick start and enforces its content contract', () => {
+  const job = jobBlock('build-backend')
+  const stageAt = job.indexOf('Stage Windows archive contents')
+  const verifyAt = job.indexOf('Verify Windows archive content contract')
+  const packageAt = job.indexOf('Package artifact (zip')
+
+  assert.ok(stageAt !== -1 && verifyAt !== -1 && packageAt !== -1)
+  assert.ok(stageAt < verifyAt, 'the archive is staged before its content contract is checked')
+  assert.ok(verifyAt < packageAt, 'only contract-checked files may enter the ZIP')
+  assert.match(
+    job,
+    /cp docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
+  )
+  assert.match(
+    job,
+    /cmp -s docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
+    'the archive copy must be byte-identical to the reviewed source guide',
+  )
+
+  for (const required of [
+    'Taskdeck.Api.exe',
+    'appsettings.json',
+    'QUICK_START.md',
+    'wwwroot/index.html',
+    'LICENSE',
+    'RELICENSING.md',
+    'LICENSES/MIT.txt',
+  ]) {
+    assert.ok(job.includes(`'${required}'`), `workflow does not require ${required}`)
+  }
+
+  for (const forbidden of [
+    'appsettings.Development.json',
+    '*.pdb',
+    '*.xml',
+    'web.config',
+  ]) {
+    assert.ok(job.includes(`-iname '${forbidden}'`), `workflow does not reject ${forbidden}`)
+  }
+  assert.match(job, /forbidden="\$\(find "\$\{stage\}"[\s\S]*?-print\)"/)
+  assert.match(job, /Windows archive contains forbidden development\/build artifacts/)
+})
+
+test('the archive quick start pins the Windows, lifecycle, data, and OpenAI truth', () => {
+  for (const required of [
+    'Windows 10/11 x64',
+    'Taskdeck.Api.exe',
+    'http://127.0.0.1:5000',
+    'Ctrl+C',
+    '%LOCALAPPDATA%\\Taskdeck\\taskdeck.db',
+    '%LOCALAPPDATA%\\Taskdeck\\appsettings.local.json',
+    'Llm__EnableLiveProviders',
+    'Llm__Provider',
+    'Llm__OpenAi__ApiKey',
+    'gpt-5.6-luna',
+    'Verify LLM',
+    'tdsk_',
+  ]) {
+    assert.ok(quickStart.includes(required), `quick start is missing ${required}`)
+  }
+
+  assert.match(quickStart, /does \*\*not\*\* contain a seeded account/i)
+  assert.match(quickStart, /`configured` is not `verified`/i)
+  assert.match(quickStart, /board is unchanged after \*\*Approve\*\*/i)
+  assert.match(quickStart, /\*\*Apply to board\*\*[\s\S]*confirm-Apply/i)
+  assert.match(quickStart, /SmartScreen[\s\S]*SHA-256/i)
+  assert.match(quickStart, /Do not use `setx`/i)
+  assert.doesNotMatch(quickStart, /(?:log in|sign in)[^\n]*demo123/i)
 })
 
 // -----------------------------------------------------------------------------
