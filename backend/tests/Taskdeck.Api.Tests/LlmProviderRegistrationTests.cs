@@ -15,6 +15,49 @@ namespace Taskdeck.Api.Tests;
 
 public class LlmProviderRegistrationTests
 {
+    [Theory]
+    [InlineData("Gemini")]
+    [InlineData("gemini")]
+    [InlineData(" GEMINI ")]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSelector(string selector)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = selector
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Gemini provider support was removed*")
+            .WithMessage("*OpenAi*")
+            .WithMessage("*OpenAiCompatible*")
+            .WithMessage("*Ollama*")
+            .WithMessage("*Mock*");
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSectionEvenWhenMockIsSelected()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = "Mock",
+                ["Llm:Gemini:ApiKey"] = "stale-test-key"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Gemini provider support was removed*")
+            .WithMessage("*remove the retired Gemini settings section*");
+    }
+
     [Fact]
     public void AddLlmProviders_ResolvesOpenAiCompatibleProvider_WhenSelectionIsValid()
     {
@@ -62,12 +105,10 @@ public class LlmProviderRegistrationTests
 
         using var openAi = factory.CreateHandler(nameof(OpenAiLlmProvider));
         using var compatible = factory.CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
-        using var gemini = factory.CreateHandler(nameof(GeminiLlmProvider));
         using var ollama = factory.CreateHandler(nameof(OllamaLlmProvider));
 
         EnumeratePipeline(openAi).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         EnumeratePipeline(compatible).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
-        EnumeratePipeline(gemini).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         ProxySafeHttpHandlerTestHarness.AssertProxySafeOriginHandler(compatible);
         EnumeratePipeline(compatible).Should().Contain(item => item is EgressEnvelopeHandler);
@@ -127,7 +168,6 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
-    [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public void AddLlmProviders_ShouldDisableProxyAndRetainOriginGuards_OnFactoryPipeline(
         string clientName)
@@ -152,9 +192,6 @@ public class LlmProviderRegistrationTests
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://127.0.0.1/protected")]
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://10.0.0.1/protected")]
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://169.254.169.254/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://127.0.0.1/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://10.0.0.1/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://169.254.169.254/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://127.0.0.1/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://10.0.0.1/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://169.254.169.254/protected")]
@@ -181,7 +218,6 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
-    [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldReachAllowedDirectOriginWithoutConsultingHostileProxy(
         string clientName)
@@ -201,7 +237,6 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData("OpenAi", nameof(OpenAiLlmProvider))]
     [InlineData("OpenAiCompatible", "OpenAiCompatibleLlmProvider")]
-    [InlineData("Gemini", nameof(GeminiLlmProvider))]
     [InlineData("Ollama", nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldApplyResolvedLocalhostPolicyToConcreteProvider(
         string providerName,
@@ -228,8 +263,6 @@ public class LlmProviderRegistrationTests
     [InlineData("OpenAi", true, "/v1/chat/completions")]
     [InlineData("OpenAiCompatible", false, "/openai/v1/chat/completions")]
     [InlineData("OpenAiCompatible", true, "/openai/v1/chat/completions")]
-    [InlineData("Gemini", false, "/v1beta/models/test-gemini-model:generateContent")]
-    [InlineData("Gemini", true, "/v1beta/models/test-gemini-model:generateContent")]
     [InlineData("Ollama", false, "/api/chat")]
     [InlineData("Ollama", true, "/api/chat")]
     public async Task AddLlmProviders_ShouldDispatchProbeAndCompletionThroughRegisteredLoopbackPipeline(
@@ -244,7 +277,6 @@ public class LlmProviderRegistrationTests
         {
             "OpenAi" => $"{origin}/v1",
             "OpenAiCompatible" => $"{origin}/openai/v1",
-            "Gemini" => $"{origin}/v1beta",
             _ => origin
         };
         using var serviceProvider = BuildServiceProvider(
@@ -342,7 +374,6 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
     [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
-    [InlineData(nameof(GeminiLlmProvider))]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldSuppressProtectedRequestLogging(string clientName)
     {
@@ -524,11 +555,6 @@ public class LlmProviderRegistrationTests
                         ? "https://api.groq.com/openai/v1"
                         : "http://localhost:12345/openai/v1",
                 ["Llm:OpenAiCompatible:Model"] = "test-compatible-model",
-                ["Llm:Gemini:ApiKey"] = "test-gemini-key",
-                ["Llm:Gemini:BaseUrl"] = providerName == "Gemini" && providerBaseUrl is not null
-                    ? providerBaseUrl
-                    : "http://localhost:12345",
-                ["Llm:Gemini:Model"] = "test-gemini-model",
                 ["Llm:Ollama:BaseUrl"] = providerName == "Ollama" && providerBaseUrl is not null
                     ? providerBaseUrl
                     : "http://localhost:12345",
@@ -549,10 +575,6 @@ public class LlmProviderRegistrationTests
         "OpenAiCompatible" =>
             """
             {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
-            """,
-        "Gemini" =>
-            """
-            {"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":1}}
             """,
         "Ollama" =>
             """
@@ -591,17 +613,6 @@ public class LlmProviderRegistrationTests
                 root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
                 root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
                 root.GetProperty("messages")[0].GetProperty("content").GetString().Should().Be(expectedContent);
-                break;
-            case "Gemini":
-                var generationConfig = root.GetProperty("generationConfig");
-                generationConfig.GetProperty("maxOutputTokens").GetInt32().Should().Be(expectedMaxTokens);
-                generationConfig.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
-                root.GetProperty("contents")[0]
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString()
-                    .Should()
-                    .Be(expectedContent);
                 break;
             case "Ollama":
                 root.GetProperty("model").GetString().Should().Be("test-ollama-model");

@@ -186,7 +186,7 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
             {
                 services.RemoveAll<CircuitBreakerStateTracker>();
                 var tracker = new CircuitBreakerStateTracker();
-                tracker.RecordState("Gemini", CircuitState.Open, "Connection refused");
+                tracker.RecordState("OpenAICompatible", CircuitState.Open, "Connection refused");
                 services.AddSingleton(tracker);
             });
         });
@@ -199,8 +199,8 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
         // The circuit state is reported for operator visibility.
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         var circuitBreakers = payload.GetProperty("checks").GetProperty("circuitBreakers");
-        circuitBreakers.TryGetProperty("Gemini", out var gemini).Should().BeTrue();
-        gemini.GetProperty("state").GetString().Should().Be("Open");
+        circuitBreakers.TryGetProperty("OpenAICompatible", out var compatible).Should().BeTrue();
+        compatible.GetProperty("state").GetString().Should().Be("Open");
         circuitBreakers.GetProperty("_summary").GetProperty("status").GetString().Should().Be("Degraded");
     }
 

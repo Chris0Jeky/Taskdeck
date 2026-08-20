@@ -478,10 +478,21 @@ public class OpenAiLlmProvider : ILlmProvider
 
             return new LlmHealthStatus(true, "OpenAI", Model: model, IsProbed: true);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "OpenAI probe failed: {Message}", ex.Message);
-            return new LlmHealthStatus(false, "OpenAI", $"Probe failed: {ex.Message}", model, IsProbed: true);
+            _logger.LogWarning(
+                "OpenAI probe failed. {ExceptionSummary}",
+                SensitiveDataRedactor.SummarizeException(ex));
+            return new LlmHealthStatus(
+                false,
+                "OpenAI",
+                "Provider probe failed. Check provider connectivity and configuration.",
+                model,
+                IsProbed: true);
         }
     }
 

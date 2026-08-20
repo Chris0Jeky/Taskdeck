@@ -18,6 +18,14 @@ public static class LlmProviderRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        var llmSection = configuration.GetSection("Llm");
+        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(llmSection["Provider"]);
+        if (llmSection.GetChildren().Any(section =>
+                section.Key.Equals("Gemini", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
+        }
+
         // LLM quota and kill switch settings
         var llmQuotaSettings = configuration.GetSection("LlmQuota").Get<LlmQuotaSettings>() ?? new LlmQuotaSettings();
         services.AddSingleton(llmQuotaSettings);
@@ -50,7 +58,7 @@ public static class LlmProviderRegistration
         services.AddScoped<ILlmCaptureTriageExtractor, LlmCaptureTriageExtractor>();
 
         // LLM provider settings and deterministic provider selection policy
-        var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
+        var llmProviderSettings = llmSection.Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);
 
         // Circuit breaker settings and shared state tracker (explicit instances
@@ -77,8 +85,6 @@ public static class LlmProviderRegistration
         // request would defeat circuit breaking entirely.
         var openAiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
-        var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
-            circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
         var openAiCompatibleCircuitBreakerPolicy = BuildOpenAiCompatibleCircuitBreakerPolicy(
@@ -154,33 +160,6 @@ public static class LlmProviderRegistration
             nameof(OpenAiCompatibleLlmProvider),
             followRedirects: false))
         .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
-        services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
-        {
-            var settings = sp.GetRequiredService<LlmProviderSettings>();
-            var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
-            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        })
-        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
-        {
-            // SSRF protection: DNS-level check prevents connections to private/internal IPs
-            // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
-            // In development with AllowLiveProvidersInDevelopment, localhost is permitted.
-            return new SocketsHttpHandler
-            {
-                AllowAutoRedirect = false,
-                UseProxy = false,
-                ActivityHeadersPropagator = null,
-                MeterFactory = serviceProvider.GetRequiredService<ProtectedOutboundMeterFactory>(),
-                ConnectCallback = (context, cancellationToken) =>
-                    OutboundWebhookConnectCallback.ConnectAsync(
-                        context,
-                        allowLocalhostEndpoints: localhostPolicy.AllowGeneralProviderLocalhost,
-                        cancellationToken)
-            };
-        })
-        .AddPolicyHandler(geminiCircuitBreakerPolicy)
-        .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
         services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -228,7 +207,6 @@ public static class LlmProviderRegistration
                     circuitBreakerTracker,
                     circuitBreakerSettings,
                     localhostPolicy),
-                LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
             };

@@ -108,7 +108,13 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
             EnableLiveProviders = true,
             Provider = "OpenAi",
             OpenAi = new OpenAiProviderSettings { ApiKey = "test-key", TimeoutSeconds = 30 },
-            Gemini = new GeminiProviderSettings { ApiKey = "test-key", TimeoutSeconds = 300 },
+            OpenAiCompatible = new OpenAiCompatibleProviderSettings
+            {
+                ApiKey = "test-key",
+                BaseUrl = "https://api.groq.com/openai/v1",
+                Model = "test-model",
+                TimeoutSeconds = 300
+            },
             Ollama = new OllamaProviderSettings { TimeoutSeconds = 600 }
         };
 
@@ -122,8 +128,8 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Development")
             .TotalSeconds.Should().Be(150);
 
-        providerSettings.Provider = "Gemini";
-        providerSettings.Gemini.TimeoutSeconds = 77;
+        providerSettings.Provider = "OpenAiCompatible";
+        providerSettings.OpenAiCompatible.TimeoutSeconds = 77;
         HealthController.CalculateTranscriptWorkerMaxStaleness(workerSettings, providerSettings, "Production")
             .TotalSeconds.Should().Be(107);
 

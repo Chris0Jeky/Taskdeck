@@ -419,7 +419,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Add Application Services
 builder.Services.AddApplicationServices();
 
-// Add LLM providers (quota, kill switch, OpenAI/Gemini/Mock selection)
+// Add LLM providers (quota, kill switch, OpenAI/compatible/Ollama/Mock selection)
 builder.Services.AddLlmProviders(builder.Configuration);
 
 // Add IUserContext for claim-based identity

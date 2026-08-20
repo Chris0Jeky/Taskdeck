@@ -71,7 +71,7 @@ public class EgressEnvelopeHandlerTests
     {
         // Deliberate test from acceptance criteria:
         // "Test agent attempting https://attacker.example fails with EgressViolation"
-        var (handler, _) = CreateHandler("api.openai.com", "generativelanguage.googleapis.com");
+        var (handler, _) = CreateHandler("api.openai.com", "api.groq.com");
         using var invoker = new HttpMessageInvoker(handler);
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://attacker.example");

@@ -4,7 +4,6 @@ public enum LlmProviderKind
 {
     Mock = 0,
     OpenAi = 1,
-    Gemini = 2,
     Ollama = 3,
     OpenAiCompatible = 4
 }
@@ -13,6 +12,10 @@ public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Re
 
 public static class LlmProviderSelectionPolicy
 {
+    public const string RetiredGeminiProviderMessage =
+        "Gemini provider support was removed from Taskdeck. Set Llm:Provider (or Llm__Provider) " +
+        "to OpenAi, OpenAiCompatible, Ollama, or Mock, and remove the retired Gemini settings section under Llm.";
+
     private static readonly HashSet<string> ForbiddenCompatibleHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
         "Host", "Connection", "Transfer-Encoding", "Cookie", "Cookie2", "Keep-Alive",
@@ -21,6 +24,9 @@ public static class LlmProviderSelectionPolicy
 
     public static LlmProviderDecision Evaluate(LlmProviderSettings settings, string? environmentName)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        ThrowIfRetiredProvider(settings.Provider);
+
         var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
         if (!requestedProvider.HasValue)
         {
@@ -69,20 +75,6 @@ public static class LlmProviderSelectionPolicy
                 "OpenAI provider selected.");
         }
 
-        if (requestedProvider.Value == LlmProviderKind.Gemini)
-        {
-            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowDevelopmentLocalhostEndpoints))
-            {
-                return new LlmProviderDecision(
-                    LlmProviderKind.Mock,
-                    $"Gemini configuration is invalid: {geminiValidationError}");
-            }
-
-            return new LlmProviderDecision(
-                LlmProviderKind.Gemini,
-                "Gemini provider selected.");
-        }
-
         if (requestedProvider.Value == LlmProviderKind.OpenAiCompatible)
         {
             if (!TryValidateOpenAiCompatibleSettings(settings, out var compatibleValidationError, allowDevelopmentLocalhostEndpoints))
@@ -111,6 +103,14 @@ public static class LlmProviderSelectionPolicy
         return new LlmProviderDecision(
             LlmProviderKind.Ollama,
             "Ollama provider selected.");
+    }
+
+    public static void ThrowIfRetiredProvider(string? provider)
+    {
+        if (provider?.Trim().Equals("Gemini", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            throw new InvalidOperationException(RetiredGeminiProviderMessage);
+        }
     }
 
     public static bool TryValidateOpenAiSettings(
@@ -156,58 +156,6 @@ public static class LlmProviderSelectionPolicy
         }
 
         if (openAi.TimeoutSeconds <= 0)
-        {
-            error = "TimeoutSeconds must be greater than zero.";
-            return false;
-        }
-
-        error = string.Empty;
-        return true;
-    }
-
-    public static bool TryValidateGeminiSettings(
-        LlmProviderSettings settings,
-        out string error,
-        bool allowLocalhostEndpoints = false)
-    {
-        if (settings.Gemini is null)
-        {
-            error = "Gemini settings are required.";
-            return false;
-        }
-
-        var gemini = settings.Gemini;
-
-        if (string.IsNullOrWhiteSpace(gemini.ApiKey))
-        {
-            error = "ApiKey is required.";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(gemini.Model))
-        {
-            error = "Model is required.";
-            return false;
-        }
-
-        if (!Uri.TryCreate(gemini.BaseUrl, UriKind.Absolute, out var baseUri) ||
-            (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
-        {
-            error = "BaseUrl must be an absolute HTTP(S) URI.";
-            return false;
-        }
-
-        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames.
-        // In development with AllowLiveProvidersInDevelopment, localhost is permitted for local
-        // LLM gateways (Ollama, LM Studio, etc.).
-        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(gemini.BaseUrl, allowLocalhostEndpoints);
-        if (!ssrfResult.IsAllowed)
-        {
-            error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
-            return false;
-        }
-
-        if (gemini.TimeoutSeconds <= 0)
         {
             error = "TimeoutSeconds must be greater than zero.";
             return false;
@@ -415,11 +363,6 @@ public static class LlmProviderSelectionPolicy
         if (normalized.Equals("OpenAICompatible", StringComparison.OrdinalIgnoreCase))
         {
             return LlmProviderKind.OpenAiCompatible;
-        }
-
-        if (normalized.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
-        {
-            return LlmProviderKind.Gemini;
         }
 
         if (normalized.Equals("Mock", StringComparison.OrdinalIgnoreCase))

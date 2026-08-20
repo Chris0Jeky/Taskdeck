@@ -353,7 +353,9 @@ public class HealthController : ControllerBase
         return LlmProviderSelectionPolicy.Evaluate(settings, environmentName).ProviderKind switch
         {
             LlmProviderKind.OpenAi => settings.OpenAi?.TimeoutSeconds is > 0 ? settings.OpenAi.TimeoutSeconds : 30,
-            LlmProviderKind.Gemini => settings.Gemini?.TimeoutSeconds is > 0 ? settings.Gemini.TimeoutSeconds : 30,
+            LlmProviderKind.OpenAiCompatible => settings.OpenAiCompatible?.TimeoutSeconds is > 0
+                ? settings.OpenAiCompatible.TimeoutSeconds
+                : 30,
             LlmProviderKind.Ollama => settings.Ollama?.TimeoutSeconds is > 0 ? settings.Ollama.TimeoutSeconds : 120,
             _ => 30 // Mock and policy-disabled modes perform no live completion.
         };
