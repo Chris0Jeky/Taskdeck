@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # One-command local dev launcher: starts the Taskdeck API and the Vue dev server.
 #
-#   1. Verifies the .NET 8 SDK and Node.js 24.x are on PATH.
-#   2. Pins the SQLite database to a stable per-user data dir so it no longer
+#   1. Verifies the .NET 8 SDK, npm, and the supported Node.js range.
+#   2. Reconciles frontend dependencies exactly from package-lock.json.
+#   3. Pins the SQLite database to a stable per-user data dir so it no longer
 #      lands in the launch directory (issue #1140).
-#   3. Starts the API (background) and waits for /health/ready.
-#   4. Installs frontend deps if missing, then starts the Vite dev server.
-#   5. Optionally seeds the demo account (demo / demo123) with --seed.
+#   4. Starts the API (background) and waits for /health/ready.
+#   5. Starts the Vite dev server through the resolved npm executable.
+#   6. Optionally seeds the demo account (demo / demo123) with --seed.
 #
 # Usage:
 #   scripts/dev-up.sh            # start API + frontend
 #   scripts/dev-up.sh --seed     # start and seed the demo account
 #   scripts/dev-up.sh --stop     # stop a stack started by this script
 #
-# Requires: .NET 8 SDK, Node.js 24.x, npm.
+# Requires: .NET 8 SDK, Node.js >=24.13.1 <25, npm.
 #
 # Note: --stop kills each recorded launcher PID together with its whole process
 # tree (the real Kestrel API and Vite node are children/grandchildren), so the
@@ -117,19 +118,31 @@ if [[ "$STOP" -eq 1 ]]; then
   exit 0
 fi
 
-# Dependency checks
+# Resolve every tool once before any server starts, then use the resolved path
+# for each later invocation so aliases or PATH changes cannot swap executables.
 missing=0
-for cmd in dotnet node npm; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    warn "Required tool not found on PATH: $cmd"
+DOTNET_BIN="$(command -v dotnet 2>/dev/null || true)"
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+NPM_BIN="$(command -v npm 2>/dev/null || true)"
+for tool_and_path in "dotnet:$DOTNET_BIN" "node:$NODE_BIN" "npm:$NPM_BIN"; do
+  tool="${tool_and_path%%:*}"
+  tool_path="${tool_and_path#*:}"
+  if [[ -z "$tool_path" ]]; then
+    warn "Required tool not found on PATH: $tool"
     missing=$((missing + 1))
   fi
 done
-[[ "$missing" -gt 0 ]] && fatal "$missing required tool(s) missing. Install the .NET 8 SDK and Node.js 24.x first."
+[[ "$missing" -gt 0 ]] && fatal "$missing required tool(s) missing. Install the .NET 8 SDK and Node.js >=24.13.1 <25 first."
 
-node_major="$(node -e "process.stdout.write(String(process.versions.node.split('.')[0]))" 2>/dev/null || echo 0)"
-if [[ "$node_major" -lt 24 ]]; then
-  warn "Node.js 24.x is required; found $(node --version). Continuing, but the dev server may fail."
+node_version="$("$NODE_BIN" -p "process.versions.node" 2>/dev/null || true)"
+if [[ ! "$node_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+  fatal "Node.js returned an unsupported version string: '$node_version'. Required: >=24.13.1 <25."
+fi
+node_major="${BASH_REMATCH[1]}"
+node_minor="${BASH_REMATCH[2]}"
+node_patch="${BASH_REMATCH[3]}"
+if (( node_major != 24 || node_minor < 13 || (node_minor == 13 && node_patch < 1) )); then
+  fatal "Node.js >=24.13.1 <25 is required; found v$node_version. No server was started."
 fi
 
 mkdir -p "$DATA_DIR"
@@ -152,6 +165,18 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
+# Reconcile the complete dependency tree before either server starts. `npm ci`
+# removes a stale node_modules tree and installs exactly package-lock.json, so a
+# newly locked direct dependency cannot be skipped just because the directory
+# already exists.
+if [[ ! -f "$FRONTEND_DIR/package-lock.json" ]]; then
+  fatal "Frontend lockfile not found: $FRONTEND_DIR/package-lock.json. No server was started."
+fi
+step "Reconciling frontend dependencies from package-lock.json (npm ci)..."
+if ! ( cd "$FRONTEND_DIR" && "$NPM_BIN" ci --no-audit --no-fund ); then
+  fatal "Frontend dependency reconciliation failed. No server was started. Run: cd '$FRONTEND_DIR' && '$NPM_BIN' ci --no-audit --no-fund"
+fi
+
 step "Database: $DEV_DB_PATH (pinned via ConnectionStrings__DefaultConnection)"
 
 # Setting the connection string here beats appsettings, so the DB no longer
@@ -166,7 +191,7 @@ step "Starting API (dotnet run) on port $API_PORT..."
 # is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
 # TASKDECK_API_PORT must be applied via --urls with the profile disabled, or the
 # API stays on 5000 while only the probe/printed URL move (P2).
-( cd "$REPO_ROOT" && exec dotnet run --no-launch-profile --project "$API_PROJECT" --urls "http://localhost:$API_PORT" ) &
+( cd "$REPO_ROOT" && exec "$DOTNET_BIN" run --no-launch-profile --project "$API_PROJECT" --urls "http://localhost:$API_PORT" ) &
 API_PID=$!
 # Record the process's actual name (read live, not guessed) next to its PID so
 # --stop can detect PID reuse by comparing names like-for-like (falls back to a
@@ -192,25 +217,13 @@ else
   warn "API did not report ready within 90s. It may still be migrating; continuing to start the frontend."
 fi
 
-# Frontend deps only if missing. Must run BEFORE seeding: demo:seed is a Node
-# script that resolves through the installed toolchain.
-if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-  step "Installing frontend dependencies (npm install)..."
-  # The API is already running in the background; if install fails we must stop
-  # it before exiting or we leave the port + pinned SQLite DB in use (P2).
-  if ! ( cd "$FRONTEND_DIR" && npm install ); then
-    stop_started_api
-    fatal "npm install failed."
-  fi
-fi
-
 if [[ "$SEED" -eq 1 ]]; then
   step "Seeding demo account (demo / demo123)..."
-  ( cd "$FRONTEND_DIR" && npm run demo:seed ) || warn "demo:seed failed; continuing."
+  ( cd "$FRONTEND_DIR" && "$NPM_BIN" run demo:seed ) || warn "demo:seed failed; continuing."
 fi
 
 step "Starting Vite dev server (npm run dev)..."
-( cd "$FRONTEND_DIR" && exec npm run dev ) &
+( cd "$FRONTEND_DIR" && exec "$NPM_BIN" run dev ) &
 WEB_PID=$!
 web_name="$(ps -p "$WEB_PID" -o comm= 2>/dev/null | tr -d ' ')"
 echo "$WEB_PID ${web_name:-node}" >> "$PID_FILE"

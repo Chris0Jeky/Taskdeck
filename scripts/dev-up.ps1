@@ -5,12 +5,13 @@
 
 .DESCRIPTION
     Brings up the full local development stack with a single command:
-      1. Verifies the .NET 8 SDK and Node.js 24.x are on PATH.
-      2. Pins the SQLite database to %LOCALAPPDATA%\Taskdeck so it no longer
+      1. Verifies the .NET 8 SDK, npm.cmd, and the supported Node.js range.
+      2. Reconciles frontend dependencies exactly from package-lock.json.
+      3. Pins the SQLite database to %LOCALAPPDATA%\Taskdeck so it no longer
          lands in whatever directory you happened to launch from (issue #1140).
-      3. Starts the API (background) and waits for /health/ready.
-      4. Installs frontend deps if missing, then starts the Vite dev server.
-      5. Optionally seeds the demo account (demo / demo123) so the first
+      4. Starts the API (background) and waits for /health/ready.
+      5. Starts the Vite dev server through the resolved npm.cmd executable.
+      6. Optionally seeds the demo account (demo / demo123) so the first
          sign-in is never an empty board.
 
     Both processes run in the background; their PIDs are printed at the end
@@ -32,7 +33,7 @@
     .\scripts\dev-up.ps1 -Stop         # stop the running stack
 
 .NOTES
-    Requires: .NET 8 SDK, Node.js 24.x, npm on PATH.
+    Requires: .NET 8 SDK, Node.js >=24.13.1 <25, npm.cmd on PATH.
     The dev database lives at %LOCALAPPDATA%\Taskdeck\taskdeck-dev.db.
 
     -Stop kills each recorded launcher PID with its whole process tree via
@@ -65,6 +66,12 @@ $DevDbPath  = Join-Path $DataDir "taskdeck-dev.db"
 $PidFile    = Join-Path $DataDir "dev-up.pids"
 
 $ReadyUrl   = "http://localhost:$ApiPort/health/ready"
+
+$MinimumNodeVersion = [version]"24.13.1"
+$MaximumNodeVersion = [version]"25.0.0"
+$script:DotnetExe = $null
+$script:NodeExe = $null
+$script:NpmCmd = $null
 
 function Write-Step  { param([string]$Msg) Write-Host "[dev-up] $Msg" -ForegroundColor Cyan }
 function Write-Info  { param([string]$Msg) Write-Host "[dev-up] $Msg" -ForegroundColor DarkGray }
@@ -135,25 +142,73 @@ if ($Stop) {
 # ---------------------------------------------------------------------------
 # Dependency checks
 # ---------------------------------------------------------------------------
+function Resolve-RequiredApplication {
+    param([string]$Name)
+    return Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+}
+
 function Assert-Dependencies {
+    $dotnetCommand = Resolve-RequiredApplication -Name "dotnet"
+    $nodeCommand = Resolve-RequiredApplication -Name "node"
+    # Resolve npm.cmd by its complete Windows launcher name. An extensionless
+    # `npm` can resolve through a text-editor association instead of creating a
+    # controllable npm process tree on Windows.
+    $npmCommand = Resolve-RequiredApplication -Name "npm.cmd"
+
     $missing = 0
-    foreach ($cmd in @("dotnet", "node", "npm")) {
-        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
-            Write-Warn "Required tool not found on PATH: $cmd"
+    foreach ($tool in @(
+        @{ Name = "dotnet"; Command = $dotnetCommand },
+        @{ Name = "node"; Command = $nodeCommand },
+        @{ Name = "npm.cmd"; Command = $npmCommand }
+    )) {
+        if (-not $tool.Command) {
+            Write-Warn "Required tool not found on PATH: $($tool.Name)"
             $missing++
         }
     }
     if ($missing -gt 0) {
-        Write-Fatal "$missing required tool(s) missing. Install the .NET 8 SDK and Node.js 24.x first."
+        Write-Fatal "$missing required tool(s) missing. Install the .NET 8 SDK and Node.js >=24.13.1 <25 first."
     }
 
+    $script:DotnetExe = $dotnetCommand.Source
+    $script:NodeExe = $nodeCommand.Source
+    $script:NpmCmd = $npmCommand.Source
+
     try {
-        $nodeMajor = [int](node -e "process.stdout.write(String(process.versions.node.split('.')[0]))" 2>$null)
+        $nodeVersionText = ((& $script:NodeExe -p "process.versions.node" 2>$null) |
+            Select-Object -First 1).Trim()
     } catch {
-        $nodeMajor = 0
+        Write-Fatal "Could not read the Node.js version from $script:NodeExe."
     }
-    if ($nodeMajor -lt 24) {
-        Write-Warn "Node.js 24.x is required; found $(node --version). Continuing, but the dev server may fail."
+
+    if ($nodeVersionText -notmatch '^\d+\.\d+\.\d+$') {
+        Write-Fatal "Node.js returned an unsupported version string: '$nodeVersionText'. Required: >=24.13.1 <25."
+    }
+
+    $nodeVersion = [version]$nodeVersionText
+    if ($nodeVersion -lt $MinimumNodeVersion -or $nodeVersion -ge $MaximumNodeVersion) {
+        Write-Fatal "Node.js >=24.13.1 <25 is required; found v$nodeVersionText. No server was started."
+    }
+}
+
+function Sync-FrontendDependencies {
+    $lockFile = Join-Path $FrontendDir "package-lock.json"
+    if (-not (Test-Path -LiteralPath $lockFile -PathType Leaf)) {
+        Write-Fatal "Frontend lockfile not found: $lockFile. No server was started."
+    }
+
+    Write-Step "Reconciling frontend dependencies from package-lock.json (npm ci)..."
+    $npmExit = 1
+    Push-Location $FrontendDir
+    try {
+        & $script:NpmCmd ci --no-audit --no-fund
+        $npmExit = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+    if ($npmExit -ne 0) {
+        Write-Fatal "Frontend dependency reconciliation failed (npm ci exit $npmExit). No server was started. Run: Set-Location `"$FrontendDir`"; & `"$script:NpmCmd`" ci --no-audit --no-fund"
     }
 }
 
@@ -183,6 +238,12 @@ if (Test-Path $PidFile) {
     }
 }
 
+# Reconcile the complete dependency tree before either server starts. `npm ci`
+# removes a stale node_modules tree and installs exactly package-lock.json, so a
+# newly locked direct dependency cannot be skipped just because the directory
+# already exists.
+Sync-FrontendDependencies
+
 Write-Step "Database: $DevDbPath (pinned via ConnectionStrings__DefaultConnection)"
 
 Write-Step "Starting API (dotnet run) on port $ApiPort..."
@@ -202,7 +263,7 @@ try {
     # is fixed at :5000 and would override an inherited ASPNETCORE_URLS, so a custom
     # -ApiPort must be applied via --urls with the profile disabled, or the API stays
     # on 5000 while only the probe/printed URL move (P2).
-    $apiProc = Start-Process -FilePath "dotnet" `
+    $apiProc = Start-Process -FilePath $script:DotnetExe `
         -ArgumentList @("run", "--no-launch-profile", "--project", $ApiProject, "--urls", "http://localhost:$ApiPort") `
         -WorkingDirectory $RepoRoot `
         -PassThru -WindowStyle Minimized
@@ -233,30 +294,11 @@ if (-not $ready) {
     Write-Step "API is ready."
 }
 
-# Frontend deps only if missing. Must run BEFORE seeding: demo:seed is a Node
-# script that resolves through the installed toolchain.
-if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {
-    Write-Step "Installing frontend dependencies (npm install)..."
-    Push-Location $FrontendDir
-    try {
-        npm install
-        $npmExit = $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
-    if ($npmExit -ne 0) {
-        # The API is already running in the background; stop it before exiting or
-        # we leave the port + pinned SQLite DB held by an orphaned process (P2).
-        Stop-StartedApi -ApiPid $apiProc.Id
-        Write-Fatal "npm install failed (code $npmExit)."
-    }
-}
-
 if ($Seed) {
     Write-Step "Seeding demo account (demo / demo123)..."
     Push-Location $FrontendDir
     try {
-        npm run demo:seed
+        & $script:NpmCmd run demo:seed
         if ($LASTEXITCODE -ne 0) { Write-Warn "demo:seed exited with code $LASTEXITCODE." }
     } finally {
         Pop-Location
@@ -264,7 +306,7 @@ if ($Seed) {
 }
 
 Write-Step "Starting Vite dev server (npm run dev)..."
-$webProc = Start-Process -FilePath "npm" `
+$webProc = Start-Process -FilePath $script:NpmCmd `
     -ArgumentList @("run", "dev") `
     -WorkingDirectory $FrontendDir `
     -PassThru -WindowStyle Minimized
