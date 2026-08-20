@@ -276,7 +276,7 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             ["model"] = _settings.OpenAi.Model.Trim(),
             ["messages"] = messages.ToArray(),
-            ["max_completion_tokens"] = request.MaxTokens,
+            ["max_completion_tokens"] = ResolveMaxCompletionTokens(_settings.OpenAi.Model, request.MaxTokens),
             ["stream"] = false,
             ["tools"] = openAiTools,
             ["tool_choice"] = "auto"
@@ -537,7 +537,7 @@ public class OpenAiLlmProvider : ILlmProvider
         {
             ["model"] = _settings.OpenAi.Model.Trim(),
             ["messages"] = messages.ToArray(),
-            ["max_completion_tokens"] = request.MaxTokens,
+            ["max_completion_tokens"] = ResolveMaxCompletionTokens(_settings.OpenAi.Model, request.MaxTokens),
             ["stream"] = false
         };
 
@@ -559,11 +559,42 @@ public class OpenAiLlmProvider : ILlmProvider
         return payload;
     }
 
+    // Reasoning models spend tokens on an internal reasoning pass before they
+    // emit any visible output, and max_completion_tokens caps the two together.
+    // A budget sized for a non-reasoning model therefore truncates before the
+    // first visible token — the 4-token health probe could never succeed — which
+    // surfaces as finish_reason=length and a degraded result. Give reasoning
+    // models room for the reasoning pass on top of the caller's visible-output
+    // budget. This is a ceiling, not a reservation: tokens that are never
+    // generated are never billed.
+    internal const int ReasoningTokenHeadroom = 4096;
+
+    internal static int ResolveMaxCompletionTokens(string model, int requestedMaxTokens)
+    {
+        if (!IsReasoningModel(model))
+        {
+            return requestedMaxTokens;
+        }
+
+        return requestedMaxTokens > int.MaxValue - ReasoningTokenHeadroom
+            ? int.MaxValue
+            : requestedMaxTokens + ReasoningTokenHeadroom;
+    }
+
     // GPT-5-family and o-series reasoning models reject any non-default
     // temperature on chat completions; the parameter must be omitted for them.
     internal static bool IsReasoningModel(string model)
     {
         var normalized = model.Trim();
+
+        // `gpt-5-chat-latest` and sibling `-chat` variants are the non-reasoning
+        // chat models inside the GPT-5 family: they take `temperature` normally
+        // and need no reasoning headroom.
+        if (normalized.Contains("-chat", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         return normalized.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
             || normalized.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
             || normalized.StartsWith("o3", StringComparison.OrdinalIgnoreCase)

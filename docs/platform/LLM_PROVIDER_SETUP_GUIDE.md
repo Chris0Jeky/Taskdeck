@@ -26,11 +26,19 @@ Backend provider runtime now supports:
 The OpenAI adapter sends `max_completion_tokens` (never the legacy `max_tokens`) and omits
 `temperature` for reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`), which reject
 non-default temperature values on chat completions. Reasoning effort is left at the model
-default (`medium` for the GPT-5.6 family). Note that on a reasoning model the token budget
-covers reasoning **and** visible output together, so a `MaxTokens` that was ample for
-`gpt-4o-mini` can truncate here; the adapter logs a warning and reports a degraded result on
-`finish_reason=length`. This applies to the `OpenAI` provider only — `OpenAICompatible` still
-sends `max_tokens`, which is what third-party gateways expect.
+default (`medium` for the GPT-5.6 family). `gpt-5-chat-latest` and sibling `-chat` variants are
+excluded from that classification — they are the non-reasoning chat models in the family and do
+accept `temperature`.
+
+On a reasoning model the token budget covers the reasoning pass **and** the visible output
+together, so a budget that was ample for `gpt-4o-mini` truncates. `ResolveMaxCompletionTokens`
+therefore adds a fixed 4096-token headroom on top of the caller's budget for reasoning models
+only; non-reasoning models are unaffected. This is a ceiling, not a reservation — tokens that
+are never generated are never billed. On truncation the adapter still logs a warning and returns
+a degraded result (`finish_reason=length`).
+
+All of this applies to the `OpenAI` provider only — `OpenAICompatible` still sends `max_tokens`,
+which is what third-party gateways expect.
 
 Selection is deterministic through `LlmProviderSelectionPolicy`:
 
