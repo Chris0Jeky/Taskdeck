@@ -36,7 +36,7 @@ DB Baseline:        fresh | existing | seeded (specify seed script)
 Backend URL:        <e.g. http://localhost:5000>
 Frontend URL:       <e.g. http://localhost:5173>
 Env Overrides:      <list any non-default env vars, or "none">
-LLM Provider Mode:  Mock | OpenAI | Gemini | <other>
+LLM Provider Mode:  Mock | OpenAI | OpenAICompatible | Ollama
 ```
 
 ---

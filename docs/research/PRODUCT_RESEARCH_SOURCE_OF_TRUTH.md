@@ -157,7 +157,7 @@ Evidence:
 - `backend/src/Taskdeck.Application/Services/ChatService.cs`
 - `backend/src/Taskdeck.Application/Services/ILlmProvider.cs`
 - `backend/src/Taskdeck.Application/Services/OpenAiLlmProvider.cs`
-- `backend/src/Taskdeck.Application/Services/GeminiLlmProvider.cs`
+- `backend/src/Taskdeck.Application/Services/OpenAiCompatibleLlmProvider.cs`
 - `backend/src/Taskdeck.Application/Services/MockLlmProvider.cs`
 - `backend/src/Taskdeck.Application/Services/LlmIntentClassifier.cs`
 - `backend/src/Taskdeck.Application/Services/NaturalLanguageInstructionExtractor.cs`

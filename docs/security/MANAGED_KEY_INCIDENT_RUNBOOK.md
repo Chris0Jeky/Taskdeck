@@ -1,6 +1,6 @@
 # Managed-Key Incident Response Runbook
 
-Last Updated: 2026-03-28
+Last Updated: 2026-08-20
 Owner: Taskdeck maintainers
 Linked issue: `#239` (SEC-19)
 
@@ -16,7 +16,7 @@ Scope: any Taskdeck deployment where the platform operator holds and manages LLM
 
 ### 1A. Key Leakage / Compromise
 
-**Definition**: A provider API key (OpenAI, Gemini, or other configured provider) is exposed in logs, source control, client responses, error messages, or any channel accessible to unauthorized parties.
+**Definition**: An OpenAI or operator-configured compatible-provider API key is exposed in logs, source control, client responses, error messages, or any channel accessible to unauthorized parties.
 
 **Indicators**:
 - Provider dashboard shows requests from unknown IPs or user-agents
@@ -132,13 +132,6 @@ Valid surface names are defined in `LlmSurface` enum (check backend source for c
 2. Revoke the compromised key immediately
 3. Generate a new key
 4. Update Taskdeck configuration: `Llm__OpenAi__ApiKey=<NEW_KEY>`
-5. Restart API hosts
-
-**Gemini**:
-1. Go to https://aistudio.google.com/apikey (or Google Cloud Console)
-2. Delete or disable the compromised key
-3. Create a new key
-4. Update Taskdeck configuration: `Llm__Gemini__ApiKey=<NEW_KEY>`
 5. Restart API hosts
 
 **Post-rotation verification**:

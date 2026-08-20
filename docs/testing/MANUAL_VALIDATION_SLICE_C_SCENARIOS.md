@@ -918,7 +918,7 @@ curl -s http://localhost:5000/api/audit/boards/$BOARD_A \
 
 **Expected Outcome:**
 - With mock provider (default): banner shows `[data-llm-health-state="mock"]` with "Live LLM not active" text.
-- With configured provider (OpenAI/Gemini): banner shows `[data-llm-health-state="configured"]` initially.
+- With a configured live provider: banner shows `[data-llm-health-state="configured"]` initially.
 - After probe verification: banner transitions to green "verified" or red "failed".
 
 ---

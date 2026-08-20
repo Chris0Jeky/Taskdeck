@@ -160,4 +160,4 @@ curl -s "http://localhost:5000/api/llm/chat/health?probe=true" \
 
 ## Provider configuration
 
-The default provider is `Mock` (deterministic responses for testing). Production providers (`OpenAI`, `Gemini`) are enabled via configuration. See `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for setup details.
+The default provider is `Mock` (deterministic responses for testing). `OpenAI` is the supported vendor-hosted live provider; compatible and local providers require explicit configuration. See `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for setup details.

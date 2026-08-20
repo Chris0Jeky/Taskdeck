@@ -56,3 +56,4 @@
 | [0052](ADR-0052-ci-estate-right-sizing.md) | CI Estate Right-Sizing — Keep/Fix/Kill/Gate Verdict Per Scheduled Lane | Accepted | 2026-08-19 |
 | [0053](ADR-0053-legacy-token-substrate-paper-scoped-remap.md) | Legacy Obsidian Token Substrate — Paper-Scoped Remap as an Interim Floor, Per-View Migration as the Fix | Accepted | 2026-08-19 |
 | [0054](ADR-0054-i18n-vue-i18n-surface-by-surface.md) | Internationalization — `vue-i18n` in Composition Mode, Per-Surface Catalogs, Surface-by-Surface Rollout | Accepted | 2026-08-19 |
+| [0055](ADR-0055-openai-only-live-provider-surface.md) | Collapse Supported Live LLM Configuration to OpenAI | Accepted | 2026-08-20 |

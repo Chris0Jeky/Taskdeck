@@ -42,19 +42,15 @@ Demo seed creates:
 Use this when you want the chat and tool-calling surfaces to produce real LLM responses.
 
 ```bash
-# Terminal 1 — Backend with Gemini (recommended for cost)
+# Terminal 1 — Backend with OpenAI
 export Llm__EnableLiveProviders=true
 export Llm__AllowLiveProvidersInDevelopment=true
-export Llm__Provider=Gemini
-export Llm__Gemini__ApiKey=<your_gemini_key>
-dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
-
-# OR with OpenAI:
 export Llm__Provider=OpenAI
 export Llm__OpenAi__ApiKey=<your_openai_key>
+dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
 ```
 
-Default models: `gpt-5.6-luna` (OpenAI), `gemini-2.5-flash` (Gemini — deprecated 2026-08-20, see `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`). Override with `Llm__OpenAi__Model` or `Llm__Gemini__Model`.
+The default OpenAI model is `gpt-5.6-luna`. Override it with `Llm__OpenAi__Model`.
 
 Verify provider health after startup:
 ```
@@ -383,4 +379,4 @@ curl http://localhost:5000/api/llm/chat/health -H "Authorization: Bearer <token>
 curl "http://localhost:5000/api/llm/chat/health?probe=true" -H "Authorization: Bearer <token>"
 ```
 
-Response includes `provider` (Mock/OpenAI/Gemini), `isAvailable`, and `degradedReason` if applicable.
+Response includes the provider name, `isAvailable`, and `degradedReason` if applicable.
