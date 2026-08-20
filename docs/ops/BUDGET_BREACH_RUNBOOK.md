@@ -1,6 +1,6 @@
 # Budget Breach Runbook
 
-Last Updated: 2026-04-09
+Last Updated: 2026-08-20
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
 Parent: `docs/ops/CLOUD_COST_OBSERVABILITY.md`
 
@@ -77,7 +77,7 @@ Is the cost spike from LLM API usage?
    - Was `LlmToolCalling:Enabled` disabled, or did a code change lower `ToolCallingChatOrchestrator.MaxRounds`?
    - Was `LlmQuota:GlobalBudgetCeilingTokens` raised or removed?
    - Was a more expensive model configured (e.g., GPT-4o instead of GPT-4o-mini)?
-4. Check LLM provider dashboard (OpenAI/Gemini) for independent cost confirmation.
+4. Check the OpenAI dashboard (or the dashboard for the explicitly configured compatible endpoint) for independent cost confirmation.
 
 ### Logging Cost Triage
 

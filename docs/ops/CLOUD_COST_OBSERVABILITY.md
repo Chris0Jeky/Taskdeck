@@ -1,6 +1,6 @@
 # Cloud Cost Observability Framework
 
-Last Updated: 2026-04-09
+Last Updated: 2026-08-20
 Issue: `#104` OPS-12 Cloud cost observability and budget-guardrail automation
 ADR: ADR-0026
 
@@ -38,15 +38,15 @@ Cloud costs are tracked across six dimensions. Each dimension maps to a billing 
 | Estimated monthly cost | $5-15 (EBS) + $1-5 (S3) |
 | Scaling driver | Board/card/audit data volume, backup frequency, export artifact retention |
 
-### 3. LLM API Calls (OpenAI / Gemini)
+### 3. LLM API Calls (OpenAI / Compatible Endpoints)
 
 | Attribute | Value |
 |---|---|
-| Billing source | Provider API usage (OpenAI, Google Gemini) |
+| Billing source | OpenAI API usage, or the operator's explicitly configured compatible endpoint |
 | Application metric | Persisted `ILlmQuotaService` usage records and quota summaries |
-| Current baseline | GPT-4o-mini: ~$0.15/1M input tokens, ~$0.60/1M output tokens (reference baseline; verify against current OpenAI pricing). Gemini 2.5 Flash pricing differs and should be verified separately against current Google pricing. |
-| Estimated monthly cost | $5-50 (light usage, 10-50 active users) to $200-500 (heavy usage, 100+ users with tool-calling) |
-| Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), non-capture LLM queue requests (capture triage is deterministic/offline and adds no LLM cost) |
+| Current baseline | OpenAI defaults to `gpt-5.6-luna`. Do not encode a fixed price here; verify the configured model and current provider pricing before deployment. |
+| Estimated monthly cost | Variable. Calculate from measured input/output tokens and the current configured-model rates. |
+| Scaling driver | Chat messages per user, tool-calling rounds per message (max 5), LLM queue requests, and bounded transcript-source triage chunks. Ordinary short-form capture and deterministic fallback add no provider cost. |
 
 LLM costs are the highest-variance dimension. See `docs/ops/COST_HOTSPOT_REGISTRY.md` for detailed breakdown.
 
@@ -197,7 +197,7 @@ Deploy alongside the existing observability dashboard (see `docs/ops/OBSERVABILI
 
 1. **Monthly spend by dimension** — stacked bar chart, one bar per dimension per month.
 2. **Daily spend trend** — line chart showing daily total spend with 70%/90% budget threshold lines.
-3. **LLM token consumption** — line chart of daily token usage (input + output), broken down by provider (OpenAI, Gemini, Mock).
+3. **LLM token consumption** — line chart of daily token usage (input + output), broken down by provider (`OpenAI`, configured compatible endpoint, local `Ollama`, `Mock`).
 4. **LLM cost per user (top 10)** — horizontal bar chart of top token consumers.
 5. **Storage growth** — line chart of database file size and S3 total object size over time.
 6. **Logging ingestion volume** — line chart of daily log bytes ingested.

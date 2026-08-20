@@ -8,7 +8,7 @@
 > must customize this document for their jurisdiction, pricing model, and
 > acceptable-use posture before publishing it.
 
-**Last updated:** 2026-04-23 (draft)
+**Last updated:** 2026-08-20 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 
 > **⚠️ DRAFT — NOT IN USE.** This was prepared for a hosted cloud instance that is no longer planned (2026-06-13 archive pivot: Taskdeck is personal-use only, never distributed or hosted as a service). It is retained only as a template; any self-hosted deployment is the operator's sole responsibility. See `docs/STATUS.md`.
@@ -87,8 +87,8 @@ jurisdiction-specific restrictions.
   your content only to the extent necessary to provide the service to you and
   the collaborators you authorize. This licence ends when you delete the content
   or the account, subject to the retention/backup caveats in the Privacy Policy.
-- When you use a third-party LLM provider through Taskdeck (OpenAI or Gemini,
-  when enabled by the operator), the provider processes the relevant content
+- When you use a third-party LLM provider through Taskdeck (OpenAI or an
+  operator-configured compatible endpoint), the provider processes the relevant content
   under its own terms. Review `SUB_PROCESSORS.md` and the provider's terms
   before enabling these features.
 - Taskdeck, the Taskdeck name, and any operator-provided branding remain the

@@ -241,7 +241,7 @@ Current review model:
 3. user approves or rejects
 4. user executes explicitly
 
-> Capture triage is deterministic and offline in every mode — it extracts tasks from your text with a fixed rule-based parser and never calls an LLM, even when a live AI provider is configured. Its provenance is recorded as `deterministic-extractor` / `capture-triage-v1`, not the configured provider.
+> Ordinary short-form capture triage is deterministic and offline. Transcript-source triage has a separately gated extraction leg that may send bounded transcript chunks, extraction instructions, and pseudonymous attribution metadata to the configured live provider. If that leg is unavailable or fails, Taskdeck falls back to deterministic extraction. Every resulting proposal still requires review, approval, and explicit execution, and provenance records which path produced it.
 
 ## Daily Rhythm
 
