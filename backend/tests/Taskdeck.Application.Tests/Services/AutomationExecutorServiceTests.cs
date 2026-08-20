@@ -239,7 +239,7 @@ public class AutomationExecutorServiceTests
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal))
             .Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "No access"));
 
         // Act
@@ -277,7 +277,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
@@ -335,7 +335,7 @@ public class AutomationExecutorServiceTests
             .ReturnsAsync(pinnedRevision);
         _policyEngineMock.Setup(e => e.ValidatePolicy(It.IsAny<ProposalDto>())).Returns(Result.Success());
         _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(
-                userId, board.Id, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+                userId, board.Id, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
@@ -383,7 +383,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
@@ -481,7 +481,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
@@ -664,7 +664,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
@@ -710,7 +710,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, null, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, null, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
 
@@ -754,7 +754,7 @@ public class AutomationExecutorServiceTests
         _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
             .ReturnsAsync(Result.Success(proposal));
         _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);

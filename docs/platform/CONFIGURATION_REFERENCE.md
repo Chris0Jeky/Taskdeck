@@ -21,6 +21,7 @@ Source files used to build this reference:
 ## Table of contents
 
 - [Conventions](#conventions)
+- [Product version](#product-version)
 - [JWT and authentication](#jwt-and-authentication)
   - [`Jwt`](#jwt)
   - [`GitHubOAuth`](#githuboauth)
@@ -52,6 +53,7 @@ Source files used to build this reference:
   - [`Analytics`](#analytics)
 - [Database](#database)
   - [`Database`](#database-1)
+  - [`Database:Backup`](#databasebackup)
   - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
@@ -81,6 +83,37 @@ Source files used to build this reference:
 - Arrays may be provided either as a JSON array or a comma-separated string
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
+
+## Product version
+
+The product version is **not configurable** — it is stamped into the assemblies
+at build time and only read at runtime. It is documented here because it is the
+answer to "what version am I running?" for a self-hoster.
+
+`backend/Directory.Build.props` sets `Version` for every backend project.
+Release workflows override it from the `v*` release tag, stripping the leading
+`v` and any `+<build>` metadata (the runtime reader drops build metadata before
+reporting, so stamping it would make the reported value un-comparable with the
+value injected):
+
+| Build | Injection | Reported version |
+| --- | --- | --- |
+| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
+| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
+| Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
+
+Where to read it:
+
+- `GET /health/live` → `version` (anonymous, cheapest probe)
+- `GET /health/ready` → `version`
+- `taskdeck --version` → `{"version":"…"}` (answered before any configuration,
+  database, or migration work, so it still works on a broken data directory)
+- Container image OCI labels → `org.opencontainers.image.version`
+  (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <image>`)
+
+A reported `0.0.0-dev` or `0.0.0-dryrun` means the binary was not cut from a
+release tag — it is not a released artefact.
 
 ## Startup validation
 
@@ -220,7 +253,7 @@ default and the only one that ships enabled. See
 | `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Use `OpenAiCompatible` for third-party compatible gateways. | No |
-| `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
+| `Llm:OpenAi:Model` | `string` | `gpt-5.6-luna` | Model identifier sent in chat requests. Reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`, excluding `-chat` variants) are detected by `OpenAiLlmProvider.IsReasoningModel`; for them the outbound payload omits `temperature`, which those models reject, and adds a fixed 4096-token headroom to `max_completion_tokens` because that cap covers reasoning and visible output together. Every model receives `max_completion_tokens` (not the legacy `max_tokens`). | No |
 | `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
 | `Llm:OpenAiCompatible:ApiKey` | `string` | `""` | API key for the configured OpenAI-compatible endpoint. Store as a secret. | Only for `Llm:Provider = OpenAiCompatible` |
 | `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. Public HTTPS is required except when the host is exactly `localhost`, the environment is `Development`, `Test`, or `Testing`, and `Llm:AllowLiveProvidersInDevelopment=true`; numeric loopback addresses such as `127.0.0.1` and `[::1]`, and all other private/link-local hosts, remain blocked. The URL may contain a path but not user information, a query, or a fragment, and passes private-network, metadata-host, egress-envelope, and DNS connection-time SSRF controls. | Only for `Llm:Provider = OpenAiCompatible` |
@@ -599,6 +632,52 @@ Registered via `RegisterValidatedOptions<DatabaseSettings>` with
 | --- | --- | --- | --- | --- | --- |
 | `Database:CommandTimeoutSeconds` | `int` | `30` | 1–300 | EF Core command timeout applied to the SQLite `DbContext`. Affects all queries including `Database.Migrate()` calls — avoid very low values if migrations are expected. | No |
 | `Database:BusyTimeoutMilliseconds` | `int` | `5000` | 0–60000 | SQLite `busy_timeout` applied to every connection (alongside WAL journal mode). When the single writer slot is contended (UI + MCP + CLI share one file), a waiting connection retries for up to this long before surfacing `SQLITE_BUSY`. `0` fails immediately (not recommended). | No |
+
+### `Database:Backup`
+
+Bound to `DatabaseBackupSettings` (`Taskdeck.Application.Services.DatabaseBackupSettings`).
+Registered in `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure` with
+`ValidateDataAnnotations().ValidateOnStart()`, so it applies to **every** host mode (API, CLI,
+MCP HTTP, MCP stdio) — all four apply migrations on startup.
+
+Before applying any pending EF Core migration, `SerializedMigrator` writes a consistent snapshot
+of the SQLite database file via SQLite's online backup API (WAL-safe: it folds uncheckpointed WAL
+frames in, and the resulting file needs no `-wal`/`-shm` sidecar). The snapshot is written to a
+`.tmp` sibling and moved into place only once complete.
+
+Behaviour worth knowing before you tune it:
+
+- **Only when migrations are pending.** An ordinary boot against an up-to-date schema copies
+  nothing, and a first run that creates the database copies nothing (there is no prior state).
+- **Fail-closed.** If the snapshot cannot be written, `PreMigrationBackupException` propagates out
+  of startup and the migration is **not** applied. Retention *pruning* failures are the exception:
+  they log a warning and let startup continue, because the protective copy already exists.
+- **Naming and retention order (`#1839`).** Snapshots are named
+  `<db file name>-pre-migration-<UTC timestamp>-<sequence>.db`. Two details matter:
+  - The key is the database's **full file name**, extension included — not its stem. `taskdeck.db`
+    and `taskdeck.sqlite` sharing one backup directory therefore cannot prune each other's
+    snapshots.
+  - Retention orders by the **sequence** (one past the highest already on disk for that database),
+    not by the timestamp. The timestamp is descriptive only. A wall clock that steps backwards —
+    NTP correction, a VM resuming, a DST-naive host — could otherwise make the newest snapshot look
+    oldest and get it deleted first, which is exactly the file the user needs.
+  - Snapshots written by the earlier stem-keyed, sequence-less scheme (`<stem>-pre-migration-<UTC
+    timestamp>.db`) are still recognised and still pruned, so they age out rather than accumulating
+    forever. They sort oldest and are deleted first, which is correct: any sequenced snapshot was
+    necessarily written by newer code. That shape was never released — the feature landed in
+    `#1829`, after the `v0.1.0` tag — so only hosts tracking `main` between `#1829` and `#1839` can
+    hold one.
+- **Lock contention while reading.** The **source** connection (the live database being read) gets a
+  5000 ms `PRAGMA busy_timeout`, mirroring the `Database:BusyTimeoutMilliseconds` default, so a
+  moment of contention with an in-flight writer in another Taskdeck process does not fail startup
+  closed. This is a fixed value, not a configuration key. The destination connection deliberately
+  gets no timeout: it writes a freshly created `.tmp` file nothing else has opened.
+
+| Key | Type | Default | Range | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Database:Backup:Enabled` | `bool` | `true` | — | Snapshot the SQLite file before applying pending migrations. Setting this to `false` removes the only automatic protection against a failed upgrade — do it only when an external system already snapshots the file, or for throwaway databases. | No |
+| `Database:Backup:RetainCount` | `int` | `5` | 1–100 | How many pre-migration snapshots to keep per database file. After a successful backup, older snapshots are deleted oldest-first. Only files matching the managed naming scheme below are ever deleted. | No |
+| `Database:Backup:Directory` | `string` | `""` (→ `backups/` next to the database file) | — | Where snapshots are written. A **relative** path resolves against the directory holding the database file, not the process working directory (the API, CLI, and MCP hosts do not share one). | No |
 
 ### `AuditRetention`
 

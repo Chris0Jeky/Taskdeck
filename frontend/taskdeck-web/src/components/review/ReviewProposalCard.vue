@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { Proposal } from '../../types/automation'
 import {
   normalizeProposalRiskLevel,
@@ -9,6 +9,7 @@ import {
 import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
+import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 
 const props = defineProps<{
   proposal: Proposal
@@ -24,6 +25,22 @@ const props = defineProps<{
   captureHref: string
   proposalHref: string
 }>()
+const displayVersion = ref(0)
+const technicalDetailsCopied = ref(false)
+
+async function resolveDisplayNames() {
+  await proposalDisplayNames.ensure([props.proposal])
+  displayVersion.value += 1
+}
+
+onMounted(() => {
+  void resolveDisplayNames()
+})
+
+watch(
+  () => [props.proposal.id, props.proposal.updatedAt] as const,
+  () => { void resolveDisplayNames() },
+)
 
 // Whether the diff pane has anything to show for this proposal. Read-only
 // (stored) and invalid states always render their banner/notice; a live diff
@@ -44,6 +61,7 @@ const diffPaneVisible = computed(
 // a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
 // for these proposals (#1397).
 const storedOperationsFallback = computed(() => {
+  void displayVersion.value
   if (props.selectedDiffMode !== 'stored' || props.selectedDiff) return null
   const ops = props.proposal.operations ?? []
   if (ops.length === 0) return null
@@ -51,7 +69,7 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${op.actionType} ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+        `${index + 1}. ${proposalDisplayNames.operationHeadline(props.proposal, op)}`,
     )
     .join('\n')
 })
@@ -82,14 +100,24 @@ function impactSummary(proposal: Proposal): string {
 }
 
 function getOperationHeadlines(proposal: Proposal): string[] {
-  if (proposal.presentation?.operationHeadlines?.length) {
-    return proposal.presentation.operationHeadlines
-  }
-  return proposal.operations.map((operation) => `${operation.actionType} ${operation.targetType}`)
+  void displayVersion.value
+  const operations = proposal.operations ?? []
+  const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
+  const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
+  return Array.from({ length: headlineCount }, (_, index) => {
+    const suppliedHeadline = suppliedHeadlines[index]?.trim()
+    if (suppliedHeadline) return suppliedHeadline
+
+    const operation = operations[index]
+    return operation ? proposalDisplayNames.operationHeadline(proposal, operation) : ''
+  }).filter((headline) => headline.length > 0)
 }
 
 function getAffectedEntities(proposal: Proposal) {
-  return proposal.presentation?.affectedEntities ?? []
+  void displayVersion.value
+  return (proposal.presentation?.affectedEntities ?? []).map((entity) =>
+    proposalDisplayNames.affectedEntity(proposal, entity),
+  )
 }
 
 function hasProvenanceContext(proposal: Proposal): boolean {
@@ -146,6 +174,28 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
   if (normalized === 'Critical') return 'td-risk--critical'
   return 'td-risk--low'
 }
+
+const technicalDetails = computed(() => {
+  void displayVersion.value
+  return proposalDisplayNames.technicalDetails(props.proposal)
+})
+
+const displayedSelectedDiff = computed(() => {
+  void displayVersion.value
+  return props.selectedDiff
+    ? proposalDisplayNames.displayDiff(props.proposal, props.selectedDiff)
+    : props.selectedDiff
+})
+
+async function copyTechnicalDetails() {
+  if (!navigator.clipboard?.writeText) return
+  try {
+    await navigator.clipboard.writeText(technicalDetails.value)
+    technicalDetailsCopied.value = true
+  } catch {
+    technicalDetailsCopied.value = false
+  }
+}
 </script>
 
 <template>
@@ -161,6 +211,7 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
           <span :class="['td-risk-badge', riskLevelClass(proposal.riskLevel)]">
             {{ normalizeProposalRiskLevel(proposal.riskLevel) }} risk
           </span>
+          <span>Board: {{ proposalDisplayNames.boardLabel(proposal.boardId) }}</span>
           <span>Created: {{ formatDate(proposal.createdAt) }}</span>
           <span>Source: {{ normalizeProposalSourceType(proposal.sourceType) }}</span>
         </div>
@@ -199,6 +250,18 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
       :short-correlation-id="shortCorrelationId(proposal.correlationId)"
       @open-board="$emit('open-board', $event)"
     />
+
+    <details class="td-review-card__technical-details" data-testid="review-technical-details">
+      <summary>Technical details</summary>
+      <button
+        type="button"
+        class="td-btn td-btn--secondary td-btn--sm"
+        @click="copyTechnicalDetails"
+      >
+        {{ technicalDetailsCopied ? 'Copied' : 'Copy technical details' }}
+      </button>
+      <pre aria-label="Proposal technical details">{{ technicalDetails }}</pre>
+    </details>
 
     <div
       v-if="diffPaneVisible"
@@ -241,7 +304,7 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
           role="region"
           aria-label="Stored proposal preview"
           data-testid="review-diff-stored"
-        >{{ selectedDiff }}</pre>
+        >{{ displayedSelectedDiff }}</pre>
         <template v-else-if="storedOperationsFallback">
           <span class="td-review-card__diff-note" data-testid="review-diff-stored-ops-note">
             No stored preview was captured — showing the proposal's recorded operations.
@@ -283,7 +346,7 @@ function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
           role="region"
           aria-label="Proposal operation diff"
           data-testid="review-diff-pre"
-        >{{ selectedDiff }}</pre>
+        >{{ displayedSelectedDiff }}</pre>
       </template>
     </div>
   </article>

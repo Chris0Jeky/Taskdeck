@@ -41,15 +41,19 @@ public class CaptureTriageServiceTests
             .ReturnsAsync((AutomationProposal?)null);
         _policyEngineMock.Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
             .Returns(RiskLevel.Low);
+        // Permissive on the bar here so the default fixture stays neutral; the tests that care
+        // pin BoardAccessBar.Write explicitly (the worker lane is a mutation lane, #1836).
         _policyEngineMock.Setup(p => p.ValidateBoardAccessAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
+                It.IsAny<BoardAccessBar>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
         _policyEngineMock.Setup(p => p.ValidatePermissionsAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<BoardAccessBar>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
 
@@ -424,6 +428,7 @@ public class CaptureTriageServiceTests
                 userId,
                 boardId,
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
                 default))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "You do not have permission to access this board"));
 
@@ -741,8 +746,11 @@ public class CaptureTriageServiceTests
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var captureId = Guid.NewGuid();
-        _policyEngineMock.Setup(p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "User does not have access to board"));
+        // Pins the bar the worker lane asks for: BoardAccessBar.Write (#1836). If the worker were
+        // switched to the Read bar this Setup would not match, the mock would return a null Result
+        // and the test would fail — the assertion is not merely "some gate ran".
+        _policyEngineMock.Setup(p => p.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "User does not have write access to board"));
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>(MockBehavior.Strict);
         var service = BuildServiceWithExtractor(extractorMock);
@@ -752,7 +760,7 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _policyEngineMock.Verify(
-            p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()),
+            p => p.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write, It.IsAny<CancellationToken>()),
             Times.Once);
         extractorMock.Verify(
             e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
@@ -764,6 +772,7 @@ public class CaptureTriageServiceTests
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<BoardAccessBar>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         _proposalServiceMock.Verify(
@@ -782,6 +791,7 @@ public class CaptureTriageServiceTests
                 userId,
                 boardId,
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "Board access was revoked during extraction"));
 
@@ -796,13 +806,14 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
         _policyEngineMock.Verify(
-            p => p.ValidateBoardAccessAsync(userId, boardId, It.IsAny<CancellationToken>()),
+            p => p.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write, It.IsAny<CancellationToken>()),
             Times.Once);
         _policyEngineMock.Verify(
             p => p.ValidatePermissionsAsync(
                 userId,
                 boardId,
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
                 It.IsAny<CancellationToken>()),
             Times.Once);
         extractorMock.Verify(
@@ -842,6 +853,59 @@ public class CaptureTriageServiceTests
         createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
         // Evidence rides in the card description so the review rail can show the verbatim quote.
         createdProposal.Operations[0].Parameters.Should().Contain("Alice: I will send the report.");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromTranscriptAsync_PassesTranscriptIdAndAmbiguousSpansAsNull()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var transcriptId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        IReadOnlyList<TranscriptEvidenceLinkInput>? createdEvidence = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+        _proposalServiceMock
+            .Setup(s => s.CreateTranscriptProposalAsync(
+                It.IsAny<CreateProposalDto>(),
+                It.IsAny<IReadOnlyList<TranscriptEvidenceLinkInput>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalDto, IReadOnlyList<TranscriptEvidenceLinkInput>, CancellationToken>(
+                (dto, evidence, _) =>
+                {
+                    createdProposal = dto;
+                    createdEvidence = evidence;
+                })
+            .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                new CaptureTriageOutputV2(
+                    CaptureTriageOutputContract.SchemaVersionV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    [new CaptureTriageTaskV2("Review item", "action", null, null, 0.9m, "repeated quote")]),
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                EvidenceSpans: [null]));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromTranscriptAsync(
+            captureId,
+            userId,
+            boardId,
+            transcriptId,
+            TranscriptPayload("repeated quote"));
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        createdEvidence.Should().ContainSingle();
+        createdEvidence![0].OperationSequence.Should().Be(0);
+        createdEvidence[0].TranscriptId.Should().Be(transcriptId);
+        createdEvidence[0].SpanStart.Should().BeNull();
+        createdEvidence[0].SpanEnd.Should().BeNull();
     }
 
     [Fact]
@@ -1041,13 +1105,14 @@ public class CaptureTriageServiceTests
             e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _policyEngineMock.Verify(
-            p => p.ValidateBoardAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            p => p.ValidateBoardAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<BoardAccessBar>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _policyEngineMock.Verify(
             p => p.ValidatePermissionsAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<BoardAccessBar>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         _boardsMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);

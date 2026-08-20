@@ -19,6 +19,12 @@ axios, `@microsoft/signalr` board realtime). Orientation only.
   factory module + barrel export, not by growing the facade.
 - `api/http.ts` centralizes auth, request-id, 401 redirect, and retry — don't bypass it with
   raw axios/fetch.
+- `storeToRefs` copies a key **only** when the raw store value is a computed (`value?.effect`) or
+  passes `isRef`/`isReactive` — so *any* bare value is omitted from the returned object, not just
+  nullish ones: `null`, `undefined`, `5` and `'str'` all destructure as `undefined` while `store.x`
+  still reads the real value (`ref(...)` is unaffected). Wrap such state in a `ref`. What is
+  pinia-**4**-specific is only the `?.` guard: pinia 3.0.4's `if (value.effect)` *threw* a
+  TypeError on a bare `null` instead of skipping it. Zero usages today; the note is preventive.
 
 ## Verify
 - `npm run typecheck`, `npm run build`

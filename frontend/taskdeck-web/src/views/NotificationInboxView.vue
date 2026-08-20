@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNotificationStore } from '../store/notificationStore'
 import { TdSkeleton } from '../components/ui'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import {
   groupNotifications,
@@ -211,45 +212,44 @@ watch([unreadOnly, activeBoardId], () => {
 </script>
 
 <template>
-  <div class="td-notifications max-w-[920px]">
-    <header class="flex items-start justify-between gap-4 mb-4">
-      <div>
-        <h1 class="td-page-title">Notifications</h1>
-        <p class="mt-1 text-[color:var(--td-text-secondary)]">
-          {{ unreadCount }} unread
-        </p>
-        <p v-if="activeBoardId" class="mt-2 text-sm font-semibold text-[color:var(--td-color-primary)]">
+  <div class="paper-notifications max-w-[920px]">
+    <header class="paper-notifications__header">
+      <div class="paper-notifications__header-copy">
+        <span class="tk-eyebrow paper-notifications__eyebrow">Workspace</span>
+        <h1 class="tk-h2 paper-notifications__title">Notifications</h1>
+        <p class="tk-lede paper-notifications__subtitle">{{ unreadCount }} unread</p>
+        <p v-if="activeBoardId" class="paper-notifications__board-scope">
           Showing notifications linked to board {{ activeBoardId }}.
         </p>
       </div>
-      <div class="flex gap-2">
-        <button
+      <div class="paper-notifications__header-actions">
+        <PaperHLBtn
           v-if="unreadCount > 0"
-          class="td-btn td-btn--secondary"
+          class="paper-notifications__mark-all"
           @click="markAllRead"
         >
           Mark all read
-        </button>
-        <button class="td-btn td-btn--secondary" @click="loadNotifications">
+        </PaperHLBtn>
+        <PaperHLBtn class="paper-notifications__refresh" @click="loadNotifications">
           Refresh
-        </button>
+        </PaperHLBtn>
       </div>
     </header>
 
-    <div class="mb-4">
-      <label class="inline-flex items-center gap-2 text-[color:var(--td-text-secondary)]">
+    <div class="paper-notifications__filter">
+      <label class="paper-notifications__checkbox">
         <input v-model="unreadOnly" type="checkbox" />
         <span>Show unread only</span>
       </label>
     </div>
 
-    <div v-if="inlineError" class="td-alert td-alert--error" role="alert">
+    <div v-if="inlineError" class="paper-notifications__alert" role="alert">
       {{ inlineError }}
     </div>
 
-    <div v-if="notifications.loading" class="td-notification-skeleton" role="status" aria-live="polite">
+    <div v-if="notifications.loading" class="paper-notifications__skeleton" role="status" aria-live="polite">
       <span class="sr-only">Loading notifications...</span>
-      <div v-for="n in 4" :key="n" class="td-notification-skeleton__row">
+      <div v-for="n in 4" :key="n" class="paper-notifications__skeleton-row">
         <div class="flex flex-col gap-2 flex-1">
           <div class="flex items-center gap-2">
             <TdSkeleton width="60px" height="20px" />
@@ -264,13 +264,13 @@ watch([unreadOnly, activeBoardId], () => {
         <TdSkeleton width="80px" height="32px" />
       </div>
     </div>
-    <div v-else-if="items.length === 0" class="td-notification-empty">No notifications found.</div>
+    <div v-else-if="items.length === 0" class="paper-notifications__empty">No notifications found.</div>
 
     <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- virtual scrollable list with keyboard handler -->
     <div
       v-else
       ref="notifParentRef"
-      class="td-notif-virtual"
+      class="paper-notifications__virtual"
       tabindex="0"
       @keydown="handleNotifKeydown"
     >
@@ -295,7 +295,7 @@ watch([unreadOnly, activeBoardId], () => {
               <!-- Time header row -->
               <h2
                 v-if="flatRows[virtualRow.index]!.kind === 'time-header'"
-                class="text-sm font-semibold uppercase tracking-wide text-[color:var(--td-text-tertiary)] mb-3 mt-4"
+                class="tk-eyebrow paper-notifications__time-header"
               >
                 {{ rowHeader(virtualRow.index) }}
               </h2>
@@ -303,7 +303,7 @@ watch([unreadOnly, activeBoardId], () => {
               <!-- Collapsed group summary -->
               <button
                 v-else-if="flatRows[virtualRow.index]!.kind === 'collapsed-summary'"
-                class="w-full text-left rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4 hover:bg-[color:var(--td-surface-secondary)] transition-colors mb-3"
+                class="paper-notifications__group-summary"
                 :class="typeBorderClass(rowGroup(virtualRow.index).items[0].type)"
                 @click="toggleGroupExpand(rowGroup(virtualRow.index).key)"
               >
@@ -314,10 +314,10 @@ watch([unreadOnly, activeBoardId], () => {
                   >
                     {{ typeLabel(rowGroup(virtualRow.index).items[0].type) }}
                   </span>
-                  <span class="font-medium text-[color:var(--td-text-primary)]">
+                  <span class="paper-notifications__group-label">
                     {{ rowGroup(virtualRow.index).summaryLabel }}
                   </span>
-                  <span class="text-xs text-[color:var(--td-text-tertiary)] ml-auto">
+                  <span class="paper-notifications__group-hint">
                     Click to expand
                   </span>
                 </div>
@@ -329,7 +329,7 @@ watch([unreadOnly, activeBoardId], () => {
                 class="flex items-center gap-2 mb-1"
               >
                 <button
-                  class="text-xs text-[color:var(--td-color-primary)] hover:underline"
+                  class="paper-notifications__collapse-btn"
                   @click="toggleGroupExpand(rowGroup(virtualRow.index).key)"
                 >
                   Collapse {{ rowGroup(virtualRow.index).items.length }} {{ typeLabel(rowGroup(virtualRow.index).items[0].type).toLowerCase() }} notifications
@@ -339,10 +339,10 @@ watch([unreadOnly, activeBoardId], () => {
               <!-- Individual notification item -->
               <div
                 v-else-if="flatRows[virtualRow.index]!.kind === 'notification'"
-                class="td-notification-row flex justify-between gap-4 items-start rounded-lg border border-[color:var(--td-border-default)] bg-[color:var(--td-surface-primary)] p-4 mb-3"
+                class="paper-notifications__row"
                 :class="[
                   typeBorderClass(rowItem(virtualRow.index).type),
-                  { 'border-[color:var(--td-color-primary)]': !rowItem(virtualRow.index).isRead },
+                  { 'paper-notifications__row--unread': !rowItem(virtualRow.index).isRead },
                 ]"
               >
                 <div class="flex flex-col gap-2">
@@ -353,32 +353,33 @@ watch([unreadOnly, activeBoardId], () => {
                     >
                       {{ typeLabel(rowItem(virtualRow.index).type) }}
                     </span>
-                    <span class="font-semibold text-[color:var(--td-text-primary)]">
+                    <span class="paper-notifications__row-title">
                       {{ rowItem(virtualRow.index).title }}
                     </span>
                   </div>
-                  <div class="text-[color:var(--td-text-secondary)]">{{ rowItem(virtualRow.index).message }}</div>
-                  <div class="flex flex-wrap gap-3 text-sm text-[color:var(--td-text-tertiary)]">
+                  <div class="paper-notifications__row-message">{{ rowItem(virtualRow.index).message }}</div>
+                  <div class="paper-notifications__row-meta">
                     <span v-if="rowItem(virtualRow.index).boardId">Board-linked</span>
                     <span>{{ formatCadence(rowItem(virtualRow.index).cadence) }}</span>
                     <span>{{ new Date(rowItem(virtualRow.index).createdAt).toLocaleString() }}</span>
                   </div>
                 </div>
                 <div class="flex flex-wrap justify-end gap-2">
-                  <button
+                  <PaperHLBtn
                     v-if="destinationLabel(rowItem(virtualRow.index))"
-                    class="td-btn td-btn--secondary"
+                    class="paper-notifications__open"
                     @click="openNotificationDestination(rowItem(virtualRow.index))"
                   >
                     {{ destinationLabel(rowItem(virtualRow.index)) }}
-                  </button>
-                  <button
+                  </PaperHLBtn>
+                  <PaperHLBtn
                     v-if="!rowItem(virtualRow.index).isRead"
-                    class="td-btn td-btn--primary"
+                    variant="ember"
+                    class="paper-notifications__mark-read"
                     @click="markAsRead(rowItem(virtualRow.index).id)"
                   >
                     Mark read
-                  </button>
+                  </PaperHLBtn>
                 </div>
               </div>
             </template>
@@ -390,66 +391,188 @@ watch([unreadOnly, activeBoardId], () => {
 </template>
 
 <style scoped>
-.td-notification-skeleton {
+/* ── Paper & Graphite — NotificationInboxView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
+   surface legible if rendered outside the Paper shell.  The per-type accent
+   stripe still comes from `typeBorderClass` in
+   `composables/useNotificationGrouping.ts` and is intentionally untouched:
+   card rules below therefore declare borders PER SIDE and leave the left edge
+   entirely undeclared (see `.paper-notifications__row`). */
+
+.paper-notifications {
+  font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
+
+.paper-notifications__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-4, 16px);
+}
+
+.paper-notifications__header-copy { display: flex; flex-direction: column; gap: var(--s-2, 8px); }
+.paper-notifications__eyebrow { color: var(--mute, #635c4e); }
+.paper-notifications__title { margin: 0; font-size: var(--t-h2, 32px); }
+.paper-notifications__subtitle { margin: 0; color: var(--ink-2, #3a352d); }
+
+.paper-notifications__board-scope {
+  margin: 0;
+  font-size: var(--t-md, 13.5px);
+  font-weight: 600;
+  color: var(--ember, #a8421f);
+}
+
+.paper-notifications__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2, 8px);
+  flex-shrink: 0;
+}
+
+.paper-notifications__filter { margin-bottom: var(--s-4, 16px); }
+
+.paper-notifications__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2, 8px);
+  cursor: pointer;
+  color: var(--ink-2, #3a352d);
+  font-size: var(--t-md, 13.5px);
+}
+
+.paper-notifications__alert {
+  margin-bottom: var(--s-4, 16px);
+  padding: var(--s-3, 12px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--overdue, #8c4a26);
+  background: var(--overdue-tint, #ecd9c4);
+  color: var(--overdue, #8c4a26);
+}
+
+.paper-notifications__skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
-  padding: var(--td-space-2) 0;
+  gap: var(--s-3, 12px);
+  padding: var(--s-2, 8px) 0;
 }
 
-.td-notification-empty {
-  color: var(--td-text-secondary);
-  padding: var(--td-space-6) 0;
-}
-
-.td-notification-skeleton__row {
+.paper-notifications__skeleton-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: var(--td-space-4);
-  padding: var(--td-space-4);
-  border-radius: var(--td-radius-lg);
-  border: 1px solid var(--td-border-default);
-  background: var(--td-surface-primary);
+  gap: var(--s-4, 16px);
+  padding: var(--s-4, 16px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
 }
 
-.td-alert {
-  margin-bottom: var(--td-space-4);
-  padding: var(--td-space-3);
-  border-radius: var(--td-radius-md);
+.paper-notifications__empty {
+  color: var(--mute, #635c4e);
+  padding: var(--s-6, 24px) 0;
 }
 
-.td-alert--error {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
-}
-
-.td-btn {
-  padding: var(--td-space-2) var(--td-space-3);
-  border-radius: var(--td-radius-md);
-  border: none;
-  cursor: pointer;
-}
-
-.td-btn--primary {
-  background: var(--td-color-primary);
-  color: var(--td-text-inverse);
-}
-
-.td-btn--secondary {
-  background: var(--td-surface-tertiary);
-  color: var(--td-text-primary);
-  border: 1px solid var(--td-border-default);
-}
-
-.td-notif-virtual {
+.paper-notifications__virtual {
   max-height: 70vh;
   overflow-y: auto;
   contain: layout paint;
   outline: none;
 }
 
-.td-notif-virtual:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(255, 77, 77, 0.35);
+.paper-notifications__virtual:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ember-bloom, #a8421f1a);
+}
+
+.paper-notifications__time-header {
+  margin: var(--s-4, 16px) 0 var(--s-3, 12px);
+  color: var(--mute, #635c4e);
+}
+
+.paper-notifications__group-summary {
+  width: 100%;
+  text-align: left;
+  padding: var(--s-4, 16px);
+  margin-bottom: var(--s-3, 12px);
+  border-radius: var(--r-3, 6px);
+  /* Left edge deliberately undeclared — see `.paper-notifications__row`. */
+  border-top: 1px solid var(--line, #d8d0bf);
+  border-right: 1px solid var(--line, #d8d0bf);
+  border-bottom: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-notifications__group-summary:hover { background: var(--paper-2, #ebe5d8); }
+
+.paper-notifications__group-label { font-weight: 600; color: var(--ink-deep, #0a0908); }
+
+.paper-notifications__group-hint {
+  margin-left: auto;
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+}
+
+.paper-notifications__collapse-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ember, #a8421f);
+}
+
+.paper-notifications__collapse-btn:hover { text-decoration: underline; }
+
+.paper-notifications__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s-4, 16px);
+  padding: var(--s-4, 16px);
+  margin-bottom: var(--s-3, 12px);
+  border-radius: var(--r-3, 6px);
+  /* Per-side, never the `border` / `border-color` shorthand. Vue scopes these
+     rules to `.paper-notifications__row[data-v-…]` (0,2,0), which outranks the
+     single-class `td-notify-stripe--*` classes `typeBorderClass` puts on
+     the same element (0,1,0) — a shorthand here silently erases the per-type
+     accent stripe, which is information, not decoration. The left edge is left
+     undeclared so those utilities own it (Tailwind preflight supplies
+     `border-style: solid`), exactly as before the Paper restyle. */
+  border-top: 1px solid var(--line, #d8d0bf);
+  border-right: 1px solid var(--line, #d8d0bf);
+  border-bottom: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+/* Unread also stays per-side: `border-color` would repaint the type stripe. */
+.paper-notifications__row--unread {
+  border-top-color: var(--ember, #a8421f);
+  border-right-color: var(--ember, #a8421f);
+  border-bottom-color: var(--ember, #a8421f);
+}
+
+.paper-notifications__row-title { font-weight: 600; color: var(--ink-deep, #0a0908); }
+.paper-notifications__row-message { color: var(--ink-2, #3a352d); font-size: var(--t-md, 13.5px); }
+
+.paper-notifications__row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3, 12px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
 }
 </style>

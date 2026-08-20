@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import { useBoardStore } from '../../../store/boardStore'
 import { canMutateSelection, sourceLabel, statusLabel } from '../../../components/inbox/inboxUtils'
+import type { Board } from '../../../types/board'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
 /**
@@ -12,6 +15,10 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  *
  * Idempotent: `actionBusyItemId` mirrors the captureStore field so a
  * double-click on Accept can't fire `accept` twice for the same row.
+ *
+ * Board-less captures (Home quick-capture) can't be triaged into a proposal
+ * without a target board, so Accept first reveals an inline board picker
+ * (#1764); the chosen board rides the `accept` event and the server links it.
  */
 const props = defineProps<{
   items: CaptureItemSummary[]
@@ -22,11 +29,45 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (event: 'accept', itemId: string): void
+  (event: 'accept', itemId: string, boardId?: string | null): void
   (event: 'reject', itemId: string): void
   (event: 'open', itemId: string): void
   (event: 'retry'): void
 }>()
+
+const boardStore = useBoardStore()
+const { t } = useI18n()
+
+// Item currently awaiting a board choice before its triage can be accepted.
+const boardPickItemId = ref<string | null>(null)
+const pickedBoardId = ref<string | null>(null)
+
+/**
+ * Write capability comes from the server (`BoardDto.CanWrite`, #1836) — a board
+ * the user can only read would 403 at accept, so it is shown DISABLED and
+ * annotated rather than filtered away: a Viewer should see why a board is
+ * unavailable, not wonder where it went.
+ *
+ * Only an explicit `false` gates. A payload without the field (older cache,
+ * a non-caller-scoped source) behaves as it did before the field existed.
+ */
+function isBoardWritable(board: Board): boolean {
+  return board.canWrite !== false
+}
+
+function boardOptionLabel(board: Board): string {
+  return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
+}
+
+const hasReadOnlyBoard = computed(() => boardStore.boards.some((board) => !isBoardWritable(board)))
+
+const pickedBoardIsWritable = computed(() => {
+  if (!pickedBoardId.value) return false
+  const picked = boardStore.boards.find((board) => board.id === pickedBoardId.value)
+  // An id that is not in the loaded list is left alone: the server remains the
+  // authority, and this gate exists to stop a KNOWN read-only pick.
+  return picked ? isBoardWritable(picked) : true
+})
 
 const hasItems = computed(() => props.items.length > 0)
 const hasMutationInFlight = computed(
@@ -41,9 +82,45 @@ function isActionDisabled(item: CaptureItemSummary): boolean {
   return hasMutationInFlight.value || props.triagePollingItemId === item.id || !canMutate(item)
 }
 
-function onAccept(item: CaptureItemSummary) {
+function hasBoard(item: CaptureItemSummary): boolean {
+  return typeof item.boardId === 'string' && item.boardId.length > 0
+}
+
+function isPickingBoard(item: CaptureItemSummary): boolean {
+  return boardPickItemId.value === item.id
+}
+
+async function onAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
-  emit('accept', item.id)
+  if (hasBoard(item)) {
+    emit('accept', item.id, item.boardId)
+    return
+  }
+  // No board yet — require the user to choose one before we queue triage.
+  pickedBoardId.value = null
+  boardPickItemId.value = item.id
+  if (boardStore.boards.length === 0) {
+    try {
+      await boardStore.fetchBoards()
+    } catch {
+      // store surfaces its own toast; the picker still renders with whatever loaded.
+    }
+  }
+}
+
+function confirmBoardAndAccept(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  if (!pickedBoardId.value) return
+  // Belt and braces behind the disabled option: never emit an accept the server
+  // would answer with a 403.
+  if (!pickedBoardIsWritable.value) return
+  emit('accept', item.id, pickedBoardId.value)
+  cancelBoardPick()
+}
+
+function cancelBoardPick() {
+  boardPickItemId.value = null
+  pickedBoardId.value = null
 }
 
 function onReject(item: CaptureItemSummary) {
@@ -59,6 +136,20 @@ function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue'
   if (value.includes('applied') || value.includes('accept')) return 'applied'
   return 'mute'
 }
+
+function failureReason(item: CaptureItemSummary): string | null {
+  const message = item.errorMessage
+  if (!message) return null
+  return statusTone(item.status) === 'overdue' ? message : null
+}
+
+onMounted(() => {
+  // Prime boards so the picker is ready if the user accepts a board-less capture.
+  // Best-effort — the store owns its own error/toast surface.
+  if (boardStore.boards.length === 0) {
+    void boardStore.fetchBoards().catch(() => undefined)
+  }
+})
 
 function formatTime(iso: string): string {
   try {
@@ -110,6 +201,15 @@ function formatTime(iso: string): string {
         >
           <span class="tk-serial paper-triage__time">{{ formatTime(item.createdAt) }}</span>
           <span class="paper-triage__excerpt">{{ item.textExcerpt }}</span>
+          <span
+            v-if="failureReason(item)"
+            class="paper-triage__reason"
+            role="alert"
+            :title="failureReason(item) ?? ''"
+            data-testid="capture-failure-reason"
+          >
+            {{ failureReason(item) }}
+          </span>
         </button>
 
         <div class="paper-triage__tags">
@@ -117,7 +217,47 @@ function formatTime(iso: string): string {
           <PaperTagstamp tone="mute">{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
-        <div class="paper-triage__actions">
+        <div v-if="isPickingBoard(item)" class="paper-triage__board-pick" data-testid="capture-board-pick">
+          <label class="paper-triage__board-label">
+            <span class="tk-eyebrow">Board</span>
+            <select
+              v-model="pickedBoardId"
+              class="paper-triage__board-select"
+              aria-label="Choose a board for this capture"
+            >
+              <option :value="null" disabled>Select a board…</option>
+              <option
+                v-for="board in boardStore.boards"
+                :key="board.id"
+                :value="board.id"
+                :disabled="!isBoardWritable(board)"
+                :data-writable="isBoardWritable(board)"
+              >
+                {{ boardOptionLabel(board) }}
+              </option>
+            </select>
+          </label>
+          <p v-if="hasReadOnlyBoard" class="paper-triage__board-hint" data-testid="board-pick-view-only-hint">
+            {{ t('inbox.boardPicker.viewOnlyHint') }}
+          </p>
+          <div class="paper-triage__actions">
+            <PaperHLBtn
+              label="Accept on board"
+              variant="ember"
+              :disabled="isActionDisabled(item) || !pickedBoardId || !pickedBoardIsWritable"
+              data-action="accept-on-board"
+              @click="confirmBoardAndAccept(item)"
+            />
+            <PaperHLBtn
+              label="Cancel"
+              variant="ghost"
+              data-action="cancel-board-pick"
+              @click="cancelBoardPick"
+            />
+          </div>
+        </div>
+
+        <div v-else class="paper-triage__actions">
           <PaperHLBtn
             label="Accept"
             variant="ember"
@@ -233,5 +373,48 @@ function formatTime(iso: string): string {
 .paper-triage__actions {
   display: flex;
   gap: 6px;
+}
+.paper-triage__reason {
+  grid-column: 2;
+  margin-top: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--overdue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.paper-triage__board-pick {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.paper-triage__board-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.paper-triage__board-hint {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.paper-triage__board-select {
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-bottom-color: var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+}
+.paper-triage__board-select:focus {
+  border-color: var(--ember);
 }
 </style>

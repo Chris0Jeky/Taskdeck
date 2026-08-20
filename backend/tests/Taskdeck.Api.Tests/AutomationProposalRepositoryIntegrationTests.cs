@@ -668,9 +668,18 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
     }
 
     [Fact]
-    public async Task GetExpiredAsync_WithExpiresAtExactlyNow_ShouldNotReturnAsExpired()
+    public async Task GetExpiredAsync_WithExpiresAtInTheFuture_ShouldNotReturnAsExpired()
     {
-        // Locks in that GetExpiredAsync uses strict < (not <=) for ExpiresAt comparison.
+        // PROVES: GetExpiredAsync's ExpiresAt filter excludes an unexpired PendingReview row, and the
+        // exclusion is not vacuous — a past-ExpiresAt sibling seeded alongside it IS returned by the
+        // same call.
+        //
+        // DOES NOT PROVE: the exact strict-'<' vs '<=' behaviour at ExpiresAt == now. The repository
+        // reads DateTime.UtcNow inside the query and there is no clock seam to freeze it, so no test can
+        // place a row exactly on the queried "now". An earlier version of this test approximated that
+        // with a one-second future offset and raced the write plus the sweep against it; on a slow
+        // windows-latest runner the row was genuinely expired by query time and the assertion failed
+        // legitimately (#1822). The offsets below are far wider than any plausible sweep duration.
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
@@ -678,25 +687,27 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         var user = new User("ap-boundary-user", "ap-boundary@example.com", "hash");
         db.Users.Add(user);
 
-        var proposal = new AutomationProposal(
+        var unexpired = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Boundary test", RiskLevel.Low,
             $"corr-boundary-{Guid.NewGuid():N}", expiryMinutes: 1);
-        db.AutomationProposals.Add(proposal);
+        SetExpiresAt(unexpired, DateTime.UtcNow.AddMinutes(30));
+
+        // Positive control: without it a GetExpiredAsync that returned nothing at all would still pass.
+        var expired = new AutomationProposal(
+            ProposalSourceType.Queue, user.Id, "Boundary control", RiskLevel.Low,
+            $"corr-boundary-control-{Guid.NewGuid():N}", expiryMinutes: 1);
+        SetExpiresAt(expired, DateTime.UtcNow.AddMinutes(-30));
+
+        db.AutomationProposals.AddRange(unexpired, expired);
         await db.SaveChangesAsync();
 
-        // Set ExpiresAt to a point slightly in the future (1 second from now)
-        // so that "now" at query time is still before ExpiresAt
-        var futureExpiry = DateTime.UtcNow.AddSeconds(1);
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $"UPDATE AutomationProposals SET ExpiresAt = {futureExpiry} WHERE Id = {proposal.Id}");
-
-        // Clear the change tracker so the subsequent query reads fresh data from the database.
+        // Clear the change tracker so the subsequent query materializes fresh rows from the database.
         db.ChangeTracker.Clear();
 
         var results = (await repo.GetExpiredAsync()).ToList();
 
-        // ExpiresAt is in the future, so strict < should NOT include it
-        results.Should().NotContain(p => p.Id == proposal.Id);
+        results.Should().NotContain(p => p.Id == unexpired.Id, "ExpiresAt is 30 minutes in the future");
+        results.Should().Contain(p => p.Id == expired.Id, "ExpiresAt is 30 minutes in the past");
     }
 
     [Fact]

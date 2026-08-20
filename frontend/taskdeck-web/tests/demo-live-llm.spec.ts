@@ -17,6 +17,21 @@ describe('demo live llm env resolution', () => {
     })
   })
 
+  it('prefers OpenAI over deprecated Gemini when both keys are present', () => {
+    const env = resolveDemoBackendLlmEnv({
+      TASKDECK_RUN_DEMO: '1',
+      GEMINI_API_KEY: 'gemini-key',
+      OPENAI_API_KEY: 'openai-key',
+    })
+
+    expect(env).toEqual({
+      Llm__EnableLiveProviders: 'true',
+      Llm__AllowLiveProvidersInDevelopment: 'true',
+      Llm__Provider: 'OpenAI',
+      Llm__OpenAi__ApiKey: 'openai-key',
+    })
+  })
+
   it('keeps deterministic demo smoke runs on mock by skipping live overrides when llm steps are disabled', () => {
     const env = resolveDemoBackendLlmEnv({
       TASKDECK_RUN_DEMO: '1',

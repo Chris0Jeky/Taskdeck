@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useVisualViewport } from '../../composables/useVisualViewport'
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +24,16 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocusedElement: HTMLElement | null = null
 let unregisterEscape: (() => void) | null = null
+
+// The backdrop teleports to <body>, so no ancestor can constrain it — a software
+// keyboard would otherwise leave the footer actions underneath itself. The
+// `'unset'` fallback keeps the `100dvh` mobile sheet intact on browsers without
+// a VisualViewport API (see the `var(..., 100dvh)` declarations inside the
+// `@supports (height: 100dvh)` block below).
+const { style: visualViewportStyle } = useVisualViewport({
+  prefix: '--td-dialog',
+  fallback: 'unset',
+})
 
 function requestClose() {
   emit('close')
@@ -99,6 +110,7 @@ onUnmounted(() => {
       <div
         v-if="props.open"
         class="td-dialog-backdrop"
+        :style="visualViewportStyle"
         @click.self="handleBackdropClick"
         @keydown.escape="handleBackdropClick"
       >
@@ -139,7 +151,25 @@ onUnmounted(() => {
 <style scoped>
 .td-dialog-backdrop {
   position: fixed;
-  inset: 0;
+  /* Bound to the VISUAL viewport, not the layout viewport: a software keyboard
+   * contracts the visual viewport only, and `inset: 0` would keep the dialog
+   * (and its footer actions) spanning the full layout viewport underneath it.
+   * `--td-dialog-visual-viewport-*` come from `useVisualViewport`; when the
+   * browser has no VisualViewport API they are never set and the `100dvh`
+   * fallback inside the `@supports (height: 100dvh)` block below applies. */
+  left: 0;
+  right: 0;
+  top: var(--td-dialog-visual-viewport-offset-top, 0px);
+  /* Unconditional layout-viewport floor. The visual-viewport form deliberately
+   * lives in the `@supports (height: 100dvh)` block below rather than as the
+   * next declaration here: `var()` is parse-valid in EVERY browser that has
+   * custom properties, so an unguarded
+   * `height: var(--td-dialog-visual-viewport-height, 100dvh)` would discard this
+   * declaration even on a browser without `dvh`. Substitution would then yield
+   * `100dvh` — invalid at computed-value time — and per the CSS Variables spec
+   * this non-inherited property would compute to its INITIAL value (`auto`);
+   * the discarded declaration does not resurface. */
+  height: 100vh;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
@@ -150,6 +180,11 @@ onUnmounted(() => {
 
 .td-dialog {
   width: min(560px, 100%);
+  /* Unconditional layout-viewport floor — same reasoning as the backdrop above.
+   * Without the `@supports` guard this would compute to `max-height: none` on a
+   * browser with custom properties but no `dvh`, `overflow-y: auto` would never
+   * engage, and a long dialog's footer would become unreachable — the exact bug
+   * this component's visual-viewport binding exists to prevent. */
   max-height: calc(100vh - 2 * var(--td-space-8));
   overflow-y: auto;
   background: var(--td-surface-container);
@@ -160,6 +195,32 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--td-space-3);
+}
+
+/* The visual-viewport / dynamic-viewport upgrade, guarded so it can only ever
+ * REPLACE a working declaration, never strand one.
+ *
+ * This is the first `@supports` usage in the repo. The feature query is not
+ * decoration: it splits the third column of the browser matrix off from the
+ * first two. Columns, and what each gets:
+ *   1. `dvh` + VisualViewport API -> the custom property, i.e. the true visual
+ *      viewport (the case this component exists for).
+ *   2. `dvh`, no VisualViewport API -> the `100dvh` fallback inside `var()`.
+ *   3. No `dvh` (browsers predating the VisualViewport API too) -> the query
+ *      fails, this whole block is skipped, and the unconditional `100vh` forms
+ *      above stay in force. Declaring the `var()` forms unguarded would instead
+ *      leave these browsers with `height: auto` / `max-height: none`.
+ * Must stay ABOVE the `@media (max-width: 640px)` block: these rules carry no
+ * extra specificity, so the mobile sheet's `height: 100%` / `max-height: 100%`
+ * win on source order alone. */
+@supports (height: 100dvh) {
+  .td-dialog-backdrop {
+    height: var(--td-dialog-visual-viewport-height, 100dvh);
+  }
+
+  .td-dialog {
+    max-height: calc(var(--td-dialog-visual-viewport-height, 100dvh) - 2 * var(--td-space-8));
+  }
 }
 
 .td-dialog:focus {
@@ -233,13 +294,23 @@ onUnmounted(() => {
   .td-dialog {
     width: 100%;
     max-width: 100%;
-    /* vh fallback for iOS Safari <= 15.4 which doesn't support dvh; dvh
-     * handles browser chrome collapse so the close/footer stays reachable
-     * even when the URL bar is visible. */
+    /* DEAD, kept only as documentation of what this rule used to do — these
+     * four declarations can no longer take effect anywhere. The `100%` pair
+     * below is later in source order and percentages resolve against the
+     * backdrop in every browser that supports them, so it always wins. Do not
+     * read the vh/dvh pair as a live fallback chain; the live chain for this
+     * component is `100vh` -> `@supports (height: 100dvh)` on `.td-dialog`
+     * above. Historical intent: vh for iOS Safari <= 15.4 without dvh, dvh to
+     * survive browser-chrome collapse. */
     max-height: 100vh;
     height: 100vh;
     max-height: 100dvh;
     height: 100dvh;
+    /* The backdrop is already sized to the visual viewport (or 100dvh when the
+     * VisualViewport API is missing, or 100vh when dvh is missing too), so fill
+     * it rather than re-deriving a layout-viewport height here. */
+    max-height: 100%;
+    height: 100%;
     border-radius: 0;
     /* Respect iOS safe-area insets so footer actions don't sit under the
      * home indicator and the header doesn't collide with the notch. */

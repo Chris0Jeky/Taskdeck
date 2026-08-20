@@ -101,73 +101,75 @@
   --td-surface-secondary: var(--td-surface-container-low);
   --td-surface-tertiary: var(--td-surface-container-high);
   --td-surface-hover: var(--td-surface-bright);
-}
 
-/* ══════════════════════════════════════════════════
-   Light Theme — warm professional variant
-   Apply via <html data-theme="light">
-   Only overrides tokens that differ from the dark default.
-   ══════════════════════════════════════════════════ */
-[data-theme="light"] {
-  /* ── Internal accent aliases (single source for accent tweaks) ── */
-  --_td-light-accent: #d93636;
-  --_td-light-accent-rgb: 217 54 54;
-  --_td-light-accent-hover: #c12e2e;
+  /* ── Depth Aliases (issue #1814) ──
+     These five names were consumed by components but declared NOWHERE, so
+     `var(--td-surface-elevated)` was invalid-at-computed-value-time in Legacy
+     and its three call sites — MfaChallengeModal, MfaSetup and LoginView, all
+     `:hover` on a `--td-surface-container` rest fill — painted TRANSPARENT.
+     Each name is mapped onto the tier its call sites already assumed:
 
-  /* ── Surface Tiers (warm gray / cream) ── */
-  --td-surface-base: #f5f3f1;
-  --td-surface-container-lowest: #ffffff;
-  --td-surface-container-low: #f0edeb;
-  --td-surface-container: #eae7e5;
-  --td-surface-container-high: #dfdcda;
-  --td-surface-container-highest: #d4d1cf;
-  --td-surface-bright: #c9c6c4;
+       lowest / sunken  recessed below the page   → container-lowest #0e0e0e
+       low              the card tier             → container-low    #1c1b1b
+       elevated / high  one tier above container  → container-high   #2a2a2a
 
-  /* ── Text Colors ── */
-  --td-text-primary: #1c1917;
-  --td-text-secondary: #6b4c48;
-  --td-text-tertiary: rgba(28, 25, 23, 0.45);
-  --td-text-inverse: #f5f3f1;
-  --td-text-ember: var(--_td-light-accent);
-  --td-text-muted: rgba(28, 25, 23, 0.55);
+     `elevated` and `high` deliberately share a tier: every `elevated` site is
+     the hover partner of a `--td-surface-container` rest fill, which is the
+     same "one tier up" step `high` expresses.  Alias, never literal, so the
+     `[data-density]` overrides below keep working.
+     `.paper` / `.paper-night` restate all five in `paper-legacy-bridge.css`
+     on <body>; a body-level declaration beats an inherited `:root` value, so
+     Paper rendering is unchanged by these lines. */
+  --td-surface-lowest: var(--td-surface-container-lowest);
+  --td-surface-sunken: var(--td-surface-container-lowest);
+  --td-surface-low: var(--td-surface-container-low);
+  --td-surface-elevated: var(--td-surface-container-high);
+  --td-surface-high: var(--td-surface-container-high);
 
-  /* ── Semantic Colors (deeper for contrast on light bg) ── */
-  --td-color-primary: var(--_td-light-accent);
-  --td-color-primary-hover: var(--_td-light-accent-hover);
-  --td-color-primary-light: rgb(var(--_td-light-accent-rgb) / 0.1);
+  /* ── Notification accent stripes (issue #1817) ──
+     `composables/useNotificationGrouping.ts` decides WHICH stripe a
+     notification type gets and stays the single source of that mapping; the
+     `.td-notify-stripe--*` rules in `style.css` paint it, and these tokens are
+     the only thing that changes per skin.
 
-  --td-color-ember: var(--_td-light-accent);
-  --td-color-ember-glow: var(--_td-light-accent-hover);
-  --td-color-ember-dim: rgb(var(--_td-light-accent-rgb) / 0.07);
+     The values are the exact Tailwind v4 palette entries the stripes used as
+     literal utility classes before (`border-l-amber-500` / `-blue-500` /
+     `-green-500` / `-purple-500` / `-gray-400`), copied from
+     `tailwindcss@4.3.3/theme.css`, so Legacy rendering is unchanged.
+     `paper-legacy-bridge.css` re-tints all five onto Paper hues under
+     `.paper` / `.paper-night`. */
+  --td-notify-proposal: oklch(76.9% 0.188 70.08);        /* was amber-500  */
+  --td-notify-mention: oklch(62.3% 0.214 259.815);       /* was blue-500   */
+  --td-notify-board-change: oklch(72.3% 0.219 149.579);  /* was green-500  */
+  --td-notify-assignment: oklch(62.7% 0.265 303.9);      /* was purple-500 */
+  --td-notify-system: oklch(70.7% 0.022 261.325);        /* was gray-400   */
 
-  --td-color-success: #16a34a;
-  --td-color-success-light: rgba(22, 163, 74, 0.1);
-  --td-color-warning: #d97706;
-  --td-color-warning-light: rgba(217, 119, 6, 0.1);
-  --td-color-error: #dc2626;
-  --td-color-error-light: rgba(220, 38, 38, 0.1);
-  --td-color-info: var(--_td-light-accent);
-  --td-color-info-light: rgb(var(--_td-light-accent-rgb) / 0.08);
+  /* ── Notification type badges (issue #1842) ──
+     The same treatment as the stripes above, one slice later: `typeBadgeClass`
+     in `useNotificationGrouping.ts` used to emit raw Tailwind palette utilities
+     (`bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200`), so
+     the badges stayed Obsidian-era hues inside the cream Paper shell.
 
-  /* ── Border & Outline ── */
-  --td-border-default: rgba(28, 25, 23, 0.12);
-  --td-border-ghost: rgba(28, 25, 23, 0.06);
-  --td-border-focus: var(--_td-light-accent);
-  --td-border-ember: var(--_td-light-accent-hover);
+     Values are the exact Tailwind v4 palette entries those utilities compiled
+     to, copied from `tailwindcss@4.3.3/theme.css`, so Legacy rendering is
+     unchanged. The `dark:` halves are NOT carried over: `tailwind.config.js`
+     sets `darkMode: 'class'` and nothing in the app ever puts `dark` on an
+     element (`src/tests/config/PaperBranding.spec.ts` even asserts `index.html`
+     does not), so those variants never rendered. Paper's own night skin is
+     `.paper-night`, which `paper-legacy-bridge.css` handles alongside `.paper`.
 
-  /* ── Focus Ring ── */
-  --td-focus-ring: 0 0 0 2px var(--_td-light-accent), 0 0 0 4px rgb(var(--_td-light-accent-rgb) / 0.2);
-  --td-focus-ring-error: 0 0 0 2px #dc2626, 0 0 0 4px rgba(220, 38, 38, 0.2);
-
-  /* ── Elevation (softer for light surfaces) ── */
-  --td-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
-  --td-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --td-shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.06);
-  --td-shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.12);
-
-  /* ── Glass ── */
-  --td-glass-bg: rgba(245, 243, 241, 0.85);
-  --td-glass-blur: 16px;
+     `.td-notify-badge--*` in `style.css` paints these; the composable stays the
+     single source of the type -> badge mapping. */
+  --td-notify-proposal-bg: oklch(96.2% 0.059 95.617);       /* was amber-100  */
+  --td-notify-proposal-fg: oklch(47.3% 0.137 46.201);       /* was amber-800  */
+  --td-notify-mention-bg: oklch(93.2% 0.032 255.585);       /* was blue-100   */
+  --td-notify-mention-fg: oklch(42.4% 0.199 265.638);       /* was blue-800   */
+  --td-notify-board-change-bg: oklch(96.2% 0.044 156.743);  /* was green-100  */
+  --td-notify-board-change-fg: oklch(44.8% 0.119 151.328);  /* was green-800  */
+  --td-notify-assignment-bg: oklch(94.6% 0.033 307.174);    /* was purple-100 */
+  --td-notify-assignment-fg: oklch(43.8% 0.218 303.724);    /* was purple-800 */
+  --td-notify-system-bg: oklch(96.7% 0.003 264.542);        /* was gray-100   */
+  --td-notify-system-fg: oklch(37.3% 0.034 259.733);        /* was gray-700   */
 }
 
 /* ══════════════════════════════════════════════════

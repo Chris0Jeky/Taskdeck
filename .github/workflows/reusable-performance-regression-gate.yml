@@ -48,9 +48,13 @@ on:
         default: "250"
         type: string
       bundle-max-total-js-kb:
+        # Kept in step with the default in scripts/ci/check-bundle-size.mjs —
+        # raised 1200 -> 1250 on 2026-08-19 (#1770) for the i18n catalogs. If
+        # these two drift, the required lane and this gate disagree about
+        # identical bytes. The rationale lives on the constant in that script.
         description: Max total JS size in KB (error threshold)
         required: false
-        default: "1200"
+        default: "1250"
         type: string
 
 permissions:

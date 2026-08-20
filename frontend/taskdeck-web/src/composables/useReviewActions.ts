@@ -1,5 +1,6 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { automationApi } from '../api/automationApi'
+import { i18n } from '../i18n'
 import { proposalRevisionsApi } from '../api/proposalRevisionsApi'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
@@ -48,6 +49,15 @@ export function useReviewActions(
 ) {
   const toast = useToastStore()
   const diffRenderPerf = usePerformanceMark('proposal-diff-render')
+  /**
+   * i18n via the MODULE-SCOPED runtime, not `useI18n()` (ADR-0054 / `#1770`).
+   * `useI18n()` requires a live component instance; this composable is also
+   * driven by the Legacy shell and exercised by specs that never mount one, and
+   * threading a `t` argument through would change every caller's signature for
+   * no gain. `i18n.global.t` reads `i18n.global.locale` internally, so a call
+   * made inside a computed still re-evaluates on a language switch.
+   */
+  const t = i18n.global.t
 
   const proposalActionBusyId = ref<string | null>(null)
   // Bulk dismiss has no single proposal id to track, so it gets its own
@@ -112,7 +122,7 @@ export function useReviewActions(
       if (!isAccessDeniedError(e)) return
       if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
       resetDiffState()
-      toast.error('This proposal is no longer available to you.')
+      toast.error(t('review.toast.noLongerAvailable'))
     }
   }
 
@@ -163,9 +173,9 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.approveProposal(proposalId)
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal approved for board application')
+      toast.success(t('review.toast.approved'))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to approve proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.approveFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -174,13 +184,15 @@ export function useReviewActions(
   async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['riskLevel']) {
     const requiresReason = ['High', 'Critical'].includes(normalizeProposalRiskLevel(riskLevel))
     const promptedReason = prompt(
-      requiresReason ? 'Reason is required for this risk level:' : 'Optional rejection reason:',
+      requiresReason
+        ? t('review.prompt.rejectReasonRequired')
+        : t('review.prompt.rejectReasonOptional'),
     )
     if (promptedReason === null) return
 
     const reason = promptedReason.trim()
     if (requiresReason && !reason) {
-      toast.error('Rejection reason is required for high and critical risk proposals')
+      toast.error(t('review.toast.rejectReasonRequired'))
       return
     }
 
@@ -190,9 +202,9 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.rejectProposal(proposalId, reasonOrNull)
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal rejected')
+      toast.success(t('review.toast.rejected'))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to reject proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.rejectFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -208,26 +220,83 @@ export function useReviewActions(
       // Map the returned proposal in place so its new deferredUntil/expiresAt are live;
       // the ~60s review clock then resurfaces it when the snooze window elapses.
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Snoozed for 1 hour — it will return to your queue.')
+      toast.success(t('review.toast.snoozed'))
       return true
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to snooze proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.snoozeFailed')).message)
       return false
     } finally {
       proposalActionBusyId.value = null
     }
   }
 
-  async function handleExecuteProposal(proposalId: string) {
-    if (!confirm('Apply this approved proposal to the board now?')) return
+  // --- Phase 2 (execute) confirmation --------------------------------------
+  //
+  // #1818: the approve→execute split is the ADR-0003 product invariant and does
+  // NOT change here — only its feedback does. The second phase used to be gated
+  // by a native `confirm()`, which cannot carry the proposal summary, is not
+  // styled by either surface, and is invisible to component specs. It is now a
+  // declarative request: the surface renders the app's own dialog (TdDialog, the
+  // #1407 hardening idiom) bound to `executeConfirmProposalId`, and only
+  // `confirmExecuteProposal()` reaches the API. `handleExecuteProposal` is
+  // deliberately NOT exported so no caller can execute without that gate.
+  const executeConfirmProposalId = ref<string | null>(null)
 
+  /** The proposal awaiting the phase-2 confirmation, so the dialog can show its summary. */
+  const executeConfirmProposal = computed<ApiProposal | null>(() => {
+    const id = executeConfirmProposalId.value
+    if (!id) return null
+    return proposals.value.find((p) => p.id === id) ?? null
+  })
+
+  function requestExecuteProposal(proposalId: string) {
+    // Another decision is mid-flight; opening the gate now would let the user
+    // confirm against state that is already changing.
+    if (proposalActionBusyId.value !== null) return
+    executeConfirmProposalId.value = proposalId
+  }
+
+  function cancelExecuteProposal() {
+    executeConfirmProposalId.value = null
+  }
+
+  async function confirmExecuteProposal() {
+    const proposalId = executeConfirmProposalId.value
+    if (!proposalId) return
+    // Confirming against a proposal that vanished from the list (refresh, filter
+    // change, dismissed elsewhere) would apply something no longer on screen —
+    // and the dialog has already closed itself, since its `open` is derived from
+    // this same computed. Load-bearing guard, not a tidy-up.
+    const stillPresent = executeConfirmProposal.value !== null
+    // Close the gate BEFORE awaiting so a double-confirm cannot fire two
+    // executes; the Idempotency-Key would make the second a no-op server-side,
+    // but the surface must not depend on that to stay honest.
+    executeConfirmProposalId.value = null
+    if (!stillPresent) return
+    await handleExecuteProposal(proposalId)
+  }
+
+  // Keep the pending id from lingering after its proposal leaves the list, so a
+  // later refresh that re-adds it cannot silently re-open the dialog. Sync flush:
+  // a pre-flush watcher would miss a set-then-remove that happens in one tick.
+  watch(
+    executeConfirmProposal,
+    (proposal) => {
+      if (executeConfirmProposalId.value !== null && proposal === null) {
+        executeConfirmProposalId.value = null
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  async function handleExecuteProposal(proposalId: string) {
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.executeProposal(proposalId, createRequestId())
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal applied to board')
+      toast.success(t('review.toast.applied'))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to apply proposal to board').message)
+      toast.error(getErrorDisplay(e, t('review.toast.applyFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -296,7 +365,7 @@ export function useReviewActions(
       // Any other failure (e.g. a 404 because it was deleted elsewhere) stays a
       // toast with a clean teardown.
       resetDiffState()
-      toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+      toast.error(getErrorDisplay(e, t('review.toast.diffFailed')).message)
     } finally {
       diffRenderPerf.end()
     }
@@ -308,14 +377,14 @@ export function useReviewActions(
       const result = await automationApi.dismissProposals([proposalId])
       if (result.dismissed > 0) {
         proposals.value = proposals.value.filter((p) => p.id !== proposalId)
-        toast.success('Proposal dismissed')
+        toast.success(t('review.toast.dismissed'))
       } else {
         proposals.value = proposals.value.filter((p) => p.id !== proposalId)
-        toast.info('Proposal removed from view. Refreshing...')
+        toast.info(t('review.toast.dismissedRefreshing'))
         void loadProposals()
       }
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to dismiss proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.dismissFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -328,7 +397,7 @@ export function useReviewActions(
 
     const ids = dismissableProposalIds.value
     if (ids.length === 0) {
-      toast.info('No completed proposals to clear.')
+      toast.info(t('review.toast.nothingToClear'))
       return
     }
 
@@ -341,9 +410,9 @@ export function useReviewActions(
       } else {
         await loadProposals()
       }
-      toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
+      toast.success(t('review.toast.cleared', { count: result.dismissed }, result.dismissed))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
+      toast.error(getErrorDisplay(e, t('review.toast.clearFailed')).message)
     } finally {
       bulkDismissBusy.value = false
     }
@@ -357,10 +426,14 @@ export function useReviewActions(
     selectedDiffMode,
     selectedDiffInvalidReason,
     selectedDiffRevised,
+    executeConfirmProposalId,
+    executeConfirmProposal,
     handleApproveProposal,
     handleRejectProposal,
     handleDeferProposal,
-    handleExecuteProposal,
+    requestExecuteProposal,
+    cancelExecuteProposal,
+    confirmExecuteProposal,
     handleToggleDiff,
     handleDismissProposal,
     handleDismissApplied,

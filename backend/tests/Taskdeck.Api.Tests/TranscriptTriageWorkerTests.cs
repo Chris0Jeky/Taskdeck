@@ -157,6 +157,7 @@ public class TranscriptTriageWorkerTests
         triageService.LastCaptureItemId.Should().Be(item.Id);
         triageService.LastUserId.Should().Be(item.UserId);
         triageService.LastBoardId.Should().Be(boardId);
+        triageService.LastTranscriptId.Should().Be(item.TranscriptId);
     }
 
     [Fact]
@@ -857,6 +858,7 @@ public class TranscriptTriageWorkerTests
         public Guid? LastCaptureItemId { get; private set; }
         public Guid? LastUserId { get; private set; }
         public Guid? LastBoardId { get; private set; }
+        public Guid? LastTranscriptId { get; private set; }
         public CapturePayloadV1? LastPayload { get; private set; }
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
@@ -887,6 +889,18 @@ public class TranscriptTriageWorkerTests
                 "mock",
                 "mock-model");
             return Task.FromResult(Result.Success(result));
+        }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+        {
+            LastTranscriptId = transcriptId;
+            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
         }
     }
 

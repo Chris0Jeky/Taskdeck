@@ -175,6 +175,110 @@ test.describe('TST11-SC-018: Board-scoped activity timeline', () => {
     // Verify a Created action exists
     expect(history.some((e) => e.action === AuditAction.Created)).toBeTruthy()
   })
+
+  test('board history fetch renders the first audit row in the virtual timeline', async ({ page, request }) => {
+    const boardName = `Visible Activity ${Date.now()}`
+    await createBoard(request, boardName)
+
+    await page.goto('/workspace/activity')
+
+    await page.locator('#activity-board-select').selectOption({ label: boardName })
+    await page.getByRole('button', { name: 'Fetch', exact: true }).click()
+
+    await expect(page).toHaveURL(/\/workspace\/activity\/board\/[a-f0-9-]+$/)
+    const timeline = page.locator('.td-timeline--virtual')
+    await expect(timeline).toBeVisible()
+    await expect(timeline.locator('[data-index="0"]')).toBeVisible()
+    await expect(timeline.locator('.td-timeline__action').first()).toHaveText('Created')
+  })
+
+  test('@mobile long board history stays scrollable and traceable on small screens', async ({ page, request }) => {
+    const boardName = `Mobile Activity Long History ${Date.now()}`
+    const boardId = await createBoard(request, boardName)
+    const columnId = await addColumn(request, boardId, 'Synthetic Activity Column', 0)
+
+    for (let index = 1; index <= 48; index += 1) {
+      await addCard(
+        request,
+        boardId,
+        columnId,
+        `Synthetic Activity Card ${String(index).padStart(2, '0')}`,
+      )
+    }
+
+    const history = await getBoardHistory(request, boardId)
+    expect(history).toHaveLength(50)
+
+    await page.goto('/workspace/activity')
+    await page.locator('#activity-board-select').selectOption({ label: boardName })
+    await page.getByRole('button', { name: 'Fetch', exact: true }).click()
+
+    await expect(page).toHaveURL(/\/workspace\/activity\/board\/[a-f0-9-]+$/)
+    const timeline = page.locator('.td-timeline--virtual')
+    await expect(timeline).toBeVisible()
+    await expect(timeline.locator('[data-index="0"]')).toBeVisible()
+
+    const overflow = await page.evaluate(() => {
+      const documentRoot = document.documentElement
+      const timelineElement = document.querySelector<HTMLElement>('.td-timeline--virtual')
+      return {
+        documentWithinViewport:
+          documentRoot.scrollWidth <= documentRoot.clientWidth + 2,
+        timelineWithinViewport:
+          timelineElement !== null &&
+          timelineElement.scrollWidth <= timelineElement.clientWidth + 2,
+      }
+    })
+    expect(overflow.documentWithinViewport).toBe(true)
+    expect(overflow.timelineWithinViewport).toBe(true)
+
+    const timelineSize = await timeline.evaluate((element) => ({
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    }))
+    expect(timelineSize.scrollHeight).toBeGreaterThan(timelineSize.clientHeight)
+
+    await timeline.evaluate((element) => {
+      element.scrollIntoView({ block: 'center', inline: 'nearest' })
+      element.scrollTo({ top: element.scrollHeight, left: 0, behavior: 'auto' })
+    })
+
+    const lastRow = timeline.locator('[data-index="49"]')
+    await expect.poll(
+      async () => {
+        await timeline.evaluate((element) => {
+          element.scrollTo({ top: element.scrollHeight, left: 0, behavior: 'auto' })
+        })
+        return page.evaluate(() => {
+          const timelineElement = document.querySelector<HTMLElement>('.td-timeline--virtual')
+          const row = timelineElement?.querySelector<HTMLElement>('[data-index="49"]')
+          if (!timelineElement || !row) {
+            return {
+              atBottom: false,
+              inTimelineViewport: false,
+              inBrowserViewport: false,
+            }
+          }
+
+          const timelineRect = timelineElement.getBoundingClientRect()
+          const rowRect = row.getBoundingClientRect()
+          const atBottom =
+            timelineElement.scrollTop + timelineElement.clientHeight >=
+            timelineElement.scrollHeight - 1
+          const inTimelineViewport =
+            rowRect.height > 0 &&
+            rowRect.top >= timelineRect.top - 1 &&
+            rowRect.bottom <= timelineRect.bottom + 1
+          const inBrowserViewport =
+            rowRect.top >= -1 && rowRect.bottom <= window.innerHeight + 1
+
+          return { atBottom, inTimelineViewport, inBrowserViewport }
+        })
+      },
+      { timeout: 8_000, intervals: [50, 100, 200, 500] },
+    ).toMatchObject({ atBottom: true, inTimelineViewport: true, inBrowserViewport: true })
+    await expect(lastRow).toBeVisible()
+  })
 })
 
 test.describe('TST11-SC-019: Entity-scoped activity (card level)', () => {

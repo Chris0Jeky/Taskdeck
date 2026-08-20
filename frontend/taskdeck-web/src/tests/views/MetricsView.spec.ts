@@ -116,13 +116,49 @@ describe('MetricsView', () => {
     expect(wrapper.text()).toContain('Select a board above to view its metrics.')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    // #1816: this guard used to mount with `metrics === null`, so the asserted
+    // HTML was only the hero + filters shell and ~90% of the restyled markup
+    // (the whole dashboard: summary cards, bar chart, WIP chart, tables) was
+    // never in scope. Mount with a populated fixture so the negative
+    // assertions below actually see the restyled surface.
+    mockMetricsStore.metrics = MOCK_METRICS
+    const wrapper = mount(MetricsView)
+    await waitForUi()
+
+    expect(wrapper.find('.paper-metrics').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__filters').exists()).toBe(true)
+
+    // Guard the guard: if the dashboard branch stopped rendering, every
+    // `not.toContain` below would pass vacuously again.
+    expect(wrapper.find('.paper-metrics__dashboard').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__summary').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__bar-chart').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__wip-chart').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__table').exists()).toBe(true)
+
+    // MetricsView was the heaviest --td-* consumer in the app; none of the
+    // legacy Obsidian hooks should survive the Paper restyle.
+    const html = wrapper.html()
+    expect(html).not.toContain('td-metrics')
+    expect(html).not.toContain('td-page-title')
+    expect(html).not.toContain('td-btn')
+    expect(html).not.toContain('td-table')
+    expect(html).not.toContain('--td-bar-size')
+    // The bar-size custom property moved to the Paper namespace and is written
+    // by the dashboard branch only.
+    expect(html).toContain('--pm-bar-size')
+    expect(wrapper.find('[class^="td-"]').exists()).toBe(false)
+  })
+
   it('shows loading skeleton when loading is true', async () => {
     mockMetricsStore.loading = true
     const wrapper = mount(MetricsView)
     await waitForUi()
 
     expect(wrapper.text()).toContain('Loading metrics...')
-    expect(wrapper.find('.td-metrics__skeleton').exists()).toBe(true)
+    expect(wrapper.find('.paper-metrics__skeleton').exists()).toBe(true)
   })
 
   it('shows error state with retry button', async () => {
@@ -131,7 +167,7 @@ describe('MetricsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Something went wrong')
-    const retryBtn = wrapper.find('.td-metrics__state--error button')
+    const retryBtn = wrapper.find('.paper-metrics__state--error button')
     expect(retryBtn.exists()).toBe(true)
     expect(retryBtn.text()).toBe('Retry')
   })
@@ -161,7 +197,7 @@ describe('MetricsView', () => {
 
     // Throughput chart
     expect(wrapper.text()).toContain('Throughput Trend')
-    expect(wrapper.findAll('.td-metrics__bar-group')).toHaveLength(2)
+    expect(wrapper.findAll('.paper-metrics__bar-group')).toHaveLength(2)
 
     // WIP chart
     expect(wrapper.text()).toContain('WIP by Column')
@@ -169,7 +205,7 @@ describe('MetricsView', () => {
     expect(wrapper.text()).toContain('Doing')
 
     // WIP limit violation highlighting
-    const overLimitBars = wrapper.findAll('.td-metrics__wip-bar-fill--over')
+    const overLimitBars = wrapper.findAll('.paper-metrics__wip-bar-fill--over')
     expect(overLimitBars.length).toBe(1) // Doing: 3 > wipLimit 2
 
     // WIP limit display
@@ -202,7 +238,7 @@ describe('MetricsView', () => {
     const wrapper = mount(MetricsView)
     await waitForUi()
 
-    const alertCard = wrapper.find('.td-metrics__card--alert')
+    const alertCard = wrapper.find('.paper-metrics__card--alert')
     expect(alertCard.exists()).toBe(true)
     expect(alertCard.text()).toContain('Blocked')
   })
@@ -212,7 +248,7 @@ describe('MetricsView', () => {
     const wrapper = mount(MetricsView)
     await waitForUi()
 
-    expect(wrapper.find('.td-metrics__card--alert').exists()).toBe(false)
+    expect(wrapper.find('.paper-metrics__card--alert').exists()).toBe(false)
   })
 
   it('shows null block reason as "No reason given"', async () => {

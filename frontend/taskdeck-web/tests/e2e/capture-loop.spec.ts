@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -69,12 +69,10 @@ test.describe('Paper capture-review-apply loop', () => {
     const executeResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
       && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-    // The final apply confirmation is a hard gate: expectDialog FAILS this test
-    // if the confirm() dialog is removed, instead of silently executing anyway.
-    await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-      type: 'confirm',
-      message: 'Apply this approved proposal to the board now?',
-    })
+    // The final apply confirmation is a hard gate: expectApplyConfirmDialog FAILS
+    // this test if the in-app confirmation is removed (#1818), instead of
+    // silently executing anyway.
+    await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
     await assertOk(await executeResponsePromise, `execute Paper proposal ${proposalId}`)
     const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
 
@@ -134,10 +132,7 @@ test('capture triage should create proposal and apply card with provenance links
   const cardsAfterApprove = await listBoardCards(request, auth, boardId)
   expect(cardsAfterApprove.length).toBe(0)
 
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
   await expect(proposalCard).not.toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)

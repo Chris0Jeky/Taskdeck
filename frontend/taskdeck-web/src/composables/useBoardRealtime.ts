@@ -46,6 +46,9 @@ export function createBoardRealtimeController(
 ): BoardRealtimeController {
   let connection: HubConnection | null = null
   let subscribedBoardId: string | null = null
+  let requestedBoardId: string | null = null
+  let subscriptionGeneration = 0
+  let subscriptionTransition: Promise<void> = Promise.resolve()
   let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
@@ -63,6 +66,10 @@ export function createBoardRealtimeController(
   const startFallbackPolling = (boardId: string) => {
     stopFallbackPolling()
     fallbackTimer = setInterval(() => {
+      if (requestedBoardId !== boardId) {
+        return
+      }
+
       void options.fetchBoard(boardId).catch(() => {
         // Keep fallback resilient; fetch failures are already surfaced by store-level handling.
       })
@@ -77,7 +84,11 @@ export function createBoardRealtimeController(
   }
 
   const handleBoardMutation = (event: BoardRealtimeEvent) => {
-    if (!subscribedBoardId || event.boardId !== subscribedBoardId) {
+    if (
+      !subscribedBoardId ||
+      event.boardId !== subscribedBoardId ||
+      event.boardId !== requestedBoardId
+    ) {
       return
     }
 
@@ -89,7 +100,7 @@ export function createBoardRealtimeController(
 
       // Skip if a refresh is already in-flight (started by a previous debounced
       // call that hasn't resolved yet).
-      if (refreshInFlight || !subscribedBoardId) {
+      if (refreshInFlight || !subscribedBoardId || subscribedBoardId !== requestedBoardId) {
         return
       }
 
@@ -102,7 +113,11 @@ export function createBoardRealtimeController(
   }
 
   const handleBoardPresence = (snapshot: BoardPresenceSnapshot) => {
-    if (!subscribedBoardId || snapshot.boardId !== subscribedBoardId) {
+    if (
+      !subscribedBoardId ||
+      snapshot.boardId !== subscribedBoardId ||
+      snapshot.boardId !== requestedBoardId
+    ) {
       return
     }
 
@@ -126,22 +141,28 @@ export function createBoardRealtimeController(
     hubConnection.on(BOARD_MUTATION_EVENT, handleBoardMutation)
     hubConnection.on(BOARD_PRESENCE_EVENT, handleBoardPresence)
     hubConnection.onreconnecting(() => {
-      if (subscribedBoardId) {
-        startFallbackPolling(subscribedBoardId)
+      if (requestedBoardId) {
+        startFallbackPolling(requestedBoardId)
       }
     })
     hubConnection.onreconnected(async () => {
       stopFallbackPolling()
-      if (subscribedBoardId) {
-        await hubConnection.invoke('JoinBoard', subscribedBoardId)
-        if (editingCardId !== null) {
-          await hubConnection.invoke('SetEditingCard', subscribedBoardId, editingCardId)
+      const boardId = requestedBoardId
+      const generation = subscriptionGeneration
+      if (boardId) {
+        await queueBoardSubscription(boardId, generation)
+        if (
+          editingCardId !== null &&
+          requestedBoardId === boardId &&
+          subscriptionGeneration === generation
+        ) {
+          await hubConnection.invoke('SetEditingCard', boardId, editingCardId)
         }
       }
     })
     hubConnection.onclose(() => {
-      if (subscribedBoardId) {
-        startFallbackPolling(subscribedBoardId)
+      if (requestedBoardId) {
+        startFallbackPolling(requestedBoardId)
       }
     })
 
@@ -149,17 +170,23 @@ export function createBoardRealtimeController(
     return hubConnection
   }
 
-  const joinBoard = async (boardId: string) => {
-    // Cancel any debounced mutation fetch from the previous board so it cannot
-    // fire against the newly-subscribed boardId after subscribedBoardId changes.
-    cancelMutationDebounce()
-
+  const joinBoard = async (boardId: string, generation: number) => {
     const hubConnection = ensureConnection()
+    const isCurrentRequest = () =>
+      requestedBoardId === boardId && subscriptionGeneration === generation
+
+    if (!isCurrentRequest()) {
+      return
+    }
 
     if (hubConnection.state === HubConnectionState.Disconnected) {
       try {
         await hubConnection.start()
       } catch (error) {
+        if (!isCurrentRequest()) {
+          return
+        }
+
         logWarn('SignalR board realtime unavailable, using polling fallback.', error)
         startFallbackPolling(boardId)
         subscribedBoardId = boardId
@@ -167,8 +194,24 @@ export function createBoardRealtimeController(
       }
     }
 
+    if (!isCurrentRequest()) {
+      return
+    }
+
+    // SignalR only accepts hub invocations when connected. During any
+    // transition state (especially Reconnecting), retain the last confirmed
+    // subscription so onreconnected can leave it and join the latest request.
+    if (hubConnection.state !== HubConnectionState.Connected) {
+      startFallbackPolling(boardId)
+      return
+    }
+
     if (subscribedBoardId && subscribedBoardId !== boardId) {
       await hubConnection.invoke('LeaveBoard', subscribedBoardId)
+    }
+
+    if (!isCurrentRequest()) {
+      return
     }
 
     await hubConnection.invoke('JoinBoard', boardId)
@@ -176,12 +219,30 @@ export function createBoardRealtimeController(
     stopFallbackPolling()
   }
 
+  const queueBoardSubscription = (boardId: string, generation: number) => {
+    const transition = subscriptionTransition
+      .catch(() => undefined)
+      .then(() => joinBoard(boardId, generation))
+    subscriptionTransition = transition
+    return transition
+  }
+
+  const requestBoardSubscription = (boardId: string) => {
+    requestedBoardId = boardId
+    const generation = ++subscriptionGeneration
+
+    // Cancel any debounced mutation fetch from the previous board as soon as
+    // navigation changes intent, rather than waiting for the connection move.
+    cancelMutationDebounce()
+    return queueBoardSubscription(boardId, generation)
+  }
+
   const start = async (boardId: string) => {
-    await joinBoard(boardId)
+    await requestBoardSubscription(boardId)
   }
 
   const switchBoard = async (boardId: string) => {
-    await joinBoard(boardId)
+    await requestBoardSubscription(boardId)
   }
 
   const setEditingCard = async (cardId: string | null) => {
@@ -195,6 +256,8 @@ export function createBoardRealtimeController(
   }
 
   const stop = async () => {
+    requestedBoardId = null
+    subscriptionGeneration++
     stopFallbackPolling()
     cancelMutationDebounce()
     editingCardId = null

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
-import type { ProvenanceRow, ProvenanceWeight } from '../../composables/usePaperReviewSelectors'
+import TranscriptEvidenceViewer from './TranscriptEvidenceViewer.vue'
+import {
+  TRANSCRIPT_EVIDENCE_SOURCE_TYPE,
+  type EvidenceLink as ProvenanceEvidenceLink,
+  type ProvenanceRow,
+  type ProvenanceWeight,
+} from '../../composables/usePaperReviewSelectors'
 
 export interface ProvenanceMetadata {
   model: string
@@ -11,17 +18,28 @@ export interface ProvenanceMetadata {
   promptVersion: string | null
 }
 
-export interface EvidenceLink {
-  sourceKey: string
-  span: [number, number] | null
-  reason: string
-  weight: ProvenanceWeight
-}
+/**
+ * Re-exported from its canonical home in `usePaperReviewSelectors` so existing
+ * importers keep resolving `EvidenceLink` from this component.
+ */
+export type EvidenceLink = ProvenanceEvidenceLink
 
+/**
+ * Provenance drawer for the Paper deep-Review surface: source rows, model metadata, and the
+ * evidence links behind a proposal, with an optional inline transcript viewer.
+ *
+ * CALLER CONTRACT — `evidenceLinks` must be a STABLE reference. An open transcript viewer is
+ * reset whenever the `evidenceLinks` REFERENCE changes (not its contents), because a different
+ * proposal's links occupy the same indices. A caller that mints a fresh array on every render
+ * therefore collapses the viewer on every render. Pass a `computed`/`ref` that only changes
+ * when the underlying data does — as `usePaperReviewSelectors().evidenceLinks` does today
+ * (#1837 item 4).
+ */
 const props = defineProps<{
   open: boolean
   rows: ProvenanceRow[]
   metadata: ProvenanceMetadata | null
+  /** Stable reference required — see the caller contract above. */
   evidenceLinks: EvidenceLink[]
   proposalId: string
 }>()
@@ -30,6 +48,8 @@ const emit = defineEmits<{
   close: []
   report: [proposalId: string]
 }>()
+
+const { t } = useI18n()
 
 const drawerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
@@ -91,6 +111,52 @@ const provenanceJson = computed(() => {
   )
 })
 
+/**
+ * A transcript evidence link is deep-linkable only when it names a transcript, carries a
+ * resolved character span, and the server marked it viewable for THIS caller; anything else
+ * renders as plain metadata.
+ *
+ * `viewable` is server-computed from claims because the client cannot tell whether the caller
+ * owns the transcript: provenance is board-authorized while `GET /api/transcripts/{id}` is
+ * owner-only. Without this gate a board collaborator gets a button that can only land on
+ * "no longer available" (#1837 item 1). An absent flag is treated as not viewable.
+ */
+function transcriptTargetOf(link: EvidenceLink): { transcriptId: string; span: [number, number] } | null {
+  if (link.sourceType !== TRANSCRIPT_EVIDENCE_SOURCE_TYPE) return null
+  if (!link.sourceId || !link.span) return null
+  if (link.viewable !== true) return null
+  return { transcriptId: link.sourceId, span: link.span }
+}
+
+const openEvidenceIndex = ref<number | null>(null)
+
+const openEvidence = computed(() => {
+  const index = openEvidenceIndex.value
+  if (index === null) return null
+  const link = props.evidenceLinks[index]
+  if (!link) return null
+  const target = transcriptTargetOf(link)
+  return target === null ? null : { link, ...target }
+})
+
+function toggleTranscript(index: number) {
+  openEvidenceIndex.value = openEvidenceIndex.value === index ? null : index
+}
+
+// A different proposal's links occupy the same indices; close the viewer so it can
+// never show the previous proposal's transcript against the new list.
+//
+// This watcher fires on any REFERENCE change of the prop, contents identical or not — the
+// index-based viewer state has no cheaper way to know the list is a different one. Callers
+// must therefore pass a stable ref (see the caller contract on `defineProps`); a caller that
+// rebuilds the array each render would close the viewer under the user (#1837 item 4).
+watch(
+  () => props.evidenceLinks,
+  () => {
+    openEvidenceIndex.value = null
+  },
+)
+
 const copyError = ref(false)
 
 async function copyJson() {
@@ -115,13 +181,13 @@ function reportBadSuggestion() {
 function weightLabel(weight: ProvenanceWeight): string {
   switch (weight) {
     case 'primary':
-      return 'Primary Sources'
+      return t('review.provenanceDrawer.weight.primary')
     case 'contextual':
-      return 'Contextual'
+      return t('review.provenanceDrawer.weight.contextual')
     case 'inferred':
-      return 'Inferred'
+      return t('review.provenanceDrawer.weight.inferred')
     case 'excluded':
-      return 'Excluded'
+      return t('review.provenanceDrawer.weight.excluded')
   }
 }
 
@@ -147,6 +213,7 @@ watch(
       await nextTick()
       drawerRef.value?.focus()
     } else {
+      openEvidenceIndex.value = null
       unregisterEscape?.()
       unregisterEscape = null
       previouslyFocusedElement?.focus()
@@ -179,15 +246,15 @@ onUnmounted(() => {
           class="prov-drawer"
           role="dialog"
           aria-modal="true"
-          aria-label="Provenance details"
+          :aria-label="$t('review.provenanceDrawer.ariaLabel')"
           tabindex="-1"
           @keydown="trapFocus"
         >
           <header class="prov-drawer__header">
-            <h2 class="prov-drawer__title">Provenance</h2>
+            <h2 class="prov-drawer__title">{{ $t('review.provenanceDrawer.title') }}</h2>
             <button
               class="prov-drawer__close"
-              aria-label="Close provenance drawer"
+              :aria-label="$t('review.provenanceDrawer.close')"
               @click="emit('close')"
             >
               &times;
@@ -196,19 +263,31 @@ onUnmounted(() => {
 
           <div v-if="metadata" class="prov-drawer__meta">
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Model</span>
+              <span class="prov-drawer__meta-label">{{ $t('review.provenanceDrawer.meta.model') }}</span>
               <span class="prov-drawer__meta-value">{{ metadata.provider }}/{{ metadata.model }}</span>
             </div>
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Confidence</span>
-              <span class="prov-drawer__meta-value">{{ (metadata.confidence * 100).toFixed(0) }}%</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.confidence')
+              }}</span>
+              <span class="prov-drawer__meta-value">{{
+                $t('review.provenanceDrawer.meta.confidenceValue', {
+                  value: (metadata.confidence * 100).toFixed(0),
+                })
+              }}</span>
             </div>
             <div class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Latency</span>
-              <span class="prov-drawer__meta-value">{{ metadata.latencyMs }}ms</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.latency')
+              }}</span>
+              <span class="prov-drawer__meta-value">{{
+                $t('review.provenanceDrawer.meta.latencyValue', { value: metadata.latencyMs })
+              }}</span>
             </div>
             <div v-if="metadata.promptVersion" class="prov-drawer__meta-row">
-              <span class="prov-drawer__meta-label">Prompt version</span>
+              <span class="prov-drawer__meta-label">{{
+                $t('review.provenanceDrawer.meta.promptVersion')
+              }}</span>
               <span class="prov-drawer__meta-value">{{ metadata.promptVersion }}</span>
             </div>
           </div>
@@ -233,7 +312,9 @@ onUnmounted(() => {
           </div>
 
           <section v-if="evidenceLinks.length > 0" class="prov-drawer__evidence">
-            <h3 class="prov-drawer__section-title">Evidence Links</h3>
+            <h3 class="prov-drawer__section-title">
+              {{ $t('review.provenanceDrawer.evidenceTitle') }}
+            </h3>
             <div
               v-for="(link, idx) in evidenceLinks"
               :key="idx"
@@ -243,18 +324,52 @@ onUnmounted(() => {
                 {{ link.sourceKey }}
               </span>
               <span v-if="link.span" class="prov-drawer__evidence-span">
-                chars {{ link.span[0] }}&ndash;{{ link.span[1] }}
+                {{
+                  $t('review.provenanceDrawer.evidenceSpan', {
+                    start: link.span[0],
+                    end: link.span[1],
+                  })
+                }}
               </span>
               <span class="prov-drawer__evidence-reason">{{ link.reason }}</span>
+              <button
+                v-if="transcriptTargetOf(link)"
+                type="button"
+                class="prov-drawer__evidence-open"
+                :aria-expanded="openEvidenceIndex === idx"
+                :data-testid="`provenance-view-in-transcript-${idx}`"
+                @click="toggleTranscript(idx)"
+              >
+                {{
+                  openEvidenceIndex === idx
+                    ? $t('review.provenanceDrawer.hideTranscript')
+                    : $t('review.provenanceDrawer.viewTranscript')
+                }}
+              </button>
+              <TranscriptEvidenceViewer
+                v-if="openEvidence && openEvidenceIndex === idx"
+                class="prov-drawer__evidence-viewer"
+                :transcript-id="openEvidence.transcriptId"
+                :span-start="openEvidence.span[0]"
+                :span-end="openEvidence.span[1]"
+                :label="openEvidence.link.reason"
+                @close="openEvidenceIndex = null"
+              />
             </div>
           </section>
 
           <footer class="prov-drawer__footer">
             <button class="prov-drawer__action prov-drawer__action--copy" @click="copyJson">
-              {{ copyError ? 'Copy failed' : copied ? 'Copied!' : 'Copy JSON' }}
+              {{
+                copyError
+                  ? $t('review.provenanceDrawer.copyFailed')
+                  : copied
+                    ? $t('review.provenanceDrawer.copied')
+                    : $t('review.provenanceDrawer.copyJson')
+              }}
             </button>
             <button class="prov-drawer__action prov-drawer__action--report" @click="reportBadSuggestion">
-              Report bad suggestion
+              {{ $t('review.provenanceDrawer.report') }}
             </button>
           </footer>
         </aside>
@@ -318,7 +433,7 @@ onUnmounted(() => {
 }
 
 .prov-drawer__meta {
-  background: var(--td-surface-sunken, #f9f9f9);
+  background: var(--td-surface-sunken, #0e0e0e);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 20px;
@@ -427,6 +542,25 @@ onUnmounted(() => {
 .prov-drawer__evidence-reason {
   color: var(--td-text-secondary, #666);
   flex: 1;
+}
+
+.prov-drawer__evidence-open {
+  border: 1px solid var(--td-border-default, #ddd);
+  background: var(--td-surface-container, #fff);
+  color: var(--td-text-primary, #333);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.prov-drawer__evidence-open:hover {
+  background: var(--td-surface-hover, #f5f5f5);
+}
+
+.prov-drawer__evidence-viewer {
+  flex-basis: 100%;
 }
 
 .prov-drawer__footer {

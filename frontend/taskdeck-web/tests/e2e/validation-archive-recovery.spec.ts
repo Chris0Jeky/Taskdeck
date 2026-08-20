@@ -171,7 +171,7 @@ test.describe('TST11-SC-012: Restore archived board', () => {
     await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
 
     // Find and click restore for this board
-    const boardRow = page.locator('.td-archive-row').filter({ hasText: `Restore Test ${seed}` })
+    const boardRow = page.locator('.paper-archive__row').filter({ hasText: `Restore Test ${seed}` })
     await expect(boardRow).toBeVisible()
 
     // Accept the confirmation dialog

@@ -16,9 +16,9 @@ defineProps<{
 
 <template>
   <section class="card paper-review-past">
-    <div class="tk-eyebrow paper-review-past__eyebrow">Similar past decisions</div>
+    <div class="tk-eyebrow paper-review-past__eyebrow">{{ $t('review.similarPast.heading') }}</div>
     <div v-if="rows.length === 0" class="tk-meta paper-review-past__empty">
-      No comparable past decisions.
+      {{ $t('review.similarPast.empty') }}
     </div>
     <div
       v-for="row in rows"
@@ -31,16 +31,21 @@ defineProps<{
       </div>
       <div class="paper-review-past__verdict">
         <PaperTagstamp :tone="row.verdict === 'applied' ? 'applied' : 'overdue'">
-          {{ row.verdict.toUpperCase() }}
+          {{ $t(`review.similarPast.verdict.${row.verdict}`) }}
         </PaperTagstamp>
         <div class="tk-meta paper-review-past__date">{{ row.date }}</div>
       </div>
     </div>
     <div v-if="rows.length > 0" class="tk-meta paper-review-past__rate">
-      Apply rate on similar:
+      {{ $t('review.similarPast.rateLabel') }}
       <b>
-        {{ applyRate.applied }} of {{ applyRate.total }}
-        ({{ Math.round(applyRate.ratio * 100) }}%)
+        {{
+          $t('review.similarPast.rateValue', {
+            applied: applyRate.applied,
+            total: applyRate.total,
+            percent: Math.round(applyRate.ratio * 100),
+          })
+        }}
       </b>
     </div>
   </section>

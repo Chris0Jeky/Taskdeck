@@ -5,6 +5,19 @@ export interface Board {
   isArchived: boolean
   createdAt: string
   updatedAt: string
+  /**
+   * Whether the CURRENT user may write to this board — server-computed
+   * (`BoardDto.CanWrite`), never derived client-side. True for the board owner
+   * and for Admin/Editor members; false for a Viewer.
+   *
+   * Optional because it is only meaningful on caller-scoped payloads and
+   * because older cached responses predate the field. Surfaces that gate on it
+   * treat ONLY an explicit `false` as read-only, so a board from a payload
+   * without the field behaves exactly as it did before the field existed.
+   * `permissionsStore.canEdit` is NOT a substitute: it reads `BoardAccess`
+   * rows, and board owners have none.
+   */
+  canWrite?: boolean
 }
 
 export interface BoardDetail extends Board {

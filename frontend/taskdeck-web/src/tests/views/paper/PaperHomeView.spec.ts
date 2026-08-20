@@ -199,6 +199,7 @@ describe('PaperHomeView', () => {
 
       expect(wrapper.find('[data-testid="paper-home-empty"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="paper-home-empty"]').text()).toContain('Nothing waiting')
+      expect(wrapper.text().match(/Nothing waiting\. Good\./g) ?? []).toHaveLength(1)
       expect(wrapper.find('[data-testid="paper-home-card-proposal"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-home-card-carryover"]').exists()).toBe(false)
     })
@@ -316,6 +317,132 @@ describe('PaperHomeView', () => {
       carryoverCards.forEach((card) => {
         expect(card.classes()).not.toContain('halo-ember')
       })
+    })
+  })
+
+  /**
+   * Issue #1768 — Home reported "1 carry-over from yesterday" seconds after the
+   * very first same-day capture on a fresh account.
+   *
+   * Root cause: `workload.capturesNeedingTriage` is a pure STATUS count
+   * (`NewCount + FailedCount` in WorkspaceService.GetHomeAsync) with no date
+   * predicate in the chain. The view alone authored the "from yesterday" claim,
+   * so a capture saved seconds ago was mislabelled — in every timezone.
+   *
+   * The pinned contract: Home's workload copy is date-neutral. It must not vary
+   * with the local clock and must never assert a day-relative origin.
+   */
+  describe('day-boundary copy (#1768)', () => {
+    // `vi.stubEnv` (restored by unstubAllEnvs) rather than touching `process.env`
+    // directly: this tsconfig project has no node types, and CI type-checks specs.
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    function ledeAt(systemTime: Date, tz: string, capturesNeedingTriage: number): string {
+      vi.stubEnv('TZ', tz)
+      vi.useFakeTimers()
+      vi.setSystemTime(systemTime)
+      mockWorkspaceStore.homeSummary = buildSummary({
+        workload: {
+          capturesNeedingTriage,
+          capturesInProgress: 0,
+          capturesReadyForFollowUp: 0,
+          proposalsPendingReview: 0,
+        },
+      })
+      const wrapper = mount(PaperHomeView)
+      const text = wrapper.get('[data-testid="paper-home-lede"]').text()
+      wrapper.unmount()
+      vi.useRealTimers()
+      return text
+    }
+
+    it('never calls a same-day capture a carry-over from yesterday', () => {
+      // The live repro: fresh account, first capture saved at 02:43 local, read
+      // back seconds later. Before the fix this rendered "1 carry-over from yesterday".
+      const lede = ledeAt(new Date(2026, 7, 19, 2, 43, 12), 'UTC', 1)
+
+      expect(lede).toBe('1 awaiting triage')
+      expect(lede.toLowerCase()).not.toContain('yesterday')
+      expect(lede.toLowerCase()).not.toContain('carry-over')
+    })
+
+    /**
+     * Each row straddles a boundary: instants seconds either side of local
+     * midnight, and offsets where the UTC calendar day differs from the local
+     * one in both directions (Kiritimati is UTC+14, Midway UTC-11).
+     *
+     * `utcDayShift` is asserted first so the timezone dimension is load-bearing:
+     * it proves the runtime really adopted the offset. Without it a runtime that
+     * ignored the TZ stub would still pass every copy assertion below and the
+     * row would be decorative.
+     */
+    // Wall-clock parts, not Date objects: a `new Date(...)` in this table would be
+    // constructed at collection time under the ambient zone, before the TZ swap.
+    it.each<[string, [number, number, number, number, number, number], string, number]>([
+      ['one second before local midnight, UTC', [2026, 7, 19, 23, 59, 59], 'UTC', 0],
+      ['one second after local midnight, UTC', [2026, 7, 20, 0, 0, 1], 'UTC', 0],
+      ['UTC+14 — UTC is still on the previous day', [2026, 7, 19, 12, 0, 0], 'Pacific/Kiritimati', -1],
+      ['UTC-11 — UTC has already rolled to the next day', [2026, 7, 19, 20, 0, 0], 'Pacific/Midway', 1],
+      ['UTC+5:30 — half-hour offset just past local midnight', [2026, 7, 20, 0, 15, 0], 'Asia/Kolkata', -1],
+      ['DST-observing zone at the local boundary', [2026, 7, 19, 23, 59, 59], 'America/New_York', 1],
+    ])('renders identical date-neutral copy: %s', (_label, parts, tz, utcDayShift) => {
+      vi.stubEnv('TZ', tz)
+      const local = new Date(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
+      expect(local.getUTCDate() - local.getDate()).toBe(utcDayShift)
+
+      const lede = ledeAt(local, tz, 2)
+
+      expect(lede).toBe('2 awaiting triage')
+      expect(lede.toLowerCase()).not.toContain('yesterday')
+    })
+
+    it('keeps the queue card title date-neutral too', () => {
+      vi.stubEnv('TZ', 'Pacific/Kiritimati')
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 7, 19, 2, 43, 12))
+      mockWorkspaceStore.homeSummary = buildSummary({
+        workload: {
+          capturesNeedingTriage: 1,
+          capturesInProgress: 0,
+          capturesReadyForFollowUp: 0,
+          proposalsPendingReview: 0,
+        },
+      })
+
+      const wrapper = mount(PaperHomeView)
+      const card = wrapper.get('[data-testid="paper-home-card-carryover"]')
+
+      expect(card.text()).toContain('Triage 1 capture')
+      expect(card.text().toLowerCase()).not.toContain('yesterday')
+      expect(card.text().toUpperCase()).not.toContain('CARRY-OVER')
+    })
+
+    it('still reports nothing waiting when the workload is empty', () => {
+      vi.stubEnv('TZ', 'Pacific/Midway')
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 7, 20, 0, 0, 1))
+      mockWorkspaceStore.homeSummary = buildSummary({
+        workload: {
+          capturesNeedingTriage: 0,
+          capturesInProgress: 0,
+          capturesReadyForFollowUp: 0,
+          proposalsPendingReview: 0,
+        },
+      })
+
+      const wrapper = mount(PaperHomeView)
+
+      // #1734: the empty state owns the message, so the lede is suppressed
+      // rather than saying it a second time. The copy stays date-neutral (#1768).
+      expect(wrapper.find('[data-testid="paper-home-lede"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-home-empty"]').text()).toContain(
+        'Nothing waiting. Good.',
+      )
+
+      wrapper.unmount()
+      vi.useRealTimers()
     })
   })
 

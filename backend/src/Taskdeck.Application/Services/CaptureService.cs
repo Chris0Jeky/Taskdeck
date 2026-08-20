@@ -220,13 +220,34 @@ public class CaptureService : ICaptureService
         return CancelInternalAsync(userId, itemId, cancellationToken);
     }
 
-    public async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+    public Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,
+        Guid? targetBoardId = null,
         CancellationToken cancellationToken = default)
+        => EnqueueTriageAsync(userId, itemId, targetBoardId, boardAccessCache: null, cancellationToken);
+
+    /// <param name="boardAccessCache">
+    /// Optional per-call-group memo of board authorization outcomes, keyed by board id. Supplied by
+    /// <see cref="BatchTriageAsync"/> so a batch spends one <c>CanWriteBoardAsync</c> lookup per
+    /// DISTINCT board instead of one per item (#1836): that lookup is a board fetch plus a
+    /// membership read, so a 50-item batch on one board previously paid 50 of each. Board
+    /// membership cannot change within a single batch call, so the memo is behaviour-identical;
+    /// failure outcomes are memoized too, for the same reason. Null on the single-item path, which
+    /// keeps its original one-lookup-per-call shape.
+    /// </param>
+    private async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+        Guid userId,
+        Guid itemId,
+        Guid? targetBoardId,
+        Dictionary<Guid, Result>? boardAccessCache,
+        CancellationToken cancellationToken)
     {
         if (userId == Guid.Empty)
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (targetBoardId.HasValue && targetBoardId.Value == Guid.Empty)
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "BoardId cannot be empty");
 
         var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
         if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
@@ -236,7 +257,7 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
         var payload = ParsePayload(item);
-        var (effectivePayload, _, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
+        var (effectivePayload, effectiveBoardId, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
             item,
             payload,
             persistChanges: true,
@@ -249,6 +270,8 @@ public class CaptureService : ICaptureService
         var currentStatus = ResolveCaptureStatus(item, effectivePayload);
         if (currentStatus == CaptureStatus.Triaging)
         {
+            // Already in flight — the board was resolved on the first accept. Stay idempotent so a
+            // double-click can't turn a live triage into a spurious validation error.
             return Result.Success(new CaptureTriageEnqueueResultDto(
                 item.Id,
                 CaptureStatus.Triaging,
@@ -267,6 +290,47 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(
                 ErrorCodes.Conflict,
                 $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
+        }
+
+        // A capture with no board can never be triaged into a proposal — a proposal targets a board
+        // (CaptureTriageService enforces this at the worker). Home quick-capture lands board-less, so
+        // resolve the target board now that the item is otherwise transition-eligible: link a
+        // caller-supplied board, then reject synchronously with a 400 instead of queueing a doomed
+        // async job that dead-ends at a bare FAILED badge with no reason (#1764).
+        if (!effectiveBoardId.HasValue && targetBoardId.HasValue)
+        {
+            // Gate the link on write access, not read (#1794): the board is only being attached so a
+            // proposal can be queued against it, so the same bar applies as to an already-linked board.
+            var linkPermission = await EnsureBoardProposalAccessAsync(userId, targetBoardId.Value, boardAccessCache);
+            if (!linkPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(linkPermission.ErrorCode, linkPermission.ErrorMessage);
+
+            try
+            {
+                item.BackfillBoard(targetBoardId.Value);
+            }
+            catch (DomainException ex)
+            {
+                return Result.Failure<CaptureTriageEnqueueResultDto>(ex.ErrorCode, ex.Message);
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            effectiveBoardId = targetBoardId;
+        }
+        else if (effectiveBoardId.HasValue)
+        {
+            // Same gate for a capture that already carries its board: the read-only injection vector
+            // is reachable through capture-with-board + accept, not only through the backfill body.
+            var boardPermission = await EnsureBoardProposalAccessAsync(userId, effectiveBoardId.Value, boardAccessCache);
+            if (!boardPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(boardPermission.ErrorCode, boardPermission.ErrorMessage);
+        }
+
+        if (!effectiveBoardId.HasValue)
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(
+                ErrorCodes.ValidationError,
+                "Choose a board before accepting this capture. Triage turns a capture into a board proposal, so it needs a target board.");
         }
 
         try
@@ -289,6 +353,40 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Conflict, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Board-targeted triage generates an automation proposal into the target board's review queue,
+    /// so it requires write-capable membership on that board — the roles
+    /// <see cref="BoardAccess.CanWrite"/> admits (Owner, Admin, Editor), plus the board owner. A
+    /// Viewer can read the board but must not be able to inject proposals into a queue only
+    /// approvers can clear (#1794). Approval and execution authorization are unchanged: write access
+    /// buys the right to <em>suggest</em>; every board mutation still needs an explicit approve and
+    /// execute by an approver.
+    /// </summary>
+    private async Task<Result> EnsureBoardProposalAccessAsync(
+        Guid userId,
+        Guid boardId,
+        Dictionary<Guid, Result>? boardAccessCache = null)
+    {
+        if (boardAccessCache is not null && boardAccessCache.TryGetValue(boardId, out var memoized))
+            return memoized;
+
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        var outcome = !permission.IsSuccess
+            ? Result.Failure(permission.ErrorCode, permission.ErrorMessage)
+            : permission.Value
+                ? Result.Success()
+                : Result.Failure(ErrorCodes.Forbidden, BoardProposalAccessDeniedMessage);
+
+        if (boardAccessCache is not null)
+            boardAccessCache[boardId] = outcome;
+
+        return outcome;
+    }
+
+    private const string BoardProposalAccessDeniedMessage =
+        "You do not have permission to modify this board. Triaging a capture into a board queues an " +
+        "automation proposal there, which requires write access to that board.";
 
     private static readonly HashSet<string> ValidBatchActions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -328,13 +426,18 @@ public class CaptureService : ICaptureService
 
         var results = new List<BatchTriageItemResultDto>(request.Items.Count);
 
+        // One board-authorization lookup per DISTINCT board for the whole batch, not one per item
+        // (#1836). Shared across every triage item below; see the boardAccessCache parameter on
+        // EnqueueTriageAsync for why memoizing inside a single batch is behaviour-identical.
+        var boardAccessCache = new Dictionary<Guid, Result>();
+
         foreach (var itemAction in request.Items)
         {
             try
             {
                 var actionResult = itemAction.Action.ToLowerInvariant() switch
                 {
-                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, cancellationToken),
+                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, boardAccessCache, cancellationToken),
                     "ignore" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     "cancel" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     _ => Result.Failure(ErrorCodes.ValidationError, $"Unknown action: {itemAction.Action}")
@@ -369,9 +472,10 @@ public class CaptureService : ICaptureService
     private async Task<Result> ExecuteBatchItemTriageAsync(
         Guid userId,
         Guid itemId,
+        Dictionary<Guid, Result> boardAccessCache,
         CancellationToken cancellationToken)
     {
-        var triageResult = await EnqueueTriageAsync(userId, itemId, cancellationToken);
+        var triageResult = await EnqueueTriageAsync(userId, itemId, targetBoardId: null, boardAccessCache, cancellationToken);
         return triageResult.IsSuccess
             ? Result.Success()
             : Result.Failure(triageResult.ErrorCode, triageResult.ErrorMessage);
@@ -496,7 +600,8 @@ public class CaptureService : ICaptureService
             payload.Source,
             excerpt,
             item.CreatedAt,
-            item.ProcessedAt);
+            item.ProcessedAt,
+            item.ErrorMessage);
     }
 
     private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)

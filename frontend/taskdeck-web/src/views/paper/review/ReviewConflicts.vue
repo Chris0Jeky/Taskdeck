@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { ConflictRow } from '../../../composables/usePaperReviewSelectors'
 
 /**
@@ -9,11 +10,13 @@ import type { ConflictRow } from '../../../composables/usePaperReviewSelectors'
  */
 const props = defineProps<{ rows: ConflictRow[] }>()
 
+const { t } = useI18n()
+
 const warnCount = computed(() => props.rows.filter((r) => r.tone === 'warn').length)
 const subTitle = computed(() =>
   warnCount.value === 0
-    ? 'What the system noticed · clear'
-    : `What the system noticed · ${warnCount.value} ${warnCount.value === 1 ? 'minor' : 'items'}`,
+    ? t('review.conflicts.sub.clear')
+    : t('review.conflicts.sub.counted', { count: warnCount.value }, warnCount.value),
 )
 
 function color(tone: ConflictRow['tone']): string {
@@ -41,12 +44,12 @@ function glyph(tone: ConflictRow['tone']): string {
 function label(tone: ConflictRow['tone']): string {
   switch (tone) {
     case 'warn':
-      return 'WARNING'
+      return t('review.conflicts.tone.warn')
     case 'ok':
-      return 'CLEAR'
+      return t('review.conflicts.tone.ok')
     case 'info':
     default:
-      return 'INFO'
+      return t('review.conflicts.tone.info')
   }
 }
 </script>
@@ -55,12 +58,12 @@ function label(tone: ConflictRow['tone']): string {
   <section class="paper-review-conflicts">
     <header class="paper-review-conflicts__header">
       <span class="tk-serial paper-review-conflicts__serial">§ IV</span>
-      <h3 class="tk-h3 paper-review-conflicts__title">Conflicts &amp; warnings</h3>
+      <h3 class="tk-h3 paper-review-conflicts__title">{{ $t('review.conflicts.title') }}</h3>
       <span class="tk-meta paper-review-conflicts__sub">{{ subTitle }}</span>
     </header>
     <div class="card paper-review-conflicts__card">
       <div v-if="rows.length === 0" class="paper-review-conflicts__empty tk-meta">
-        Nothing flagged.
+        {{ $t('review.conflicts.empty') }}
       </div>
       <div
         v-for="row in rows"

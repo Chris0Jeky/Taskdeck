@@ -13,6 +13,14 @@ using Taskdeck.Infrastructure.Persistence;
 var startupTrace = CliStartupTrace.CreateFromTestHarnessEnvironment();
 startupTrace.Record(CliStartupTrace.ManagedEntryPhase);
 
+// `taskdeck --version` answers before anything else is touched: no configuration,
+// no encryption-key bootstrap, no database, no migrations (#1804). It must stay
+// answerable on a machine whose data directory is missing or corrupt.
+if (VersionCommand.IsVersionRequest(args))
+{
+    return VersionCommand.Execute();
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // CLI stdout must be clean JSON. Remove all default logging providers so EF Core
@@ -68,10 +76,14 @@ using (var host = builder.Build())
     using (var startupScope = host.Services.CreateScope())
     {
         var dbContext = startupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-        // Serialize migrations across processes (API/MCP/CLI) via a file lock (#1164).
+        var backupSettings = startupScope.ServiceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseBackupSettings>>().Value;
+        // Serialize migrations across processes (API/MCP/CLI) via a file lock (#1164), taking a
+        // fail-closed pre-migration snapshot of the SQLite file when migrations are pending (#1803).
         // Pass no logger: CLI stdout must stay clean JSON (the helper never writes to stdout,
-        // but logging is suppressed here regardless).
-        SerializedMigrator.Migrate(dbContext);
+        // but logging is suppressed here regardless). A backup failure still surfaces: it throws
+        // PreMigrationBackupException out of startup rather than migrating unprotected.
+        SerializedMigrator.Migrate(dbContext, backupSettings);
     }
 
     startupTrace.Record(CliStartupTrace.MigrationEndPhase);

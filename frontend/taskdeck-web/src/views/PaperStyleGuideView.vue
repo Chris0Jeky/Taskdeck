@@ -90,7 +90,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <div><span class="tk-eyebrow">.tk-h1</span><span class="tk-h1">Split <em>"Implement dark mode"</em> into <em>three smaller cards.</em></span></div>
           <div><span class="tk-eyebrow">.tk-h2</span><span class="tk-h2">Provenance &amp; <em>side effects</em></span></div>
           <div><span class="tk-eyebrow">.tk-h3</span><span class="tk-h3">Recently applied</span></div>
-          <div><span class="tk-eyebrow">.tk-lede</span><span class="tk-lede">Haiku read the card body, the linked design doc, and 7 prior activity entries on this board.</span></div>
+          <div><span class="tk-eyebrow">.tk-lede</span><span class="tk-lede">The assistant read the card body, the linked design doc, and 7 prior activity entries on this board.</span></div>
           <div><span class="tk-eyebrow">.tk-body</span><span class="tk-body">Original 4 comments stay on the archived parent.</span></div>
           <div><span class="tk-eyebrow">.tk-meta</span><span class="tk-meta">2026-04-25 · 11:42 PT</span></div>
           <div><span class="tk-eyebrow">.tk-serial</span><span class="tk-serial">REVIEW · #014 · LOCAL-FIRST</span></div>
@@ -309,8 +309,8 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
         <h3 class="tk-eyebrow sg-section-eyebrow">PaperConfidenceDial</h3>
         <div class="sg-row" style="gap: 28px;">
           <PaperConfidenceDial :value="0.18" subline="router · v3" />
-          <PaperConfidenceDial :value="0.5" subline="haiku" />
-          <PaperConfidenceDial :value="0.84" subline="opus" />
+          <PaperConfidenceDial :value="0.5" subline="assistant" />
+          <PaperConfidenceDial :value="0.84" subline="provider" />
           <PaperConfidenceDial :value="1" caption="LIVE" subline="local" />
         </div>
 
@@ -339,7 +339,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <PaperStatusPill kind="live">LIVE</PaperStatusPill>
         </div>
         <div class="sg-row" style="gap: 28px;">
-          <PaperConfidenceDial :value="0.62" subline="haiku" />
+          <PaperConfidenceDial :value="0.62" subline="assistant" />
           <PaperCard variant="lift" class="sg-pad-tight" style="min-width: 200px;">
             <span class="tk-eyebrow">card-lift</span>
             <p class="tk-body">Both themes share one stylesheet.</p>

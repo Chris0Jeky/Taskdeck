@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
+using Taskdeck.Application.Common;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Xunit;
@@ -31,6 +32,29 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         payload.GetProperty("status").GetString().Should().Be("Healthy");
+    }
+
+    [Fact]
+    public async Task Live_ShouldReportTheStampedProductVersion()
+    {
+        var response = await _client.GetAsync("/health/live");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.TryGetProperty("version", out var version).Should().BeTrue(
+            "a self-hoster must be able to answer 'what version am I running?' (#1804)");
+        version.GetString().Should().Be(ProductVersion.Value);
+        version.GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Ready_ShouldReportTheStampedProductVersion()
+    {
+        var response = await _client.GetAsync("/health/ready");
+
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        payload.TryGetProperty("version", out var version).Should().BeTrue();
+        version.GetString().Should().Be(ProductVersion.Value);
     }
 
     [Fact]

@@ -114,6 +114,16 @@ public record CreateProposalOperationDto(
     string? ExpectedVersion = null
 );
 
+/// <summary>
+/// Trusted application-side evidence metadata for schema-v2 transcript proposals. This is not an
+/// API request shape: only the transcript triage pipeline supplies it after resolving quote spans.
+/// </summary>
+public sealed record TranscriptEvidenceLinkInput(
+    int OperationSequence,
+    Guid TranscriptId,
+    int? SpanStart = null,
+    int? SpanEnd = null);
+
 public record UpdateProposalStatusDto(
     string? Reason = null
 );

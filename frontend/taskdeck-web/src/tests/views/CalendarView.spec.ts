@@ -112,6 +112,47 @@ describe('CalendarView', () => {
     expect(wrapper.text()).toContain('due-date-backed work')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(CalendarView)
+    await waitForUi()
+
+    expect(wrapper.find('.paper-calendar').exists()).toBe(true)
+    expect(wrapper.find('.paper-calendar__hero').exists()).toBe(true)
+    expect(wrapper.find('.paper-calendar__grid').exists()).toBe(true)
+    expect(wrapper.find('.paper-cal-card').exists()).toBe(true)
+
+    const html = wrapper.html()
+    expect(html).not.toContain('td-calendar')
+    expect(html).not.toContain('td-cal-card')
+    expect(html).not.toContain('td-panel')
+    expect(html).not.toContain('td-btn')
+  })
+
+  // #1816: the month view never renders the timeline branch, so asserting
+  // `not.toContain('td-timeline')` on the default mount was vacuous -- it held
+  // whatever the timeline markup looked like. Switch to the timeline view and
+  // pin the hooks that are actually rendered there.
+  it('renders the timeline view with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(CalendarView)
+    await waitForUi()
+
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
+    const timelineBtn = buttons.find(b => b.text() === 'Timeline')
+    expect(timelineBtn).toBeDefined()
+    await timelineBtn!.trigger('click')
+
+    // Guard the guard: without a rendered timeline the negatives below would
+    // pass on an empty branch again.
+    expect(wrapper.find('.paper-calendar__timeline').exists()).toBe(true)
+    expect(wrapper.find('.paper-timeline-group').exists()).toBe(true)
+    expect(wrapper.find('.paper-timeline-card').exists()).toBe(true)
+
+    const html = wrapper.html()
+    expect(html).not.toContain('td-timeline')
+    expect(html).not.toContain('td-calendar')
+    expect(html).not.toContain('td-btn')
+  })
+
   it('shows loading state while fetching', async () => {
     // Never resolve
     mockGetCalendar.mockReturnValue(new Promise(() => {}))
@@ -134,7 +175,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const retryBtn = wrapper.find('.td-btn--ghost.td-btn--sm')
+    const retryBtn = wrapper.find('.paper-calendar__retry')
     expect(retryBtn.exists()).toBe(true)
     expect(retryBtn.text()).toContain('Retry')
   })
@@ -163,7 +204,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const weekdays = wrapper.findAll('.td-calendar__weekday')
+    const weekdays = wrapper.findAll('.paper-calendar__weekday')
     expect(weekdays).toHaveLength(7)
     expect(weekdays[0].text()).toBe('Sun')
     expect(weekdays[6].text()).toBe('Sat')
@@ -173,7 +214,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const cardElements = wrapper.findAll('.td-cal-card')
+    const cardElements = wrapper.findAll('.paper-cal-card')
     expect(cardElements.length).toBeGreaterThan(0)
     expect(wrapper.text()).toContain('Ship feature X')
   })
@@ -182,7 +223,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const overdueCards = wrapper.findAll('.td-cal-card--overdue')
+    const overdueCards = wrapper.findAll('.paper-cal-card--overdue')
     expect(overdueCards.length).toBeGreaterThan(0)
   })
 
@@ -190,7 +231,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const blockedCards = wrapper.findAll('.td-cal-card--blocked')
+    const blockedCards = wrapper.findAll('.paper-cal-card--blocked')
     expect(blockedCards.length).toBeGreaterThan(0)
   })
 
@@ -198,7 +239,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const card = wrapper.find('.td-cal-card')
+    const card = wrapper.find('.paper-cal-card')
     await card.trigger('click')
 
     expect(routerMocks.push).toHaveBeenCalled()
@@ -210,12 +251,12 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const buttons = wrapper.findAll('.td-calendar__hero-actions .td-btn')
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
     const timelineBtn = buttons.find(b => b.text() === 'Timeline')
     expect(timelineBtn).toBeDefined()
     await timelineBtn!.trigger('click')
 
-    expect(wrapper.findAll('.td-timeline-group').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('.paper-timeline-group').length).toBeGreaterThan(0)
   })
 
   it('renders timeline cards with status indicators', async () => {
@@ -223,7 +264,7 @@ describe('CalendarView', () => {
     await waitForUi()
 
     // Switch to timeline
-    const buttons = wrapper.findAll('.td-calendar__hero-actions .td-btn')
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
     const timelineBtn = buttons.find(b => b.text() === 'Timeline')
     await timelineBtn!.trigger('click')
 
@@ -238,7 +279,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const buttons = wrapper.findAll('.td-calendar__hero-actions .td-btn')
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
     const timelineBtn = buttons.find(b => b.text() === 'Timeline')
     await timelineBtn!.trigger('click')
 
@@ -249,7 +290,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const nav = wrapper.find('.td-calendar__nav')
+    const nav = wrapper.find('.paper-calendar__nav')
     expect(nav.exists()).toBe(true)
     expect(nav.text()).toContain('Today')
   })
@@ -260,7 +301,7 @@ describe('CalendarView', () => {
 
     const initialCallCount = mockGetCalendar.mock.calls.length
 
-    const nextBtn = wrapper.findAll('.td-calendar__nav .td-btn--ghost')[1]
+    const nextBtn = wrapper.findAll('.paper-calendar__nav-btn')[1]
     await nextBtn.trigger('click')
     await waitForUi()
 
@@ -274,7 +315,7 @@ describe('CalendarView', () => {
 
     const initialCallCount = mockGetCalendar.mock.calls.length
 
-    const prevBtn = wrapper.findAll('.td-calendar__nav .td-btn--ghost')[0]
+    const prevBtn = wrapper.findAll('.paper-calendar__nav-btn')[0]
     await prevBtn.trigger('click')
     await waitForUi()
 
@@ -285,11 +326,11 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const buttons = wrapper.findAll('.td-calendar__hero-actions .td-btn')
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
     const timelineBtn = buttons.find(b => b.text() === 'Timeline')
     await timelineBtn!.trigger('click')
 
-    const card = wrapper.find('.td-timeline-card')
+    const card = wrapper.find('.paper-timeline-card')
     await card.trigger('click')
 
     expect(routerMocks.push).toHaveBeenCalled()
@@ -299,7 +340,7 @@ describe('CalendarView', () => {
     const wrapper = mount(CalendarView)
     await waitForUi()
 
-    const buttons = wrapper.findAll('.td-calendar__hero-actions .td-btn')
+    const buttons = wrapper.findAll('.paper-calendar__hero-actions button')
     const timelineBtn = buttons.find(b => b.text() === 'Timeline')
     await timelineBtn!.trigger('click')
 

@@ -30,14 +30,21 @@ const props = withDefaults(
     /** Disables the bulk file-away action while any review action is in flight. */
     busy?: boolean
     recentlyApplied: RecentlyAppliedRow[]
+    /**
+     * Real 7-day activity counts (oldest → newest). Omit when there is no
+     * decision history — the mini-cadence bars are hidden rather than invented.
+     */
     cadence?: number[]
+    /**
+     * Real apply rate (0–1) derived from decision history. Omit when there is
+     * no decision history so the rail shows an honest empty state instead of a
+     * fabricated percentage. There is intentionally no default value.
+     */
     applyRate?: number
   }>(),
   {
     dismissableCount: 0,
     busy: false,
-    cadence: () => [4, 3, 5, 2, 4, 1, 3],
-    applyRate: 0.71,
   },
 )
 
@@ -65,6 +72,20 @@ function asPct(value: number): string {
   return `${Math.round(value * 100)}%`
 }
 
+/** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
+const hasCadence = computed<boolean>(
+  () => Array.isArray(props.cadence) && props.cadence.length > 0,
+)
+
+/**
+ * Formatted apply-rate percentage, or null when there is no decision history.
+ * Never falls back to a fabricated constant — an absent value renders the
+ * "No decisions yet" empty state instead of an invented percentage.
+ */
+const applyRatePct = computed<string | null>(() =>
+  typeof props.applyRate === 'number' ? asPct(props.applyRate) : null,
+)
+
 function setFilter(next: QueueFilter) {
   filter.value = next
   emit('filter-change', next)
@@ -75,9 +96,13 @@ function setFilter(next: QueueFilter) {
   <aside class="paper-review-rail" data-testid="paper-review-queue-rail">
     <div class="paper-review-rail__head">
       <div class="tk-eyebrow">
-        Queue · {{ awaitingCount }} awaiting · {{ staleCount }} stale
+        {{ $t('review.queueRail.eyebrow', { awaiting: awaitingCount, stale: staleCount }) }}
       </div>
-      <div class="paper-review-rail__filters" role="group" aria-label="Queue filters">
+      <div
+        class="paper-review-rail__filters"
+        role="group"
+        :aria-label="$t('review.queueRail.filters.label')"
+      >
         <button
           v-for="key in (['all', 'mine', 'stale'] as QueueFilter[])"
           :key="key"
@@ -86,10 +111,10 @@ function setFilter(next: QueueFilter) {
           :class="{ 'paper-review-rail__pill--active': filter === key }"
           :aria-pressed="filter === key"
           @click="setFilter(key)"
-        >{{ key === 'all' ? 'All' : key === 'mine' ? 'Mine' : 'Stale' }}</button>
+        >{{ $t(`review.queueRail.filter.${key}`) }}</button>
       </div>
       <p class="paper-review-rail__risk-note tk-meta" role="note" data-testid="paper-review-risk-order-note">
-        Risk order: Low, Medium, High, Critical. Sorting only changes presentation; review actions remain manual.
+        {{ $t('review.queueRail.riskNote') }}
       </p>
       <button
         v-if="dismissableCount >= 1"
@@ -97,13 +122,13 @@ function setFilter(next: QueueFilter) {
         class="paper-review-rail__file-away"
         data-testid="queue-file-away-all"
         :disabled="busy"
-        :aria-label="`File away ${dismissableCount} settled proposals`"
+        :aria-label="$t('review.queueRail.fileAway.label', { count: dismissableCount })"
         @click="emit('file-away-all')"
-      >File away {{ dismissableCount }} settled</button>
+      >{{ $t('review.queueRail.fileAway.cta', { count: dismissableCount }) }}</button>
     </div>
 
     <div v-if="visible.length === 0" class="paper-review-rail__empty tk-meta">
-      Nothing in this filter.
+      {{ $t('review.queueRail.empty') }}
     </div>
 
     <ReviewQueueItem
@@ -123,10 +148,23 @@ function setFilter(next: QueueFilter) {
     <ReviewRecentApplied :rows="recentlyApplied" />
 
     <div class="paper-review-rail__cadence">
-      <div class="tk-eyebrow paper-review-rail__cadence-heading">This week</div>
-      <ReviewMiniCadence :days="cadence" />
-      <div class="tk-meta paper-review-rail__cadence-meta">
-        Apply rate <b>{{ asPct(applyRate) }}</b>
+      <div class="tk-eyebrow paper-review-rail__cadence-heading">
+        {{ $t('review.queueRail.cadence.heading') }}
+      </div>
+      <ReviewMiniCadence v-if="hasCadence" :days="cadence" />
+      <div
+        v-if="applyRatePct !== null"
+        class="tk-meta paper-review-rail__cadence-meta"
+        data-testid="paper-review-apply-rate"
+      >
+        {{ $t('review.queueRail.cadence.applyRateLabel') }} <b>{{ applyRatePct }}</b>
+      </div>
+      <div
+        v-else
+        class="tk-meta paper-review-rail__cadence-meta paper-review-rail__cadence-empty"
+        data-testid="paper-review-apply-rate-empty"
+      >
+        {{ $t('review.queueRail.cadence.applyRateEmpty') }}
       </div>
     </div>
   </aside>

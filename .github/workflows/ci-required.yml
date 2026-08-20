@@ -7,6 +7,7 @@
 #   ci-required.yml          PR/push/merge_group gate (this file)
 #     ├── native Git + KineticCafe/actions-dco DCO sign-off signal (PR-only, advisory)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
+#     ├── release-workflow-contract            release-desktop dispatch hardening gate (#1795/#1806)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
@@ -121,6 +122,33 @@ jobs:
     uses: ./.github/workflows/reusable-docs-governance.yml
     with:
       node-version: 24.13.1
+
+  # A live release dispatch cannot be rehearsed on a PR, so the release-desktop
+  # dispatch hardening (#1795) is held by an executable contract instead: the tag
+  # grammar gate is run for real against injection-shaped inputs, and the
+  # workflow's provenance/credential invariants are asserted structurally.
+  # Inline (not a reusable call) — it needs nothing beyond the top-level
+  # `contents: read`, and a reusable callee may not declare more than its caller
+  # grants (GitHub fails such a call at plan time with startup_failure).
+  release-workflow-contract:
+    name: Release Workflow Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.13.1
+
+      - name: Validate release-desktop dispatch hardening contract
+        run: node --test scripts/ci/release-desktop-dispatch.test.mjs
 
   backend-architecture:
     name: Backend Architecture

@@ -203,6 +203,24 @@ async function mountAt(path: string) {
 let mountedWrapper: ReturnType<typeof mount> | null = null
 let originalPrompt: typeof window.prompt
 
+/**
+ * Accept the #1818 phase-2 confirmation dialog (TdDialog, teleported to <body>).
+ * Hard-asserts the dialog is present so a removed confirmation gate FAILS here
+ * instead of silently letting the execute call through.
+ */
+async function confirmApplyDialog(wrapper: { vm: { $nextTick: () => Promise<unknown> } }) {
+  const accept = document.body.querySelector(
+    '[data-testid="apply-confirm-accept"]',
+  ) as HTMLButtonElement | null
+  expect(
+    accept,
+    'expected the apply-to-board confirmation dialog to be open (#1818 phase-2 gate)',
+  ).not.toBeNull()
+  accept!.click()
+  await Promise.resolve()
+  await wrapper.vm.$nextTick()
+}
+
 describe('ReviewView — approve and apply actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -253,7 +271,7 @@ describe('ReviewView — approve and apply actions', () => {
   })
 
   it('applies an Approved proposal to the board after confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = vi.spyOn(window, 'confirm')
 
     mocks.getProposals.mockResolvedValue([
       buildProposal({
@@ -275,7 +293,16 @@ describe('ReviewView — approve and apply actions', () => {
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    // #1818: clicking Apply to board opens the app dialog; nothing executes yet,
+    // and the native confirm() is gone.
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(
+      document.body.querySelector('[data-testid="apply-confirm-summary"]')?.textContent,
+    ).toContain('Apply me')
+
+    await confirmApplyDialog(wrapper)
+
     expect(mocks.executeProposal).toHaveBeenCalledWith('proposal-to-apply', 'request-1')
     expect(mocks.successToast).toHaveBeenCalled()
 
@@ -304,7 +331,7 @@ describe('ReviewView — approve and apply actions', () => {
   })
 
   it('shows error toast when apply fails', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = vi.spyOn(window, 'confirm')
 
     mocks.getProposals.mockResolvedValue([
       buildProposal({
@@ -323,8 +350,10 @@ describe('ReviewView — approve and apply actions', () => {
     await applyBtn!.trigger('click')
     await Promise.resolve()
     await wrapper.vm.$nextTick()
+    await confirmApplyDialog(wrapper)
 
     expect(mocks.errorToast).toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
 
     confirmSpy.mockRestore()
   })

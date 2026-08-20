@@ -34,12 +34,12 @@ This document describes entities in the Taskdeck data model, their fields, const
 > columns, widths, indexes, delete behavior). Where the two differ -- the domain often validates
 > tighter than the column allows -- both numbers are given.
 >
-> **EF model metadata vs. runtime validation:** A declared width (`HasMaxLength`) or `JSON`
-> constraint is EF model/schema metadata. SQLite stores these mapped string properties as `TEXT`
-> and does not itself enforce declared widths or JSON syntax. That database behavior does not imply
-> that runtime validation is absent: domain or service code may validate a field even when this
-> document does not cite it. Check the relevant entity, domain, or service implementation before
-> treating a documented constraint as unenforced at runtime.
+> **EF model metadata vs. runtime validation:** `IsRequired()` and a declared width
+> (`HasMaxLength`) are EF model/schema mappings. SQLite stores these mapped string properties as
+> `TEXT` and does not itself enforce declared widths or JSON syntax. In the rows below, `JSON`
+> describes the intended serialized representation, not a database constraint. Where application
+> or domain validation is known, it is called out separately; serialization/deserialization or a
+> length bound alone is not syntax validation.
 >
 > The glob is `Domain/**` on purpose, not `Domain/Entities/*.cs`: 50 of the 51 mapped entities live
 > under `Domain/Entities/`, but `McpToolHash` is defined at
@@ -120,6 +120,7 @@ erDiagram
 
     ProposalProvenance ||--o{ ProvenanceField : "explains (FK)"
     ProvenanceField ||--o{ ProvenanceEvidenceLink : "cites (FK)"
+    Transcript ||--o{ ProvenanceEvidenceLink : "anchors transcript evidence (FK)"
 
     IntegrationConnector ||--o{ ConnectorEvent : "logs (FK)"
     IntegrationConnector ||--o{ ConnectorCredential : "authenticates with (FK)"
@@ -357,7 +358,7 @@ A single atomic operation within a proposal.
 | ActionType | `string` | Yes | Non-empty | Operation type (e.g., "CreateCard") |
 | TargetType | `string` | Yes | Non-empty | Target entity type |
 | TargetId | `string?` | No | | ID of existing target |
-| Parameters | `string` | Yes | Non-empty, JSON | Operation parameters |
+| Parameters | `string` | Yes | EF: required `TEXT`; application: `ProposalOperationInputValidator` requires non-empty JSON object, max 64 KiB UTF-8, max depth 32 | Operation parameters |
 | IdempotencyKey | `string` | Yes | Non-empty | Ensures at-most-once execution |
 | ExpectedVersion | `string?` | No | | Optimistic concurrency token |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -378,7 +379,7 @@ chronological chain, and `AutomationProposal.ApprovedRevisionId` pins the one Ap
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade) | Parent proposal |
 | RevisionNumber | `int` | Yes | >= 1, unique per proposal | Monotonic 1-based revision counter |
 | EditorUserId | `Guid` | Yes | References User (no FK) | Who made the edit |
-| RevisedPayload | `string` | Yes | Non-empty, JSON | Full snapshot of the edited operations, not a diff |
+| RevisedPayload | `string` | Yes | EF: required `TEXT`; domain requires non-empty; application: `ProposalRevisionService` parses a JSON object with a non-empty `operations` array | Full snapshot of the edited operations, not a diff |
 | RevisedAt | `DateTimeOffset` | Yes | | When the revision was created (UTC) |
 | Reason | `string` | Yes | 1-500 chars | Human-readable reason for the edit |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -505,7 +506,7 @@ Confidence is monotonic downward once set: verification may downgrade it, never 
 ### ProvenanceEvidenceLink
 
 A structured pointer from a provenance field back to its source material -- a capture, a chat
-message, a document chunk.
+message, a document chunk, or a durable Transcript.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -513,13 +514,28 @@ message, a document chunk.
 | ProvenanceFieldId | `Guid` | Yes | FK to ProvenanceField (Cascade) | Parent field |
 | SourceType | `string` | Yes | 1-100 chars | Kind of source referenced |
 | SourceId | `string` | Yes | 1-500 chars | Identifier within that source |
+| TranscriptId | `Guid?` | Conditional | FK to Transcript (Cascade) | Required for canonical Transcript sources; null for every other source type |
 | Label | `string?` | No | Max 200 chars | Optional display label |
 | SpanStart | `int?` | No | >= 0 | Optional start offset in the source |
 | SpanEnd | `int?` | No | >= 0, >= SpanStart | Optional end offset |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
 
-**Index:** `ProvenanceFieldId`.
+**Indexes:** `ProvenanceFieldId`, `TranscriptId`.
+
+For transcript triage, the canonical source contract is `SourceType = "Transcript"`, a `Guid` `D`
+string in `SourceId`, the same value in typed `TranscriptId`, and the fixed non-content label
+`Transcript evidence`. `SpanStart` and `SpanEnd` are either both null when the verbatim quote is
+ambiguous, or a paired half-open
+`[start,end)` range measured in .NET UTF-16 code units over the Transcript's LF-normalized text.
+Neither `Label` nor the inferred field's `ExtractiveQuote` duplicates Transcript content. Board
+readers may receive this opaque metadata, but any future quote resolver must load text through the
+owner-scoped Transcript repository and return an explicit unavailable state to other users.
+
+The database check requires typed `TranscriptId` exactly for `SourceType = "Transcript"`, and its
+FK cascades on Transcript deletion. A link committed before erasure is therefore deleted by the
+database; a stale proposal/link save attempted after erasure fails its FK and rolls back atomically.
+Other generic source types remain untyped and retain only `SourceType`/`SourceId`.
 
 > Not to be confused with the unmapped domain class `EvidenceLink`, which has no table.
 
@@ -557,7 +573,7 @@ A single message in a chat session.
 | ProposalId | `Guid?` | No | | Linked proposal |
 | TokenUsage | `int?` | No | >= 0 | Tokens consumed |
 | DegradedReason | `string?` | No | | Reason for degraded response |
-| ToolCallMetadataJson | `string?` | No | | Tool call metadata (JSON) |
+| ToolCallMetadataJson | `string?` | No | Optional `TEXT`; application serializer produces the orchestrator metadata; the entity setter only trims and does not validate arbitrary JSON syntax | Tool call metadata (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -703,7 +719,7 @@ Short-lived authorization code for OAuth login/linking flows.
 | UserId | `Guid` | Yes | References User (no FK); non-empty | Authenticated user (login) or initiating user (link) |
 | Token | `string` | Yes | | Legacy field, no longer stores JWTs |
 | Purpose | `string` | Yes | `"login"` or `"link"` | Flow type |
-| ProviderData | `string?` | No | | JSON provider identity for linking |
+| ProviderData | `string?` | No | Optional `TEXT`, max 4096 via EF; application serializes provider identity and deserializes it during link exchange; persistence does not enforce syntax | JSON provider identity for linking |
 | ExpiresAt | `DateTimeOffset` | Yes | Must be future | Expiration time |
 | IsConsumed | `bool` | Yes | | Whether already exchanged |
 | ConsumedAt | `DateTimeOffset?` | No | | When consumed |
@@ -776,7 +792,7 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 | SourceArtefactId | `Guid` | Yes | FK to SourceArtefact (Cascade) | Source metadata |
 | ExtractorName | `string` | Yes | 1-100, control-free, valid UTF-16 | Extractor identity |
 | ExtractorVersion | `string` | Yes | 1-50, control-free, valid UTF-16 | Extractor version |
-| WarningsJson | `string` | Yes | Max 4096 chars; up to 16 warnings of 128 chars | Serialized warning list |
+| WarningsJson | `string` | Yes | EF: required `TEXT`, max 4096; domain validates warning count/item lengths and serialized length, then serializes/deserializes the list | Serialized warning list |
 | ExtractedText | `string` | Yes | Max 102,400 chars; LF-only, valid UTF-16 | Immutable extracted text; may be empty |
 | TextLength | `int` | Yes | Derived from text | Character count |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -797,7 +813,7 @@ transcript captures. The current transcript-capture path also retains input text
 | BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
 | CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
 | Text | `string` | Yes | 1-200,000 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
-| SegmentsJson | `string` | Yes | Max 1,048,576 chars; at most 5,000 segments | Serialized line-indexed annotations |
+| SegmentsJson | `string` | Yes | EF: required `TEXT`, max 1,048,576; domain validates segment count/content and serialized length, then serializes/deserializes the list | Serialized line-indexed annotations |
 | CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
 | SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -822,7 +838,7 @@ A queued request for LLM processing.
 | BoardId | `Guid?` | No | FK to Board | Optional board scope |
 | TranscriptId | `Guid?` | No | FK to Transcript (SetNull); unique when present | Optional durable transcript snapshot linked to this request |
 | RequestType | `string` | Yes | Non-empty | Request category |
-| Payload | `string` | Yes | Non-empty | Request content (JSON) |
+| Payload | `string` | Yes | EF: required `TEXT`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
 | ErrorMessage | `string?` | No | | Failure message |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
@@ -903,7 +919,7 @@ A log entry for a command execution.
 | Level | `string` | Yes | One of: Debug, Info, Warning, Error | Log level |
 | Source | `string` | Yes | Non-empty | Log source |
 | Message | `string` | Yes | Non-empty | Log message |
-| Metadata | `string?` | No | | Additional data (JSON) |
+| Metadata | `string?` | No | Optional `TEXT`; no application/domain JSON syntax validation is claimed here | Additional data (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -922,7 +938,7 @@ An external integration connector owned by a user.
 | ConnectorType | `ConnectorType` | Yes | Enum: BrowserClipper, MarkdownImport, WebClip, GitHubIssueIntake, WebhookInbound, Custom | Integration type |
 | Direction | `ConnectorDirection` | Yes | Enum: Inbound, Context, Outbound | Data flow direction |
 | Status | `ConnectorStatus` | Yes | Enum: Active, Disabled, Error | Current state |
-| Configuration | `string?` | No | Max 4000 chars | Connector config (JSON) |
+| Configuration | `string?` | No | Optional `TEXT`, max 4000 via EF; length-only mapping, with no application/domain JSON syntax validation claimed here | Connector config (JSON) |
 | UserId | `Guid` | Yes | FK to User | Owner |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -997,7 +1013,7 @@ A single webhook delivery attempt.
 | SubscriptionId | `Guid` | Yes | FK to OutboundWebhookSubscription | Parent subscription |
 | BoardId | `Guid` | Yes | Non-empty | Board context |
 | EventType | `string` | Yes | 1-120 chars, lowercase | Event type delivered |
-| Payload | `string` | Yes | Non-empty | JSON payload |
+| Payload | `string` | Yes | EF: required `TEXT`; outbound webhook service serializes the envelope, but SQLite does not enforce JSON syntax | JSON payload |
 | Status | `WebhookDeliveryStatus` | Yes | Enum: Pending, Processing, Delivered, DeadLetter | Delivery state |
 | AttemptCount | `int` | Yes | | Number of attempts |
 | NextAttemptAt | `DateTimeOffset` | Yes | | Scheduled next attempt |
@@ -1044,7 +1060,7 @@ A chunk of a knowledge document for retrieval.
 | DocumentId | `Guid` | Yes | FK to KnowledgeDocument | Parent document |
 | ChunkIndex | `int` | Yes | >= 0 | Position in document |
 | Content | `string` | Yes | Non-empty | Chunk text |
-| Metadata | `string?` | No | Max 4000 chars | Chunk metadata (JSON) |
+| Metadata | `string?` | No | Optional `TEXT`, max 4000 via EF; domain enforces length only, with no JSON syntax validation | Chunk metadata (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -1065,7 +1081,7 @@ A configured agent template owned by a user.
 | TemplateKey | `string` | Yes | 1-100 chars | Template identifier |
 | ScopeType | `AgentScopeType` | Yes | Enum: Workspace, Board | Scope level |
 | ScopeBoardId | `Guid?` | No | Required when ScopeType = Board | Target board |
-| PolicyJson | `string` | Yes | Max 8000 chars | Agent policy config (JSON); defaults to `{}` |
+| PolicyJson | `string` | Yes | EF: required `TEXT`, max 8000; domain enforces length/default only, with no JSON syntax validation | Agent policy config (JSON); defaults to `{}` |
 | IsEnabled | `bool` | Yes | | Active flag |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -1108,7 +1124,7 @@ A timestamped event emitted during an agent run.
 | RunId | `Guid` | Yes | FK to AgentRun | Parent run |
 | SequenceNumber | `int` | Yes | >= 0 | Event order |
 | EventType | `string` | Yes | 1-100 chars | Event type |
-| Payload | `string` | Yes | Max 16000 chars | Event data (JSON); defaults to `{}` |
+| Payload | `string` | Yes | EF: required `TEXT`, max 16000; runtime callers commonly serialize event data, but the entity enforces only the `{}` default and no JSON syntax | Event data (JSON); defaults to `{}` |
 | Timestamp | `DateTimeOffset` | Yes | | Event time |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -1209,7 +1225,7 @@ A snapshot of a soft-deleted board, column, or card for potential restoration.
 | ArchivedByUserId | `Guid` | Yes | Non-empty | User who archived |
 | ArchivedAt | `DateTime` | Yes | | Archive timestamp |
 | Reason | `string?` | No | | Archive reason |
-| SnapshotJson | `string` | Yes | Non-empty | Full entity snapshot (JSON) |
+| SnapshotJson | `string` | Yes | EF: required `TEXT`; restore application deserializes the snapshot for the selected entity type; persistence does not enforce syntax | Full entity snapshot (JSON) |
 | RestoreStatus | `RestoreStatus` | Yes | Enum: Available, Restored, Expired, Conflict | Restore lifecycle |
 | RestoredAt | `DateTime?` | No | | When restored |
 | RestoredByUserId | `Guid?` | No | | Who restored |
@@ -1231,7 +1247,7 @@ Tracks changes to entities for accountability.
 | EntityId | `Guid` | Yes | Non-empty | Target entity ID |
 | Action | `AuditAction` | Yes | Enum: Created, Updated, Deleted, Archived, Unarchived, Moved, PermissionGranted, PermissionRevoked, OwnershipTransferred, DataExported, AccountDeletionRequested, AccountAnonymized | Action performed |
 | UserId | `Guid?` | No | | Acting user |
-| Changes | `string?` | No | | Change details (JSON) |
+| Changes | `string?` | No | Optional `TEXT`, max 4000 via EF; no application/domain JSON syntax validation is claimed here | Change details (JSON) |
 | Timestamp | `DateTimeOffset` | Yes | | When action occurred |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -1331,6 +1347,7 @@ Immutable audit record for abuse detection events and state transitions.
 | AutomationProposal -> ProposalProvenance | One-to-zero-or-one | FK (Cascade) | Provenance chain head, keyed by `ProposalId` |
 | ProposalProvenance -> ProvenanceField | One-to-many | FK (Cascade) | Per-field derivation metadata |
 | ProvenanceField -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Source references per field |
+| Transcript -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Typed ownership for canonical Transcript evidence; prevents post-erasure orphan links |
 | IntegrationConnector -> ConnectorEvent | One-to-many | FK (Cascade) | A connector logs many events |
 | IntegrationConnector -> ConnectorCredential | One-to-many | FK (Cascade) | Encrypted credentials per connector |
 | User -> ConnectorCredential | One-to-many | FK (Cascade) | Credentials are deleted with their owner |
@@ -1362,7 +1379,10 @@ Immutable audit record for abuse detection events and state transitions.
   A few mapped tables have no `UpdatedAt` column at all -- `ArtefactBlob`, `CardLabel`, and
   `RegistrationBootstrap` in the current snapshot.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
-- **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`, `WarningsJson`, `SegmentsJson`).
+- **JSON strings:** The JSON-described fields below are ordinary SQLite `TEXT` strings. JSON syntax
+  and shape are enforced only where the row calls out an application or domain path;
+  serialization/deserialization and length bounds do not turn the SQLite column into a
+  JSON-enforcing schema type.
 - **Enum storage:** Enums are stored as integers by default. There are exactly three exceptions --
   every `HasConversion<string>()` call in `Persistence/Configurations/`:
   `UserPreference.WorkspaceMode`, `UserPreference.OnboardingVisibility`, and

@@ -18,9 +18,9 @@ defineProps<{
 
 <template>
   <div class="paper-review-recent">
-    <div class="tk-eyebrow paper-review-recent__heading">Recently applied</div>
+    <div class="tk-eyebrow paper-review-recent__heading">{{ $t('review.recent.heading') }}</div>
     <div v-if="rows.length === 0" class="tk-meta paper-review-recent__empty">
-      Nothing applied yet today.
+      {{ $t('review.recent.empty') }}
     </div>
     <div
       v-for="row in rows"
@@ -29,7 +29,9 @@ defineProps<{
     >
       <div class="paper-review-recent__head">
         <span class="tk-serial">{{ row.serial }}</span>
-        <span class="tk-serial paper-review-recent__age">{{ row.age }} ago</span>
+        <span class="tk-serial paper-review-recent__age">{{
+          $t('review.recent.age', { age: row.age })
+        }}</span>
       </div>
       <div class="paper-review-recent__title">{{ row.title }}</div>
     </div>

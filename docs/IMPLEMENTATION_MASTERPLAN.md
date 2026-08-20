@@ -20,9 +20,19 @@ Companion Active Docs:
   four acceptance-ready issue items in `Now` and eight in `Next` without per-issue owner approval,
   while plan/Accepted-ADR authority still gates new product surface and external or irreversible
   actions remain separately human-scoped.
-- **Initial admitted queue:** `Now` = `#1206`, `#1633`, `#1661`, `#1664`; `Next` = `#1495`,
-  `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`. The paired sanitizer and CLI
-  follow-ups stay sequenced rather than competing for the same seam.
+- **Initial admitted queue record:** the first seeded set was `Now` = `#1206`, `#1633`, `#1661`,
+  `#1664`; `Next` = `#1495`, `#1626`, `#1639`, `#1641`, `#1652`, `#1665`, `#1666`, `#1670`.
+  This is historical admission evidence rather than a live-status mirror; ProjectV2 is authoritative
+  as items move through `Review`, `Blocked`, and `Done`. Paired sanitizer and CLI follow-ups remain
+  dependency-sequenced rather than competing for the same seam.
+
+## Delivery update (2026-08-18, log sanitization expansion)
+
+- **PR `#1695` / issue `#1661` centralizes the log-safe character contract.** One Application helper
+  removes C0, DEL, and C1 code points for Application telemetry, log-query, and API
+  unhandled-exception values before bounded structured logging. Printable Unicode, persisted user
+  text, and public API payloads are unchanged. Unicode line/paragraph separators remain sequenced
+  under `#1652`; surrogate-safe truncation is separately tracked by `#1700`.
 
 ## Delivery update (2026-08-16, Windows API timing diagnostics)
 
@@ -30,7 +40,8 @@ Companion Active Docs:
 
 ## Delivery update (2026-08-16, REVIVAL-09 transcript linkage)
 
-- **The first bounded `#1305` linkage slice turns the Transcript foundation into the canonical triage source.** A transcript queue request owns at most one linked Transcript through a nullable unique FK. The worker persists the normalized source and linkage atomically before provider work, reuses it across retries/replays, and sends its LF-normalized UTF-16 text to extraction. Post-link capture edits fail with Conflict, preventing the future evidence coordinate space from drifting; the accepted 200,000-character capture limit is now also the Transcript persistence limit. The follow-up detail contract exposes a server-computed edit capability rather than the internal Transcript identity, so Inbox removes linked edit affordances, suppresses a stale open editor after refresh, and gives linked failures retry-or-ignore guidance. Deleting a Transcript sets the optional request FK to null, while legacy queue payload text remains for compatibility and portability. Evidence spans, provenance reads, Paper deep links, shared-reader authorization, and payload retirement remain later `#1305` slices.
+- **The first bounded `#1305` linkage slice turns the Transcript foundation into the canonical triage source.** A transcript queue request owns at most one linked Transcript through a nullable unique FK. The worker persists the normalized source and linkage atomically before provider work, reuses it across retries/replays, and sends its LF-normalized UTF-16 text to extraction. Post-link capture edits fail with Conflict, preventing the future evidence coordinate space from drifting; the accepted 200,000-character capture limit is now also the Transcript persistence limit. The follow-up detail contract exposes a server-computed edit capability rather than the internal Transcript identity, so Inbox removes linked edit affordances, suppresses a stale open editor after refresh, and gives linked failures retry-or-ignore guidance. Deleting a Transcript sets the optional request FK to null, while legacy queue payload text remains for compatibility and portability.
+- **The next bounded `#1305` slice carries trusted Transcript evidence through proposal provenance without changing provider v2.** Schema-v2 LLM operations get `ProvenanceEvidenceLink` rows whose generic API source is the linked Transcript. The server converts a uniquely resolved quote into absolute .NET UTF-16 `[start,end)` offsets over canonical LF text; overlapping repeats or conflicting same-title map observations retain an offset-free source reference, while a missing quote invalidates the LLM leg and deterministic fallback remains evidence-link-free. The additive board-authorized response returns only opaque source metadata and coordinates, never Transcript text. A typed Transcript FK, database source-type check, and cascading delete make erasure race-safe without a string-ID cleanup scan: an existing link is deleted with its Transcript, and a stale post-erasure aggregate cannot commit. Paper owner-scoped quote resolution/deep links, provenance export, legacy payload retirement, and removal of the unused intent-envelope graph remain separate bounded slices.
 
 ## Delivery update (2026-08-13, project/CLI reliability and Paper review)
 
@@ -52,9 +63,10 @@ supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
 - **Dependency and tracking hygiene landed in PRs `#1622`, `#1623`, and `#1624`.** The npm minor-patch group (`#1622`) is merged; the NuGet/.NET minor-patch group (`#1623`) updates `ModelContextProtocol` and `ModelContextProtocol.AspNetCore` from 2.0.0 to 2.1.0; and the human-action document's section labels now follow reading order. The current MCP package pin is 2.1.0.
 - **Frontend typecheck burn-down advanced in PR `#1634`:** the 24 one-error specs were fixed, leaving 40 quarantined files and 391 errors; the active project now gates 244 of the 302 Vitest-run specs, with 58 outside this gate. `#1607` remains the burn-down tracker.
 
-## Delivery update (2026-08-12, log sanitization)
+## Initial delivery update (2026-08-12, log sanitization)
 
 - **PR `#1650`** sanitizes user-controlled request metadata before API exception logging and adds bounded application telemetry/log-query sanitization with CR/LF regression coverage. The accepted local-first browser-token follow-up remains tracked in `#1644`.
+- The 2026-08-18 `#1661` expansion above supersedes this section's character-set boundary.
 
 ## Delivery update (2026-08-10, OpenAI-compatible provider replacement)
 

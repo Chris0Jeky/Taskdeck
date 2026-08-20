@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import NotificationInboxView from '../../views/NotificationInboxView.vue'
+import notificationInboxSource from '../../views/NotificationInboxView.vue?raw'
 
 const vueHelpers = vi.hoisted(async () => {
   const { computed, ref, shallowRef } = await import('vue')
@@ -151,7 +152,7 @@ describe('NotificationInboxView', () => {
     const wrapper = mount(NotificationInboxView)
     await waitForUi()
 
-    const action = wrapper.get('button.td-btn--primary')
+    const action = wrapper.get('button.paper-notifications__mark-read')
     await action.trigger('click')
 
     expect(mockNotificationStore.markAsRead).toHaveBeenCalledWith('n1')
@@ -386,5 +387,111 @@ describe('NotificationInboxView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('2 mention notifications')
+  })
+
+  it('gives each notification type its own left accent stripe class', async () => {
+    const now = new Date()
+    mockNotificationStore.notifications = [
+      {
+        id: 'n1',
+        title: 'Mention',
+        message: 'Message',
+        boardId: null,
+        type: 'Mention',
+        cadence: 0,
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: true,
+        readAt: null,
+        createdAt: new Date(now.getTime() - 1000).toISOString(),
+        updatedAt: new Date(now.getTime() - 1000).toISOString(),
+      },
+      {
+        id: 'n2',
+        title: 'Assignment',
+        message: 'Message',
+        boardId: null,
+        type: 'Assignment',
+        cadence: 0,
+        sourceEntityType: null,
+        sourceEntityId: null,
+        isRead: true,
+        readAt: null,
+        createdAt: new Date(now.getTime() - 2000).toISOString(),
+        updatedAt: new Date(now.getTime() - 2000).toISOString(),
+      },
+    ]
+
+    const wrapper = mount(NotificationInboxView)
+    await waitForUi()
+
+    const rows = wrapper.findAll('.paper-notifications__row')
+    expect(rows).toHaveLength(2)
+
+    const stripes = rows.map((row) => row.classes().filter((c) => c.startsWith('td-notify-stripe')))
+    expect(stripes[0]).toContain('td-notify-stripe')
+    expect(stripes[1]).toContain('td-notify-stripe')
+
+    const colours = stripes.map((classes) => classes.find((c) => c !== 'td-notify-stripe'))
+    expect(colours[0]).toBeTruthy()
+    expect(colours[1]).toBeTruthy()
+    expect(colours[0]).not.toBe(colours[1])
+  })
+})
+
+/**
+ * Scoped-CSS guard for the per-type accent stripe (#1781 Paper restyle).
+ *
+ * `typeBorderClass` puts `td-notify-stripe td-notify-stripe--<type>` on each
+ * notification card, and that stripe is the type signal — information, not
+ * decoration. Vue compiles `<style scoped>` rules to `.selector[data-v-…]`
+ * (specificity 0,2,0), which outranks those single-class utilities (0,1,0), so
+ * ANY `border` / `border-color` shorthand — or an explicit left-edge
+ * declaration — in the scoped block silently erases the stripe on every type at
+ * once. jsdom loads no Tailwind sheet and computes no cascade across a scoped
+ * SFC block, so the mounted assertions above cannot see this; the source is the
+ * only place it is observable in a unit test.
+ *
+ * The invariant: the card rules declare their borders per side and leave the
+ * left edge entirely undeclared.
+ */
+describe('NotificationInboxView scoped card borders', () => {
+  const CARD_RULES = [
+    '.paper-notifications__row',
+    '.paper-notifications__group-summary',
+    '.paper-notifications__row--unread',
+  ] as const
+
+  /** Body of the first top-level rule for `selector`, comments stripped. */
+  function readRule(selector: string): string {
+    const pattern = new RegExp(`^\\${selector}\\s*\\{([\\s\\S]*?)\\}`, 'm')
+    const match = notificationInboxSource.match(pattern)
+    if (!match) throw new Error(`Could not locate the ${selector} rule`)
+    return match[1]!.replace(/\/\*[\s\S]*?\*\//g, '')
+  }
+
+  it.each(CARD_RULES)('%s declares no left border, so the type stripe survives', (selector) => {
+    const body = readRule(selector)
+
+    expect(body).not.toMatch(/(^|[\s;])border\s*:/)
+    expect(body).not.toMatch(/(^|[\s;])border-color\s*:/)
+    expect(body).not.toMatch(/border-left/)
+    expect(body).not.toMatch(/border-inline-start/)
+  })
+
+  it('still paints the other three sides of a notification card', () => {
+    const body = readRule('.paper-notifications__row')
+
+    expect(body).toMatch(/border-top:\s*1px solid var\(--line/)
+    expect(body).toMatch(/border-right:\s*1px solid var\(--line/)
+    expect(body).toMatch(/border-bottom:\s*1px solid var\(--line/)
+  })
+
+  it('marks unread cards per side rather than with a border-color shorthand', () => {
+    const body = readRule('.paper-notifications__row--unread')
+
+    expect(body).toMatch(/border-top-color:\s*var\(--ember/)
+    expect(body).toMatch(/border-right-color:\s*var\(--ember/)
+    expect(body).toMatch(/border-bottom-color:\s*var\(--ember/)
   })
 })

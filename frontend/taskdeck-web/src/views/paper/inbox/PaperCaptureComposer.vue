@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import type { Board } from '../../../types/board'
 
 /**
  * PaperCaptureComposer — variant B of the Paper Inbox capture surface.
@@ -30,6 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const boardStore = useBoardStore()
+const { t } = useI18n()
 
 const body = ref('')
 const boardId = ref<string | null>(props.defaultBoardId ?? null)
@@ -43,7 +46,36 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const dropActive = ref(false)
 
 const inputsDisabled = computed(() => !!props.submitting)
-const canSubmit = computed(() => body.value.trim().length > 0 && !props.submitting)
+
+/**
+ * Write capability comes from the server (`BoardDto.CanWrite`, #1836). Choosing
+ * a read-only board here produces a capture that 403s the moment it is accepted
+ * for triage, so such boards are DISABLED and annotated "view-only" rather than
+ * hidden — no silent filtering, no reachable 403 from the picker.
+ *
+ * Only an explicit `false` gates; a payload without the field behaves as before.
+ */
+function isBoardWritable(board: Board): boolean {
+  return board.canWrite !== false
+}
+
+function boardOptionLabel(board: Board): string {
+  return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
+}
+
+const hasReadOnlyBoard = computed(() => boardStore.boards.some((board) => !isBoardWritable(board)))
+
+const selectedBoardIsWritable = computed(() => {
+  if (!boardId.value) return true
+  const selected = boardStore.boards.find((board) => board.id === boardId.value)
+  // An id outside the loaded list is left alone: the server stays the authority,
+  // and this gate exists to stop a KNOWN read-only selection.
+  return selected ? isBoardWritable(selected) : true
+})
+
+const canSubmit = computed(
+  () => body.value.trim().length > 0 && !props.submitting && selectedBoardIsWritable.value,
+)
 
 watch(
   () => props.defaultBoardId,
@@ -227,10 +259,19 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             :disabled="inputsDisabled"
           >
             <option :value="null">No board · land in inbox</option>
-            <option v-for="board in boardStore.boards" :key="board.id" :value="board.id">
-              {{ board.name }}
+            <option
+              v-for="board in boardStore.boards"
+              :key="board.id"
+              :value="board.id"
+              :disabled="!isBoardWritable(board)"
+              :data-writable="isBoardWritable(board)"
+            >
+              {{ boardOptionLabel(board) }}
             </option>
           </select>
+          <span v-if="hasReadOnlyBoard" class="tk-meta" data-testid="composer-view-only-hint">
+            {{ t('inbox.boardPicker.viewOnlyHint') }}
+          </span>
         </label>
 
         <label class="paper-composer__label">

@@ -30,9 +30,9 @@ export const useBoardStore = defineStore('board', () => {
   const filtering = createCardFilterActions(state)
   const ui = createBoardUiActions(state)
 
-  // Wire fetchBoard to depend on card/label fetch
+  // Detail loads commit board, cards, and labels together in boardCrud.
   async function fetchBoard(id: string) {
-    return boardCrud.fetchBoard(id, cards.fetchCards, labels.fetchLabels)
+    return boardCrud.fetchBoard(id)
   }
 
   return {
