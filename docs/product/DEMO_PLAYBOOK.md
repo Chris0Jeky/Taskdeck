@@ -18,64 +18,82 @@ Capture -> Triage -> Proposal -> Apply -> Board
 Saul-facing recording contract:
 - `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
 
-## Quick Start
+## Quick Start (source-only seeded demo)
 
-1. Start backend
+This playbook is for a source checkout. The packaged Windows release has no seeded credentials and
+uses a different Production run/data contract; follow its
+[archive quick start](../releases/WINDOWS_QUICK_START.md) instead. In particular, use that guide's
+current-process-only OpenAI setup rather than copying demo-key shortcuts into the packaged app.
 
-```bash
-cd backend/src/Taskdeck.Api
-dotnet run
+From the repository root, start the source stack and seed it with one launcher:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
 ```
 
-2. Start frontend
-
 ```bash
-cd frontend/taskdeck-web
-npm install
-npm run dev
+scripts/dev-up.sh --seed
 ```
 
-Default URLs:
+The launcher intentionally leaves the API and Vite frontend running in the background. It waits for
+API readiness, prints the API URL, expected frontend entry point, and PIDs, and records the process
+trees so the matching stop command can close both safely:
+
+```powershell
+.\scripts\dev-up.ps1 -Stop
+```
+
+```bash
+scripts/dev-up.sh --stop
+```
+
+Closing the shell that launched the stack is not the documented stop path. Default URLs are:
 
 - API: `http://localhost:5000/api`
-- UI: `http://localhost:5173`
-- Local fallback ports for UI: `http://localhost:4173`, `http://localhost:5001`
-- Health-check endpoints (note: these are **not** under the `/api` prefix):
-  - `http://localhost:5000/health/live` — liveness probe
-  - `http://localhost:5000/health/ready` — readiness probe
+- UI: `http://localhost:5173` (if Vite selects a fallback, its `Local:` line in the frontend
+  dev-server output is authoritative)
+- Health checks (not under `/api`): `http://localhost:5000/health/live` and
+  `http://localhost:5000/health/ready`
 
-3. Seed baseline demo data
-
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
-```
-
-The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
-On reruns against the canonical demo account, it now reuses the seeded artifacts it can identify instead of appending a fresh copy of every capture, queue sample, comment, chat session, and Ops evidence item.
-
-Use `npm run demo:seed -- --reset` to delete all demo boards before seeding (clean start).
-Use `npm run demo:seed -- --help` for full usage information.
+The source-only seeded accounts are `demo` / `demo123` and `collab` / `demo123`. They do not exist in
+the Windows release. If a source stack is already running, seed or refresh it from
+`frontend/taskdeck-web` with `npm run demo:seed`; `npm run demo:seed -- --reset` removes the demo
+boards before reseeding, and `npm run demo:seed -- --help` lists the options. The seeder reuses
+recognised baseline artifacts instead of appending a duplicate copy on every run.
 
 ### Database location
 
-The canonical dev database is `backend/src/Taskdeck.Api/taskdeck.db` (SQLite, created by EF Core migration on first backend startup). The connection string is `Data Source=taskdeck.db` in `appsettings.json`, resolved relative to the backend's working directory.
+The canonical source-launcher database is stable and independent of the repository working directory:
 
-To reset the database without `--reset` (which only deletes demo boards via the API):
+- Windows: `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db`
+- Linux/macOS: `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db`
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:reset-db          # delete canonical dev DB
-npm run demo:reset-db -- --all # also delete e2e/demo/ci DB files
-```
+`dev-up` prints the exact path and passes it only to the API process it starts. A raw developer
+`dotnet run` is an alternative developer-only path: its relative `Data Source=taskdeck.db` resolves
+from that command's working directory, so it is not the canonical seeded-demo database. Likewise,
+`npm run demo:reset-db` targets the legacy repository-local raw-`dotnet run` database; it does not
+reset the stable `dev-up` database. Prefer `npm run demo:seed -- --reset` unless you deliberately own
+that lower-level developer path.
 
-Then restart the backend — EF Core will recreate the DB from migrations.
+Other repository-local DB files are per-purpose:
 
-Other DB files in the repo are per-purpose:
 - `taskdeck.e2e*.db` — E2E test databases (Playwright)
 - `taskdeck.demo*.db` — demo director/CI databases
-- `backend/tests/**/taskdeck.db` — backend test databases (created by test runs)
-- `taskdeck.db` at repo root — created when the backend is started from the repo root (e.g. `dotnet run --project backend/src/Taskdeck.Api/...`). Safe to delete when the backend is stopped and your active dev DB is `backend/src/Taskdeck.Api/taskdeck.db`.
+- `backend/tests/**/taskdeck.db` — backend test databases created by test runs
+- a repo-root or API-directory `taskdeck.db` — a raw developer `dotnet run` artifact, not `dev-up`
+
+### Source startup troubleshooting
+
+- If the launcher reports a live recorded stack, run its `-Stop` / `--stop` command before starting
+  another one; it refuses to overwrite live PIDs because that would orphan the old processes.
+- If the API exits before readiness, read the API window/output named by the launcher. Do not keep
+  restarting over an unexamined database or configuration error.
+- The canonical seeded path requires port 5000. Stop a listener you recognise before starting it;
+  do not combine the launcher's custom API-port option with `-Seed` / `--seed`, because the seeder and
+  browser client currently continue to target port 5000. For a UI collision, restore/read the Vite
+  dev-server output and use its `Local:` fallback URL rather than assuming 5173.
+- Confirm the printed database path before deleting or resetting anything. Stop the stack first so
+  SQLite can checkpoint its WAL cleanly.
 
 ## Managed-Key Mode Disclosure
 

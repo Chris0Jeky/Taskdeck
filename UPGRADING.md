@@ -1,8 +1,10 @@
 # Upgrading Taskdeck
 
-Taskdeck is local-first: **your entire workspace is a single SQLite file that you own.** That is
-the promise this document exists to protect. Read the section for the version you are moving *to*
-before you upgrade — each one leads with whether it contains breaking changes.
+Taskdeck is local-first: **your workspace data is a single SQLite file that you own.** The packaged
+Windows app also keeps generated local identity in `appsettings.local.json`; preserve that file with
+the database so sessions and encrypted connector credentials remain usable. Read the section for the
+version you are moving *to* before you upgrade — each one leads with whether it contains breaking
+changes.
 
 - Release notes and downloads: <https://github.com/Chris0Jeky/Taskdeck/releases>
 - Configuration keys referenced below: `docs/platform/CONFIGURATION_REFERENCE.md`
@@ -10,17 +12,20 @@ before you upgrade — each one leads with whether it contains breaking changes.
 
 ---
 
-## Backup = copy this one file
+## Backup the database and packaged identity
 
 Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives
-in one SQLite database file. To back Taskdeck up, **stop Taskdeck and copy that file.** There is
-no separate data directory to remember.
+in one SQLite database file. To back the workspace up, **stop Taskdeck and copy that file.** A
+packaged Windows install also generates secrets in `appsettings.local.json`; copy the whole
+`%LOCALAPPDATA%\Taskdeck` directory so the database and its local identity stay together.
 
 **Where the file is**
 
 | How you run Taskdeck | Database file |
 | --- | --- |
-| Desktop / `dotnet run` (default) | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` on Windows; the XDG equivalent (`~/.local/share/Taskdeck/taskdeck.db`) on Linux/macOS |
+| Supported Windows 0.1.x release | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
+| Source `dev-up` launcher | `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db` on Windows; `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` on Linux/macOS |
+| Raw developer `dotnet run` | A relative path resolves from that command's working directory; use `dev-up` for the stable source path above |
 | Explicit connection string | Whatever path `ConnectionStrings:DefaultConnection` points at |
 | Docker Compose (`deploy/docker-compose.yml`) | `/app/data/taskdeck.db` inside the container, on the `taskdeck-db` volume |
 
@@ -35,8 +40,11 @@ server), the WAL is checkpointed away and the single `.db` file is complete. If 
 `taskdeck.db-wal` / `taskdeck.db-shm` files, copy those too, or simply start and cleanly stop
 Taskdeck once more.
 
-**To restore:** stop Taskdeck, delete `taskdeck.db` and any `-wal`/`-shm` sidecars, put your
-backup copy in place under the original name, and start Taskdeck again.
+**To restore:** stop Taskdeck and move the current `taskdeck.db` plus any `-wal`/`-shm` sidecars aside
+until the backup is known-good. Put the backup set under the original names; never leave a sidecar from
+a different database copy in place. Restore the matching packaged `appsettings.local.json` when
+applicable, then start Taskdeck again. Do not pair an older local-config identity with a newer database
+that may contain connector credentials encrypted by a different key.
 
 ### Automatic pre-migration backups
 
@@ -86,7 +94,9 @@ path — for moving a workspace, copy the database file as described above.
 
 1. Read the section for your target version below. If it has a **BREAKING** entry, follow it.
 2. Stop every Taskdeck process (API, CLI, MCP servers).
-3. Copy `taskdeck.db` somewhere safe. (Optional but recommended: also take an account export.)
+3. Copy `taskdeck.db` somewhere safe. Windows release users should copy the entire
+   `%LOCALAPPDATA%\Taskdeck` folder so `appsettings.local.json` stays with it. (Optional but
+   recommended: also take an account export.)
 4. Replace the binaries / pull the new container image.
 5. Start Taskdeck. Pending migrations are applied automatically on startup, after the automatic
    pre-migration snapshot.
@@ -114,6 +124,9 @@ to a later release applies every intervening migration in one startup.
   [Automatic pre-migration backups](#automatic-pre-migration-backups). No action required.
 - **New configuration keys:** `Database:Backup:Enabled`, `Database:Backup:RetainCount`,
   `Database:Backup:Directory`. All optional; the defaults are the recommended settings.
+- **Desktop support is Windows-only for 0.1.x.** Use the `win-x64` ZIP on Windows 10/11 x64 and
+  follow its archive-local `QUICK_START.md`. The four v0.1.0 platform archives remain immutable
+  historical release evidence, not a continuing cross-platform support promise.
 
 ## v0.1.0 — 2026-08-19
 
@@ -122,7 +135,7 @@ to a later release applies every intervening migration in one startup.
 - First tagged open-beta release: 4-platform binaries plus a public GHCR container image.
 - Starting Taskdeck for the first time creates the database and applies the full migration chain.
   Nothing is backed up on that first run because there is no prior state to protect.
-- Everything under [Backup = copy this one file](#backup--copy-this-one-file) and
+- Everything under [Backup the database and packaged identity](#backup-the-database-and-packaged-identity) and
   [Export](#export-your-data-leaves-whenever-you-want) applies to v0.1.0. The *automatic*
   pre-migration snapshot arrives in v0.1.1 — when upgrading away from v0.1.0, take the manual copy
   in step 3 of the general procedure.
