@@ -213,6 +213,8 @@ jobs:
 
       - name: Build production bundle
         working-directory: frontend/taskdeck-web
+        env:
+          VITE_API_BASE_URL: /api
         run: npx vite build
 
       - name: Upload frontend dist
@@ -229,7 +231,7 @@ jobs:
     name: Build ${{ matrix.rid }}
     needs: [resolve-source, build-frontend]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -267,6 +269,19 @@ jobs:
             backend/Taskdeck.sln
             backend/Directory.Packages.props
             backend/**/*.csproj
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Install packaged acceptance browser
+        working-directory: frontend/taskdeck-web
+        run: |
+          npm ci
+          npx playwright install chromium
 
       - name: Download frontend dist
         uses: actions/download-artifact@v8
@@ -333,6 +348,7 @@ jobs:
           -r ${{ matrix.rid }}
           --self-contained true
           -p:Version=${{ steps.product-version.outputs.version }}
+          -p:TaskdeckDesktopPackage=true
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:PublishTrimmed=false
@@ -374,152 +390,10 @@ jobs:
           test -f "publish/${{ matrix.rid }}/RELICENSING.md"
           echo "GPLv3 licence and transition notices verified in the desktop distribution"
 
-      # -----------------------------------------------------------------------
-      # Post-publish smoke test (#1123 AC2)
-      #
-      # Proves the just-published self-contained executable actually boots and
-      # serves the product before we archive and ship it:
-      #   1. GET /health/ready returns success  -> EF migrations applied, DB
-      #      reachable, workers heartbeating (PipelineConfiguration runs the
-      #      SerializedMigrator at startup; HealthController.ReadyCheck gates on
-      #      DB + queue + workers).
-      #   2. GET /                returns the SPA index.html -> same-origin
-      #      wwwroot serving works (UseDefaultFiles + UseStaticFiles).
-      # The process is always killed (trap ... EXIT) so it never leaks, and any
-      # failure (no boot, never ready, / not HTML) fails the release job.
-      #
-      # The 0.1.x release matrix contains one runner-native target: win-x64 on
-      # windows-latest. Git Bash, curl and openssl are available on that runner.
-      #
-      # Secrets: a downloaded desktop exe runs with ASPNETCORE_ENVIRONMENT unset,
-      # which defaults to Production. First-run auto-generates the JWT secret, but
-      # in Production the connector encryption key is NOT auto-generated and
-      # FirstRunBootstrapper.ValidateProductionSecrets hard-fails without it. We
-      # therefore pass throwaway Jwt__SecretKey and Connectors__EncryptionKey env
-      # vars (generated with openssl; the connector key must base64-decode to
-      # exactly 32 bytes per AesCredentialEncryptionService). Supplying the JWT
-      # secret also stops first-run from writing appsettings.local.json into the
-      # publish dir, and the DB is pointed at a temp dir, so nothing pollutes the
-      # archive built in the next step.
-      - name: Smoke test published executable
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PORT=5099
-          URL="http://127.0.0.1:${PORT}"
-          PUBLISH_DIR="publish/${{ matrix.rid }}"
-
-          # The published assembly name is Taskdeck.Api (no AssemblyName override);
-          # the apphost gets a .exe suffix on Windows only.
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            EXE="${PUBLISH_DIR}/Taskdeck.Api.exe"
-          else
-            EXE="${PUBLISH_DIR}/Taskdeck.Api"
-          fi
-
-          if [ ! -f "$EXE" ]; then
-            echo "::error::Published executable not found at $EXE"
-            ls -la "$PUBLISH_DIR" || true
-            exit 1
-          fi
-          chmod +x "$EXE" 2>/dev/null || true
-
-          # Isolated temp data dir so no SQLite file lands in the publish output.
-          SMOKE_DATA_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t taskdeck-smoke)"
-          # .NET needs a native path for the connection string on Windows; the
-          # MSYS path from mktemp (/tmp/...) is meaningless to the Win32 process.
-          if [ "${RUNNER_OS}" = "Windows" ]; then
-            DB_DIR="$(cygpath -w "${SMOKE_DATA_DIR}")"
-          else
-            DB_DIR="${SMOKE_DATA_DIR}"
-          fi
-
-          # Throwaway secrets (never reused, discarded with the temp dir).
-          SMOKE_JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
-          SMOKE_CONNECTOR_KEY="$(openssl rand -base64 32 | tr -d '\n')"
-
-          APP_PID=""
-          LOG="${SMOKE_DATA_DIR}/app.log"
-          cleanup() {
-            if [ -n "${APP_PID}" ]; then
-              kill "${APP_PID}" 2>/dev/null || true
-            fi
-            if [ "${RUNNER_OS}" = "Windows" ]; then
-              # MSYS->Win32 PID mapping can miss; make sure the apphost is gone.
-              taskkill //F //IM Taskdeck.Api.exe 2>/dev/null || true
-            fi
-            rm -rf "${SMOKE_DATA_DIR}" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          EXE_NAME="$(basename "$EXE")"
-          echo "Launching ${EXE_NAME} (cwd=${PUBLISH_DIR}) on ${URL} (data dir: ${SMOKE_DATA_DIR})"
-          # Run with the publish dir as the working directory so ASP.NET Core resolves the
-          # content root there and serves wwwroot/index.html + appsettings.json — exactly as
-          # an end user runs the extracted exe (the content root defaults to the CWD, not the
-          # exe folder). The DB + log use absolute temp paths, so the publish dir (archived in
-          # the next step) stays clean. `exec` replaces the subshell with the apphost so $! is
-          # the real process PID for a clean kill.
-          (
-            cd "$PUBLISH_DIR"
-            ASPNETCORE_URLS="${URL}" \
-            ConnectionStrings__DefaultConnection="Data Source=${DB_DIR}/taskdeck-smoke.db" \
-            Jwt__SecretKey="${SMOKE_JWT_SECRET}" \
-            Connectors__EncryptionKey="${SMOKE_CONNECTOR_KEY}" \
-            FirstRun__AutoOpenBrowser="false" \
-            exec "./${EXE_NAME}"
-          ) > "$LOG" 2>&1 &
-          APP_PID=$!
-          echo "Started PID ${APP_PID}"
-
-          # Poll /health/ready (DB migrated + reachable, workers heartbeating).
-          # -f makes curl non-zero on any non-2xx (e.g. a 503 NotReady), so the
-          # loop only breaks once the app reports fully Ready. Bounded to ~60s.
-          READY=0
-          for i in $(seq 1 60); do
-            if curl -fsS -o /dev/null --max-time 5 "${URL}/health/ready"; then
-              READY=1
-              echo "health/ready returned success after ~${i}s"
-              break
-            fi
-            # Fast-fail if the process already died (skip on Windows where the
-            # MSYS->Win32 PID mapping makes kill -0 unreliable; fall through to
-            # the timeout instead of a false negative).
-            if [ "${RUNNER_OS}" != "Windows" ] && ! kill -0 "${APP_PID}" 2>/dev/null; then
-              echo "::error::Taskdeck process exited before /health/ready became ready"
-              echo "--- app log (tail) ---"; tail -n 60 "$LOG" || true
-              exit 1
-            fi
-            sleep 1
-          done
-
-          if [ "${READY}" -ne 1 ]; then
-            echo "::error::/health/ready did not return success within 60s"
-            echo "--- app log (tail) ---"; tail -n 60 "$LOG" || true
-            exit 1
-          fi
-
-          # GET / must serve the SPA shell (same-origin index.html from wwwroot, HTTP 200).
-          ROOT_BODY="${SMOKE_DATA_DIR}/root.html"
-          ROOT_CODE="$(curl -s -o "$ROOT_BODY" -w '%{http_code}' --max-time 10 "${URL}/" || echo 000)"
-          if [ "$ROOT_CODE" = "200" ] && grep -qiE '<div id="app"|<!doctype html' "$ROOT_BODY"; then
-            echo "GET / served the SPA index.html (HTTP 200) — smoke test passed for ${{ matrix.rid }}"
-          else
-            echo "::error::GET / did not serve the SPA index.html (HTTP ${ROOT_CODE})"
-            # Diagnostics: separate "the SPA is not served at all" from "only the bare root / fails"
-            # (e.g. the root path 401ing under the global auth fallback policy) so the failure is actionable.
-            echo "  diag: GET /index.html      -> $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${URL}/index.html")"
-            echo "  diag: GET /board (SPA nav) -> $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${URL}/board")"
-            echo "--- first 500 chars of GET / body ---"; head -c 500 "$ROOT_BODY" 2>/dev/null || true; echo
-            echo "--- app log (tail) ---"; tail -n 60 "$LOG" || true
-            exit 1
-          fi
-
       # The version tag is resolved ONCE in `resolve-source` (grammar-validated
       # there) and reaches these steps through `env:`, never as raw shell source.
       # A bare workflow_dispatch (no tag input, run from a branch) is the REHEARSAL
-      # path: it builds, smoke-tests and packages as `v0.0.0-dryrun+<sha7>` and
+      # path: it builds, validates and packages as `v0.0.0-dryrun+<sha7>` and
       # publishes nothing (`#1123`).
       - name: Package artifact (zip — Windows x64)
         shell: pwsh
@@ -544,6 +418,23 @@ jobs:
           else
             shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
           fi
+
+      - name: Test untouched Windows desktop ZIP
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_RID: ${{ matrix.rid }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
+          TASKDECK_RELEASE_OPENAI_API_KEY: ${{ secrets.TASKDECK_RELEASE_OPENAI_API_KEY }}
+        run: |
+          $archive = "taskdeck-${env:RELEASE_TAG}-${env:RELEASE_RID}.${env:ARCHIVE_EXT}"
+          $evidence = Join-Path $env:RUNNER_TEMP "taskdeck-desktop-acceptance-${env:RELEASE_RID}.json"
+          ./scripts/ci/Test-WindowsDesktopArchive.ps1 `
+            -ArchivePath $archive `
+            -ChecksumPath "${archive}.sha256" `
+            -EvidencePath $evidence `
+            -FrontendDirectory "frontend/taskdeck-web" `
+            -LiveOpenAI
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7

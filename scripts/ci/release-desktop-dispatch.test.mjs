@@ -282,6 +282,35 @@ test('the 0.1.x release matrix and packaging are Windows x64 zip only', () => {
   assert.doesNotMatch(job, /tar\.gz|\btar\s+-czf\b/, 'dead Linux/macOS packaging must stay absent')
 })
 
+test('the desktop package marker is publish-only and the false pre-ZIP proof stays removed', () => {
+  const job = jobBlock('build-backend')
+  assert.match(job, /-p:TaskdeckDesktopPackage=true/)
+  assert.match(jobBlock('build-frontend'), /VITE_API_BASE_URL: \/api/)
+  assert.doesNotMatch(job, /Smoke test published executable/)
+  assert.doesNotMatch(job, /ConnectionStrings__DefaultConnection/)
+  assert.doesNotMatch(job, /Jwt__SecretKey/)
+  assert.doesNotMatch(job, /Connectors__EncryptionKey/)
+  assert.doesNotMatch(job, /FirstRun__AutoOpenBrowser/)
+  assert.doesNotMatch(job, /taskkill \/\/F \/\/IM Taskdeck\.Api\.exe/)
+})
+
+test('the untouched ZIP is checksummed, accepted, and only then uploaded', () => {
+  const job = jobBlock('build-backend')
+  const packageAt = job.indexOf('Package artifact (zip')
+  const checksumAt = job.indexOf('Generate SHA256 checksum')
+  const acceptanceAt = job.indexOf('Test untouched Windows desktop ZIP')
+  const uploadAt = job.indexOf('Upload release artifact')
+
+  assert.ok(packageAt !== -1 && checksumAt !== -1 && acceptanceAt !== -1 && uploadAt !== -1)
+  assert.ok(packageAt < checksumAt, 'the immutable archive exists before its checksum')
+  assert.ok(checksumAt < acceptanceAt, 'acceptance verifies the generated checksum')
+  assert.ok(acceptanceAt < uploadAt, 'only an accepted untouched ZIP can be uploaded')
+  assert.match(job, /Test-WindowsDesktopArchive\.ps1/)
+  assert.match(job, /npx playwright install chromium/)
+  assert.match(job, /TASKDECK_RELEASE_OPENAI_API_KEY: \$\{\{ secrets\.TASKDECK_RELEASE_OPENAI_API_KEY \}\}/)
+  assert.match(job, /-LiveOpenAI/)
+})
+
 // -----------------------------------------------------------------------------
 // 6. Workflow structure — resumable publish (#1806)
 // -----------------------------------------------------------------------------
