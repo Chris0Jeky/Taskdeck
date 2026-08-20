@@ -576,7 +576,12 @@ public class LlmProviderRegistrationTests
             case "OpenAi":
                 root.GetProperty("model").GetString().Should().Be("test-openai-model");
                 root.GetProperty("stream").GetBoolean().Should().BeFalse();
-                root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                // The OpenAI adapter sends the current `max_completion_tokens`
+                // parameter; only OpenAiCompatible still speaks `max_tokens`.
+                // `test-openai-model` is non-reasoning, so no headroom is added
+                // and temperature is still sent.
+                root.GetProperty("max_completion_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                root.TryGetProperty("max_tokens", out _).Should().BeFalse();
                 root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
                 root.GetProperty("messages")[0].GetProperty("content").GetString().Should().Be(expectedContent);
                 break;

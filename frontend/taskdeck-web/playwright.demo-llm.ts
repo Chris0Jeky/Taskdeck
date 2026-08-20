@@ -104,12 +104,14 @@ function resolveDemoProvider(env: NodeJS.ProcessEnv): DemoProvider | null {
     return 'OpenAI'
   }
 
-  if (hasGeminiApiKey(env)) {
-    return 'Gemini'
-  }
-
+  // OpenAI is the supported live provider; Gemini is deprecated and only
+  // used when explicitly forced or when it is the only key available.
   if (hasOpenAiApiKey(env)) {
     return 'OpenAI'
+  }
+
+  if (hasGeminiApiKey(env)) {
+    return 'Gemini'
   }
 
   return null

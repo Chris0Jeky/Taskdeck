@@ -44,7 +44,7 @@ public sealed class OpenAiProviderSettings
     public string BaseUrl { get; set; } = "https://api.openai.com/v1";
 
     [Required(AllowEmptyStrings = false)]
-    public string Model { get; set; } = "gpt-4o-mini";
+    public string Model { get; set; } = "gpt-5.6-luna";
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;

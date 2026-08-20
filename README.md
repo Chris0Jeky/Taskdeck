@@ -121,7 +121,7 @@ Shipped now:
 - boards, cards, labels, Inbox, Review, search, notifications, and local operations surfaces;
 - SQLite persistence, JSON/board exports, authentication, and self-hosted container support;
 - MCP resources, review-gated board changes, and bounded workflow actions;
-- mock, OpenAI, Gemini, and config-gated local/provider integrations.
+- mock, OpenAI, and config-gated local/provider integrations (Gemini is deprecated, pending removal).
 
 Coming through the revival roadmap:
 
@@ -139,7 +139,7 @@ This README follows the maintainer-owned revival direction proposed in [PR #1296
 | Frontend | Vue 3, TypeScript, Pinia, Vite, Tailwind CSS |
 | Realtime | SignalR |
 | Testing | xUnit, Vitest, Playwright |
-| LLM | Mock by default; OpenAI and Gemini are config-gated |
+| LLM | Mock by default; OpenAI is config-gated (Gemini deprecated) |
 
 ```text
 backend/          .NET solution and layered application
