@@ -11,6 +11,15 @@ using Microsoft.Extensions.Configuration.EnvironmentVariables;
 namespace Taskdeck.Api.FirstRun;
 
 /// <summary>
+/// Redacted per-process outcome: each flag is true only when this bootstrap call generated that
+/// effective value. False deliberately makes no claim about whether the value came from durable
+/// local config or another configured source.
+/// </summary>
+internal readonly record struct BootstrapIdentityLifecycle(
+    bool JwtCreated,
+    bool ConnectorCreated);
+
+/// <summary>
 /// Runs synchronously before the DI container is built.
 /// Ensures that auto-generated configuration values (JWT secret, DB path)
 /// are written to <c>appsettings.local.json</c> so they are available to
@@ -550,6 +559,19 @@ public static class FirstRunBootstrapper
         ILogger logger,
         string localConfigPath,
         bool isBootstrapHeadless)
+        => RunFirstRunChecks(
+            builder,
+            logger,
+            localConfigPath,
+            isBootstrapHeadless,
+            bootstrapIdentityObserver: null);
+
+    internal static WebApplicationBuilder RunFirstRunChecks(
+        this WebApplicationBuilder builder,
+        ILogger logger,
+        string localConfigPath,
+        bool isBootstrapHeadless,
+        Action<BootstrapIdentityLifecycle>? bootstrapIdentityObserver)
     {
         var exactPath = Path.GetFullPath(localConfigPath);
         var isProduction = builder.Environment.IsProduction();
@@ -562,7 +584,7 @@ public static class FirstRunBootstrapper
 
         // Recover/check connector identity before either secret is generated. An existing database with no
         // recoverable connector key must not be paired with a new key that silently orphans credentials.
-        EnsureBootstrapSecrets(
+        var bootstrapIdentity = EnsureBootstrapSecrets(
             builder.Configuration,
             logger,
             exactPath,
@@ -570,6 +592,7 @@ public static class FirstRunBootstrapper
             isBootstrapHeadless,
             resolveDatabaseToAppData,
             databaseAppDataPath);
+        bootstrapIdentityObserver?.Invoke(bootstrapIdentity);
 
         if (!resolveDatabaseToAppData)
         {
@@ -701,7 +724,7 @@ public static class FirstRunBootstrapper
     /// Recovers persisted connector identity and refuses replacement-secret generation when an existing
     /// database has no supplied or recoverable key. Connector identity is established before JWT identity.
     /// </summary>
-    internal static void EnsureBootstrapSecrets(
+    internal static BootstrapIdentityLifecycle EnsureBootstrapSecrets(
         IConfiguration configuration,
         ILogger logger,
         string localConfigPath,
@@ -784,16 +807,17 @@ public static class FirstRunBootstrapper
                 "Connectors__EncryptionKey before starting Taskdeck.");
         }
 
+        var connectorCreated = false;
         if (ShouldAutoGenerateConnectorKey(isProduction, isHeadless))
         {
-            EnsureConnectorEncryptionKey(
+            connectorCreated = EnsureConnectorEncryptionKey(
                 configuration,
                 logger,
                 localConfigPath,
                 requirePersistence: isProduction);
         }
 
-        EnsureJwtSecret(
+        var jwtCreated = EnsureJwtSecret(
             configuration,
             logger,
             localConfigPath,
@@ -806,6 +830,8 @@ public static class FirstRunBootstrapper
         {
             configuration["Connectors:EncryptionKey"] = recoveredPersistedKey;
         }
+
+        return new BootstrapIdentityLifecycle(jwtCreated, connectorCreated);
     }
 
     private static string? ResolveDatabaseFilePath(
@@ -874,7 +900,7 @@ public static class FirstRunBootstrapper
         }
     }
 
-    internal static void EnsureJwtSecret(
+    internal static bool EnsureJwtSecret(
         IConfiguration configuration,
         ILogger logger,
         string localConfigPath,
@@ -886,7 +912,7 @@ public static class FirstRunBootstrapper
 
         if (!IsPlaceholder(configured))
         {
-            return;
+            return false;
         }
 
         afterInitialAbsence?.Invoke();
@@ -913,6 +939,7 @@ public static class FirstRunBootstrapper
                     : "First-run: Another startup persisted the JWT secret in {ConfigFile}. Reusing that " +
                         "winning value.",
                 localConfigPath);
+            return result.Created;
         }
         catch (IOException ex)
         {
@@ -929,10 +956,11 @@ public static class FirstRunBootstrapper
                 "First-run: Could not persist JWT secret to {ConfigFile} ({Error}). " +
                 "A transient in-memory secret has been generated instead.",
                 localConfigPath, ex.Message);
+            return true;
         }
     }
 
-    internal static void EnsureConnectorEncryptionKey(
+    internal static bool EnsureConnectorEncryptionKey(
         IConfiguration configuration,
         ILogger logger,
         string localConfigPath,
@@ -944,7 +972,7 @@ public static class FirstRunBootstrapper
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return;
+            return false;
         }
 
         // The effective value is empty. Before generating a new key (which PersistValue would write OVER the
@@ -962,7 +990,7 @@ public static class FirstRunBootstrapper
                 "environment variable) is masking the connector key persisted in {ConfigFile}. Reusing the " +
                 "persisted key so stored connector credentials stay decryptable; unset the empty variable to " +
                 "silence this warning.", localConfigPath);
-            return;
+            return false;
         }
 
         afterInitialAbsence?.Invoke();
@@ -1014,7 +1042,7 @@ public static class FirstRunBootstrapper
                 "First-run: Could not persist connector encryption key to {ConfigFile} ({Error}). " +
                 "A transient in-memory key has been generated instead.",
                 localConfigPath, ex.Message);
-            return;
+            return true;
         }
 
         // The key is now persisted on disk. Make sure it is also the effective in-process value: a reload may
@@ -1040,6 +1068,8 @@ public static class FirstRunBootstrapper
                     localConfigPath);
             }
         }
+
+        return result.Created;
     }
 
     internal static void EnsureDbPath(
