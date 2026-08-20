@@ -16,6 +16,7 @@ type ProviderHealth = {
   isMock: boolean
   isProbed: boolean
   verificationStatus: string
+  probeLatencyMs: number | null
 }
 
 const apiBaseUrl = requiredEnv('TASKDECK_E2E_API_BASE_URL')
@@ -50,7 +51,7 @@ test('untouched Windows package retains its synthetic journey', async ({ page, r
   } catch {
     writeFileSync(
       failurePath,
-      `${JSON.stringify({ schemaVersion: 1, phase, outcome: 'failed', checkpoint, httpStatus: failureHttpStatus })}\n`,
+      `${JSON.stringify({ schemaVersion: 2, phase, outcome: 'failed', checkpoint, httpStatus: failureHttpStatus })}\n`,
       { encoding: 'utf8', flag: 'wx' },
     )
     throw new Error(`[packaged desktop] ${phase} failed at a sanitized checkpoint.`)
@@ -95,7 +96,7 @@ async function runCreatePhase(page: Page, request: APIRequestContext): Promise<v
     : { outcome: 'skipped', reason: validatedLiveSkipReason(liveOpenAiSkipReason) }
 
   writeEvidence({
-    schemaVersion: 1,
+    schemaVersion: 2,
     phase: 'create',
     journeyId,
     board: { id: boardId, title: boardTitle },
@@ -139,7 +140,7 @@ async function runRestartPhase(page: Page, request: APIRequestContext): Promise<
   }
 
   writeEvidence({
-    schemaVersion: 1,
+    schemaVersion: 2,
     phase: 'restart',
     journeyId,
     board: { id: boardId, title: boardTitle },
@@ -273,6 +274,7 @@ async function runLiveOpenAiJourney(
   requireOk(healthResponse, 'GET', '/api/llm/chat/health?probe=true', http)
   const health = await healthResponse.json() as ProviderHealth
   checkpoint = 'live_provider_identity'
+  const probeLatencyMs = health.probeLatencyMs
   if (
     health.providerName !== 'OpenAI'
     || health.model !== expectedModel
@@ -280,12 +282,22 @@ async function runLiveOpenAiJourney(
     || !health.isAvailable
     || !health.isProbed
     || health.verificationStatus !== 'verified'
+    || typeof probeLatencyMs !== 'number'
+    || !Number.isSafeInteger(probeLatencyMs)
+    || probeLatencyMs < 1
+    || probeLatencyMs > 300_000
   ) {
     throw new Error('[packaged desktop] The live provider did not verify as exact OpenAI/non-mock/verified.')
   }
   checkpoint = 'live_verified_ui'
   failureHttpStatus = null
-  await expect(page.locator('[data-llm-health-state="verified"]')).toBeVisible()
+  const verifiedHealthState = page.locator('[data-llm-health-state="verified"]')
+  await expect(verifiedHealthState).toBeVisible()
+  await expect(verifiedHealthState).toHaveAttribute(
+    'data-llm-probe-latency-ms',
+    String(probeLatencyMs),
+  )
+  await expect(verifiedHealthState).toContainText(`Probe completed in ${probeLatencyMs} ms.`)
 
   const beforeProposal = await matchingCardCount(request, auth, boardId, http)
   if (beforeProposal !== 0) {
@@ -338,6 +350,7 @@ async function runLiveOpenAiJourney(
     isMock: health.isMock,
     isProbed: health.isProbed,
     verificationStatus: health.verificationStatus,
+    probeLatencyMs,
     cardTitle,
     proposal: {
       id: proposalId,

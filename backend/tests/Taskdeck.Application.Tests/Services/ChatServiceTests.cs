@@ -735,6 +735,7 @@ public class ChatServiceTests
         result.Model.Should().Be("gpt-4o-mini");
         result.IsMock.Should().BeFalse();
         result.VerificationStatus.Should().Be("unverified");
+        result.ProbeLatencyMs.Should().BeNull();
     }
 
     [Fact]
@@ -751,6 +752,7 @@ public class ChatServiceTests
         result.Model.Should().Be("stub-model");
         result.IsMock.Should().BeTrue();
         result.VerificationStatus.Should().Be("unverified");
+        result.ProbeLatencyMs.Should().BeNull();
     }
 
     [Fact]
@@ -758,7 +760,11 @@ public class ChatServiceTests
     {
         _llmProviderMock
             .Setup(p => p.ProbeAsync(default))
-            .ReturnsAsync(new LlmHealthStatus(true, "OpenAI", Model: "gpt-4o-mini", IsProbed: true));
+            .Returns(async () =>
+            {
+                await Task.Delay(20);
+                return new LlmHealthStatus(true, "OpenAI", Model: "gpt-4o-mini", IsProbed: true);
+            });
 
         var result = await _service.GetProviderHealthAsync(probe: true, default);
 
@@ -767,6 +773,7 @@ public class ChatServiceTests
         result.Model.Should().Be("gpt-4o-mini");
         result.IsProbed.Should().BeTrue();
         result.VerificationStatus.Should().Be("verified");
+        result.ProbeLatencyMs.Should().BeGreaterThan(0);
         _llmProviderMock.Verify(p => p.ProbeAsync(default), Times.Once);
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
     }
@@ -785,6 +792,43 @@ public class ChatServiceTests
         result.ErrorMessage.Should().Be("Connection refused");
         result.IsProbed.Should().BeTrue();
         result.VerificationStatus.Should().Be("failed");
+        result.ProbeLatencyMs.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldPropagateProbeFailure()
+    {
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(default))
+            .ThrowsAsync(new InvalidOperationException("synthetic probe failure"));
+
+        ChatProviderHealthDto? result = null;
+        Func<Task> act = async () => result = await _service.GetProviderHealthAsync(probe: true, default);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("synthetic probe failure");
+        result.Should().BeNull();
+        _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldPropagateCallerCancellationWithoutReturningLatency()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+        ChatProviderHealthDto? result = null;
+        Func<Task> act = async () =>
+            result = await _service.GetProviderHealthAsync(probe: true, cancellation.Token);
+
+        var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+        thrown.Which.CancellationToken.Should().Be(cancellation.Token);
+        result.Should().BeNull();
+        _llmProviderMock.Verify(p => p.ProbeAsync(cancellation.Token), Times.Once);
+        _llmProviderMock.Verify(p => p.GetHealthAsync(cancellation.Token), Times.Never);
     }
 
     #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)

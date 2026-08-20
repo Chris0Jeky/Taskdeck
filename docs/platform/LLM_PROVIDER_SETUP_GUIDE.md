@@ -46,6 +46,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
 - unknown provider values also fall back deterministically to `Mock`
 - the retired `Gemini` selector or any remaining `Llm:Gemini` settings section is a fatal startup error with migration guidance; it never silently falls back to `Mock`
+- the retired Compose wrapper `TASKDECK_LLM_GEMINI_API_KEY` is reduced by the shipped Compose file to a boolean presence marker; a non-empty legacy value fails startup with fixed migration guidance, and its value is never forwarded into Taskdeck configuration or diagnostics
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
 - the OpenAI, OpenAICompatible, and Ollama primary `HttpClient` handlers use `OutboundWebhookConnectCallback` for DNS-level SSRF protection and set both `AllowAutoRedirect = false` and `UseProxy = false`; ambient/system proxy settings are ignored so the configured provider origin remains the host validated by the connect callback
@@ -258,6 +259,8 @@ Note:
 - callers must use an authenticated session or a valid Bearer token
 - unauthenticated requests return `401 Unauthorized`, so a direct browser or `curl` call without auth can fail even when the provider is healthy
 - `?probe=true` makes a real API call to the upstream provider; use it intentionally since it consumes tokens
+- `probeLatencyMs` is `null` for passive health and a whole-millisecond, server-measured monotonic duration around `ProbeAsync` for an explicit probe; it contains no provider response, error detail, or key material
+- the banner displays `Probe completed in ... ms.` only for a non-Mock probed response whose server value is an integer from 1 through 300,000, and exposes that same integer through `data-llm-probe-latency-ms` for exact acceptance checks
 
 Current operator-visible states:
 - `verified` — probe confirmed live reachability (only after `?probe=true`)

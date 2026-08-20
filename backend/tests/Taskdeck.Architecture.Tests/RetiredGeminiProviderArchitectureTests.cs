@@ -62,7 +62,7 @@ public class RetiredGeminiProviderArchitectureTests
         var violations = files
             .SelectMany(path => RetiredIntegrationMarkers
                 .Where(marker =>
-                    !IsDemoMigrationGuardMarker(path, marker) &&
+                    !IsAllowedRetiredMigrationMarker(path, marker) &&
                     File.ReadAllText(path).Contains(marker, StringComparison.OrdinalIgnoreCase))
                 .Select(marker =>
                     $"{Path.GetRelativePath(repositoryRoot, path).Replace(Path.DirectorySeparatorChar, '/')}: {marker}"))
@@ -76,17 +76,74 @@ public class RetiredGeminiProviderArchitectureTests
             + string.Join(Environment.NewLine, violations));
     }
 
+    [Fact]
+    public void Compose_ShouldMapRetiredWrapperOnlyToBooleanPresenceMarker()
+    {
+        const string retiredWrapper = "TASKDECK_LLM_GEMINI_API_KEY";
+        const string expectedMapping =
+            "TaskdeckMigration__RetiredLlmProviderConfigurationPresent: \"${TASKDECK_LLM_GEMINI_API_KEY:+true}\"";
+        var repositoryRoot = Path.GetFullPath(Path.Combine(ArchitectureTestPaths.BackendRoot, ".."));
+        var composePath = Path.Combine(repositoryRoot, "deploy", "docker-compose.yml");
+        var compose = File.ReadAllText(composePath);
+
+        Assert.Equal(1, CountOccurrences(compose, retiredWrapper));
+        Assert.Contains(expectedMapping, compose, StringComparison.Ordinal);
+        Assert.DoesNotContain($"${{{retiredWrapper}}}", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain($"${{{retiredWrapper}:-", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain($"${{{retiredWrapper}-", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain($"Llm__Gemini__ApiKey:", compose, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RuntimeMigrationGuard_ShouldNameRetiredWrapperOnlyInFixedGuidance()
+    {
+        const string retiredWrapper = "TASKDECK_LLM_GEMINI_API_KEY";
+        var registrationPath = ArchitectureTestPaths.GetBackendPath(
+            "src/Taskdeck.Api/Extensions/LlmProviderRegistration.cs");
+        var registration = File.ReadAllText(registrationPath);
+
+        Assert.Equal(1, CountOccurrences(registration, retiredWrapper));
+        Assert.Contains(
+            $"The retired Docker Compose variable {retiredWrapper} is set.",
+            registration,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain($"configuration[\"{retiredWrapper}\"]", registration, StringComparison.Ordinal);
+    }
+
     private static bool ContainsDirectory(string path, string directoryName)
     {
         var segment = $"{Path.DirectorySeparatorChar}{directoryName}{Path.DirectorySeparatorChar}";
         return path.Contains(segment, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsDemoMigrationGuardMarker(string path, string marker)
+    private static bool IsAllowedRetiredMigrationMarker(string path, string marker)
     {
-        return Path.GetFileName(path).Equals("playwright.demo-llm.ts", StringComparison.OrdinalIgnoreCase)
-               && (marker.Equals("Llm__Gemini", StringComparison.OrdinalIgnoreCase)
+        if (Path.GetFileName(path).Equals("playwright.demo-llm.ts", StringComparison.OrdinalIgnoreCase))
+        {
+            return marker.Equals("Llm__Gemini", StringComparison.OrdinalIgnoreCase)
                    || marker.Equals("TASKDECK_DEMO_GEMINI", StringComparison.OrdinalIgnoreCase)
-                   || marker.Equals("TASKDECK_LLM_GEMINI", StringComparison.OrdinalIgnoreCase));
+                   || marker.Equals("TASKDECK_LLM_GEMINI", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!marker.Equals("TASKDECK_LLM_GEMINI", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return Path.GetFileName(path).Equals("docker-compose.yml", StringComparison.OrdinalIgnoreCase)
+               || Path.GetFileName(path).Equals("LlmProviderRegistration.cs", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CountOccurrences(string value, string search)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = value.IndexOf(search, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += search.Length;
+        }
+
+        return count;
     }
 }

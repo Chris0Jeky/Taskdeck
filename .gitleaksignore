@@ -44,3 +44,8 @@ aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:curl-auth-he
 aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:generic-api-key:23
 aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:36
 aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:54
+
+# Synthetic 32-byte connector-encryption prerequisite used only to execute the
+# retired-provider Compose interpolation regression. The test asserts that the
+# separate synthetic retired-provider value never reaches Compose output.
+f581076b99d276f0c9f950761bdc3c6d1cd0d425:scripts/ci/test_retired_llm_compose_migration.py:generic-api-key:83

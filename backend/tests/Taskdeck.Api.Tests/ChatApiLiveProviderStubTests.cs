@@ -87,6 +87,7 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         payload.IsAvailable.Should().BeTrue();
         payload.IsMock.Should().BeFalse();
         payload.Model.Should().Be("gpt-4o-mini");
+        payload.ProbeLatencyMs.Should().BeNull();
     }
 
     [Fact]
@@ -114,6 +115,7 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         payload.ProviderName.Should().Be("OpenAI");
         payload.IsProbed.Should().BeTrue();
         payload.IsMock.Should().BeFalse();
+        payload.ProbeLatencyMs.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -235,13 +237,14 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
                 Model: "gpt-4o-mini"));
         }
 
-        public Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
+        public async Task<LlmHealthStatus> ProbeAsync(CancellationToken ct = default)
         {
-            return Task.FromResult(new LlmHealthStatus(
+            await Task.Delay(20, ct);
+            return new LlmHealthStatus(
                 IsAvailable: true,
                 ProviderName: "OpenAI",
                 Model: "gpt-4o-mini",
-                IsProbed: true));
+                IsProbed: true);
         }
     }
 }

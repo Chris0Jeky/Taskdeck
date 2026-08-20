@@ -24,9 +24,13 @@ manual clean-machine acceptance:
 - Issue `#1879`: full local backend proof passed Domain 1,656, Application 3,798, API 2,309
   (+4 intentional skips), CLI 140, Architecture 24 (+1 existing skip), and Integration 35;
   a synthetic Chromium journey verified OpenAI / `gpt-5.6-luna` without reading or printing the
-  key value and completed in 15.1 seconds. No distinct provider-probe latency was captured, so
-  `#1879` keeps that evidence criterion open. The active provider filter below passes 167/167
-  after Gemini retirement.
+  key value and completed in 15.1 seconds. Follow-through code head `d902715c` then passed a
+  no-publish hosted Windows build plus a local live run of the downloaded untouched ZIP: evidence
+  schema 2 recorded OpenAI / `gpt-5.6-luna`, non-Mock/probed/verified, a server-measured 1,786 ms
+  probe duration, fallback then default-port launch, review-first card counts 0/0/1, and one card
+  after restart. The active provider filter below passes 167/167 after Gemini retirement. The
+  issue stays open for the separate post-0.1.x BYOK setup/validation/rotation/removal decision and
+  maintainer record, not for missing automated probe timing.
 
 These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
 clean Windows machine, manual registration, or a public v0.1.1 release.

@@ -8,6 +8,27 @@ const props = defineProps<{
   chatHealthLoadError: string | null
 }>()
 
+const maxDisplayedProbeLatencyMs = 300_000
+
+const llmProbeLatencyMs = computed(() => {
+  const health = props.chatHealth
+  if (!health || health.isMock || !health.isProbed) {
+    return null
+  }
+
+  const latency = health.probeLatencyMs
+  if (
+    typeof latency !== 'number'
+    || !Number.isSafeInteger(latency)
+    || latency < 1
+    || latency > maxDisplayedProbeLatencyMs
+  ) {
+    return null
+  }
+
+  return latency
+})
+
 const llmHealthState = computed(() => {
   if (props.loadingHealth) {
     return 'loading'
@@ -118,12 +139,16 @@ const llmStatusMeta = computed(() => {
     class="td-chat-status"
     :class="`td-chat-status--${llmHealthState}`"
     :data-llm-health-state="llmHealthState"
+    :data-llm-probe-latency-ms="llmProbeLatencyMs"
   >
     <div>
       <h2 class="td-chat-status__title">{{ llmStatusTitle }}</h2>
       <p class="td-chat-status__copy">{{ llmStatusCopy }}</p>
     </div>
-    <span v-if="llmStatusMeta" class="td-chat-status__meta">{{ llmStatusMeta }}</span>
+    <span v-if="llmStatusMeta" class="td-chat-status__meta">
+      {{ llmStatusMeta }}
+      <span v-if="llmProbeLatencyMs !== null"> | Probe completed in {{ llmProbeLatencyMs }} ms.</span>
+    </span>
   </section>
 </template>
 
@@ -183,6 +208,10 @@ const llmStatusMeta = computed(() => {
 @media (max-width: 900px) {
   .td-chat-status {
     flex-direction: column;
+  }
+
+  .td-chat-status__meta {
+    white-space: normal;
   }
 }
 </style>
