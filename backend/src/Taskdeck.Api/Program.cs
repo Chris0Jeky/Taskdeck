@@ -235,17 +235,22 @@ if (args.Contains("--mcp"))
     // from the client's own working directory, so a relative file could miss the durable desktop config
     // (or the executable-local compatibility config) being repaired.
     // Env-var precedence is preserved by the AddEnvironmentVariables() re-add AFTER the file source.
+    var mcpStdioEnvironmentOverride = FirstRunBootstrapper.ResolveMcpStdioEnvironmentOverride(
+        Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+    var mcpStdioHostBuilder = Host.CreateDefaultBuilder(args);
+    if (mcpStdioEnvironmentOverride is not null)
+    {
+        // Apply before Build so the Generic Host environment, default appsettings.{Environment}.json source,
+        // explicit source below, and local-config path policy all use one authoritative name.
+        mcpStdioHostBuilder.UseEnvironment(mcpStdioEnvironmentOverride);
+    }
+
     string? mcpStdioLocalConfigPath = null;
-    var mcpHost = Host.CreateDefaultBuilder(args)
+    var mcpHost = mcpStdioHostBuilder
         .ConfigureAppConfiguration((context, config) =>
         {
-            // Generic Host normally keys from DOTNET_ENVIRONMENT, while this ASP.NET executable has
-            // historically honoured ASPNETCORE_ENVIRONMENT. Preserve that compatibility and resolve one
-            // exact config path for the complete stdio host lifetime.
-            var aspNetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var environmentName = string.IsNullOrWhiteSpace(aspNetCoreEnvironment)
-                ? context.HostingEnvironment.EnvironmentName
-                : aspNetCoreEnvironment;
+            var environmentName = context.HostingEnvironment.EnvironmentName;
             var isProduction = string.Equals(
                 environmentName,
                 Environments.Production,

@@ -228,8 +228,6 @@ public sealed class LocalConfigPathMigrationTests
                 ConnectionStrings = new { DefaultConnection = $"Data Source={durableDatabase}" }
             }));
         File.WriteAllBytes(Path.Combine(legacyDirectory, "taskdeck.db"), [0x54, 0x44]);
-        File.WriteAllBytes(Path.Combine(legacyDirectory, "taskdeck.db-wal"), [0x57, 0x41, 0x4C]);
-        File.WriteAllBytes(Path.Combine(legacyDirectory, "taskdeck.db-shm"), [0x53, 0x48, 0x4D]);
         var configuration = BuildConfiguration(durableDatabase);
 
         var error = Assert.Throws<InvalidOperationException>(() =>
@@ -248,6 +246,83 @@ public sealed class LocalConfigPathMigrationTests
         Assert.True(File.Exists(localConfig), "the migrated recovery evidence must remain intact");
         Assert.DoesNotContain("Connectors", File.ReadAllText(localConfig));
         Assert.DoesNotContain("Jwt", File.ReadAllText(localConfig));
+        Assert.Null(configuration["Connectors:EncryptionKey"]);
+        Assert.Null(configuration["Jwt:SecretKey"]);
+    }
+
+    [Theory]
+    [InlineData("-wal")]
+    [InlineData("-shm")]
+    public void EnsureBootstrapSecrets_LegacyAdjacentSidecarAloneCannotBeSilentlyAbandoned(
+        string sidecarSuffix)
+    {
+        using var temp = new TempDirectory();
+        var durableDirectory = Path.Combine(temp.Path, "appdata", "Taskdeck");
+        var durableDatabase = Path.Combine(durableDirectory, "taskdeck.db");
+        var localConfig = Path.Combine(durableDirectory, "appsettings.local.json");
+        var legacyDirectory = Path.Combine(temp.Path, "release");
+        Directory.CreateDirectory(legacyDirectory);
+        Directory.CreateDirectory(durableDirectory);
+        FirstRunBootstrapper.WriteRestrictedFile(
+            localConfig,
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                ConnectionStrings = new { DefaultConnection = $"Data Source={durableDatabase}" }
+            }));
+        var legacyDatabase = Path.Combine(legacyDirectory, "taskdeck.db");
+        File.WriteAllBytes($"{legacyDatabase}{sidecarSuffix}", [0x54, 0x44]);
+        var configuration = BuildConfiguration(durableDatabase);
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            FirstRunBootstrapper.EnsureBootstrapSecrets(
+                configuration,
+                NullLogger.Instance,
+                localConfig,
+                isProduction: true,
+                isHeadless: false,
+                resolveDatabaseToAppData: true,
+                databaseAppDataPath: durableDirectory,
+                legacyDatabaseDirectory: legacyDirectory));
+
+        Assert.Contains("silently abandon v0.1 data", error.Message);
+        Assert.False(File.Exists(legacyDatabase));
+        Assert.True(File.Exists($"{legacyDatabase}{sidecarSuffix}"));
+        Assert.False(File.Exists(durableDatabase));
+        Assert.DoesNotContain("Connectors", File.ReadAllText(localConfig));
+        Assert.DoesNotContain("Jwt", File.ReadAllText(localConfig));
+        Assert.Null(configuration["Connectors:EncryptionKey"]);
+        Assert.Null(configuration["Jwt:SecretKey"]);
+    }
+
+    [Theory]
+    [InlineData("-wal")]
+    [InlineData("-shm")]
+    public void EnsureBootstrapSecrets_ResolvedTargetSidecarAloneFailsBeforeIdentityGeneration(
+        string sidecarSuffix)
+    {
+        using var temp = new TempDirectory();
+        var durableDirectory = Path.Combine(temp.Path, "appdata", "Taskdeck");
+        var durableDatabase = Path.Combine(durableDirectory, "taskdeck.db");
+        var localConfig = Path.Combine(durableDirectory, "appsettings.local.json");
+        Directory.CreateDirectory(durableDirectory);
+        File.WriteAllBytes($"{durableDatabase}{sidecarSuffix}", [0x54, 0x44]);
+        var configuration = BuildConfiguration(durableDatabase);
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            FirstRunBootstrapper.EnsureBootstrapSecrets(
+                configuration,
+                NullLogger.Instance,
+                localConfig,
+                isProduction: true,
+                isHeadless: false,
+                resolveDatabaseToAppData: true,
+                databaseAppDataPath: durableDirectory,
+                legacyDatabaseDirectory: Path.Combine(temp.Path, "release")));
+
+        Assert.Contains("recovery evidence exists beside it", error.Message);
+        Assert.False(File.Exists(durableDatabase));
+        Assert.True(File.Exists($"{durableDatabase}{sidecarSuffix}"));
+        Assert.False(File.Exists(localConfig));
         Assert.Null(configuration["Connectors:EncryptionKey"]);
         Assert.Null(configuration["Jwt:SecretKey"]);
     }
@@ -417,6 +492,24 @@ public sealed class LocalConfigPathMigrationTests
         Assert.False(File.Exists(localConfig));
     }
 
+    [Theory]
+    [InlineData("Production", "Development", "Production")]
+    [InlineData("Development", "Production", "Development")]
+    [InlineData(null, "Development", "Development")]
+    [InlineData(" ", " Production ", "Production")]
+    [InlineData(null, null, null)]
+    public void ResolveMcpStdioEnvironmentOverride_UsesDotnetThenAspNetCoreFallback(
+        string? dotnetEnvironment,
+        string? aspNetCoreEnvironment,
+        string? expected)
+    {
+        Assert.Equal(
+            expected,
+            FirstRunBootstrapper.ResolveMcpStdioEnvironmentOverride(
+                dotnetEnvironment,
+                aspNetCoreEnvironment));
+    }
+
     [Fact]
     public void Program_ThreadsResolvedPathThroughWebAndBothMcpHosts()
     {
@@ -424,6 +517,8 @@ public sealed class LocalConfigPathMigrationTests
 
         Assert.Contains("mcpHttpLocalConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath", source);
         Assert.Contains("mcpHttpBuilder.AddLocalConfigFile(mcpHttpLocalConfigPath)", source);
+        Assert.Contains("mcpStdioHostBuilder.UseEnvironment(mcpStdioEnvironmentOverride)", source);
+        Assert.Contains("var environmentName = context.HostingEnvironment.EnvironmentName", source);
         Assert.Contains("mcpStdioLocalConfigPath ??= FirstRunBootstrapper.ResolveLocalConfigPath", source);
         Assert.Contains("config.AddJsonFile(mcpStdioLocalConfigPath, optional: true)", source);
         Assert.Contains("localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath", source);

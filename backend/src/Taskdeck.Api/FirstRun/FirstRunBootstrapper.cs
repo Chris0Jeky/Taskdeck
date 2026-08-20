@@ -69,6 +69,25 @@ public static class FirstRunBootstrapper
     }
 
     /// <summary>
+    /// Resolves the optional environment override applied to the MCP stdio Generic Host. The Generic Host's
+    /// native <c>DOTNET_ENVIRONMENT</c> wins; <c>ASPNETCORE_ENVIRONMENT</c> is a compatibility fallback.
+    /// Returning <see langword="null"/> leaves command-line/default host selection authoritative.
+    /// </summary>
+    internal static string? ResolveMcpStdioEnvironmentOverride(
+        string? dotnetEnvironment,
+        string? aspNetCoreEnvironment)
+    {
+        if (!string.IsNullOrWhiteSpace(dotnetEnvironment))
+        {
+            return dotnetEnvironment.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(aspNetCoreEnvironment)
+            ? null
+            : aspNetCoreEnvironment.Trim();
+    }
+
+    /// <summary>
     /// Prepares the exact path before a configuration provider reads it. A valid v0.1 executable-local
     /// file is imported whole when the durable target is absent. The source is retained, and an existing
     /// durable target always wins without merge or overwrite.
@@ -698,6 +717,17 @@ public static class FirstRunBootstrapper
         var databaseExists = databasePath is not null
             && FileExistsOrThrow(databasePath, "resolved SQLite database");
         if (databasePath is not null
+            && !databaseExists
+            && HasSqliteSidecarEvidence(databasePath, "resolved SQLite database"))
+        {
+            throw new InvalidOperationException(
+                $"First-run: The resolved SQLite database {databasePath} is absent, but WAL or shared-memory " +
+                "recovery evidence exists beside it. Refusing to generate replacement identity or create a " +
+                "new database over potentially recoverable state. Stop Taskdeck and recover the database " +
+                "together with its -wal and -shm sidecars before retrying.");
+        }
+
+        if (databasePath is not null
             && resolveDatabaseToAppData
             && (!hasExplicitAbsoluteDatabasePath || databaseTargetIsPersistedLocally)
             && !databaseExists)
@@ -709,11 +739,15 @@ public static class FirstRunBootstrapper
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal;
             if (!string.Equals(databasePath, legacyDatabasePath, comparison)
-                && FileExistsOrThrow(legacyDatabasePath, "legacy executable-local SQLite database"))
+                && (FileExistsOrThrow(legacyDatabasePath, "legacy executable-local SQLite database")
+                    || HasSqliteSidecarEvidence(
+                        legacyDatabasePath,
+                        "legacy executable-local SQLite database")))
             {
                 throw new InvalidOperationException(
                     $"First-run: The configured per-user database target {databasePath} is absent, but a " +
-                    $"legacy executable-local database exists at {legacyDatabasePath}. Refusing to generate " +
+                    $"legacy executable-local SQLite file or sidecar exists at {legacyDatabasePath}. " +
+                    "Refusing to generate " +
                     "new identity or create a blank database that would silently abandon v0.1 data. Stop " +
                     "Taskdeck and recover the SQLite database together with any -wal and -shm sidecars " +
                     "before retrying.");
@@ -781,6 +815,10 @@ public static class FirstRunBootstrapper
                 Path.GetFileName(dbFile)))
             : Path.GetFullPath(dbFile);
     }
+
+    private static bool HasSqliteSidecarEvidence(string databasePath, string description)
+        => FileExistsOrThrow($"{databasePath}-wal", $"{description} WAL sidecar")
+            || FileExistsOrThrow($"{databasePath}-shm", $"{description} shared-memory sidecar");
 
     private static bool PersistedDatabaseTargetMatches(string localConfigPath, string effectiveDataSource)
     {

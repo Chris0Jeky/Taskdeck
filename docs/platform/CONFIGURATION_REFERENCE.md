@@ -181,6 +181,13 @@ host and uses that exact path for loading and first-run writes:
 - Development, Test/Staging, and headless Production: the historical
   executable-local path, preserving development and container compatibility.
 
+For MCP stdio, `DOTNET_ENVIRONMENT` is authoritative when it is nonblank;
+`ASPNETCORE_ENVIRONMENT` is a backward-compatible fallback. When neither is
+set, Generic Host command-line/default selection remains authoritative. The
+selected name is applied to the Generic Host before configuration is built, so
+host identity, `appsettings.{Environment}.json`, and local-config path policy
+cannot disagree.
+
 On the first desktop launch after v0.1.0, a complete provider-loadable
 executable-local file is copied atomically into the absent durable path. The
 legacy source is retained as recovery evidence. An existing durable file always
@@ -191,10 +198,11 @@ or changing input fails closed before replacement secrets are generated.
 Connector identity is checked before JWT generation. If the resolved SQLite
 database already exists but neither configuration nor the persisted file supplies
 `Connectors:EncryptionKey`, startup stops instead of rotating the key. Likewise,
-if the configured per-user database target is absent while a v0.1
-executable-local database remains, startup stops rather than creating a blank
-replacement database; recover the database together with its `-wal` and `-shm`
-sidecars while Taskdeck is stopped. Explicit absolute database paths and
+if the configured per-user database target is absent while a v0.1 executable-local
+database or either of its `-wal`/`-shm` sidecars remains, startup stops rather than
+creating a blank replacement database. A sidecar beside an absent resolved target
+also stops startup; recover the complete SQLite set while Taskdeck is stopped.
+Explicit absolute database paths and
 `Data Source=:memory:` remain authoritative. Relative/default desktop paths
 resolve under the same per-user Taskdeck directory as the generated configuration.
 
