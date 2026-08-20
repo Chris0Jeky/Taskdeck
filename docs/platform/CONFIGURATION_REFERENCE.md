@@ -170,6 +170,34 @@ Developers can alternatively supply the secret via `dotnet user-secrets` or the
 | `Jwt:Audience` | `string` | `TaskdeckUsers` | `aud` claim and validation value. | Yes |
 | `Jwt:ExpirationMinutes` | `int` | `1440` (24h) | Access-token lifetime in minutes. | No |
 
+### Generated local configuration file
+
+`FirstRunBootstrapper` resolves one absolute `appsettings.local.json` path per
+host and uses that exact path for loading and first-run writes:
+
+- non-headless Production desktop: `%LOCALAPPDATA%\Taskdeck\appsettings.local.json`
+  on Windows (an absolute `LOCALAPPDATA` override is honored for isolated
+  profiles) and the platform-equivalent local app-data directory elsewhere;
+- Development, Test/Staging, and headless Production: the historical
+  executable-local path, preserving development and container compatibility.
+
+On the first desktop launch after v0.1.0, a complete provider-loadable
+executable-local file is copied atomically into the absent durable path. The
+legacy source is retained as recovery evidence. An existing durable file always
+wins; Taskdeck does not merge or overwrite it with the legacy file. Both copies
+are restricted to the current user, and unreadable, corrupt, permission-unsafe,
+or changing input fails closed before replacement secrets are generated.
+
+Connector identity is checked before JWT generation. If the resolved SQLite
+database already exists but neither configuration nor the persisted file supplies
+`Connectors:EncryptionKey`, startup stops instead of rotating the key. Likewise,
+if the configured per-user database target is absent while a v0.1
+executable-local database remains, startup stops rather than creating a blank
+replacement database; recover the database together with its `-wal` and `-shm`
+sidecars while Taskdeck is stopped. Explicit absolute database paths and
+`Data Source=:memory:` remain authoritative. Relative/default desktop paths
+resolve under the same per-user Taskdeck directory as the generated configuration.
+
 ### `Auth:Registration`
 
 Bound to `RegistrationSettings`. The application default is `Open` so local
