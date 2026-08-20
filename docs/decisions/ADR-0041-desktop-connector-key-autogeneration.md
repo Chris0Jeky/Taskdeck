@@ -20,8 +20,10 @@ existing database without a supplied or recoverable connector key fails before
 either connector or JWT identity is generated. A missing durable database plus
 an executable-local v0.1 database also fails closed rather than silently creating
 a blank replacement. This amendment implements durable identity selection while
-preserving the original headless-Production decision; the packaged Explorer and
-unrelated-working-directory proof remains tracked by #1242 and #1876.
+preserving the original headless-Production decision. The post-ZIP harness now
+proves launch from an unrelated working directory and durable identity reuse across
+two extraction directories; Explorer, shortcut, and clean-Windows behavior remains
+tracked by #1242 and #1876.
 
 ## Context
 
@@ -70,14 +72,14 @@ internal static bool ShouldAutoGenerateConnectorKey(bool isProduction, bool isHe
   protected current-user DACL on Windows) before the secret is written. If the write fails, startup
   **fails loudly** (throws) rather than running with
   an ephemeral in-memory key that would be lost on restart and orphan stored connector credentials.
-- **Headless Production (CI / cloud container):** detected via `CI` / `TF_BUILD` / `GITHUB_ACTIONS` /
-  `TASKDECK_HEADLESS`. The key is **not** generated; the deployment must supply a stable key, and
-  `ValidateProductionSecrets` hard-fails (throws) if it is missing — unchanged behavior. Because the
-  CI-marker set does not by itself identify a server/container, **the container image
-  (`deploy/docker/backend.Dockerfile`) sets `TASKDECK_HEADLESS=true`**, so every container — bare
-  `docker run`, compose, or terraform — is classified headless and cannot auto-generate an ephemeral key.
-  A desktop machine with an ambient `CI` variable is likewise treated as headless and will hard-fail
-  (fail-safe, not silent) until a key is supplied or `CI` is unset.
+- **Headless Production (generic CI / cloud container):** an unmarked server process under `CI` /
+  `TF_BUILD` / `GITHUB_ACTIONS`, or any process with `TASKDECK_HEADLESS`, does not generate the key;
+  the deployment must supply a stable value and `ValidateProductionSecrets` hard-fails if it is
+  missing. **The container image (`deploy/docker/backend.Dockerfile`) sets
+  `TASKDECK_HEADLESS=true`**, so bare `docker run`, Compose, and Terraform retain that fail-closed
+  posture. A marked desktop package is the deliberate exception: ambient CI suppresses automatic
+  browser launch but does not suppress its durable bootstrap, allowing the hosted post-ZIP gate to
+  exercise the same persisted-identity path as a user launch without opening a browser on the runner.
 - **Non-Production (Development/Staging/Test):** generate as before — unchanged behavior.
 
 `RunFirstRunChecks` runs before `ValidateProductionSecrets` in `Program.cs`, so a desktop launch
@@ -94,8 +96,8 @@ generates the key first and then passes validation.
   single-user local tool; the existing `appsettings.local.json` mechanism (already used for the JWT
   secret) is consistent and sufficient.
 - **Gate on a bespoke `FirstRun:AutoConnectorKey` flag instead of headless detection.** Rejected: adds
-  configuration surface; the existing `IsHeadlessEnvironment()` signal already distinguishes desktop
-  from CI/cloud and is reused here.
+  configuration surface; the package marker plus existing CI / explicit-headless signals distinguish
+  durable desktop bootstrap from generic CI/cloud and are reused here.
 
 ## Consequences
 
@@ -136,8 +138,9 @@ generates the key first and then passes validation.
   (`ValidateProductionSecrets` early-returns for non-Production). So a cloud Staging container does **not**
   behave like Production — it relies on its local `appsettings.local.json` persisting, with the same
   backup caveat. This is unchanged by this ADR but worth stating explicitly.
-- Cloud/CI behavior is unchanged: headless Production still requires a supplied stable key and hard-fails
-  without one.
+- Cloud/container behavior remains fail-closed through `TASKDECK_HEADLESS`, and unmarked Production
+  under CI remains bootstrap-headless. Marked desktop CI instead performs durable bootstrap while
+  keeping browser launch suppressed.
 - **The bundled AWS single-node Terraform module supplies that stable key itself.** `user_data.sh.tftpl`
   generates the connector key once (`openssl rand -base64 32`) and persists it to
   `/var/lib/taskdeck/connector-encryption.key` on the durable EBS data volume — the same volume that holds

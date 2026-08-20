@@ -21,19 +21,26 @@ manual clean-machine acceptance:
 - PR `#1886`: release structure 60/60, 37/37 hosted checks, an exact-head clean-runner archive
   content and untouched-ZIP rehearsal, and a local 147-file inventory with 7 required paths and
   0 forbidden files.
-- Issue `#1879`: full local backend proof passed Domain 1,656, Application 3,798, API 2,309
+- PR `#1888` / issue `#1879`: full local backend proof passed Domain 1,656, Application 3,798, API 2,309
   (+4 intentional skips), CLI 140, Architecture 24 (+1 existing skip), and Integration 35;
   a synthetic Chromium journey verified OpenAI / `gpt-5.6-luna` without reading or printing the
-  key value and completed in 15.1 seconds. Follow-through code head `d902715c` then passed a
-  no-publish hosted Windows build plus a local live run of the downloaded untouched ZIP: evidence
-  schema 2 recorded OpenAI / `gpt-5.6-luna`, non-Mock/probed/verified, a server-measured 1,786 ms
+  key value and completed in 15.1 seconds. Final reviewed head `83d3502c` passed a no-publish hosted
+  Windows build plus a local live run of the downloaded untouched ZIP: evidence schema 2 recorded
+  OpenAI / `gpt-5.6-luna`, non-Mock/probed/verified, a server-measured 1,382 ms
   probe duration, fallback then default-port launch, review-first card counts 0/0/1, and one card
   after restart. The active provider filter below passes 167/167 after Gemini retirement. The
   issue stays open for the separate post-0.1.x BYOK setup/validation/rotation/removal decision and
   maintainer record, not for missing automated probe timing.
+- PR `#1889`: exact-head no-publish run `32419422433` passed the untouched-ZIP gate and skipped
+  release creation. Downloaded-artifact evidence schema 3 kept the inner archive unchanged and
+  recorded only two lifecycle booleans per launch: `jwtCreated=true` and `connectorCreated=true`
+  on clean launch, then both `false` on restart against the same isolated app-data state. The live
+  OpenAI proposal/review/apply journey and one-card restart persistence passed without retaining a
+  JWT, connector key, API key, configuration value/path, secret-derived hash, or application log.
 
 These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
-clean Windows machine, manual registration, or a public v0.1.1 release.
+clean Windows machine, manual registration, packaged v0.1 adjacent-config import/retention, or a
+public v0.1.1 release.
 
 ## 2026-08-16 API Integration Timing Evidence (`#1682`)
 
