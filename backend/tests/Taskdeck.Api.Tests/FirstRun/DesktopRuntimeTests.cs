@@ -13,6 +13,22 @@ public class DesktopRuntimeTests
     }
 
     [Theory]
+    [InlineData(true, true, "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true")]
+    [InlineData(true, false, "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=false")]
+    [InlineData(false, true, "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=false connector_created=true")]
+    [InlineData(false, false, "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=false connector_created=false")]
+    public void FormatBootstrapIdentityMarker_UsesOnlyBoundedPerSecretLifecycles(
+        bool jwtCreated,
+        bool connectorCreated,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            DesktopRuntime.FormatBootstrapIdentityMarker(
+                new BootstrapIdentityLifecycle(jwtCreated, connectorCreated)));
+    }
+
+    [Theory]
     [InlineData(true, true, false, false, false)]
     [InlineData(false, true, false, false, true)]
     [InlineData(true, true, true, false, true)]

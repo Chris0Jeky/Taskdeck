@@ -174,6 +174,86 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             "TASKDECK_DESKTOP_READY url=http://127.0.0.1:0"
         ))
 
+    def test_bootstrap_identity_marker_accepts_exact_bounded_booleans(self) -> None:
+        self.assertEqual(
+            {"jwtCreated": True, "connectorCreated": False},
+            harness.validate_bootstrap_identity_markers([
+                "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=false"
+            ]),
+        )
+
+    def test_bootstrap_identity_marker_rejects_missing_and_duplicate_records(self) -> None:
+        valid = "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true"
+
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_bootstrap_identity_markers([])
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_bootstrap_identity_markers([valid, valid])
+
+    def test_bootstrap_identity_marker_rejects_malformed_and_unknown_records(self) -> None:
+        invalid_markers = (
+            "TASKDECK_DESKTOP_BOOTSTRAP connector_created=true jwt_created=true",
+            "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true extra=true",
+            "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=True connector_created=true",
+            "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=generated connector_created=false",
+            "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=false connector_created=unknown",
+            "TASKDECK_DESKTOP_BOOTSTRAP_V2 jwt_created=true connector_created=true",
+        )
+
+        for marker in invalid_markers:
+            with self.subTest(marker=marker):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_bootstrap_identity_markers([marker])
+
+    def test_process_monitor_requires_one_bootstrap_marker_before_ready(self) -> None:
+        valid_monitor = self._process_monitor(
+            "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=false",
+            "TASKDECK_DESKTOP_READY url=http://127.0.0.1:54321",
+        )
+        self.assertEqual(
+            (
+                "http://127.0.0.1:54321",
+                54321,
+                {"jwtCreated": True, "connectorCreated": False},
+            ),
+            valid_monitor.wait_for_ready(timeout_seconds=1),
+        )
+
+        invalid_sequences = (
+            ("TASKDECK_DESKTOP_READY url=http://127.0.0.1:54321",),
+            (
+                "TASKDECK_DESKTOP_READY url=http://127.0.0.1:54321",
+                "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true",
+            ),
+            (
+                "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true",
+                "TASKDECK_DESKTOP_BOOTSTRAP jwt_created=true connector_created=true",
+                "TASKDECK_DESKTOP_READY url=http://127.0.0.1:54321",
+            ),
+        )
+        for sequence in invalid_sequences:
+            with self.subTest(sequence=sequence):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    self._process_monitor(*sequence).wait_for_ready(timeout_seconds=1)
+
+    def test_clean_bootstrap_gate_requires_created_then_not_created_flags(self) -> None:
+        harness.require_bootstrap_identity(
+            {"jwtCreated": True, "connectorCreated": True},
+            {"jwtCreated": True, "connectorCreated": True},
+        )
+
+        for invalid in (
+            {"jwtCreated": False, "connectorCreated": True},
+            {"jwtCreated": True, "connectorCreated": False},
+            {"jwtCreated": False, "connectorCreated": False},
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.require_bootstrap_identity(
+                        invalid,
+                        {"jwtCreated": True, "connectorCreated": True},
+                    )
+
     def test_remove_temp_root_refuses_unowned_path(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             parent = Path(raw).resolve()
@@ -226,6 +306,49 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
+    def test_final_evidence_v3_records_only_bounded_bootstrap_booleans(self) -> None:
+        final = harness.build_final_evidence(
+            "taskdeck-v0.1.1-win-x64.zip",
+            "a" * 64,
+            {"ready": True, "spa": True},
+            {"ready": True, "spa": True},
+            {"jwtCreated": True, "connectorCreated": True},
+            {"jwtCreated": False, "connectorCreated": False},
+            {"phase": "create"},
+            {"phase": "restart"},
+        )
+
+        self.assertEqual(2, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
+        self.assertEqual(3, final["schemaVersion"])
+        self.assertEqual(
+            {"jwtCreated": True, "connectorCreated": True},
+            final["launches"][0]["bootstrapIdentity"],
+        )
+        self.assertEqual(
+            {"jwtCreated": False, "connectorCreated": False},
+            final["launches"][1]["bootstrapIdentity"],
+        )
+
+    def test_final_evidence_rejects_non_boolean_or_unknown_bootstrap_fields(self) -> None:
+        invalid_identities = (
+            {"jwtCreated": "true", "connectorCreated": True},
+            {"jwtCreated": True, "connectorCreated": False, "source": "file"},
+        )
+
+        for identity in invalid_identities:
+            with self.subTest(identity=identity):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.build_final_evidence(
+                        "taskdeck-v0.1.1-win-x64.zip",
+                        "a" * 64,
+                        {"ready": True, "spa": True},
+                        {"ready": True, "spa": True},
+                        identity,
+                        {"jwtCreated": False, "connectorCreated": False},
+                        {"phase": "create"},
+                        {"phase": "restart"},
+                    )
+
     def test_snapshot_detects_extraction_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -236,6 +359,18 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             file_path.write_bytes(b"changed")
             with self.assertRaises(harness.AcceptanceFailure):
                 harness.assert_tree_unchanged(before, root, "archive")
+
+    @staticmethod
+    def _process_monitor(*markers: str) -> harness.ProcessMonitor:
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.stdout = [f"{marker}\n" for marker in markers]
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        return harness.ProcessMonitor(FakeProcess())
 
     @staticmethod
     def _live_create_evidence(probe_latency_ms: object) -> dict[str, object]:

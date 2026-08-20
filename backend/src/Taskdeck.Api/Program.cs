@@ -357,7 +357,14 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb =>
 }))
 {
     var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
-    builder.RunFirstRunChecks(bootstrapLogger, localConfigPath, bootstrapHeadless);
+    Action<BootstrapIdentityLifecycle>? bootstrapIdentityObserver = DesktopRuntime.IsPackagedDesktop
+        ? DesktopRuntime.WriteBootstrapIdentity
+        : null;
+    builder.RunFirstRunChecks(
+        bootstrapLogger,
+        localConfigPath,
+        bootstrapHeadless,
+        bootstrapIdentityObserver);
     // Hard-fail if a placeholder JWT secret reaches Production (cloud containers).
     builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath);
 }
