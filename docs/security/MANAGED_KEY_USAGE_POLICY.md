@@ -7,14 +7,14 @@ Version: 1.1
 
 ## Purpose
 
-When Taskdeck operates with a platform-managed LLM provider key (managed-key mode), all users share a single provider API key owned by the Taskdeck operator. This document defines:
+When Taskdeck operates with an operator-managed, deployment-global LLM provider key (managed-key mode), all users share a single provider API key owned by the Taskdeck operator. This document defines:
 
 - fair-use boundaries for managed-key LLM access
 - privacy and attribution disclosures
 - prohibited abuse patterns
 - enforcement consequences (throttle, restrict, block)
 
-This policy applies only when users consume LLM features (Automation Chat, LLM queue processing, or the live extraction leg of transcript-source triage) through a managed key. Users who supply their own provider keys (BYOK) are not subject to these managed-key limits. Ordinary short-form capture triage is deterministic and offline. Transcript-source triage may call the configured live provider and falls back deterministically if that leg is unavailable.
+This policy applies only when users consume LLM features (Automation Chat, LLM queue processing, or the live extraction leg of transcript-source triage) through a managed key. Provider configuration is currently deployment-global: users cannot add or manage a per-user provider key in Taskdeck, and **Settings -> API Keys** manages MCP `tdsk_` credentials only. A future BYOK experience requires a separate design decision and is not described by this policy. Ordinary short-form capture triage is deterministic and offline. Transcript-source triage may call the configured live provider and falls back deterministically if that leg is unavailable.
 
 ## Fair-Use Boundaries
 

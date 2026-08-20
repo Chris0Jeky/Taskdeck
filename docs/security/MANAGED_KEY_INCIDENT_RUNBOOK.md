@@ -55,7 +55,7 @@ Scope: any Taskdeck deployment where the platform operator holds and manages LLM
 **Definition**: The upstream LLM provider issues a usage warning, policy violation notice, or threatens/executes account suspension.
 
 **Indicators**:
-- Email or dashboard notification from OpenAI/Google/provider
+- Email or dashboard notification from OpenAI or the operator's configured compatible-provider vendor
 - Provider API returns persistent `403` or policy-violation error codes
 - `GET /api/llm/chat/health?probe=true` returns `unavailable` or `error` status after previously returning `verified`
 

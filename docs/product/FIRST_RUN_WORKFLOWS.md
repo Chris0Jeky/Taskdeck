@@ -117,4 +117,4 @@ Use the advanced paths when you specifically need diagnostics, collaboration evi
 
 ## Managed-Key LLM Mode Notice
 
-If your Taskdeck instance uses a platform-managed LLM provider key (rather than your own), fair-use limits and privacy disclosures apply to Automation Chat, LLM queue work, and the live extraction leg of transcript-source triage. Ordinary short-form capture remains deterministic; transcript-source triage falls back deterministically if the live leg fails. Every proposal remains review-first. See `docs/security/MANAGED_KEY_USAGE_POLICY.md` for the full policy.
+If your Taskdeck instance uses an operator-managed, deployment-global LLM provider key, fair-use limits and privacy disclosures apply to Automation Chat, LLM queue work, and the live extraction leg of transcript-source triage. Users cannot add a per-user provider key in the current product; **Settings -> API Keys** manages MCP `tdsk_` credentials only. Ordinary short-form capture remains deterministic; transcript-source triage falls back deterministically if the live leg fails. Every proposal remains review-first. See `docs/security/MANAGED_KEY_USAGE_POLICY.md` for the full policy.
