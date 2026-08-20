@@ -358,7 +358,7 @@ A single atomic operation within a proposal.
 | ActionType | `string` | Yes | Non-empty | Operation type (e.g., "CreateCard") |
 | TargetType | `string` | Yes | Non-empty | Target entity type |
 | TargetId | `string?` | No | | ID of existing target |
-| Parameters | `string` | Yes | EF: required `TEXT`; application: `ProposalOperationInputValidator` requires non-empty JSON object, max 64 KiB UTF-8, max depth 32 | Operation parameters |
+| Parameters | `string` | Yes | EF: required `TEXT`; create path: `ProposalOperationInputValidator` requires a non-empty JSON object, max 64 KiB UTF-8, max depth 32; revision path: `ProposalRevisionService` applies `ProposalOperationStructureValidator`, which requires a non-null value no longer than 10,000 characters | Operation parameters |
 | IdempotencyKey | `string` | Yes | Non-empty | Ensures at-most-once execution |
 | ExpectedVersion | `string?` | No | | Optimistic concurrency token |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -792,7 +792,7 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 | SourceArtefactId | `Guid` | Yes | FK to SourceArtefact (Cascade) | Source metadata |
 | ExtractorName | `string` | Yes | 1-100, control-free, valid UTF-16 | Extractor identity |
 | ExtractorVersion | `string` | Yes | 1-50, control-free, valid UTF-16 | Extractor version |
-| WarningsJson | `string` | Yes | EF: required `TEXT`, max 4096; domain validates warning count/item lengths and serialized length, then serializes/deserializes the list | Serialized warning list |
+| WarningsJson | `string` | Yes | EF: required `TEXT`, max 4096; domain allows at most 16 warnings, each non-empty, control-free, valid UTF-16, and no longer than 128 characters, then enforces the serialized-length bound and serializes/deserializes the list | Serialized warning list |
 | ExtractedText | `string` | Yes | Max 102,400 chars; LF-only, valid UTF-16 | Immutable extracted text; may be empty |
 | TextLength | `int` | Yes | Derived from text | Character count |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -813,7 +813,7 @@ transcript captures. The current transcript-capture path also retains input text
 | BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
 | CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
 | Text | `string` | Yes | 1-200,000 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
-| SegmentsJson | `string` | Yes | EF: required `TEXT`, max 1,048,576; domain validates segment count/content and serialized length, then serializes/deserializes the list | Serialized line-indexed annotations |
+| SegmentsJson | `string` | Yes | EF: required `TEXT`, max 1,048,576; domain allows at most 5,000 segments, validates their content and serialized length, then serializes/deserializes the list | Serialized line-indexed annotations |
 | CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
 | SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -838,7 +838,7 @@ A queued request for LLM processing.
 | BoardId | `Guid?` | No | FK to Board | Optional board scope |
 | TranscriptId | `Guid?` | No | FK to Transcript (SetNull); unique when present | Optional durable transcript snapshot linked to this request |
 | RequestType | `string` | Yes | Non-empty | Request category |
-| Payload | `string` | Yes | EF: required `TEXT`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
+| Payload | `string` | Yes | EF: required `TEXT`; domain rejects null, empty, or whitespace-only values in both construction and `UpdatePayload`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
 | ErrorMessage | `string?` | No | | Failure message |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
@@ -1124,7 +1124,7 @@ A timestamped event emitted during an agent run.
 | RunId | `Guid` | Yes | FK to AgentRun | Parent run |
 | SequenceNumber | `int` | Yes | >= 0 | Event order |
 | EventType | `string` | Yes | 1-100 chars | Event type |
-| Payload | `string` | Yes | EF: required `TEXT`, max 16000; runtime callers commonly serialize event data, but the entity enforces only the `{}` default and no JSON syntax | Event data (JSON); defaults to `{}` |
+| Payload | `string` | Yes | EF: required `TEXT`, max 16000; domain rejects values longer than 16,000 characters and defaults null to `{}`; runtime callers commonly serialize event data, but neither layer validates JSON syntax | Event data (JSON); defaults to `{}` |
 | Timestamp | `DateTimeOffset` | Yes | | Event time |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
