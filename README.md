@@ -93,8 +93,9 @@ scripts/dev-up.sh --seed
 
 The seeded account is `demo` / `demo123`. These source-only credentials are not present in the
 Windows release. The source launcher intentionally leaves the API and frontend running as background
-processes, prints their PIDs and actual URLs, and records them for the matching stop command. Open the
-printed frontend URL (normally `http://localhost:5173`) and stop the whole stack with
+processes, prints their PIDs, API URL, and expected frontend entry point, and records them for the
+matching stop command. Open `http://localhost:5173`; if Vite selects a fallback port, use the `Local:`
+URL in the frontend dev-server output. Stop the whole stack with
 `.\scripts\dev-up.ps1 -Stop` or `scripts/dev-up.sh --stop`; closing the launching shell is not the
 documented stop path. See the [source startup troubleshooting](docs/product/DEMO_PLAYBOOK.md#source-startup-troubleshooting)
 if readiness, ports, or a stale PID file blocks startup.

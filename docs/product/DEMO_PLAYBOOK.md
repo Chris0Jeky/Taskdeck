@@ -36,8 +36,8 @@ scripts/dev-up.sh --seed
 ```
 
 The launcher intentionally leaves the API and Vite frontend running in the background. It waits for
-API readiness, prints the actual URLs and PIDs, and records the process trees so the matching stop
-command can close both safely:
+API readiness, prints the API URL, expected frontend entry point, and PIDs, and records the process
+trees so the matching stop command can close both safely:
 
 ```powershell
 .\scripts\dev-up.ps1 -Stop
@@ -50,7 +50,8 @@ scripts/dev-up.sh --stop
 Closing the shell that launched the stack is not the documented stop path. Default URLs are:
 
 - API: `http://localhost:5000/api`
-- UI: `http://localhost:5173` (the launcher prints the actual fallback if that port is occupied)
+- UI: `http://localhost:5173` (if Vite selects a fallback, its `Local:` line in the frontend
+  dev-server output is authoritative)
 - Health checks (not under `/api`): `http://localhost:5000/health/live` and
   `http://localhost:5000/health/ready`
 
@@ -87,9 +88,10 @@ Other repository-local DB files are per-purpose:
   another one; it refuses to overwrite live PIDs because that would orphan the old processes.
 - If the API exits before readiness, read the API window/output named by the launcher. Do not keep
   restarting over an unexamined database or configuration error.
-- If port 5000 is intentionally occupied, use `.\scripts\dev-up.ps1 -ApiPort 5050 -Seed` or
-  `TASKDECK_API_PORT=5050 scripts/dev-up.sh --seed`. For a UI port collision, use the actual fallback
-  URL printed by Vite/the launcher rather than assuming 5173.
+- The canonical seeded path requires port 5000. Stop a listener you recognise before starting it;
+  do not combine the launcher's custom API-port option with `-Seed` / `--seed`, because the seeder and
+  browser client currently continue to target port 5000. For a UI collision, restore/read the Vite
+  dev-server output and use its `Local:` fallback URL rather than assuming 5173.
 - Confirm the printed database path before deleting or resetting anything. Stop the stack first so
   SQLite can checkpoint its WAL cleanly.
 
