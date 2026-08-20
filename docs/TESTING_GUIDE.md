@@ -2,13 +2,32 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-20
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-20 Windows release and provider-retirement checkpoint
+
+The Windows 0.1.x stack is proven at the artifact boundary without claiming a public release or
+manual clean-machine acceptance:
+
+- PR `#1885`: 62 focused runtime/FirstRun tests, Python 11/11, release structure 58/58,
+  33/33 hosted checks, and an exact-head blank-tag rehearsal that tested the untouched ZIP before
+  upload.
+- PR `#1886`: release structure 60/60, 37/37 hosted checks, an exact-head clean-runner archive
+  content and untouched-ZIP rehearsal, and a local 147-file inventory with 7 required paths and
+  0 forbidden files.
+- Issue `#1879`: full local backend proof passed Domain 1,656, Application 3,798, API 2,309
+  (+4 intentional skips), CLI 140, Architecture 24 (+1 existing skip), and Integration 35;
+  a synthetic Chromium journey verified OpenAI / `gpt-5.6-luna` without reading or printing the
+  key value. The active provider filter below passes 167/167 after Gemini retirement.
+
+These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
+clean Windows machine, manual registration, or a public v0.1.1 release.
 
 ## 2026-08-16 API Integration Timing Evidence (`#1682`)
 
@@ -161,9 +180,11 @@ stream fallback outside the compatible Polly failure set; pre-dispatch versus
 dispatched quota settlement; and deterministic half-open race/cooldown behavior
 across separate Polly and companion circuit states.
 
-The compatible registration expands the protected-client inventory from the
-four clients proved by `#1513` to five: OpenAI, OpenAICompatible, Gemini, Ollama,
-and outbound webhook delivery. The earlier pre-integration provider tree passed the required full gate:
+The compatible registration originally expanded the protected-client inventory from the
+four clients proved by `#1513` to five while Gemini was active. After `#1879`, the active
+inventory is four: OpenAI, OpenAICompatible, Ollama, and outbound webhook delivery. Generic
+`x-goog-api-key` redaction and redirect stripping remain even though Gemini is no longer executable.
+The earlier pre-integration provider tree passed the required full gate:
 
 ```powershell
 dotnet test backend/Taskdeck.sln -c Release -m:1
@@ -284,15 +305,14 @@ provider clients retain their configured URI, request body, and authentication. 
 not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.
 
 ```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
 ```
 
-The six provider-dispatch cases passed five consecutive repetitions, and the registered EventSource
-and scoped-Sentry boundary pair passed three fresh-process repetitions. The provider and
-selection-policy compatibility subset (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
-`OllamaLlmProviderTests`, `LlmProviderResilienceTests`, and `LlmProviderSelectionPolicyTests`)
-passed **151 / 0 failed / 0 skipped**; the constructor-compatibility and remasking classes add
-**7 / 0 failed / 0 skipped**, so the documented Application filter proves **158 / 0 / 0**.
+The historical six-provider-dispatch repetition record included Gemini. The active post-`#1879`
+filter covers `OpenAiLlmProviderTests`, `OllamaLlmProviderTests`, provider resilience and selection,
+constructor compatibility, and protected outbound telemetry; it passed **167 / 0 failed / 0 skipped**
+on 2026-08-20. Historical free-form provider data and generic Google-key defenses remain covered
+without retaining an executable Gemini provider.
 Docs governance, golden-principles governance, GitHub-operations governance, and
 `git diff --check` passed on the same working tree.
 
@@ -1085,7 +1105,7 @@ New test coverage:
 - `ToolCallingChatOrchestratorTests`: multi-turn loop, timeout, max-round enforcement
 - `ReadToolSchemasTests`: schema generation for all 5 read tools
 - `MockLlmProviderToolCallingTests` / `MockToolCallDispatcherTests` / `MockToolResultsTests`: mock provider tool-calling dispatch and result formatting
-- `OpenAiToolCallingParseTests` / `GeminiToolCallingParseTests`: provider-specific tool-call response parsing
+- Historical at PR `#669`: `OpenAiToolCallingParseTests` / `GeminiToolCallingParseTests` covered both then-active providers. The Gemini parser and its executable provider surface were retired by `#1879`; OpenAI parsing remains active.
 
 Manual validation recommended: send "What cards are in my Backlog?" via chat with Mock provider and verify dynamic tool-calling response.
 

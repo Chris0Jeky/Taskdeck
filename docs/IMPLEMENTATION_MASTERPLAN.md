@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-20
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -9,6 +9,12 @@ Companion Active Docs:
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Delivery update (2026-08-20, Windows 0.1.x and OpenAI-only provider surface)
+
+- **PRs `#1880`–`#1886` complete the current Windows release stack.** Shutdown persistence is scope-isolated, bootstrap identity is durable, the 0.1.x desktop topology is Windows x64 only, proposal-feedback and JSON-enforcement boundaries are corrected, and the final archive contains its quick start and licence contract. Exact-head hosted proof exercises the untouched ZIP before upload; no public v0.1.1 was created.
+- **Issue `#1879` retires Gemini as executable configuration.** OpenAI is the only supported live provider; stale Gemini selectors or sections fail startup with migration guidance. Historical provider strings and generic Google-key redaction defenses remain for compatibility and safety, while active docs, deployment examples, demo selection, and health behavior are OpenAI-only.
+- **Human and record boundaries remain explicit.** Issues `#1242`, `#1876`, `#1877`, and `#1878` remain open despite their implementation PRs. Explorer/shortcut/default-browser/SmartScreen, a genuinely clean Windows machine, translation/legal/device gates, and public-release authority are not inferred from CI or archive rehearsals.
 
 ## Governance update (2026-08-18, ADR-0051 autonomous admission and merge authority)
 
