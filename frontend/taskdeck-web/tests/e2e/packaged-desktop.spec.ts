@@ -417,7 +417,14 @@ async function matchingCardCount(
   })
   requireOk(response, 'GET', path, http, record)
   const cards = await response.json() as Array<{ title: string }>
-  return cards.filter(card => card.title === cardTitle).length
+  if (!Array.isArray(cards)) {
+    throw new Error('[packaged desktop] The synthetic board card listing was invalid.')
+  }
+  const matching = cards.filter(card => card.title === cardTitle).length
+  if (cards.length !== matching) {
+    throw new Error('[packaged desktop] The synthetic board contained an unexpected card.')
+  }
+  return matching
 }
 
 function requireOk(
