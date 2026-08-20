@@ -18,6 +18,8 @@ namespace Taskdeck.Api.FirstRun;
 /// </summary>
 public static class FirstRunBootstrapper
 {
+    private const string LocalConfigFileName = "appsettings.local.json";
+
     // Placeholder values that indicate "not configured".
     // If ANY of these appear as the JWT secret in a non-Development,
     // non-headless Production environment, startup will be blocked.
@@ -39,6 +41,323 @@ public static class FirstRunBootstrapper
     };
 
     /// <summary>
+    /// Resolves the one local-config path a host must use for its lifetime. Only a non-headless
+    /// Production desktop uses durable per-user storage; development, tests, and headless Production
+    /// retain the executable-local compatibility path.
+    /// </summary>
+    internal static string ResolveLocalConfigPath(bool isProduction, bool isHeadless)
+        => ResolveLocalConfigPath(
+            isProduction,
+            isHeadless,
+            AppContext.BaseDirectory,
+            isProduction && !isHeadless ? GetAppDataPath() : AppContext.BaseDirectory);
+
+    /// <summary>Path-injected core for deterministic tests.</summary>
+    internal static string ResolveLocalConfigPath(
+        bool isProduction,
+        bool isHeadless,
+        string executableDirectory,
+        string appDataDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executableDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(appDataDirectory);
+
+        var directory = isProduction && !isHeadless
+            ? appDataDirectory
+            : executableDirectory;
+        return Path.GetFullPath(Path.Combine(directory, LocalConfigFileName));
+    }
+
+    /// <summary>
+    /// Prepares the exact path before a configuration provider reads it. A valid v0.1 executable-local
+    /// file is imported whole when the durable target is absent. The source is retained, and an existing
+    /// durable target always wins without merge or overwrite.
+    /// </summary>
+    internal static void PrepareLocalConfigFile(
+        string localConfigPath,
+        string legacyLocalConfigPath,
+        bool requireOwnerOnly = false,
+        Action<string>? restrictFile = null)
+    {
+        ImportLegacyLocalConfigIfNeeded(
+            legacyLocalConfigPath,
+            localConfigPath,
+            restrictFile: restrictFile);
+
+        if (requireOwnerOnly && FileExistsOrThrow(localConfigPath, "durable local config"))
+        {
+            var restrict = restrictFile ?? RestrictFileToCurrentUser;
+            RestrictForMigration(restrict, localConfigPath, "durable local config");
+            EnsureCompleteJsonObject(
+                ReadMigrationFile(localConfigPath, "durable local config"),
+                localConfigPath);
+        }
+
+        QuarantineCorruptLocalConfigAt(localConfigPath);
+        RestrictExistingLocalConfigFileAt(
+            localConfigPath,
+            requireSuccess: requireOwnerOnly,
+            restrictFile: restrictFile);
+    }
+
+    /// <summary>
+    /// Atomically imports a complete legacy JSON object into an absent durable path. Both files are
+    /// restricted to the current user, the source is retained, and any ambiguity fails closed.
+    /// </summary>
+    internal static void ImportLegacyLocalConfigIfNeeded(
+        string legacyPath,
+        string durablePath,
+        Action<string>? beforeRead = null,
+        Action<string>? restrictFile = null)
+    {
+        var normalizedLegacyPath = Path.GetFullPath(legacyPath);
+        var normalizedDurablePath = Path.GetFullPath(durablePath);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (string.Equals(normalizedLegacyPath, normalizedDurablePath, comparison))
+        {
+            return;
+        }
+
+        WithBootstrapLock(normalizedLegacyPath, TimeSpan.FromSeconds(10), () =>
+            WithBootstrapLock(normalizedDurablePath, TimeSpan.FromSeconds(10), () =>
+            {
+                var restrict = restrictFile ?? RestrictFileToCurrentUser;
+                if (FileExistsOrThrow(normalizedDurablePath, "durable local config"))
+                {
+                    RestrictForMigration(restrict, normalizedDurablePath, "durable local config");
+                    if (FileExistsOrThrow(normalizedLegacyPath, "legacy local config"))
+                    {
+                        RestrictForMigration(restrict, normalizedLegacyPath, "retained legacy local config");
+                    }
+
+                    return true;
+                }
+
+                if (!FileExistsOrThrow(normalizedLegacyPath, "legacy local config"))
+                {
+                    return true;
+                }
+
+                if (HasCorruptRecoveryEvidence(normalizedDurablePath))
+                {
+                    throw new InvalidOperationException(
+                        $"First-run: Recovery evidence for a prior durable local config exists beside " +
+                        $"{normalizedDurablePath}. Refusing to import an older legacy config until the " +
+                        "recovery evidence is resolved.");
+                }
+
+                RestrictForMigration(restrict, normalizedLegacyPath, "legacy local config");
+
+                byte[] payload;
+                try
+                {
+                    using var source = new FileStream(
+                        normalizedLegacyPath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read | FileShare.Delete);
+                    beforeRead?.Invoke(normalizedLegacyPath);
+                    using var buffer = new MemoryStream();
+                    source.CopyTo(buffer);
+                    payload = buffer.ToArray();
+                    EnsureCompleteJsonObject(payload, normalizedLegacyPath);
+                }
+                catch (InvalidOperationException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (
+                    ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    throw new InvalidOperationException(
+                        $"First-run: Could not securely read the legacy local config at " +
+                        $"{normalizedLegacyPath}; refusing to generate replacement secrets.", ex);
+                }
+
+                RestrictForMigration(restrict, normalizedLegacyPath, "current legacy local config");
+                var currentPayload = ReadMigrationFile(normalizedLegacyPath, "legacy local config");
+                if (!payload.AsSpan().SequenceEqual(currentPayload))
+                {
+                    throw new InvalidOperationException(
+                        $"First-run: The legacy local config at {normalizedLegacyPath} changed while it " +
+                        "was being read; refusing to import stale or unverified bytes.");
+                }
+
+                var directory = Path.GetDirectoryName(normalizedDurablePath)
+                    ?? throw new InvalidOperationException(
+                        $"First-run: Could not resolve the durable config directory for " +
+                        $"{normalizedDurablePath}.");
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                catch (Exception ex) when (
+                    ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    throw new InvalidOperationException(
+                        $"First-run: Could not create durable config directory {directory}; refusing to " +
+                        "generate replacement secrets.", ex);
+                }
+
+                var tempPath = Path.Combine(
+                    directory,
+                    $".{Path.GetFileName(normalizedDurablePath)}.{Guid.NewGuid():N}.import.tmp");
+                try
+                {
+                    WriteRestrictedFile(tempPath, payload);
+                    try
+                    {
+                        File.Move(tempPath, normalizedDurablePath);
+                    }
+                    catch (IOException ex)
+                    {
+                        if (!FileExistsOrThrow(normalizedDurablePath, "concurrent durable local config")
+                            || !IsCompleteJsonObjectFile(normalizedDurablePath))
+                        {
+                            throw new InvalidOperationException(
+                                $"First-run: Could not atomically import the legacy local config into " +
+                                $"{normalizedDurablePath}; refusing to generate replacement secrets.", ex);
+                        }
+                    }
+
+                    RestrictForMigration(restrict, normalizedDurablePath, "durable local config");
+                }
+                finally
+                {
+                    try { File.Delete(tempPath); } catch { /* restricted temp; best-effort cleanup */ }
+                }
+
+                RestrictForMigration(restrict, normalizedLegacyPath, "retained legacy local config");
+                RestrictForMigration(restrict, normalizedDurablePath, "durable local config");
+                return true;
+            }));
+    }
+
+    private static void RestrictForMigration(Action<string> restrict, string path, string description)
+    {
+        try
+        {
+            restrict(path);
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: Could not restrict the {description} at {path} to the current user; refusing " +
+                "to read, copy, or generate secrets.", ex);
+        }
+    }
+
+    private static byte[] ReadMigrationFile(string path, string description)
+    {
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: Could not read the {description} at {path}; refusing migration.", ex);
+        }
+    }
+
+    private static bool HasCorruptRecoveryEvidence(string durablePath)
+    {
+        var directory = Path.GetDirectoryName(durablePath);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(
+                    directory,
+                    $"{Path.GetFileName(durablePath)}.corrupt-*",
+                    SearchOption.TopDirectoryOnly)
+                .Any();
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: Could not inspect recovery evidence beside {durablePath}; refusing migration.",
+                ex);
+        }
+    }
+
+    private static bool FileExistsOrThrow(string path, string description)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0)
+            {
+                throw new InvalidOperationException(
+                    $"First-run: The {description} path {path} is a directory; refusing to generate " +
+                    "replacement secrets.");
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: Could not inspect the {description} path {path}; refusing to generate " +
+                "replacement secrets.", ex);
+        }
+    }
+
+    private static bool IsCompleteJsonObjectFile(string path)
+    {
+        try
+        {
+            EnsureCompleteJsonObject(File.ReadAllBytes(path), path);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: Could not validate the durable local config at {path}; refusing startup.", ex);
+        }
+    }
+
+    private static void EnsureCompleteJsonObject(byte[] payload, string path)
+    {
+        try
+        {
+            _ = JsonNode.Parse(payload, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject()
+                ?? throw new JsonException("The JSON root is null.");
+            using var stream = new MemoryStream(payload, writable: false);
+            _ = new ConfigurationBuilder().AddJsonStream(stream).Build();
+        }
+        catch (Exception ex) when (
+            ex is JsonException or InvalidOperationException or FormatException or InvalidDataException)
+        {
+            throw new InvalidOperationException(
+                $"First-run: The local config at {path} is not a complete provider-loadable JSON object; " +
+                "refusing to generate replacement secrets.", ex);
+        }
+    }
+
+    /// <summary>
     /// Registers <c>appsettings.local.json</c> as an optional configuration
     /// source so that previously generated secrets are picked up.
     /// Call this before building <see cref="WebApplication"/>.
@@ -52,20 +371,20 @@ public static class FirstRunBootstrapper
     /// and must not be silently overridden by a previously written file.
     /// </remarks>
     public static WebApplicationBuilder AddLocalConfigFile(this WebApplicationBuilder builder)
-    {
-        // A present-but-unparsable appsettings.local.json would throw the moment the configuration is built
-        // (JsonConfigurationSource.Optional only suppresses a MISSING file, not a malformed one), crashing
-        // startup before the first-run checks ever run. Quarantine it first: preserve the corrupt file (it
-        // may hold a recoverable key) and remove the original so the optional source loads as "missing" and
-        // the desktop install self-heals instead of failing to launch on every restart.
-        QuarantineCorruptLocalConfig();
+        => AddLocalConfigFile(builder, LegacyLocalConfigPath);
 
-        // Forward remediation (#1241): an install upgraded from a pre-#1241 build may already have a
-        // world-readable appsettings.local.json on disk (the first-run writers return early when the secrets
-        // are already present, so PersistValue never re-runs to lock it down). Best-effort re-restrict the
-        // existing file to the current user on every startup so existing exposure is healed, not just future
-        // writes. Idempotent; never fatal (logged to stderr at this pre-DI stage if it fails).
-        RestrictExistingLocalConfigFile();
+    public static WebApplicationBuilder AddLocalConfigFile(
+        this WebApplicationBuilder builder,
+        string localConfigPath)
+    {
+        // Prepare before the provider reads: import a valid legacy file into an absent durable path, enforce
+        // owner-only permissions, and validate the durable Production file without replacing corrupt
+        // evidence. Compatibility hosts retain the existing secure quarantine behavior for malformed files.
+        var exactPath = Path.GetFullPath(localConfigPath);
+        PrepareLocalConfigFile(
+            exactPath,
+            LegacyLocalConfigPath,
+            requireOwnerOnly: builder.Environment.IsProduction() && !IsHeadlessEnvironment());
 
         var sources = builder.Configuration.Sources;
 
@@ -83,7 +402,7 @@ public static class FirstRunBootstrapper
 
         var fileSource = new Microsoft.Extensions.Configuration.Json.JsonConfigurationSource
         {
-            Path = LocalConfigPath,
+            Path = exactPath,
             Optional = true,
             ReloadOnChange = false
         };
@@ -106,9 +425,9 @@ public static class FirstRunBootstrapper
     /// <summary>
     /// If the persisted local config file exists but does not parse as a JSON object, preserve it to a
     /// <c>.corrupt-*</c> sibling (it may hold a recoverable key) and remove the original, so the optional
-    /// config source loads as "missing" instead of throwing at config-build time. This lets a desktop install
-    /// self-heal from a corrupt <c>appsettings.local.json</c> rather than crash on every launch. Best-effort:
-    /// a file that cannot be removed is reported to stderr.
+    /// config source loads as missing instead of throwing at config-build time. Recovery-copy creation is
+    /// mandatory; a file that cannot be removed after preservation is reported and remains fail-closed at
+    /// configuration load.
     /// </summary>
     internal static void QuarantineCorruptLocalConfig() => QuarantineCorruptLocalConfigAt(LocalConfigPath);
 
@@ -148,7 +467,8 @@ public static class FirstRunBootstrapper
         catch (Exception ex)
         {
             // Genuine parse failure (malformed JSON / non-object root). Preserve for recovery, then remove
-            // so the optional config source loads as "missing" and the app self-heals.
+            // so the optional config source can load as missing and the later database/key guard can decide
+            // whether a fresh identity is safe.
             PreserveCorruptConfig(path, ex);
             try
             {
@@ -165,7 +485,7 @@ public static class FirstRunBootstrapper
 
     /// <summary>
     /// Runs the first-run checks. Must be called after
-    /// <see cref="AddLocalConfigFile"/> and after the standard
+    /// <see cref="AddLocalConfigFile(WebApplicationBuilder, string)"/> and after the standard
     /// <c>appsettings.json</c> / <c>appsettings.{env}.json</c> files have been
     /// loaded (i.e. after the builder is constructed).
     /// </summary>
@@ -185,43 +505,46 @@ public static class FirstRunBootstrapper
     public static WebApplicationBuilder RunFirstRunChecks(
         this WebApplicationBuilder builder,
         ILogger logger)
+        => RunFirstRunChecks(builder, logger, LegacyLocalConfigPath);
+
+    public static WebApplicationBuilder RunFirstRunChecks(
+        this WebApplicationBuilder builder,
+        ILogger logger,
+        string localConfigPath)
     {
-        // JWT secret generation runs unconditionally (including headless/CI)
-        // so that no hardcoded secret is required in appsettings.Development.json.
-        EnsureJwtSecret(builder.Configuration, logger);
+        var exactPath = Path.GetFullPath(localConfigPath);
+        var isProduction = builder.Environment.IsProduction();
+        var isHeadless = IsHeadlessEnvironment();
+        var resolveDatabaseToAppData = !builder.Environment.IsDevelopment() && !isHeadless;
+        var databaseAppDataPath = resolveDatabaseToAppData
+            ? isProduction
+                ? Path.GetDirectoryName(exactPath)
+                : GetAppDataPath()
+            : null;
 
-        // Auto-generate the connector encryption key unless this is a headless Production deployment
-        // (CI / cloud container). A desktop install persists the generated key to appsettings.local.json
-        // next to the exe, so it is stable across restarts and the self-contained exe is runnable without
-        // manually supplying Connectors__EncryptionKey. Headless Production is excluded: there the key may
-        // not survive a restart, so an auto-generated one would be ephemeral and silently lose the ability
-        // to decrypt stored connector credentials -- those deployments must supply a stable key, which
-        // ValidateProductionSecrets enforces. See ADR-0041.
-        if (ShouldAutoGenerateConnectorKey(builder.Environment.IsProduction(), IsHeadlessEnvironment()))
-        {
-            // In non-headless Production (the desktop exe) the key MUST persist across restarts: a failed
-            // write has to be fatal, not silently degraded to an ephemeral in-memory key that the next
-            // launch replaces -- which would make stored connector credentials unrecoverable.
-            EnsureConnectorEncryptionKey(
-                builder.Configuration,
-                logger,
-                requirePersistence: builder.Environment.IsProduction());
-        }
+        // Recover/check connector identity before either secret is generated. An existing database with no
+        // recoverable connector key must not be paired with a new key that silently orphans credentials.
+        EnsureBootstrapSecrets(
+            builder.Configuration,
+            logger,
+            exactPath,
+            isProduction,
+            isHeadless,
+            resolveDatabaseToAppData,
+            databaseAppDataPath);
 
-        // Remaining first-run checks are for the self-hosted packaged
-        // distribution only -- skip in Development and CI/headless.
-        if (builder.Environment.IsDevelopment() || IsHeadlessEnvironment())
+        if (!resolveDatabaseToAppData)
         {
             return builder;
         }
 
-        EnsureDbPath(builder.Configuration, logger);
+        EnsureDbPath(builder.Configuration, logger, exactPath, databaseAppDataPath!);
         return builder;
     }
 
     /// <summary>
     /// Validates that no placeholder JWT secret is being used in Production.
-    /// Unlike <see cref="RunFirstRunChecks"/> (which auto-generates secrets for
+    /// Unlike <see cref="RunFirstRunChecks(WebApplicationBuilder, ILogger, string)"/> (which auto-generates secrets for
     /// self-hosted desktop installs), this check <b>throws</b> if the configured
     /// secret is a known placeholder -- preventing cloud containers from
     /// accidentally running with an insecure or ephemeral secret.
@@ -234,6 +557,12 @@ public static class FirstRunBootstrapper
     public static WebApplicationBuilder ValidateProductionSecrets(
         this WebApplicationBuilder builder,
         ILogger logger)
+        => ValidateProductionSecrets(builder, logger, LegacyLocalConfigPath);
+
+    public static WebApplicationBuilder ValidateProductionSecrets(
+        this WebApplicationBuilder builder,
+        ILogger logger,
+        string localConfigPath)
     {
         // Only enforce in Production; other environments (Development, Staging,
         // Test, etc.) use their own defaults or placeholder secrets safely.
@@ -262,7 +591,7 @@ public static class FirstRunBootstrapper
                 "Generate a base64-encoded 256-bit key with 'openssl rand -base64 32' and set it via the " +
                 "Connectors__EncryptionKey environment variable. The application cannot start without a " +
                 $"real encryption key in Production. (If this used to run as a desktop install, an existing " +
-                $"key may already be in {LocalConfigPath} -- reuse that value rather than generating a new " +
+                $"key may already be in {Path.GetFullPath(localConfigPath)} -- reuse that value rather than generating a new " +
                 "one, or stored connector credentials will become unrecoverable.)");
         }
 
@@ -272,14 +601,11 @@ public static class FirstRunBootstrapper
 
     // -------------------------------------------------------------------------
 
-    internal static string LocalConfigPath
-    {
-        get
-        {
-            var dir = AppContext.BaseDirectory;
-            return Path.Combine(dir, "appsettings.local.json");
-        }
-    }
+    internal static string LegacyLocalConfigPath
+        => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, LocalConfigFileName));
+
+    // Backward-compatible test alias. Runtime hosts resolve once and thread the exact path explicitly.
+    internal static string LocalConfigPath => LegacyLocalConfigPath;
 
     internal static bool IsPlaceholder(string value)
         => string.IsNullOrWhiteSpace(value) || PlaceholderSecrets.Contains(value.Trim());
@@ -333,7 +659,171 @@ public static class FirstRunBootstrapper
         }
     }
 
-    private static void EnsureJwtSecret(IConfiguration configuration, ILogger logger)
+    /// <summary>
+    /// Recovers persisted connector identity and refuses replacement-secret generation when an existing
+    /// database has no supplied or recoverable key. Connector identity is established before JWT identity.
+    /// </summary>
+    internal static void EnsureBootstrapSecrets(
+        IConfiguration configuration,
+        ILogger logger,
+        string localConfigPath,
+        bool isProduction,
+        bool isHeadless,
+        bool resolveDatabaseToAppData,
+        string? databaseAppDataPath = null,
+        string? legacyDatabaseDirectory = null)
+    {
+        string? recoveredPersistedKey = null;
+        if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"])
+            && TryReadPersistedConnectorKey(localConfigPath, out recoveredPersistedKey))
+        {
+            configuration["Connectors:EncryptionKey"] = recoveredPersistedKey;
+            logger.LogWarning(
+                "First-run: A higher-priority configuration source is masking the connector key persisted " +
+                "in {ConfigFile}. Reusing the persisted key so stored connector credentials stay " +
+                "decryptable; unset an empty Connectors__EncryptionKey value to silence this warning.",
+                localConfigPath);
+        }
+
+        var configuredDataSource = ExtractDataSource(
+            configuration.GetConnectionString("DefaultConnection") ?? string.Empty);
+        var hasExplicitAbsoluteDatabasePath = !string.IsNullOrWhiteSpace(configuredDataSource)
+            && Path.IsPathRooted(configuredDataSource);
+        var databaseTargetIsPersistedLocally = hasExplicitAbsoluteDatabasePath
+            && PersistedDatabaseTargetMatches(localConfigPath, configuredDataSource);
+        var databasePath = ResolveDatabaseFilePath(
+            configuration,
+            resolveDatabaseToAppData,
+            databaseAppDataPath);
+        var databaseExists = databasePath is not null
+            && FileExistsOrThrow(databasePath, "resolved SQLite database");
+        if (databasePath is not null
+            && resolveDatabaseToAppData
+            && (!hasExplicitAbsoluteDatabasePath || databaseTargetIsPersistedLocally)
+            && !databaseExists)
+        {
+            var legacyDatabasePath = Path.GetFullPath(Path.Combine(
+                legacyDatabaseDirectory ?? AppContext.BaseDirectory,
+                Path.GetFileName(databasePath)));
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!string.Equals(databasePath, legacyDatabasePath, comparison)
+                && FileExistsOrThrow(legacyDatabasePath, "legacy executable-local SQLite database"))
+            {
+                throw new InvalidOperationException(
+                    $"First-run: The configured per-user database target {databasePath} is absent, but a " +
+                    $"legacy executable-local database exists at {legacyDatabasePath}. Refusing to generate " +
+                    "new identity or create a blank database that would silently abandon v0.1 data. Stop " +
+                    "Taskdeck and recover the SQLite database together with any -wal and -shm sidecars " +
+                    "before retrying.");
+            }
+        }
+
+        if (databaseExists
+            && string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
+        {
+            throw new InvalidOperationException(
+                $"First-run: An existing database was found at {databasePath}, but no supplied or " +
+                $"persisted connector encryption key is recoverable from {localConfigPath}. Refusing to " +
+                "generate replacement connector or JWT secrets because stored connector credentials may " +
+                "depend on the missing key. Restore the original key or explicitly supply " +
+                "Connectors__EncryptionKey before starting Taskdeck.");
+        }
+
+        if (ShouldAutoGenerateConnectorKey(isProduction, isHeadless))
+        {
+            EnsureConnectorEncryptionKey(
+                configuration,
+                logger,
+                localConfigPath,
+                requirePersistence: isProduction);
+        }
+
+        EnsureJwtSecret(
+            configuration,
+            logger,
+            localConfigPath,
+            requirePersistence: isProduction && !isHeadless);
+
+        // Reloading the JSON provider can re-expose an empty higher-priority value. Reapply only the exact
+        // recovered key; never generate a different one.
+        if (!string.IsNullOrWhiteSpace(recoveredPersistedKey)
+            && string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
+        {
+            configuration["Connectors:EncryptionKey"] = recoveredPersistedKey;
+        }
+    }
+
+    private static string? ResolveDatabaseFilePath(
+        IConfiguration configuration,
+        bool resolveDatabaseToAppData,
+        string? databaseAppDataPath)
+    {
+        var connectionString = configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+        var dataSource = ExtractDataSource(connectionString);
+        if (string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var dbFile = string.IsNullOrWhiteSpace(dataSource) ? "taskdeck.db" : dataSource;
+        if (Path.IsPathRooted(dbFile))
+        {
+            return Path.GetFullPath(dbFile);
+        }
+
+        var shouldResolveAppData = resolveDatabaseToAppData
+            && (configuration.GetValue<bool?>("FirstRun:ResolveAppDataDbPath") ?? true);
+        return shouldResolveAppData
+            ? Path.GetFullPath(Path.Combine(
+                databaseAppDataPath ?? GetAppDataPath(),
+                Path.GetFileName(dbFile)))
+            : Path.GetFullPath(dbFile);
+    }
+
+    private static bool PersistedDatabaseTargetMatches(string localConfigPath, string effectiveDataSource)
+    {
+        if (!File.Exists(localConfigPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var persisted = new ConfigurationBuilder()
+                .AddJsonFile(localConfigPath, optional: false, reloadOnChange: false)
+                .Build()
+                .GetConnectionString("DefaultConnection");
+            var persistedDataSource = ExtractDataSource(persisted ?? string.Empty);
+            if (!Path.IsPathRooted(persistedDataSource))
+            {
+                return false;
+            }
+
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            return string.Equals(
+                Path.GetFullPath(persistedDataSource),
+                Path.GetFullPath(effectiveDataSource),
+                comparison);
+        }
+        catch
+        {
+            // The runtime preparation path already fails closed on an unreadable or corrupt durable file.
+            // Treat a direct unit-call failure here as not proven to be the migrated legacy target.
+            return false;
+        }
+    }
+
+    internal static void EnsureJwtSecret(
+        IConfiguration configuration,
+        ILogger logger,
+        string localConfigPath,
+        bool requirePersistence = false,
+        Action? afterInitialAbsence = null,
+        Func<string>? secretFactory = null)
     {
         var configured = configuration["Jwt:SecretKey"] ?? string.Empty;
 
@@ -342,38 +832,56 @@ public static class FirstRunBootstrapper
             return;
         }
 
-        var generated = GenerateSecret();
+        afterInitialAbsence?.Invoke();
+        PersistedValueResult result;
         try
         {
-            PersistValue("Jwt", "SecretKey", generated);
+            result = PersistGeneratedValue(
+                localConfigPath,
+                "Jwt",
+                "SecretKey",
+                secretFactory ?? GenerateSecret,
+                value => !IsPlaceholder(value));
             // Reload so subsequent configuration reads get the new value.
             if (configuration is IConfigurationRoot root)
             {
                 root.Reload();
             }
 
+            configuration["Jwt:SecretKey"] = result.Value;
             logger.LogInformation(
-                "First-run: JWT secret was not configured. A random secret has been " +
-                "generated and saved to {ConfigFile}.", LocalConfigPath);
+                result.Created
+                    ? "First-run: JWT secret was not configured. A random secret has been generated and " +
+                        "saved to {ConfigFile}."
+                    : "First-run: Another startup persisted the JWT secret in {ConfigFile}. Reusing that " +
+                        "winning value.",
+                localConfigPath);
         }
         catch (IOException ex)
         {
-            // File may be locked by another process (e.g. parallel test
-            // factories sharing the same output directory).  Fall back to
-            // setting the value in-memory so the current startup still
-            // succeeds.
-            configuration["Jwt:SecretKey"] = generated;
+            if (requirePersistence)
+            {
+                throw new InvalidOperationException(
+                    $"First-run: Could not persist the JWT secret to {localConfigPath} ({ex.Message}). " +
+                    "Desktop Production refuses a transient secret that would invalidate sessions on " +
+                    "restart.", ex);
+            }
+
+            configuration["Jwt:SecretKey"] = (secretFactory ?? GenerateSecret)();
             logger.LogWarning(
                 "First-run: Could not persist JWT secret to {ConfigFile} ({Error}). " +
                 "A transient in-memory secret has been generated instead.",
-                LocalConfigPath, ex.Message);
+                localConfigPath, ex.Message);
         }
     }
 
-    private static void EnsureConnectorEncryptionKey(
+    internal static void EnsureConnectorEncryptionKey(
         IConfiguration configuration,
         ILogger logger,
-        bool requirePersistence = false)
+        string localConfigPath,
+        bool requirePersistence = false,
+        Action? afterInitialAbsence = null,
+        Func<string>? secretFactory = null)
     {
         var configured = configuration["Connectors:EncryptionKey"] ?? string.Empty;
 
@@ -389,30 +897,40 @@ public static class FirstRunBootstrapper
         // would permanently destroy the only copy of the key the stored connector credentials were encrypted
         // with. Reuse is stable across restarts (the next launch reads the same persisted key) and keeps the
         // app working despite the misconfigured empty variable.
-        if (TryReadPersistedConnectorKey(LocalConfigPath, out var persisted))
+        if (TryReadPersistedConnectorKey(localConfigPath, out var persisted))
         {
             configuration["Connectors:EncryptionKey"] = persisted;
             logger.LogWarning(
                 "First-run: A higher-priority configuration source (likely an empty Connectors__EncryptionKey " +
                 "environment variable) is masking the connector key persisted in {ConfigFile}. Reusing the " +
                 "persisted key so stored connector credentials stay decryptable; unset the empty variable to " +
-                "silence this warning.", LocalConfigPath);
+                "silence this warning.", localConfigPath);
             return;
         }
 
-        var generated = GenerateSecret();
+        afterInitialAbsence?.Invoke();
+        PersistedValueResult result;
         try
         {
-            PersistValue("Connectors", "EncryptionKey", generated);
+            result = PersistGeneratedValue(
+                localConfigPath,
+                "Connectors",
+                "EncryptionKey",
+                secretFactory ?? GenerateSecret,
+                value => !string.IsNullOrWhiteSpace(value));
             if (configuration is IConfigurationRoot root)
             {
                 root.Reload();
             }
 
             logger.LogInformation(
-                "First-run: Connector encryption key was not configured. A random key has been generated " +
-                "and saved to {ConfigFile}. BACK UP THIS FILE alongside your database -- it is required to " +
-                "decrypt stored connector credentials; losing it makes them unrecoverable.", LocalConfigPath);
+                result.Created
+                    ? "First-run: Connector encryption key was not configured. A random key has been " +
+                        "generated and saved to {ConfigFile}. BACK UP THIS FILE alongside your database -- " +
+                        "it is required to decrypt stored connector credentials."
+                    : "First-run: Another startup persisted the connector encryption key in {ConfigFile}. " +
+                        "Reusing that winning key.",
+                localConfigPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -424,9 +942,9 @@ public static class FirstRunBootstrapper
                 // be lost on the next launch, which would then generate a different one and silently lose
                 // the ability to decrypt previously-stored connector credentials. Fail loudly instead.
                 throw new InvalidOperationException(
-                    $"First-run: Could not persist the connector encryption key to {LocalConfigPath} " +
+                    $"First-run: Could not persist the connector encryption key to {localConfigPath} " +
                     $"({ex.Message}). A run-once in-memory key would be lost on restart and make stored " +
-                    "connector credentials unrecoverable. Ensure the application directory is writable AND on " +
+                    "connector credentials unrecoverable. Ensure the local-config directory is writable AND on " +
                     "a filesystem that supports owner-only file permissions (NTFS / a POSIX filesystem; " +
                     "FAT32/exFAT or some network shares cannot lock the secret down), or set a stable key via " +
                     "the Connectors__EncryptionKey environment variable.", ex);
@@ -434,11 +952,11 @@ public static class FirstRunBootstrapper
 
             // Non-Production (dev/staging/test): a transient in-memory key is acceptable -- these do not
             // carry credentials that must survive a restart, and parallel test harnesses can lock the file.
-            configuration["Connectors:EncryptionKey"] = generated;
+            configuration["Connectors:EncryptionKey"] = (secretFactory ?? GenerateSecret)();
             logger.LogWarning(
                 "First-run: Could not persist connector encryption key to {ConfigFile} ({Error}). " +
                 "A transient in-memory key has been generated instead.",
-                LocalConfigPath, ex.Message);
+                localConfigPath, ex.Message);
             return;
         }
 
@@ -447,9 +965,12 @@ public static class FirstRunBootstrapper
         // mask the freshly written file. Either way the key IS persisted and recoverable -- the next launch
         // reads it back (and reuses it via TryReadPersistedConnectorKey if still masked) -- so an in-memory
         // value here is safe (no data loss), unlike overwriting an existing key would have been.
-        if (string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]))
+        if (!string.Equals(
+                configuration["Connectors:EncryptionKey"],
+                result.Value,
+                StringComparison.Ordinal))
         {
-            configuration["Connectors:EncryptionKey"] = generated;
+            configuration["Connectors:EncryptionKey"] = result.Value;
             if (requirePersistence)
             {
                 // In Production the only way the just-persisted key is not the effective value is a
@@ -459,12 +980,16 @@ public static class FirstRunBootstrapper
                     "First-run: The connector key was persisted to {ConfigFile} but a higher-priority " +
                     "configuration source (likely an empty Connectors__EncryptionKey environment variable) is " +
                     "masking it. The persisted key will be reused on the next launch; unset the empty variable.",
-                    LocalConfigPath);
+                    localConfigPath);
             }
         }
     }
 
-    private static void EnsureDbPath(IConfiguration configuration, ILogger logger)
+    internal static void EnsureDbPath(
+        IConfiguration configuration,
+        ILogger logger,
+        string localConfigPath,
+        string appDataPath)
     {
         var resolveAppData = configuration.GetValue<bool?>("FirstRun:ResolveAppDataDbPath") ?? true;
         if (!resolveAppData)
@@ -476,27 +1001,31 @@ public static class FirstRunBootstrapper
             ?? string.Empty;
         var dataSource = ExtractDataSource(connectionString);
 
+        if (string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         // Already an absolute path — nothing to do.
         if (!string.IsNullOrWhiteSpace(dataSource) && Path.IsPathRooted(dataSource))
         {
             return;
         }
 
-        var appDataDir = GetAppDataPath();
-        Directory.CreateDirectory(appDataDir);
+        Directory.CreateDirectory(appDataPath);
 
         var dbFile = string.IsNullOrWhiteSpace(dataSource)
             ? "taskdeck.db"
             : Path.GetFileName(dataSource);
 
-        var resolvedPath = Path.Combine(appDataDir, dbFile);
+        var resolvedPath = Path.GetFullPath(Path.Combine(appDataPath, dbFile));
         var resolvedConnectionString = $"Data Source={resolvedPath}";
 
         // Write into the local config file so the value is picked up by
         // AddInfrastructure later in the startup pipeline.
         try
         {
-            PersistValue("ConnectionStrings", "DefaultConnection", resolvedConnectionString);
+            PersistValue(localConfigPath, "ConnectionStrings", "DefaultConnection", resolvedConnectionString);
         }
         catch (IOException ex)
         {
@@ -507,7 +1036,7 @@ public static class FirstRunBootstrapper
             logger.LogWarning(
                 "First-run: Could not persist DB path to {ConfigFile} ({Error}). " +
                 "A transient in-memory connection string has been set instead.",
-                LocalConfigPath, ex.Message);
+                localConfigPath, ex.Message);
             return;
         }
 
@@ -515,6 +1044,10 @@ public static class FirstRunBootstrapper
         {
             root.Reload();
         }
+
+        // A command-line or environment provider can keep exposing the original relative value after reload.
+        // Install the exact resolved value so AddInfrastructure opens the file the safety check inspected.
+        configuration["ConnectionStrings:DefaultConnection"] = resolvedConnectionString;
 
         logger.LogInformation(
             "First-run: SQLite DB path resolved to AppData location: {DbPath}", resolvedPath);
@@ -530,10 +1063,29 @@ public static class FirstRunBootstrapper
 
     internal static string GetAppDataPath()
     {
-        var localAppData = Environment.GetFolderPath(
+        // Known Folder lookup ignores a test/portable-launcher LOCALAPPDATA override on Windows. Honour the
+        // standard absolute variable first so packaged smoke can isolate a profile without touching real data.
+        var localAppDataOverride = OperatingSystem.IsWindows()
+            ? Environment.GetEnvironmentVariable("LOCALAPPDATA")
+            : null;
+        var knownFolderPath = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData,
             Environment.SpecialFolderOption.Create);
-        return Path.Combine(localAppData, "Taskdeck");
+        return ResolveAppDataPath(localAppDataOverride, knownFolderPath);
+    }
+
+    internal static string ResolveAppDataPath(string? localAppDataOverride, string knownFolderPath)
+    {
+        var localAppData = string.IsNullOrWhiteSpace(localAppDataOverride)
+            ? knownFolderPath
+            : localAppDataOverride;
+        if (string.IsNullOrWhiteSpace(localAppData) || !Path.IsPathRooted(localAppData))
+        {
+            throw new InvalidOperationException(
+                "First-run: Could not resolve an absolute per-user LocalApplicationData directory.");
+        }
+
+        return Path.GetFullPath(Path.Combine(localAppData, "Taskdeck"));
     }
 
     private static string ExtractDataSource(string connectionString)
@@ -555,11 +1107,12 @@ public static class FirstRunBootstrapper
     /// <summary>
     /// Backs up an unparsable config file to a timestamped <c>.corrupt-*</c> sibling before it is rewritten,
     /// so a previously-generated secret it may still hold (the connector key in particular) is recoverable
-    /// by an operator instead of being silently overwritten. Best-effort: failure to copy is logged, not fatal.
+    /// by an operator instead of being silently overwritten. Preservation is mandatory: if a restricted
+    /// recovery copy cannot be created, the original remains and bootstrap fails closed.
     /// </summary>
     private static void PreserveCorruptConfig(string path, Exception parseError)
     {
-        var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+        var backupPath = $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid():N}";
         try
         {
             // The .corrupt-* backup holds the same secrets as the original (the connector key in
@@ -571,36 +1124,10 @@ public static class FirstRunBootstrapper
         }
         catch (Exception ex)
         {
-            // Recovery-first fallback: a failed primary backup must not cost the ONLY copy of a
-            // possibly-recoverable key. Fall back to a plain copy + best-effort restriction, warning that
-            // the backup may be readable by other local users until fixed. Copy to a DISTINCT name: if the
-            // primary attempt's best-effort cleanup could not remove its partial file (e.g. an AV/indexer
-            // held a same-user handle), overwrite:false on the same name would always fail here even though
-            // the source is still perfectly readable.
-            backupPath = $"{backupPath}.fallback";
-            try
-            {
-                File.Copy(path, backupPath, overwrite: false);
-            }
-            catch (Exception copyEx)
-            {
-                Console.Error.WriteLine(
-                    $"[FirstRun] WARNING: {path} contains invalid JSON ({parseError.Message}) and could NOT be " +
-                    $"backed up (primary backup: {ex.Message}; fallback copy: {copyEx.Message}); it will be " +
-                    "overwritten.");
-                return;
-            }
-
-            try
-            {
-                RestrictFileToCurrentUser(backupPath);
-            }
-            catch (Exception aclEx)
-            {
-                Console.Error.WriteLine(
-                    $"[FirstRun] WARNING: preserved {backupPath} but could not restrict its permissions " +
-                    $"({aclEx.Message}); it may be readable by other local users until fixed.");
-            }
+            throw new InvalidOperationException(
+                $"First-run: {path} contains invalid JSON ({parseError.Message}) and could not be " +
+                $"preserved securely at {backupPath}. Leaving the original untouched and refusing to " +
+                "generate replacement secrets.", ex);
         }
 
         Console.Error.WriteLine(
@@ -609,70 +1136,40 @@ public static class FirstRunBootstrapper
             "file will be rewritten.");
     }
 
-    private static void PersistValue(string section, string key, string value)
+    private readonly record struct PersistedValueResult(string Value, bool Created);
+
+    /// <summary>Atomically reuses an acceptable persisted value or creates exactly one winner.</summary>
+    private static PersistedValueResult PersistGeneratedValue(
+        string path,
+        string section,
+        string key,
+        Func<string> valueFactory,
+        Func<string, bool> acceptExisting)
     {
-        var path = LocalConfigPath;
-
-        // Cross-process mutex: multiple xUnit test processes (and any
-        // accidentally concurrent startup in the same output directory) must
-        // not race on the read-modify-write of appsettings.local.json.  Two
-        // concurrent File.WriteAllText calls can interleave and leave the
-        // file with trailing bytes from the longer write after the shorter
-        // one finishes, producing the `'}' is invalid after a single JSON
-        // value` parse error seen in CI.
-        var mutexName = BuildMutexName(path);
-        Mutex? mutex = null;
-        var acquired = false;
-        try
+        path = Path.GetFullPath(path);
+        return WithBootstrapLock(path, TimeSpan.FromSeconds(10), () =>
         {
-            try
-            {
-                // The named (Global\ on Windows) mutex ctor AND WaitOne can throw on
-                // locked-down or multi-user hosts -- e.g. when another user already
-                // owns the name. That must NOT crash API startup.
-                mutex = new System.Threading.Mutex(initiallyOwned: false, name: mutexName);
-                acquired = mutex.WaitOne(TimeSpan.FromSeconds(10));
-            }
-            catch (AbandonedMutexException)
-            {
-                // A previous holder crashed without releasing; we still own it now.
-                acquired = true;
-            }
-            catch (Exception ex) when (
-                ex is UnauthorizedAccessException
-                    or WaitHandleCannotBeOpenedException
-                    or IOException)
-            {
-                // Could not create/open or wait on the cross-process lock. Degrade
-                // gracefully: skip the persistent write entirely so two unsynchronized
-                // writers never race to persist different keys. The caller's catch
-                // block will fall back to an in-memory value.
-                Console.Error.WriteLine(
-                    $"[FirstRun] WARNING: Could not acquire the cross-process bootstrap " +
-                    $"lock ({ex.Message}). Skipping persistent write.");
-                throw new IOException(
-                    "Cross-process bootstrap lock unavailable; skipping persistent write.", ex);
-            }
-
             JsonObject root;
             if (File.Exists(path))
             {
                 try
                 {
-                    // Parse with the config provider's leniency (comments / trailing commas). A hand-edited
-                    // but provider-loadable file must round-trip here -- a strict parse would treat it as
-                    // corrupt and drop its existing sections (e.g. the Connectors key) when a later first-run
-                    // write (EnsureDbPath / JWT) rewrites the file, orphaning stored connector credentials.
-                    var existing = File.ReadAllText(path);
-                    root = JsonNode.Parse(existing, nodeOptions: null, documentOptions: LocalConfigJsonOptions)?.AsObject() ?? new JsonObject();
+                    var payload = File.ReadAllBytes(path);
+                    EnsureCompleteJsonObject(payload, path);
+                    root = JsonNode.Parse(
+                        payload,
+                        nodeOptions: null,
+                        documentOptions: LocalConfigJsonOptions)?.AsObject() ?? new JsonObject();
+
+                    using var stream = new MemoryStream(payload, writable: false);
+                    var current = new ConfigurationBuilder().AddJsonStream(stream).Build()[$"{section}:{key}"];
+                    if (current is not null && acceptExisting(current))
+                    {
+                        return new PersistedValueResult(current, Created: false);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // The file is genuinely unparsable (not even provider-loadable -- e.g. an interrupted
-                    // write). It may still hold the ONLY copy of a previously-generated secret -- losing the
-                    // connector key in particular orphans stored connector credentials -- so preserve it for
-                    // operator recovery before starting fresh, rather than silently overwriting it. Logger is
-                    // not available at this pre-DI stage, so warn to stderr.
                     PreserveCorruptConfig(path, ex);
                     root = new JsonObject();
                 }
@@ -682,58 +1179,60 @@ public static class FirstRunBootstrapper
                 root = new JsonObject();
             }
 
-            if (root[section] is not JsonObject sectionNode)
+            var value = valueFactory();
+            SetJsonValue(root, section, key, value);
+            WriteLocalConfigRoot(path, root);
+            return new PersistedValueResult(value, Created: true);
+        });
+    }
+
+    private static void SetJsonValue(JsonObject root, string section, string key, string value)
+    {
+        var flattenedName = $"{section}:{key}";
+        foreach (var property in root.ToList())
+        {
+            if (string.Equals(property.Key, flattenedName, StringComparison.OrdinalIgnoreCase))
             {
-                sectionNode = new JsonObject();
-                root[section] = sectionNode;
-            }
-
-            sectionNode[key] = value;
-
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var payload = root.ToJsonString(options);
-
-            // Atomic write: stage into a sibling temp file then move into place.
-            // File.WriteAllText is not atomic — a concurrent reader or writer
-            // can observe a partially written file.  A rename onto an existing
-            // path is atomic on both Windows and Linux file systems we target.
-            var dir = Path.GetDirectoryName(path)!;
-            Directory.CreateDirectory(dir);
-            var tempPath = Path.Combine(dir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-
-            // Create the temp file ATOMICALLY with owner-only permissions and FileShare.None (#1241/#1264):
-            // under the Unix default umask (022) a plainly-created file would be 0644, and on Windows it
-            // would inherit the directory's default ACL (e.g. BUILTIN\Users read). Supplying the restrictive
-            // mode/DACL at creation leaves no instant where the file is openable by another local user --
-            // the previous create-then-restrict sequence had a window where a racer's pre-opened handle on
-            // the empty file survived the tightened ACL (ACL changes do not revoke open handles) and could
-            // read the later-written secret. FileMode.CreateNew also refuses to adopt a pre-created file.
-            // If the restricted create fails, WriteRestrictedFile throws (normalized to IOException) and the
-            // secret is never written -- the caller falls back to an in-memory value rather than leaving it
-            // world-readable. The create+write -> move sequence is inside the try so any failure deletes the
-            // staged temp file rather than leaking it.
-            try
-            {
-                WriteRestrictedFile(tempPath, payload);
-                ReplaceFileWithRetry(tempPath, path);
-            }
-            catch
-            {
-                // Best-effort cleanup; the original exception propagates.
-                try { File.Delete(tempPath); } catch { /* ignore */ }
-                throw;
+                root[property.Key] = value;
+                return;
             }
         }
-        finally
+
+        var sectionProperty = root.FirstOrDefault(
+            property => string.Equals(property.Key, section, StringComparison.OrdinalIgnoreCase));
+        var sectionNode = sectionProperty.Value as JsonObject;
+        if (sectionNode is null)
         {
-            if (acquired)
-            {
-                try { mutex?.ReleaseMutex(); }
-                catch (ApplicationException) { }
-            }
-            mutex?.Dispose();
+            sectionNode = new JsonObject();
+            root[string.IsNullOrEmpty(sectionProperty.Key) ? section : sectionProperty.Key] = sectionNode;
+        }
+
+        var keyProperty = sectionNode.FirstOrDefault(
+            property => string.Equals(property.Key, key, StringComparison.OrdinalIgnoreCase));
+        sectionNode[string.IsNullOrEmpty(keyProperty.Key) ? key : keyProperty.Key] = value;
+    }
+
+    private static void WriteLocalConfigRoot(string path, JsonObject root)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(directory);
+        var tempPath = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            WriteRestrictedFile(
+                tempPath,
+                root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            ReplaceFileWithRetry(tempPath, path);
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { /* best-effort restricted-temp cleanup */ }
+            throw;
         }
     }
+
+    private static void PersistValue(string path, string section, string key, string value)
+        => PersistGeneratedValue(path, section, key, () => value, _ => false);
 
     /// <summary>
     /// Best-effort re-restriction of an existing persisted local config to the current user (#1241 forward
@@ -741,8 +1240,13 @@ public static class FirstRunBootstrapper
     /// at this pre-DI stage a failure is reported to stderr and startup continues.
     /// </summary>
     internal static void RestrictExistingLocalConfigFile()
+        => RestrictExistingLocalConfigFileAt(LegacyLocalConfigPath);
+
+    internal static void RestrictExistingLocalConfigFileAt(
+        string path,
+        bool requireSuccess = false,
+        Action<string>? restrictFile = null)
     {
-        var path = LocalConfigPath;
         if (!File.Exists(path))
         {
             return;
@@ -750,10 +1254,17 @@ public static class FirstRunBootstrapper
 
         try
         {
-            RestrictFileToCurrentUser(path);
+            (restrictFile ?? RestrictFileToCurrentUser)(path);
         }
         catch (Exception ex)
         {
+            if (requireSuccess)
+            {
+                throw new InvalidOperationException(
+                    $"First-run: Could not restrict {path} to the current user; refusing startup because " +
+                    "the file may contain connector and JWT secrets.", ex);
+            }
+
             Console.Error.WriteLine(
                 $"[FirstRun] WARNING: could not re-restrict permissions on the existing {path} " +
                 $"({ex.Message}); it may remain readable by other local users until permissions are fixed.");
@@ -968,6 +1479,48 @@ public static class FirstRunBootstrapper
             {
                 Thread.Sleep(TimeSpan.FromMilliseconds(25 * attempt));
             }
+        }
+    }
+
+    private static T WithBootstrapLock<T>(string path, TimeSpan timeout, Func<T> action)
+    {
+        Mutex? mutex = null;
+        var acquired = false;
+        try
+        {
+            try
+            {
+                mutex = new Mutex(initiallyOwned: false, BuildMutexName(path));
+                acquired = mutex.WaitOne(timeout);
+            }
+            catch (AbandonedMutexException)
+            {
+                acquired = true;
+            }
+            catch (Exception ex) when (
+                ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException or IOException)
+            {
+                throw new IOException(
+                    $"Could not acquire the bootstrap lock for {path}; refusing an unsynchronized write.",
+                    ex);
+            }
+
+            if (!acquired)
+            {
+                throw new IOException(
+                    $"Timed out waiting for the bootstrap lock for {path}; refusing an unsynchronized write.");
+            }
+
+            return action();
+        }
+        finally
+        {
+            if (acquired)
+            {
+                try { mutex?.ReleaseMutex(); } catch (ApplicationException) { }
+            }
+
+            mutex?.Dispose();
         }
     }
 
