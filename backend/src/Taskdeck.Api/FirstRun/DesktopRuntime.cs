@@ -182,6 +182,20 @@ internal static class DesktopRuntime
         Console.WriteLine($"Your Taskdeck data is stored in: {Path.GetFullPath(dataDirectory)}");
     }
 
+    internal static void WriteBootstrapIdentity(BootstrapIdentityLifecycle lifecycle)
+    {
+        if (!IsPackagedDesktop)
+        {
+            return;
+        }
+
+        Console.WriteLine(FormatBootstrapIdentityMarker(lifecycle));
+    }
+
+    internal static string FormatBootstrapIdentityMarker(BootstrapIdentityLifecycle lifecycle)
+        => $"TASKDECK_DESKTOP_BOOTSTRAP jwt_created={FormatCreated(lifecycle.JwtCreated)} " +
+            $"connector_created={FormatCreated(lifecycle.ConnectorCreated)}";
+
     internal static void WriteReady(string url)
     {
         Console.WriteLine($"TASKDECK_DESKTOP_READY url={url}");
@@ -234,6 +248,8 @@ internal static class DesktopRuntime
     // container flags change the established generic server or standalone MCP persistence posture.
     private static bool IsExplicitHeadlessEnvironment()
         => HasValue(Environment.GetEnvironmentVariable("TASKDECK_HEADLESS"));
+
+    private static string FormatCreated(bool created) => created ? "true" : "false";
 
     private static bool IsLoopbackHost(string host)
         => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)

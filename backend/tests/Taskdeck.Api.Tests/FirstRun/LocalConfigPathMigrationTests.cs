@@ -421,7 +421,7 @@ public sealed class LocalConfigPathMigrationTests
         var localConfig = Path.Combine(dataDirectory, "appsettings.local.json");
         var configuration = BuildConfiguration(database);
 
-        FirstRunBootstrapper.EnsureBootstrapSecrets(
+        var lifecycle = FirstRunBootstrapper.EnsureBootstrapSecrets(
             configuration,
             NullLogger.Instance,
             localConfig,
@@ -431,12 +431,82 @@ public sealed class LocalConfigPathMigrationTests
             databaseAppDataPath: dataDirectory,
             legacyDatabaseDirectory: Path.Combine(temp.Path, "legacy"));
 
+        Assert.True(lifecycle.JwtCreated);
+        Assert.True(lifecycle.ConnectorCreated);
         Assert.False(string.IsNullOrWhiteSpace(configuration["Connectors:EncryptionKey"]));
         Assert.False(string.IsNullOrWhiteSpace(configuration["Jwt:SecretKey"]));
         var persisted = new ConfigurationBuilder().AddJsonFile(localConfig).Build();
         Assert.Equal(configuration["Connectors:EncryptionKey"], persisted["Connectors:EncryptionKey"]);
         Assert.Equal(configuration["Jwt:SecretKey"], persisted["Jwt:SecretKey"]);
         AssertOwnerOnly(localConfig);
+    }
+
+    [Fact]
+    public void EnsureBootstrapSecrets_RestartReportsBothDurableValuesReused()
+    {
+        using var temp = new TempDirectory();
+        var dataDirectory = Path.Combine(temp.Path, "data");
+        var database = Path.Combine(dataDirectory, "taskdeck.db");
+        var localConfig = Path.Combine(dataDirectory, "appsettings.local.json");
+
+        var first = FirstRunBootstrapper.EnsureBootstrapSecrets(
+            BuildConfiguration(database),
+            NullLogger.Instance,
+            localConfig,
+            isProduction: true,
+            isHeadless: false,
+            resolveDatabaseToAppData: true,
+            databaseAppDataPath: dataDirectory,
+            legacyDatabaseDirectory: Path.Combine(temp.Path, "legacy"));
+        var restartConfiguration = new ConfigurationBuilder()
+            .AddJsonFile(localConfig, optional: false, reloadOnChange: false)
+            .Build();
+        var restart = FirstRunBootstrapper.EnsureBootstrapSecrets(
+            restartConfiguration,
+            NullLogger.Instance,
+            localConfig,
+            isProduction: true,
+            isHeadless: false,
+            resolveDatabaseToAppData: true,
+            databaseAppDataPath: dataDirectory,
+            legacyDatabaseDirectory: Path.Combine(temp.Path, "legacy"));
+
+        Assert.True(first.JwtCreated);
+        Assert.True(first.ConnectorCreated);
+        Assert.False(restart.JwtCreated);
+        Assert.False(restart.ConnectorCreated);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void EnsureBootstrapSecrets_MixedDurableUpgradeReportsEachSecretIndependently(
+        bool jwtAlreadyPersisted)
+    {
+        using var temp = new TempDirectory();
+        var dataDirectory = Path.Combine(temp.Path, "data");
+        var localConfig = Path.Combine(dataDirectory, "appsettings.local.json");
+        Directory.CreateDirectory(dataDirectory);
+        var existingConfig = jwtAlreadyPersisted
+            ? "{\"Jwt\":{\"SecretKey\":\"synthetic-jwt\"}}"
+            : "{\"Connectors\":{\"EncryptionKey\":\"synthetic-connector\"}}";
+        FirstRunBootstrapper.WriteRestrictedFile(localConfig, existingConfig);
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(localConfig, optional: false, reloadOnChange: false)
+            .Build();
+
+        var lifecycle = FirstRunBootstrapper.EnsureBootstrapSecrets(
+            configuration,
+            NullLogger.Instance,
+            localConfig,
+            isProduction: true,
+            isHeadless: false,
+            resolveDatabaseToAppData: true,
+            databaseAppDataPath: dataDirectory,
+            legacyDatabaseDirectory: Path.Combine(temp.Path, "legacy"));
+
+        Assert.Equal(!jwtAlreadyPersisted, lifecycle.JwtCreated);
+        Assert.Equal(jwtAlreadyPersisted, lifecycle.ConnectorCreated);
     }
 
     [Fact]
@@ -448,7 +518,7 @@ public sealed class LocalConfigPathMigrationTests
         var second = new ConfigurationBuilder().AddInMemoryCollection().Build();
         using var barrier = new Barrier(2);
 
-        await Task.WhenAll(
+        var outcomes = await Task.WhenAll(
             Task.Run(() => FirstRunBootstrapper.EnsureConnectorEncryptionKey(
                 first,
                 NullLogger.Instance,
@@ -464,6 +534,7 @@ public sealed class LocalConfigPathMigrationTests
                 afterInitialAbsence: () => barrier.SignalAndWait(),
                 secretFactory: () => "second-candidate")));
 
+        Assert.Single(outcomes, created => created);
         var persisted = new ConfigurationBuilder().AddJsonFile(localConfig).Build()["Connectors:EncryptionKey"];
         Assert.True(persisted is "first-candidate" or "second-candidate");
         Assert.Equal(persisted, first["Connectors:EncryptionKey"]);
@@ -552,7 +623,11 @@ public sealed class LocalConfigPathMigrationTests
         Assert.Contains("bootstrapHeadless = DesktopRuntime.IsBootstrapHeadlessEnvironment", source);
         Assert.Contains("localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath", source);
         Assert.Contains("builder.AddLocalConfigFile(localConfigPath, bootstrapHeadless)", source);
-        Assert.Contains("builder.RunFirstRunChecks(bootstrapLogger, localConfigPath, bootstrapHeadless)", source);
+        Assert.Contains(
+            "Action<BootstrapIdentityLifecycle>? bootstrapIdentityObserver = DesktopRuntime.IsPackagedDesktop",
+            source);
+        Assert.Contains("DesktopRuntime.WriteBootstrapIdentity", source);
+        Assert.Contains("bootstrapIdentityObserver);", source);
         Assert.Contains("builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath)", source);
     }
 
