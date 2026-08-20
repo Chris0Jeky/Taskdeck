@@ -59,6 +59,7 @@ export interface ChatProviderHealth {
   isMock: boolean
   isProbed: boolean
   verificationStatus: VerificationStatus
+  probeLatencyMs?: number | null
 }
 
 export interface CreateChatSessionRequest {

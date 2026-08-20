@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -110,9 +111,26 @@ public class ChatService : IChatService
 
     public async Task<ChatProviderHealthDto> GetProviderHealthAsync(bool probe = false, CancellationToken ct = default)
     {
-        var health = probe
-            ? await _llmProvider.ProbeAsync(ct)
-            : await _llmProvider.GetHealthAsync(ct);
+        LlmHealthStatus health;
+        long? probeLatencyMs = null;
+        if (probe)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                health = await _llmProvider.ProbeAsync(ct);
+            }
+            finally
+            {
+                stopwatch.Stop();
+            }
+
+            probeLatencyMs = stopwatch.ElapsedMilliseconds;
+        }
+        else
+        {
+            health = await _llmProvider.GetHealthAsync(ct);
+        }
 
         var verificationStatus = DeriveVerificationStatus(health);
 
@@ -123,7 +141,8 @@ public class ChatService : IChatService
             health.Model,
             health.IsMock,
             health.IsProbed,
-            verificationStatus);
+            verificationStatus,
+            probeLatencyMs);
     }
 
     private static string DeriveVerificationStatus(LlmHealthStatus health)

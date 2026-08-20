@@ -32,6 +32,8 @@ from typing import Any, Mapping
 
 READY_PATTERN = re.compile(r"^TASKDECK_DESKTOP_READY url=(http://127\.0\.0\.1:([1-9]\d{0,4}))$")
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
+EVIDENCE_SCHEMA_VERSION = 2
+MAX_PROBE_LATENCY_MS = 300_000
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
     "TASKDECK_RELEASE_OPENAI_API_KEY",
@@ -404,7 +406,7 @@ def validate_phase_evidence(value: Any, expected_phase: str, journey_id: str) ->
     if not isinstance(value, dict):
         raise AcceptanceFailure("Packaged Playwright evidence is not an object.")
     allowed_top = {"schemaVersion", "phase", "journeyId", "board", "persistence", "http", "liveOpenAi"}
-    if set(value) != allowed_top or value.get("schemaVersion") != 1:
+    if set(value) != allowed_top or value.get("schemaVersion") != EVIDENCE_SCHEMA_VERSION:
         raise AcceptanceFailure("Packaged Playwright evidence has an unexpected schema.")
     if value.get("phase") != expected_phase or value.get("journeyId") != journey_id:
         raise AcceptanceFailure("Packaged Playwright evidence identity does not match the harness journey.")
@@ -470,6 +472,7 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
             "isMock",
             "isProbed",
             "verificationStatus",
+            "probeLatencyMs",
             "cardTitle",
             "proposal",
             "cardCounts",
@@ -483,6 +486,8 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
         or live["isMock"] is not False
         or live["isProbed"] is not True
         or live["verificationStatus"] != "verified"
+        or type(live["probeLatencyMs"]) is not int
+        or not 1 <= live["probeLatencyMs"] <= MAX_PROBE_LATENCY_MS
         or not isinstance(live["cardTitle"], str)
     ):
         raise AcceptanceFailure("Packaged live-provider identity evidence is invalid.")
@@ -673,7 +678,7 @@ def run(argv: list[str]) -> int:
             journey_id,
         )
         final_evidence = {
-            "schemaVersion": 1,
+            "schemaVersion": EVIDENCE_SCHEMA_VERSION,
             "release": {"archive": archive.name, "sha256": archive_hash, "archiveUnchanged": True},
             "launches": [
                 {"extraction": 1, "heldDefaultPort": True, "usedFallbackPort": True, "http": first_http},

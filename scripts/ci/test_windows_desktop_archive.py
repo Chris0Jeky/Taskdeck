@@ -182,7 +182,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
 
     def test_phase_evidence_rejects_forbidden_fields(self) -> None:
         evidence = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "phase": "create",
             "journeyId": "release-123456-789",
             "board": {"id": "synthetic-id", "title": "synthetic"},
@@ -200,6 +200,29 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         with self.assertRaises(harness.AcceptanceFailure):
             harness.validate_phase_evidence(forbidden, "create", "release-123456-789")
 
+    def test_phase_evidence_accepts_bounded_integer_probe_latency(self) -> None:
+        evidence = self._live_create_evidence(123)
+
+        self.assertEqual(
+            evidence,
+            harness.validate_phase_evidence(evidence, "create", "release-123456-789"),
+        )
+
+    def test_phase_evidence_rejects_missing_probe_latency(self) -> None:
+        evidence = self._live_create_evidence(123)
+        del evidence["liveOpenAi"]["probeLatencyMs"]
+
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+
+    def test_phase_evidence_rejects_invalid_probe_latency_types_and_bounds(self) -> None:
+        invalid_values = (True, "123", 1.5, None, 0, -1, 300_001)
+        for value in invalid_values:
+            with self.subTest(value=value):
+                evidence = self._live_create_evidence(value)
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+
     def test_snapshot_detects_extraction_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -210,6 +233,35 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             file_path.write_bytes(b"changed")
             with self.assertRaises(harness.AcceptanceFailure):
                 harness.assert_tree_unchanged(before, root, "archive")
+
+    @staticmethod
+    def _live_create_evidence(probe_latency_ms: object) -> dict[str, object]:
+        return {
+            "schemaVersion": 2,
+            "phase": "create",
+            "journeyId": "release-123456-789",
+            "board": {"id": "synthetic-id", "title": "synthetic"},
+            "persistence": {"registered": True, "boardCreated": True},
+            "http": [{"method": "POST", "path": "/api/auth/register", "status": 200}],
+            "liveOpenAi": {
+                "outcome": "passed",
+                "provider": "OpenAI",
+                "model": "gpt-5.6-luna",
+                "isMock": False,
+                "isProbed": True,
+                "verificationStatus": "verified",
+                "probeLatencyMs": probe_latency_ms,
+                "cardTitle": "Synthetic card",
+                "proposal": {
+                    "id": "synthetic-proposal",
+                    "statusBeforeApproval": "Pending",
+                    "statusAfterApproval": "Approved",
+                    "statusAfterApply": "Applied",
+                    "operationCount": 1,
+                },
+                "cardCounts": {"beforeProposal": 0, "afterApproval": 0, "afterApply": 1},
+            },
+        }
 
 
 if __name__ == "__main__":

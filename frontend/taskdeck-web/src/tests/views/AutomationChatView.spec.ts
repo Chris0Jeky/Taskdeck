@@ -287,6 +287,7 @@ describe('AutomationChatView', () => {
       isMock: false,
       isProbed: true,
       verificationStatus: 'verified',
+      probeLatencyMs: 87,
     })
 
     const wrapper = mountView()
@@ -294,7 +295,9 @@ describe('AutomationChatView', () => {
 
     expect(wrapper.text()).toContain('Live LLM verified')
     expect(wrapper.text()).toContain('probe confirmed reachability')
-    expect(wrapper.get('[data-llm-health-state="verified"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Probe completed in 87 ms.')
+    const status = wrapper.get('[data-llm-health-state="verified"]')
+    expect(status.attributes('data-llm-probe-latency-ms')).toBe('87')
   })
 
   it('shows a failed banner when probe confirms provider is unreachable', async () => {
@@ -306,6 +309,7 @@ describe('AutomationChatView', () => {
       isMock: false,
       isProbed: true,
       verificationStatus: 'failed',
+      probeLatencyMs: 143,
     })
 
     const wrapper = mountView()
@@ -313,7 +317,54 @@ describe('AutomationChatView', () => {
 
     expect(wrapper.text()).toContain('LLM verification failed')
     expect(wrapper.text()).toContain('OpenAI (gpt-4o-mini) verification failed: Connection refused')
-    expect(wrapper.get('[data-llm-health-state="failed"]').exists()).toBe(true)
+    const status = wrapper.get('[data-llm-health-state="failed"]')
+    expect(status.attributes('data-llm-probe-latency-ms')).toBe('143')
+  })
+
+  it.each([0, -1, 300_001, 1.5, Number.NaN])(
+    'does not display invalid probe latency %s',
+    async (probeLatencyMs) => {
+      mocks.getHealth.mockResolvedValue({
+        isAvailable: true,
+        providerName: 'OpenAI',
+        errorMessage: null,
+        model: 'gpt-5.6-luna',
+        isMock: false,
+        isProbed: true,
+        verificationStatus: 'verified',
+        probeLatencyMs,
+      })
+
+      const wrapper = mountView()
+      await waitForAsyncUi()
+
+      expect(wrapper.text()).not.toContain('Probe completed in')
+      expect(wrapper.get('[data-llm-health-state="verified"]').attributes())
+        .not.toHaveProperty('data-llm-probe-latency-ms')
+    },
+  )
+
+  it.each([
+    { isMock: true, isProbed: true, healthState: 'mock' },
+    { isMock: false, isProbed: false, healthState: 'configured' },
+  ])('does not display probe latency for mock or passive health', async ({ isMock, isProbed, healthState }) => {
+    mocks.getHealth.mockResolvedValue({
+      isAvailable: true,
+      providerName: 'OpenAI',
+      errorMessage: null,
+      model: 'gpt-5.6-luna',
+      isMock,
+      isProbed,
+      verificationStatus: 'unverified',
+      probeLatencyMs: 22,
+    })
+
+    const wrapper = mountView()
+    await waitForAsyncUi()
+
+    expect(wrapper.text()).not.toContain('Probe completed in')
+    expect(wrapper.get(`[data-llm-health-state="${healthState}"]`).attributes())
+      .not.toHaveProperty('data-llm-probe-latency-ms')
   })
 
   it('shows failed banner with generic message when no error detail is provided', async () => {
