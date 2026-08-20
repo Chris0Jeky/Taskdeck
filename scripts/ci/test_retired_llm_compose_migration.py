@@ -109,7 +109,7 @@ def _compose_environment(source: Mapping[str, str]) -> dict[str, str]:
     environment.update(
         {
             "TASKDECK_JWT_SECRET": "synthetic-compose-only-jwt-secret-with-sufficient-length",
-            "TASKDECK_CONNECTORS_ENCRYPTION_KEY": "c3ludGhldGljLWNvbXBvc2Utb25seS1rZXktMzJiIQ==",
+            "TASKDECK_CONNECTORS_ENCRYPTION_KEY": "c3ludGhldGljLWNvbXBvc2Utb25seS1rZXktMzJiIQ==",  # gitleaks:allow -- synthetic fixture
         }
     )
     return environment
