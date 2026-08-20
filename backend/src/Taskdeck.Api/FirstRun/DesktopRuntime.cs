@@ -46,11 +46,11 @@ internal static class DesktopRuntime
     }
 
     internal static bool IsBootstrapHeadlessEnvironment(bool isPackagedDesktop)
-        => IsExplicitHeadlessOrContainerEnvironment()
+        => IsExplicitHeadlessEnvironment()
             || (!isPackagedDesktop && IsCiEnvironment());
 
     internal static bool IsBrowserSuppressedEnvironment()
-        => IsExplicitHeadlessOrContainerEnvironment() || IsCiEnvironment();
+        => IsExplicitHeadlessEnvironment() || IsCiEnvironment();
 
     internal static bool ResolveBootstrapHeadless(
         bool isPackagedDesktop,
@@ -230,10 +230,10 @@ internal static class DesktopRuntime
             || HasValue(Environment.GetEnvironmentVariable("TF_BUILD"))
             || HasValue(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
 
-    private static bool IsExplicitHeadlessOrContainerEnvironment()
-        => HasValue(Environment.GetEnvironmentVariable("TASKDECK_HEADLESS"))
-            || HasValue(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"))
-            || HasValue(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINERS"));
+    // Taskdeck's container images set TASKDECK_HEADLESS explicitly. Do not make ambient .NET
+    // container flags change the established generic server or standalone MCP persistence posture.
+    private static bool IsExplicitHeadlessEnvironment()
+        => HasValue(Environment.GetEnvironmentVariable("TASKDECK_HEADLESS"));
 
     private static bool IsLoopbackHost(string host)
         => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
