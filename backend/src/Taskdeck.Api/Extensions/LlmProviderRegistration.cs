@@ -13,11 +13,24 @@ namespace Taskdeck.Api.Extensions;
 public static class LlmProviderRegistration
 {
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+    private const string RetiredComposeWrapperPresenceKey =
+        "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
+    private const string RetiredComposeWrapperMessage =
+        "The retired Docker Compose variable TASKDECK_LLM_GEMINI_API_KEY is set. Remove it and configure " +
+        "TASKDECK_LLM_OPENAI_API_KEY with TASKDECK_LLM_PROVIDER=OpenAI, or select OpenAICompatible, Ollama, or Mock.";
 
     public static IServiceCollection AddLlmProviders(
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        if (string.Equals(
+                configuration[RetiredComposeWrapperPresenceKey],
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(RetiredComposeWrapperMessage);
+        }
+
         var llmSection = configuration.GetSection("Llm");
         LlmProviderSelectionPolicy.ThrowIfRetiredProvider(llmSection["Provider"]);
         if (llmSection.GetChildren().Any(section =>

@@ -58,6 +58,52 @@ public class LlmProviderRegistrationTests
             .WithMessage("*remove the retired Gemini settings section*");
     }
 
+    [Theory]
+    [InlineData("true")]
+    [InlineData("TRUE")]
+    [InlineData("TrUe")]
+    public void AddLlmProviders_ShouldRejectRetiredComposeWrapperPresenceMarker(string marker)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TaskdeckMigration:RetiredLlmProviderConfigurationPresent"] = marker,
+                ["Llm:Provider"] = "Mock"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*TASKDECK_LLM_GEMINI_API_KEY*")
+            .WithMessage("*TASKDECK_LLM_OPENAI_API_KEY*")
+            .WithMessage("*OpenAICompatible*")
+            .WithMessage("*Ollama*")
+            .WithMessage("*Mock*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("false")]
+    [InlineData(" true ")]
+    public void AddLlmProviders_ShouldIgnoreInactiveRetiredComposeWrapperPresenceMarker(string? marker)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TaskdeckMigration:RetiredLlmProviderConfigurationPresent"] = marker,
+                ["Llm:Provider"] = "Mock"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void AddLlmProviders_ResolvesOpenAiCompatibleProvider_WhenSelectionIsValid()
     {

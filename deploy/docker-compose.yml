@@ -37,6 +37,7 @@ services:
       Auth__Registration__Mode: ${TASKDECK_REGISTRATION_MODE:-Closed}
       Llm__EnableLiveProviders: ${TASKDECK_LLM_ENABLE_LIVE_PROVIDERS:-false}
       Llm__Provider: ${TASKDECK_LLM_PROVIDER:-Mock}
+      TaskdeckMigration__RetiredLlmProviderConfigurationPresent: "${TASKDECK_LLM_GEMINI_API_KEY:+true}"
       Llm__OpenAi__ApiKey: ${TASKDECK_LLM_OPENAI_API_KEY:-}
       Llm__OpenAiCompatible__ApiKey: ${TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY:-}
       Llm__OpenAiCompatible__BaseUrl: ${TASKDECK_LLM_OPENAI_COMPATIBLE_BASE_URL:-}
