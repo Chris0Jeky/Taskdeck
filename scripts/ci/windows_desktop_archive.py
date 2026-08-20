@@ -31,8 +31,13 @@ from typing import Any, Mapping
 
 
 READY_PATTERN = re.compile(r"^TASKDECK_DESKTOP_READY url=(http://127\.0\.0\.1:([1-9]\d{0,4}))$")
+BOOTSTRAP_IDENTITY_PREFIX = "TASKDECK_DESKTOP_BOOTSTRAP"
+BOOTSTRAP_IDENTITY_PATTERN = re.compile(
+    r"^TASKDECK_DESKTOP_BOOTSTRAP jwt_created=(true|false) connector_created=(true|false)$"
+)
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
-EVIDENCE_SCHEMA_VERSION = 2
+PHASE_EVIDENCE_SCHEMA_VERSION = 2
+FINAL_EVIDENCE_SCHEMA_VERSION = 3
 MAX_PROBE_LATENCY_MS = 300_000
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
@@ -78,11 +83,35 @@ class AcceptanceFailure(RuntimeError):
     """Sanitized acceptance failure; messages never include raw process/provider data."""
 
 
+def validate_bootstrap_identity_markers(markers: list[str]) -> dict[str, bool]:
+    if not markers:
+        raise AcceptanceFailure("The packaged process did not report bootstrap identity lifecycle.")
+    if len(markers) != 1:
+        raise AcceptanceFailure("The packaged process reported duplicate bootstrap identity lifecycle.")
+
+    match = BOOTSTRAP_IDENTITY_PATTERN.fullmatch(markers[0])
+    if match is None:
+        raise AcceptanceFailure("The packaged process reported malformed bootstrap identity lifecycle.")
+    return {
+        "jwtCreated": match.group(1) == "true",
+        "connectorCreated": match.group(2) == "true",
+    }
+
+
+def require_bootstrap_identity(
+    actual: Mapping[str, bool],
+    expected: Mapping[str, bool],
+) -> None:
+    if actual != expected:
+        raise AcceptanceFailure("The packaged bootstrap identity lifecycle did not match the clean-run gate.")
+
+
 class ProcessMonitor:
     def __init__(self, process: subprocess.Popen[str]) -> None:
         self.process = process
         self.markers: queue.Queue[str] = queue.Queue()
         self.seen_markers: set[str] = set()
+        self.bootstrap_identity_markers: list[str] = []
         self._thread = threading.Thread(target=self._drain, daemon=True)
         self._thread.start()
 
@@ -93,10 +122,13 @@ class ProcessMonitor:
             if line.startswith("TASKDECK_DESKTOP_"):
                 marker_name = line.split(maxsplit=1)[0]
                 self.seen_markers.add(marker_name)
+                if line.startswith(BOOTSTRAP_IDENTITY_PREFIX):
+                    self.bootstrap_identity_markers.append(line)
                 self.markers.put(line)
 
-    def wait_for_ready(self, timeout_seconds: float = 120.0) -> tuple[str, int]:
+    def wait_for_ready(self, timeout_seconds: float = 120.0) -> tuple[str, int, dict[str, bool]]:
         deadline = time.monotonic() + timeout_seconds
+        bootstrap_identity_markers: list[str] = []
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 raise AcceptanceFailure("The packaged process exited before readiness.")
@@ -106,13 +138,24 @@ class ProcessMonitor:
                 continue
             if marker.startswith("TASKDECK_DESKTOP_FATAL"):
                 raise AcceptanceFailure("The packaged process reported a redacted startup failure.")
+            if marker.startswith(BOOTSTRAP_IDENTITY_PREFIX):
+                bootstrap_identity_markers.append(marker)
+                continue
             match = READY_PATTERN.fullmatch(marker)
             if match:
                 port = int(match.group(2))
                 if not 1 <= port <= 65535:
                     raise AcceptanceFailure("The packaged process reported an invalid loopback port.")
-                return match.group(1), port
+                bootstrap_identity = validate_bootstrap_identity_markers(
+                    bootstrap_identity_markers
+                )
+                return match.group(1), port, bootstrap_identity
         raise AcceptanceFailure("The packaged process did not report readiness within the bounded wait.")
+
+    def wait_for_output_completion(self, timeout_seconds: float = 2.0) -> None:
+        self._thread.join(timeout=timeout_seconds)
+        if self._thread.is_alive():
+            raise AcceptanceFailure("The packaged process output did not close after shutdown.")
 
 
 def sha256_file(path: Path) -> str:
@@ -290,6 +333,8 @@ def stop_packaged_process(monitor: ProcessMonitor, require_clean: bool = True) -
     if require_clean:
         if process.returncode not in (0, None):
             raise AcceptanceFailure("The packaged process returned a non-zero code after Ctrl+Break.")
+        monitor.wait_for_output_completion()
+        validate_bootstrap_identity_markers(list(monitor.bootstrap_identity_markers))
         required_markers = {"TASKDECK_DESKTOP_SHUTTING_DOWN", "TASKDECK_DESKTOP_STOPPED"}
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline and not required_markers.issubset(monitor.seen_markers):
@@ -408,7 +453,7 @@ def validate_phase_evidence(value: Any, expected_phase: str, journey_id: str) ->
     if not isinstance(value, dict):
         raise AcceptanceFailure("Packaged Playwright evidence is not an object.")
     allowed_top = {"schemaVersion", "phase", "journeyId", "board", "persistence", "http", "liveOpenAi"}
-    if set(value) != allowed_top or value.get("schemaVersion") != EVIDENCE_SCHEMA_VERSION:
+    if set(value) != allowed_top or value.get("schemaVersion") != PHASE_EVIDENCE_SCHEMA_VERSION:
         raise AcceptanceFailure("Packaged Playwright evidence has an unexpected schema.")
     if value.get("phase") != expected_phase or value.get("journeyId") != journey_id:
         raise AcceptanceFailure("Packaged Playwright evidence identity does not match the harness journey.")
@@ -526,6 +571,47 @@ def _reject_forbidden_evidence_keys(value: Any) -> None:
             _reject_forbidden_evidence_keys(nested)
 
 
+def build_final_evidence(
+    archive_name: str,
+    archive_hash: str,
+    first_http: dict[str, Any],
+    second_http: dict[str, Any],
+    first_bootstrap_identity: dict[str, bool],
+    second_bootstrap_identity: dict[str, bool],
+    create_evidence: dict[str, Any],
+    restart_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    for identity in (first_bootstrap_identity, second_bootstrap_identity):
+        _require_exact_keys(identity, {"jwtCreated", "connectorCreated"}, "bootstrap identity")
+        if any(type(identity[key]) is not bool for key in ("jwtCreated", "connectorCreated")):
+            raise AcceptanceFailure("Packaged bootstrap identity evidence is invalid.")
+
+    final_evidence = {
+        "schemaVersion": FINAL_EVIDENCE_SCHEMA_VERSION,
+        "release": {"archive": archive_name, "sha256": archive_hash, "archiveUnchanged": True},
+        "launches": [
+            {
+                "extraction": 1,
+                "heldDefaultPort": True,
+                "usedFallbackPort": True,
+                "bootstrapIdentity": dict(first_bootstrap_identity),
+                "http": first_http,
+            },
+            {
+                "extraction": 2,
+                "heldDefaultPort": False,
+                "usedDefaultPort": True,
+                "bootstrapIdentity": dict(second_bootstrap_identity),
+                "http": second_http,
+            },
+        ],
+        "create": create_evidence,
+        "restart": restart_evidence,
+    }
+    _reject_forbidden_evidence_keys(final_evidence)
+    return final_evidence
+
+
 def create_temp_root(parent: Path) -> Path:
     parent = parent.resolve()
     if not parent.is_absolute() or not parent.is_dir():
@@ -614,7 +700,11 @@ def run(argv: list[str]) -> int:
 
         first_monitor = start_packaged_process(executable_one, unrelated_cwd, app_environment)
         monitors.append(first_monitor)
-        first_url, first_port = first_monitor.wait_for_ready()
+        first_url, first_port, first_bootstrap_identity = first_monitor.wait_for_ready()
+        require_bootstrap_identity(
+            first_bootstrap_identity,
+            {"jwtCreated": True, "connectorCreated": True},
+        )
         if first_port == 5000:
             raise AcceptanceFailure("The packaged process did not fall back while port 5000 was held.")
         port_guard.close()
@@ -642,7 +732,11 @@ def run(argv: list[str]) -> int:
 
         second_monitor = start_packaged_process(executable_two, unrelated_cwd, app_environment)
         monitors.append(second_monitor)
-        second_url, second_port = second_monitor.wait_for_ready()
+        second_url, second_port, second_bootstrap_identity = second_monitor.wait_for_ready()
+        require_bootstrap_identity(
+            second_bootstrap_identity,
+            {"jwtCreated": False, "connectorCreated": False},
+        )
         if second_port != 5000:
             raise AcceptanceFailure("The packaged process did not prefer port 5000 after it became free.")
         second_http = request_health_and_spa(second_url)
@@ -679,17 +773,16 @@ def run(argv: list[str]) -> int:
             "restart",
             journey_id,
         )
-        final_evidence = {
-            "schemaVersion": EVIDENCE_SCHEMA_VERSION,
-            "release": {"archive": archive.name, "sha256": archive_hash, "archiveUnchanged": True},
-            "launches": [
-                {"extraction": 1, "heldDefaultPort": True, "usedFallbackPort": True, "http": first_http},
-                {"extraction": 2, "heldDefaultPort": False, "usedDefaultPort": True, "http": second_http},
-            ],
-            "create": create_evidence,
-            "restart": restart_evidence,
-        }
-        _reject_forbidden_evidence_keys(final_evidence)
+        final_evidence = build_final_evidence(
+            archive.name,
+            archive_hash,
+            first_http,
+            second_http,
+            first_bootstrap_identity,
+            second_bootstrap_identity,
+            create_evidence,
+            restart_evidence,
+        )
         evidence_path.write_text(json.dumps(final_evidence, indent=2) + "\n", encoding="utf-8")
         live_result = create_evidence["liveOpenAi"]
         outcome = live_result["outcome"]
