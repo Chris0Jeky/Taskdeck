@@ -37,7 +37,12 @@ Choose the path that matches how you want to evaluate Taskdeck.
 
 ### 1. Desktop release
 
-The self-contained desktop executable is the intended quickest path for v0.1. No public desktop build is published yet; use the [Releases page](https://github.com/Chris0Jeky/Taskdeck/releases) as the download placeholder and follow [REVIVAL-07](https://github.com/Chris0Jeky/Taskdeck/issues/1303) for release readiness.
+The self-contained desktop executable is the quickest path for v0.1.x. **Windows 10/11 x64 is the
+only supported 0.1.x desktop platform.** Download the Windows ZIP and checksum from the
+[latest public release](https://github.com/Chris0Jeky/Taskdeck/releases/latest), then follow the
+[Windows quick start](docs/releases/WINDOWS_QUICK_START.md) for verification, extraction, launch,
+registration, shutdown, backup, and optional OpenAI setup. The non-Windows archives attached to
+v0.1.0 remain available as historical artifacts; they are not a continuing support promise.
 
 ### 2. Docker
 
@@ -86,7 +91,13 @@ cd Taskdeck
 scripts/dev-up.sh --seed
 ```
 
-The seeded account is `demo` / `demo123`. Open the frontend URL printed by the launcher (normally `http://localhost:5173`). Stop it with `.\scripts\dev-up.ps1 -Stop` or `scripts/dev-up.sh --stop`.
+The seeded account is `demo` / `demo123`. These source-only credentials are not present in the
+Windows release. The source launcher intentionally leaves the API and frontend running as background
+processes, prints their PIDs and actual URLs, and records them for the matching stop command. Open the
+printed frontend URL (normally `http://localhost:5173`) and stop the whole stack with
+`.\scripts\dev-up.ps1 -Stop` or `scripts/dev-up.sh --stop`; closing the launching shell is not the
+documented stop path. See the [source startup troubleshooting](docs/product/DEMO_PLAYBOOK.md#source-startup-troubleshooting)
+if readiness, ports, or a stale PID file blocks startup.
 
 For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
