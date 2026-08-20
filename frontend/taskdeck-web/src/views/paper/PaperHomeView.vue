@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import PaperCard from '../../components/paper/PaperCard.vue'
 import PaperEmptyState from '../../components/paper/PaperEmptyState.vue'
 import PaperKbd from '../../components/paper/PaperKbd.vue'
@@ -18,13 +19,25 @@ import { useCaptureStore } from '../../store/captureStore'
  *     derived from the local clock at render time.
  *   • A `tk-lede` subtitle summarising today's queue.
  *   • Up to three "queued for you" cards (proposals first — ember-accented —
- *     followed by triage carry-overs, hairline only).
+ *     followed by captures awaiting triage, hairline only).
+ *
  *   • A single-line quick capture row that wires through the existing
  *     captureStore so we don't duplicate dispatch logic.
  *
  * Data is read from the existing `workspaceStore.homeSummary` cache —
  * AppShell prefetches it on mount, so we do not refetch here unless the
  * cache is empty.
+ *
+ * Day-boundary contract (issue #1768): the Home workload counters are pure
+ * STATUS counts — `capturesNeedingTriage` is `NewCount + FailedCount` in
+ * `WorkspaceService.GetHomeAsync`, with no date predicate anywhere in the
+ * chain. This surface must therefore never describe them as belonging to a
+ * particular day ("from yesterday", "carry-over", "overnight"): a capture
+ * saved seconds ago is `New` and would be mislabelled in every timezone.
+ * Copy here stays date-neutral unless the payload grows a real timestamp.
+ * That constraint now applies to the `home.ts` catalog of EVERY locale under
+ * `src/locales`, not just to this file — each one restates it in its header
+ * (ADR-0054).
  */
 
 interface QueueCardModel {
@@ -36,6 +49,7 @@ interface QueueCardModel {
   isProposal: boolean
 }
 
+const { t } = useI18n()
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
@@ -64,10 +78,33 @@ function resolveFirstName(username: string | null | undefined): string | null {
   return token.toLocaleLowerCase().replace(/^\p{L}/u, (first) => first.toLocaleUpperCase())
 }
 
-function periodFor(hour: number): 'morning' | 'afternoon' | 'evening' {
+type Period = 'morning' | 'afternoon' | 'evening'
+
+function periodFor(hour: number): Period {
   if (hour < 12) return 'morning'
   if (hour < 17) return 'afternoon'
   return 'evening'
+}
+
+// Static key maps, not `t(\`home.greeting.${period}\`)`. Message keys assembled
+// at runtime are invisible to grep and to any future key-usage lint. A typo in a
+// static key here is NOT caught by the catalog guard either — that guard only
+// checks the en/it/es catalogs against each other, not view references against
+// the catalogs, so a key absent from all three still renders its raw path with
+// no warning (fallback warnings are off by design). What the static literals buy
+// is greppability: they keep every referenced key visible so a future key-usage
+// lint can cross-check them against the catalogs, which a runtime-assembled key
+// would defeat.
+const GREETING_KEYS: Record<Period, string> = {
+  morning: 'home.greeting.morning',
+  afternoon: 'home.greeting.afternoon',
+  evening: 'home.greeting.evening',
+}
+
+const PERIOD_KEYS: Record<Period, string> = {
+  morning: 'home.period.morning',
+  afternoon: 'home.period.afternoon',
+  evening: 'home.period.evening',
 }
 
 const currentHour = ref(new Date().getHours())
@@ -75,36 +112,41 @@ const currentHour = ref(new Date().getHours())
 const greeting = computed(() => {
   const period = periodFor(currentHour.value)
   const name = resolveFirstName(session.username)
-  const opener = name ? `Good ${period}` : 'Hello'
-  return { opener, name, period }
+  // Keyed per period rather than composed from "Good {period}": the greeting is
+  // one fixed expression in most languages (Buongiorno, Buenas tardes) and does
+  // not survive being assembled from parts.
+  const opener = name ? t(GREETING_KEYS[period]) : t('home.greeting.anonymous')
+  return { opener, name, period, periodLabel: t(PERIOD_KEYS[period]) }
 })
 
 // ── Lede / queue summary ─────────────────────────────────────────────────
 
 const proposalsAwaiting = computed(() => summary.value?.workload.proposalsPendingReview ?? 0)
-const carryOvers = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
+// Status count, not a dated bucket — see the day-boundary contract above.
+const capturesAwaitingTriage = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
 const showLoadingState = computed(() => workspace.homeLoading && !summary.value)
 const showErrorState = computed(() => Boolean(workspace.homeError))
 
 const ledeText = computed(() => {
   if (showErrorState.value) {
-    return workspace.homeError ?? 'Workspace summary could not be loaded.'
+    return workspace.homeError ?? t('home.error')
   }
   if (showLoadingState.value || !summary.value) {
-    return 'Loading your workspace summary...'
+    return t('home.loading')
   }
   const p = proposalsAwaiting.value
-  const c = carryOvers.value
+  const c = capturesAwaitingTriage.value
   if (p === 0 && c === 0) {
-    return 'Nothing waiting. Good.'
+    return ''
   }
   const parts: string[] = []
   if (p > 0) {
-    parts.push(`${p} awaiting review`)
+    parts.push(t('home.lede.awaitingReview', { count: p }))
   }
   if (c > 0) {
-    parts.push(`${c} carry-over${c === 1 ? '' : 's'} from yesterday`)
+    parts.push(t('home.lede.awaitingTriage', { count: c }))
   }
+  // The separator is punctuation, not copy — no locale changes a middot.
   return parts.join(' · ')
 })
 
@@ -123,26 +165,33 @@ const queueCards = computed<QueueCardModel[]>(() => {
     .forEach((action, index) => {
       cards.push({
         serial: `#${String(index + 1).padStart(3, '0')}`,
+        // action.title / action.description are SERVER-supplied strings and are
+        // not catalog keys — the backend does not know the client's locale.
+        // Localizing them is a separate, backend-shaped slice.
         title: action.title,
         meta: action.description,
-        tagLabel: 'PROPOSED',
+        tagLabel: t('home.queue.tagProposed'),
         tagTone: 'ember',
         isProposal: true,
       })
     })
 
-  // Triage carry-overs — hairline only, no ember.
+  // Captures awaiting triage — hairline only, no ember. Date-neutral copy.
   if (cards.length < 3 && s.workload.capturesNeedingTriage > 0) {
     const remaining = 3 - cards.length
-    const carryCount = Math.min(remaining, s.workload.capturesNeedingTriage)
-    for (let i = 0; i < carryCount; i += 1) {
+    const triageCount = Math.min(remaining, s.workload.capturesNeedingTriage)
+    for (let i = 0; i < triageCount; i += 1) {
       cards.push({
         serial: `#${String(cards.length + 1).padStart(3, '0')}`,
         title: i === 0
-          ? `Triage ${s.workload.capturesNeedingTriage} capture${s.workload.capturesNeedingTriage === 1 ? '' : 's'} from yesterday`
-          : 'Triage carry-over',
-        meta: 'inbox · awaiting decision',
-        tagLabel: 'CARRY-OVER',
+          ? t(
+              'home.queue.triageCard',
+              { count: s.workload.capturesNeedingTriage },
+              s.workload.capturesNeedingTriage,
+            )
+          : t('home.queue.triageCardMore'),
+        meta: t('home.queue.triageMeta'),
+        tagLabel: t('home.queue.tagTriage'),
         tagTone: 'mute',
         isProposal: false,
       })
@@ -286,7 +335,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   <div class="paper-home" data-testid="paper-home">
     <header class="paper-home__hero">
       <p class="tk-eyebrow paper-home__eyebrow" data-testid="paper-home-period">
-        Workspace · {{ greeting.period }}
+        {{ $t('home.eyebrow', { period: greeting.periodLabel }) }}
       </p>
       <h1 class="tk-h1 paper-home__greeting" data-testid="paper-home-greeting">
         <template v-if="greeting.name">
@@ -296,7 +345,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
           {{ greeting.opener }}.
         </template>
       </h1>
-      <p class="tk-lede paper-home__lede" data-testid="paper-home-lede">
+      <p v-if="ledeText" class="tk-lede paper-home__lede" data-testid="paper-home-lede">
         {{ ledeText }}
       </p>
     </header>
@@ -310,7 +359,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     >
       <PaperCard variant="flat">
         <p class="tk-meta paper-home__state-text">
-          Loading your workspace summary...
+          {{ $t('home.loading') }}
         </p>
       </PaperCard>
     </section>
@@ -334,8 +383,8 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
       data-testid="paper-home-first-board"
     >
       <PaperEmptyState tone="ember" mark="✦">
-        <template #title>Shape your first useful board.</template>
-        Start blank or reuse a starter workflow. The existing setup guide will create the board and take you straight into it.
+        <template #title>{{ $t('home.firstBoard.title') }}</template>
+        {{ $t('home.firstBoard.body') }}
         <template #cta>
           <button
             type="button"
@@ -343,7 +392,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
             data-testid="paper-home-setup-cta"
             @click="openSetupModal"
           >
-            Start guided setup
+            {{ $t('home.firstBoard.cta') }}
           </button>
         </template>
       </PaperEmptyState>
@@ -356,14 +405,18 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     >
       <PaperCard variant="flat">
         <p class="tk-meta paper-home__empty-text">
-          Nothing waiting. Good.
+          {{ $t('home.empty') }}
         </p>
       </PaperCard>
     </section>
 
-    <section v-else class="paper-home__queue" aria-label="Queued for you">
-      <h2 class="tk-eyebrow paper-home__queue-title">II · Queued for you</h2>
+    <section v-else class="paper-home__queue" :aria-label="$t('home.queue.label')">
+      <h2 class="tk-eyebrow paper-home__queue-title">{{ $t('home.queue.title') }}</h2>
       <div class="paper-home__queue-grid">
+        <!--
+          `carryover` here is a legacy structural id meaning "not a proposal";
+          it carries no date claim. User-visible copy stays date-neutral (#1768).
+        -->
         <PaperCard
           v-for="card in queueCards"
           :key="card.serial"
@@ -398,12 +451,14 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     >
       <div class="paper-home__milestones-heading">
         <div>
-          <p class="tk-eyebrow">III · Your first loop</p>
+          <p class="tk-eyebrow">{{ $t('home.milestones.eyebrow') }}</p>
           <h2 id="paper-home-milestones-title" class="paper-home__milestones-title">
-            From thought to trusted action
+            {{ $t('home.milestones.title') }}
           </h2>
         </div>
-        <span class="tk-meta">{{ completedMilestones }}/{{ onboarding.steps.length }} complete</span>
+        <span class="tk-meta">
+          {{ $t('home.milestones.progress', { completed: completedMilestones, total: onboarding.steps.length }) }}
+        </span>
       </div>
       <ol class="paper-home__milestone-list">
         <li
@@ -418,24 +473,26 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
             <strong>{{ step.title }}</strong>
             <small>{{ step.description }}</small>
           </span>
-          <span class="sr-only">{{ step.isComplete ? 'Complete' : 'Not complete' }}</span>
+          <span class="sr-only">
+            {{ step.isComplete ? $t('home.milestones.stepComplete') : $t('home.milestones.stepIncomplete') }}
+          </span>
         </li>
       </ol>
       <p class="tk-meta paper-home__milestones-note">
-        These milestones stay in this workspace; they are not sent as analytics.
+        {{ $t('home.milestones.note') }}
       </p>
     </section>
 
-    <section class="paper-home__capture" aria-label="Quick capture">
+    <section class="paper-home__capture" :aria-label="$t('home.capture.label')">
       <form class="paper-home__capture-row" @submit.prevent="submitCapture">
-        <label class="sr-only" for="paper-home-capture-input">Capture a thought</label>
+        <label class="sr-only" for="paper-home-capture-input">{{ $t('home.capture.inputLabel') }}</label>
         <input
           id="paper-home-capture-input"
           ref="captureInputRef"
           v-model="captureText"
           class="paper-home__capture-input"
           type="text"
-          placeholder="Capture a thought..."
+          :placeholder="$t('home.capture.placeholder')"
           autocomplete="off"
           :disabled="captureBusy"
           data-testid="paper-home-capture-input"

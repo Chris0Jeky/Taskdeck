@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { useBoardStore } from '../store/boardStore'
 import { useMetricsStore } from '../store/metricsStore'
 import { useToastStore } from '../store/toastStore'
@@ -147,25 +148,25 @@ const maxWipCount = computed(() => {
 </script>
 
 <template>
-  <div class="td-metrics">
-    <header class="td-metrics__hero">
-      <div class="td-metrics__hero-copy">
-        <span class="td-metrics__eyebrow">Analytics</span>
-        <h1 class="td-page-title">Board Metrics</h1>
-        <p class="td-metrics__subtitle">
+  <div class="paper-metrics">
+    <header class="paper-metrics__hero">
+      <div class="paper-metrics__hero-copy">
+        <span class="tk-eyebrow paper-metrics__eyebrow">Analytics</span>
+        <h1 class="tk-h1 paper-metrics__title">Board Metrics</h1>
+        <p class="tk-lede paper-metrics__subtitle">
           Throughput, cycle time, work-in-progress, and blocked card trends for your boards.
         </p>
       </div>
     </header>
 
     <!-- Filters -->
-    <section class="td-metrics__filters" aria-label="Metric filters">
-      <div class="td-metrics__filter-group">
-        <label for="board-select" class="td-metrics__label">Board</label>
+    <section class="paper-metrics__filters" aria-label="Metric filters">
+      <div class="paper-metrics__filter-group">
+        <label for="board-select" class="paper-metrics__label">Board</label>
         <select
           id="board-select"
           v-model="selectedBoardId"
-          class="td-metrics__select"
+          class="paper-metrics__select"
           :disabled="boardsLoading"
         >
           <option value="" disabled>Select a board</option>
@@ -175,9 +176,9 @@ const maxWipCount = computed(() => {
         </select>
       </div>
 
-      <div class="td-metrics__filter-group">
-        <label for="range-select" class="td-metrics__label">Date Range</label>
-        <select id="range-select" v-model="dateRangeDays" class="td-metrics__select">
+      <div class="paper-metrics__filter-group">
+        <label for="range-select" class="paper-metrics__label">Date Range</label>
+        <select id="range-select" v-model="dateRangeDays" class="paper-metrics__select">
           <option :value="7">Last 7 days</option>
           <option :value="14">Last 14 days</option>
           <option :value="30">Last 30 days</option>
@@ -186,41 +187,41 @@ const maxWipCount = computed(() => {
         </select>
       </div>
 
-      <div class="td-metrics__filter-group td-metrics__filter-group--action">
-        <button
-          class="td-btn td-btn--secondary td-btn--sm"
+      <div class="paper-metrics__filter-group paper-metrics__filter-group--action">
+        <PaperHLBtn
+          class="paper-metrics__export-btn"
           :disabled="!hasData || exporting"
           @click="exportCsv"
           title="Export current metrics as CSV"
         >
           {{ exporting ? 'Exporting...' : 'Export CSV' }}
-        </button>
+        </PaperHLBtn>
       </div>
     </section>
 
     <!-- Loading state -->
-    <div v-if="loading" class="td-metrics__skeleton" role="status" aria-live="polite">
+    <div v-if="loading" class="paper-metrics__skeleton" role="status" aria-live="polite">
       <span class="sr-only">Loading metrics...</span>
       <!-- Summary card skeletons -->
-      <div class="td-metrics__summary">
-        <div v-for="n in 4" :key="n" class="td-metrics__card">
+      <div class="paper-metrics__summary">
+        <div v-for="n in 4" :key="n" class="paper-metrics__card">
           <TdSkeleton width="100px" height="12px" />
           <TdSkeleton width="60px" height="28px" />
           <TdSkeleton width="80px" height="10px" />
         </div>
       </div>
       <!-- Chart skeleton -->
-      <div class="td-metrics__section">
+      <div class="paper-metrics__section">
         <TdSkeleton width="160px" height="18px" />
-        <div class="td-metrics__skeleton-chart">
+        <div class="paper-metrics__skeleton-chart">
           <TdSkeleton width="100%" height="200px" />
         </div>
       </div>
       <!-- WIP skeleton -->
-      <div class="td-metrics__section">
+      <div class="paper-metrics__section">
         <TdSkeleton width="120px" height="18px" />
-        <div class="td-metrics__skeleton-rows">
-          <div v-for="n in 3" :key="n" class="td-metrics__skeleton-wip-row">
+        <div class="paper-metrics__skeleton-rows">
+          <div v-for="n in 3" :key="n" class="paper-metrics__skeleton-wip-row">
             <TdSkeleton width="100px" height="14px" />
             <TdSkeleton width="100%" height="24px" />
             <TdSkeleton width="40px" height="14px" />
@@ -230,59 +231,59 @@ const maxWipCount = computed(() => {
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="td-metrics__state td-metrics__state--error" role="alert">
-      <p class="td-metrics__error-message">{{ error }}</p>
-      <button class="td-btn td-btn--primary td-btn--sm" @click="fetchMetrics">Retry</button>
+    <div v-else-if="error" class="paper-metrics__state paper-metrics__state--error" role="alert">
+      <p class="paper-metrics__error-message">{{ error }}</p>
+      <PaperHLBtn class="paper-metrics__retry" variant="ember" @click="fetchMetrics">Retry</PaperHLBtn>
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="!hasData && canFetch" class="td-metrics__state">
+    <div v-else-if="!hasData && canFetch" class="paper-metrics__state">
       <p>No metrics data available. Select a board to get started.</p>
     </div>
 
-    <div v-else-if="!canFetch" class="td-metrics__state">
+    <div v-else-if="!canFetch" class="paper-metrics__state">
       <p>Select a board above to view its metrics.</p>
     </div>
 
     <!-- Dashboard -->
-    <div v-else-if="hasData && metrics" class="td-metrics__dashboard">
+    <div v-else-if="hasData && metrics" class="paper-metrics__dashboard">
       <!-- Summary cards -->
-      <div class="td-metrics__summary">
-        <div class="td-metrics__card">
-          <span class="td-metrics__card-label">Total Throughput</span>
-          <span class="td-metrics__card-value">
+      <div class="paper-metrics__summary">
+        <div class="paper-metrics__card">
+          <span class="paper-metrics__card-label">Total Throughput</span>
+          <span class="paper-metrics__card-value">
             {{ metrics.throughput.reduce((sum, d) => sum + d.completedCount, 0) }}
           </span>
-          <span class="td-metrics__card-unit">cards completed</span>
+          <span class="paper-metrics__card-unit">cards completed</span>
         </div>
 
-        <div class="td-metrics__card">
-          <span class="td-metrics__card-label">Avg Cycle Time</span>
-          <span class="td-metrics__card-value">{{ metrics.averageCycleTimeDays }}</span>
-          <span class="td-metrics__card-unit">days</span>
+        <div class="paper-metrics__card">
+          <span class="paper-metrics__card-label">Avg Cycle Time</span>
+          <span class="paper-metrics__card-value">{{ metrics.averageCycleTimeDays }}</span>
+          <span class="paper-metrics__card-unit">days</span>
         </div>
 
-        <div class="td-metrics__card">
-          <span class="td-metrics__card-label">Current WIP</span>
-          <span class="td-metrics__card-value">{{ metrics.totalWip }}</span>
-          <span class="td-metrics__card-unit">cards in progress</span>
+        <div class="paper-metrics__card">
+          <span class="paper-metrics__card-label">Current WIP</span>
+          <span class="paper-metrics__card-value">{{ metrics.totalWip }}</span>
+          <span class="paper-metrics__card-unit">cards in progress</span>
         </div>
 
-        <div class="td-metrics__card" :class="{ 'td-metrics__card--alert': metrics.blockedCount > 0 }">
-          <span class="td-metrics__card-label">Blocked</span>
-          <span class="td-metrics__card-value">{{ metrics.blockedCount }}</span>
-          <span class="td-metrics__card-unit">cards blocked</span>
+        <div class="paper-metrics__card" :class="{ 'paper-metrics__card--alert': metrics.blockedCount > 0 }">
+          <span class="paper-metrics__card-label">Blocked</span>
+          <span class="paper-metrics__card-value">{{ metrics.blockedCount }}</span>
+          <span class="paper-metrics__card-unit">cards blocked</span>
         </div>
       </div>
 
       <!-- Forecast section -->
-      <section class="td-metrics__section td-metrics__forecast" aria-label="Completion forecast">
-        <h2 class="td-metrics__section-title">Completion Forecast</h2>
+      <section class="paper-metrics__section paper-metrics__forecast" aria-label="Completion forecast">
+        <h2 class="paper-metrics__section-title">Completion Forecast</h2>
 
-        <div v-if="forecastLoading" class="td-metrics__forecast-loading" role="status">
+        <div v-if="forecastLoading" class="paper-metrics__forecast-loading" role="status">
           <span class="sr-only">Computing forecast...</span>
-          <div class="td-metrics__forecast-grid">
-            <div v-for="n in 4" :key="n" class="td-metrics__card">
+          <div class="paper-metrics__forecast-grid">
+            <div v-for="n in 4" :key="n" class="paper-metrics__card">
               <TdSkeleton width="80px" height="12px" />
               <TdSkeleton width="50px" height="24px" />
               <TdSkeleton width="70px" height="10px" />
@@ -290,71 +291,71 @@ const maxWipCount = computed(() => {
           </div>
         </div>
 
-        <div v-else-if="forecastError" class="td-metrics__forecast-error" role="alert">
+        <div v-else-if="forecastError" class="paper-metrics__forecast-error" role="alert">
           <p>{{ forecastError }}</p>
-          <button class="td-btn td-btn--ghost td-btn--sm" @click="fetchForecast">Retry</button>
+          <PaperHLBtn class="paper-metrics__retry" variant="ghost" @click="fetchForecast">Retry</PaperHLBtn>
         </div>
 
-        <div v-else-if="forecast" class="td-metrics__forecast-content">
+        <div v-else-if="forecast" class="paper-metrics__forecast-content">
           <!-- Estimate cards -->
-          <div class="td-metrics__forecast-grid">
-            <div class="td-metrics__card">
-              <span class="td-metrics__card-label">Remaining</span>
-              <span class="td-metrics__card-value">{{ forecast.remainingCards }}</span>
-              <span class="td-metrics__card-unit">cards left</span>
+          <div class="paper-metrics__forecast-grid">
+            <div class="paper-metrics__card">
+              <span class="paper-metrics__card-label">Remaining</span>
+              <span class="paper-metrics__card-value">{{ forecast.remainingCards }}</span>
+              <span class="paper-metrics__card-unit">cards left</span>
             </div>
 
-            <div class="td-metrics__card">
-              <span class="td-metrics__card-label">Avg Throughput</span>
-              <span class="td-metrics__card-value">{{ forecast.averageThroughputPerDay.toFixed(2) }}</span>
-              <span class="td-metrics__card-unit">cards / day</span>
+            <div class="paper-metrics__card">
+              <span class="paper-metrics__card-label">Avg Throughput</span>
+              <span class="paper-metrics__card-value">{{ forecast.averageThroughputPerDay.toFixed(2) }}</span>
+              <span class="paper-metrics__card-unit">cards / day</span>
             </div>
 
-            <div class="td-metrics__card">
-              <span class="td-metrics__card-label">Estimated Completion</span>
-              <span class="td-metrics__card-value td-metrics__card-value--date">
+            <div class="paper-metrics__card">
+              <span class="paper-metrics__card-label">Estimated Completion</span>
+              <span class="paper-metrics__card-value paper-metrics__card-value--date">
                 {{ forecast.estimatedCompletionDate ? formatDate(forecast.estimatedCompletionDate) : 'N/A' }}
               </span>
-              <span v-if="forecast.estimatedCompletionDate" class="td-metrics__card-unit">
+              <span v-if="forecast.estimatedCompletionDate" class="paper-metrics__card-unit">
                 ~{{ daysFromNow(forecast.estimatedCompletionDate) }} from now
               </span>
             </div>
 
-            <div class="td-metrics__card">
-              <span class="td-metrics__card-label">Data Points</span>
-              <span class="td-metrics__card-value">{{ forecast.dataPointCount }}</span>
-              <span class="td-metrics__card-unit">over {{ forecast.historyDaysUsed }} days</span>
+            <div class="paper-metrics__card">
+              <span class="paper-metrics__card-label">Data Points</span>
+              <span class="paper-metrics__card-value">{{ forecast.dataPointCount }}</span>
+              <span class="paper-metrics__card-unit">over {{ forecast.historyDaysUsed }} days</span>
             </div>
           </div>
 
           <!-- Confidence band -->
-          <div v-if="forecast.confidenceBand" class="td-metrics__confidence">
-            <h3 class="td-metrics__confidence-title">Confidence Range</h3>
-            <div class="td-metrics__confidence-band">
-              <div class="td-metrics__confidence-row">
-                <span class="td-metrics__confidence-label td-metrics__confidence-label--optimistic">Optimistic</span>
-                <span class="td-metrics__confidence-date">
+          <div v-if="forecast.confidenceBand" class="paper-metrics__confidence">
+            <h3 class="paper-metrics__confidence-title">Confidence Range</h3>
+            <div class="paper-metrics__confidence-band">
+              <div class="paper-metrics__confidence-row">
+                <span class="paper-metrics__confidence-label paper-metrics__confidence-label--optimistic">Optimistic</span>
+                <span class="paper-metrics__confidence-date">
                   {{ formatDate(forecast.confidenceBand.lowEstimate) }}
                 </span>
-                <span class="td-metrics__confidence-rate">
+                <span class="paper-metrics__confidence-rate">
                   ({{ forecast.confidenceBand.highThroughputPerDay.toFixed(2) }} cards/day)
                 </span>
               </div>
-              <div class="td-metrics__confidence-row td-metrics__confidence-row--expected">
-                <span class="td-metrics__confidence-label">Expected</span>
-                <span class="td-metrics__confidence-date">
+              <div class="paper-metrics__confidence-row paper-metrics__confidence-row--expected">
+                <span class="paper-metrics__confidence-label">Expected</span>
+                <span class="paper-metrics__confidence-date">
                   {{ formatDate(forecast.confidenceBand.expectedEstimate) }}
                 </span>
-                <span class="td-metrics__confidence-rate">
+                <span class="paper-metrics__confidence-rate">
                   ({{ forecast.confidenceBand.expectedThroughputPerDay.toFixed(2) }} cards/day)
                 </span>
               </div>
-              <div class="td-metrics__confidence-row">
-                <span class="td-metrics__confidence-label td-metrics__confidence-label--pessimistic">Pessimistic</span>
-                <span class="td-metrics__confidence-date">
+              <div class="paper-metrics__confidence-row">
+                <span class="paper-metrics__confidence-label paper-metrics__confidence-label--pessimistic">Pessimistic</span>
+                <span class="paper-metrics__confidence-date">
                   {{ formatDate(forecast.confidenceBand.highEstimate) }}
                 </span>
-                <span class="td-metrics__confidence-rate">
+                <span class="paper-metrics__confidence-rate">
                   ({{ forecast.confidenceBand.lowThroughputPerDay.toFixed(2) }} cards/day)
                 </span>
               </div>
@@ -362,17 +363,17 @@ const maxWipCount = computed(() => {
           </div>
 
           <!-- Caveats -->
-          <div v-if="forecast.caveats.length > 0" class="td-metrics__caveats" role="note">
-            <h3 class="td-metrics__caveats-title">Caveats</h3>
-            <ul class="td-metrics__caveats-list">
+          <div v-if="forecast.caveats.length > 0" class="paper-metrics__caveats" role="note">
+            <h3 class="paper-metrics__caveats-title">Caveats</h3>
+            <ul class="paper-metrics__caveats-list">
               <li v-for="(caveat, i) in forecast.caveats" :key="i">{{ caveat }}</li>
             </ul>
           </div>
 
           <!-- Assumptions -->
-          <details class="td-metrics__assumptions">
-            <summary class="td-metrics__assumptions-summary">Assumptions ({{ forecast.assumptions.length }})</summary>
-            <ul class="td-metrics__assumptions-list">
+          <details class="paper-metrics__assumptions">
+            <summary class="paper-metrics__assumptions-summary">Assumptions ({{ forecast.assumptions.length }})</summary>
+            <ul class="paper-metrics__assumptions-list">
               <li v-for="(assumption, i) in forecast.assumptions" :key="i">{{ assumption }}</li>
             </ul>
           </details>
@@ -380,48 +381,48 @@ const maxWipCount = computed(() => {
       </section>
 
       <!-- Throughput chart -->
-      <section class="td-metrics__section" aria-label="Throughput trend">
-        <h2 class="td-metrics__section-title">Throughput Trend</h2>
-        <div v-if="metrics.throughput.length === 0" class="td-metrics__empty-chart">
+      <section class="paper-metrics__section" aria-label="Throughput trend">
+        <h2 class="paper-metrics__section-title">Throughput Trend</h2>
+        <div v-if="metrics.throughput.length === 0" class="paper-metrics__empty-chart">
           <p>No completed cards in this period.</p>
         </div>
-        <div v-else class="td-metrics__bar-chart" role="img" aria-label="Throughput bar chart">
+        <div v-else class="paper-metrics__bar-chart" role="img" aria-label="Throughput bar chart">
           <div
             v-for="dp in metrics.throughput"
             :key="dp.date"
-            class="td-metrics__bar-group"
+            class="paper-metrics__bar-group"
           >
             <div
-              class="td-metrics__bar"
-              :style="{ '--td-bar-size': `${(dp.completedCount / maxThroughput) * 100}%` }"
+              class="paper-metrics__bar"
+              :style="{ '--pm-bar-size': `${(dp.completedCount / maxThroughput) * 100}%` }"
               :title="`${dp.completedCount} completed`"
             />
-            <span class="td-metrics__bar-label">{{ new Date(dp.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }}</span>
+            <span class="paper-metrics__bar-label">{{ new Date(dp.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }}</span>
           </div>
         </div>
       </section>
 
       <!-- WIP by column -->
-      <section class="td-metrics__section" aria-label="WIP by column">
-        <h2 class="td-metrics__section-title">WIP by Column</h2>
-        <div v-if="metrics.wipSnapshots.length === 0" class="td-metrics__empty-chart">
+      <section class="paper-metrics__section" aria-label="WIP by column">
+        <h2 class="paper-metrics__section-title">WIP by Column</h2>
+        <div v-if="metrics.wipSnapshots.length === 0" class="paper-metrics__empty-chart">
           <p>No columns found.</p>
         </div>
-        <div v-else class="td-metrics__wip-chart">
+        <div v-else class="paper-metrics__wip-chart">
           <div
             v-for="wip in metrics.wipSnapshots"
             :key="wip.columnId"
-            class="td-metrics__wip-row"
+            class="paper-metrics__wip-row"
           >
-            <span class="td-metrics__wip-name">{{ wip.columnName }}</span>
-            <div class="td-metrics__wip-bar-track">
+            <span class="paper-metrics__wip-name">{{ wip.columnName }}</span>
+            <div class="paper-metrics__wip-bar-track">
               <div
-                class="td-metrics__wip-bar-fill"
-                :style="{ '--td-bar-size': `${(wip.cardCount / maxWipCount) * 100}%` }"
-                :class="{ 'td-metrics__wip-bar-fill--over': wip.wipLimit !== null && wip.cardCount > wip.wipLimit }"
+                class="paper-metrics__wip-bar-fill"
+                :style="{ '--pm-bar-size': `${(wip.cardCount / maxWipCount) * 100}%` }"
+                :class="{ 'paper-metrics__wip-bar-fill--over': wip.wipLimit !== null && wip.cardCount > wip.wipLimit }"
               />
             </div>
-            <span class="td-metrics__wip-count">
+            <span class="paper-metrics__wip-count">
               {{ wip.cardCount }}
               <template v-if="wip.wipLimit !== null"> / {{ wip.wipLimit }}</template>
             </span>
@@ -430,12 +431,12 @@ const maxWipCount = computed(() => {
       </section>
 
       <!-- Cycle time entries -->
-      <section class="td-metrics__section" aria-label="Cycle time entries">
-        <h2 class="td-metrics__section-title">Cycle Time Details</h2>
-        <div v-if="metrics.cycleTimeEntries.length === 0" class="td-metrics__empty-chart">
+      <section class="paper-metrics__section" aria-label="Cycle time entries">
+        <h2 class="paper-metrics__section-title">Cycle Time Details</h2>
+        <div v-if="metrics.cycleTimeEntries.length === 0" class="paper-metrics__empty-chart">
           <p>No completed cards to compute cycle time.</p>
         </div>
-        <table v-else class="td-metrics__table">
+        <table v-else class="paper-metrics__table">
           <thead>
             <tr>
               <th>Card</th>
@@ -452,12 +453,12 @@ const maxWipCount = computed(() => {
       </section>
 
       <!-- Blocked cards -->
-      <section class="td-metrics__section" aria-label="Blocked cards">
-        <h2 class="td-metrics__section-title">Blocked Cards</h2>
-        <div v-if="metrics.blockedCards.length === 0" class="td-metrics__empty-chart">
+      <section class="paper-metrics__section" aria-label="Blocked cards">
+        <h2 class="paper-metrics__section-title">Blocked Cards</h2>
+        <div v-if="metrics.blockedCards.length === 0" class="paper-metrics__empty-chart">
           <p>No blocked cards. Great!</p>
         </div>
-        <table v-else class="td-metrics__table">
+        <table v-else class="paper-metrics__table">
           <thead>
             <tr>
               <th>Card</th>
@@ -469,7 +470,7 @@ const maxWipCount = computed(() => {
             <tr
               v-for="blocked in metrics.blockedCards"
               :key="blocked.cardId"
-              class="td-metrics__row--blocked"
+              class="paper-metrics__row--blocked"
             >
               <td>{{ blocked.cardTitle }}</td>
               <td>{{ blocked.blockReason ?? 'No reason given' }}</td>
@@ -483,206 +484,238 @@ const maxWipCount = computed(() => {
 </template>
 
 <style scoped>
-.td-metrics {
+/* ── Paper & Graphite — MetricsView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   The tokens live under `.paper` / `.paper-night` (the canonical shell), so the
+   var() fallbacks keep this surface legible if it is ever rendered outside the
+   Paper shell (Legacy/Obsidian "off" mode).
+
+   This was the heaviest --td-* consumer in the app.  Semantic colors map onto
+   the Paper family: alert/danger -> --overdue, optimistic -> --applied, chart
+   accent + caveats -> --ember.  The chart-size custom property is renamed
+   --td-bar-size -> --pm-bar-size; it is a view-local variable set inline in the
+   template, not a design token. */
+
+.paper-metrics {
   max-width: 1200px;
   margin: 0 auto;
-  padding: var(--td-space-6);
+  padding: var(--s-6, 24px);
+  font-family: var(--sans, system-ui, sans-serif);
+  /* Substrate must be painted alongside --ink: outside the Paper shell the
+     Paper variables are unscoped (paper-tokens.css), so `--ink` falls back to
+     near-black while AppShell's .td-content keeps the Obsidian
+     --td-surface-base (#131313). Painting --paper with the same fallback keeps
+     the page legible in Legacy ("off") mode and is a no-op under
+     .paper/.paper-night, where .td-shell--paper .td-content already paints it. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
 
-.td-metrics__hero {
-  margin-bottom: var(--td-space-8);
+/* ── Hero ── */
+
+.paper-metrics__hero {
+  margin-bottom: var(--s-8, 32px);
 }
 
-.td-metrics__eyebrow {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-xs);
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--td-color-ember);
+.paper-metrics__eyebrow {
+  color: var(--mute, #635c4e);
 }
 
-.td-page-title {
-  font-family: 'Manrope', system-ui, sans-serif;
-  font-size: var(--td-font-2xl);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  color: var(--td-text-primary);
-  margin: var(--td-space-2) 0;
+.paper-metrics__title {
+  margin: var(--s-2, 8px) 0;
+  font-size: var(--t-h2, 32px);
 }
 
-.td-metrics__subtitle {
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
+.paper-metrics__subtitle {
+  margin: 0;
+  color: var(--ink-2, #3a352d);
   max-width: 600px;
 }
 
-/* Filters */
-.td-metrics__filters {
+/* ── Filters ── */
+
+.paper-metrics__filters {
   display: flex;
-  gap: var(--td-space-4);
-  margin-bottom: var(--td-space-6);
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-6, 24px);
   flex-wrap: wrap;
 }
 
-.td-metrics__filter-group {
+.paper-metrics__filter-group {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-1);
+  gap: var(--s-1, 4px);
 }
 
-.td-metrics__label {
-  font-size: var(--td-font-xs);
+.paper-metrics__label {
+  font-size: var(--t-xs, 10.5px);
   font-weight: 600;
-  color: var(--td-text-secondary);
+  color: var(--mute, #635c4e);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
-.td-metrics__filter-group--action {
+.paper-metrics__filter-group--action {
   justify-content: flex-end;
   align-self: flex-end;
 }
 
-.td-metrics__select {
-  padding: var(--td-space-2) var(--td-space-3);
-  border: 1px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-md);
-  background: var(--td-surface-container);
-  color: var(--td-text-primary);
-  font-size: var(--td-font-sm);
+.paper-metrics__select {
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: var(--t-md, 13.5px);
   min-width: 180px;
+  transition: border-color var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-metrics__select:focus {
+.paper-metrics__select:focus {
   outline: none;
-  box-shadow: var(--td-focus-ring);
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
-/* States */
-.td-metrics__state {
+.paper-metrics__select:disabled {
+  color: var(--mute, #635c4e);
+  cursor: not-allowed;
+}
+
+/* ── States ── */
+
+.paper-metrics__state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--td-space-12);
-  color: var(--td-text-secondary);
+  padding: var(--s-12, 56px);
+  color: var(--ink-2, #3a352d);
   text-align: center;
-  gap: var(--td-space-4);
+  gap: var(--s-4, 16px);
 }
 
-.td-metrics__state--error {
-  color: var(--td-color-danger, #e53e3e);
+.paper-metrics__state--error {
+  color: var(--overdue, #8c4a26);
 }
 
-.td-metrics__error-message {
+.paper-metrics__error-message {
+  margin: 0;
   font-weight: 600;
 }
 
-.td-metrics__skeleton {
+.paper-metrics__skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-8);
+  gap: var(--s-8, 32px);
 }
 
-.td-metrics__skeleton-chart {
-  margin-top: var(--td-space-4);
-  border-radius: var(--td-radius-md);
+.paper-metrics__skeleton-chart {
+  margin-top: var(--s-4, 16px);
+  border-radius: var(--r-2, 4px);
   overflow: hidden;
 }
 
-.td-metrics__skeleton-rows {
+.paper-metrics__skeleton-rows {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
-  margin-top: var(--td-space-4);
+  gap: var(--s-3, 12px);
+  margin-top: var(--s-4, 16px);
 }
 
-.td-metrics__skeleton-wip-row {
+.paper-metrics__skeleton-wip-row {
   display: grid;
   grid-template-columns: 120px 1fr 60px;
   align-items: center;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
 }
 
-/* Summary cards */
-.td-metrics__summary {
+/* ── Summary cards ── */
+
+.paper-metrics__summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--td-space-4);
-  margin-bottom: var(--td-space-8);
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-8, 32px);
 }
 
-.td-metrics__card {
-  background: var(--td-surface-container);
-  border: 1px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-lg);
-  padding: var(--td-space-5);
+.paper-metrics__card {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-5, 20px);
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-1);
+  gap: var(--s-1, 4px);
 }
 
-.td-metrics__card--alert {
-  border-color: var(--td-color-danger, #e53e3e);
+.paper-metrics__card--alert {
+  border-color: var(--overdue, #8c4a26);
+  background: var(--overdue-tint, #ecd9c4);
 }
 
-.td-metrics__card-label {
-  font-size: var(--td-font-xs);
+.paper-metrics__card-label {
+  font-size: var(--t-xs, 10.5px);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--td-text-tertiary);
+  color: var(--mute, #635c4e);
 }
 
-.td-metrics__card-value {
-  font-family: 'Manrope', system-ui, sans-serif;
-  font-size: var(--td-font-2xl);
-  font-weight: 800;
-  color: var(--td-text-primary);
+.paper-metrics__card-value {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-feature-settings: 'tnum' 1;
+  font-size: var(--t-h3, 22px);
+  font-weight: 600;
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-metrics__card-unit {
-  font-size: var(--td-font-xs);
-  color: var(--td-text-secondary);
+.paper-metrics__card-unit {
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ink-2, #3a352d);
 }
 
-/* Sections */
-.td-metrics__section {
-  margin-bottom: var(--td-space-8);
+/* ── Sections ── */
+
+.paper-metrics__section {
+  margin-bottom: var(--s-8, 32px);
 }
 
-.td-metrics__section-title {
-  font-family: 'Manrope', system-ui, sans-serif;
-  font-size: var(--td-font-lg);
-  font-weight: 700;
-  color: var(--td-text-primary);
-  margin-bottom: var(--td-space-4);
+.paper-metrics__section-title {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-lg, 18px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
+  margin: 0 0 var(--s-4, 16px);
 }
 
-.td-metrics__empty-chart {
-  padding: var(--td-space-8);
+.paper-metrics__empty-chart {
+  padding: var(--s-8, 32px);
   text-align: center;
-  color: var(--td-text-secondary);
-  background: var(--td-surface-container);
-  border-radius: var(--td-radius-md);
-  border: 1px dashed var(--td-border-ghost);
+  color: var(--ink-2, #3a352d);
+  background: var(--paper-2, #ebe5d8);
+  border-radius: var(--r-2, 4px);
+  border: 1px dashed var(--line, #d8d0bf);
 }
 
-/* Throughput bar chart */
-.td-metrics__bar-chart {
+/* ── Throughput bar chart ── */
+
+.paper-metrics__bar-chart {
   display: flex;
   align-items: flex-end;
-  gap: var(--td-space-2);
+  gap: var(--s-2, 8px);
   height: 200px;
-  padding: var(--td-space-4);
-  background: var(--td-surface-container);
-  border-radius: var(--td-radius-md);
-  border: 1px solid var(--td-border-ghost);
+  padding: var(--s-4, 16px);
+  background: var(--paper-card, #fbf7ee);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
   overflow-x: auto;
 }
 
-.td-metrics__bar-group {
+.paper-metrics__bar-group {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -692,267 +725,286 @@ const maxWipCount = computed(() => {
   justify-content: flex-end;
 }
 
-.td-metrics__bar {
+.paper-metrics__bar {
   width: 100%;
   max-width: 40px;
-  height: var(--td-bar-size, 0%);
-  background: var(--td-color-ember);
-  border-radius: var(--td-radius-sm) var(--td-radius-sm) 0 0;
+  height: var(--pm-bar-size, 0%);
+  background: var(--ember, #a8421f);
+  border-radius: var(--r-1, 2px) var(--r-1, 2px) 0 0;
   min-height: 4px;
-  transition: height 0.3s ease;
+  transition: height var(--d-base, 240ms) var(--ease-paper, ease);
 }
 
-.td-metrics__bar-label {
-  font-size: 10px;
-  color: var(--td-text-tertiary);
-  margin-top: var(--td-space-1);
+.paper-metrics__bar-label {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+  margin-top: var(--s-1, 4px);
   white-space: nowrap;
 }
 
-/* WIP chart */
-.td-metrics__wip-chart {
+/* ── WIP chart ── */
+
+.paper-metrics__wip-chart {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
 }
 
-.td-metrics__wip-row {
+.paper-metrics__wip-row {
   display: grid;
   grid-template-columns: 120px 1fr 60px;
   align-items: center;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
 }
 
-.td-metrics__wip-name {
-  font-size: var(--td-font-sm);
+.paper-metrics__wip-name {
+  font-size: var(--t-sm, 12px);
   font-weight: 600;
-  color: var(--td-text-primary);
+  color: var(--ink, #1a1814);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.td-metrics__wip-bar-track {
+.paper-metrics__wip-bar-track {
   height: 24px;
-  background: var(--td-surface-container);
-  border-radius: var(--td-radius-sm);
-  border: 1px solid var(--td-border-ghost);
+  background: var(--paper-2, #ebe5d8);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line, #d8d0bf);
   overflow: hidden;
 }
 
-.td-metrics__wip-bar-fill {
+.paper-metrics__wip-bar-fill {
   height: 100%;
-  width: var(--td-bar-size, 0%);
-  background: var(--td-color-ember);
-  border-radius: var(--td-radius-sm);
-  transition: width 0.3s ease;
+  width: var(--pm-bar-size, 0%);
+  background: var(--ember, #a8421f);
+  border-radius: var(--r-2, 4px);
+  transition: width var(--d-base, 240ms) var(--ease-paper, ease);
   min-width: 4px;
 }
 
-.td-metrics__wip-bar-fill--over {
-  background: var(--td-color-danger, #e53e3e);
+.paper-metrics__wip-bar-fill--over {
+  background: var(--overdue, #8c4a26);
 }
 
-.td-metrics__wip-count {
-  font-size: var(--td-font-sm);
+.paper-metrics__wip-count {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-feature-settings: 'tnum' 1;
+  font-size: var(--t-sm, 12px);
   font-weight: 600;
-  color: var(--td-text-secondary);
+  color: var(--ink-2, #3a352d);
   text-align: right;
 }
 
-/* Tables */
-.td-metrics__table {
+/* ── Tables ── */
+
+.paper-metrics__table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--td-surface-container);
-  border-radius: var(--td-radius-md);
-  border: 1px solid var(--td-border-ghost);
+  background: var(--paper-card, #fbf7ee);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
   overflow: hidden;
 }
 
-.td-metrics__table th {
+.paper-metrics__table th {
   text-align: left;
-  padding: var(--td-space-3) var(--td-space-4);
-  font-size: var(--td-font-xs);
-  font-weight: 700;
+  padding: var(--s-3, 12px) var(--s-4, 16px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--td-text-tertiary);
-  background: var(--td-surface-container-high);
-  border-bottom: 1px solid var(--td-border-ghost);
+  letter-spacing: 0.22em;
+  color: var(--mute, #635c4e);
+  background: var(--paper-2, #ebe5d8);
+  border-bottom: 1px solid var(--line, #d8d0bf);
 }
 
-.td-metrics__table td {
-  padding: var(--td-space-3) var(--td-space-4);
-  font-size: var(--td-font-sm);
-  color: var(--td-text-primary);
-  border-bottom: 1px solid var(--td-border-ghost);
+.paper-metrics__table td {
+  padding: var(--s-3, 12px) var(--s-4, 16px);
+  font-size: var(--t-sm, 12px);
+  color: var(--ink, #1a1814);
+  border-bottom: 1px solid var(--line-soft, #e3dcc9);
 }
 
-.td-metrics__table tbody tr:last-child td {
+.paper-metrics__table tbody tr:last-child td {
   border-bottom: none;
 }
 
-.td-metrics__row--blocked td {
-  color: var(--td-color-danger, #e53e3e);
+.paper-metrics__row--blocked td {
+  color: var(--overdue, #8c4a26);
 }
 
-/* Forecast */
-.td-metrics__forecast {
-  background: var(--td-surface-container);
-  border: 1px solid var(--td-border-ghost);
-  border-radius: var(--td-radius-lg);
-  padding: var(--td-space-6);
+/* ── Forecast ── */
+
+.paper-metrics__forecast {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-6, 24px);
 }
 
-.td-metrics__forecast-loading {
+.paper-metrics__forecast-loading {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-4);
+  gap: var(--s-4, 16px);
 }
 
-.td-metrics__forecast-error {
+.paper-metrics__forecast-error {
   display: flex;
   align-items: center;
-  gap: var(--td-space-3);
-  color: var(--td-color-danger, #e53e3e);
-  font-size: var(--td-font-sm);
+  gap: var(--s-3, 12px);
+  color: var(--overdue, #8c4a26);
+  font-size: var(--t-sm, 12px);
 }
 
-.td-metrics__forecast-grid {
+.paper-metrics__forecast-error p {
+  margin: 0;
+}
+
+.paper-metrics__forecast-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--td-space-4);
-  margin-bottom: var(--td-space-6);
+  gap: var(--s-4, 16px);
+  margin-bottom: var(--s-6, 24px);
 }
 
-.td-metrics__card-value--date {
-  font-size: var(--td-font-lg);
+.paper-metrics__card-value--date {
+  font-size: var(--t-lg, 18px);
 }
 
-.td-metrics__confidence {
-  margin-bottom: var(--td-space-5);
+.paper-metrics__confidence {
+  margin-bottom: var(--s-5, 20px);
 }
 
-.td-metrics__confidence-title {
-  font-size: var(--td-font-sm);
+.paper-metrics__confidence-title {
+  font-size: var(--t-sm, 12px);
   font-weight: 700;
-  color: var(--td-text-secondary);
+  color: var(--ink-2, #3a352d);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: var(--td-space-3);
+  margin: 0 0 var(--s-3, 12px);
 }
 
-.td-metrics__confidence-band {
+.paper-metrics__confidence-band {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-2);
-  padding: var(--td-space-4);
-  background: var(--td-surface-container-high);
-  border-radius: var(--td-radius-md);
-  border: 1px solid var(--td-border-ghost);
+  gap: var(--s-2, 8px);
+  padding: var(--s-4, 16px);
+  background: var(--paper-2, #ebe5d8);
+  border-radius: var(--r-2, 4px);
+  border: 1px solid var(--line-soft, #e3dcc9);
+  box-shadow: var(--shadow-press, inset 0 1px 0 #1a181410);
 }
 
-.td-metrics__confidence-row {
+.paper-metrics__confidence-row {
   display: grid;
   grid-template-columns: 100px 1fr auto;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
   align-items: center;
-  font-size: var(--td-font-sm);
+  font-size: var(--t-sm, 12px);
 }
 
-.td-metrics__confidence-row--expected {
+.paper-metrics__confidence-row--expected {
   font-weight: 700;
-  color: var(--td-text-primary);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-metrics__confidence-label {
+.paper-metrics__confidence-label {
   font-weight: 600;
-  color: var(--td-text-secondary);
+  color: var(--ink-2, #3a352d);
 }
 
-.td-metrics__confidence-label--optimistic {
-  color: var(--td-color-success, #38a169);
+.paper-metrics__confidence-label--optimistic {
+  color: var(--applied, #4a6b3f);
 }
 
-.td-metrics__confidence-label--pessimistic {
-  color: var(--td-color-danger, #e53e3e);
+.paper-metrics__confidence-label--pessimistic {
+  color: var(--overdue, #8c4a26);
 }
 
-.td-metrics__confidence-date {
-  color: var(--td-text-primary);
+.paper-metrics__confidence-date {
+  color: var(--ink, #1a1814);
 }
 
-.td-metrics__confidence-rate {
-  color: var(--td-text-tertiary);
-  font-size: var(--td-font-xs);
+.paper-metrics__confidence-rate {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--mute, #635c4e);
+  font-size: var(--t-xs, 10.5px);
 }
 
-.td-metrics__caveats {
-  margin-bottom: var(--td-space-4);
-  padding: var(--td-space-4);
-  background: rgba(237, 137, 54, 0.08);
-  border-left: 3px solid var(--td-color-ember);
-  border-radius: 0 var(--td-radius-md) var(--td-radius-md) 0;
+/* ── Caveats & assumptions ── */
+
+.paper-metrics__caveats {
+  margin-bottom: var(--s-4, 16px);
+  padding: var(--s-4, 16px);
+  background: var(--ember-bloom, #a8421f1a);
+  border-left: 3px solid var(--ember, #a8421f);
+  border-radius: 0 var(--r-2, 4px) var(--r-2, 4px) 0;
 }
 
-.td-metrics__caveats-title {
-  font-size: var(--td-font-xs);
+.paper-metrics__caveats-title {
+  font-size: var(--t-xs, 10.5px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--td-color-ember);
-  margin-bottom: var(--td-space-2);
+  color: var(--ember, #a8421f);
+  margin: 0 0 var(--s-2, 8px);
 }
 
-.td-metrics__caveats-list {
+.paper-metrics__caveats-list {
   list-style: disc;
-  padding-left: var(--td-space-5);
-  font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
+  padding-left: var(--s-5, 20px);
+  margin: 0;
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
 }
 
-.td-metrics__caveats-list li {
-  margin-bottom: var(--td-space-1);
+.paper-metrics__caveats-list li {
+  margin-bottom: var(--s-1, 4px);
 }
 
-.td-metrics__assumptions {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-tertiary);
+.paper-metrics__assumptions {
+  font-size: var(--t-sm, 12px);
+  color: var(--mute, #635c4e);
 }
 
-.td-metrics__assumptions-summary {
+.paper-metrics__assumptions-summary {
   cursor: pointer;
   font-weight: 600;
-  color: var(--td-text-secondary);
-  padding: var(--td-space-2) 0;
+  color: var(--ink-2, #3a352d);
+  padding: var(--s-2, 8px) 0;
 }
 
-.td-metrics__assumptions-list {
+.paper-metrics__assumptions-list {
   list-style: disc;
-  padding-left: var(--td-space-5);
-  margin-top: var(--td-space-2);
+  padding-left: var(--s-5, 20px);
+  margin-top: var(--s-2, 8px);
 }
 
-.td-metrics__assumptions-list li {
-  margin-bottom: var(--td-space-1);
+.paper-metrics__assumptions-list li {
+  margin-bottom: var(--s-1, 4px);
 }
 
-/* Responsive */
+/* ── Responsive ── */
+
 @media (max-width: 640px) {
-  .td-metrics {
-    padding: var(--td-space-4);
+  .paper-metrics {
+    padding: var(--s-4, 16px);
   }
 
-  .td-metrics__summary {
+  .paper-metrics__summary {
     grid-template-columns: 1fr 1fr;
   }
 
-  .td-metrics__wip-row {
+  .paper-metrics__wip-row {
     grid-template-columns: 80px 1fr 50px;
   }
 
-  .td-metrics__filters {
+  .paper-metrics__filters {
     flex-direction: column;
   }
 }

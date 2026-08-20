@@ -42,9 +42,12 @@ export const captureApi = {
     await http.post(`/capture/items/${pathItemId}/cancel`)
   },
 
-  async enqueueTriage(itemId: string): Promise<CaptureTriageEnqueueResult> {
+  async enqueueTriage(itemId: string, boardId?: string | null): Promise<CaptureTriageEnqueueResult> {
     const pathItemId = encodePathSegment(itemId)
-    const { data } = await http.post<CaptureTriageEnqueueResult>(`/capture/items/${pathItemId}/triage`)
+    // Board-less captures (Home quick-capture) must supply a target board so the server can link it
+    // and triage in one step instead of rejecting with a 400 (#1764).
+    const body = boardId ? { boardId } : undefined
+    const { data } = await http.post<CaptureTriageEnqueueResult>(`/capture/items/${pathItemId}/triage`, body)
     return data
   },
 

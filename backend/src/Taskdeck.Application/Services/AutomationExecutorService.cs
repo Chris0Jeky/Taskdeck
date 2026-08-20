@@ -134,11 +134,14 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Failure(policyResult.ErrorCode, policyResult.ErrorMessage);
         }
 
-        // Revalidate permissions
+        // Revalidate permissions. Execute is the mutation lane par excellence, so the requester
+        // must clear the write bar on the target board (#1836) — the same bar the API-side
+        // #1794/#1827 AuthorizationService.CanWriteBoardAsync applies at the execute endpoint.
         var permissionResult = await _policyEngine.ValidatePermissionsAsync(
             effectiveProposal.RequestedByUserId,
             effectiveProposal.BoardId,
             effectiveProposal.Operations,
+            BoardAccessBar.Write,
             cancellationToken);
         if (!permissionResult.IsSuccess)
         {

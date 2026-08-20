@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ReviewQueueRail, {
   type QueueFilter,
   type QueueRailItem,
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
+import type { ApplyPhase } from './review/ReviewDecisionRail.vue'
+import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
+import { useReviewCadence } from '../../composables/useReviewCadence'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
@@ -23,6 +27,7 @@ import {
   sortProposalsByRisk,
 } from '../../utils/automation'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
+import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -69,12 +74,53 @@ const {
   clearProposalDeepLink,
   loadProposals,
   loadBoardOptions,
+  availableBoards,
   startClock,
   stopClock,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
+const { t, locale } = useI18n()
+const displayVersion = ref(0)
+const technicalDetailsCopied = ref(false)
+
+/**
+ * Date/time formatting goes through `Intl` against the ACTIVE locale, never a
+ * per-locale pattern catalog (ADR-0054 §4). Region is preserved where it agrees
+ * with the chosen language — same shape as `BoardsListView` — so an `en-GB`
+ * reviewer on app-locale `en` keeps their own clock and date order instead of
+ * being silently switched to US formatting by turning i18n on.
+ */
+const dateLocale = computed(() => {
+  const active = locale.value
+  const preferred =
+    typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language])
+  const regional = preferred.find(
+    (tag) => typeof tag === 'string' && tag.toLowerCase().split('-')[0] === active,
+  )
+  return regional ?? active
+})
+
+/**
+ * Backend status wire values are never catalog keys; only their RENDERED labels
+ * are. This maps one to the other, so `review.status.*` / `review.statusInline.*`
+ * stay the single place the display wording lives.
+ */
+function statusKeySuffix(status: string): string {
+  return status.charAt(0).toLowerCase() + status.slice(1)
+}
+
+watch(
+  [proposals, availableBoards],
+  ([currentProposals, boards]) => {
+    if (currentProposals.length === 0 && boards.length === 0) return
+    void proposalDisplayNames.ensure(currentProposals, boards).then(() => {
+      displayVersion.value += 1
+    })
+  },
+  { deep: true, immediate: true },
+)
 
 // The dismiss endpoint rejects the WHOLE request with 403 if any id isn't owned
 // by the caller, and a board-filtered proposal list deliberately includes other
@@ -93,10 +139,13 @@ const ownedDismissableIds = computed(() =>
 const {
   proposalActionBusyId,
   bulkDismissBusy,
+  executeConfirmProposal,
   handleApproveProposal,
   handleRejectProposal,
   handleDeferProposal,
-  handleExecuteProposal,
+  requestExecuteProposal,
+  cancelExecuteProposal,
+  confirmExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
 } = useReviewActions(proposals, ownedDismissableIds, loadProposals, isProposalExpired)
@@ -136,11 +185,7 @@ const filteredVisibleProposals = computed(() => {
   return sortProposalsByRisk(filtered)
 })
 
-const activeFilterLabel = computed(() => {
-  if (queueFilter.value === 'mine') return 'Mine'
-  if (queueFilter.value === 'stale') return 'Stale'
-  return 'All'
-})
+const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
 
 const hasFilterEmptyState = computed(
   () => visibleProposals.value.length > 0 && filteredVisibleProposals.value.length === 0,
@@ -227,8 +272,8 @@ function clearPreviewDiff() {
 const previewReadOnlyLabel = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
-  if (isProposalExpired(p)) return 'Expired'
-  return normalizeProposalStatus(p.status)
+  if (isProposalExpired(p)) return t('review.status.expired')
+  return t(`review.status.${statusKeySuffix(normalizeProposalStatus(p.status))}`)
 })
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -238,6 +283,7 @@ const previewReadOnlyLabel = computed(() => {
 // a dead "no stored preview" end. Local rendering only — the live `/diff` 400s
 // for these proposals (#1397).
 const storedOperationsFallback = computed(() => {
+  void displayVersion.value
   if (previewDiffMode.value !== 'stored' || previewDiff.value) return null
   const ops = activeProposal.value?.operations ?? []
   if (ops.length === 0) return null
@@ -245,7 +291,7 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${formatActionLabel(op.actionType)} · ${op.targetType}${op.targetId ? ` (${op.targetId})` : ''}`,
+        `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
 })
@@ -322,6 +368,10 @@ const {
   loadRevisionState,
 } = useProposalRevisions(activeProposal)
 
+const revisionBadge = computed(() =>
+  t('review.revisionEditor.badge', { count: revisionCount.value }, revisionCount.value),
+)
+
 const editablePayload = computed(() => {
   const p = activeProposal.value
   if (!p) return '{}'
@@ -362,16 +412,18 @@ const staleCount = computed(() =>
 
 function ageLabel(iso: string): string {
   const ms = nowMs.value - new Date(iso).getTime()
-  if (ms < 60_000) return `${Math.max(1, Math.floor(ms / 1000))}s`
-  if (ms < 60 * 60_000) return `${Math.floor(ms / 60_000)}m`
-  if (ms < 24 * 60 * 60_000) return `${Math.floor(ms / (60 * 60_000))}h`
-  return `${Math.floor(ms / (24 * 60 * 60_000))}d`
+  if (ms < 60_000)
+    return t('review.age.seconds', { value: Math.max(1, Math.floor(ms / 1000)) })
+  if (ms < 60 * 60_000) return t('review.age.minutes', { value: Math.floor(ms / 60_000) })
+  if (ms < 24 * 60 * 60_000) return t('review.age.hours', { value: Math.floor(ms / (60 * 60_000)) })
+  return t('review.age.days', { value: Math.floor(ms / (24 * 60 * 60_000)) })
 }
 
 function summariseReach(proposal: ApiProposal): string {
   const ops = proposal.operations?.length ?? 0
+  // An em dash is a glyph, not copy — it reads the same in every locale.
   if (ops === 0) return '—'
-  return `${ops} ${ops === 1 ? 'op' : 'ops'}`
+  return t('review.queueItem.reach', { count: ops }, ops)
 }
 
 const queueItems = computed<QueueRailItem[]>(() =>
@@ -380,8 +432,11 @@ const queueItems = computed<QueueRailItem[]>(() =>
     return {
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
-      title: p.summary || '(no summary)',
-      who: normalizeProposalSourceType(p.sourceType) === 'Chat' ? 'haiku' : 'capture',
+      title: p.summary || t('review.queueItem.noSummary'),
+      who:
+        normalizeProposalSourceType(p.sourceType) === 'Chat'
+          ? t('review.queueItem.who.assistant')
+          : t('review.queueItem.who.capture'),
       // Per-item rail confidence is not yet wired per-proposal — leave null until
       // the gap lands. Not contradictory with `authorMeta` below, which shows the
       // REAL aggregate /confidence breakdown for the single active proposal.
@@ -402,7 +457,7 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
     .map((p) => ({
       id: p.id,
       serial: `#${p.id.slice(0, 4).toUpperCase()}`,
-      title: p.summary || '(applied)',
+      title: p.summary || t('review.recent.noSummary'),
       // Pass the backend ISO string straight through (same pattern as queueItems):
       // ageLabel degrades gracefully on an unparseable value, whereas the previous
       // Date→ms→Date→toISOString roundtrip threw RangeError on an invalid date.
@@ -410,6 +465,23 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
     }))
     .slice(0, 4)
 })
+
+/**
+ * Real 7-day cadence for the rail: how many proposals the CURRENT user decided
+ * on each of the last seven calendar days, projected from the review-queue
+ * payload already loaded (`decidedAt` / `decidedByUserId` on `ProposalDto`).
+ * Board-scoped through the same `matchesActiveBoardFilter` the queue uses, so
+ * the bars never describe a board the rail is not showing.
+ *
+ * `undefined` when there is nothing honest to draw — the mini-cadence then
+ * hides itself rather than inventing a week (#1782 / #1796 contract).
+ */
+const cadence = useReviewCadence(
+  proposals,
+  nowMs,
+  () => session.userId,
+  matchesActiveBoardFilter,
+)
 
 // --- Main column data --------------------------------------------------
 
@@ -450,16 +522,14 @@ function splitQuotedSummary(summary: string): Array<{ text: string; emphasis?: b
 }
 
 const lede = computed(
-  () =>
-    activeProposal.value?.presentation?.plainSummary ??
-    'Awaiting decision. Review the change, provenance, and side-effects below before applying.',
+  () => activeProposal.value?.presentation?.plainSummary ?? t('review.main.ledeFallback'),
 )
 
 const decisionSummary = computed(() => {
   const p = activeProposal.value
-  if (!p) return 'Nothing to decide right now'
+  if (!p) return t('review.decisionRail.summary.none')
   const ops = p.operations?.length ?? 0
-  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · explicit review · atomic apply`
+  return t('review.decisionRail.summary.operations', { count: ops }, ops)
 })
 
 const headerSerial = computed(() => {
@@ -473,8 +543,11 @@ const headerMeta = computed(() => {
   if (!p) return ''
   const status = normalizeProposalStatus(p.status)
   const created = new Date(p.createdAt)
-  const time = created.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  return `${time} · ${status === 'PendingReview' ? 'awaiting decision' : status.toLowerCase()}`
+  const time = created.toLocaleTimeString(dateLocale.value, { hour: '2-digit', minute: '2-digit' })
+  return t('review.headerMeta', {
+    time,
+    status: t(`review.statusInline.${statusKeySuffix(status)}`),
+  })
 })
 
 function formatActionLabel(actionType: string): string {
@@ -484,51 +557,43 @@ function formatActionLabel(actionType: string): string {
     .trim()
 }
 
-function parseOperationParameters(operation: ProposalOperation): Record<string, unknown> | null {
-  if (!operation.parameters) return null
-  try {
-    const parsed = JSON.parse(operation.parameters) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch {
-    return null
-  }
-}
-
-function formatParameterValue(value: unknown): string {
-  if (value === null || value === undefined) return 'null'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-  return JSON.stringify(value) ?? String(value)
-}
-
 function summarizeOperation(operation: ProposalOperation): string {
-  const params = parseOperationParameters(operation)
-  if (!params) return 'No parameter preview supplied for this operation.'
-  const entries = Object.entries(params).slice(0, 4)
-  if (entries.length === 0) return 'No parameter preview supplied for this operation.'
-  return entries.map(([key, value]) => `${key}: ${formatParameterValue(value)}`).join(' · ')
+  const proposal = activeProposal.value
+  if (!proposal) return t('review.change.after.noParameterPreview')
+  void displayVersion.value
+  return proposalDisplayNames.summarizeOperation(proposal, operation)
 }
 
-const before = computed<ChangeBeforeCard>(() => ({
-  serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
-  title: activeProposal.value?.summary ?? 'No proposal selected',
-  body:
-    activeProposal.value?.presentation?.impactSummary ??
-    `Review ${activeProposal.value?.operations?.length ?? 0} proposal operations before applying.`,
-  meta: `${activeProposal.value?.boardId ?? 'Inbox'} · ${activeProposal.value?.sourceType ?? 'proposal'}`,
-}))
+const before = computed<ChangeBeforeCard>(() => {
+  void displayVersion.value
+  return {
+    serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
+    title: activeProposal.value?.summary ?? t('review.change.before.titleFallback'),
+    body:
+      activeProposal.value?.presentation?.impactSummary ??
+      t('review.change.before.bodyFallback', {
+        count: activeProposal.value?.operations?.length ?? 0,
+      }),
+    // `source` is the backend's own sourceType wire value when present, so it is
+    // interpolated rather than translated; only the fallback word is copy.
+    meta: t('review.change.before.meta', {
+      board: proposalDisplayNames.boardLabel(activeProposal.value?.boardId),
+      source: activeProposal.value?.sourceType ?? t('review.change.before.sourceFallback'),
+    }),
+  }
+})
 
 const after = computed<ChangeAfterCard[]>(() => {
+  void displayVersion.value
   const p = activeProposal.value
   const operations = p?.operations ?? []
   if (operations.length === 0) {
     return [{
       serial: p ? `#${p.id.slice(0, 8)}.0` : '—',
-      title: 'No operation preview',
-      body: p?.diffPreview ?? 'The proposal did not include operation details.',
+      title: t('review.change.after.noPreviewTitle'),
+      body: p?.diffPreview
+        ? proposalDisplayNames.displayDiff(p, p.diffPreview)
+        : t('review.change.after.noPreviewBody'),
       status: 'kept',
     }]
   }
@@ -544,24 +609,60 @@ const after = computed<ChangeAfterCard[]>(() => {
 })
 
 const fields = computed<FieldDiff[]>(() => {
+  void displayVersion.value
   const p = activeProposal.value
   const operations = p?.operations ?? []
   if (operations.length === 0) {
-    return [{ key: 'operations', before: 'none', after: p?.diffPreview ?? 'not provided', same: !p?.diffPreview }]
+    return [{
+      key: t('review.change.fields.operationsKey'),
+      before: t('review.change.fields.none'),
+      after: p?.diffPreview
+        ? proposalDisplayNames.displayDiff(p, p.diffPreview)
+        : t('review.change.fields.notProvided'),
+      same: !p?.diffPreview,
+    }]
   }
 
   return [...operations]
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation) => ({
       key: formatActionLabel(operation.actionType),
-      before: operation.targetId ?? operation.targetType,
+      before: proposalDisplayNames.operationTargetLabel(p!, operation) ?? operation.targetType,
       after: summarizeOperation(operation),
     }))
 })
 
 const changeSubTitle = computed(() => {
+  void displayVersion.value
   const ops = activeProposal.value?.operations?.length ?? 0
-  return `${ops} ${ops === 1 ? 'operation' : 'operations'} · ${activeProposal.value?.boardId ?? 'this board'}`
+  return t(
+    'review.change.subTitle',
+    { count: ops, board: proposalDisplayNames.boardLabel(activeProposal.value?.boardId) },
+    ops,
+  )
+})
+
+const technicalDetails = computed(() => {
+  void displayVersion.value
+  return activeProposal.value ? proposalDisplayNames.technicalDetails(activeProposal.value) : ''
+})
+
+async function copyTechnicalDetails() {
+  if (!technicalDetails.value || !navigator.clipboard?.writeText) return
+  try {
+    await navigator.clipboard.writeText(technicalDetails.value)
+    technicalDetailsCopied.value = true
+  } catch {
+    technicalDetailsCopied.value = false
+  }
+}
+
+const displayedPreviewDiff = computed(() => {
+  void displayVersion.value
+  const proposal = activeProposal.value
+  return proposal && previewDiff.value
+    ? proposalDisplayNames.displayDiff(proposal, previewDiff.value)
+    : previewDiff.value
 })
 
 // --- Right rail data ---------------------------------------------------
@@ -570,13 +671,13 @@ const proposedDate = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
   const d = new Date(p.createdAt)
-  return d.toLocaleString('default', { month: 'short', day: '2-digit' })
+  return d.toLocaleString(dateLocale.value, { month: 'short', day: '2-digit' })
 })
 
 const proposedTime = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
-  return new Date(p.createdAt).toLocaleTimeString([], {
+  return new Date(p.createdAt).toLocaleTimeString(dateLocale.value, {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -595,20 +696,28 @@ const authorMeta = computed(() => {
   // Defensive: the type says overall is always a number, but guard against a
   // malformed/NaN value so toFixed can never throw on the deep-review surface.
   if (!c || !Number.isFinite(c.overall)) return ''
-  return `${c.overall.toFixed(2)} confidence`
+  return t('review.author.confidence', { value: c.overall.toFixed(2) })
 })
 
 const authorName = computed(() => {
-  const source = activeProposal.value
-    ? normalizeProposalSourceType(activeProposal.value.sourceType).toLowerCase()
-    : 'proposal'
-  return `Haiku · ${source} proposal`
+  const normalized = activeProposal.value
+    ? normalizeProposalSourceType(activeProposal.value.sourceType)
+    : null
+  if (!normalized) return t('review.author.nameFallback')
+  // Same actor split as the queue rail above: only chat-driven proposals come from
+  // the configured AI provider; capture triage may be the deterministic extractor
+  // (see ReviewProvenance), so it must not be attributed to "Assistant".
+  // `normalized` is a backend wire value — compared, never translated, and
+  // interpolated verbatim into the sentence.
+  const actor =
+    normalized === 'Chat' ? t('review.author.actor.assistant') : t('review.author.actor.capture')
+  return t('review.author.name', { actor, source: normalized.toLowerCase() })
 })
 
 const whyNowBody = computed(() => {
   const p = activeProposal.value
-  if (!p) return 'No proposal is selected.'
-  return p.presentation?.sourceCue ?? 'This proposal is awaiting review based on the source captured with it.'
+  if (!p) return t('review.whyNow.noProposal')
+  return p.presentation?.sourceCue ?? t('review.whyNow.fallback')
 })
 
 // --- Action wiring -----------------------------------------------------
@@ -648,17 +757,41 @@ const activeDismissable = computed(
 // per-proposal rail in Paper) is never left unclearable. #1161
 const bulkDismissableCount = computed(() => ownedDismissableIds.value.length)
 
+// #1818: which half of the two-phase apply the ⏎ / primary button will run.
+// `execute` is the state the walkthrough found illegible — approved, but the
+// board is untouched until the second explicit call. A settled proposal (the
+// filing rail) has no apply phase at all, so it reports `approve`.
+const applyPhase = computed<ApplyPhase>(() => {
+  const p = activeProposal.value
+  if (!p || activeDismissable.value) return 'approve'
+  return normalizeProposalStatus(p.status) === 'Approved' ? 'execute' : 'approve'
+})
+
+// #1830 round 2: the confirmation dialog must not claim "0 operations will be
+// applied" for the revision-aware apply path onApply deliberately allows (zero
+// original operations + a saved revision, #1235). `revisionCount` tracks the
+// ACTIVE proposal only, so it is only passed while the proposal awaiting
+// confirmation is still the active one — otherwise the dialog is told nothing
+// (null) and falls back to copy that claims no count.
+const applyConfirmRevisionCount = computed<number | null>(() => {
+  const pending = executeConfirmProposal.value
+  if (!pending) return null
+  if (activeProposal.value?.id !== pending.id) return null
+  if (!revisionsLoaded.value) return null
+  return revisionCount.value
+})
+
 function onFileAway() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
-    toast.info('Save or cancel the revision before filing this proposal away.')
+    toast.info(t('review.toast.revisionBusyFileAway'))
     return
   }
   // Another dismiss/approve/reject/bulk action is already in flight.
   if (busy.value) return
   if (!activeDismissable.value) {
-    toast.info('This proposal is still active and cannot be filed away yet.')
+    toast.info(t('review.toast.notDismissableYet'))
     return
   }
   void handleDismissProposal(p.id)
@@ -666,7 +799,7 @@ function onFileAway() {
 
 function onFileAwayBulk() {
   if (busy.value) {
-    toast.info('Wait for the current action to finish before filing more away.')
+    toast.info(t('review.toast.bulkBusy'))
     return
   }
   void handleDismissApplied()
@@ -677,11 +810,11 @@ async function onApply() {
   if (!p) return
   if (applyGuardBusy.value) return
   if (revisionBusy.value) {
-    toast.info('Save or cancel the revision before applying this proposal.')
+    toast.info(t('review.toast.revisionBusyApply'))
     return
   }
   if (!isApplyActionable(p)) {
-    toast.info('This proposal is no longer actionable. Refresh review to see current status.')
+    toast.info(t('review.toast.notApplyable'))
     return
   }
   // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal is only approved (or
@@ -716,7 +849,7 @@ async function onApply() {
       // Load failed or was cancelled — the revision-history-unavailable error
       // toast (from loadRevisionState) covers the failure case; this names why
       // Apply did not proceed.
-      toast.info('Revision history is unavailable, so this proposal cannot be verified for Apply. Try again.')
+      toast.info(t('review.toast.revisionStateUnknown'))
       return
     }
     if (revisionCount.value === 0) {
@@ -724,15 +857,17 @@ async function onApply() {
         normalizeProposalStatus((activeProposal.value ?? p).status) === 'Approved'
       toast.info(
         approvedZeroOp
-          ? 'This proposal contains no operations — applying it to the board will be rejected.'
-          : 'This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.',
+          ? t('review.toast.zeroOpApproved')
+          : t('review.toast.zeroOpPending'),
       )
       return
     }
   }
   const status = normalizeProposalStatus((activeProposal.value ?? p).status)
   if (status === 'Approved') {
-    void handleExecuteProposal(p.id)
+    // Phase 2 — opens the in-app confirmation (#1818); only its accept button
+    // reaches executeProposal, preserving the explicit second step of ADR-0003.
+    requestExecuteProposal(p.id)
     return
   }
   void handleApproveProposal(p.id)
@@ -749,7 +884,7 @@ function onReject() {
     return
   }
   if (revisionBusy.value) {
-    toast.info('Save or cancel the revision before rejecting this proposal.')
+    toast.info(t('review.toast.revisionBusyReject'))
     return
   }
   // #1414 round 4 P2-A: mirror onDefer/onFileAway — a decision must not fire
@@ -760,7 +895,7 @@ function onReject() {
   // Apply race the P2-A busy join closed.
   if (busy.value) return
   if (!isRejectActionable(p)) {
-    toast.info('This proposal can no longer be rejected. Refresh review to see current status.')
+    toast.info(t('review.toast.notRejectable'))
     return
   }
   void handleRejectProposal(p.id, p.riskLevel)
@@ -771,7 +906,7 @@ function onRequestEdit() {
   if (!p) return
   if (revisionSaving.value) return
   if (normalizeProposalStatus(p.status) !== 'PendingReview' || isProposalExpired(p)) {
-    toast.info('This proposal can no longer be edited.')
+    toast.info(t('review.toast.notEditable'))
     return
   }
   startRevisionEditing()
@@ -781,14 +916,14 @@ async function onDefer() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
-    toast.info('Save or cancel the revision before deferring this proposal.')
+    toast.info(t('review.toast.revisionBusyDefer'))
     return
   }
   // Another action is already in flight (approve/reject/defer/dismiss/bulk).
   if (busy.value) return
   // Defer shares Reject's precondition: a live, non-expired PendingReview proposal.
   if (!isRejectActionable(p)) {
-    toast.info('This proposal can no longer be deferred.')
+    toast.info(t('review.toast.notDeferrable'))
     return
   }
   const deferred = await handleDeferProposal(p.id)
@@ -801,7 +936,7 @@ async function onDefer() {
 }
 
 function onToggleProvenance() {
-  toast.info('Provenance toggle is not wired yet; provenance is rendered inline below.')
+  toast.info(t('review.toast.provenanceToggleUnwired'))
 }
 
 // #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
@@ -821,7 +956,7 @@ async function verifyStoredPreviewAccess(proposalId: string, requestId: number) 
     if (!isAccessDeniedError(e)) return
     if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== proposalId) return
     clearPreviewDiff()
-    toast.error('This proposal is no longer available to you.')
+    toast.error(t('review.toast.noLongerAvailable'))
   }
 }
 
@@ -929,7 +1064,7 @@ async function onPreviewDiff() {
     previewDiffProposalId.value = p.id
     previewDiff.value = null
     previewDiffMode.value = 'invalid'
-    previewDiffInvalidReason.value = 'This proposal contains no operations to apply'
+    previewDiffInvalidReason.value = t('review.diff.invalid.noOperations')
     previewDiffLoading.value = false
     scrollDiffIntoView()
     return
@@ -974,7 +1109,7 @@ async function onPreviewDiff() {
     // Any other failure (e.g. a 404 because the proposal was deleted/dismissed
     // from another session) stays a toast with a clean teardown.
     clearPreviewDiff()
-    toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+    toast.error(getErrorDisplay(e, t('review.toast.diffFailed')).message)
   } finally {
     if (requestId === latestDiffRequestId) {
       previewDiffLoading.value = false
@@ -995,7 +1130,7 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
 
 async function onReportBadSuggestion(proposalId: string) {
   if (!proposalId) {
-    toast.error('No proposal is selected to report.')
+    toast.error(t('review.toast.noProposalToReport'))
     return
   }
   // Don't double-submit while a report for this proposal is already in flight.
@@ -1005,9 +1140,9 @@ async function onReportBadSuggestion(proposalId: string) {
   try {
     await automationApi.reportBadSuggestion(proposalId)
     // Pure feedback: the proposal stays exactly where it was (review-first, no decision).
-    toast.success('Feedback recorded for this suggestion.')
+    toast.success(t('review.toast.feedbackRecorded'))
   } catch (e: unknown) {
-    toast.error(getErrorDisplay(e, 'Failed to record feedback').message)
+    toast.error(getErrorDisplay(e, t('review.toast.feedbackFailed')).message)
   } finally {
     reportingProposalId.value = null
   }
@@ -1023,7 +1158,11 @@ useReviewKeymap(
     onPreviewDiff,
   },
   {
-    enabled: () => !busy.value && activeProposal.value !== null,
+    // #1818: while the apply confirmation is open the dialog owns the keyboard —
+    // ⏎ must not re-dispatch onApply behind it, and ⌫/D/E must not decide on a
+    // proposal the user is being asked to confirm.
+    enabled: () =>
+      !busy.value && activeProposal.value !== null && executeConfirmProposal.value === null,
   },
 )
 
@@ -1064,6 +1203,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :dismissable-count="bulkDismissableCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
+      :cadence="cadence"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
@@ -1075,7 +1215,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         class="paper-review-deep__revision-badge"
         data-testid="revision-badge"
       >
-        {{ revisionCount }} {{ revisionCount === 1 ? 'revision' : 'revisions' }}
+        {{ revisionBadge }}
       </div>
       <ReviewMain
         :serial="headerSerial"
@@ -1090,11 +1230,13 @@ function onQueueFilterChange(filter: QueueFilter) {
         :fields="fields"
         :change-sub-title="changeSubTitle"
         :provenance="selectors.provenance.value"
+        :evidence-links="selectors.evidenceLinks.value"
         :proposal-id="activeProposal?.id ?? ''"
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
         :dismissable="activeDismissable"
+        :apply-phase="applyPhase"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1102,6 +1244,21 @@ function onQueueFilterChange(filter: QueueFilter) {
         @dismiss="onFileAway"
         @report="onReportBadSuggestion"
       />
+      <details
+        class="paper-review-deep__technical-details"
+        data-testid="paper-review-technical-details"
+      >
+        <summary>{{ $t('review.technical.summary') }}</summary>
+        <button
+          type="button"
+          class="td-btn td-btn--secondary td-btn--sm"
+          :disabled="!technicalDetails"
+          @click="copyTechnicalDetails"
+        >
+          {{ technicalDetailsCopied ? $t('review.technical.copied') : $t('review.technical.copy') }}
+        </button>
+        <pre :aria-label="$t('review.technical.ariaLabel')">{{ technicalDetails }}</pre>
+      </details>
       <section
         v-if="previewDiffProposalId === activeProposal.id"
         ref="previewDiffSection"
@@ -1109,9 +1266,9 @@ function onQueueFilterChange(filter: QueueFilter) {
         data-testid="paper-review-diff"
       >
         <header class="paper-review-deep__diff-head">
-          <span class="tk-serial paper-review-deep__diff-serial">§ DIFF</span>
-          <h3 class="tk-h3 paper-review-deep__diff-title">Operation details</h3>
-          <span class="tk-meta paper-review-deep__diff-sub">Press Space to hide</span>
+          <span class="tk-serial paper-review-deep__diff-serial">{{ $t('review.diff.serial') }}</span>
+          <h3 class="tk-h3 paper-review-deep__diff-title">{{ $t('review.diff.title') }}</h3>
+          <span class="tk-meta paper-review-deep__diff-sub">{{ $t('review.diff.hint') }}</span>
         </header>
         <!-- Read-only banner: a terminal/expired proposal's stored preview (#1397) -->
         <p
@@ -1120,8 +1277,7 @@ function onQueueFilterChange(filter: QueueFilter) {
           role="status"
           data-testid="paper-review-diff-banner"
         >
-          {{ previewReadOnlyLabel }} · read-only — showing the stored preview from the
-          original submission.
+          {{ $t('review.diff.storedBanner', { status: previewReadOnlyLabel }) }}
         </p>
         <!-- diffPreview is creation-time content revisions never update, so a revised
              proposal's stored preview — or the recorded-operations fallback when no
@@ -1134,8 +1290,9 @@ function onQueueFilterChange(filter: QueueFilter) {
           role="status"
           data-testid="paper-review-diff-revised-note"
         >
-          ✎ This proposal was <strong>revised</strong> after submission — the stored
-          preview shows the original operations, not the revised ones.
+          ✎ {{ $t('review.diff.revised.lead') }}
+          <strong>{{ $t('review.diff.revised.emphasis') }}</strong>
+          {{ $t('review.diff.revised.storedTail') }}
         </p>
         <p
           v-else-if="previewDiffMode === 'stored' && revisionCount > 0 && storedOperationsFallback"
@@ -1143,16 +1300,18 @@ function onQueueFilterChange(filter: QueueFilter) {
           role="status"
           data-testid="paper-review-diff-revised-note"
         >
-          ✎ This proposal was <strong>revised</strong> after submission — the recorded
-          operations show the original submission, not the revised one.
+          ✎ {{ $t('review.diff.revised.lead') }}
+          <strong>{{ $t('review.diff.revised.emphasis') }}</strong>
+          {{ $t('review.diff.revised.fallbackTail') }}
         </p>
         <p
           v-if="revisionCount > 0 && previewDiffMode === 'live'"
           class="paper-review-deep__diff-caveat tk-meta"
           data-testid="paper-review-diff-revision-caveat"
         >
-          ✎ This preview reflects your latest <strong>saved edit</strong> — the
-          revised operations, not the original proposal.
+          ✎ {{ $t('review.diff.liveCaveat.lead') }}
+          <strong>{{ $t('review.diff.liveCaveat.emphasis') }}</strong>
+          {{ $t('review.diff.liveCaveat.tail') }}
         </p>
         <div class="card paper-review-deep__diff-card">
           <p
@@ -1160,7 +1319,7 @@ function onQueueFilterChange(filter: QueueFilter) {
             class="paper-review-deep__diff-empty tk-meta"
             data-testid="paper-review-diff-loading"
           >
-            Loading diff…
+            {{ $t('review.diff.loading') }}
           </p>
           <!-- Invalid: the backend's Apply-time gates reject this proposal; render
                the ACTUAL reason (expired vs zero-op), never a hardcoded one
@@ -1171,8 +1330,11 @@ function onQueueFilterChange(filter: QueueFilter) {
             role="status"
             data-testid="paper-review-diff-invalid"
           >
-            {{ previewDiffInvalidReason || 'This proposal contains no operations to apply' }}
-            — Apply will reject this proposal.
+            {{
+              $t('review.diff.invalid.line', {
+                reason: previewDiffInvalidReason || $t('review.diff.invalid.noOperations'),
+              })
+            }}
           </p>
           <!-- Read-only proposal without a stored preview: fall back to the
                proposal's own recorded operations before giving up (#1397 /
@@ -1181,7 +1343,7 @@ function onQueueFilterChange(filter: QueueFilter) {
             v-else-if="storedOperationsFallback"
             class="paper-review-deep__diff-pre"
             role="region"
-            aria-label="Recorded proposal operations"
+            :aria-label="$t('review.diff.recordedAriaLabel')"
             data-testid="paper-review-diff-stored-operations"
           >{{ storedOperationsFallback }}</pre>
           <p
@@ -1189,22 +1351,26 @@ function onQueueFilterChange(filter: QueueFilter) {
             class="paper-review-deep__diff-empty tk-meta"
             data-testid="paper-review-diff-stored-empty"
           >
-            No stored preview is available for this proposal.
+            {{ $t('review.diff.storedEmpty') }}
           </p>
           <p
             v-else-if="!previewDiff"
             class="paper-review-deep__diff-empty tk-meta"
             data-testid="paper-review-diff-empty"
           >
-            No changes to preview for this proposal.
+            {{ $t('review.diff.empty') }}
           </p>
           <pre
             v-else
             class="paper-review-deep__diff-pre"
             role="region"
-            :aria-label="previewDiffMode === 'stored' ? 'Stored proposal preview' : 'Proposal operation diff'"
+            :aria-label="
+              previewDiffMode === 'stored'
+                ? $t('review.diff.storedAriaLabel')
+                : $t('review.diff.liveAriaLabel')
+            "
             data-testid="paper-review-diff-pre"
-          >{{ previewDiff }}</pre>
+          >{{ displayedPreviewDiff }}</pre>
         </div>
       </section>
       <ReviewRevisionEditor
@@ -1217,19 +1383,19 @@ function onQueueFilterChange(filter: QueueFilter) {
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
       <template v-if="hasFilterEmptyState">
-        <div class="tk-eyebrow">Queue · {{ awaitingCount }} awaiting</div>
-        <h2 class="tk-h2">No matches in {{ activeFilterLabel }}.</h2>
+        <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
+        <h2 class="tk-h2">{{ $t('review.empty.filtered.title', { filter: activeFilterLabel }) }}</h2>
         <p class="tk-lede">
-          Switch filters to review proposals that are still waiting elsewhere in the queue.
+          {{ $t('review.empty.filtered.body') }}
         </p>
       </template>
       <template v-else>
-        <div class="tk-eyebrow">Queue · 0 awaiting</div>
-        <h2 class="tk-h2">Nothing waiting. Good.</h2>
+        <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
+        <h2 class="tk-h2">{{ $t('review.empty.title') }}</h2>
         <p class="tk-lede">
-          When haiku has something to propose it will appear here for review.
+          {{ $t('review.empty.body') }}
         </p>
-        <p v-if="proposalsLoading" class="tk-meta">Loading proposals…</p>
+        <p v-if="proposalsLoading" class="tk-meta">{{ $t('review.empty.loading') }}</p>
       </template>
     </div>
 
@@ -1244,8 +1410,20 @@ function onQueueFilterChange(filter: QueueFilter) {
       :breakdown="selectors.confidenceBreakdown.value"
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :apply-phase="applyPhase"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
+
+    <!-- Phase-2 confirmation (#1818) — the app dialog idiom replacing the native
+         confirm(); it carries the proposal summary so the user confirms what
+         they are about to write to the board. -->
+    <ApplyToBoardDialog
+      :proposal="executeConfirmProposal"
+      :busy="busy"
+      :revision-count="applyConfirmRevisionCount"
+      @confirm="confirmExecuteProposal"
+      @cancel="cancelExecuteProposal"
+    />
   </div>
 </template>
 

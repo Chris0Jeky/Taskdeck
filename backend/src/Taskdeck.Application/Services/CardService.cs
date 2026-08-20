@@ -52,6 +52,9 @@ public class CardService
             if (column == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found");
 
+            if (column.BoardId != dto.BoardId)
+                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found in board {dto.BoardId}");
+
             // Check WIP limit
             if (column.WouldExceedWipLimitIfAdded())
                 return Result.Failure<CardDto>(ErrorCodes.WipLimitExceeded,

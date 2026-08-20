@@ -3,11 +3,15 @@ import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import PaperCaptureComposer from '../../../../views/paper/inbox/PaperCaptureComposer.vue'
 
+type MockBoard = { id: string; name: string; canWrite?: boolean }
+
+const defaultBoards = (): MockBoard[] => [
+  { id: 'board-alpha', name: 'Alpha' },
+  { id: 'board-beta', name: 'Beta' },
+]
+
 const mockBoardStore = reactive({
-  boards: [
-    { id: 'board-alpha', name: 'Alpha' },
-    { id: 'board-beta', name: 'Beta' },
-  ] as Array<{ id: string; name: string }>,
+  boards: defaultBoards() as MockBoard[],
   fetchBoards: vi.fn<() => Promise<void>>(),
 })
 
@@ -18,6 +22,7 @@ vi.mock('../../../../store/boardStore', () => ({
 describe('PaperCaptureComposer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockBoardStore.boards = defaultBoards()
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
   })
 
@@ -153,6 +158,71 @@ describe('PaperCaptureComposer', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
     const captureButton = wrapper.findAll('button').find((button) => button.text().includes('Capture'))
     expect(captureButton?.attributes('disabled')).toBeDefined()
+  })
+
+  // --- board picker write capability (#1836) -------------------------------
+
+  it('renders a read-only board visible but disabled and annotated view-only', () => {
+    mockBoardStore.boards = [
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+      { id: 'board-readonly', name: 'Archive', canWrite: false },
+    ]
+    const wrapper = mount(PaperCaptureComposer)
+
+    const options = wrapper.findAll('select[aria-label="Board picker"] option')
+    const readOnly = options.find((option) => option.attributes('value') === 'board-readonly')
+
+    // Visible, NOT filtered away.
+    expect(readOnly).toBeDefined()
+    expect(readOnly!.attributes('disabled')).toBeDefined()
+    expect(readOnly!.text()).toContain('Archive')
+    expect(readOnly!.text()).toContain('view-only')
+    expect(wrapper.find('[data-testid="composer-view-only-hint"]').exists()).toBe(true)
+  })
+
+  it('leaves a write-capable board enabled and unannotated', () => {
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: true }]
+    const wrapper = mount(PaperCaptureComposer)
+
+    const option = wrapper
+      .findAll('select[aria-label="Board picker"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+    expect(option!.text()).not.toContain('view-only')
+    expect(wrapper.find('[data-testid="composer-view-only-hint"]').exists()).toBe(false)
+  })
+
+  it('treats a board with no canWrite field as writable (older payloads unchanged)', () => {
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha' }]
+    const wrapper = mount(PaperCaptureComposer)
+
+    const option = wrapper
+      .findAll('select[aria-label="Board picker"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+  })
+
+  it('blocks capture while a read-only board is the active scope', async () => {
+    // defaultBoardId can preselect a board the user only reads; capturing into it
+    // would produce an item that 403s the moment it is accepted for triage.
+    mockBoardStore.boards = [{ id: 'board-readonly', name: 'Archive', canWrite: false }]
+    const wrapper = mount(PaperCaptureComposer, { props: { defaultBoardId: 'board-readonly' } })
+
+    await wrapper.find('textarea').setValue('a thought that has nowhere to land')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    const captureButton = wrapper.findAll('button').find((button) => button.text().includes('Capture'))
+    expect(captureButton?.attributes('disabled')).toBeDefined()
+
+    // Switching to "no board" unblocks it — the escape hatch is one click away.
+    await wrapper.setProps({ defaultBoardId: null })
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+    expect(wrapper.emitted('submit')).toHaveLength(1)
   })
 
   it('keeps the draft after submit until the parent confirms success', async () => {

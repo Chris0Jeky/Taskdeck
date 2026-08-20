@@ -1,24 +1,44 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperKbd from '../../../components/paper/PaperKbd.vue'
+import type { ApplyPhase } from './ReviewDecisionRail.vue'
 
 /**
  * ReviewKeysCard — Decide-with-keys quick-reference rendered in the
  * ember-tint card. The shortcuts are static; behaviour is owned by
  * `useReviewKeymap`.
+ *
+ * ⏎ is the one row that is NOT static: it runs whichever half of the
+ * ADR-0003 two-phase apply the active proposal is in, so its description
+ * follows the phase (#1818 AC2).
  */
-const rows: Array<{ key: string; label: string }> = [
-  { key: '⏎', label: 'Apply proposal' },
-  { key: 'E', label: 'Request edit · opens composer' },
-  { key: '⌫', label: 'Reject · with optional reason' },
-  { key: 'D', label: 'Defer 1h' },
-  { key: 'P', label: 'Toggle provenance pane' },
-  { key: 'space', label: 'Preview diff in card detail' },
-]
+const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase }>(), {
+  applyPhase: 'approve',
+})
+
+const { t } = useI18n()
+
+// The key glyphs are physical keys and never translate; only `space` is a word.
+const rows = computed<Array<{ key: string; label: string }>>(() => [
+  {
+    key: '⏎',
+    label:
+      props.applyPhase === 'execute'
+        ? t('review.keys.enter.execute')
+        : t('review.keys.enter.approve'),
+  },
+  { key: 'E', label: t('review.keys.edit') },
+  { key: '⌫', label: t('review.keys.reject') },
+  { key: 'D', label: t('review.keys.defer') },
+  { key: 'P', label: t('review.keys.provenance') },
+  { key: t('review.keys.spaceKey'), label: t('review.keys.preview') },
+])
 </script>
 
 <template>
   <section class="card paper-review-keys">
-    <div class="tk-eyebrow paper-review-keys__eyebrow">Decide with keys</div>
+    <div class="tk-eyebrow paper-review-keys__eyebrow">{{ $t('review.keys.heading') }}</div>
     <div
       v-for="row in rows"
       :key="row.key"

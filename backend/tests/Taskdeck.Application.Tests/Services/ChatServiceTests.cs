@@ -278,7 +278,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_ShouldReturnStatusWithParseHint_WhenActionableButPlannerFails()
+    public async Task SendMessageAsync_ShouldReturnAndPersistParseHint_WhenPlannerFailureIncludesHintMarker()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -290,12 +290,13 @@ public class ChatServiceTests
         _llmProviderMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult("I can help with that.", 12, true, "card.create"));
+        var plannerFailure = $"Could not parse instruction into a proposal.{AutomationPlannerService.ParseHintMarker}{{\"supportedPatterns\":[]}}";
         _plannerMock
             .Setup(p => p.ParseInstructionAsync(
                 It.IsAny<string>(), userId, boardId,
                 It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()))
-            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse instruction"));
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, plannerFailure));
 
         var result = await _service.SendMessageAsync(
             session.Id,
@@ -304,8 +305,13 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("parse-hint");
         result.Value.Content.Should().Contain("could not parse it into a proposal");
+        result.Value.Content.Should().Contain(AutomationPlannerService.ParseHintMarker);
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.MessageType.Should().Be("parse-hint");
+        persisted.Content.Should().Contain(AutomationPlannerService.ParseHintMarker);
     }
 
     [Fact]
@@ -476,7 +482,7 @@ public class ChatServiceTests
             .Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _policyEngineMock
-            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _policyEngineMock
             .Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))

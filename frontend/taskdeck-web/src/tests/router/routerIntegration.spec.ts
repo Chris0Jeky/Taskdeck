@@ -76,6 +76,12 @@ function buildTestRouter() {
         component: Stub,
         meta: { requiresShell: true, requiresFlag: 'devTools' as keyof FeatureFlags },
       },
+      {
+        path: '/:pathMatch(.*)*',
+        name: 'not-found',
+        component: Stub,
+        meta: { requiresShell: true },
+      },
     ],
   })
 
@@ -90,7 +96,7 @@ function buildTestRouter() {
       tokenStorage.clearAll()
     }
 
-    if (!isPublic && !hasValidSession && to.path.startsWith('/workspace')) {
+    if (!isPublic && !hasValidSession && to.meta.requiresShell === true) {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
 
@@ -215,6 +221,24 @@ describe('router integration tests (#725)', () => {
       await router.push('/workspace/boards')
       expect(router.currentRoute.value.path).toBe('/login')
       expect(clearSpy).toHaveBeenCalled()
+    })
+
+    it('unauthenticated user is redirected from an unknown shell route to /login', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      const router = buildTestRouter()
+      await router.push('/workspace/definitely-missing?secret=do-not-display#private-fragment')
+      expect(router.currentRoute.value.path).toBe('/login')
+      expect(router.currentRoute.value.query.redirect).toBe(
+        '/workspace/definitely-missing?secret=do-not-display#private-fragment',
+      )
+    })
+
+    it('authenticated user resolves an unknown route inside the shell', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(fakeJwt())
+      const router = buildTestRouter()
+      await router.push('/workspace/definitely-missing?secret=do-not-display#private-fragment')
+      expect(router.currentRoute.value.name).toBe('not-found')
+      expect(router.currentRoute.value.meta.requiresShell).toBe(true)
     })
   })
 

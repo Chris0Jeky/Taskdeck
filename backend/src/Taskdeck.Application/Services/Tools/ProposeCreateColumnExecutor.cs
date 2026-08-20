@@ -140,6 +140,7 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
             context.UserId,
             context.BoardId,
             operationDtos,
+            BoardAccessBar.Write,
             ct);
         if (!validationResult.IsSuccess)
         {

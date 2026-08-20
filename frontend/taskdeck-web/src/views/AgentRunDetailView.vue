@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAgentStore } from '../store/agentStore'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { runStatusLabels, runStatusVariant, isTerminalStatus } from '../types/agent'
 import type { AgentRunStatus, AgentRunEvent } from '../types/agent'
 
@@ -106,7 +107,7 @@ function getStatusLabel(status: AgentRunStatus): string {
 }
 
 function getStatusClass(status: AgentRunStatus): string {
-  return `td-run-status--${runStatusVariant[status] ?? 'neutral'}`
+  return `paper-run-status--${runStatusVariant[status] ?? 'neutral'}`
 }
 
 function isQueuedStatus(status: AgentRunStatus): boolean {
@@ -148,10 +149,10 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 </script>
 
 <template>
-  <div class="td-run-detail">
-    <header class="td-run-detail__header">
+  <div class="paper-run-detail">
+    <header class="paper-run-detail__header">
       <button
-        class="td-run-detail__back"
+        class="paper-run-detail__back"
         aria-label="Back to runs"
         @click="goBack"
       >
@@ -159,105 +160,103 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
       </button>
 
       <!-- Loading state -->
-      <div v-if="agentStore.runDetailLoading" class="td-run-detail__state" role="status">
-        <div class="td-run-detail__spinner" aria-hidden="true" />
+      <div v-if="agentStore.runDetailLoading" class="paper-run-detail__state" role="status">
+        <div class="paper-run-detail__spinner" aria-hidden="true" />
         <span>Loading run detail...</span>
       </div>
 
       <!-- Error state -->
       <div
         v-else-if="agentStore.runDetailError"
-        class="td-run-detail__state td-run-detail__state--error"
+        class="paper-run-detail__state paper-run-detail__state--error"
         role="alert"
       >
         <p>{{ agentStore.runDetailError }}</p>
-        <button
-          class="td-btn td-btn--primary td-btn--sm"
-          @click="agentStore.fetchRunDetail(agentId, runId)"
-        >
+        <PaperHLBtn variant="ember" @click="agentStore.fetchRunDetail(agentId, runId)">
           Retry
-        </button>
+        </PaperHLBtn>
       </div>
 
       <!-- Run header (when loaded) -->
       <template v-else-if="run">
-        <span class="td-run-detail__eyebrow">Run Detail</span>
-        <h1 class="td-page-title">{{ run.objective }}</h1>
+        <span class="tk-eyebrow paper-run-detail__eyebrow">Run Detail</span>
+        <h1 class="tk-h2 paper-run-detail__title">{{ run.objective }}</h1>
 
-        <div class="td-run-detail__summary-bar">
-          <span class="td-run-status" :class="getStatusClass(run.status)">
+        <div class="paper-run-detail__summary-bar">
+          <span class="paper-run-status" :class="getStatusClass(run.status)">
             {{ getStatusLabel(run.status) }}
           </span>
-          <span class="td-run-detail__meta">Trigger: {{ run.triggerType }}</span>
-          <span class="td-run-detail__meta">Steps: {{ run.stepsExecuted }}</span>
-          <span class="td-run-detail__meta">Tokens: {{ run.tokensUsed.toLocaleString() }}</span>
-          <span v-if="run.approxCostUsd !== null" class="td-run-detail__meta">
+          <span class="paper-run-detail__meta">Trigger: {{ run.triggerType }}</span>
+          <span class="paper-run-detail__meta">Steps: {{ run.stepsExecuted }}</span>
+          <span class="paper-run-detail__meta">Tokens: {{ run.tokensUsed.toLocaleString() }}</span>
+          <span v-if="run.approxCostUsd !== null" class="paper-run-detail__meta">
             Cost: ${{ run.approxCostUsd.toFixed(4) }}
           </span>
-          <span v-if="isQueuedStatus(run.status)" class="td-run-detail__meta">
+          <span v-if="isQueuedStatus(run.status)" class="paper-run-detail__meta">
             Requested: {{ formatDate(run.startedAt) }}
           </span>
-          <span v-else class="td-run-detail__meta">Started: {{ formatDate(run.startedAt) }}</span>
-          <span v-if="run.completedAt" class="td-run-detail__meta">
+          <span v-else class="paper-run-detail__meta">Started: {{ formatDate(run.startedAt) }}</span>
+          <span v-if="run.completedAt" class="paper-run-detail__meta">
             Completed: {{ formatDate(run.completedAt) }}
           </span>
         </div>
 
-        <p v-if="run.summary" class="td-run-detail__run-summary">{{ run.summary }}</p>
-        <p v-if="run.failureReason" class="td-run-detail__failure">{{ run.failureReason }}</p>
+        <p v-if="run.summary" class="paper-run-detail__run-summary">{{ run.summary }}</p>
+        <p v-if="run.failureReason" class="paper-run-detail__failure">{{ run.failureReason }}</p>
         <p
           v-if="isQueuedStatus(run.status)"
-          class="td-run-detail__queued-note"
+          class="paper-run-detail__queued-note"
           role="status"
         >
           Queued by the API. Execution has not started.
         </p>
 
-        <button
+        <PaperHLBtn
           v-if="run.proposalId"
-          class="td-btn td-btn--ghost td-btn--sm td-run-detail__proposal-link"
+          variant="ghost"
+          class="paper-run-detail__proposal-link"
           @click="goToProposal"
         >
           View linked proposal
-        </button>
+        </PaperHLBtn>
       </template>
     </header>
 
     <!-- Timeline -->
     <section
       v-if="run && !agentStore.runDetailLoading"
-      class="td-run-detail__timeline"
+      class="paper-run-detail__timeline"
       aria-label="Run event timeline"
     >
-      <h2 class="td-run-detail__timeline-title">Timeline</h2>
+      <h2 class="tk-h3 paper-run-detail__timeline-title">Timeline</h2>
 
-      <div v-if="sortedEvents.length === 0" class="td-run-detail__timeline-empty">
+      <div v-if="sortedEvents.length === 0" class="paper-run-detail__timeline-empty">
         <p>No events recorded for this run.</p>
       </div>
 
-      <ol v-else class="td-timeline" role="list">
+      <ol v-else class="paper-timeline" role="list">
         <li
           v-for="event in timelineItems"
           :key="event.id"
-          class="td-timeline__item"
+          class="paper-timeline__item"
           role="listitem"
         >
-          <div class="td-timeline__marker" aria-hidden="true" />
-          <div class="td-timeline__content">
-            <div class="td-timeline__header">
-              <span class="td-timeline__event-type">{{ event.eventLabel }}</span>
+          <div class="paper-timeline__marker" aria-hidden="true" />
+          <div class="paper-timeline__content">
+            <div class="paper-timeline__header">
+              <span class="paper-timeline__event-type">{{ event.eventLabel }}</span>
               <time
-                class="td-timeline__time"
+                class="paper-timeline__time"
                 :datetime="event.timestamp"
                 :title="formatDate(event.timestamp)"
               >
                 {{ formatTimestamp(event.timestamp) }}
               </time>
             </div>
-            <div class="td-timeline__seq">{{ event.sequenceLabel }}</div>
+            <div class="paper-timeline__seq">{{ event.sequenceLabel }}</div>
             <pre
               v-if="event.payloadText"
-              class="td-timeline__payload"
+              class="paper-timeline__payload"
             >{{ event.payloadText }}</pre>
           </div>
         </li>
@@ -265,7 +264,7 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 
       <div
         v-if="run && !isQueuedStatus(run.status) && !isTerminalStatus(run.status)"
-        class="td-run-detail__live-indicator"
+        class="paper-run-detail__live-indicator"
         role="status"
         aria-live="polite"
       >
@@ -276,56 +275,179 @@ function parsePayloadSafe(payload: string): Record<string, unknown> | null {
 </template>
 
 <style scoped>
-.td-run-detail { max-width: 860px; }
-.td-page-title { font-size: var(--td-font-2xl); font-weight: 700; color: var(--td-text-primary); }
-.td-run-detail__header { margin-bottom: var(--td-space-6); display: flex; flex-direction: column; gap: var(--td-space-2); }
-.td-run-detail__eyebrow { font-size: var(--td-font-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--td-text-tertiary); }
+/* ── Paper & Graphite — AgentRunDetailView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night`, so var() fallbacks keep the
+   surface legible if rendered outside the Paper shell. */
 
-.td-run-detail__back { background: none; border: none; color: var(--td-color-ember); cursor: pointer; font-size: var(--td-font-sm); padding: 0; margin-bottom: var(--td-space-2); text-align: left; }
-.td-run-detail__back:hover { text-decoration: underline; }
-.td-run-detail__back:focus-visible { box-shadow: var(--td-focus-ring); outline: none; }
+.paper-run-detail {
+  max-width: 860px;
+  font-family: var(--sans, system-ui, sans-serif);
+  /* Legacy ("off") mode: Paper vars are scoped to .paper/.paper-night, so a root
+     that sets --ink must paint --paper alongside it or the near-black fallback
+     lands on AppShell's Obsidian surface. No-op inside the Paper shell. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+}
 
-.td-run-detail__state { padding: var(--td-space-8); text-align: center; color: var(--td-text-secondary); display: flex; flex-direction: column; align-items: center; gap: var(--td-space-4); }
-.td-run-detail__state--error { color: var(--td-color-error); }
-.td-run-detail__spinner { width: 24px; height: 24px; border: 3px solid var(--td-border-ghost); border-top-color: var(--td-color-ember); border-radius: 50%; animation: td-spin 0.8s linear infinite; }
-@keyframes td-spin { to { transform: rotate(360deg); } }
+.paper-run-detail__header {
+  margin-bottom: var(--s-6, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  align-items: flex-start;
+}
 
-.td-run-detail__summary-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--td-space-4); margin-top: var(--td-space-2); }
-.td-run-detail__meta { font-size: var(--td-font-xs); color: var(--td-text-tertiary); white-space: nowrap; }
-.td-run-detail__run-summary { color: var(--td-text-secondary); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
-.td-run-detail__failure { color: var(--td-color-error); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
-.td-run-detail__queued-note { color: var(--td-text-secondary); font-size: var(--td-font-sm); line-height: 1.5; margin-top: var(--td-space-2); }
-.td-run-detail__proposal-link { margin-top: var(--td-space-2); }
+.paper-run-detail__eyebrow { color: var(--mute, #635c4e); }
+.paper-run-detail__title { margin: 0; font-size: var(--t-h2, 32px); }
 
-/* Run status badge - shared with AgentRunsView */
-.td-run-status { font-size: var(--td-font-xs); font-weight: 700; padding: var(--td-space-1) var(--td-space-3); border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; flex-shrink: 0; }
-.td-run-status--success { background: var(--td-color-success-dim, rgba(34, 197, 94, 0.15)); color: var(--td-color-success, #22c55e); }
-.td-run-status--error { background: var(--td-color-error-dim, rgba(239, 68, 68, 0.15)); color: var(--td-color-error, #ef4444); }
-.td-run-status--warning { background: var(--td-color-warning-dim, rgba(234, 179, 8, 0.15)); color: var(--td-color-warning, #eab308); }
-.td-run-status--info { background: var(--td-color-info-dim, rgba(59, 130, 246, 0.15)); color: var(--td-color-info, #3b82f6); }
-.td-run-status--neutral { background: var(--td-surface-container-high); color: var(--td-text-tertiary); }
+.paper-run-detail__back {
+  background: none;
+  border: none;
+  color: var(--ember, #a8421f);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--t-sm, 12px);
+  padding: 0;
+  margin-bottom: var(--s-2, 8px);
+  text-align: left;
+}
+
+.paper-run-detail__back:hover { text-decoration: underline; }
+.paper-run-detail__back:focus-visible {
+  outline: 2px solid var(--ember, #a8421f);
+  outline-offset: 2px;
+  border-radius: var(--r-1, 2px);
+}
+
+.paper-run-detail__state {
+  padding: var(--s-8, 32px);
+  text-align: center;
+  color: var(--mute, #635c4e);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-4, 16px);
+  width: 100%;
+}
+
+.paper-run-detail__state--error { color: var(--overdue, #8c4a26); }
+
+.paper-run-detail__spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--line, #d8d0bf);
+  border-top-color: var(--ember, #a8421f);
+  border-radius: 50%;
+  animation: paper-run-detail-spin 0.8s linear infinite;
+}
+
+@keyframes paper-run-detail-spin { to { transform: rotate(360deg); } }
+
+.paper-run-detail__summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4, 16px);
+  margin-top: var(--s-2, 8px);
+}
+
+.paper-run-detail__meta {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+  white-space: nowrap;
+}
+
+.paper-run-detail__run-summary { margin: var(--s-2, 8px) 0 0; color: var(--ink-2, #3a352d); font-size: var(--t-md, 13.5px); line-height: 1.5; }
+.paper-run-detail__failure { margin: var(--s-2, 8px) 0 0; color: var(--overdue, #8c4a26); font-size: var(--t-md, 13.5px); line-height: 1.5; }
+.paper-run-detail__queued-note { margin: var(--s-2, 8px) 0 0; color: var(--mute, #635c4e); font-size: var(--t-md, 13.5px); line-height: 1.5; }
+.paper-run-detail__proposal-link { margin-top: var(--s-2, 8px); }
+
+/* Run status badge — mirrors AgentRunsView */
+.paper-run-status {
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 700;
+  padding: var(--s-1, 4px) var(--s-3, 12px);
+  border-radius: var(--r-1, 2px);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.paper-run-status--success { background: var(--applied-tint, #d8e0ce); color: var(--applied, #4a6b3f); }
+.paper-run-status--error { background: var(--ember-bloom, #a8421f1a); color: var(--ember-deep, #7a2e15); }
+.paper-run-status--warning { background: var(--overdue-tint, #ecd9c4); color: var(--overdue, #8c4a26); }
+.paper-run-status--info { background: var(--ember-tint, #f0d9c8); color: var(--ember-ink, #6e2810); }
+.paper-run-status--neutral { background: var(--paper-2, #ebe5d8); color: var(--mute, #635c4e); }
 
 /* Timeline */
-.td-run-detail__timeline { margin-top: var(--td-space-6); }
-.td-run-detail__timeline-title { font-size: var(--td-font-lg); font-weight: 700; color: var(--td-text-primary); margin-bottom: var(--td-space-4); }
-.td-run-detail__timeline-empty { color: var(--td-text-secondary); padding: var(--td-space-6); text-align: center; }
+.paper-run-detail__timeline { margin-top: var(--s-6, 24px); }
+.paper-run-detail__timeline-title { margin: 0 0 var(--s-4, 16px); font-size: var(--t-lg, 18px); }
+.paper-run-detail__timeline-empty { color: var(--mute, #635c4e); padding: var(--s-6, 24px); text-align: center; }
 
-.td-timeline { list-style: none; padding: 0; margin: 0; position: relative; }
-.td-timeline::before { content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--td-border-ghost); }
+.paper-timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+.paper-timeline::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--line, #d8d0bf);
+}
 
-.td-timeline__item { position: relative; padding-left: var(--td-space-8); padding-bottom: var(--td-space-5); }
-.td-timeline__item:last-child { padding-bottom: 0; }
+.paper-timeline__item { position: relative; padding-left: var(--s-8, 32px); padding-bottom: var(--s-5, 20px); }
+.paper-timeline__item:last-child { padding-bottom: 0; }
 
-.td-timeline__marker { position: absolute; left: 2px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--td-color-ember); border: 2px solid var(--td-surface-container); z-index: 1; }
+.paper-timeline__marker {
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ember, #a8421f);
+  border: 2px solid var(--paper-card, #fbf7ee);
+  z-index: 1;
+}
 
-.td-timeline__content { background: var(--td-surface-container); border: 1px solid var(--td-border-ghost); border-radius: var(--td-radius-md); padding: var(--td-space-4); }
+.paper-timeline__content {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+  padding: var(--s-4, 16px);
+}
 
-.td-timeline__header { display: flex; align-items: center; justify-content: space-between; gap: var(--td-space-3); }
-.td-timeline__event-type { font-weight: 600; color: var(--td-text-primary); font-size: var(--td-font-sm); }
-.td-timeline__time { font-size: var(--td-font-xs); color: var(--td-text-tertiary); white-space: nowrap; }
-.td-timeline__seq { font-size: var(--td-font-xs); color: var(--td-text-tertiary); margin-top: var(--td-space-1); }
+.paper-timeline__header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3, 12px); }
+.paper-timeline__event-type { font-weight: 600; color: var(--ink-deep, #0a0908); font-size: var(--t-md, 13.5px); }
+.paper-timeline__time { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #635c4e); white-space: nowrap; }
+.paper-timeline__seq { font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-xs, 10.5px); color: var(--mute, #635c4e); margin-top: var(--s-1, 4px); }
 
-.td-timeline__payload { margin-top: var(--td-space-3); padding: var(--td-space-3); background: var(--td-surface-container-high); border-radius: var(--td-radius-sm); font-size: var(--td-font-xs); color: var(--td-text-secondary); overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+.paper-timeline__payload {
+  margin-top: var(--s-3, 12px);
+  padding: var(--s-3, 12px);
+  background: var(--paper-2, #ebe5d8);
+  border-radius: var(--r-2, 4px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ink-2, #3a352d);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
 
-.td-run-detail__live-indicator { margin-top: var(--td-space-4); padding: var(--td-space-3) var(--td-space-4); background: var(--td-color-info-dim, rgba(59, 130, 246, 0.1)); border-radius: var(--td-radius-md); color: var(--td-color-info, #3b82f6); font-size: var(--td-font-sm); text-align: center; }
+.paper-run-detail__live-indicator {
+  margin-top: var(--s-4, 16px);
+  padding: var(--s-3, 12px) var(--s-4, 16px);
+  background: var(--ember-bloom, #a8421f1a);
+  border-radius: var(--r-3, 6px);
+  color: var(--ember-deep, #7a2e15);
+  font-size: var(--t-md, 13.5px);
+  text-align: center;
+}
 </style>

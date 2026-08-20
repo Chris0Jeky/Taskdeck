@@ -35,7 +35,7 @@ function barColor(value: number): string {
       :num="proposedNum"
       :rotate="-9"
     />
-    <div class="tk-eyebrow paper-review-author__eyebrow">Author</div>
+    <div class="tk-eyebrow paper-review-author__eyebrow">{{ $t('review.author.heading') }}</div>
     <div class="paper-review-author__row">
       <span class="paper-review-author__bullet" aria-hidden="true">✦</span>
       <div>
@@ -44,7 +44,9 @@ function barColor(value: number): string {
       </div>
     </div>
     <hr class="hr-soft paper-review-author__rule" />
-    <div class="tk-eyebrow paper-review-author__bd-heading">Confidence breakdown</div>
+    <div class="tk-eyebrow paper-review-author__bd-heading">
+      {{ $t('review.author.breakdownHeading') }}
+    </div>
     <div
       v-for="component in breakdown.components"
       :key="component.key"

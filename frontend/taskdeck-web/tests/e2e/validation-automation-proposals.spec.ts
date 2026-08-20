@@ -1,7 +1,7 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
 import { pollUntil } from './support/polling'
@@ -49,7 +49,7 @@ async function createChatSessionAndSendProposal(
   await page.getByPlaceholder('Board context (optional)').fill(boardId)
   await page.getByRole('button', { name: 'Create Session' }).click()
 
-  const sessionId = await page.locator('.td-chat-meta').first().getAttribute('data-session-id')
+  const sessionId = await page.locator('.paper-chat__meta').first().getAttribute('data-session-id')
   if (!sessionId) throw new Error('Expected chat session header to expose data-session-id')
 
   await page.getByPlaceholder('Describe an automation instruction...').fill(instruction)
@@ -142,10 +142,7 @@ test.describe('TST09 Proposal Lifecycle', () => {
     await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
     // Execute
-    await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-      type: 'confirm',
-      message: 'Apply this approved proposal to the board now?',
-    })
+    await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
     await expect(proposalCard).not.toBeVisible()
 
     // Verify card now exists on the board

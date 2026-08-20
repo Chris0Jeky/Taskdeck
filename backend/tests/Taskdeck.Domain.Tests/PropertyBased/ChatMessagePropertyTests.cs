@@ -19,7 +19,7 @@ public class ChatMessagePropertyTests
 
     private static readonly string[] ValidMessageTypes =
     {
-        "text", "proposal-reference", "error", "status", "degraded", "clarification"
+        "text", "proposal-reference", "error", "status", "degraded", "clarification", "parse-hint"
     };
 
     // ─────────────────────── Generators ───────────────────────

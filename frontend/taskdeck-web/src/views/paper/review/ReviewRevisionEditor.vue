@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 
@@ -19,6 +20,8 @@ interface EditableField {
   valueKind: 'string' | 'json'
 }
 
+const { t } = useI18n()
+
 const fields = ref<EditableField[]>([])
 const reason = ref('')
 const parseError = ref(false)
@@ -31,7 +34,7 @@ const jsonFieldErrors = computed(() => {
     try {
       JSON.parse(field.value)
     } catch {
-      errors[field.key] = 'Enter valid JSON before saving.'
+      errors[field.key] = t('review.revisionEditor.jsonError')
     }
   }
 
@@ -91,7 +94,7 @@ function onSave() {
 <template>
   <div class="revision-editor card" data-testid="revision-editor">
     <div class="revision-editor__header">
-      <PaperTagstamp tone="ember">EDIT BEFORE APPROVE</PaperTagstamp>
+      <PaperTagstamp tone="ember">{{ $t('review.revisionEditor.stamp') }}</PaperTagstamp>
     </div>
 
     <div class="revision-editor__fields">
@@ -115,26 +118,28 @@ function onSave() {
     </div>
 
     <div class="revision-editor__reason">
-      <label for="revision-reason" class="revision-editor__label">Reason for edit</label>
+      <label for="revision-reason" class="revision-editor__label">{{
+        $t('review.revisionEditor.reasonLabel')
+      }}</label>
       <input
         id="revision-reason"
         v-model="reason"
         type="text"
         class="revision-editor__reason-input"
-        placeholder="Why are you editing this proposal?"
+        :placeholder="$t('review.revisionEditor.reasonPlaceholder')"
         data-testid="revision-reason"
       />
     </div>
 
     <div class="revision-editor__actions">
       <PaperHLBtn
-        label="Cancel"
+        :label="$t('review.revisionEditor.cancel')"
         :disabled="saving"
         data-testid="revision-cancel"
         @click="emit('cancel')"
       />
       <PaperHLBtn
-        label="Save revision"
+        :label="$t('review.revisionEditor.save')"
         variant="ember"
         :disabled="!canSave"
         data-testid="revision-save"

@@ -94,14 +94,14 @@ public class UnhandledExceptionMiddlewareTests
     }
 
     [Fact]
-    public async Task InvokeAsync_ShouldStripLineBreaksFromRequestMetadata()
+    public async Task InvokeAsync_ShouldStripTerminalControlsFromRequestMetadata()
     {
         var logger = new InMemoryLogger<UnhandledExceptionMiddleware>();
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
-        context.Request.Method = "POST\r\nforged-method";
-        context.Request.Path = "/api/capture/items";
-        context.TraceIdentifier = "trace\nforged-trace";
+        context.Request.Method = "POST \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
+        context.Request.Path = "/api/capture/items \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
+        context.TraceIdentifier = "trace \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
 
         RequestDelegate next = _ => throw new InvalidOperationException("ignored content");
         var middleware = new UnhandledExceptionMiddleware(next, logger);
@@ -109,8 +109,9 @@ public class UnhandledExceptionMiddlewareTests
         await middleware.InvokeAsync(context);
 
         var message = logger.Entries.Single(entry => entry.Level == LogLevel.Error).Message;
-        message.Should().NotContain("\r").And.NotContain("\n");
-        message.Should().Contain("POSTforged-method");
-        message.Should().Contain("traceforged-trace");
+        message.Should().NotContain("\u001B").And.NotContain("\u000B").And.NotContain("\u009B").And.NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("POST escapeverticalc1safe café ✓");
+        message.Should().Contain("/api/capture/items escapeverticalc1safe café ✓");
+        message.Should().Contain("trace escapeverticalc1safe café ✓");
     }
 }

@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import ApiKeySettingsView from '../../views/ApiKeySettingsView.vue'
+import apiKeysSource from '../../views/ApiKeySettingsView.vue?raw'
 
 const mocks = vi.hoisted(() => ({
   listKeys: vi.fn(),
@@ -100,6 +101,47 @@ describe('ApiKeySettingsView', () => {
 
     const skeletons = document.body.querySelectorAll('[aria-hidden="true"]')
     expect(skeletons.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    mocks.listKeys.mockResolvedValue([activeKey])
+
+    wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+    await waitForUi()
+
+    // The page's own chrome uses the Paper (`paper-api-keys__*`) idiom. The
+    // shared `components/ui/Td*` primitives it composes are out of scope and
+    // keep their own class hooks.
+    expect(wrapper.find('.paper-api-keys').exists()).toBe(true)
+    expect(wrapper.find('.paper-api-keys__panel').exists()).toBe(true)
+    expect(wrapper.find('.paper-api-keys__card').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-key-"]').exists()).toBe(false)
+  })
+
+  // #1816 / #1808 review: the mixed-surface residual was recorded only in the
+  // PR body, so nothing would notice it changing. This spec pins it: the page
+  // deliberately still composes the shared Obsidian-styled `Td*` primitives
+  // inside Paper chrome, because none of them has a Paper variant and
+  // `PaperHLBtn` has no `:loading` equivalent (swapping TdButton would leave
+  // the Create Key button clickable mid-request). When the shared primitives
+  // gain a Paper variant, this test is the thing that must be updated -- flip
+  // it to assert the absence of `td-btn` / `td-badge`, and drop it.
+  it('pins the known mixed-surface residual: shared Td* primitives inside Paper chrome', async () => {
+    mocks.listKeys.mockResolvedValue([activeKey])
+
+    wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
+    await waitForUi()
+
+    // Paper chrome around ...
+    expect(wrapper.find('.paper-api-keys__panel').exists()).toBe(true)
+    // ... Obsidian-styled shared primitives.
+    expect(wrapper.find('.td-btn').exists()).toBe(true)
+    expect(wrapper.find('.td-badge').exists()).toBe(true)
+
+    // The scope note in the view's style block is the human-readable half of
+    // this residual; keep it and the assertion above in step.
+    expect(apiKeysSource).toMatch(/components\/ui\/Td\*|shared .*primitive/i)
   })
 
   it('shows error state with retry button on load failure', async () => {
@@ -413,5 +455,25 @@ describe('ApiKeySettingsView', () => {
 
     expect(bodyText()).toContain('MCP server HTTP transport authentication')
     expect(bodyText()).toContain('tdsk_')
+  })
+})
+
+// ── #1808 review (MEDIUM): Legacy ("off") mode substrate guard ──
+// Paper tokens exist only under `.paper` / `.paper-night` (paper-tokens.css), so
+// in Legacy mode this view's `color: var(--ink, …)` resolves to the near-black
+// literal while AppShell's `.td-content` still paints `--td-surface-base`
+// (#131313) — ~1.05:1 on the hero. A root that sets the Paper ink MUST therefore
+// also paint the Paper substrate; that is a no-op under `.paper`/`.paper-night`.
+// Source is read through Vite's `?raw` rather than `node:fs` because
+// `tsconfig.vitest.json` deliberately omits the "node" types.
+// #1815 tracks unifying these per-view assertions into one wave-wide spec.
+describe('ApiKeySettingsView Legacy-mode substrate', () => {
+  it('paints --paper on the root wherever it sets --ink', () => {
+    const rule = apiKeysSource.match(/^\.paper-api-keys \{([\s\S]*?)\}/m)?.[1]
+    expect(rule, '.paper-api-keys root rule').toBeTruthy()
+    // Guard the guard: if the ink declaration were dropped or renamed, the
+    // substrate assertion below would otherwise pass vacuously.
+    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })

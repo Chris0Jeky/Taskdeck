@@ -10,6 +10,22 @@ Taskdeck uses EF Core Code-First migrations with SQLite as the default persisten
 
 **DbContext**: `Taskdeck.Infrastructure.Persistence.TaskdeckDbContext`
 
+**Startup path**: every host mode (API, CLI, MCP HTTP, MCP stdio) applies migrations through
+`Taskdeck.Infrastructure.Persistence.SerializedMigrator`, never `Database.Migrate()` directly. It
+serializes migration application across processes with a sidecar file lock (`#1164`) and, since
+`#1803`, takes a **fail-closed pre-migration snapshot** of the SQLite file before any DDL runs
+(`SqlitePreMigrationBackup`, SQLite online backup API — WAL-safe). Consequences when authoring a
+migration:
+
+- The first startup after your migration ships will copy the user's database file. Keep migrations
+  small; a multi-GB database pays the copy cost once per schema change.
+- If the snapshot cannot be written, **the migration does not run** and startup fails with
+  `PreMigrationBackupException`. That is intentional. See `Database:Backup:*` in
+  `CONFIGURATION_REFERENCE.md` and the user-facing description in the repository-root
+  `UPGRADING.md`.
+- A migration that ships in a release also needs an `UPGRADING.md` entry under the target version —
+  at minimum a `BREAKING: none` line so self-hosters can tell at a glance.
+
 ## Prerequisites
 
 Install the EF Core CLI tools (if not already available):

@@ -1,7 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
+
+type MockBoard = { id: string; name: string; canWrite?: boolean }
+
+const defaultBoards = (): MockBoard[] => [
+  { id: 'board-alpha', name: 'Alpha' },
+  { id: 'board-beta', name: 'Beta' },
+]
+
+const mockBoardStore = reactive({
+  boards: defaultBoards() as MockBoard[],
+  fetchBoards: vi.fn<() => Promise<void>>(),
+})
+
+vi.mock('../../../../store/boardStore', () => ({
+  useBoardStore: () => mockBoardStore,
+}))
 
 function makeItems(): CaptureItemSummary[] {
   const createdAt = new Date('2026-04-25T09:42:00Z').toISOString()
@@ -9,7 +26,7 @@ function makeItems(): CaptureItemSummary[] {
     {
       id: 'capture-1',
       userId: 'user-1',
-      boardId: null,
+      boardId: 'board-alpha',
       status: 'New',
       source: 'Typed',
       textExcerpt: 'First excerpt',
@@ -19,7 +36,7 @@ function makeItems(): CaptureItemSummary[] {
     {
       id: 'capture-2',
       userId: 'user-1',
-      boardId: null,
+      boardId: 'board-alpha',
       status: 'Triaging',
       source: 'Paste',
       textExcerpt: 'Second excerpt',
@@ -30,6 +47,12 @@ function makeItems(): CaptureItemSummary[] {
 }
 
 describe('PaperTriageTable', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBoardStore.boards = defaultBoards()
+    mockBoardStore.fetchBoards.mockResolvedValue(undefined)
+  })
+
   it('renders an empty state when there are no items', () => {
     const wrapper = mount(PaperTriageTable, { props: { items: [] } })
     expect(wrapper.text()).toContain('No captures yet')
@@ -83,13 +106,13 @@ describe('PaperTriageTable', () => {
     expect(tags[3].text()).toBe('Meeting')
   })
 
-  it('emits accept with the item id when the Accept button is clicked', async () => {
+  it('emits accept with the item id and its board when the Accept button is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const acceptBtn = wrapper.findAll('button[data-action="accept"]')[0]
     await acceptBtn.trigger('click')
     const events = wrapper.emitted('accept')
     expect(events).toBeDefined()
-    expect(events?.[0]).toEqual(['capture-1'])
+    expect(events?.[0]).toEqual(['capture-1', 'board-alpha'])
   })
 
   it('emits reject with the item id when the Reject button is clicked', async () => {
@@ -99,6 +122,62 @@ describe('PaperTriageTable', () => {
     const events = wrapper.emitted('reject')
     expect(events).toBeDefined()
     expect(events?.[0]).toEqual(['capture-1'])
+  })
+
+  it('requires a board before accepting a board-less capture (#1764)', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    // Accept must NOT emit immediately — it reveals the inline board picker instead.
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    const picker = wrapper.find('[data-testid="capture-board-pick"]')
+    expect(picker.exists()).toBe(true)
+
+    // Choosing a board then confirming emits accept with the chosen board id.
+    await picker.find('select').setValue('board-beta')
+    await wrapper.find('button[data-action="accept-on-board"]').trigger('click')
+    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-1', 'board-beta'])
+    // Picker closes after confirming.
+    expect(wrapper.find('[data-testid="capture-board-pick"]').exists()).toBe(false)
+  })
+
+  it('cannot confirm the board picker without choosing a board', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    const confirmBtn = wrapper.find('button[data-action="accept-on-board"]')
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    await confirmBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+
+    // Cancel dismisses the picker without emitting.
+    await wrapper.find('button[data-action="cancel-board-pick"]').trigger('click')
+    expect(wrapper.find('[data-testid="capture-board-pick"]').exists()).toBe(false)
+    expect(wrapper.emitted('accept')).toBeUndefined()
+  })
+
+  it('surfaces the failure reason on a failed capture', () => {
+    const items = makeItems()
+    items[0] = {
+      ...items[0],
+      status: 'Failed',
+      errorMessage: 'BoardId is required to triage capture items into proposals',
+    }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const reason = wrapper.find('[data-testid="capture-failure-reason"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('BoardId is required')
+  })
+
+  it('does not surface an error line for a non-failed capture', () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New', errorMessage: 'stale message' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    expect(wrapper.find('[data-testid="capture-failure-reason"]').exists()).toBe(false)
   })
 
   it('disables row actions for immutable capture statuses', async () => {
@@ -193,8 +272,80 @@ describe('PaperTriageTable', () => {
 
     await secondAcceptBtn.trigger('click')
     await secondRejectBtn.trigger('click')
-    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-2'])
+    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-2', 'board-alpha'])
     expect(wrapper.emitted('reject')?.[0]).toEqual(['capture-2'])
+  })
+
+  // --- board picker write capability (#1836) -------------------------------
+
+  async function openBoardPicker(boards: MockBoard[]) {
+    mockBoardStore.boards = boards
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    return wrapper
+  }
+
+  it('renders a read-only board visible but disabled and annotated view-only', async () => {
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+      { id: 'board-readonly', name: 'Archive', canWrite: false },
+    ])
+
+    const options = wrapper.findAll('[data-testid="capture-board-pick"] option')
+    const readOnly = options.find((option) => option.attributes('value') === 'board-readonly')
+
+    // Visible, NOT filtered away.
+    expect(readOnly).toBeDefined()
+    expect(readOnly!.attributes('disabled')).toBeDefined()
+    expect(readOnly!.text()).toContain('Archive')
+    expect(readOnly!.text()).toContain('view-only')
+    expect(wrapper.find('[data-testid="board-pick-view-only-hint"]').exists()).toBe(true)
+  })
+
+  it('leaves a write-capable board enabled and unannotated', async () => {
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+    ])
+
+    const option = wrapper
+      .findAll('[data-testid="capture-board-pick"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+    expect(option!.text()).not.toContain('view-only')
+    // The hint is only shown when there IS something to explain.
+    expect(wrapper.find('[data-testid="board-pick-view-only-hint"]').exists()).toBe(false)
+  })
+
+  it('treats a board with no canWrite field as writable (older payloads unchanged)', async () => {
+    const wrapper = await openBoardPicker([{ id: 'board-alpha', name: 'Alpha' }])
+
+    const option = wrapper
+      .findAll('[data-testid="capture-board-pick"] option')
+      .find((o) => o.attributes('value') === 'board-alpha')
+
+    expect(option!.attributes('disabled')).toBeUndefined()
+    expect(option!.text()).toBe('Alpha')
+  })
+
+  it('refuses to accept onto a board that turns read-only after it was picked', async () => {
+    // Access can be revoked between the list load and the confirm click; the
+    // picker must not emit an accept the server would answer with a 403.
+    const wrapper = await openBoardPicker([
+      { id: 'board-alpha', name: 'Alpha', canWrite: true },
+    ])
+    await wrapper.find('[data-testid="capture-board-pick"] select').setValue('board-alpha')
+
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: false }]
+    await wrapper.vm.$nextTick()
+
+    const confirmBtn = wrapper.find('button[data-action="accept-on-board"]')
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    await confirmBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
   })
 
   it('emits open when an item row excerpt is clicked', async () => {

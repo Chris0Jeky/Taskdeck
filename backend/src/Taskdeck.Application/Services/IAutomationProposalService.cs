@@ -11,6 +11,12 @@ public interface IAutomationProposalService
     /// </summary>
     Task<Result<ProposalDto>> CreateProposalAsync(CreateProposalDto dto, CancellationToken cancellationToken = default);
 
+    /// <summary>Creates a proposal and attaches trusted transcript evidence to its operation fields.</summary>
+    Task<Result<ProposalDto>> CreateTranscriptProposalAsync(
+        CreateProposalDto dto,
+        IReadOnlyList<TranscriptEvidenceLinkInput> evidence,
+        CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Gets a proposal by ID with all operations.
     /// </summary>
@@ -60,8 +66,10 @@ public interface IAutomationProposalService
     /// <summary>
     /// Serves the STORED diff preview for a decided (terminal) proposal — Applied, Rejected,
     /// Failed, Expired, or Dismissed — after re-running ONLY the requester/board-access half of
-    /// the gate, via the shared <c>IAutomationPolicyEngine.ValidateBoardAccessAsync</c> (requester
-    /// exists → 404, board exists → 404, requester has board access → 403; #1398/#1413). A
+    /// the gate, via the shared <c>IAutomationPolicyEngine.ValidateBoardAccessAsync</c> at the
+    /// <c>BoardAccessBar.Read</c> bar (requester exists → 404, board exists → 404, requester is a
+    /// board member → 403; #1398/#1413, bar pinned by #1836 — this is a read, so membership is the
+    /// bar and a member demoted to Viewer keeps access to their own proposals' preview). A
     /// reviewer who lost board access, or whose board/requester was deleted, is therefore denied
     /// the stored preview rather than reading stale board contents through it (#1415). The
     /// operation-contract validator and the pre-decision structure/expiry gates are deliberately

@@ -48,6 +48,14 @@ const items: CommandItem[] = [
     kind: 'navigation',
   },
   {
+    id: 'nav:calendar',
+    label: 'Go to Calendar',
+    icon: 'C',
+    path: '/workspace/calendar',
+    keywords: 'calendar schedule',
+    kind: 'navigation',
+  },
+  {
     id: 'action:capture',
     label: 'New Capture',
     icon: '+',
@@ -59,7 +67,7 @@ const items: CommandItem[] = [
     id: 'action:propose-split',
     label: 'Propose: split into 3 cards',
     icon: '◆',
-    keywords: 'haiku ai split',
+    keywords: 'assistant ai split',
     kind: 'action',
     action: () => {},
   },
@@ -123,20 +131,38 @@ describe('PaperCommandPalette', () => {
     expect(visibleLabels.some((t) => t.includes('Home'))).toBe(false)
   })
 
-  it('preserves Go to labels for navigation commands', async () => {
+  it('renders navigation labels with exactly one Go to prefix and activates the route', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },
       attachTo: document.body,
     })
     await nextTick()
 
-    const visibleLabels = rows().map((r) => r.textContent ?? '')
-    expect(visibleLabels.some((t) => t.includes('Go to Home'))).toBe(true)
-    expect(visibleLabels.some((t) => t.includes('Go to Boards'))).toBe(true)
-    expect(visibleLabels.some((t) => t.includes('Go to New Capture'))).toBe(false)
+    const visibleLabels = rows().map((row) => row.querySelector('.paper-palette__row-label')?.textContent?.trim())
+    expect(visibleLabels).toEqual([
+      'Propose: split into 3 cards',
+      'Go to Home',
+      'Go to Boards',
+      'Go to Calendar',
+      'New Capture',
+    ])
+
+    const calendarRow = rows().find(
+      (row) => row.querySelector('.paper-palette__row-label')?.textContent?.trim() === 'Go to Calendar',
+    )
+    expect(calendarRow).toBeDefined()
+    calendarRow?.click()
+    await nextTick()
+    expect(wrapper.emitted('activate')?.[0]?.[0]).toMatchObject({
+      id: 'nav:calendar',
+      label: 'Go to Calendar',
+      path: '/workspace/calendar',
+      kind: 'navigation',
+    })
+
   })
 
-  it('separates AI (haiku) actions into their own section with the haiku tag', async () => {
+  it('separates AI actions into their own section with the model-neutral assistant tag (#1767)', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },
       attachTo: document.body,
@@ -151,7 +177,12 @@ describe('PaperCommandPalette', () => {
     const aiRows = aiSection!.querySelectorAll('.paper-palette__row--ai')
     expect(aiRows.length).toBe(1)
     expect(aiRows[0].textContent).toContain('Propose: split into 3 cards')
-    expect(aiRows[0].textContent).toContain('haiku')
+    // Pin the tag element itself: the row subtitle renders the fixture's keywords,
+    // which also contain "assistant", so a row-wide toContain would pass off the
+    // fixture even if the tag regressed (#1767 review).
+    expect(aiRows[0].querySelector('.paper-palette__row-tag')?.textContent).toContain('assistant')
+    // No user-facing surface may name a specific LLM model or persona (#1767).
+    expect(aiRows[0].textContent).not.toContain('haiku')
   })
 
   it('navigates rows with ArrowDown / ArrowUp and emits activate on Enter', async () => {

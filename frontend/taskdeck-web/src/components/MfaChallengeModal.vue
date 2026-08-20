@@ -203,7 +203,7 @@ function cancel() {
 }
 
 .td-btn--secondary:hover:not(:disabled) {
-  background: var(--td-surface-elevated);
+  background: var(--td-surface-elevated, #2a2a2a);
 }
 
 .td-visually-hidden {

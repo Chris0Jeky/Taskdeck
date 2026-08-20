@@ -7,6 +7,7 @@ import {
   type ConflictRowDto,
 } from '../../api/proposalDeepReviewApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
+import { i18n } from '../../i18n'
 
 vi.mock('../../api/proposalDeepReviewApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/proposalDeepReviewApi')>()
@@ -126,6 +127,171 @@ describe('usePaperReviewSelectors', () => {
 
     expect(selectors.provenance.value[0].weight).toBe('primary')
     expect(selectors.provenance.value[1].weight).toBe('excluded')
+  })
+
+  it('flattens provenance evidence links onto the field they justify', async () => {
+    mockAllEndpointsEmpty()
+    const transcriptId = '3f1c6a2e-9d55-4a10-8f22-2b6f9a1c7d40'
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'Extracted: "ship the export fix" (92% match)',
+        weight: 'Primary',
+        evidenceLinks: [
+          {
+            sourceType: 'Transcript',
+            sourceId: transcriptId,
+            label: 'ship the export fix',
+            spanStart: 5,
+            spanEnd: 24,
+            viewable: true,
+          },
+        ],
+      },
+      // No links at all, and a link whose span the backend could not resolve.
+      { icon: '📄', key: 'description', value: 'Inferred by model (60% confidence)', weight: 'Inferred' },
+      {
+        icon: '📥',
+        key: 'capture',
+        value: 'Source field (80% confidence)',
+        weight: 'Contextual',
+        evidenceLinks: [
+          {
+            sourceType: 'Transcript',
+            sourceId: transcriptId,
+            label: null,
+            spanStart: null,
+            spanEnd: null,
+          },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(2)
+    })
+
+    expect(selectors.evidenceLinks.value[0]).toEqual({
+      sourceKey: 'title',
+      span: [5, 24],
+      reason: 'ship the export fix',
+      weight: 'primary',
+      sourceType: 'Transcript',
+      sourceId: transcriptId,
+      viewable: true,
+    })
+    // A link without a label falls back to the row's rendered value. Its wire payload carries
+    // no `viewable` flag, which must fail closed rather than default to "followable".
+    expect(selectors.evidenceLinks.value[1]).toEqual({
+      sourceKey: 'capture',
+      span: null,
+      reason: 'Source field (80% confidence)',
+      weight: 'contextual',
+      sourceType: 'Transcript',
+      sourceId: transcriptId,
+      viewable: false,
+    })
+  })
+
+  it('carries the server viewable flag through and fails closed for anything but true', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 0, spanEnd: 4, viewable: true },
+          { sourceType: 'Transcript', sourceId: 't-2', label: null, spanStart: 0, spanEnd: 4, viewable: false },
+          // A collaborator's payload from a server that never sends the flag.
+          { sourceType: 'Transcript', sourceId: 't-3', label: null, spanStart: 0, spanEnd: 4 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(3)
+    })
+
+    expect(selectors.evidenceLinks.value.map((link) => link.viewable)).toEqual([
+      true,
+      false,
+      false,
+    ])
+  })
+
+  it('drops an incoherent evidence span rather than deep-linking to wrong characters', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 40, spanEnd: 12 },
+          { sourceType: 'Transcript', sourceId: 't-2', label: null, spanStart: -3, spanEnd: 12 },
+          // Zero-length: highlights nothing, so it is not a deep link either (#1837 item 2).
+          { sourceType: 'Transcript', sourceId: 't-3', label: null, spanStart: 12, spanEnd: 12 },
+          { sourceType: 'Transcript', sourceId: 't-4', label: null, spanStart: 0, spanEnd: 0 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(4)
+    })
+
+    expect(selectors.evidenceLinks.value.map((link) => link.span)).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ])
+  })
+
+  it('keeps a one-character span, the smallest span that highlights anything', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValue([
+      {
+        icon: '📝',
+        key: 'title',
+        value: 'v',
+        weight: 'Primary',
+        evidenceLinks: [
+          { sourceType: 'Transcript', sourceId: 't-1', label: null, spanStart: 12, spanEnd: 13 },
+        ],
+      },
+    ])
+
+    const activeProposal = computed(() => makeProposal())
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await vi.waitFor(() => {
+      expect(selectors.evidenceLinks.value.length).toBe(1)
+    })
+
+    expect(selectors.evidenceLinks.value[0].span).toEqual([12, 13])
+  })
+
+  it('clears evidence links when no proposal is active', async () => {
+    const activeProposal = computed(() => null)
+    const selectors = usePaperReviewSelectors(activeProposal)
+
+    await nextTick()
+
+    expect(selectors.evidenceLinks.value).toEqual([])
   })
 
   it('maps serialized numeric conflict tones from the API wire contract', async () => {
@@ -387,5 +553,35 @@ describe('usePaperReviewSelectors', () => {
         { key: 'Operation safety', value: 0.75 },
       ])
     })
+  })
+
+  it('re-resolves the confidence label when the locale changes after the fetch (#1857)', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
+      overall: 0.8,
+      // The second key is server-supplied text this client cannot localise; it
+      // must survive the switch verbatim.
+      components: [
+        { key: 'Reversibility', value: 0.75 },
+        { key: 'Evidence density', value: 0.4 },
+      ],
+      note: null,
+      threshold: 0.7,
+      meetsThreshold: true,
+    })
+    const selectors = usePaperReviewSelectors(computed(() => makeProposal()))
+
+    await vi.waitFor(() => {
+      expect(selectors.confidenceBreakdown.value.components[0]?.key).toBe('Operation safety')
+    })
+
+    // Switch AFTER the value was produced — a label resolved at fetch time
+    // would stay English here.
+    i18n.global.locale.value = 'it'
+    await nextTick()
+    expect(selectors.confidenceBreakdown.value.components).toEqual([
+      { key: 'Sicurezza delle operazioni', value: 0.75 },
+      { key: 'Evidence density', value: 0.4 },
+    ])
   })
 })

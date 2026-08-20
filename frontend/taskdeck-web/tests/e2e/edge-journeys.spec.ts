@@ -26,6 +26,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -220,10 +221,9 @@ test('proposal approve should reflect on board immediately without manual refres
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  await expectApplyConfirmDialog(page, () =>
+    proposalCard.getByRole('button', { name: 'Apply to board' }).click(),
+  )
   await expect(proposalCard).not.toBeVisible()
 
   // Navigate to board and check card appears without manual refresh

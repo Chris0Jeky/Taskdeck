@@ -1,0 +1,163 @@
+# =============================================================================
+# Release Container — GHCR image publish on version tags
+# =============================================================================
+#
+# Publishes deploy/Dockerfile.production to GHCR on v* tags (and on manual
+# dispatch for rehearsal, which builds without pushing unless a tag ref is
+# used). ADR-0044 selects GHCR as the required public image channel; this
+# closes REVIVAL-07 (#1303) AC2.
+#
+# Verify a published image with:
+#   docker run -v taskdeck-data:/app/data -p 5000:5000 ghcr.io/chris0jeky/taskdeck:<version>
+# =============================================================================
+
+name: Release Container
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-image:
+    name: Publish GHCR Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/taskdeck" >> "$GITHUB_OUTPUT"
+
+      # Product version stamped into the image's binaries and its OCI version label (#1804).
+      #
+      # Derived from the v* tag. This workflow takes NO dispatch input, so GITHUB_REF_NAME is
+      # a real Git ref rather than attacker-influenced text; a rehearsal dispatch from a
+      # branch gets the same 0.0.0-dev fallback backend/Directory.Build.props uses.
+      #
+      # Any "+<build>" metadata is stripped, because `ProductVersion.Normalize` drops it
+      # before reporting: without this, a v1.2.3+meta tag would stamp "1.2.3+meta" while
+      # /health/live echoed "1.2.3", and the version-stamp assertion in the smoke step below
+      # would fail on two spellings of the same version. The validation regex refuses "+" for
+      # the same reason — admitting a character we have just stripped would only hide a bug
+      # in the stripping.
+      - name: Resolve product version
+        id: product-version
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF#refs/tags/v}" != "$GITHUB_REF" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            VERSION="${VERSION%%+*}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          # The value reaches MSBuild as a property; refuse anything that is not a plain token.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "$VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Stamping product version $VERSION"
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=rehearsal,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build (and push on tag refs)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.production
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          build-args: |
+            TASKDECK_VERSION=${{ steps.product-version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image ref reuses the normalized version from "Resolve product version"
+      # instead of re-deriving one (#1843). `${GITHUB_REF_NAME#v}` strips only the
+      # leading "v" and KEEPS any "+<build>" metadata, and "+" is not a legal Docker
+      # tag character — a v1.2.3+build.5 tag produced the unusable ref
+      # "<image>:1.2.3+build.5", failing the run and the inspect below. That step is
+      # the single normalization source for this workflow.
+      #
+      # Reusing it does not add an assumption about what docker/metadata-action tags
+      # the image with: the assertion further down already requires the OCI
+      # org.opencontainers.image.version label — which metadata-action derives from
+      # the same computed version as its `type=semver,pattern={{version}}` tag — to
+      # equal this exact string. If the two ever disagreed, that assertion was
+      # already the check that would say so.
+      - name: Smoke-test the built image (tag refs)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          EXPECTED_VERSION="${{ steps.product-version.outputs.version }}"
+          IMAGE_REF="${{ steps.image.outputs.name }}:$EXPECTED_VERSION"
+          docker run -d --name taskdeck-smoke \
+            -e Jwt__SecretKey="$(openssl rand -base64 48)" \
+            -e Connectors__EncryptionKey="$(openssl rand -base64 32)" \
+            -e TASKDECK_HEADLESS=true \
+            -p 5000:5000 \
+            "$IMAGE_REF"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:5000/health/ready >/dev/null 2>&1; then
+              echo "Health check passed."
+              # Version stamp assertions (#1804): the running binaries and the image
+              # metadata must both report the tag-derived version, not the 0.0.0-dev
+              # fallback that an un-injected build would carry.
+              REPORTED_VERSION="$(curl -fsS http://localhost:5000/health/live \
+                | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+              LABEL_VERSION="$(docker inspect \
+                --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' \
+                "$IMAGE_REF")"
+              if [ "$REPORTED_VERSION" != "$EXPECTED_VERSION" ] \
+                || [ "$LABEL_VERSION" != "$EXPECTED_VERSION" ]; then
+                echo "Version stamp MISMATCH — expected '$EXPECTED_VERSION',"
+                echo "  /health/live reported '$REPORTED_VERSION'"
+                echo "  OCI image label reported '$LABEL_VERSION'"
+                docker rm -f taskdeck-smoke
+                exit 1
+              fi
+              echo "Version stamp verified: $EXPECTED_VERSION (binary and OCI label)."
+              docker rm -f taskdeck-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check FAILED — container logs:"
+          docker logs taskdeck-smoke
+          docker rm -f taskdeck-smoke
+          exit 1

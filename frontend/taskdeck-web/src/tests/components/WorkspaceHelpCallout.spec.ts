@@ -141,4 +141,46 @@ describe('WorkspaceHelpCallout', () => {
     })
     expect(wrapper.find('[data-help-topic="today"]').exists()).toBe(true)
   })
+
+  it('carries Paper tk-* type utilities on the copy block', () => {
+    const wrapper = mount(WorkspaceHelpCallout, {
+      props: { topic: 'home', title: 'Title', description: 'Desc' },
+      slots: { default: '<p>Extra</p>' },
+    })
+    expect(wrapper.find('.td-help-callout__eyebrow').classes()).toContain('tk-eyebrow')
+    expect(wrapper.find('.td-help-callout__title').classes()).toContain('tk-h3')
+    expect(wrapper.find('.td-help-callout__description').classes()).toContain('tk-lede')
+    expect(wrapper.find('.td-help-callout__body').classes()).toContain('tk-body')
+  })
+
+  it('carries tk-body on the hidden message when dismissed', () => {
+    visibleRef.value = false
+    const wrapper = mount(WorkspaceHelpCallout, {
+      props: { topic: 'home', title: 'Title', description: 'Desc' },
+    })
+    expect(wrapper.find('.td-help-callout__hidden-message').classes()).toContain('tk-body')
+  })
+
+  it('styles buttons locally instead of via the legacy td-btn utility layer', () => {
+    const wrapper = mount(WorkspaceHelpCallout, {
+      props: { topic: 'home', title: 'Title', description: 'Desc' },
+    })
+    const dismissBtn = wrapper.find('.td-help-callout__dismiss')
+    expect(dismissBtn.exists()).toBe(true)
+    expect(dismissBtn.classes()).toContain('td-help-callout__btn')
+    expect(dismissBtn.classes()).toContain('td-help-callout__btn--ghost')
+    expect(dismissBtn.classes().some((c) => c.startsWith('td-btn'))).toBe(false)
+  })
+
+  it('styles the replay button locally in the dismissed state', () => {
+    visibleRef.value = false
+    const wrapper = mount(WorkspaceHelpCallout, {
+      props: { topic: 'home', title: 'Title', description: 'Desc' },
+    })
+    const replayBtn = wrapper.find('.td-help-callout__replay')
+    expect(replayBtn.exists()).toBe(true)
+    expect(replayBtn.classes()).toContain('td-help-callout__btn')
+    expect(replayBtn.classes()).toContain('td-help-callout__btn--secondary')
+    expect(replayBtn.classes().some((c) => c.startsWith('td-btn'))).toBe(false)
+  })
 })

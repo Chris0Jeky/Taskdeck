@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-19
 
 **Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -67,7 +67,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | **Delivered** by PR `#1329`; issue `#1300` closed |
 | Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | **Delivered** by PR `#1344`; issue `#1301` closed |
 | README revival rewrite + demo GIF + MCP section | REVIVAL-06 | **Delivered** by PR `#1331`; issue `#1302` closed |
-| v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | folds #1123 + #1139; matches ADR-0044's required image channel |
+| v0.1.0 release: dispatch pipeline, fix breakage, publish the GHCR image, fix render.yaml, UPGRADING.md + pre-migration auto-backup | REVIVAL-07 | **Shipped 2026-08-19** (q-2 ruling): tag `v0.1.0`, public 4-platform Release + checksums, `ghcr.io/chris0jeky/taskdeck:0.1.0` public with green smoke, render.yaml fixed; issue `#1303` closed, folds #1123 + #1139 (closed). UPGRADING.md + auto-backup spun out → `#1803`; version stamping → `#1804`; release-lane workflow repairs → PR `#1801` |
 | De-stub Today dossier or honest empty states | #1272 (unchanged) | **Delivered** by PR `#1333`; issue closed |
 | Re-point E2E + axe at Paper | #1274 (unchanged) | **Delivered** by PR `#1362`; issue closed |
 | CI keep/kill/gate pass | #1275 (unchanged) | zero always-red lanes |
@@ -151,7 +151,7 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 - **(b)** Preview diff equals what Apply executes — **done** (#1235/#1280, regression-tested).
 - **(c)** Provenance never names an actor that didn't act — **done** (#1273/#1283).
 - **(d)** Registration is gateable; public deployment defaults are safe (REVIVAL-01; render.yaml fixed).
-- **(e)** One validated, documented run path *per audience*: desktop exe (smoke-run from a real release) and `docker run` from a published image (REVIVAL-07).
+- **(e)** One validated, documented run path *per audience*: desktop exe (smoke-run from a real release) and `docker run` from a published image (REVIVAL-07) — **done 2026-08-19** (v0.1.0 Release + public GHCR image, both smoke-verified).
 - **(f)** Paper core loop has E2E + axe coverage; zero always-red CI lanes; branch protection live (#1274, #1275, #1173).
 - **(g)** README/onboarding welcome strangers: no archive messaging, demo GIF present, guided first-board path in Paper (REVIVAL-05, REVIVAL-06).
 - **(h)** Licensing posture published (REVIVAL-03).

@@ -79,6 +79,96 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetProposalProvenance_AsBoardViewer_ReturnsOpaqueTranscriptEvidenceWithoutText()
+    {
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-provenance-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "automation-provenance-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "automation-provenance-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        const string privateTranscriptText = "PRIVATE_TRANSCRIPT_TEXT_never_return_this";
+        Guid transcriptId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var transcript = new Transcript(
+                owner.UserId,
+                CaptureSource.TranscriptPaste,
+                privateTranscriptText,
+                [new TranscriptSegment(0, 0, "Speaker", 0)]);
+            var provenance = await db.ProposalProvenances
+                .Include(item => item.Fields)
+                .SingleAsync(item => item.ProposalId == proposal.Id);
+            var field = provenance.Fields
+                .OrderBy(item => item.Id)
+                .First();
+            field.AddEvidenceLink(new ProvenanceEvidenceLink(
+                ProvenanceEvidenceLink.TranscriptSourceType,
+                transcript.Id.ToString("D"),
+                field.Id,
+                "Transcript evidence",
+                8,
+                23,
+                transcript.Id));
+            db.Transcripts.Add(transcript);
+            await db.SaveChangesAsync();
+            transcriptId = transcript.Id;
+        }
+
+        var response = await viewerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance");
+        var rawJson = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {rawJson}");
+        rawJson.Should().NotContain(privateTranscriptText);
+        var rows = JsonSerializer.Deserialize<List<ProvenanceRowDto>>(
+            rawJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        rows.Should().NotBeNull();
+        var evidence = rows!
+            .SelectMany(row => row.EvidenceLinks ?? Array.Empty<ProvenanceEvidenceLinkDto>())
+            .Should()
+            .ContainSingle()
+            .Subject;
+        evidence.SourceType.Should().Be("Transcript");
+        evidence.SourceId.Should().Be(transcriptId.ToString("D"));
+        evidence.Label.Should().Be("Transcript evidence");
+        evidence.SpanStart.Should().Be(8);
+        evidence.SpanEnd.Should().Be(23);
+
+        // Issue #1837 item 1: the board collaborator is authorized for the proposal but not for
+        // the owner's transcript, so the evidence must not advertise a followable link.
+        evidence.Viewable.Should().BeFalse();
+
+        // The flag tells the truth: the same caller's direct read is a 404, and that 404 is
+        // indistinguishable from a nonexistent transcript (parity unchanged by this flag).
+        var viewerTranscriptResponse = await viewerClient.GetAsync($"/api/transcripts/{transcriptId}");
+        viewerTranscriptResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The owner sees the same row marked viewable, computed from their own claims.
+        var ownerResponse = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance");
+        var ownerJson = await ownerResponse.Content.ReadAsStringAsync();
+        ownerResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {ownerJson}");
+        var ownerRows = JsonSerializer.Deserialize<List<ProvenanceRowDto>>(
+            ownerJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var ownerEvidence = ownerRows!
+            .SelectMany(row => row.EvidenceLinks ?? Array.Empty<ProvenanceEvidenceLinkDto>())
+            .Should()
+            .ContainSingle()
+            .Subject;
+        ownerEvidence.Viewable.Should().BeTrue();
+        // Still opaque for the owner too: the flag never carries transcript text.
+        ownerJson.Should().NotContain(privateTranscriptText);
+    }
+
+    [Fact]
     public async Task GetProposals_WithFilters_ShouldReturnFilteredResults()
     {
         var userId = await AuthenticateAsync("automation-filters");

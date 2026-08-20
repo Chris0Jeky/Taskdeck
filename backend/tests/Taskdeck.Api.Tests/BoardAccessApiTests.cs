@@ -84,6 +84,88 @@ public class BoardAccessApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task GrantAccess_ShouldReturnOk_WhenOwnerGrantsByEmail()
+    {
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "access-grant-email-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(clientA, "access-grant-email");
+
+        using var clientB = _factory.CreateClient();
+        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "access-grant-email-target");
+
+        var response = await clientA.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: userB.Email));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await response.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+        access!.UserId.Should().Be(userB.UserId);
+    }
+
+    [Fact]
+    public async Task GrantAccess_ShouldReturnOk_WhenOwnerGrantsByUsername()
+    {
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "access-grant-username-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(clientA, "access-grant-username");
+
+        using var clientB = _factory.CreateClient();
+        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "access-grant-username-target");
+
+        var response = await clientA.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: userB.Username));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var access = await response.Content.ReadFromJsonAsync<BoardAccessDto>();
+        access.Should().NotBeNull();
+        access!.UserId.Should().Be(userB.UserId);
+    }
+
+    [Fact]
+    public async Task GrantAccess_ShouldReturnNotFound_ForUnknownIdentifier()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "access-grant-unknown-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "access-grant-unknown");
+
+        var unknownIdentifier = $"nobody_{Guid.NewGuid():N}@example.com";
+        var response = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: unknownIdentifier));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound);
+        // Uniform not-found must not leak the probed identifier.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain(unknownIdentifier);
+    }
+
+    [Fact]
+    public async Task GrantAccess_ShouldReturnConflict_WhenGrantingByEmailToExistingMember()
+    {
+        using var clientA = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(clientA, "access-grant-dupe-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(clientA, "access-grant-dupe");
+
+        using var clientB = _factory.CreateClient();
+        var userB = await ApiTestHarness.AuthenticateAsync(clientB, "access-grant-dupe-target");
+
+        var first = await clientA.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, userB.UserId, UserRole.Editor));
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var second = await clientA.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, Guid.Empty, UserRole.Editor, Identifier: userB.Email));
+
+        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await ApiTestHarness.AssertErrorContractAsync(second, HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task GrantAccess_ShouldReturnForbiddenOrNotFound_ForNonOwner()
     {
         using var clientA = _factory.CreateClient();

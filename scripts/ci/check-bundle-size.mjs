@@ -10,7 +10,7 @@
 // Environment variables (override defaults):
 //   BUNDLE_MAX_ENTRY_KB       - max size (KB) for the main entry chunk (default: 150)
 //   BUNDLE_MAX_SINGLE_KB      - max size (KB) for any single JS chunk (default: 250)
-//   BUNDLE_MAX_TOTAL_JS_KB    - max total JS size (KB) across all chunks (default: 1200)
+//   BUNDLE_MAX_TOTAL_JS_KB    - max total JS size (KB) across all chunks (default: 1250)
 //   BUNDLE_WARN_ENTRY_KB      - warning threshold (KB) for main entry chunk (default: 120)
 //   BUNDLE_WARN_SINGLE_KB     - warning threshold (KB) for any single JS chunk (default: 200)
 //   BUNDLE_WARN_TOTAL_JS_KB   - warning threshold (KB) for total JS size (default: 1000)
@@ -32,7 +32,23 @@ const outputJson = getArg("--output-json", null);
 // Thresholds (KB)
 const MAX_ENTRY_KB = Number(process.env.BUNDLE_MAX_ENTRY_KB || "150");
 const MAX_SINGLE_KB = Number(process.env.BUNDLE_MAX_SINGLE_KB || "250");
-const MAX_TOTAL_JS_KB = Number(process.env.BUNDLE_MAX_TOTAL_JS_KB || "1200");
+// Raised 1200 -> 1250 on 2026-08-19 (#1770). The i18n rollout adds a full
+// message catalog per surface per language, and the Review extraction alone
+// took total JS from 1163.18 KB to 1201.15 KB (measured with `npx vite build`
+// + this script on both sides). This is a DELIBERATE budget decision, not a
+// silent slip: the growth is translation data the product is choosing to ship.
+//
+// This metric is TOTAL EMITTED JS, so code-splitting does not reduce it —
+// lazy-loading the `it`/`es` catalogs was measured and moved the number the
+// wrong way (1201.92 KB, +3 chunks of overhead) even though it is the right
+// thing for first-load bytes. Anything that shrinks this number has to delete
+// or externalize bytes, not move them into another chunk.
+//
+// The remaining surfaces in the rollout are larger than Review, so this
+// headroom is not expected to last. Sizing the budget for the whole rollout —
+// and deciding whether this gate should measure the eager graph instead, which
+// would make lazy loading a real lever — is #1858, not a guess made here.
+const MAX_TOTAL_JS_KB = Number(process.env.BUNDLE_MAX_TOTAL_JS_KB || "1250");
 const WARN_ENTRY_KB = Number(process.env.BUNDLE_WARN_ENTRY_KB || "120");
 const WARN_SINGLE_KB = Number(process.env.BUNDLE_WARN_SINGLE_KB || "200");
 const WARN_TOTAL_JS_KB = Number(process.env.BUNDLE_WARN_TOTAL_JS_KB || "1000");

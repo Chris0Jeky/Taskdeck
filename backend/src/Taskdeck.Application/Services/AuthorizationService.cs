@@ -53,6 +53,46 @@ public class AuthorizationService : IAuthorizationService
         return Result.Success<IReadOnlySet<Guid>>(readableBoardIds);
     }
 
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlySet<Guid>>> GetWritableBoardIdsAsync(
+        Guid userId,
+        IEnumerable<Guid> boardIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var candidateBoardIds = boardIds.Distinct().ToList();
+        if (candidateBoardIds.Count == 0)
+            return Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>());
+
+        if (_sandboxSettings.Enabled)
+            return Result.Success<IReadOnlySet<Guid>>(candidateBoardIds.ToHashSet());
+
+        // Owners short-circuit: one batched query, no membership row required (owners have none).
+        var writableBoardIds = (await _unitOfWork.Boards.GetOwnedBoardIdsAsync(
+                userId,
+                candidateBoardIds,
+                cancellationToken))
+            .ToHashSet();
+
+        if (writableBoardIds.Count == candidateBoardIds.Count)
+            return Result.Success<IReadOnlySet<Guid>>(writableBoardIds);
+
+        // One membership read for the whole candidate set — never one per board.
+        var boardAccesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId, cancellationToken);
+        var candidateBoardIdSet = candidateBoardIds.ToHashSet();
+        foreach (var boardAccess in boardAccesses)
+        {
+            if (candidateBoardIdSet.Contains(boardAccess.BoardId) && boardAccess.CanWrite())
+            {
+                writableBoardIds.Add(boardAccess.BoardId);
+            }
+        }
+
+        return Result.Success<IReadOnlySet<Guid>>(writableBoardIds);
+    }
+
     public async Task<Result<bool>> CanReadBoardAsync(Guid userId, Guid boardId)
     {
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);

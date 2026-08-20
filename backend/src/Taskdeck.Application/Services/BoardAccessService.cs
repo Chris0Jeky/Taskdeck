@@ -38,27 +38,43 @@ public class BoardAccessService : IBoardAccessService
             if (!canManage.IsSuccess)
                 return Result.Failure<BoardAccessDto>(canManage.ErrorCode, canManage.ErrorMessage);
 
-            var user = await _unitOfWork.Users.GetByIdAsync(dto.UserId);
-            if (user == null)
-                return Result.Failure<BoardAccessDto>(ErrorCodes.NotFound, $"User with ID {dto.UserId} not found");
+            // Resolve the grantee only after the manage-access gate passes. An email-or-username
+            // identifier takes precedence over the raw UserId compatibility path. Unknown
+            // identifiers return a uniform NotFound that never echoes the supplied identifier, so
+            // the grant path cannot be used to enumerate which users exist beyond the grant result.
+            Guid targetUserId;
+            if (!string.IsNullOrWhiteSpace(dto.Identifier))
+            {
+                var resolvedUser = await ResolveUserByIdentifierAsync(dto.Identifier);
+                if (resolvedUser == null)
+                    return Result.Failure<BoardAccessDto>(ErrorCodes.NotFound, "User not found");
+                targetUserId = resolvedUser.Id;
+            }
+            else
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(dto.UserId);
+                if (user == null)
+                    return Result.Failure<BoardAccessDto>(ErrorCodes.NotFound, "User not found");
+                targetUserId = dto.UserId;
+            }
 
-            var existingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(dto.BoardId, dto.UserId);
+            var existingAccess = await _unitOfWork.BoardAccesses.GetByBoardAndUserAsync(dto.BoardId, targetUserId);
             if (existingAccess != null)
                 return Result.Failure<BoardAccessDto>(ErrorCodes.Conflict, $"User already has access to this board");
 
-            var access = new BoardAccess(dto.BoardId, dto.UserId, dto.Role, grantedBy);
+            var access = new BoardAccess(dto.BoardId, targetUserId, dto.Role, grantedBy);
             await _unitOfWork.BoardAccesses.AddAsync(access);
 
             var notificationResult = await _notificationService.PublishAsync(
                 new CreateNotificationRequestDto(
-                    dto.UserId,
+                    targetUserId,
                     NotificationType.Assignment,
                     "Board access granted",
                     $"You were granted {dto.Role} access to board '{board.Name}'.",
                     dto.BoardId,
                     SourceEntityType: "board-access",
                     SourceEntityId: access.Id,
-                    DeduplicationKey: $"assignment:grant:{dto.BoardId}:{dto.UserId}:{dto.Role}"));
+                    DeduplicationKey: $"assignment:grant:{dto.BoardId}:{targetUserId}:{dto.Role}"));
             if (!notificationResult.IsSuccess)
                 return Result.Failure<BoardAccessDto>(notificationResult.ErrorCode, notificationResult.ErrorMessage);
 
@@ -158,7 +174,24 @@ public class BoardAccessService : IBoardAccessService
             return Result.Failure<IEnumerable<BoardDto>>(ErrorCodes.NotFound, $"User with ID {userId} not found");
 
         var accesses = await _unitOfWork.BoardAccesses.GetByUserIdAsync(userId);
-        return Result.Success(accesses.Select(a => MapToBoardDto(a.Board)));
+        // Every row here belongs to `userId`, so its role IS that user's write capability —
+        // no extra lookup needed, and no board is stamped `canWrite: false` by omission.
+        return Result.Success(accesses.Select(a => MapToBoardDto(a.Board, a.CanWrite())));
+    }
+
+    /// <summary>
+    /// Resolves an email-or-username identifier to a user without exposing a user directory.
+    /// An identifier containing '@' is treated as an email (emails always contain '@' per the
+    /// User domain invariant); otherwise it is treated as a username. Returns null when no user
+    /// matches, so callers can surface a uniform NotFound.
+    /// </summary>
+    private async Task<User?> ResolveUserByIdentifierAsync(string identifier)
+    {
+        var trimmed = identifier.Trim();
+        if (trimmed.Contains('@'))
+            return await _unitOfWork.Users.GetByEmailAsync(trimmed);
+
+        return await _unitOfWork.Users.GetByUsernameAsync(trimmed);
     }
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
@@ -199,7 +232,7 @@ public class BoardAccessService : IBoardAccessService
             access.GrantedAt);
     }
 
-    private static BoardDto MapToBoardDto(Board board)
+    private static BoardDto MapToBoardDto(Board board, bool canWrite)
     {
         return new BoardDto(
             board.Id,
@@ -207,6 +240,7 @@ public class BoardAccessService : IBoardAccessService
             board.Description,
             board.IsArchived,
             board.CreatedAt,
-            board.UpdatedAt);
+            board.UpdatedAt,
+            canWrite);
     }
 }

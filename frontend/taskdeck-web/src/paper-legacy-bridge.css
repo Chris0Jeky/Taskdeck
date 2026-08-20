@@ -1,0 +1,401 @@
+/* =========================================================
+   Paper ← Legacy token bridge  (ADR-0053 · issue #1778)
+
+   THIS FILE IS AN INTERIM FLOOR, NOT THE PAPER IDIOM.
+
+   Taskdeck carries two visual substrates:
+
+     1. Obsidian legacy — the `--td-*` custom properties in
+        `design-tokens.css`, the `.td-*` utility layer in `style.css`, and
+        the Tailwind semantic colors in `tailwind.config.js`.  All three are
+        pinned to dark surfaces (#131313 / #0e0e0e) and a hot ember (#ff4d4d).
+     2. Paper — the `--paper` / `--ink` / `--ember` tokens in
+        `paper-tokens.css`, scoped under `.paper` / `.paper-night`, which
+        `paperThemeStore` puts on <body>.
+
+   Paper is canonical (ADR-0038), but ~22 workspace views have not been
+   migrated to the Paper idiom yet.  Because substrate 1 is defined at
+   `:root`, those views kept rendering black-on-red *inside* the Paper shell.
+
+   This file remaps substrate 1 onto Paper values, scoped to the Paper shell
+   classes only.  Consequences worth knowing before you edit it:
+
+   - Legacy mode ("Paper off") is untouched: no `.paper` class is on <body>,
+     so every token below is inert and `:root` / the Tailwind hex fallbacks
+     still resolve to the original Obsidian palette.
+   - `.paper-night` reuses the same variable NAMES as `.paper`, so a single
+     rule remaps both themes.
+   - This fixes COLOR ONLY.  Serif display type, `tk-*` utilities, hairline
+     rules, stamps and the restrained ember treatment remain per-view work
+     (Option B in ADR-0053).  A view that merely stops being dark is legible,
+     not canonical.
+   - Every value here is a `var()` reference into `paper-tokens.css`.  Do not
+     introduce hex literals: the palette must stay single-sourced so a Paper
+     token change propagates to legacy surfaces automatically.
+   - Delete this file (and the legacy substrate with it) once every view has
+     migrated to the Paper idiom.
+   ========================================================= */
+
+.paper,
+.paper-night {
+  /* ── Surface ladder ──────────────────────────────────────
+     Obsidian's ladder brightens as it rises: base #131313 is the page and
+     each tier above it is lighter.  On a light substrate that inverts —
+     emphasis reads as *more* contrast against the page, i.e. darker — with
+     one exception: the card, which Paper lifts by going lighter than the
+     page (`--paper-card` #fbf7ee vs `--paper` #f3eee5), exactly as `.card`
+     does in paper-tokens.css.
+
+     So the ladder below is monotonic *away from* the page in the Paper
+     direction: card (lighter) → page → panel → edge → line → whisper.  Each
+     step is a distinct value, so hover pairs that Obsidian expressed as
+     "one tier up" still read as a state change:
+       .td-card       rest bg-surface-container-low  → --paper-card
+                      hover bg-surface-container     → --paper-2   (darkens)
+       .td-btn--secondary rest bg-surface-container-highest → --line
+                      hover bg-surface-bright        → --whisper  (darkens)
+     Paper's own `.pbtn:hover` darkens rather than brightens, so this is the
+     idiom's direction, not an inversion of it.
+
+     `--td-surface-container` carries ~122 call sites (65 Tailwind
+     `bg-surface-container` + 57 `var()`), which makes it the dominant PANEL
+     surface and not merely the card-hover tier — hence `--paper-2`, a real
+     step off the page, rather than the page colour itself. */
+  --td-surface-base: var(--paper);
+  --td-surface-container-lowest: var(--paper-2);
+  --td-surface-container-low: var(--paper-card);
+  --td-surface-container: var(--paper-2);
+  --td-surface-container-high: var(--paper-edge);
+  --td-surface-container-highest: var(--line);
+  --td-surface-bright: var(--whisper);
+
+  /* Depth aliases.  `--td-surface-lowest`, `--td-surface-sunken`,
+     `--td-surface-elevated`, `--td-surface-low` and `--td-surface-high` were
+     consumed by 9+ components but declared NOWHERE when this file landed;
+     `--td-surface-elevated` had no fallback at all, so `background` there was
+     invalid-at-computed-value-time and resolved to transparent in Legacy.
+     Issue #1814 closed that gap: `design-tokens.css` now aliases all five
+     onto the Obsidian ladder at `:root`.  These rules still matter — the
+     `:root` aliases substitute to Obsidian hexes at `:root` and are merely
+     INHERITED here, and a declaration on the element (Paper's classes sit on
+     <body>) beats an inherited value.  Keep the five in step with the ladder
+     above; deleting them would leak Obsidian into Paper.
+
+     `--td-surface-elevated` maps to `--paper-edge`, NOT `--paper-card`
+     (#1817).  The two substrates used to disagree: `:root` aliases both
+     `elevated` and `high` onto `container-high` because every `elevated` call
+     site is the hover partner of a `--td-surface-container` rest fill — the
+     same "one tier up" step `high` expresses — while the bridge sent
+     `elevated` to the CARD tier.  That was both a disagreement and a
+     direction error: `--td-surface-container` maps to `--paper-2`, so
+     hovering to `--paper-card` BRIGHTENED, against the ladder's own
+     "hover darkens on a light substrate" rule two comments up.  Keeping
+     `elevated` and `high` on one tier reconciles the two substrates and
+     restores the hover direction. */
+  --td-surface-lowest: var(--paper-2);
+  --td-surface-sunken: var(--paper-2);
+  --td-surface-low: var(--paper-card);
+  --td-surface-elevated: var(--paper-edge);
+  --td-surface-high: var(--paper-edge);
+
+  /* ── Text (Argent hierarchy → Ink ladder) ── */
+  --td-text-primary: var(--ink);
+  --td-text-secondary: var(--ink-2);
+  --td-text-tertiary: var(--faint);
+  --td-text-inverse: var(--paper-card);
+  --td-text-ember: var(--ember);
+  --td-text-muted: var(--mute);
+
+  /* ── Accent ──────────────────────────────────────────────
+     Obsidian already collapsed "primary", "error" and "ember" onto three
+     near-identical reds (#ffb3ae / #ffb4ab / #ff4d4d).  Paper has one accent
+     hue, so they collapse onto `--ember` here too.  `--td-on-ember` is the
+     Paper-side token engineered to clear 4.5:1 on an ember fill (base and
+     under the `brightness(1.1)` hover) in BOTH `.paper` and `.paper-night`. */
+  --td-color-primary: var(--ember);
+  --td-color-primary-hover: var(--ember-deep);
+  --td-color-primary-light: var(--ember-bloom);
+
+  --td-color-ember: var(--ember);
+  --td-color-ember-glow: var(--ember-deep);
+  --td-color-ember-dim: var(--ember-bloom);
+
+  /* Earth-tone semantics — Paper's own status palette.
+     `info` does NOT collapse onto `--ember` (#1817).  The accent-collapse
+     rationale above covers primary/error/ember, which Obsidian had already
+     collapsed onto three near-identical reds; `info` was a separate hue
+     (#ffb3ae vs #ff4d4d), so sending it to ember made every info banner read
+     as an error.  Paper reserves its one accent hue for attention, so an
+     informational foreground is neutral ink instead — `--ink-2`, the same rung
+     `.tk-lede` uses for secondary prose, which is unmistakably not the accent
+     and clears AA on every Paper text ground.
+
+     All four `*-light` tints are now OPAQUE Paper palette entries.  They used
+     to be inconsistent — three opaque tints next to `--ember-bloom` at 10%
+     alpha — which is the mismatch #1817 records.  Consistency goes the opaque
+     way rather than diluting three designed values into alpha: `--applied-tint`
+     / `--overdue-tint` / `--ember-tint` are real palette entries, chosen
+     against the Paper substrate, and a translucent wash over an already
+     tinted card muddies rather than layers. */
+  --td-color-success: var(--applied);
+  --td-color-success-light: var(--applied-tint);
+  --td-color-warning: var(--overdue);
+  --td-color-warning-light: var(--overdue-tint);
+  --td-color-error: var(--ember);
+  --td-color-error-light: var(--ember-tint);
+  --td-color-info: var(--ink-2);
+  --td-color-info-light: var(--paper-edge);
+
+  /* ── Borders & rules ── */
+  --td-border-default: var(--line);
+  --td-border-ghost: var(--line-soft);
+  --td-border-focus: var(--ember);
+  --td-border-ember: var(--ember-deep);
+
+  /* ── Focus ring ──────────────────────────────────────────
+     `style.css` applies `box-shadow: var(--td-focus-ring)` on every
+     `*:focus-visible`; paper-tokens.css adds an ember outline on the same
+     elements.  Re-pointing the ring at the Paper ember keeps the two
+     consistent instead of stacking a hot-red glow on a cream surface. */
+  --td-focus-ring: 0 0 0 2px var(--ember), 0 0 0 4px var(--ember-bloom);
+  --td-focus-ring-error: 0 0 0 2px var(--ember), 0 0 0 4px var(--ember-bloom);
+
+  /* ── Elevation ──────────────────────────────────────────
+     Paper ships three depths (card / lift / press) against Obsidian's four
+     steps.  `lg` and `xl` used to both fold onto `--shadow-lift`, so a modal
+     and a dropdown sat at the same depth as a hovered row — and with
+     `--td-surface-container-high` (#e3dac8) close to the page (#f3eee5) they
+     lost separation entirely (#1817).
+
+     The ramp is rebuilt from existing Paper tokens rather than new shadow
+     hexes, so it still inverts correctly in `.paper-night` (whose
+     `--shadow-*` values are dark) and adds nothing to the Paper Color Audit
+     baseline.  Paper separates by RULE before blur — `.card` is a hairline
+     plus a 1px shadow — so:
+       lg  = the lift, plus a hairline ring, so a popover has an edge.
+       xl  = the ring, the stamped ledge, and a compounded lift, so a modal
+             sits visibly above a popover.  Stacking `--shadow-lift` twice
+             deepens the same geometry, which is the intended "one step
+             further off the page" without inventing a colour. */
+  --td-shadow-sm: var(--shadow-card);
+  --td-shadow-md: var(--shadow-lift);
+  --td-shadow-lg: 0 0 0 1px var(--line), var(--shadow-lift);
+  --td-shadow-xl: 0 0 0 1px var(--line), var(--shadow-stamp), var(--shadow-lift), var(--shadow-lift);
+
+  /* ── Glass ── */
+  --td-glass-bg: color-mix(in srgb, var(--paper-card) 88%, transparent);
+
+  /* ── Legacy aliases ─────────────────────────────────────
+     `design-tokens.css` defines these as `var(--td-surface-*)`, but the
+     computed value of a custom property is its specified value with
+     variables ALREADY substituted — so the aliases froze to the Obsidian
+     values at `:root` and would NOT follow the remap above.  They have to be
+     restated here.  Keep them in step with the surface ladder. */
+  --td-surface-primary: var(--paper-2);
+  --td-surface-secondary: var(--paper-card);
+  --td-surface-tertiary: var(--paper-edge);
+  --td-surface-hover: var(--whisper);
+
+  /* ── Tailwind semantic colors ───────────────────────────
+     `tailwind.config.js` emits every semantic color as
+     `var(--td-tw-<name>, <obsidian-hex>)`.  Nothing defines `--td-tw-*` at
+     `:root`, so Legacy resolves the fallback; defining them here is what
+     lightens `bg-surface-*`, `text-on-surface`, `border-outline-variant`
+     and friends inside the Paper shell. */
+
+  /* Surfaces — mirrors the --td-surface-* ladder above. */
+  --td-tw-surface: var(--paper);
+  --td-tw-surface-dim: var(--paper-2);
+  --td-tw-surface-bright: var(--whisper);
+  --td-tw-surface-container-lowest: var(--paper-2);
+  --td-tw-surface-container-low: var(--paper-card);
+  --td-tw-surface-container: var(--paper-2);
+  --td-tw-surface-container-high: var(--paper-edge);
+  --td-tw-surface-container-highest: var(--line);
+  --td-tw-surface-variant: var(--paper-edge);
+  --td-tw-surface-tint: var(--ember);
+  --td-tw-background: var(--paper);
+
+  /* On-surface text. */
+  --td-tw-on-surface: var(--ink);
+  --td-tw-on-surface-variant: var(--mute);
+  --td-tw-on-background: var(--ink);
+  --td-tw-inverse-surface: var(--ink);
+  --td-tw-inverse-on-surface: var(--paper-card);
+
+  /* Outlines. */
+  --td-tw-outline: var(--mute);
+  --td-tw-outline-variant: var(--line);
+
+  /* Primary / ember accents. `*-container` are FILLS, `on-*` is the text
+     that sits on them. */
+  --td-tw-primary: var(--ember);
+  --td-tw-primary-container: var(--ember);
+  --td-tw-on-primary: var(--td-on-ember);
+  --td-tw-on-primary-container: var(--td-on-ember);
+  --td-tw-primary-fixed: var(--ember-tint);
+  --td-tw-primary-fixed-dim: var(--ember-tint);
+  --td-tw-on-primary-fixed: var(--ember-ink);
+  --td-tw-on-primary-fixed-variant: var(--ember-deep);
+  --td-tw-inverse-primary: var(--ember-deep);
+
+  /* Neutral tonal families. */
+  --td-tw-secondary: var(--ink-2);
+  --td-tw-secondary-container: var(--paper-edge);
+  --td-tw-on-secondary: var(--paper-card);
+  --td-tw-on-secondary-container: var(--ink);
+  --td-tw-secondary-fixed: var(--paper-2);
+  --td-tw-secondary-fixed-dim: var(--paper-edge);
+  --td-tw-on-secondary-fixed: var(--ink-deep);
+  --td-tw-on-secondary-fixed-variant: var(--ink-2);
+
+  --td-tw-tertiary: var(--ink-2);
+  --td-tw-tertiary-container: var(--paper-edge);
+  --td-tw-on-tertiary: var(--paper-card);
+  --td-tw-on-tertiary-container: var(--ink);
+  --td-tw-tertiary-fixed: var(--paper-2);
+  --td-tw-tertiary-fixed-dim: var(--paper-edge);
+  --td-tw-on-tertiary-fixed: var(--ink-deep);
+  --td-tw-on-tertiary-fixed-variant: var(--ink-2);
+
+  /* Error — same collapse onto ember as --td-color-error above. */
+  --td-tw-error: var(--ember);
+  --td-tw-error-container: var(--ember-tint);
+  --td-tw-on-error: var(--td-on-ember);
+  --td-tw-on-error-container: var(--ember-ink);
+
+  /* Semantic shortcuts.  `obsidian` means "the substrate colour" — its only
+     consumer is `.td-btn--danger { bg-ember text-obsidian }`, where mapping
+     it to `--paper` keeps light text on the ember fill (5.25:1 in `.paper`,
+     asserted in `tests/paper-ink-ladder-contrast.spec.ts`) instead of
+     inverting to unreadable dark-on-dark. */
+  --td-tw-ember: var(--ember);
+  --td-tw-ember-glow: var(--ember-deep);
+  --td-tw-obsidian: var(--paper);
+  --td-tw-argent: var(--ink-2);
+
+  /* ── Notification accent stripes ────────────────────────
+     `composables/useNotificationGrouping.ts` stays the single source of truth
+     for WHICH stripe a notification type gets; these five tokens are the only
+     thing that changes per skin.  `:root` (design-tokens.css) holds the
+     original Tailwind palette hues, so Legacy is byte-identical; under Paper
+     the five re-tint onto the palette's own hues, which stay mutually
+     distinguishable (rust / ochre / green / graphite / pale).  Colour is never
+     the sole signal — each row also carries a text type badge. */
+  --td-notify-proposal: var(--overdue);
+  --td-notify-mention: var(--ember);
+  --td-notify-board-change: var(--applied);
+  --td-notify-assignment: var(--ink-2);
+  --td-notify-system: var(--whisper);
+
+  /* ── Notification type badges ───────────────────────────
+     The stripes' companion (#1842).  Each badge is a filled chip, so the type
+     is carried by the BACKGROUND — five distinct Paper tints, one per type,
+     ordered to echo the stripe hues above (ochre / rust / green / edge /
+     page).  The foreground is `--ink` for all five rather than each tint's own
+     hue: `--applied` on `--applied-tint` measures 4.46:1 in `.paper`, just
+     under AA, while `--ink` clears 12.6:1 or better on every one of the five
+     tints in BOTH themes.  Pinned in
+     `tests/paper-ink-ladder-contrast.spec.ts`.  Colour is never the sole
+     signal either way — the badge also spells the type out. */
+  --td-notify-proposal-bg: var(--overdue-tint);
+  --td-notify-proposal-fg: var(--ink);
+  --td-notify-mention-bg: var(--ember-tint);
+  --td-notify-mention-fg: var(--ink);
+  --td-notify-board-change-bg: var(--applied-tint);
+  --td-notify-board-change-fg: var(--ink);
+  --td-notify-assignment-bg: var(--paper-edge);
+  --td-notify-assignment-fg: var(--ink);
+  --td-notify-system-bg: var(--paper-2);
+  --td-notify-system-fg: var(--ink);
+
+  /* ── Document scrollbar ─────────────────────────────────
+     `::-webkit-scrollbar-thumb` in `style.css` is unqualified, so it also
+     styles <html>; a scroller whose own scrollbar is styled does NOT inherit
+     <body>'s, which is why the viewport scrollbar kept the Obsidian brown
+     thumb even with the Paper classes on <body> (#1817).  `scrollbar-color`
+     is the standard property and DOES propagate from <body> to the viewport,
+     so it is what makes the document scrollbar follow the active skin.  It is
+     reset to `auto` on descendants below, so in-page scroll containers keep
+     the existing 8px `::-webkit-scrollbar` treatment. */
+  scrollbar-color: var(--whisper) transparent;
+}
+
+/* Descendants keep the custom webkit scrollbar; only the document scrollbar
+   is driven by the standard property above. */
+.paper *,
+.paper-night * {
+  scrollbar-color: auto;
+}
+
+/* Native UA widgets — `<select>` popups, date pickers, autofill — read
+   `color-scheme` from the element, and the document scrollbar reads it from
+   the root.  `style.css` pins `html { color-scheme: dark }`, which is right
+   for Legacy and wrong inside the Paper shell; `.paper` / `.paper-night`
+   already declare the correct value on <body>, so the only gap is the root
+   element.  `:has()` lets the root follow the body class without any store
+   change. (#1817 — recorded there as pre-existing, not introduced by the
+   bridge.) */
+:root:has(> body.paper) {
+  color-scheme: light;
+}
+
+:root:has(> body.paper-night) {
+  color-scheme: dark;
+}
+
+/* ── Utility-layer overrides ─────────────────────────────
+   `style.css`'s `.td-*` layer hardcodes four colour literals outside any
+   token (plus the two scrollbar thumbs below), so the remap above cannot
+   reach them — ADR-0053 "Known limitations" 1.  Disposition per value,
+   decided by whether a Paper surface actually renders the utility (#1817):
+
+     `.td-alert--error`  border-color rgba(255,77,77,.2) — REACHED.
+        `CaptureModal` is mounted from `AppShell` in both skins and its scoped
+        block sets background and color but not border-color, so the hot
+        Obsidian red survived on cream.  Overridden.
+     `.td-btn--ghost`    border rgba(91,64,62,.2) — REACHED.  `TdButton`'s
+        ghost variant declares no border of its own, and its consumer
+        `ApiKeySettingsView` is one of the Paper-idiom Settings roots.
+        Overridden.
+     `.td-card`          border rgba(91,64,62,.05) — LEGACY-ONLY, left alone.
+        Its one consumer `CardItem` renders through `ColumnLane` →
+        `BoardCanvas`, and `BoardView` swaps that whole tree for
+        `PaperBoardView` whenever Paper is on.
+     `.ghost-border`     rgba(91,64,62,.15) — DEAD, left alone.  Zero
+        consumers anywhere in the repo; the class name appears only in its own
+        declaration in `style.css`.
+
+   `.td-alert--error` also gets its FOREGROUND here: `var(--td-color-ember)`
+   on `--ember-tint` measures 4.46:1, just under AA, so the global utility
+   uses `--ember-ink` (7.83:1 light / 9.53:1 night) instead.  All three figures
+   are asserted exactly in `tests/paper-ink-ladder-contrast.spec.ts` (#1842);
+   the 4.45:1 recorded here before was a rounding slip. */
+.paper .td-alert--error,
+.paper-night .td-alert--error {
+  border-color: var(--ember-bloom);
+  color: var(--ember-ink);
+}
+
+.paper .td-btn--ghost,
+.paper-night .td-btn--ghost {
+  border-color: var(--line);
+}
+
+/* Obsidian's scrollbar thumbs are hardcoded in `style.css` (#5b403e / #ab8986)
+   and cannot be reached by a token remap.  These descendant rules cover
+   IN-PAGE scroll containers; the document scrollbar is handled by
+   `scrollbar-color` on the Paper block above (a descendant combinator cannot
+   reach it, and the unqualified `::-webkit-scrollbar-thumb` in `style.css`
+   styles <html> directly, which blocks the usual body→viewport propagation).
+   `scrollbar-color` is honoured by Chrome 121+, Firefox and Safari 18+; older
+   engines keep the Obsidian document thumb, which is the pre-existing state. */
+.paper ::-webkit-scrollbar-thumb,
+.paper-night ::-webkit-scrollbar-thumb {
+  background: var(--whisper);
+}
+
+.paper ::-webkit-scrollbar-thumb:hover,
+.paper-night ::-webkit-scrollbar-thumb:hover {
+  background: var(--mute);
+}

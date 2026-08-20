@@ -1,7 +1,7 @@
 import type { APIResponse, Response } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, triageCaptureItem, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
 import { assertOk } from './support/httpAsserts'
@@ -93,11 +93,8 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   // Hard-assert the final apply confirmation (see capture-loop.spec.ts): the
-  // test must FAIL if the confirm() gate disappears, not execute silently.
-  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  // test must FAIL if the phase-2 gate disappears, not execute silently.
+  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
   await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
@@ -201,7 +198,7 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await openProposalButton.click()
 
   await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
-  await expect(page.getByText(boardName)).toBeVisible()
+  await expect(page.locator('.td-review__board-filter').getByText(boardName, { exact: true })).toBeVisible()
   await expect(page.locator(`#proposal-${controlProposalId}`)).toHaveCount(0)
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
@@ -209,10 +206,7 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
   await expect(proposalCard).not.toBeVisible()
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)

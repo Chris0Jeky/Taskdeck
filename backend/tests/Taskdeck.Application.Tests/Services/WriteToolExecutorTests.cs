@@ -36,6 +36,7 @@ public class WriteToolExecutorTests
                 _userId,
                 _boardId,
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
     }
@@ -567,6 +568,7 @@ public class WriteToolExecutorTests
                 _userId,
                 _boardId,
                 It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "User does not have access to board"));
         var executor = new ProposeCreateColumnExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);

@@ -734,11 +734,15 @@ public class CaptureServiceTests
     public async Task EnqueueTriageAsync_ShouldTransitionNewCaptureToTriaging()
     {
         var userId = Guid.NewGuid();
-        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload", boardId);
 
         _llmQueueRepositoryMock
             .Setup(r => r.GetByIdAsync(item.Id, default))
             .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
 
         var result = await _service.EnqueueTriageAsync(userId, item.Id);
 
@@ -747,6 +751,152 @@ public class CaptureServiceTests
         result.Value.AlreadyTriaging.Should().BeFalse();
         item.Status.Should().Be(RequestStatus.Processing);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenAlreadyLinkedBoardIsReadOnly()
+    {
+        // #1794: the read-only injection vector is reachable without a triage body — capture WITH a
+        // board (read-gated at create), then accept. The gate has to sit on the effective board.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload", boardId);
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("write access");
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldPropagateBoardLookupFailure_WhenTargetBoardDoesNotExist()
+    {
+        // A missing board must surface as the authorization service's own 404, never be swallowed
+        // into a generic forbidden.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found"));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        item.BoardId.Should().BeNull();
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnValidationError_WhenBoardlessAndNoTargetBoard()
+    {
+        // Home quick-capture lands board-less. Accepting it must be rejected synchronously (400),
+        // not queued into a doomed async job that fails permanently with a bare FAILED badge (#1764).
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("board");
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldLinkTargetBoardAndTriage_WhenBoardlessCaptureSuppliesBoard()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeFalse();
+        item.BoardId.Should().Be(boardId);
+        item.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenTargetBoardNotAccessible()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        item.BoardId.Should().BeNull();
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenTargetBoardIsReadOnlyForCaller()
+    {
+        // Read-only (Viewer) membership must not be able to queue a proposal into a shared board's
+        // review queue — only owners/approvers can clear it (#1794). No board link is written.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id, boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Contain("write access");
+        item.BoardId.Should().BeNull();
+        item.Status.Should().Be(RequestStatus.Pending);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -889,12 +1039,16 @@ public class CaptureServiceTests
     public async Task BatchTriageAsync_ShouldProcessMultipleItems_WithPartialFailure()
     {
         var userId = Guid.NewGuid();
-        var item1 = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture 1");
+        var boardId = Guid.NewGuid();
+        var item1 = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture 1", boardId);
         var item2Id = Guid.NewGuid(); // Non-existent item
 
         _llmQueueRepositoryMock
             .Setup(r => r.GetByIdAsync(item1.Id, default))
             .ReturnsAsync(item1);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
         _llmQueueRepositoryMock
             .Setup(r => r.GetByIdAsync(item2Id, default))
             .ReturnsAsync((LlmRequest?)null);
@@ -957,6 +1111,117 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("50");
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldAuthorizeOncePerDistinctBoard_NotOncePerItem()
+    {
+        // #1836: every board-linked item used to run its own CanWriteBoardAsync (a board fetch plus
+        // a membership read). The batch now spends one lookup per DISTINCT board, so five items
+        // across two boards cost two lookups, not five.
+        var userId = Guid.NewGuid();
+        var boardA = Guid.NewGuid();
+        var boardB = Guid.NewGuid();
+
+        var items = new[]
+        {
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a1", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a2", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "a3", boardA),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b1", boardB),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "b2", boardB),
+        };
+
+        foreach (var item in items)
+        {
+            _llmQueueRepositoryMock
+                .Setup(r => r.GetByIdAsync(item.Id, default))
+                .ReturnsAsync(item);
+        }
+
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
+
+        var request = new BatchTriageRequestDto(
+            items.Select(i => new BatchTriageItemActionDto(i.Id, "triage")).ToList());
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        // Behaviour is unchanged: every item still triages.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Succeeded.Should().Be(5);
+        result.Value.Failed.Should().Be(0);
+        items.Should().OnlyContain(i => i.Status == RequestStatus.Processing);
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardA), Times.Once);
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardB), Times.Once);
+        _authorizationServiceMock.Verify(
+            s => s.CanWriteBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task BatchTriageAsync_ShouldDenyEveryItemOnAReadOnlyBoard_WithOneLookup()
+    {
+        // The memoized outcome must be the FAILURE too, applied uniformly: a Viewer batching three
+        // captures on one read-only board gets three identical 403s off a single lookup (#1836).
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        var items = new[]
+        {
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "one", boardId),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "two", boardId),
+            new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "three", boardId),
+        };
+
+        foreach (var item in items)
+        {
+            _llmQueueRepositoryMock
+                .Setup(r => r.GetByIdAsync(item.Id, default))
+                .ReturnsAsync(item);
+        }
+
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(false));
+
+        var request = new BatchTriageRequestDto(
+            items.Select(i => new BatchTriageItemActionDto(i.Id, "triage")).ToList());
+
+        var result = await _service.BatchTriageAsync(userId, request);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Succeeded.Should().Be(0);
+        result.Value.Failed.Should().Be(3);
+        result.Value.Results.Should().OnlyContain(r => r.ErrorCode == ErrorCodes.Forbidden);
+        result.Value.Results.Should().OnlyContain(r => r.ErrorMessage!.Contains("write access"));
+        items.Should().OnlyContain(i => i.Status == RequestStatus.Pending);
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardId), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldNotShareAuthorizationAcrossSingleItemCalls()
+    {
+        // The memo is scoped to one batch call; the single-item path keeps its original
+        // one-lookup-per-call shape so a membership change between two accepts is still seen.
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var first = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "first", boardId);
+        var second = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "second", boardId);
+
+        _llmQueueRepositoryMock.Setup(r => r.GetByIdAsync(first.Id, default)).ReturnsAsync(first);
+        _llmQueueRepositoryMock.Setup(r => r.GetByIdAsync(second.Id, default)).ReturnsAsync(second);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        (await _service.EnqueueTriageAsync(userId, first.Id)).IsSuccess.Should().BeTrue();
+        (await _service.EnqueueTriageAsync(userId, second.Id)).IsSuccess.Should().BeTrue();
+
+        _authorizationServiceMock.Verify(s => s.CanWriteBoardAsync(userId, boardId), Times.Exactly(2));
     }
 
     // ── UpdateSuggestionAsync ──

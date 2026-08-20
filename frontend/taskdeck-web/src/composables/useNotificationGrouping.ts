@@ -28,32 +28,53 @@ export function typeLabel(value: number | string): string {
 }
 
 /**
- * Tailwind border-left color class for a notification type.
- * Returns a left-border class. Also includes an aria-compatible
- * label via the type badge so color is not the sole differentiator.
+ * Left-border accent stripe class for a notification type.
+ *
+ * This function stays the single source of truth for WHICH stripe each type
+ * gets. The colour itself moved out of the Tailwind palette and into
+ * `--td-notify-*` tokens (#1817): `.td-notify-stripe--*` in `src/style.css`
+ * paints them, `design-tokens.css` holds the original Tailwind hues at `:root`
+ * so Legacy is unchanged, and `paper-legacy-bridge.css` re-tints all five onto
+ * Paper hues inside the Paper shell.
+ *
+ * Colour is never the sole differentiator — each row also carries a text type
+ * badge (`typeBadgeClass` / `typeLabel`).
  */
 export function typeBorderClass(value: number | string): string {
   const t = normalizeType(value)
   switch (t) {
-    case 'ProposalOutcome': return 'border-l-4 border-l-amber-500'
-    case 'Mention': return 'border-l-4 border-l-blue-500'
-    case 'BoardChange': return 'border-l-4 border-l-green-500'
-    case 'Assignment': return 'border-l-4 border-l-purple-500'
-    case 'System': return 'border-l-4 border-l-gray-400'
+    case 'ProposalOutcome': return 'td-notify-stripe td-notify-stripe--proposal'
+    case 'Mention': return 'td-notify-stripe td-notify-stripe--mention'
+    case 'BoardChange': return 'td-notify-stripe td-notify-stripe--board-change'
+    case 'Assignment': return 'td-notify-stripe td-notify-stripe--assignment'
+    case 'System': return 'td-notify-stripe td-notify-stripe--system'
   }
 }
 
 /**
- * Tailwind badge classes for a notification type.
+ * Type badge class for a notification type.
+ *
+ * Same treatment as `typeBorderClass`, one slice later (#1842): this function
+ * stays the single source of truth for WHICH badge each type gets, while the
+ * colour lives in `--td-notify-*-bg` / `--td-notify-*-fg` tokens that
+ * `.td-notify-badge--*` in `src/style.css` paints. `design-tokens.css` holds
+ * the original Tailwind hues at `:root` so Legacy is unchanged, and
+ * `paper-legacy-bridge.css` re-tints all ten onto Paper values inside the
+ * Paper shell.
+ *
+ * The badge span keeps its own layout utilities at the call site; only colour
+ * comes from here. The previous `dark:` variants are gone — `darkMode` is
+ * `'class'` and nothing in the app ever sets `dark` on an element, so they
+ * never rendered; Paper's night skin is `.paper-night`, handled by the bridge.
  */
 export function typeBadgeClass(value: number | string): string {
   const t = normalizeType(value)
   switch (t) {
-    case 'ProposalOutcome': return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
-    case 'Mention': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-    case 'BoardChange': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-    case 'Assignment': return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-    case 'System': return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+    case 'ProposalOutcome': return 'td-notify-badge--proposal'
+    case 'Mention': return 'td-notify-badge--mention'
+    case 'BoardChange': return 'td-notify-badge--board-change'
+    case 'Assignment': return 'td-notify-badge--assignment'
+    case 'System': return 'td-notify-badge--system'
   }
 }
 

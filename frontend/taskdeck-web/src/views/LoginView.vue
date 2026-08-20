@@ -437,7 +437,7 @@ onMounted(async () => {
 }
 
 .td-btn--oidc:hover:not(:disabled) {
-  background: var(--td-surface-elevated);
+  background: var(--td-surface-elevated, #2a2a2a);
   border-color: var(--td-border-focus);
 }
 

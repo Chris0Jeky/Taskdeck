@@ -50,7 +50,26 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         if (chunks.Count <= 1)
         {
-            return await ExtractChunkAsync(userId, boardId, payload, cancellationToken);
+            var extraction = await ExtractChunkAsync(userId, boardId, payload, cancellationToken: cancellationToken);
+            if (!extraction.Succeeded || extraction.Output is null)
+            {
+                return extraction;
+            }
+
+            var singleReduced = ReduceMappedTasks([
+                new MappedChunkTasks(extraction.Output.Tasks
+                    .Select((task, index) => new MappedTask(
+                        task,
+                        extraction.EvidenceSpans is not null && index < extraction.EvidenceSpans.Count
+                            ? extraction.EvidenceSpans[index]
+                            : null))
+                    .ToList())
+            ]);
+            return extraction with
+            {
+                Output = extraction.Output with { Tasks = singleReduced.Tasks },
+                EvidenceSpans = singleReduced.Spans
+            };
         }
 
         if (chunks.Count > _settings.MaxChunkCount)
@@ -64,14 +83,14 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Detail: "Transcript exceeds the configured map-chunk call budget.");
         }
 
-        var mappedTasks = new List<IReadOnlyList<CaptureTriageTaskV2>>(chunks.Count);
+        var mappedTasks = new List<MappedChunkTasks>(chunks.Count);
         string? provider = null;
         string? model = null;
 
         foreach (var chunk in chunks)
         {
             var chunkPayload = payload with { Text = chunk.Text };
-            var extraction = await ExtractChunkAsync(userId, boardId, chunkPayload, cancellationToken);
+            var extraction = await ExtractChunkAsync(userId, boardId, chunkPayload, chunk.Offset, cancellationToken);
 
             if (extraction.Succeeded)
             {
@@ -82,7 +101,14 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                         Detail: "Chunked transcript extraction returned inconsistent provider provenance.");
                 }
 
-                mappedTasks.Add(extraction.Output!.Tasks);
+                mappedTasks.Add(new MappedChunkTasks(
+                    extraction.Output!.Tasks
+                        .Select((task, index) => new MappedTask(
+                            task,
+                            extraction.EvidenceSpans is not null && index < extraction.EvidenceSpans.Count
+                                ? extraction.EvidenceSpans[index]
+                                : null))
+                        .ToList()));
                 continue;
             }
 
@@ -104,7 +130,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             _logger?.LogWarning(
                 "Chunked transcript triage failed at chunk {ChunkIndex}; discarding {MappedTaskCount} mapped tasks for deterministic fallback. Outcome: {Outcome}",
                 chunk.Index,
-                mappedTasks.Sum(tasks => tasks.Count),
+                mappedTasks.Sum(tasks => tasks.Tasks.Count),
                 extraction.Outcome);
             return new LlmCaptureTriageExtraction(extraction.Outcome, Detail: extraction.Detail);
         }
@@ -120,10 +146,11 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Model: model);
         }
 
+        var reduced = ReduceMappedTasks(mappedTasks);
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
             CaptureTriageOutputContract.PromptVersionLlmV2,
-            ReduceMappedTasks(mappedTasks));
+            reduced.Tasks);
         var validation = CaptureTriageOutputContract.Validate(output);
         if (!validation.IsSuccess)
         {
@@ -136,13 +163,15 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             LlmCaptureTriageOutcome.Succeeded,
             validation.Value,
             provider,
-            model);
+            model,
+            EvidenceSpans: reduced.Spans);
     }
 
     private async Task<LlmCaptureTriageExtraction> ExtractChunkAsync(
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        int sourceOffset = 0,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -336,8 +365,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Model: result.Model);
         }
 
-        var sanitized = SanitizeTasks(rawTasks, payload.Text);
-        if (sanitized.Count == 0)
+        var sanitized = SanitizeTasks(rawTasks, payload.Text, sourceOffset);
+        if (sanitized.Tasks.Count == 0)
         {
             // The model returned entries but none survived sanitization — treat as malformed
             // output (fallback), not as a deliberate empty verdict.
@@ -347,7 +376,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
             CaptureTriageOutputContract.PromptVersionLlmV2,
-            sanitized);
+            sanitized.Tasks);
 
         var validation = CaptureTriageOutputContract.Validate(output);
         if (!validation.IsSuccess)
@@ -363,7 +392,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             LlmCaptureTriageOutcome.Succeeded,
             validation.Value,
             result.Provider,
-            result.Model);
+            result.Model,
+            EvidenceSpans: sanitized.Spans);
     }
 
     private void ReportProviderProgress()
@@ -410,17 +440,26 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         return (int)Math.Clamp(estimate, 1L, int.MaxValue);
     }
 
-    private static List<CaptureTriageTaskV2> ReduceMappedTasks(
-        IReadOnlyList<IReadOnlyList<CaptureTriageTaskV2>> mappedTasks)
+    private sealed record MappedTask(CaptureTriageTaskV2 Task, (int Start, int End)? Span);
+
+    private sealed record MappedChunkTasks(IReadOnlyList<MappedTask> Tasks);
+
+    private sealed record ReducedTasks(
+        IReadOnlyList<CaptureTriageTaskV2> Tasks,
+        IReadOnlyList<(int Start, int End)?> Spans);
+
+    private static ReducedTasks ReduceMappedTasks(
+        IReadOnlyList<MappedChunkTasks> mappedTasks)
     {
         // A transcript can yield more than the schema-v2 contract's 20 cards. Do not let an early chunk
         // consume every output slot: take one task from evenly spaced source chunks first, then
         // fill remaining slots in stable chunk/task order. This makes the lossy reduction
         // deterministic while preserving coverage of both the beginning and end of a long meeting.
         var sanitizedByChunk = mappedTasks
-            .Select(tasks => tasks.ToList())
+            .Select(chunk => chunk.Tasks.ToList())
             .ToList();
         var reduced = new List<CaptureTriageTaskV2>();
+        var reducedSpans = new List<(int Start, int End)?>();
         var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         void AddIfUnique(CaptureTriageTaskV2 task)
@@ -428,6 +467,11 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             if (reduced.Count < CaptureTriageOutputContract.MaxTasks && seenTitles.Add(task.Title))
             {
                 reduced.Add(task);
+                reducedSpans.Add(ResolveConsensusSpan(
+                    sanitizedByChunk
+                        .SelectMany(tasks => tasks)
+                        .Where(candidate => string.Equals(candidate.Task.Title, task.Title, StringComparison.OrdinalIgnoreCase))
+                        .Select(candidate => candidate.Span)));
             }
         }
 
@@ -441,7 +485,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                     : (int)((long)slot * (sanitizedByChunk.Count - 1) / (coverageCount - 1));
                 if (sanitizedByChunk[chunkIndex].Count > 0)
                 {
-                    AddIfUnique(sanitizedByChunk[chunkIndex][0]);
+                    AddIfUnique(sanitizedByChunk[chunkIndex][0].Task);
                 }
             }
         }
@@ -455,7 +499,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             {
                 if (taskIndex < tasks.Count)
                 {
-                    AddIfUnique(tasks[taskIndex]);
+                    AddIfUnique(tasks[taskIndex].Task);
                 }
 
                 if (reduced.Count >= CaptureTriageOutputContract.MaxTasks)
@@ -465,7 +509,20 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             }
         }
 
-        return reduced;
+        return new ReducedTasks(reduced, reducedSpans);
+    }
+
+    private static (int Start, int End)? ResolveConsensusSpan(
+        IEnumerable<(int Start, int End)?> observations)
+    {
+        var spans = observations.ToList();
+        if (spans.Count == 0 || spans.Any(span => !span.HasValue))
+        {
+            return null;
+        }
+
+        var first = spans[0]!.Value;
+        return spans.All(span => span!.Value == first) ? first : null;
     }
 
     /// <summary>
@@ -474,9 +531,10 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
     /// could turn a model hallucination into misleading provenance. Assignee/due-date hints stay
     /// descriptive values here; no identity resolution or date mutation happens in this layer.
     /// </summary>
-    private static List<CaptureTriageTaskV2> SanitizeTasks(
+    private static (IReadOnlyList<CaptureTriageTaskV2> Tasks, IReadOnlyList<(int Start, int End)?> Spans) SanitizeTasks(
         IReadOnlyList<CaptureTriageTaskV2> rawTasks,
-        string transcriptText)
+        string transcriptText,
+        int sourceOffset)
     {
         // Do not repair model output here. A completion that misses the v2 contract cannot safely
         // retain a subset of its metadata, and truncating or normalizing a claimed verbatim quote
@@ -488,28 +546,38 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             rawTasks));
         if (!validation.IsSuccess)
         {
-            return [];
+            return (Array.Empty<CaptureTriageTaskV2>(), Array.Empty<(int Start, int End)?>());
         }
 
         var sanitized = new List<CaptureTriageTaskV2>();
-        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var spans = new List<(int Start, int End)?>();
 
         foreach (var task in validation.Value.Tasks)
         {
             if (!transcriptText.Contains(task.EvidenceQuote, StringComparison.Ordinal))
             {
-                return [];
+                return (Array.Empty<CaptureTriageTaskV2>(), Array.Empty<(int Start, int End)?>());
             }
 
-            // Overlap can yield the same proposed card from adjacent map chunks. Preserve the
-            // first complete v2 item deterministically; do not select using model confidence.
-            if (seenTitles.Add(task.Title))
-            {
-                sanitized.Add(task);
-            }
+            sanitized.Add(task);
+            spans.Add(FindUniqueAbsoluteSpan(transcriptText, task.EvidenceQuote, sourceOffset));
         }
 
-        return sanitized;
+        return (sanitized, spans);
+    }
+
+    private static (int Start, int End)? FindUniqueAbsoluteSpan(
+        string text,
+        string quote,
+        int sourceOffset)
+    {
+        var first = text.IndexOf(quote, StringComparison.Ordinal);
+        if (first < 0 || text.IndexOf(quote, first + 1, StringComparison.Ordinal) >= 0)
+        {
+            return null;
+        }
+
+        return (sourceOffset + first, sourceOffset + first + quote.Length);
     }
 
     private static int ResolveQuotaTokens(

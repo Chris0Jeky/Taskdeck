@@ -37,14 +37,14 @@ function tone(weight: ProvenanceWeight): string {
   <section class="paper-review-prov">
     <header class="paper-review-prov__header">
       <span class="tk-serial paper-review-prov__serial">§ II</span>
-      <h3 class="tk-h3 paper-review-prov__title">Provenance</h3>
+      <h3 class="tk-h3 paper-review-prov__title">{{ $t('review.provenance.title') }}</h3>
       <span class="tk-meta paper-review-prov__sub">
-        What was read · what wasn't · what was inferred
+        {{ $t('review.provenance.sub') }}
       </span>
     </header>
     <div class="card paper-review-prov__card">
       <div v-if="empty" class="paper-review-prov__empty tk-meta">
-        Provenance not available for this proposal yet.
+        {{ $t('review.provenance.empty') }}
       </div>
       <div
         v-for="row in rows"
@@ -57,8 +57,10 @@ function tone(weight: ProvenanceWeight): string {
       </div>
     </div>
     <p class="tk-meta paper-review-prov__footnote">
-      Provenance reflects the actor behind this proposal — a deterministic offline extractor for captures, or your configured AI provider for chat-driven automation.
-      <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">View full read-set →</a>
+      {{ $t('review.provenance.footnote') }}
+      <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">{{
+        $t('review.provenance.viewAll')
+      }}</a>
     </p>
 
     <ProvenanceDrawer

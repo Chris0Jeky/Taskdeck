@@ -18,6 +18,7 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
     textExcerpt: item.textExcerpt,
     createdAt: item.createdAt,
     processedAt: item.processedAt,
+    errorMessage: item.errorMessage ?? null,
   }
 }
 
@@ -276,12 +277,12 @@ export const useCaptureStore = defineStore('capture', () => {
     return stop
   }
 
-  async function triageItem(itemId: string) {
+  async function triageItem(itemId: string, boardId?: string | null) {
     guardDemoMutation()
     try {
       actionBusyItemId.value = itemId
       actionError.value = null
-      const triageResult = await captureApi.enqueueTriage(itemId)
+      const triageResult = await captureApi.enqueueTriage(itemId, boardId)
 
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)

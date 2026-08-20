@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { HistoryRow } from '../../../composables/usePaperReviewSelectors'
 
 /**
@@ -8,16 +9,18 @@ import type { HistoryRow } from '../../../composables/usePaperReviewSelectors'
  */
 defineProps<{ rows: HistoryRow[] }>()
 
+const { t } = useI18n()
+
 function statusLabel(status: HistoryRow['status']): string {
   switch (status) {
     case 'pending':
-      return 'PENDING'
+      return t('review.history.status.pending')
     case 'applied':
-      return 'APPLIED'
+      return t('review.history.status.applied')
     case 'past':
-      return 'past'
+      return t('review.history.status.past')
     case 'unknown':
-      return 'UNKNOWN'
+      return t('review.history.status.unknown')
   }
 }
 </script>
@@ -26,12 +29,12 @@ function statusLabel(status: HistoryRow['status']): string {
   <section class="paper-review-history">
     <header class="paper-review-history__header">
       <span class="tk-serial paper-review-history__serial">§ V</span>
-      <h3 class="tk-h3 paper-review-history__title">History · this card</h3>
-      <span class="tk-meta paper-review-history__sub">Every touch since creation</span>
+      <h3 class="tk-h3 paper-review-history__title">{{ $t('review.history.title') }}</h3>
+      <span class="tk-meta paper-review-history__sub">{{ $t('review.history.sub') }}</span>
     </header>
     <div class="rule-ledger paper-review-history__ledger">
       <div v-if="rows.length === 0" class="tk-meta paper-review-history__empty">
-        No history recorded.
+        {{ $t('review.history.empty') }}
       </div>
       <div
         v-for="row in rows"
