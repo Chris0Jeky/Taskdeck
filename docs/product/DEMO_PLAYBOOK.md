@@ -97,7 +97,7 @@ Other repository-local DB files are per-purpose:
 
 ## Managed-Key Mode Disclosure
 
-When running demos with a platform-managed OpenAI key, presenters should be aware:
+When running demos with an operator-managed, deployment-global OpenAI key, presenters should be aware:
 
 - User chat messages and bounded transcript-source triage chunks are sent to OpenAI
 - Per-user quota limits apply (default: 60 requests/hour, 100K tokens/day)
