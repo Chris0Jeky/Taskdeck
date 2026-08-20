@@ -1472,7 +1472,7 @@ Security and identity:
 - policy decision is now explicit: cross-user authenticated access failures should return `403`; remaining work is consistent enforcement across all families/tests
 
 Automation and data:
-- active LLM provider policy supports explicit mock vs live-provider switching (`OpenAI`/`OpenAICompatible`/`Gemini`/`Ollama`) with safe defaults for development/test environments
+- active LLM provider policy supports explicit Mock versus `OpenAI` / `OpenAICompatible` / `Ollama` switching with safe development/test defaults; retired Gemini selectors or sections fail startup with migration guidance instead of selecting a fallback
 - managed-key shared-token controls are now more broadly shipped: identity attribution baseline (`#236`), user-facing usage policy (`#240`, `docs/security/MANAGED_KEY_USAGE_POLICY.md`), secrets/config management baseline (SEC-10, `docs/security/SECRETS_MANAGEMENT_BASELINE.md`), incident runbook + drill scripts (SEC-19, `docs/security/MANAGED_KEY_INCIDENT_RUNBOOK.md` + `scripts/drills/`), and abuse detection domain groundwork + operator API (`#238` SEC-18, `AbuseActor`/`AbuseEvent`/`AbuseDetectionService` with 4-state model) are all delivered; remaining automated live-traffic containment and quota enforcement remain tracked in `#237` (kill-switch budget guardrails) and the SEC-18 follow-through slice for live wiring
 - board-chat planner extraction remains rule/regex-based with deterministic validation and expanded board/column operation coverage; transcript-source capture separately uses the gated LLM triage extractor with deterministic fallback
 - database-level export/import now exists as a minimal safe implementation and is restricted to Development sandbox mode
