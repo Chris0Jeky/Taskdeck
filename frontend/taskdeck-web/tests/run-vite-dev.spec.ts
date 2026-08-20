@@ -1,5 +1,5 @@
 import net from 'node:net'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -187,7 +187,9 @@ function captureLogger(logs: string[]) {
 }
 
 async function createFixture(files: Record<string, string>) {
-  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'taskdeck-vite-readiness-'))
+  const fixtureRoot = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'taskdeck-vite-readiness-')),
+  )
   fixtureRoots.push(fixtureRoot)
 
   for (const [relativePath, contents] of Object.entries(files)) {
