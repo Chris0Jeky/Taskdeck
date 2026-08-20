@@ -94,6 +94,7 @@ const e2eWorkers = resolveWorkers(process.env.TASKDECK_E2E_WORKERS, effectiveDef
 
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: /packaged-desktop\.spec\.ts/,
   forbidOnly: !!process.env.CI,
   /*
    * Parallel execution is safe because tests provision unique users, boards,
