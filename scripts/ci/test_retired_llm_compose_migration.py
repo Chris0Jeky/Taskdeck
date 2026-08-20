@@ -12,6 +12,34 @@ from typing import Mapping
 RETIRED_WRAPPER = "TASKDECK_LLM_GEMINI_API_KEY"
 PRESENCE_MARKER = "TaskdeckMigration__RetiredLlmProviderConfigurationPresent"
 SYNTHETIC_RETIRED_VALUE = "synthetic-retired-wrapper-value-never-forward"
+SAFE_PROCESS_ENVIRONMENT_NAMES = (
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMW6432",
+    "COMMONPROGRAMFILES",
+    "COMMONPROGRAMFILES(X86)",
+    "COMMONPROGRAMW6432",
+    "HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TEMP",
+    "TMP",
+    "XDG_CONFIG_HOME",
+    "XDG_RUNTIME_DIR",
+    "DOCKER_CONFIG",
+    "DOCKER_CONTEXT",
+    "DOCKER_HOST",
+    "DOCKER_TLS_VERIFY",
+    "DOCKER_CERT_PATH",
+)
 
 
 class RetiredLlmComposeMigrationTests(unittest.TestCase):
@@ -72,11 +100,12 @@ class RetiredLlmComposeMigrationTests(unittest.TestCase):
 
 
 def _compose_environment(source: Mapping[str, str]) -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in source.items()
-        if key.casefold() != RETIRED_WRAPPER.casefold()
-    }
+    environment = {}
+    for name in SAFE_PROCESS_ENVIRONMENT_NAMES:
+        value = source.get(name)
+        if value is not None:
+            environment[name] = value
+
     environment.update(
         {
             "TASKDECK_JWT_SECRET": "synthetic-compose-only-jwt-secret-with-sufficient-length",
