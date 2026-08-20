@@ -35,9 +35,15 @@ From the repository root, start the source stack and seed it with one launcher:
 scripts/dev-up.sh --seed
 ```
 
-The launcher intentionally leaves the API and Vite frontend running in the background. It waits for
-API readiness, prints the API URL, expected frontend entry point, and PIDs, and records the process
-trees so the matching stop command can close both safely:
+Each launcher first enforces Node.js `>=24.13.1 <25` and runs
+`npm ci --no-audit --no-fund` from the tracked lockfile, even when `node_modules` already exists. It
+then waits for API readiness and for Vite to transform Taskdeck's entry graph at the exact resolved
+frontend URL. Only then does it report `Stack is up`.
+
+The launcher intentionally leaves the API and Vite frontend running in the background. It prints the
+actual URLs, PIDs, unique per-run stdout/stderr logs, and versioned process-state path. That state
+binds each recorded root to its executable name and creation identity so the matching stop command
+can close only the process trees it owns:
 
 ```powershell
 .\scripts\dev-up.ps1 -Stop
@@ -47,19 +53,22 @@ trees so the matching stop command can close both safely:
 scripts/dev-up.sh --stop
 ```
 
-Closing the shell that launched the stack is not the documented stop path. Default URLs are:
+Closing the shell that launched a successful stack is not the documented stop path. Default URLs
+are:
 
 - API: `http://localhost:5000/api`
-- UI: `http://localhost:5173` (if Vite selects a fallback, its `Local:` line in the frontend
-  dev-server output is authoritative)
+- UI: normally `http://localhost:5173`, but the launcher's printed `Frontend:` URL is authoritative
+  when Vite selects a fallback port
 - Health checks (not under `/api`): `http://localhost:5000/health/live` and
-  `http://localhost:5000/health/ready`
+  `http://localhost:5000/health/ready` (replace `5000` with the selected custom API port)
 
 The source-only seeded accounts are `demo` / `demo123` and `collab` / `demo123`. They do not exist in
-the Windows release. If a source stack is already running, seed or refresh it from
-`frontend/taskdeck-web` with `npm run demo:seed`; `npm run demo:seed -- --reset` removes the demo
-boards before reseeding, and `npm run demo:seed -- --help` lists the options. The seeder reuses
-recognised baseline artifacts instead of appending a duplicate copy on every run.
+the Windows release. If a source stack is already running on the default API port, seed or refresh
+it from `frontend/taskdeck-web` with `npm run demo:seed`; `npm run demo:seed -- --reset` removes the
+demo boards before reseeding, and `npm run demo:seed -- --help` lists the options. For a custom-port
+stack, stop and restart the launcher's checked custom-port command with `-Seed` / `--seed`. Do not
+run the bare seeder there: it defaults to port 5000 and could target a different local instance. The
+seeder reuses recognised baseline artifacts instead of appending a duplicate copy on every run.
 
 ### Database location
 
@@ -72,8 +81,9 @@ The canonical source-launcher database is stable and independent of the reposito
 `dotnet run` is an alternative developer-only path: its relative `Data Source=taskdeck.db` resolves
 from that command's working directory, so it is not the canonical seeded-demo database. Likewise,
 `npm run demo:reset-db` targets the legacy repository-local raw-`dotnet run` database; it does not
-reset the stable `dev-up` database. Prefer `npm run demo:seed -- --reset` unless you deliberately own
-that lower-level developer path.
+reset the stable `dev-up` database. On a default-port stack, prefer `npm run demo:seed -- --reset`
+unless you deliberately own that lower-level developer path; use the launcher guidance above for a
+custom-port stack.
 
 Other repository-local DB files are per-purpose:
 
@@ -85,13 +95,23 @@ Other repository-local DB files are per-purpose:
 ### Source startup troubleshooting
 
 - If the launcher reports a live recorded stack, run its `-Stop` / `--stop` command before starting
-  another one; it refuses to overwrite live PIDs because that would orphan the old processes.
-- If the API exits before readiness, read the API window/output named by the launcher. Do not keep
-  restarting over an unexamined database or configuration error.
-- The canonical seeded path requires port 5000. Stop a listener you recognise before starting it;
-  do not combine the launcher's custom API-port option with `-Seed` / `--seed`, because the seeder and
-  browser client currently continue to target port 5000. For a UI collision, restore/read the Vite
-  dev-server output and use its `Local:` fallback URL rather than assuming 5173.
+  another one. A second raw `dotnet run` normally collides with that stack on port 5000.
+- If API port 5000 is already occupied, the launcher stops nothing. It identifies the listener where
+  possible and prints a checked alternative command: `-ApiPort <port>` on PowerShell or
+  `TASKDECK_API_PORT=<port>` on Bash. Retry that printed command and add your original `-Seed` /
+  `--seed` flag if wanted; the launcher passes the selected API URL only to its seed and Vite child
+  processes.
+- Use the printed `Frontend:` URL instead of assuming port 5173. Missing dependencies, entry-graph
+  transform failures, duplicate/malformed/late readiness markers, and endpoint failures trigger
+  transactional cleanup of the processes created by that startup attempt and exit nonzero.
+- If startup fails or is interrupted, inspect its error output and the newest per-run
+  `dev-up-*.stdout.log` / `dev-up-*.stderr.log` files in the data directory above. A successful launch
+  prints the exact log paths. Cleanup removes state only after the owned process trees exit and their
+  saved ports are released; an incomplete or unverifiable cleanup retains the state and kills no
+  identity it cannot prove.
+- If `-Stop` / `--stop` reports an identity mismatch, do not delete the state file or kill a PID just
+  because its number matches. Inspect the retained state and logs, stop only a process you can
+  independently identify, then rerun the stop command so it can prove port release.
 - Confirm the printed database path before deleting or resetting anything. Stop the stack first so
   SQLite can checkpoint its WAL cleanly.
 

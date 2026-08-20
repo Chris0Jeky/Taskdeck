@@ -77,7 +77,7 @@ Open `http://localhost:5000` after the direct `docker run` command. The Compose 
 
 ### 3. From source
 
-Prerequisites: .NET 8 SDK and Node.js 24.x (minimum 24.13.1 LTS).
+Prerequisites: .NET 8 SDK and Node.js `>=24.13.1 <25`.
 
 ```powershell
 git clone https://github.com/Chris0Jeky/Taskdeck.git
@@ -92,13 +92,19 @@ scripts/dev-up.sh --seed
 ```
 
 The seeded account is `demo` / `demo123`. These source-only credentials are not present in the
-Windows release. The source launcher intentionally leaves the API and frontend running as background
-processes, prints their PIDs, API URL, and expected frontend entry point, and records them for the
-matching stop command. Open `http://localhost:5173`; if Vite selects a fallback port, use the `Local:`
-URL in the frontend dev-server output. Stop the whole stack with
-`.\scripts\dev-up.ps1 -Stop` or `scripts/dev-up.sh --stop`; closing the launching shell is not the
-documented stop path. See the [source startup troubleshooting](docs/product/DEMO_PLAYBOOK.md#source-startup-troubleshooting)
-if readiness, ports, or a stale PID file blocks startup.
+Windows release. Before starting either server, both launchers enforce the complete Node range and
+reconcile `node_modules` from the tracked lockfile with `npm ci --no-audit --no-fund`. Success is
+reported only after the API is ready and Vite has transformed Taskdeck's entry graph at the exact
+printed `Frontend:` URL; that URL is authoritative when Vite selects a fallback port.
+
+The source launcher intentionally leaves the API and frontend running as background processes. It
+prints their URLs, PIDs, per-run logs, and versioned process-state path, including creation identities
+used by the matching stop command. Stop the whole stack with `.\scripts\dev-up.ps1 -Stop` or
+`scripts/dev-up.sh --stop`; closing the launching shell is not the documented stop path. If API port
+5000 is occupied, the launcher kills nothing: it identifies the owner where possible and prints a
+checked custom-port command. See the
+[source startup troubleshooting](docs/product/DEMO_PLAYBOOK.md#source-startup-troubleshooting) for
+safe state, port, log, and interrupted-start recovery.
 
 For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
