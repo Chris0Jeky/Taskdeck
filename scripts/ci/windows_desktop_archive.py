@@ -63,6 +63,7 @@ PLAYWRIGHT_SECRET_ENV_NAMES = {
     "LLM__OPENAI__APIKEY",
     "OPENAI_API_KEY",
     "TASKDECK_DEMO_OPENAI_API_KEY",
+    "TASKDECK_LLM_GEMINI_API_KEY",
     "TASKDECK_RELEASE_OPENAI_API_KEY",
 }
 
@@ -229,6 +230,7 @@ def build_playwright_environment(
             "LLM__",
             "OPENAI_API_KEY",
             "TASKDECK_DEMO_OPENAI_API_KEY",
+            "TASKDECK_LLM_GEMINI_API_KEY",
             "TASKDECK_RELEASE_OPENAI_API_KEY",
             "TASKDECK_PACKAGED_",
         ),
