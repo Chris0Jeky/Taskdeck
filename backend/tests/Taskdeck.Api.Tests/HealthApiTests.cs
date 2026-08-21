@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Tests.Support;
@@ -15,6 +17,9 @@ namespace Taskdeck.Api.Tests;
 
 public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private const string DevRunIdConfigKey = "TASKDECK_DEV_RUN_ID";
+    private const string DevRunIdHeaderName = "Taskdeck-Dev-Run-Id";
+
     private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
@@ -55,6 +60,63 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         payload.TryGetProperty("version", out var version).Should().BeTrue();
         version.GetString().Should().Be(ProductVersion.Value);
+    }
+
+    [Fact]
+    public async Task Ready_ShouldEmitCanonicalDevelopmentRunIdentityWithoutLeakingItInTheBody()
+    {
+        const string configuredRunId = "A87D0D31-AE09-405C-8DCE-75289FBA8F15";
+        var expectedRunId = Guid.Parse(configuredRunId).ToString("D");
+        using var factory = CreateFactoryWithDevRunId(configuredRunId);
+        using var client = factory.CreateClient();
+
+        var readyResponse = await client.GetAsync("/health/ready");
+
+        readyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        readyResponse.Headers.TryGetValues(DevRunIdHeaderName, out var runIdValues).Should().BeTrue();
+        runIdValues.Should().ContainSingle().Which.Should().Be(expectedRunId);
+        readyResponse.Headers.CacheControl.Should().NotBeNull();
+        readyResponse.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var body = await readyResponse.Content.ReadAsStringAsync();
+        body.Contains(expectedRunId, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+
+        var liveResponse = await client.GetAsync("/health/live");
+        liveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        liveResponse.Headers.TryGetValues(DevRunIdHeaderName, out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-guid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    [InlineData("a87d0d31ae09405c8dce75289fba8f15")]
+    [InlineData("{a87d0d31-ae09-405c-8dce-75289fba8f15}")]
+    public async Task Ready_ShouldSuppressDevelopmentRunIdentityWhenConfigurationIsAbsentOrInvalid(
+        string? configuredRunId)
+    {
+        using var factory = CreateFactoryWithDevRunId(configuredRunId);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(DevRunIdHeaderName, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Ready_ShouldSuppressDevelopmentRunIdentityOutsideDevelopment()
+    {
+        const string configuredRunId = "a87d0d31-ae09-405c-8dce-75289fba8f15";
+        using var factory = CreateFactoryWithDevRunId(configuredRunId, "Production");
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues(DevRunIdHeaderName, out _).Should().BeFalse();
+        var body = await response.Content.ReadAsStringAsync();
+        body.Contains(configuredRunId, StringComparison.OrdinalIgnoreCase).Should().BeFalse();
     }
 
     [Fact]
@@ -217,5 +279,28 @@ public class HealthApiTests : IClassFixture<TestWebApplicationFactory>
         queue.GetProperty("depth").GetInt32().Should().Be(0);
         queue.GetProperty("captureDepth").GetInt32().Should().BeGreaterThanOrEqualTo(3);
         queue.GetProperty("totalDepth").GetInt32().Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    private WebApplicationFactory<Program> CreateFactoryWithDevRunId(
+        string? configuredRunId,
+        string environmentName = "Development")
+    {
+        return _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment(environmentName);
+            if (environmentName == "Production")
+            {
+                builder.UseSetting("Jwt:SecretKey", ApiTestHarness.ProductionTestJwtSecret);
+                builder.UseSetting("Connectors:EncryptionKey", ApiTestHarness.TestEncryptionKey);
+            }
+
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [DevRunIdConfigKey] = configuredRunId
+                });
+            });
+        });
     }
 }
