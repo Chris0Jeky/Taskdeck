@@ -289,18 +289,25 @@ async function runLiveOpenAiJourney(
   const health = await healthResponse.json() as ProviderHealth
   checkpoint = 'live_provider_identity'
   const probeLatencyMs = health.probeLatencyMs
-  if (
-    health.providerName !== 'OpenAI'
-    || health.model !== expectedModel
-    || health.isMock
-    || !health.isAvailable
-    || !health.isProbed
-    || health.verificationStatus !== 'verified'
-    || typeof probeLatencyMs !== 'number'
-    || !Number.isSafeInteger(probeLatencyMs)
-    || probeLatencyMs < 1
-    || probeLatencyMs > 300_000
-  ) {
+  const identityMismatchCode = health.providerName !== 'OpenAI'
+    ? 'provider'
+    : health.model !== expectedModel
+      ? 'model'
+      : health.isMock
+        ? 'mock'
+        : !health.isAvailable
+          ? 'availability'
+          : !health.isProbed
+            ? 'probed'
+            : health.verificationStatus !== 'verified'
+              ? 'verification'
+              : typeof probeLatencyMs !== 'number' || !Number.isSafeInteger(probeLatencyMs)
+                ? 'latency_type'
+                : probeLatencyMs < 1 || probeLatencyMs > 300_000
+                  ? 'latency_range'
+                  : null
+  if (identityMismatchCode) {
+    checkpoint = `live_provider_identity_${identityMismatchCode}`
     throw new Error('[packaged desktop] The live provider did not verify as exact OpenAI/non-mock/verified.')
   }
   checkpoint = 'live_verified_ui'
