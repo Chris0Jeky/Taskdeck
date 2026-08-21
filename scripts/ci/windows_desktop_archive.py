@@ -28,6 +28,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -38,8 +39,8 @@ BOOTSTRAP_IDENTITY_PATTERN = re.compile(
     r"^TASKDECK_DESKTOP_BOOTSTRAP jwt_created=(true|false) connector_created=(true|false)$"
 )
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
-PHASE_EVIDENCE_SCHEMA_VERSION = 2
-FINAL_EVIDENCE_SCHEMA_VERSION = 5
+PHASE_EVIDENCE_SCHEMA_VERSION = 3
+FINAL_EVIDENCE_SCHEMA_VERSION = 6
 MAX_PROBE_LATENCY_MS = 300_000
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
@@ -75,14 +76,23 @@ PLAYWRIGHT_SECRET_ENV_NAMES = {
 }
 
 FORBIDDEN_EVIDENCE_KEYS = re.compile(
-    r"(?:api.?key|authorization|config|credential|email|error|header|log|password|prompt|response|"
-    r"screenshot|secret|token|tool.?arg|trace|username)$",
+    r"(?:api.?key|authorization|config|credential|email|environment|error|filesystem.?path|header|"
+    r"log|password|prompt|raw.?error|response|screenshot|secret|token|tool.?arg|trace|transcript|"
+    r"user.?id|username)$",
     re.IGNORECASE,
 )
 
 
 class AcceptanceFailure(RuntimeError):
     """Sanitized acceptance failure; messages never include raw process/provider data."""
+
+
+@dataclass(frozen=True)
+class LiveOpenAiResolution:
+    mode: str
+    enabled: bool
+    skip_reason: str
+    operator_key: str | None
 
 
 def validate_bootstrap_identity_markers(markers: list[str]) -> dict[str, bool]:
@@ -239,6 +249,29 @@ def resolve_operator_key(environment: Mapping[str, str]) -> str | None:
         if candidate and candidate.strip():
             return candidate.strip()
     return None
+
+
+def resolve_live_openai_mode(
+    *,
+    required: bool,
+    optional: bool,
+    environment: Mapping[str, str],
+) -> LiveOpenAiResolution:
+    if required and optional:
+        raise AcceptanceFailure("Hosted acceptance mode is ambiguous.")
+
+    if not required and not optional:
+        return LiveOpenAiResolution("off", False, "not_requested", None)
+
+    operator_key = resolve_operator_key(environment)
+    if required:
+        if operator_key is None:
+            raise AcceptanceFailure("Required hosted acceptance is unavailable.")
+        return LiveOpenAiResolution("required", True, "none", operator_key)
+
+    if operator_key is None:
+        return LiveOpenAiResolution("optional", False, "credential_unavailable", None)
+    return LiveOpenAiResolution("optional", True, "none", operator_key)
 
 
 def build_app_environment(
@@ -548,7 +581,13 @@ def assert_data_isolated(
             raise AcceptanceFailure("Packaged configuration or database state escaped isolated LOCALAPPDATA.")
 
 
-def validate_phase_evidence(value: Any, expected_phase: str, journey_id: str) -> dict[str, Any]:
+def validate_phase_evidence(
+    value: Any,
+    expected_phase: str,
+    journey_id: str,
+    *,
+    require_live_openai: bool = False,
+) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AcceptanceFailure("Packaged Playwright evidence is not an object.")
     allowed_top = {"schemaVersion", "phase", "journeyId", "board", "persistence", "http", "liveOpenAi"}
@@ -588,6 +627,8 @@ def validate_phase_evidence(value: Any, expected_phase: str, journey_id: str) ->
     live = value.get("liveOpenAi")
     if not isinstance(live, dict) or live.get("outcome") not in {"passed", "skipped"}:
         raise AcceptanceFailure("Packaged live-provider evidence has an invalid outcome.")
+    if require_live_openai and live["outcome"] != "passed":
+        raise AcceptanceFailure("Required hosted acceptance did not produce live evidence.")
     _validate_live_evidence(live, expected_phase)
     return value
 
@@ -602,10 +643,10 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
     if phase == "restart":
         _require_exact_keys(
             live,
-            {"outcome", "cardTitle", "cardCountAfterRestart"},
+            {"outcome", "cardCountAfterRestart"},
             "live-provider restart",
         )
-        if not isinstance(live["cardTitle"], str) or live["cardCountAfterRestart"] != 1:
+        if live["cardCountAfterRestart"] != 1:
             raise AcceptanceFailure("Packaged live-provider restart evidence is invalid.")
         return
 
@@ -615,11 +656,11 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
             "outcome",
             "provider",
             "model",
+            "promptVersion",
             "isMock",
             "isProbed",
             "verificationStatus",
             "probeLatencyMs",
-            "cardTitle",
             "proposal",
             "cardCounts",
         },
@@ -627,25 +668,25 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
     )
     if (
         live["provider"] != "OpenAI"
-        or not isinstance(live["model"], str)
-        or not live["model"]
+        or live["model"] != "gpt-5.6-luna"
+        or live["promptVersion"] != "llm-triage.v2"
         or live["isMock"] is not False
         or live["isProbed"] is not True
         or live["verificationStatus"] != "verified"
         or type(live["probeLatencyMs"]) is not int
         or not 1 <= live["probeLatencyMs"] <= MAX_PROBE_LATENCY_MS
-        or not isinstance(live["cardTitle"], str)
     ):
         raise AcceptanceFailure("Packaged live-provider identity evidence is invalid.")
     _require_exact_keys(
         live["proposal"],
-        {"id", "statusBeforeApproval", "statusAfterApproval", "statusAfterApply", "operationCount"},
+        {"statusBeforeApproval", "statusAfterApproval", "statusAfterApply", "operationCount"},
         "proposal",
     )
     if (
-        not isinstance(live["proposal"]["id"], str)
-        or not live["proposal"]["id"]
-        or not isinstance(live["proposal"]["operationCount"], int)
+        live["proposal"]["statusBeforeApproval"] not in {"PendingReview", "0"}
+        or live["proposal"]["statusAfterApproval"] not in {"Approved", "1"}
+        or live["proposal"]["statusAfterApply"] not in {"Applied", "3"}
+        or type(live["proposal"]["operationCount"]) is not int
         or live["proposal"]["operationCount"] < 1
     ):
         raise AcceptanceFailure("Packaged proposal evidence is invalid.")
@@ -758,7 +799,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--checksum", required=True, type=Path)
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--frontend-directory", required=True, type=Path)
-    parser.add_argument("--live-openai", action="store_true")
+    hosted_mode = parser.add_mutually_exclusive_group()
+    hosted_mode.add_argument("--live-openai", action="store_true")
+    hosted_mode.add_argument("--live-openai-if-configured", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -773,6 +816,8 @@ def run_packaged_journey(
     journey_id: str,
     live_openai: bool,
     live_skip_reason: str,
+    require_live_openai: bool,
+    operator_key: str | None,
     expected_first_identity: Mapping[str, bool],
     expected_second_identity: Mapping[str, bool],
     hold_default_port: bool,
@@ -785,7 +830,7 @@ def run_packaged_journey(
     app_environment = build_app_environment(
         os.environ,
         local_app_data,
-        resolve_operator_key(os.environ) if live_openai else None,
+        operator_key if live_openai else None,
     )
     monitors: list[ProcessMonitor] = []
     port_guard: socket.socket | None = None
@@ -893,11 +938,13 @@ def run_packaged_journey(
                 json.loads(create_evidence_path.read_text(encoding="utf-8")),
                 "create",
                 journey_id,
+                require_live_openai=require_live_openai,
             ),
             "restart": validate_phase_evidence(
                 json.loads(restart_evidence_path.read_text(encoding="utf-8")),
                 "restart",
                 journey_id,
+                require_live_openai=require_live_openai,
             ),
         }
     finally:
@@ -915,6 +962,12 @@ def run(argv: list[str]) -> int:
     if os.name != "nt":
         raise AcceptanceFailure("The packaged desktop acceptance harness requires Windows.")
 
+    live_resolution = resolve_live_openai_mode(
+        required=args.live_openai,
+        optional=args.live_openai_if_configured,
+        environment=os.environ,
+    )
+
     archive = args.archive.resolve(strict=True)
     checksum_path = args.checksum.resolve(strict=True)
     evidence_path = args.evidence.resolve()
@@ -927,14 +980,6 @@ def run(argv: list[str]) -> int:
     temp_parent = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()).resolve()
     temp_root = create_temp_root(temp_parent)
     try:
-        live_openai = args.live_openai and resolve_operator_key(os.environ) is not None
-        live_skip_reason = (
-            "none"
-            if live_openai
-            else "credential_unavailable"
-            if args.live_openai
-            else "not_requested"
-        )
         journey_stamp = f"{int(time.time())}-{os.getpid()}"
         clean_root = temp_root / "clean-install"
         migration_root = temp_root / "migration"
@@ -958,8 +1003,10 @@ def run(argv: list[str]) -> int:
             unrelated_cwd=clean_root / "unrelated-cwd",
             frontend_directory=frontend_directory,
             journey_id=f"release-clean-{journey_stamp}",
-            live_openai=live_openai,
-            live_skip_reason=live_skip_reason,
+            live_openai=live_resolution.enabled,
+            live_skip_reason=live_resolution.skip_reason,
+            require_live_openai=live_resolution.mode == "required",
+            operator_key=live_resolution.operator_key,
             expected_first_identity={"jwtCreated": True, "connectorCreated": True},
             expected_second_identity={"jwtCreated": False, "connectorCreated": False},
             hold_default_port=True,
@@ -981,8 +1028,10 @@ def run(argv: list[str]) -> int:
             unrelated_cwd=migration_root / "unrelated-cwd",
             frontend_directory=frontend_directory,
             journey_id=f"release-migration-{journey_stamp}",
-            live_openai=live_openai,
-            live_skip_reason=live_skip_reason,
+            live_openai=live_resolution.enabled,
+            live_skip_reason=live_resolution.skip_reason,
+            require_live_openai=live_resolution.mode == "required",
+            operator_key=live_resolution.operator_key,
             expected_first_identity={"jwtCreated": False, "connectorCreated": False},
             expected_second_identity={"jwtCreated": False, "connectorCreated": False},
             hold_default_port=False,

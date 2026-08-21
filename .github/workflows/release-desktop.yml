@@ -484,7 +484,7 @@ jobs:
             -ChecksumPath "${archive}.sha256" `
             -EvidencePath $evidence `
             -FrontendDirectory "frontend/taskdeck-web" `
-            -LiveOpenAI
+            -LiveOpenAIIfConfigured
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v7

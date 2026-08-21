@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -163,6 +165,118 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         self.assertEqual("synthetic-operator-value", app_environment["Llm__OpenAi__ApiKey"])
         self.assertNotIn("synthetic-operator-value", playwright_environment.values())
 
+    def test_live_openai_mode_matrix(self) -> None:
+        cases = (
+            (
+                "off",
+                False,
+                False,
+                {"LlM__oPeNaI__aPiKeY": "must-be-ignored"},
+                False,
+                "not_requested",
+                None,
+            ),
+            ("optional-missing", False, True, {}, False, "credential_unavailable", None),
+            (
+                "optional-configured",
+                False,
+                True,
+                {"tAsKdEcK_rElEaSe_OpEnAi_ApI_kEy": "  optional-value  "},
+                True,
+                "none",
+                "optional-value",
+            ),
+            (
+                "required-configured",
+                True,
+                False,
+                {"LlM__oPeNaI__aPiKeY": "  required-value  "},
+                True,
+                "none",
+                "required-value",
+            ),
+        )
+
+        for mode, required, optional, environment, enabled, skip_reason, operator_key in cases:
+            with self.subTest(mode=mode):
+                resolution = harness.resolve_live_openai_mode(
+                    required=required,
+                    optional=optional,
+                    environment=environment,
+                )
+                self.assertEqual(mode.split("-", maxsplit=1)[0], resolution.mode)
+                self.assertEqual(enabled, resolution.enabled)
+                self.assertEqual(skip_reason, resolution.skip_reason)
+                self.assertEqual(operator_key, resolution.operator_key)
+
+    def test_required_live_openai_without_credential_fails_with_generic_text(self) -> None:
+        with self.assertRaises(harness.AcceptanceFailure) as raised:
+            harness.resolve_live_openai_mode(required=True, optional=False, environment={})
+
+        message = str(raised.exception)
+        self.assertEqual("Required hosted acceptance is unavailable.", message)
+        for forbidden in (
+            "openai",
+            "api",
+            "key",
+            "credential",
+            "environment",
+            "path",
+            "prompt",
+            "response",
+        ):
+            self.assertNotIn(forbidden, message.lower())
+
+    def test_live_openai_modes_are_mutually_exclusive(self) -> None:
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.resolve_live_openai_mode(required=True, optional=True, environment={})
+
+    @unittest.skipUnless(os.name == "nt", "PowerShell wrapper regression requires Windows")
+    def test_required_missing_wrapper_output_is_nonzero_generic_and_path_free(self) -> None:
+        system_root = Path(os.environ["SystemRoot"])
+        powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        wrapper = Path(__file__).with_name("Test-WindowsDesktopArchive.ps1").resolve()
+        repo_root = wrapper.parents[2]
+        child_environment = {
+            name: os.environ[name]
+            for name in ("SystemRoot", "TEMP", "TMP")
+            if name in os.environ
+        }
+        child_environment["PATH"] = os.pathsep.join((str(system_root), str(system_root / "System32")))
+        child_environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
+
+        result = subprocess.run(
+            [
+                str(powershell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(wrapper),
+                "-ArchivePath",
+                "missing.zip",
+                "-ChecksumPath",
+                "missing.sha256",
+                "-EvidencePath",
+                "missing.json",
+                "-FrontendDirectory",
+                "missing-frontend",
+                "-LiveOpenAI",
+            ],
+            cwd=repo_root,
+            env=child_environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("ERROR: Required hosted acceptance is unavailable.", output)
+        self.assertNotIn("NativeCommandError", output)
+        self.assertNotIn(str(wrapper), output)
+
     def test_ready_marker_accepts_only_resolved_ipv4_loopback(self) -> None:
         self.assertIsNotNone(harness.READY_PATTERN.fullmatch(
             "TASKDECK_DESKTOP_READY url=http://127.0.0.1:54321"
@@ -265,7 +379,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
 
     def test_phase_evidence_rejects_forbidden_fields(self) -> None:
         evidence = {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "phase": "create",
             "journeyId": "release-123456-789",
             "board": {"id": "synthetic-id", "title": "synthetic"},
@@ -282,6 +396,25 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         forbidden["liveOpenAi"]["providerError"] = "must not persist"
         with self.assertRaises(harness.AcceptanceFailure):
             harness.validate_phase_evidence(forbidden, "create", "release-123456-789")
+
+    def test_required_live_mode_rejects_skipped_evidence(self) -> None:
+        evidence = {
+            "schemaVersion": 3,
+            "phase": "create",
+            "journeyId": "release-123456-789",
+            "board": {"id": "synthetic-id", "title": "synthetic"},
+            "persistence": {"registered": True, "boardCreated": True},
+            "http": [{"method": "POST", "path": "/api/auth/register", "status": 200}],
+            "liveOpenAi": {"outcome": "skipped", "reason": "credential_unavailable"},
+        }
+
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_phase_evidence(
+                evidence,
+                "create",
+                "release-123456-789",
+                require_live_openai=True,
+            )
 
     def test_phase_evidence_accepts_bounded_integer_probe_latency(self) -> None:
         evidence = self._live_create_evidence(123)
@@ -306,7 +439,66 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
-    def test_final_evidence_v5_records_both_explicit_journeys(self) -> None:
+    def test_live_capture_evidence_is_an_exact_value_minimized_whitelist(self) -> None:
+        evidence = self._live_create_evidence(123)
+        harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+        live = evidence["liveOpenAi"]
+
+        self.assertEqual(
+            {
+                "outcome",
+                "provider",
+                "model",
+                "promptVersion",
+                "isMock",
+                "isProbed",
+                "verificationStatus",
+                "probeLatencyMs",
+                "proposal",
+                "cardCounts",
+            },
+            set(live),
+        )
+        self.assertEqual(
+            {"statusBeforeApproval", "statusAfterApproval", "statusAfterApply", "operationCount"},
+            set(live["proposal"]),
+        )
+        for forbidden_field in (
+            "transcript",
+            "prompt",
+            "response",
+            "rawError",
+            "log",
+            "credential",
+            "environment",
+            "filesystemPath",
+            "userId",
+        ):
+            forbidden = json.loads(json.dumps(evidence))
+            forbidden["liveOpenAi"][forbidden_field] = "must not persist"
+            with self.subTest(forbidden_field=forbidden_field):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_phase_evidence(forbidden, "create", "release-123456-789")
+
+    def test_live_capture_evidence_rejects_degraded_attribution_and_unbounded_statuses(self) -> None:
+        mutations = (
+            ("provider", "Deterministic"),
+            ("model", "fallback"),
+            ("promptVersion", "deterministic.v1"),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field):
+                evidence = self._live_create_evidence(123)
+                evidence["liveOpenAi"][field] = value
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+
+        evidence = self._live_create_evidence(123)
+        evidence["liveOpenAi"]["proposal"]["statusAfterApproval"] = "Unexpected"
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+
+    def test_final_evidence_v6_records_both_explicit_journeys(self) -> None:
         final = harness.build_final_evidence(
             "taskdeck-v0.1.1-win-x64.zip",
             "a" * 64,
@@ -326,8 +518,8 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             {"phase": "restart", "journeyId": "migration-123"},
         )
 
-        self.assertEqual(2, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
-        self.assertEqual(5, final["schemaVersion"])
+        self.assertEqual(3, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
+        self.assertEqual(6, final["schemaVersion"])
         self.assertEqual({"cleanInstall", "migration"}, set(final) - {"schemaVersion", "release"})
         self.assertEqual(
             {"jwtCreated": True, "connectorCreated": True},
@@ -478,7 +670,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
     @staticmethod
     def _live_create_evidence(probe_latency_ms: object) -> dict[str, object]:
         return {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "phase": "create",
             "journeyId": "release-123456-789",
             "board": {"id": "synthetic-id", "title": "synthetic"},
@@ -488,14 +680,13 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 "outcome": "passed",
                 "provider": "OpenAI",
                 "model": "gpt-5.6-luna",
+                "promptVersion": "llm-triage.v2",
                 "isMock": False,
                 "isProbed": True,
                 "verificationStatus": "verified",
                 "probeLatencyMs": probe_latency_ms,
-                "cardTitle": "Synthetic card",
                 "proposal": {
-                    "id": "synthetic-proposal",
-                    "statusBeforeApproval": "Pending",
+                    "statusBeforeApproval": "PendingReview",
                     "statusAfterApproval": "Approved",
                     "statusAfterApply": "Applied",
                     "operationCount": 1,
