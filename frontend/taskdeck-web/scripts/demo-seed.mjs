@@ -816,6 +816,25 @@ export function planDemoBoardReset(boards) {
   return { candidates, tombstones }
 }
 
+export function planDemoBoardsForSeed(boards, { reset = false } = {}) {
+  const resetPlan = reset ? planDemoBoardReset(boards) : null
+  const boardInventory = Array.isArray(boards) ? boards : []
+  const preResetBoardIds = new Set(
+    reset
+      ? boardInventory
+          .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
+          .filter(Boolean)
+      : [],
+  )
+
+  return {
+    reset,
+    demoBoards: boardInventory.filter(isDemoBoard),
+    preResetBoardIds,
+    resetPlan,
+  }
+}
+
 export async function quarantineDemoBoardsForCleanReset(
   candidates,
   token,
@@ -966,22 +985,17 @@ export async function prepareDemoBoardsForSeed(
   token,
   {
     reset = false,
+    boardPlan = planDemoBoardsForSeed(boards, { reset }),
     request = http,
     refreshBoards = () => listBoards(token),
     onQuarantined = () => {},
   } = {},
 ) {
-  let demoBoards = (boards || []).filter(isDemoBoard)
-  let resetPlan = null
+  let demoBoards = boardPlan.demoBoards
+  const { preResetBoardIds, resetPlan } = boardPlan
   let canonicalBoards
 
   if (reset) {
-    const preResetBoardIds = new Set(
-      boards
-        .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
-        .filter(Boolean),
-    )
-    resetPlan = planDemoBoardReset(boards)
     await quarantineDemoBoardsForCleanReset(resetPlan.candidates, token, { request, onQuarantined })
 
     let quarantinedBoards
@@ -1481,7 +1495,11 @@ async function ensureOpsSeed(token) {
 
 export async function seedDemo(
   { reset = false } = {},
-  { ensureUser: ensureSeedUser = ensureUser, listBoards: listSeedBoards = listBoards } = {},
+  {
+    ensureUser: ensureSeedUser = ensureUser,
+    listBoards: listSeedBoards = listBoards,
+    prepareBoardsForSeed: prepareSeedBoards = prepareDemoBoardsForSeed,
+  } = {},
 ) {
   ensureSafeApiBaseTarget()
 
@@ -1496,10 +1514,20 @@ export async function seedDemo(
 
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
 
-  // 2) Reuse canonical boards normally; protected reset retires them to ID-bound tombstones first.
+  // 2) Complete the pure reset inventory plan before collaborator provisioning or product writes.
   const boards = await listSeedBoards(demoToken)
-  const preparedBoards = await prepareDemoBoardsForSeed(boards, demoToken, {
+  const boardPlan = planDemoBoardsForSeed(boards, { reset })
+
+  let collabLogin = null
+  if (reset) {
+    collabLogin = await ensureSeedUser(COLLAB)
+    console.log(`Collab user: ${collabLogin.user.username} (${collabLogin.user.email})`)
+  }
+
+  // 3) Reuse canonical boards normally; protected reset retires them only after both accounts authenticate.
+  const preparedBoards = await prepareSeedBoards(boards, demoToken, {
     reset,
+    boardPlan,
     refreshBoards: () => listSeedBoards(demoToken),
     onQuarantined: (board) => console.log(`  - quarantined ${board.name}`),
   })
@@ -1518,11 +1546,11 @@ export async function seedDemo(
     )
   }
 
-  // 3) Provision the collaborator only after reset preflight and board preparation succeed.
-  const collabLogin = await ensureSeedUser(COLLAB)
+  // Ordinary seeds preserve their existing board-before-collaborator ordering.
+  collabLogin ||= await ensureSeedUser(COLLAB)
   const collabToken = collabLogin.token
   const collabUser = collabLogin.user
-  console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
+  if (!reset) console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
   const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))

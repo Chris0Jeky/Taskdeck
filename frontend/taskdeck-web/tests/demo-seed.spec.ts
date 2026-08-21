@@ -12,6 +12,7 @@ import {
   mergeSeedPlanChatSessions,
   parseSeedArgs,
   planDemoBoardReset,
+  planDemoBoardsForSeed,
   planDemoSeedRerunState,
   prepareDemoBoardsForSeed,
   quarantineDemoBoardsForCleanReset,
@@ -289,6 +290,95 @@ describe('demo seed rerun planning', () => {
     expect(authAttempts).toEqual(['demo'])
     expect(reads).toEqual(['GET /boards as demo-token'])
     expect(productWrites).toEqual([])
+  })
+
+  it('plans the complete reset board inventory without mutating it', () => {
+    const boards = [
+      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo (Chat)', isArchived: false },
+      { id: 'real-board', name: 'Client work', isArchived: false },
+      {
+        id: 'prior-reset',
+        name: buildDemoResetTombstoneName('prior-reset'),
+        isArchived: true,
+      },
+    ]
+    const originalBoards = structuredClone(boards)
+
+    const plan = planDemoBoardsForSeed(boards, { reset: true })
+
+    expect(plan.resetPlan?.candidates).toEqual([
+      {
+        id: 'demo-capture',
+        name: 'DEMO: Client Onboarding Demo (Chat)',
+        specKey: 'capture',
+        isArchived: false,
+        tombstoneName: buildDemoResetTombstoneName('demo-capture'),
+      },
+    ])
+    expect(plan.resetPlan?.tombstones).toEqual([
+      {
+        id: 'prior-reset',
+        name: buildDemoResetTombstoneName('prior-reset'),
+        isArchived: true,
+      },
+    ])
+    expect([...plan.preResetBoardIds]).toEqual(['demo-capture', 'real-board', 'prior-reset'])
+    expect(boards).toEqual(originalBoards)
+  })
+
+  it('fails stale collaborator authentication before reset board preparation or product writes', async () => {
+    const api = createStatefulDemoBoardApi([
+      {
+        id: 'old-capture',
+        name: 'DEMO: Client Onboarding Demo',
+        isArchived: false,
+        cards: [{ id: 'dirty-card' }],
+        captures: [{ id: 'dirty-capture' }],
+        proposals: [{ id: 'dirty-proposal' }],
+      },
+      {
+        id: 'real-board',
+        name: 'Client work',
+        isArchived: false,
+        cards: [{ id: 'real-card' }],
+        proposals: [],
+      },
+    ])
+    const originalBoards = api.list()
+    const authAttempts: string[] = []
+    let preparationAttempts = 0
+
+    await expect(
+      seedDemo(
+        { reset: true },
+        {
+          ensureUser: async (account) => {
+            authAttempts.push(account.username)
+            if (account.username === 'collab') {
+              throw new Error('Existing collaborator rejected the configured password.')
+            }
+            return {
+              token: `${account.username}-token`,
+              user: { id: `${account.username}-id`, username: account.username, email: account.email },
+            }
+          },
+          listBoards: async () => api.list(),
+          prepareBoardsForSeed: async (boards, token, options) => {
+            preparationAttempts += 1
+            return prepareDemoBoardsForSeed(boards, token, {
+              ...options,
+              request: api.request,
+              refreshBoards: async () => api.list(),
+            })
+          },
+        },
+      ),
+    ).rejects.toThrow(/collaborator rejected/i)
+
+    expect(authAttempts).toEqual(['demo', 'collab'])
+    expect(preparationAttempts).toBe(0)
+    expect(api.requests).toEqual([])
+    expect(api.list()).toEqual(originalBoards)
   })
 
   it('stops after a reset quarantine failure and does not attempt a reseed', async () => {
