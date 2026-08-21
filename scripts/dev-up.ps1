@@ -410,7 +410,9 @@ function Stop-RecordedProcess {
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
         $status = Get-ProcessIdentityStatus -Record $Record
         if ($status -eq "Missing") { return $true }
-        if ($status -ne "Match") { break }
+        # The exact tree was authorized before taskkill. A terminating process can
+        # transiently hide its creation token; retry Unknown, but never accept Mismatch.
+        if ($status -notin @("Match", "Unknown")) { break }
         Start-Sleep -Milliseconds 100
     }
     Write-DevWarning "Recorded $($Record.Role) PID $($Record.Pid) did not exit cleanly (taskkill $taskkillExit): $output"
