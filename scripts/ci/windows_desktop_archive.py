@@ -39,7 +39,7 @@ BOOTSTRAP_IDENTITY_PATTERN = re.compile(
 )
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 2
-FINAL_EVIDENCE_SCHEMA_VERSION = 4
+FINAL_EVIDENCE_SCHEMA_VERSION = 5
 MAX_PROBE_LATENCY_MS = 300_000
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
@@ -458,6 +458,7 @@ def seed_legacy_v01_state(legacy_path: Path, local_app_data: Path) -> bytes:
             "ConnectionStrings": {"DefaultConnection": f"Data Source={database}"},
             "Jwt": {"SecretKey": base64.b64encode(os.urandom(48)).decode("ascii")},
             "Connectors": {"EncryptionKey": base64.b64encode(os.urandom(32)).decode("ascii")},
+            "ArchiveAcceptance": {"Sentinel": "synthetic-non-identity-setting"},
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -514,6 +515,10 @@ def assert_legacy_identity_imported_and_retained(
         )
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise AcceptanceFailure("The durable packaged identity could not be safely verified.") from exc
+    if durable != expected:
+        raise AcceptanceFailure(
+            "The complete packaged legacy config payload was not imported into durable app data."
+        )
     if durable_identity != expected_identity:
         raise AcceptanceFailure("The packaged legacy identity was not imported into durable app data.")
 
@@ -687,6 +692,8 @@ def build_final_evidence(
     create_evidence: dict[str, Any],
     restart_evidence: dict[str, Any],
     migration_evidence: Any,
+    migration_create_evidence: dict[str, Any],
+    migration_restart_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     for identity in (first_bootstrap_identity, second_bootstrap_identity):
         _require_exact_keys(identity, {"jwtCreated", "connectorCreated"}, "bootstrap identity")
@@ -696,25 +703,31 @@ def build_final_evidence(
     final_evidence = {
         "schemaVersion": FINAL_EVIDENCE_SCHEMA_VERSION,
         "release": {"archive": archive_name, "sha256": archive_hash, "archiveUnchanged": True},
-        "launches": [
-            {
-                "extraction": 1,
-                "heldDefaultPort": True,
-                "usedFallbackPort": True,
-                "bootstrapIdentity": dict(first_bootstrap_identity),
-                "http": first_http,
-            },
-            {
-                "extraction": 2,
-                "heldDefaultPort": False,
-                "usedDefaultPort": True,
-                "bootstrapIdentity": dict(second_bootstrap_identity),
-                "http": second_http,
-            },
-        ],
-        "create": create_evidence,
-        "restart": restart_evidence,
-        "migration": validate_migration_evidence(migration_evidence),
+        "cleanInstall": {
+            "launches": [
+                {
+                    "extraction": 1,
+                    "heldDefaultPort": True,
+                    "usedFallbackPort": True,
+                    "bootstrapIdentity": dict(first_bootstrap_identity),
+                    "http": first_http,
+                },
+                {
+                    "extraction": 2,
+                    "heldDefaultPort": False,
+                    "usedDefaultPort": True,
+                    "bootstrapIdentity": dict(second_bootstrap_identity),
+                    "http": second_http,
+                },
+            ],
+            "create": create_evidence,
+            "restart": restart_evidence,
+        },
+        "migration": {
+            **validate_migration_evidence(migration_evidence),
+            "create": migration_create_evidence,
+            "restart": migration_restart_evidence,
+        },
     }
     _reject_forbidden_evidence_keys(final_evidence)
     return final_evidence
@@ -749,80 +762,65 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def run(argv: list[str]) -> int:
-    args = parse_args(argv)
-    if os.name != "nt":
-        raise AcceptanceFailure("The packaged desktop acceptance harness requires Windows.")
-
-    archive = args.archive.resolve(strict=True)
-    checksum_path = args.checksum.resolve(strict=True)
-    evidence_path = args.evidence.resolve()
-    frontend_directory = args.frontend_directory.resolve(strict=True)
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    if evidence_path.exists():
-        raise AcceptanceFailure("The evidence destination must not already exist.")
-
-    archive_hash = verify_checksum(archive, checksum_path)
-    temp_parent = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()).resolve()
-    temp_root = create_temp_root(temp_parent)
+def run_packaged_journey(
+    *,
+    journey_root: Path,
+    first_extract: Path,
+    second_extract: Path,
+    local_app_data: Path,
+    unrelated_cwd: Path,
+    frontend_directory: Path,
+    journey_id: str,
+    live_openai: bool,
+    live_skip_reason: str,
+    expected_first_identity: Mapping[str, bool],
+    expected_second_identity: Mapping[str, bool],
+    hold_default_port: bool,
+    retained_legacy_path: Path | None = None,
+    expected_legacy_payload: bytes | None = None,
+) -> dict[str, Any]:
+    first_snapshot = snapshot_tree(first_extract)
+    second_snapshot = snapshot_tree(second_extract)
+    cwd_snapshot = snapshot_tree(unrelated_cwd)
+    app_environment = build_app_environment(
+        os.environ,
+        local_app_data,
+        resolve_operator_key(os.environ) if live_openai else None,
+    )
     monitors: list[ProcessMonitor] = []
     port_guard: socket.socket | None = None
     try:
-        first_extract = temp_root / "extract-one"
-        second_extract = temp_root / "extract-two"
-        unrelated_cwd = temp_root / "unrelated-cwd"
-        local_app_data = temp_root / "local-app-data"
-        unrelated_cwd.mkdir()
-        local_app_data.mkdir()
-        safe_extract_archive(archive, first_extract)
-        safe_extract_archive(archive, second_extract)
-        legacy_local_config = first_extract / "appsettings.local.json"
-        require_absent_legacy_fixture_path(legacy_local_config)
-        legacy_payload = seed_legacy_v01_state(legacy_local_config, local_app_data)
-        first_snapshot = snapshot_tree(first_extract)
-        second_snapshot = snapshot_tree(second_extract)
-        cwd_snapshot = snapshot_tree(unrelated_cwd)
+        if hold_default_port:
+            port_guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            port_guard.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+            try:
+                port_guard.bind(("127.0.0.1", 5000))
+                port_guard.listen(1)
+            except OSError:
+                raise AcceptanceFailure(
+                    "The harness could not take exclusive ownership of port 5000."
+                ) from None
 
-        executable_one = (first_extract / "Taskdeck.Api.exe").resolve()
-        executable_two = (second_extract / "Taskdeck.Api.exe").resolve()
-        operator_key = resolve_operator_key(os.environ)
-        live_openai = args.live_openai and operator_key is not None
-        live_skip_reason = (
-            "none"
-            if live_openai
-            else "credential_unavailable"
-            if args.live_openai
-            else "not_requested"
+        first_monitor = start_packaged_process(
+            (first_extract / "Taskdeck.Api.exe").resolve(),
+            unrelated_cwd,
+            app_environment,
         )
-        journey_id = f"release-{int(time.time())}-{os.getpid()}"
-        app_environment = build_app_environment(
-            os.environ,
-            local_app_data,
-            operator_key if live_openai else None,
-        )
-
-        port_guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        port_guard.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
-        try:
-            port_guard.bind(("127.0.0.1", 5000))
-            port_guard.listen(1)
-        except OSError:
-            raise AcceptanceFailure("The harness could not take exclusive ownership of port 5000.") from None
-
-        first_monitor = start_packaged_process(executable_one, unrelated_cwd, app_environment)
         monitors.append(first_monitor)
         first_url, first_port, first_bootstrap_identity = first_monitor.wait_for_ready()
-        require_bootstrap_identity(
-            first_bootstrap_identity,
-            {"jwtCreated": False, "connectorCreated": False},
-        )
-        if first_port == 5000:
-            raise AcceptanceFailure("The packaged process did not fall back while port 5000 was held.")
-        port_guard.close()
-        port_guard = None
+        require_bootstrap_identity(first_bootstrap_identity, expected_first_identity)
+        if hold_default_port:
+            if first_port == 5000:
+                raise AcceptanceFailure(
+                    "The packaged process did not fall back while port 5000 was held."
+                )
+            port_guard.close()
+            port_guard = None
+        elif first_port != 5000:
+            raise AcceptanceFailure("The packaged process did not use the available default port.")
         first_http = request_health_and_spa(first_url)
 
-        create_evidence_path = temp_root / "create-evidence.json"
+        create_evidence_path = journey_root / "create-evidence.json"
         run_playwright(
             frontend_directory,
             build_playwright_environment(
@@ -837,28 +835,30 @@ def run(argv: list[str]) -> int:
         )
         stop_packaged_process(first_monitor)
         monitors.remove(first_monitor)
-        assert_data_isolated(temp_root, local_app_data, legacy_local_config)
-        assert_legacy_identity_imported_and_retained(
-            legacy_local_config,
-            local_app_data / "Taskdeck" / "appsettings.local.json",
-            legacy_payload,
-        )
-        assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
+        assert_data_isolated(journey_root, local_app_data, retained_legacy_path)
+        if expected_legacy_payload is not None and retained_legacy_path is not None:
+            assert_legacy_identity_imported_and_retained(
+                retained_legacy_path,
+                local_app_data / "Taskdeck" / "appsettings.local.json",
+                expected_legacy_payload,
+            )
+            assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
         assert_tree_unchanged(first_snapshot, first_extract, "first extracted archive")
         assert_tree_unchanged(cwd_snapshot, unrelated_cwd, "unrelated working directory")
 
-        second_monitor = start_packaged_process(executable_two, unrelated_cwd, app_environment)
+        second_monitor = start_packaged_process(
+            (second_extract / "Taskdeck.Api.exe").resolve(),
+            unrelated_cwd,
+            app_environment,
+        )
         monitors.append(second_monitor)
         second_url, second_port, second_bootstrap_identity = second_monitor.wait_for_ready()
-        require_bootstrap_identity(
-            second_bootstrap_identity,
-            {"jwtCreated": False, "connectorCreated": False},
-        )
+        require_bootstrap_identity(second_bootstrap_identity, expected_second_identity)
         if second_port != 5000:
-            raise AcceptanceFailure("The packaged process did not prefer port 5000 after it became free.")
+            raise AcceptanceFailure("The packaged process did not prefer port 5000 after restart.")
         second_http = request_health_and_spa(second_url)
 
-        restart_evidence_path = temp_root / "restart-evidence.json"
+        restart_evidence_path = journey_root / "restart-evidence.json"
         run_playwright(
             frontend_directory,
             build_playwright_environment(
@@ -875,49 +875,31 @@ def run(argv: list[str]) -> int:
         monitors.remove(second_monitor)
         assert_tree_unchanged(second_snapshot, second_extract, "second extracted archive")
         assert_tree_unchanged(cwd_snapshot, unrelated_cwd, "unrelated working directory")
-        assert_data_isolated(temp_root, local_app_data, legacy_local_config)
-        assert_legacy_identity_imported_and_retained(
-            legacy_local_config,
-            local_app_data / "Taskdeck" / "appsettings.local.json",
-            legacy_payload,
-        )
-        assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
+        assert_data_isolated(journey_root, local_app_data, retained_legacy_path)
+        if expected_legacy_payload is not None and retained_legacy_path is not None:
+            assert_legacy_identity_imported_and_retained(
+                retained_legacy_path,
+                local_app_data / "Taskdeck" / "appsettings.local.json",
+                expected_legacy_payload,
+            )
+            assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
 
-        if sha256_file(archive) != archive_hash:
-            raise AcceptanceFailure("The archive changed during post-ZIP acceptance.")
-
-        create_evidence = validate_phase_evidence(
-            json.loads(create_evidence_path.read_text(encoding="utf-8")),
-            "create",
-            journey_id,
-        )
-        restart_evidence = validate_phase_evidence(
-            json.loads(restart_evidence_path.read_text(encoding="utf-8")),
-            "restart",
-            journey_id,
-        )
-        final_evidence = build_final_evidence(
-            archive.name,
-            archive_hash,
-            first_http,
-            second_http,
-            first_bootstrap_identity,
-            second_bootstrap_identity,
-            create_evidence,
-            restart_evidence,
-            {
-                "legacy": {"location": "adjacent", "state": "retained"},
-                "durable": {"location": "app-data", "state": "imported"},
-                "database": {"location": "app-data", "state": "reused"},
-                "board": {"location": "app-data", "state": "created"},
-            },
-        )
-        evidence_path.write_text(json.dumps(final_evidence, indent=2) + "\n", encoding="utf-8")
-        live_result = create_evidence["liveOpenAi"]
-        outcome = live_result["outcome"]
-        outcome_label = outcome if outcome == "passed" else f"skipped:{live_result['reason']}"
-        print(f"Packaged desktop acceptance passed (live OpenAI: {outcome_label}).")
-        return 0
+        return {
+            "firstHttp": first_http,
+            "secondHttp": second_http,
+            "firstBootstrapIdentity": first_bootstrap_identity,
+            "secondBootstrapIdentity": second_bootstrap_identity,
+            "create": validate_phase_evidence(
+                json.loads(create_evidence_path.read_text(encoding="utf-8")),
+                "create",
+                journey_id,
+            ),
+            "restart": validate_phase_evidence(
+                json.loads(restart_evidence_path.read_text(encoding="utf-8")),
+                "restart",
+                journey_id,
+            ),
+        }
     finally:
         if port_guard is not None:
             port_guard.close()
@@ -926,6 +908,116 @@ def run(argv: list[str]) -> int:
                 stop_packaged_process(monitor, require_clean=False)
             except Exception:
                 _terminate_tracked_process_tree(monitor.process)
+
+
+def run(argv: list[str]) -> int:
+    args = parse_args(argv)
+    if os.name != "nt":
+        raise AcceptanceFailure("The packaged desktop acceptance harness requires Windows.")
+
+    archive = args.archive.resolve(strict=True)
+    checksum_path = args.checksum.resolve(strict=True)
+    evidence_path = args.evidence.resolve()
+    frontend_directory = args.frontend_directory.resolve(strict=True)
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    if evidence_path.exists():
+        raise AcceptanceFailure("The evidence destination must not already exist.")
+
+    archive_hash = verify_checksum(archive, checksum_path)
+    temp_parent = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()).resolve()
+    temp_root = create_temp_root(temp_parent)
+    try:
+        live_openai = args.live_openai and resolve_operator_key(os.environ) is not None
+        live_skip_reason = (
+            "none"
+            if live_openai
+            else "credential_unavailable"
+            if args.live_openai
+            else "not_requested"
+        )
+        journey_stamp = f"{int(time.time())}-{os.getpid()}"
+        clean_root = temp_root / "clean-install"
+        migration_root = temp_root / "migration"
+        clean_root.mkdir()
+        migration_root.mkdir()
+        for root in (clean_root, migration_root):
+            (root / "unrelated-cwd").mkdir()
+            (root / "local-app-data").mkdir()
+
+        clean_first_extract = clean_root / "extract-one"
+        clean_second_extract = clean_root / "extract-two"
+        safe_extract_archive(archive, clean_first_extract)
+        safe_extract_archive(archive, clean_second_extract)
+        require_absent_legacy_fixture_path(clean_first_extract / "appsettings.local.json")
+        require_absent_legacy_fixture_path(clean_second_extract / "appsettings.local.json")
+        clean_journey = run_packaged_journey(
+            journey_root=clean_root,
+            first_extract=clean_first_extract,
+            second_extract=clean_second_extract,
+            local_app_data=clean_root / "local-app-data",
+            unrelated_cwd=clean_root / "unrelated-cwd",
+            frontend_directory=frontend_directory,
+            journey_id=f"release-clean-{journey_stamp}",
+            live_openai=live_openai,
+            live_skip_reason=live_skip_reason,
+            expected_first_identity={"jwtCreated": True, "connectorCreated": True},
+            expected_second_identity={"jwtCreated": False, "connectorCreated": False},
+            hold_default_port=True,
+        )
+
+        migration_first_extract = migration_root / "extract-one"
+        migration_second_extract = migration_root / "extract-two"
+        migration_local_app_data = migration_root / "local-app-data"
+        safe_extract_archive(archive, migration_first_extract)
+        safe_extract_archive(archive, migration_second_extract)
+        migration_legacy_config = migration_first_extract / "appsettings.local.json"
+        require_absent_legacy_fixture_path(migration_legacy_config)
+        migration_payload = seed_legacy_v01_state(migration_legacy_config, migration_local_app_data)
+        migration_journey = run_packaged_journey(
+            journey_root=migration_root,
+            first_extract=migration_first_extract,
+            second_extract=migration_second_extract,
+            local_app_data=migration_local_app_data,
+            unrelated_cwd=migration_root / "unrelated-cwd",
+            frontend_directory=frontend_directory,
+            journey_id=f"release-migration-{journey_stamp}",
+            live_openai=live_openai,
+            live_skip_reason=live_skip_reason,
+            expected_first_identity={"jwtCreated": False, "connectorCreated": False},
+            expected_second_identity={"jwtCreated": False, "connectorCreated": False},
+            hold_default_port=False,
+            retained_legacy_path=migration_legacy_config,
+            expected_legacy_payload=migration_payload,
+        )
+
+        if sha256_file(archive) != archive_hash:
+            raise AcceptanceFailure("The archive changed during post-ZIP acceptance.")
+
+        final_evidence = build_final_evidence(
+            archive.name,
+            archive_hash,
+            clean_journey["firstHttp"],
+            clean_journey["secondHttp"],
+            clean_journey["firstBootstrapIdentity"],
+            clean_journey["secondBootstrapIdentity"],
+            clean_journey["create"],
+            clean_journey["restart"],
+            {
+                "legacy": {"location": "adjacent", "state": "retained"},
+                "durable": {"location": "app-data", "state": "imported"},
+                "database": {"location": "app-data", "state": "reused"},
+                "board": {"location": "app-data", "state": "created"},
+            },
+            migration_journey["create"],
+            migration_journey["restart"],
+        )
+        evidence_path.write_text(json.dumps(final_evidence, indent=2) + "\n", encoding="utf-8")
+        live_result = clean_journey["create"]["liveOpenAi"]
+        outcome = live_result["outcome"]
+        outcome_label = outcome if outcome == "passed" else f"skipped:{live_result['reason']}"
+        print(f"Packaged desktop acceptance passed (live OpenAI: {outcome_label}).")
+        return 0
+    finally:
         remove_temp_root(temp_root, temp_parent)
 
 

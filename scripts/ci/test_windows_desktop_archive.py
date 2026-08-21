@@ -306,7 +306,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
-    def test_final_evidence_v4_records_bounded_bootstrap_and_migration_states(self) -> None:
+    def test_final_evidence_v5_records_both_explicit_journeys(self) -> None:
         final = harness.build_final_evidence(
             "taskdeck-v0.1.1-win-x64.zip",
             "a" * 64,
@@ -322,18 +322,23 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 "database": {"location": "app-data", "state": "reused"},
                 "board": {"location": "app-data", "state": "created"},
             },
+            {"phase": "create", "journeyId": "migration-123"},
+            {"phase": "restart", "journeyId": "migration-123"},
         )
 
         self.assertEqual(2, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
-        self.assertEqual(4, final["schemaVersion"])
+        self.assertEqual(5, final["schemaVersion"])
+        self.assertEqual({"cleanInstall", "migration"}, set(final) - {"schemaVersion", "release"})
         self.assertEqual(
             {"jwtCreated": True, "connectorCreated": True},
-            final["launches"][0]["bootstrapIdentity"],
+            final["cleanInstall"]["launches"][0]["bootstrapIdentity"],
         )
         self.assertEqual(
             {"jwtCreated": False, "connectorCreated": False},
-            final["launches"][1]["bootstrapIdentity"],
+            final["cleanInstall"]["launches"][1]["bootstrapIdentity"],
         )
+        self.assertEqual("create", final["migration"]["create"]["phase"])
+        self.assertEqual("restart", final["migration"]["restart"]["phase"])
 
     def test_final_evidence_rejects_non_boolean_or_unknown_bootstrap_fields(self) -> None:
         invalid_identities = (
@@ -359,6 +364,8 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                             "database": {"location": "app-data", "state": "reused"},
                             "board": {"location": "app-data", "state": "created"},
                         },
+                        {"phase": "create", "journeyId": "migration-123"},
+                        {"phase": "restart", "journeyId": "migration-123"},
                     )
 
     def test_snapshot_detects_extraction_mutation(self) -> None:
@@ -390,6 +397,50 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             )
             harness.assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
             harness.assert_data_isolated(root, local_app_data, legacy_path)
+
+    def test_legacy_import_allows_formatting_only_durable_reserialization(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            local_app_data = root / "local-app-data"
+            legacy_path = root / "legacy-extract" / "appsettings.local.json"
+            legacy_path.parent.mkdir()
+
+            payload = harness.seed_legacy_v01_state(legacy_path, local_app_data)
+            durable_path = local_app_data / "Taskdeck" / "appsettings.local.json"
+            durable_path.write_text(
+                json.dumps(json.loads(payload), indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            harness.assert_legacy_identity_imported_and_retained(
+                legacy_path,
+                durable_path,
+                payload,
+            )
+
+    def test_legacy_import_rejects_loss_of_non_identity_config_sentinel(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            local_app_data = root / "local-app-data"
+            legacy_path = root / "legacy-extract" / "appsettings.local.json"
+            legacy_path.parent.mkdir()
+
+            payload = harness.seed_legacy_v01_state(legacy_path, local_app_data)
+            durable_path = local_app_data / "Taskdeck" / "appsettings.local.json"
+            durable = json.loads(payload)
+            self.assertEqual(
+                "synthetic-non-identity-setting",
+                durable["ArchiveAcceptance"]["Sentinel"],
+            )
+            del durable["ArchiveAcceptance"]
+            durable_path.write_text(json.dumps(durable, separators=(",", ":")), encoding="utf-8")
+
+            with self.assertRaises(harness.AcceptanceFailure):
+                harness.assert_legacy_identity_imported_and_retained(
+                    legacy_path,
+                    durable_path,
+                    payload,
+                )
 
     def test_legacy_fixture_refuses_to_overwrite_a_packaged_local_config(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
