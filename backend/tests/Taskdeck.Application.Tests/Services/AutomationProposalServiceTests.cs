@@ -3574,7 +3574,7 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
-    public async Task GetProposalsAsync_ShouldQueryByUserFirst_WhenUserAndStatusFiltersProvided()
+    public async Task GetProposalsAsync_ShouldQueryActiveByUser_WhenUnscopedUserAndStatusFiltersProvided()
     {
         // Arrange
         var userId = Guid.NewGuid();
@@ -3582,7 +3582,12 @@ public class AutomationProposalServiceTests
         var approved = new AutomationProposal(ProposalSourceType.Chat, userId, "Approved", RiskLevel.Low, Guid.NewGuid().ToString());
         approved.Approve(Guid.NewGuid());
 
-        _proposalRepoMock.Setup(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        _proposalRepoMock.Setup(r => r.GetActiveByUserIdAsync(
+                userId,
+                10,
+                ProposalStatus.PendingReview,
+                null,
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[] { pending, approved });
 
         // Act
@@ -3591,8 +3596,48 @@ public class AutomationProposalServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().ContainSingle(p => p.Id == pending.Id);
-        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+        _proposalRepoMock.Verify(r => r.GetActiveByUserIdAsync(
+            userId,
+            10,
+            ProposalStatus.PendingReview,
+            null,
+            It.IsAny<CancellationToken>()), Times.Once);
+        _proposalRepoMock.Verify(r => r.GetByUserIdAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<int>(),
+            It.IsAny<bool>(),
+            It.IsAny<CancellationToken>()), Times.Never);
         _proposalRepoMock.Verify(r => r.GetByStatusAsync(It.IsAny<ProposalStatus>(), It.IsAny<int>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProposalsAsync_ShouldKeepExplicitBoardHistory_WhenUserAndBoardFiltersProvided()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            userId,
+            "Historical board proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+
+        _proposalRepoMock
+            .Setup(r => r.GetByUserIdAsync(userId, 10, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { proposal });
+
+        var result = await _service.GetProposalsAsync(
+            new ProposalFilterDto(BoardId: boardId, UserId: userId, Limit: 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().ContainSingle(item => item.Id == proposal.Id);
+        _proposalRepoMock.Verify(r => r.GetActiveByUserIdAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<int>(),
+            It.IsAny<ProposalStatus?>(),
+            It.IsAny<RiskLevel?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion

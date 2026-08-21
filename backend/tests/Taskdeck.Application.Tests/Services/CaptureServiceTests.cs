@@ -17,6 +17,7 @@ public class CaptureServiceTests
     private readonly Mock<IAuthorizationService> _authorizationServiceMock;
     private readonly Mock<ILlmQueueRepository> _llmQueueRepositoryMock;
     private readonly Mock<IAutomationProposalRepository> _automationProposalRepositoryMock;
+    private readonly Mock<IBoardRepository> _boardRepositoryMock;
     private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly CaptureService _service;
 
@@ -26,11 +27,16 @@ public class CaptureServiceTests
         _authorizationServiceMock = new Mock<IAuthorizationService>();
         _llmQueueRepositoryMock = new Mock<ILlmQueueRepository>();
         _automationProposalRepositoryMock = new Mock<IAutomationProposalRepository>();
+        _boardRepositoryMock = new Mock<IBoardRepository>();
         _userRepositoryMock = new Mock<IUserRepository>();
 
         _unitOfWorkMock.SetupGet(u => u.LlmQueue).Returns(_llmQueueRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(u => u.AutomationProposals).Returns(_automationProposalRepositoryMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Users).Returns(_userRepositoryMock.Object);
+        _boardRepositoryMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Board>());
 
         _service = new CaptureService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
     }
@@ -510,6 +516,139 @@ public class CaptureServiceTests
         result.Value.Select(s => s.Id).Should().Equal(captures[3].Id, captures[4].Id);
         // Offset advanced by the returned page size each iteration (0 -> 2 -> 4) until enough matches.
         requestedOffsets.Should().Equal(0, 2, 4);
+    }
+
+    [Fact]
+    public async Task ListAsync_UnscopedHidesArchivedEffectiveBoards_FillsLimit_AndKeepsExplicitHistoryReadable()
+    {
+        var userId = Guid.NewGuid();
+        var archivedDirectBoard = new Board("Archived direct", ownerId: userId);
+        var archivedProvenanceBoard = new Board("Archived provenance", ownerId: userId);
+        var archivedStoredProvenanceBoard = new Board("Archived stored provenance", ownerId: userId);
+        var activeBoard = new Board("Active", ownerId: userId);
+        archivedDirectBoard.Archive();
+        archivedProvenanceBoard.Archive();
+        archivedStoredProvenanceBoard.Archive();
+
+        var directArchived = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            "direct archived",
+            archivedDirectBoard.Id);
+
+        var provenanceArchived = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            "provenance archived");
+        var provenanceProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Applied archived proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            archivedProvenanceBoard.Id,
+            provenanceArchived.Id.ToString());
+        provenanceProposal.Approve(userId);
+        provenanceProposal.MarkAsApplied();
+        provenanceArchived.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "provenance archived"),
+                captureItemId: provenanceArchived.Id,
+                triageRunId: Guid.NewGuid(),
+                proposalId: provenanceProposal.Id)));
+        provenanceArchived.MarkAsProcessing();
+        provenanceArchived.MarkAsCompleted();
+
+        var storedProvenanceArchived = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            "stored provenance archived");
+        storedProvenanceArchived.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "stored provenance archived"),
+                captureItemId: storedProvenanceArchived.Id,
+                boardId: archivedStoredProvenanceBoard.Id,
+                convertedAt: DateTimeOffset.UtcNow)));
+
+        var activeOne = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            "active one",
+            activeBoard.Id);
+        var activeTwo = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            "active two",
+            activeBoard.Id);
+        var captures = new[] { directArchived, provenanceArchived, storedProvenanceArchived, activeOne, activeTwo };
+        var requestedOffsets = new List<int>();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetCapturesByUserAsync(
+                userId,
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((Guid _, int limit, int offset, Guid? _, CancellationToken _) =>
+            {
+                requestedOffsets.Add(offset);
+                return Task.FromResult<IEnumerable<LlmRequest>>(captures.Skip(offset).Take(limit).ToList());
+            });
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.Contains(provenanceProposal.Id)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { provenanceProposal });
+
+        var boardsById = new[]
+            { archivedDirectBoard, archivedProvenanceBoard, archivedStoredProvenanceBoard, activeBoard }
+            .ToDictionary(board => board.Id);
+        _boardRepositoryMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .Returns((IEnumerable<Guid> ids, CancellationToken _) =>
+                Task.FromResult<IEnumerable<Board>>(
+                    ids.Distinct().Where(boardsById.ContainsKey).Select(id => boardsById[id]).ToList()));
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(directArchived.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(directArchived);
+
+        var active = await _service.ListAsync(userId, new CaptureListFilterDto(Limit: 2));
+
+        active.IsSuccess.Should().BeTrue();
+        active.Value.Select(item => item.Id).Should().Equal(activeOne.Id, activeTwo.Id);
+        requestedOffsets.Should().Equal(0, 2, 4);
+
+        requestedOffsets.Clear();
+        var directHistory = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(BoardId: archivedDirectBoard.Id, Limit: 1));
+        directHistory.IsSuccess.Should().BeTrue();
+        directHistory.Value.Should().ContainSingle(item => item.Id == directArchived.Id);
+
+        requestedOffsets.Clear();
+        var provenanceHistory = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(BoardId: archivedProvenanceBoard.Id, Limit: 1));
+        provenanceHistory.IsSuccess.Should().BeTrue();
+        provenanceHistory.Value.Should().ContainSingle(item => item.Id == provenanceArchived.Id);
+
+        requestedOffsets.Clear();
+        var storedProvenanceHistory = await _service.ListAsync(
+            userId,
+            new CaptureListFilterDto(BoardId: archivedStoredProvenanceBoard.Id, Limit: 1));
+        storedProvenanceHistory.IsSuccess.Should().BeTrue();
+        storedProvenanceHistory.Value.Should().ContainSingle(item => item.Id == storedProvenanceArchived.Id);
+
+        var detail = await _service.GetByIdAsync(userId, directArchived.Id);
+        detail.IsSuccess.Should().BeTrue();
+        detail.Value.Id.Should().Be(directArchived.Id);
     }
 
     [Fact]

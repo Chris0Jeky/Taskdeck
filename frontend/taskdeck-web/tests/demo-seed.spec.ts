@@ -102,13 +102,18 @@ type StatefulDemoBoard = {
   description?: string
   isArchived: boolean
   cards: Array<{ id: string }>
+  captures?: Array<{ id: string }>
   proposals: Array<{ id: string }>
 }
 
 function createStatefulDemoBoardApi(initialBoards: StatefulDemoBoard[]) {
-  const boards = structuredClone(initialBoards)
+  const boards = structuredClone(initialBoards).map((board) => ({
+    ...board,
+    captures: board.captures || [],
+  }))
   const requests: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
   let nextBoardId = 1
+  let nextStoryId = 1
 
   const request = async (
     method: string,
@@ -124,6 +129,7 @@ function createStatefulDemoBoardApi(initialBoards: StatefulDemoBoard[]) {
         description: typeof options.body?.description === 'string' ? options.body.description : undefined,
         isArchived: false,
         cards: [],
+        captures: [],
         proposals: [],
       }
       boards.push(created)
@@ -147,12 +153,27 @@ function createStatefulDemoBoardApi(initialBoards: StatefulDemoBoard[]) {
   }
 
   return {
+    activeInbox: () =>
+      structuredClone(
+        boards.filter((board) => !board.isArchived).flatMap((board) => board.captures || []),
+      ),
+    activeReview: () =>
+      structuredClone(boards.filter((board) => !board.isArchived).flatMap((board) => board.proposals)),
+    history: (boardId: string) => structuredClone(boards.find((board) => board.id === boardId)),
     list: () => structuredClone(boards),
     mutate(boardId: string) {
       const board = boards.find((candidate) => candidate.id === boardId)
       if (!board) throw new Error(`Board not found: ${boardId}`)
       board.cards.push({ id: `dirty-card-${board.cards.length + 1}` })
+      board.captures.push({ id: `dirty-capture-${board.captures.length + 1}` })
       board.proposals.push({ id: `dirty-proposal-${board.proposals.length + 1}` })
+    },
+    seedCanonicalStory(boardId: string) {
+      const board = boards.find((candidate) => candidate.id === boardId)
+      if (!board) throw new Error(`Board not found: ${boardId}`)
+      const storyId = nextStoryId++
+      board.captures.push({ id: `seed-capture-${storyId}` })
+      board.proposals.push({ id: `seed-proposal-${storyId}` })
     },
     request,
     requests,
@@ -274,6 +295,7 @@ describe('demo seed rerun planning', () => {
         name: 'DEMO: Client Onboarding Demo',
         isArchived: false,
         cards: [{ id: 'dirty-card' }],
+        captures: [{ id: 'dirty-capture' }],
         proposals: [{ id: 'dirty-proposal' }],
       },
       {
@@ -344,6 +366,14 @@ describe('demo seed rerun planning', () => {
       expect(snapshot.find((board) => board.id === id)).toMatchObject({ cards: [], proposals: [] })
     }
 
+    api.seedCanonicalStory(first.capture.id)
+    expect(api.activeInbox()).toEqual([{ id: 'seed-capture-1' }])
+    expect(api.activeReview()).toEqual([{ id: 'seed-proposal-1' }])
+    expect(api.history('old-capture')).toMatchObject({
+      captures: [{ id: 'dirty-capture' }],
+      proposals: [{ id: 'dirty-proposal' }],
+    })
+
     api.mutate(first.capture.id)
     const second = await prepareDemoBoardsForSeed(api.list(), 'token', options)
     const secondIds = new Set([second.capture.id, second.content.id, second.blank.id, second.archived.id])
@@ -361,11 +391,19 @@ describe('demo seed rerun planning', () => {
       name: buildDemoResetTombstoneName(first.capture.id),
       isArchived: true,
       cards: [{ id: 'dirty-card-1' }],
-      proposals: [{ id: 'dirty-proposal-1' }],
+      captures: [{ id: 'seed-capture-1' }, { id: 'dirty-capture-2' }],
+      proposals: [{ id: 'seed-proposal-1' }, { id: 'dirty-proposal-2' }],
     })
     for (const id of secondIds) {
       expect(snapshot.find((board) => board.id === id)).toMatchObject({ cards: [], proposals: [] })
     }
+    api.seedCanonicalStory(second.capture.id)
+    expect(api.activeInbox()).toEqual([{ id: 'seed-capture-2' }])
+    expect(api.activeReview()).toEqual([{ id: 'seed-proposal-2' }])
+    expect(api.history(first.capture.id)).toMatchObject({
+      captures: [{ id: 'seed-capture-1' }, { id: 'dirty-capture-2' }],
+      proposals: [{ id: 'seed-proposal-1' }, { id: 'dirty-proposal-2' }],
+    })
     expect(planDemoBoardReset(snapshot).tombstones).toHaveLength(8)
   })
 
