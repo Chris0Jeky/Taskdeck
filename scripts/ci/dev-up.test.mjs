@@ -372,6 +372,37 @@ async function createFixture(platform) {
   }
 }
 
+async function installPostTaskkillUnknownProbe(fixture) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = await readFile(launcherPath, 'utf8')
+  const identityFunction = 'function Get-ProcessIdentityStatus {'
+  const nextFunction = 'function Assert-ProcessIdentityMatch {'
+  assert.equal(source.split(identityFunction).length - 1, 1, 'unexpected identity-function count')
+  assert.equal(source.split(nextFunction).length - 1, 1, 'unexpected identity-assertion count')
+
+  const instrumented = source
+    .replace(identityFunction, 'function Get-RealProcessIdentityStatus {')
+    .replace(
+      nextFunction,
+      String.raw`$script:IdentityProbeCounts = @{}
+function Get-ProcessIdentityStatus {
+    param($Record)
+    $key = [string]$Record.Pid
+    $actual = Get-RealProcessIdentityStatus -Record $Record
+    if (-not $script:IdentityProbeCounts.ContainsKey($key)) { $script:IdentityProbeCounts[$key] = 0 }
+    $script:IdentityProbeCounts[$key] = [int]$script:IdentityProbeCounts[$key] + 1
+    if ([int]$script:IdentityProbeCounts[$key] -eq 2) {
+        Write-Host '[dev-up-test] Forced transient post-taskkill identity: Unknown'
+        return 'Unknown'
+    }
+    return $actual
+}
+
+function Assert-ProcessIdentityMatch {`,
+    )
+  await writeFile(launcherPath, instrumented)
+}
+
 async function installPowerShellStubs(fakeBin) {
   await writeFile(
     join(fakeBin, 'node.cmd'),
@@ -834,6 +865,39 @@ if (powershell) {
       assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
     } finally {
       if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+      await removeFixture(fixture)
+    }
+  })
+
+  test('PowerShell: Stop retries transient post-taskkill Unknown until both trees are missing', { concurrency: false }, async () => {
+    const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
+    const fixture = await createFixture(platform)
+    const apiPort = await getFreePort()
+    const frontendPort = await getFreePort()
+    const foreign = await listenForeign()
+    try {
+      const startResult = runLauncher(platform, fixture, {
+        apiPort,
+        env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+      })
+      assert.ifError(startResult.error)
+      assert.equal(startResult.status, 0, combinedOutput(startResult))
+      assert.equal(await canBind(apiPort), false)
+      assert.equal(await canBind(frontendPort), false)
+
+      await installPostTaskkillUnknownProbe(fixture)
+      const stopResult = runLauncher(platform, fixture, { stop: true })
+      assert.ifError(stopResult.error)
+      assert.equal(stopResult.status, 0, combinedOutput(stopResult))
+      assert.match(combinedOutput(stopResult), /Forced transient post-taskkill identity: Unknown/)
+      assert.match(combinedOutput(stopResult), /Stack stopped/)
+      assert.equal(await readOptional(fixture.stateFile), null)
+      assert.equal(await canBind(apiPort), true)
+      assert.equal(await canBind(frontendPort), true)
+      assert.equal(foreign.listening, true, 'Stop killed an unrelated listener')
+    } finally {
+      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+      await new Promise((resolve) => foreign.close(resolve))
       await removeFixture(fixture)
     }
   })
