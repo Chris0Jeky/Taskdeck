@@ -116,6 +116,11 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 self.assertNotIn("operator-value", playwright_environment.values())
 
     def test_playwright_environment_never_receives_operator_key(self) -> None:
+        legacy_aliases = {
+            "tAsKdEcK_lLm_OpEnAi_ApI_kEy": "synthetic-legacy-openai-value",
+            "TaSkDeCk_LlM_oPeNaI_cOmPaTiBlE_aPi_KeY": "synthetic-compatible-value",
+            "gEmInI_aPi_KeY": "synthetic-gemini-value",
+        }
         source = {
             "CI": "true",
             "GITHUB_ACTIONS": "true",
@@ -123,6 +128,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             "OPENAI_API_KEY": "ambient-value",
             "Llm__OpenAi__ApiKey": "mapped-value",
             "tAsKdEcK_lLm_GeMiNi_ApI_kEy": "retired-value",
+            **legacy_aliases,
         }
         environment = harness.build_playwright_environment(
             source,
@@ -141,6 +147,11 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         self.assertNotIn("mapped-value", environment.values())
         self.assertNotIn("retired-value", environment.values())
         self.assertNotIn("TASKDECK_LLM_GEMINI_API_KEY", {key.upper() for key in environment})
+        environment_names = {key.upper() for key in environment}
+        for name, value in legacy_aliases.items():
+            with self.subTest(name=name):
+                self.assertNotIn(name.upper(), environment_names)
+                self.assertNotIn(value, environment.values())
 
     def test_standard_taskdeck_key_enables_live_child_without_reaching_playwright(self) -> None:
         source = {"llm__openai__apikey": "  synthetic-operator-value  "}
