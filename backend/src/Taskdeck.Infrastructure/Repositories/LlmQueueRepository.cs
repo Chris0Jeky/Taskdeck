@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -12,6 +14,9 @@ namespace Taskdeck.Infrastructure.Repositories;
 public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 {
     private const string CaptureRequestTypeLike = "inbox.capture.%";
+    private const int EffectiveBoardLookupBatchSize = 500;
+    private const string ProvenanceBoardIdMarker = "\"boardId\":\"";
+    private const string ProvenanceProposalIdMarker = "\"proposalId\":\"";
 
     // Transcript captures nest under the capture prefix (so user-facing capture queries keep
     // matching them) but form their own worker lane: LLM-backed triage runs seconds-to-minutes and
@@ -77,18 +82,34 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         var completedWithLinkedProposal = await CountCompletedCapturesWithProposalAsync(
             userId,
             cancellationToken);
+        var archivedCaptures = await GetArchivedCaptureSummaryCandidatesAsync(
+            captureQuery,
+            cancellationToken);
+        var archivedCountsByStatus = archivedCaptures
+            .GroupBy(capture => capture.Status)
+            .ToDictionary(group => group.Key, group => group.Count());
 
         countsByStatus.TryGetValue(RequestStatus.Completed, out var completedCount);
         countsByStatus.TryGetValue(RequestStatus.Pending, out var pendingCount);
         countsByStatus.TryGetValue(RequestStatus.Failed, out var failedCount);
         countsByStatus.TryGetValue(RequestStatus.Processing, out var processingCount);
+        archivedCountsByStatus.TryGetValue(RequestStatus.Completed, out var archivedCompletedCount);
+        archivedCountsByStatus.TryGetValue(RequestStatus.Pending, out var archivedPendingCount);
+        archivedCountsByStatus.TryGetValue(RequestStatus.Failed, out var archivedFailedCount);
+        archivedCountsByStatus.TryGetValue(RequestStatus.Processing, out var archivedProcessingCount);
+        var archivedCompletedWithLinkedProposal = archivedCaptures.Count(capture =>
+            capture.Status == RequestStatus.Completed && capture.HasLinkedProposal);
+        var activeCompletedCount = Math.Max(0, completedCount - archivedCompletedCount);
+        var activeCompletedWithLinkedProposal = Math.Max(
+            0,
+            completedWithLinkedProposal - archivedCompletedWithLinkedProposal);
 
         return (
             TotalCaptures: countsByStatus.Values.Sum(),
-            NewCount: pendingCount,
-            FailedCount: failedCount,
-            TriagingCount: processingCount,
-            TriagedCount: Math.Max(0, completedCount - completedWithLinkedProposal));
+            NewCount: Math.Max(0, pendingCount - archivedPendingCount),
+            FailedCount: Math.Max(0, failedCount - archivedFailedCount),
+            TriagingCount: Math.Max(0, processingCount - archivedProcessingCount),
+            TriagedCount: Math.Max(0, activeCompletedCount - activeCompletedWithLinkedProposal));
     }
 
     private async Task<int> CountCompletedCapturesWithProposalAsync(
@@ -119,6 +140,126 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
                 && request.Payload.Contains("\"proposalId\":\""))
             .CountAsync(cancellationToken);
     }
+
+    private async Task<IReadOnlyList<ArchivedCaptureSummaryCandidate>> GetArchivedCaptureSummaryCandidatesAsync(
+        IQueryable<LlmRequest> captureQuery,
+        CancellationToken cancellationToken)
+    {
+        // Raw BoardId is authoritative. Only direct archived rows and null-board rows carrying a
+        // server-serialized board/proposal marker need payload resolution; ordinary boardless rows
+        // remain active without materializing potentially large transcript payloads.
+        var candidates = await captureQuery
+            .Where(request =>
+                (request.BoardId.HasValue && _context.Boards.Any(board =>
+                    board.Id == request.BoardId.Value && board.IsArchived)) ||
+                (!request.BoardId.HasValue &&
+                    (request.Payload.Contains(ProvenanceBoardIdMarker) ||
+                     request.Payload.Contains(ProvenanceProposalIdMarker))))
+            .Select(request => new CaptureSummaryCandidate(
+                request.Id,
+                request.UserId,
+                request.BoardId,
+                request.Payload,
+                request.Status))
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+        {
+            return Array.Empty<ArchivedCaptureSummaryCandidate>();
+        }
+
+        var parsedCandidates = candidates
+            .Select(candidate => new ParsedCaptureSummaryCandidate(
+                candidate,
+                CaptureRequestContract.ParseStoredPayload(candidate.Payload)))
+            .ToList();
+        var proposalIds = parsedCandidates
+            .Select(candidate => candidate.Payload.Provenance?.ProposalId)
+            .Where(proposalId => proposalId.HasValue && proposalId.Value != Guid.Empty)
+            .Select(proposalId => proposalId!.Value)
+            .Distinct()
+            .ToArray();
+        var proposalsById = new Dictionary<Guid, AutomationProposal>();
+        foreach (var proposalIdBatch in proposalIds.Chunk(EffectiveBoardLookupBatchSize))
+        {
+            var proposals = await _context.AutomationProposals
+                .AsNoTracking()
+                .Where(proposal => proposalIdBatch.Contains(proposal.Id))
+                .ToListAsync(cancellationToken);
+            foreach (var proposal in proposals)
+            {
+                proposalsById[proposal.Id] = proposal;
+            }
+        }
+
+        var resolvedCandidates = parsedCandidates
+            .Select(candidate =>
+            {
+                AutomationProposal? proposal = null;
+                var proposalId = candidate.Payload.Provenance?.ProposalId;
+                if (proposalId.HasValue && proposalId.Value != Guid.Empty)
+                {
+                    proposalsById.TryGetValue(proposalId.Value, out proposal);
+                }
+
+                return new ResolvedCaptureSummaryCandidate(
+                    candidate.Candidate,
+                    CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+                        candidate.Candidate.Id,
+                        candidate.Candidate.UserId,
+                        candidate.Candidate.BoardId,
+                        candidate.Payload.Provenance?.BoardId,
+                        proposalId,
+                        candidate.Payload.Provenance?.ConvertedAt,
+                        proposal));
+            })
+            .ToList();
+        var effectiveBoardIds = resolvedCandidates
+            .Where(candidate => candidate.EffectiveBoardId.HasValue)
+            .Select(candidate => candidate.EffectiveBoardId!.Value)
+            .Distinct()
+            .ToArray();
+        var archivedBoardIds = new HashSet<Guid>();
+        foreach (var boardIdBatch in effectiveBoardIds.Chunk(EffectiveBoardLookupBatchSize))
+        {
+            var batchArchivedBoardIds = await _context.Boards
+                .AsNoTracking()
+                .Where(board => boardIdBatch.Contains(board.Id) && board.IsArchived)
+                .Select(board => board.Id)
+                .ToListAsync(cancellationToken);
+            archivedBoardIds.UnionWith(batchArchivedBoardIds);
+        }
+
+        return resolvedCandidates
+            .Where(candidate =>
+                candidate.EffectiveBoardId.HasValue &&
+                archivedBoardIds.Contains(candidate.EffectiveBoardId.Value))
+            .Select(candidate => new ArchivedCaptureSummaryCandidate(
+                candidate.Candidate.Status,
+                candidate.Candidate.Payload.Contains(
+                    ProvenanceProposalIdMarker,
+                    StringComparison.Ordinal)))
+            .ToList();
+    }
+
+    private sealed record CaptureSummaryCandidate(
+        Guid Id,
+        Guid UserId,
+        Guid? BoardId,
+        string Payload,
+        RequestStatus Status);
+
+    private sealed record ParsedCaptureSummaryCandidate(
+        CaptureSummaryCandidate Candidate,
+        CapturePayloadV1 Payload);
+
+    private sealed record ResolvedCaptureSummaryCandidate(
+        CaptureSummaryCandidate Candidate,
+        Guid? EffectiveBoardId);
+
+    private sealed record ArchivedCaptureSummaryCandidate(
+        RequestStatus Status,
+        bool HasLinkedProposal);
 
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
