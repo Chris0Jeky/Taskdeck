@@ -398,6 +398,26 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             harness.assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
             harness.assert_data_isolated(root, local_app_data, legacy_path)
 
+    def test_legacy_import_allows_formatting_only_durable_reserialization(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            local_app_data = root / "local-app-data"
+            legacy_path = root / "legacy-extract" / "appsettings.local.json"
+            legacy_path.parent.mkdir()
+
+            payload = harness.seed_legacy_v01_state(legacy_path, local_app_data)
+            durable_path = local_app_data / "Taskdeck" / "appsettings.local.json"
+            durable_path.write_text(
+                json.dumps(json.loads(payload), indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            harness.assert_legacy_identity_imported_and_retained(
+                legacy_path,
+                durable_path,
+                payload,
+            )
+
     def test_legacy_import_rejects_loss_of_non_identity_config_sentinel(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

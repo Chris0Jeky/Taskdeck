@@ -500,10 +500,6 @@ def assert_legacy_identity_imported_and_retained(
         raise AcceptanceFailure("The packaged legacy identity was not retained in the expected locations.") from exc
     if legacy_payload != expected_payload:
         raise AcceptanceFailure("The packaged legacy identity source was not retained byte-for-byte.")
-    if durable_payload != expected_payload:
-        raise AcceptanceFailure(
-            "The complete packaged legacy config payload was not imported into durable app data."
-        )
     try:
         expected = json.loads(expected_payload)
         durable = json.loads(durable_payload)
@@ -519,6 +515,10 @@ def assert_legacy_identity_imported_and_retained(
         )
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise AcceptanceFailure("The durable packaged identity could not be safely verified.") from exc
+    if durable != expected:
+        raise AcceptanceFailure(
+            "The complete packaged legacy config payload was not imported into durable app data."
+        )
     if durable_identity != expected_identity:
         raise AcceptanceFailure("The packaged legacy identity was not imported into durable app data.")
 
