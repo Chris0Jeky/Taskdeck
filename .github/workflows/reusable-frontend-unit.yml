@@ -16,6 +16,7 @@ jobs:
   frontend-unit:
     name: Frontend Unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,9 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: npm
           cache-dependency-path: frontend/taskdeck-web/package-lock.json
+
+      - name: Run source launcher regression suite
+        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
 
       - name: Install frontend dependencies
         working-directory: frontend/taskdeck-web
