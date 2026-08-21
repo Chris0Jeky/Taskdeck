@@ -189,6 +189,11 @@ public class ProposalHousekeepingWorkerTests
             throw new NotSupportedException();
         }
 
+        public Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(Guid userId, int limit = 100, ProposalStatus? status = null, RiskLevel? riskLevel = null, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

@@ -305,6 +305,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task DeleteAsync(AutomationProposal entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(Guid userId, int limit = 100, ProposalStatus? status = null, RiskLevel? riskLevel = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -338,6 +339,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task DeleteAsync(AutomationProposal entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(Guid userId, int limit = 100, ProposalStatus? status = null, RiskLevel? riskLevel = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
