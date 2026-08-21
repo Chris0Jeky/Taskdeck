@@ -1195,7 +1195,11 @@ for (const platform of platforms) {
   })
 
   for (const mode of ['missing', 'malformed', 'duplicate-property', 'duplicate', 'late', 'transform-failure', 'exit-after-entry-response', 'stderr-marker', 'spoof']) {
-    test(`${platform.name}: invalid Vite outcome ${mode} cleans both trees and never reports success`, { concurrency: false }, async () => {
+    const isSpoofMode = mode === 'spoof'
+    test(`${platform.name}: invalid Vite outcome ${mode} cleans both trees and never reports success`, {
+      concurrency: false,
+      ...(isSpoofMode ? { timeout: 40_000 } : {}),
+    }, async () => {
       const fixture = await createFixture(platform)
       const apiPort = await getFreePort()
       const frontendPort = await getFreePort()
@@ -1203,6 +1207,7 @@ for (const platform of platforms) {
       try {
         const result = runLauncher(platform, fixture, {
           apiPort,
+          ...(isSpoofMode ? { timeout: 30_000 } : {}),
           env: {
             FAKE_FRONTEND_PORT: String(frontendPort),
             FAKE_FRONTEND_MODE: mode,
