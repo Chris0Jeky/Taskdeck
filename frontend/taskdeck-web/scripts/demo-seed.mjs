@@ -52,6 +52,8 @@ const DEV_RUN_ID_HEADER_NAME = 'taskdeck-dev-run-id'
 const EMPTY_GUID_D = '00000000-0000-0000-0000-000000000000'
 const CANONICAL_GUID_D_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const RUN_BOUND_RESPONSE_DEADLINE_MS = 10_000
+// Chat messages synchronously await the live-provider tool-calling orchestration (60s maximum).
+const RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS = 65_000
 
 let activeRunBoundTransport = null
 
@@ -90,6 +92,7 @@ export function createRunBoundApiTransport({
   }
 
   const apiOrigin = parsedApiBase.origin
+  const apiPath = parsedApiBase.pathname.replace(/\/+$/, '')
   const readyUrl = new URL('/health/ready', apiOrigin)
   let activeRequest = false
   let closed = false
@@ -151,6 +154,25 @@ export function createRunBoundApiTransport({
     }
   }
 
+  const responseDeadlineFor = (target, method) => {
+    const providerMessagePrefix = `${apiPath}/llm/chat/sessions/`
+    const providerMessageSuffix = '/messages'
+    const sessionId = target.pathname
+      .slice(providerMessagePrefix.length, -providerMessageSuffix.length)
+
+    if (
+      method.toUpperCase() === 'POST' &&
+      target.pathname.startsWith(providerMessagePrefix) &&
+      target.pathname.endsWith(providerMessageSuffix) &&
+      sessionId.length > 0 &&
+      !sessionId.includes('/')
+    ) {
+      return RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS
+    }
+
+    return responseDeadlineMs
+  }
+
   const performRequest = async (url, init = {}, { readiness = false } = {}) => {
     assertUsable()
     if (activeRequest) {
@@ -166,6 +188,7 @@ export function createRunBoundApiTransport({
     }
 
     const method = init.method || 'GET'
+    const requestResponseDeadlineMs = responseDeadlineFor(target, method)
     const requestBody = init.body === undefined ? null : Buffer.from(String(init.body))
     const headers = { ...(init.headers || {}) }
     if (requestBody && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-length')) {
@@ -242,8 +265,8 @@ export function createRunBoundApiTransport({
             },
           )
           responseDeadline = setTimeoutFn(() => {
-            failRequest(`Run-bound API response exceeded the ${responseDeadlineMs}ms deadline.`)
-          }, responseDeadlineMs)
+            failRequest(`Run-bound API response exceeded the ${requestResponseDeadlineMs}ms deadline.`)
+          }, requestResponseDeadlineMs)
         } catch (err) {
           failRequest('Run-bound API request could not be created.', err)
           return

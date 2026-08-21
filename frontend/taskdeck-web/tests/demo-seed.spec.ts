@@ -61,8 +61,18 @@ async function readRequestBody(request: IncomingMessage) {
 
 function createManualResponseDeadline() {
   const deadlines: Array<{ callback: () => void; cleared: boolean; milliseconds: number }> = []
+  let elapsedMilliseconds = 0
 
   return {
+    advanceBy(milliseconds: number) {
+      elapsedMilliseconds += milliseconds
+      for (const deadline of deadlines) {
+        if (!deadline.cleared && deadline.milliseconds <= elapsedMilliseconds) {
+          deadline.cleared = true
+          deadline.callback()
+        }
+      }
+    },
     clearTimeoutFn(deadline: { cleared: boolean }) {
       deadline.cleared = true
     },
@@ -75,6 +85,9 @@ function createManualResponseDeadline() {
       const deadline = { callback, cleared: false, milliseconds }
       deadlines.push(deadline)
       return deadline
+    },
+    get pendingMilliseconds() {
+      return deadlines.filter((deadline) => !deadline.cleared).map((deadline) => deadline.milliseconds)
     },
   }
 }
@@ -636,6 +649,65 @@ describe('run-bound demo seed transport', () => {
       transport.destroy()
       if (foreign && foreignSockets) await closeServer(foreign, foreignSockets)
       else await closeServer(owner, ownerSockets)
+    }
+  })
+
+  it('allows only the live-provider chat message to exceed the normal response deadline', async () => {
+    let releaseProviderResponse: (() => void) | undefined
+    let announceProviderRequest: () => void
+    const providerRequest = new Promise<void>((resolve) => {
+      announceProviderRequest = resolve
+    })
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      if (request.url === '/api/llm/chat/sessions/session-1/messages') {
+        announceProviderRequest()
+        releaseProviderResponse = () => {
+          response.setHeader('Content-Type', 'application/json')
+          response.statusCode = 200
+          response.end('{"ok":true}')
+        }
+        return
+      }
+
+      response.statusCode = 200
+      response.end()
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const deadline = createManualResponseDeadline()
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+      responseDeadlineMs: 123,
+      ...deadline,
+    })
+
+    try {
+      await transport.verifyReady()
+      const response = transport.fetch(`http://127.0.0.1:${port}/api/llm/chat/sessions/session-1/messages`, {
+        method: 'POST',
+        body: '{"content":"seed chat"}',
+      })
+      await providerRequest
+
+      expect(deadline.pendingMilliseconds).toEqual([65_000])
+      deadline.advanceBy(10_001)
+      expect(deadline.pendingMilliseconds).toEqual([65_000])
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+
+      releaseProviderResponse?.()
+      await expect(response).resolves.toMatchObject({ status: 200 })
+      expect(deadline.pendingMilliseconds).toEqual([])
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
     }
   })
 
