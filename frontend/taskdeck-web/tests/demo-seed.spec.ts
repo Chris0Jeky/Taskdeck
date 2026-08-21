@@ -1,8 +1,12 @@
+import { createServer, type IncomingMessage, type Server } from 'node:http'
+import type { AddressInfo, Socket } from 'node:net'
 import { describe, expect, it } from 'vitest'
 
 import {
   buildProposalLookupPath,
   collectSeededChatProposalIds,
+  createRunBoundApiTransport,
+  createRunBoundApiTransportFromEnvironment,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
   parseSeedArgs,
@@ -10,6 +14,50 @@ import {
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
 import { extractListItems } from '../scripts/demo-shared.mjs'
+
+const DEV_RUN_ID = '12345678-1234-4234-8234-123456789abc'
+const OTHER_DEV_RUN_ID = '87654321-4321-4321-8321-cba987654321'
+
+function trackSockets(server: Server) {
+  const sockets = new Set<Socket>()
+  server.on('connection', (socket) => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+  })
+  return sockets
+}
+
+async function listenOnLoopback(server: Server, port = 0) {
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error)
+    server.once('error', onError)
+    server.listen(port, '127.0.0.1', () => {
+      server.off('error', onError)
+      resolve()
+    })
+  })
+  return (server.address() as AddressInfo).port
+}
+
+async function closeServer(server: Server, sockets: Set<Socket>) {
+  for (const socket of sockets) socket.destroy()
+  if (!server.listening) return
+
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
+}
+
+async function readRequestBody(request: IncomingMessage) {
+  const chunks = []
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
 
 describe('demo seed rerun planning', () => {
   it('normalizes paginated API responses for demo board discovery', () => {
@@ -276,6 +324,293 @@ describe('demo seed rerun planning', () => {
   it('builds a direct proposal lookup path for rerun reuse checks', () => {
     expect(buildProposalLookupPath('proposal/with spaces')).toBe('/automation/proposals/proposal%2Fwith%20spaces')
     expect(() => buildProposalLookupPath('')).toThrow('Proposal id is required')
+  })
+})
+
+describe('run-bound demo seed transport', () => {
+  it('proves readiness and sends every seed request over one socket without exposing the run ID', async () => {
+    const requests = []
+    const requestSockets = new Set<Socket>()
+    let connectionCount = 0
+    const server = createServer(async (request, response) => {
+      const body = await readRequestBody(request)
+      requests.push({
+        body,
+        method: request.method,
+        path: request.url,
+        rawHeaders: [...request.rawHeaders],
+      })
+      requestSockets.add(request.socket)
+
+      if (request.url === '/health/ready') {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.setHeader('Cache-Control', 'no-store')
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      response.setHeader('Content-Type', 'application/json')
+      response.statusCode = 200
+      response.end('{"ok":true}')
+    })
+    const sockets = trackSockets(server)
+    server.on('connection', () => {
+      connectionCount += 1
+    })
+    const port = await listenOnLoopback(server)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    try {
+      await transport.verifyReady()
+      const first = await transport.fetch(`http://127.0.0.1:${port}/api/first`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"name":"first"}',
+      })
+      const second = await transport.fetch(`http://127.0.0.1:${port}/api/second`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"name":"second"}',
+      })
+
+      expect(first.status).toBe(200)
+      expect(await first.text()).toBe('{"ok":true}')
+      expect(second.status).toBe(200)
+      expect(await second.text()).toBe('{"ok":true}')
+      transport.assertActive()
+      expect(connectionCount).toBe(1)
+      expect(requestSockets.size).toBe(1)
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+      expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+        'GET /health/ready',
+        'POST /api/first',
+        'POST /api/second',
+      ])
+      expect(requests.every(({ body, path }) => !`${path}\n${body}`.includes(DEV_RUN_ID))).toBe(true)
+      expect(
+        requests.every(({ rawHeaders }) =>
+          rawHeaders.every(
+            (value, index) => index % 2 === 1 || value.toLowerCase() !== 'taskdeck-dev-run-id',
+          ),
+        ),
+      ).toBe(true)
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['mismatched', OTHER_DEV_RUN_ID],
+    ['duplicate', [DEV_RUN_ID, DEV_RUN_ID]],
+  ])('rejects an HTTP 200 readiness response with a %s run-ID header before mutation', async (_label, runIdHeader) => {
+    let mutationCount = 0
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        if (runIdHeader !== undefined) {
+          response.setHeader('Taskdeck-Dev-Run-Id', runIdHeader)
+        }
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      mutationCount += 1
+      response.statusCode = 200
+      response.end()
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    try {
+      await expect(
+        (async () => {
+          await transport.verifyReady()
+          await transport.fetch(`http://127.0.0.1:${port}/api/mutate`, {
+            method: 'POST',
+            body: '{"mutate":true}',
+          })
+        })(),
+      ).rejects.toThrow('one exact matching development run ID')
+      expect(mutationCount).toBe(0)
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it('does not follow a readiness redirect', async () => {
+    let redirectedRequestCount = 0
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        response.statusCode = 302
+        response.setHeader('Location', '/redirected')
+        response.end()
+        return
+      }
+
+      redirectedRequestCount += 1
+      response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+      response.statusCode = 200
+      response.end()
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    try {
+      await expect(transport.verifyReady()).rejects.toThrow('one exact matching development run ID')
+      expect(redirectedRequestCount).toBe(0)
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it('rejects an incomplete readiness response', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+      response.setHeader('Content-Length', '10')
+      response.setHeader('Connection', 'close')
+      response.statusCode = 200
+      response.end('short')
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    try {
+      await expect(transport.verifyReady()).rejects.toThrow(/response|socket/i)
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it('fails closed when run-bound requests overlap', async () => {
+    let releaseReadiness: (() => void) | undefined
+    let announceReadinessRequest: () => void
+    const readinessRequest = new Promise<void>((resolve) => {
+      announceReadinessRequest = resolve
+    })
+    const server = createServer((_request, response) => {
+      announceReadinessRequest()
+      releaseReadiness = () => {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.statusCode = 200
+        response.end()
+      }
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    try {
+      const firstProof = transport.verifyReady()
+      const firstProofRejection = expect(firstProof).rejects.toThrow()
+      await readinessRequest
+      await expect(transport.verifyReady()).rejects.toThrow('Concurrent run-bound demo seed requests')
+      await firstProofRejection
+    } finally {
+      releaseReadiness?.()
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it('never reconnects seed mutations to a foreign listener that takes over the verified port', async () => {
+    let ownerConnectionCount = 0
+    const owner = createServer((_request, response) => {
+      response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+      response.statusCode = 200
+      response.end()
+    })
+    const ownerSockets = trackSockets(owner)
+    owner.on('connection', () => {
+      ownerConnectionCount += 1
+    })
+    const port = await listenOnLoopback(owner)
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+    })
+
+    await transport.verifyReady()
+    await closeServer(owner, ownerSockets)
+
+    let foreignRequestCount = 0
+    const foreign = createServer((_request, response) => {
+      foreignRequestCount += 1
+      response.statusCode = 200
+      response.end()
+    })
+    const foreignSockets = trackSockets(foreign)
+    await listenOnLoopback(foreign, port)
+
+    try {
+      await expect(
+        transport.fetch(`http://127.0.0.1:${port}/api/mutate`, {
+          method: 'POST',
+          body: '{"mutate":true}',
+        }),
+      ).rejects.toThrow(/socket|reconnect/i)
+      expect(ownerConnectionCount).toBe(1)
+      expect(transport.diagnostics.physicalConnectionCount).toBe(1)
+      expect(foreignRequestCount).toBe(0)
+    } finally {
+      transport.destroy()
+      await closeServer(foreign, foreignSockets)
+    }
+  })
+
+  it.each([
+    '',
+    '00000000-0000-0000-0000-000000000000',
+    DEV_RUN_ID.toUpperCase(),
+    `{${DEV_RUN_ID}}`,
+    'not-a-guid',
+  ])('rejects invalid or noncanonical run ID %j before networking', (expectedRunId) => {
+    expect(() =>
+      createRunBoundApiTransport({
+        apiBaseUrl: 'http://127.0.0.1:1/api',
+        expectedRunId,
+      }),
+    ).toThrow('canonical lowercase GUID-D')
+  })
+
+  it.each([
+    ['https target', { apiBaseUrl: 'https://127.0.0.1:1/api' }],
+    ['non-loopback target', { apiBaseUrl: 'http://example.com/api' }],
+    ['non-local override', { apiBaseUrl: 'http://127.0.0.1:1/api', allowNonLocal: true }],
+  ])('rejects a %s before networking', (_label, options) => {
+    expect(() => createRunBoundApiTransport({ ...options, expectedRunId: DEV_RUN_ID })).toThrow()
+  })
+
+  it('keeps the legacy transport disabled when no development run ID is present', () => {
+    expect(
+      createRunBoundApiTransportFromEnvironment({
+        environment: {},
+        apiBaseUrl: 'http://127.0.0.1:1/api',
+      }),
+    ).toBeNull()
   })
 })
 
