@@ -61,8 +61,18 @@ async function readRequestBody(request: IncomingMessage) {
 
 function createManualResponseDeadline() {
   const deadlines: Array<{ callback: () => void; cleared: boolean; milliseconds: number }> = []
+  let elapsedMilliseconds = 0
 
   return {
+    advanceBy(milliseconds: number) {
+      elapsedMilliseconds += milliseconds
+      for (const deadline of deadlines) {
+        if (!deadline.cleared && deadline.milliseconds <= elapsedMilliseconds) {
+          deadline.cleared = true
+          deadline.callback()
+        }
+      }
+    },
     clearTimeoutFn(deadline: { cleared: boolean }) {
       deadline.cleared = true
     },
@@ -75,6 +85,9 @@ function createManualResponseDeadline() {
       const deadline = { callback, cleared: false, milliseconds }
       deadlines.push(deadline)
       return deadline
+    },
+    get pendingMilliseconds() {
+      return deadlines.filter((deadline) => !deadline.cleared).map((deadline) => deadline.milliseconds)
     },
   }
 }
@@ -636,6 +649,101 @@ describe('run-bound demo seed transport', () => {
       transport.destroy()
       if (foreign && foreignSockets) await closeServer(foreign, foreignSockets)
       else await closeServer(owner, ownerSockets)
+    }
+  })
+
+  it('fails the live-provider chat message at its authoritative response deadline', async () => {
+    let announceProviderRequest: () => void
+    const providerRequest = new Promise<void>((resolve) => {
+      announceProviderRequest = resolve
+    })
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      if (request.url === '/api/llm/chat/sessions/session-1/messages') {
+        announceProviderRequest()
+        return
+      }
+
+      response.statusCode = 200
+      response.end()
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const deadline = createManualResponseDeadline()
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+      responseDeadlineMs: 123,
+      ...deadline,
+    })
+
+    try {
+      await transport.verifyReady()
+      const response = transport.fetch(`http://127.0.0.1:${port}/api/llm/chat/sessions/session-1/messages`, {
+        method: 'POST',
+        body: '{"content":"seed chat"}',
+      })
+      await providerRequest
+
+      expect(deadline.pendingMilliseconds).toEqual([700_000])
+      deadline.advanceBy(699_999)
+      expect(deadline.pendingMilliseconds).toEqual([700_000])
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+
+      deadline.advanceBy(1)
+      await expect(response).rejects.toThrow('700000ms deadline')
+      expect(deadline.pendingMilliseconds).toEqual([])
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it.each([
+    ['the chat path with a non-POST method', 'GET', '/api/llm/chat/sessions/session-1/messages'],
+    ['a POST path extending the chat message endpoint', 'POST', '/api/llm/chat/sessions/session-1/messages/extra'],
+  ])('keeps the normal deadline for %s', async (_label, method, requestPath) => {
+    let announceRequest: () => void
+    const requestReceived = new Promise<void>((resolve) => {
+      announceRequest = resolve
+    })
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      announceRequest()
+    })
+    const sockets = trackSockets(server)
+    const port = await listenOnLoopback(server)
+    const deadline = createManualResponseDeadline()
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+      ...deadline,
+    })
+
+    try {
+      await transport.verifyReady()
+      const response = transport.fetch(`http://127.0.0.1:${port}${requestPath}`, { method })
+      await requestReceived
+
+      expect(deadline.pendingMilliseconds).toEqual([10_000])
+      deadline.advanceBy(10_000)
+      await expect(response).rejects.toThrow('10000ms deadline')
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
     }
   })
 
