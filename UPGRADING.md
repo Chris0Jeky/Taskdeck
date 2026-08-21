@@ -114,7 +114,7 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## v0.1.1 (unreleased)
+## v0.1.1 — 2026-08-21
 
 **BREAKING: none.**
 

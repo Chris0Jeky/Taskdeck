@@ -10,10 +10,36 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## 2026-08-21 Windows release and provider-retirement checkpoint
+## 2026-08-21 public Windows v0.1.1 release proof
 
-The Windows 0.1.x stack is proven at the artifact boundary without claiming a public release or
-manual clean-machine acceptance:
+The public v0.1.1 Windows x64 artifact is proven end to end, with the unavailable Windows Sandbox
+lane recorded separately as an owner waiver rather than a passing clean-machine result:
+
+- **Published source and assets:** annotated tag `v0.1.1` peels exactly to
+  `e338566d0f3d1fc65004beb5a29c10778e6e61bc`. Release Container `32505993267`, Release Security
+  `32505993558`, CI Release `32505993464`, and Release Desktop `32505993397` all passed. The public
+  53,258,784-byte ZIP rehash equals its sidecar:
+  `e8bcbf36dfce28b75be7ee89842a6d5b2c248535f6c11678d06b2cb91c4c607b`.
+- **Public Windows host journey:** a Chrome download had `ZoneId=3`; Windows Shell extracted exactly
+  147 expected files and 0 forbidden files. The executable retained `ZoneId=3`, reported file
+  version `0.1.1.0` / product version `0.1.1`, and is intentionally unsigned for this beta. The
+  supplied shortcut launched successfully from an unrelated working directory, bound only to
+  `127.0.0.1:5000`, wrote state only under isolated local app data, and opened the default browser
+  at `/login?redirect=/workspace/home`. No blocking SmartScreen intervention appeared on this host.
+- **Public live OpenAI journey:** the unchanged public ZIP passed
+  `Test-WindowsDesktopArchive.ps1 -LiveOpenAI` with schema-6 evidence. It proved exact
+  `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2` attribution, non-Mock probed/verified health,
+  proposal states `0 -> 1 -> 3`, card counts `0/0/1`, one applied operation, one card after restart,
+  clean-install identity create/reuse, adjacent-config retention, durable app-data import, database
+  reuse, board creation, and signed-in restart. The recursive evidence check found 0 forbidden
+  credential, secret, token, prompt, transcript, raw-response, log, configuration-path, or
+  filesystem-path fields.
+- **Public container journey:** an anonymous pull using an empty Docker auth config succeeded for
+  `ghcr.io/chris0jeky/taskdeck:0.1.1`. Its digest is
+  `sha256:a04edc297416d149934b688227cf8c34f0e7add80320f7e2350f59d7f09bdd8e`; OCI labels identify
+  version `0.1.1`, revision `e338566d`, and the Taskdeck repository.
+
+Earlier candidate checkpoints that built up this final proof are retained below:
 
 - PR `#1885`: 62 focused runtime/FirstRun tests, Python 11/11, release structure 58/58,
   33/33 hosted checks, and an exact-head blank-tag rehearsal that tested the untouched ZIP before
@@ -84,9 +110,13 @@ manual clean-machine acceptance:
   The archive remained byte-identical and the recursive evidence validator rejected credential,
   transcript, prompt, raw provider-response, filesystem-path, and application-log fields.
 
-These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
-clean Windows machine, manual registration, maintainer acceptance of the candidate redacted
-identity record, or a public v0.1.1 release.
+The public proof does **not** establish a genuinely clean Windows machine: Windows Sandbox remained
+unable to create an environment after a supported Store-package reset and retry, with deterministic
+Filter Manager `0xC03A001C` (`STATUS_VHD_INVALID_STATE`) failures. The maintainer explicitly waived
+that lane and authorized the host fallback; this is not a pass claim. Windows Shell automation—not
+an independent human click-through—performed extraction and shortcut invocation, and the absence of
+a SmartScreen block is specific to this host's reputation and policy. Issue `#1242` also remains open
+for separate maintainer acceptance of the redacted identity record.
 
 ## 2026-08-16 API Integration Timing Evidence (`#1682`)
 
