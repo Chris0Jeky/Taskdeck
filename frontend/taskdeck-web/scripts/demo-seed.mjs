@@ -27,6 +27,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { Agent, request as nodeHttpRequest } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -47,6 +48,265 @@ const API_BASE = (
 const NORMALIZED_API_BASE = normalizeBaseUrl(API_BASE, 'http://localhost:5000/api')
 
 const ALLOW_NON_LOCAL_API = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
+const DEV_RUN_ID_HEADER_NAME = 'taskdeck-dev-run-id'
+const EMPTY_GUID_D = '00000000-0000-0000-0000-000000000000'
+const CANONICAL_GUID_D_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+let activeRunBoundTransport = null
+
+export function createRunBoundApiTransport({ apiBaseUrl, expectedRunId, allowNonLocal = false }) {
+  if (
+    typeof expectedRunId !== 'string' ||
+    !CANONICAL_GUID_D_PATTERN.test(expectedRunId) ||
+    expectedRunId === EMPTY_GUID_D
+  ) {
+    throw new Error('TASKDECK_DEV_RUN_ID must be a non-empty canonical lowercase GUID-D value.')
+  }
+  if (allowNonLocal) {
+    throw new Error('Run-bound demo seeding cannot use TASKDECK_DEMO_ALLOW_NON_LOCAL_API.')
+  }
+
+  let parsedApiBase
+  try {
+    parsedApiBase = new URL(apiBaseUrl)
+  } catch (err) {
+    throw new Error(`Invalid run-bound API base URL "${apiBaseUrl}". ${err?.message || err}`, {
+      cause: err,
+    })
+  }
+  if (parsedApiBase.protocol !== 'http:' || !isLocalHostname(parsedApiBase.hostname.toLowerCase())) {
+    throw new Error('Run-bound demo seeding requires a direct loopback http:// API base URL.')
+  }
+
+  const apiOrigin = parsedApiBase.origin
+  const readyUrl = new URL('/health/ready', apiOrigin)
+  let activeRequest = false
+  let closed = false
+  let failedError = null
+  let physicalConnectionCount = 0
+  let refusedConnectionCount = 0
+  let pinnedSocket = null
+  let readinessVerified = false
+  let agent
+
+  const markFailed = (message, cause) => {
+    if (!failedError) {
+      failedError = new Error(message, cause ? { cause } : undefined)
+      agent?.destroy()
+    }
+    return failedError
+  }
+
+  class OneConnectionAgent extends Agent {
+    createConnection(options, callback) {
+      // A replacement listener requires a new TCP connection, so this transport permits only one.
+      if (physicalConnectionCount > 0) {
+        refusedConnectionCount += 1
+        const error = markFailed('Run-bound demo seeding refused to reconnect to the API listener.')
+        queueMicrotask(() => callback(error))
+        return undefined
+      }
+
+      physicalConnectionCount += 1
+      return super.createConnection(options, callback)
+    }
+  }
+
+  agent = new OneConnectionAgent({
+    keepAlive: true,
+    maxSockets: 1,
+    maxTotalSockets: 1,
+    maxFreeSockets: 1,
+  })
+
+  const assertUsable = () => {
+    if (closed) {
+      throw new Error('Run-bound demo seed transport is closed.')
+    }
+    if (failedError) {
+      throw failedError
+    }
+  }
+
+  const observePinnedSocket = (socket) => {
+    if (!pinnedSocket) {
+      pinnedSocket = socket
+      socket.once('error', (err) => {
+        if (!closed) markFailed('Run-bound API socket failed.', err)
+      })
+      socket.once('close', () => {
+        if (!closed) markFailed('Run-bound API socket closed before demo seeding completed.')
+      })
+    }
+  }
+
+  const performRequest = async (url, init = {}, { readiness = false } = {}) => {
+    assertUsable()
+    if (activeRequest) {
+      throw markFailed('Concurrent run-bound demo seed requests are not allowed.')
+    }
+
+    const target = new URL(url)
+    if (target.origin !== apiOrigin) {
+      throw markFailed('Run-bound demo seed requests must stay on the verified API origin.')
+    }
+    if (!readiness && !readinessVerified) {
+      throw markFailed('Run-bound API readiness must be verified before demo seed requests.')
+    }
+
+    const method = init.method || 'GET'
+    const requestBody = init.body === undefined ? null : Buffer.from(String(init.body))
+    const headers = { ...(init.headers || {}) }
+    if (requestBody && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-length')) {
+      headers['Content-Length'] = String(requestBody.byteLength)
+    }
+
+    activeRequest = true
+    try {
+      return await new Promise((resolve, reject) => {
+        let request
+        let settled = false
+
+        const settle = (error, response) => {
+          if (settled) return
+          settled = true
+          if (error) reject(error)
+          else resolve(response)
+        }
+
+        const failRequest = (message, cause) => {
+          const error = markFailed(message, cause)
+          if (request && !request.destroyed) request.destroy(error)
+          settle(error)
+        }
+
+        try {
+          request = nodeHttpRequest(
+            target,
+            {
+              agent,
+              method,
+              headers,
+            },
+            (response) => {
+              const chunks = []
+              response.on('data', (chunk) => {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+              })
+              response.once('aborted', () => {
+                failRequest('Run-bound API response was aborted before completion.')
+              })
+              response.once('error', (err) => {
+                failRequest('Run-bound API response failed before completion.', err)
+              })
+              response.once('close', () => {
+                if (!response.complete) {
+                  failRequest('Run-bound API response closed before completion.')
+                }
+              })
+              response.once('end', () => {
+                if (!response.complete || response.aborted) {
+                  failRequest('Run-bound API response was incomplete.')
+                  return
+                }
+                if (failedError) {
+                  settle(failedError)
+                  return
+                }
+
+                const status = response.statusCode || 0
+                const text = Buffer.concat(chunks).toString('utf8')
+                settle(null, {
+                  ok: status >= 200 && status < 300,
+                  status,
+                  rawHeaders: [...response.rawHeaders],
+                  text: async () => text,
+                })
+              })
+            },
+          )
+        } catch (err) {
+          failRequest('Run-bound API request could not be created.', err)
+          return
+        }
+
+        request.once('socket', (socket) => {
+          if (readiness) {
+            observePinnedSocket(socket)
+            if (socket !== pinnedSocket || request.reusedSocket) {
+              failRequest('Run-bound readiness was not assigned its one new API socket.')
+              return
+            }
+          } else if (socket !== pinnedSocket || !request.reusedSocket) {
+            failRequest('Run-bound demo seed request was not assigned the verified API socket.')
+            return
+          }
+
+          if (failedError || socket.destroyed) {
+            failRequest('Run-bound API socket became unusable before request transmission.')
+            return
+          }
+
+          // ClientRequest buffers until end(); validate the assigned socket before releasing bytes.
+          request.end(requestBody || undefined)
+        })
+        request.once('error', (err) => {
+          failRequest('Run-bound API request failed.', err)
+        })
+      })
+    } finally {
+      activeRequest = false
+    }
+  }
+
+  return {
+    async verifyReady() {
+      const response = await performRequest(readyUrl, { method: 'GET' }, { readiness: true })
+      const runIdValues = []
+      for (let index = 0; index < response.rawHeaders.length; index += 2) {
+        if (response.rawHeaders[index].toLowerCase() === DEV_RUN_ID_HEADER_NAME) {
+          runIdValues.push(response.rawHeaders[index + 1])
+        }
+      }
+      if (response.status !== 200 || runIdValues.length !== 1 || runIdValues[0] !== expectedRunId) {
+        throw markFailed('Run-bound API readiness did not return one exact matching development run ID.')
+      }
+      readinessVerified = true
+    },
+    fetch(url, init) {
+      return performRequest(url, init)
+    },
+    assertActive() {
+      assertUsable()
+      if (!readinessVerified || !pinnedSocket || pinnedSocket.destroyed) {
+        throw markFailed('Run-bound API socket was not active after demo seeding.')
+      }
+    },
+    destroy() {
+      if (closed) return
+      closed = true
+      agent.destroy()
+    },
+    get diagnostics() {
+      return { physicalConnectionCount, refusedConnectionCount }
+    },
+  }
+}
+
+export function createRunBoundApiTransportFromEnvironment({
+  environment = process.env,
+  apiBaseUrl = NORMALIZED_API_BASE,
+} = {}) {
+  if (!Object.prototype.hasOwnProperty.call(environment, 'TASKDECK_DEV_RUN_ID')) {
+    return null
+  }
+
+  return createRunBoundApiTransport({
+    apiBaseUrl,
+    expectedRunId: environment.TASKDECK_DEV_RUN_ID,
+    allowNonLocal: parseTrueishEnv(environment.TASKDECK_DEMO_ALLOW_NON_LOCAL_API),
+  })
+}
 
 const DEMO = {
   username: process.env.TASKDECK_DEMO_USERNAME || 'demo',
@@ -378,11 +638,14 @@ async function http(method, path, { token, body, headers: extraHeaders } = {}) {
     }
   }
 
-  const res = await fetch(url, {
+  const requestInit = {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  }
+  const res = activeRunBoundTransport
+    ? await activeRunBoundTransport.fetch(url, requestInit)
+    : await fetch(url, requestInit)
 
   const text = await res.text()
   const maybeJson = text ? safeJsonParse(text) : null
@@ -943,7 +1206,7 @@ async function ensureOpsSeed(token) {
   }
 }
 
-export async function main({ reset = false } = {}) {
+async function seedDemo({ reset = false } = {}) {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
@@ -1129,6 +1392,30 @@ export async function main({ reset = false } = {}) {
   console.log('\nTips:')
   console.log('- If you do not see Activity/Ops/Access/Archive in the left nav, enable them in Settings -> Feature Flags.')
   console.log('- If queue/proposals look empty, confirm backend setting EnableAutoQueueProcessing=true (Development).')
+}
+
+export async function main(options = {}) {
+  const transport = createRunBoundApiTransportFromEnvironment()
+  if (!transport) {
+    return seedDemo(options)
+  }
+  if (activeRunBoundTransport) {
+    transport.destroy()
+    throw new Error('Concurrent run-bound demo seed runs are not allowed.')
+  }
+
+  activeRunBoundTransport = transport
+  try {
+    await transport.verifyReady()
+    const result = await seedDemo(options)
+    transport.assertActive()
+    return result
+  } finally {
+    if (activeRunBoundTransport === transport) {
+      activeRunBoundTransport = null
+    }
+    transport.destroy()
+  }
 }
 
 const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false

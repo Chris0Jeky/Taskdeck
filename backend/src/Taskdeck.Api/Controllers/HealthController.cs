@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
@@ -17,10 +18,14 @@ namespace Taskdeck.Api.Controllers;
 [Route("health")]
 public class HealthController : ControllerBase
 {
+    private const string DevRunIdConfigKey = "TASKDECK_DEV_RUN_ID";
+    private const string DevRunIdHeaderName = "Taskdeck-Dev-Run-Id";
+
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerSettings _workerSettings;
     private readonly LlmProviderSettings _llmProviderSettings;
     private readonly IWebHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
     private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
@@ -31,6 +36,7 @@ public class HealthController : ControllerBase
         WorkerSettings workerSettings,
         LlmProviderSettings llmProviderSettings,
         IWebHostEnvironment environment,
+        IConfiguration configuration,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         RedisBackplaneHealthCheck redisHealthCheck,
         CircuitBreakerStateTracker circuitBreakerTracker,
@@ -40,6 +46,7 @@ public class HealthController : ControllerBase
         _workerSettings = workerSettings;
         _llmProviderSettings = llmProviderSettings;
         _environment = environment;
+        _configuration = configuration;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
         _circuitBreakerTracker = circuitBreakerTracker;
@@ -311,6 +318,14 @@ public class HealthController : ControllerBase
         }
 
         var statusCode = isReady ? 200 : 503;
+        if (isReady &&
+            _environment.IsDevelopment() &&
+            TryGetCanonicalDevRunId(_configuration[DevRunIdConfigKey], out var devRunId))
+        {
+            Response.Headers[DevRunIdHeaderName] = devRunId;
+            Response.Headers.CacheControl = "no-store";
+        }
+
         return StatusCode(statusCode, new
         {
             status = isReady ? "Ready" : "NotReady",
@@ -318,6 +333,20 @@ public class HealthController : ControllerBase
             timestamp = DateTimeOffset.UtcNow,
             checks
         });
+    }
+
+    private static bool TryGetCanonicalDevRunId(string? configuredValue, out string canonicalValue)
+    {
+        if (configuredValue is { Length: 36 } &&
+            Guid.TryParseExact(configuredValue, "D", out var runId) &&
+            runId != Guid.Empty)
+        {
+            canonicalValue = runId.ToString("D");
+            return true;
+        }
+
+        canonicalValue = string.Empty;
+        return false;
     }
 
     internal static TimeSpan CalculateTranscriptWorkerMaxStaleness(
