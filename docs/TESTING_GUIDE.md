@@ -44,11 +44,12 @@ manual clean-machine acceptance:
   no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation. Pair
   this migration proof with `#1889`'s clean-install proof; `#1903` tracks running both journeys in
   the current gate and adding a harmless non-identity config sentinel.
-- PR `#1902`: the identity-bound `demo:seed` transport now gives every response a 10,000 ms
-  deadline. Expiry marks the one-shot transport failed, destroys its agent/socket, and never
-  retries or creates a replacement connection. Focused transport tests passed 35/35 and the exact
-  merge-forwarded head passed all hosted checks. Issue `#1897` remains open because a documented
-  slow OpenAI/Ollama call can validly exceed 10 seconds.
+- PR `#1902`: the identity-bound `demo:seed` transport established a 10,000 ms response deadline.
+  PR `#1909` keeps that deadline for ordinary requests and grants only the exact provider
+  chat-message `POST` 700,000 ms: up to three 30-second tool rounds, the supported 600-second
+  Ollama fallback, and 10 seconds of response-delivery allowance. Expiry still marks the one-shot
+  transport failed, destroys its agent/socket, and never retries or creates a replacement
+  connection. The final focused transport suite passes 38/38.
 
 These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
 clean Windows machine, manual registration, maintainer acceptance of the candidate redacted
@@ -1761,7 +1762,7 @@ Policy notes:
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
 - `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
 - `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
-- When `dev-up -Seed` / `dev-up.sh --seed` invokes `demo:seed`, the launcher supplies a fresh run identity and the seeder pins every request to one proven HTTP connection. Each response has a 10,000 ms deadline; expiry destroys that transport and exits without retry or reconnection. Bare manual `npm run demo:seed` remains outside this run-bound mode. `#1897` tracks endpoint-appropriate timing for valid provider calls that exceed 10 seconds.
+- When `dev-up -Seed` / `dev-up.sh --seed` invokes `demo:seed`, the launcher supplies a fresh run identity and the seeder pins every request to one proven HTTP connection. Ordinary responses have a 10,000 ms deadline; only the exact provider chat-message `POST` has a 700,000 ms deadline for the maximum supported tool-round, Ollama-fallback, and delivery sequence. Either expiry destroys that transport and exits without retry or reconnection. Bare manual `npm run demo:seed` remains outside this run-bound mode.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 - opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
