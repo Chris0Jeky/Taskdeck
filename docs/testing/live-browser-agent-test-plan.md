@@ -1,6 +1,6 @@
 # Live Browser Agent Test Plan
 
-Last Updated: 2026-04-02
+Last Updated: 2026-08-21
 
 Use this plan to drive an LLM agent (Playwright MCP, browser-use, or similar) through a full interactive session against a running Taskdeck instance.
 
@@ -18,19 +18,15 @@ Companion docs:
 This is the recommended default. Chat will return canned responses but all surfaces are functional.
 
 ```bash
-# Terminal 1 — Backend
-dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
-
-# Terminal 2 — Frontend
-cd frontend/taskdeck-web
-npm install
-npm run dev
-# Opens on http://localhost:5173
-
-# Terminal 3 — Seed demo data (after backend is running)
-cd frontend/taskdeck-web
-npm run demo:seed
+# From the repository root. These settings stay scoped to the launcher process tree.
+Llm__Provider=Mock \
+Llm__EnableLiveProviders=false \
+Llm__AllowLiveProvidersInDevelopment=false \
+./scripts/dev-up.sh --seed
 ```
+
+Continue only after `Stack is up.`, then use the API and frontend URLs printed by the launcher.
+Stop the owned stack later with `./scripts/dev-up.sh --stop`.
 
 Demo seed creates:
 - Two users: `demo` / `demo123` and `collab` / `demo123`
@@ -42,17 +38,18 @@ Demo seed creates:
 Use this when you want the chat and tool-calling surfaces to produce real LLM responses.
 
 ```bash
-# Terminal 1 — Backend with OpenAI
+# From the repository root, configure OpenAI for this shell, then start the protected stack.
 export Llm__EnableLiveProviders=true
 export Llm__AllowLiveProvidersInDevelopment=true
 export Llm__Provider=OpenAI
 export Llm__OpenAi__ApiKey=<your_openai_key>
-dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+./scripts/dev-up.sh --seed
 ```
 
 The default OpenAI model is `gpt-5.6-luna`. Override it with `Llm__OpenAi__Model`.
 
-Verify provider health after startup:
+Continue only after `Stack is up.` and use the printed API/frontend URLs. Verify provider health
+against that printed API base after startup:
 ```
 GET http://localhost:5000/api/llm/chat/health          # config check
 GET http://localhost:5000/api/llm/chat/health?probe=true  # real upstream call
@@ -353,7 +350,7 @@ This is the most important test -- the **capture -> review -> board** golden pat
 
 ## Seeded Data Quick Reference
 
-After running `npm run demo:seed`, log in as `demo` / `demo123`:
+After the identity-bound seeded launcher reports `Stack is up.`, log in as `demo` / `demo123`:
 
 | Surface | What to expect |
 |---|---|

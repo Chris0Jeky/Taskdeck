@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-20
+Last Updated: 2026-08-21
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -10,11 +10,13 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## Delivery update (2026-08-20, Windows 0.1.x and OpenAI-only provider surface)
+## Delivery update (2026-08-21, Windows 0.1.x and OpenAI-only provider surface)
 
 - **PRs `#1880`–`#1889` complete the current automated Windows release stack.** Shutdown persistence is scope-isolated, bootstrap identity is durable, the 0.1.x desktop topology is Windows x64 only, proposal-feedback and JSON-enforcement boundaries are corrected, and the final archive contains its quick start and licence contract. Exact-head hosted proof exercises the untouched ZIP before upload; downloaded-artifact proof records only bounded lifecycle booleans and shows both JWT and connector identity created on launch one and neither recreated on restart. No public v0.1.1 was created.
+- **PR `#1901` proves the packaged v0.1 migration path with value-free schema-v4 evidence.** The adjacent source is retained, durable app-data identity is imported, the existing app-data database is reused, and a board is created there. Exact-head no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation; `#1903` tracks additive clean-install and broader config-fixture coverage rather than weakening this proven identity migration.
+- **PR `#1902` makes run-bound demo seeding fail closed on stalled responses.** A 10,000 ms response deadline destroys the one-shot transport without retry or reconnection. `#1897` remains open for endpoint-appropriate slow-provider compatibility, so this bounded availability improvement is not recorded as the final timing policy.
 - **PRs `#1887` and `#1888` retired Gemini and closed the remaining automated `#1879` migration/evidence gaps.** OpenAI is the only supported live provider; stale Gemini selectors, sections, or the non-empty retired Compose wrapper fail startup with value-blind migration guidance. Historical provider strings and generic Google-key redaction defenses remain for compatibility and safety. `Verify LLM` reports a bounded, server-measured probe duration without retaining provider content or credentials; the issue remains open for the separate post-0.1.x BYOK setup/validation/rotation/removal decision and maintainer record.
-- **Human and record boundaries remain explicit.** Issue `#1242` still needs packaged legacy-config import/retention evidence, an accepted redacted identity record, and Explorer coverage. Issue `#1876` still needs Explorer/shortcut/default-browser/SmartScreen and a clean-Windows walkthrough; `#1877` remains open for its record/manual disposition. `#1878` is closed/Done after direct topology and canonical-record verification. Translation/legal/device gates and public-release authority are not inferred from CI or archive rehearsals.
+- **Human and record boundaries remain explicit.** Issue `#1242` still needs maintainer acceptance of the candidate redacted identity record and Explorer coverage. Issue `#1876` still needs Explorer/shortcut/default-browser/SmartScreen and a clean-Windows walkthrough; `#1877` remains open for its record/manual disposition. `#1878` is closed/Done after direct topology and canonical-record verification. Translation/legal/device gates and public-release authority are not inferred from CI or archive rehearsals.
 
 ## Governance update (2026-08-18, ADR-0051 autonomous admission and merge authority)
 

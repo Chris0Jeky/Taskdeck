@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-20
+Last Updated: 2026-08-21
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,7 +10,7 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
-## 2026-08-20 Windows release and provider-retirement checkpoint
+## 2026-08-21 Windows release and provider-retirement checkpoint
 
 The Windows 0.1.x stack is proven at the artifact boundary without claiming a public release or
 manual clean-machine acceptance:
@@ -37,10 +37,22 @@ manual clean-machine acceptance:
   on clean launch, then both `false` on restart against the same isolated app-data state. The live
   OpenAI proposal/review/apply journey and one-card restart persistence passed without retaining a
   JWT, connector key, API key, configuration value/path, secret-derived hash, or application log.
+- PR `#1901`: evidence schema 4 adds a value-free `migration` record. Its four exact states are
+  `legacy=adjacent/retained`, `durable=app-data/imported`, `database=app-data/reused`, and
+  `board=app-data/created`; both migration launches report `jwtCreated=false` and
+  `connectorCreated=false`. Local offline and live-OpenAI ZIP rehearsals passed, and exact-head
+  no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation. Pair
+  this migration proof with `#1889`'s clean-install proof; `#1903` tracks running both journeys in
+  the current gate and adding a harmless non-identity config sentinel.
+- PR `#1902`: the identity-bound `demo:seed` transport now gives every response a 10,000 ms
+  deadline. Expiry marks the one-shot transport failed, destroys its agent/socket, and never
+  retries or creates a replacement connection. Focused transport tests passed 35/35 and the exact
+  merge-forwarded head passed all hosted checks. Issue `#1897` remains open because a documented
+  slow OpenAI/Ollama call can validly exceed 10 seconds.
 
 These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
-clean Windows machine, manual registration, packaged v0.1 adjacent-config import/retention, or a
-public v0.1.1 release.
+clean Windows machine, manual registration, maintainer acceptance of the candidate redacted
+identity record, or a public v0.1.1 release.
 
 ## 2026-08-16 API Integration Timing Evidence (`#1682`)
 
@@ -1749,6 +1761,7 @@ Policy notes:
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
 - `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
 - `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
+- When `dev-up -Seed` / `dev-up.sh --seed` invokes `demo:seed`, the launcher supplies a fresh run identity and the seeder pins every request to one proven HTTP connection. Each response has a 10,000 ms deadline; expiry destroys that transport and exits without retry or reconnection. Bare manual `npm run demo:seed` remains outside this run-bound mode. `#1897` tracks endpoint-appropriate timing for valid provider calls that exceed 10 seconds.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 - opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
@@ -1760,11 +1773,19 @@ Canonical operator contract:
 
 Deterministic bootstrap for the Saul-facing story:
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
-npm run demo:run -- --clean --skip-llm client-onboarding
+```powershell
+# From the repository root
+.\scripts\dev-up.ps1 -Seed
 ```
+
+```bash
+# From the repository root
+./scripts/dev-up.sh --seed
+```
+
+Continue only after `Stack is up.` and the launcher's API line reports
+`http://localhost:5000`. This Saul contract is default-port only; stop and abort the rehearsal if
+that URL is different. Do not replace the launcher with bare `demo:seed` or `demo:run` commands.
 
 Deterministic artifact rehearsal bundle:
 
