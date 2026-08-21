@@ -467,16 +467,18 @@ function fixtureEnvironment(platform, fixture, overrides = {}) {
   }
 }
 
-function launcherInvocation(platform, fixture, { apiPort, seed = false, stop = false } = {}) {
+function launcherInvocation(platform, fixture, { apiPort, seed = false, resetSeed = false, stop = false } = {}) {
   if (platform.name === 'PowerShell') {
     const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fixture.launcherPath ?? join(fixture.scriptsDir, 'dev-up.ps1')]
     if (apiPort) args.push('-ApiPort', String(apiPort))
     if (seed) args.push('-Seed')
+    if (resetSeed) args.push('-ResetSeed')
     if (stop) args.push('-Stop')
     return { command: powershell, args }
   }
   const args = ['scripts/dev-up.sh']
   if (seed) args.push('--seed')
+  if (resetSeed) args.push('--reset-seed')
   if (stop) args.push('--stop')
   return { command: bash, args }
 }
@@ -658,6 +660,28 @@ async function stopSuccessfulStack(platform, fixture) {
   assert.equal(await readOptional(fixture.stateFile), null)
 }
 
+async function assertResetSeedCycle(platform, fixture, expectedResetSeedEvents) {
+  const apiPort = await getFreePort()
+  const frontendPort = await getFreePort()
+  try {
+    const result = runLauncher(platform, fixture, {
+      apiPort,
+      seed: true,
+      resetSeed: true,
+      env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+    })
+    assert.equal(result.status, 0, combinedOutput(result))
+    const resetSeedEvents = (await readEvents(fixture)).filter(
+      (event) => event.args.join(' ') === 'run demo:seed -- --reset',
+    )
+    assert.equal(resetSeedEvents.length, expectedResetSeedEvents)
+    assert.equal(resetSeedEvents.at(-1).taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
+    await stopSuccessfulStack(platform, fixture)
+  } finally {
+    if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+  }
+}
+
 test('launchers encode the transactional lifecycle and custom-port environment boundary', async () => {
   const [powershellText, bashText, packageJson, nvmrc] = await Promise.all([
     readFile(powershellLauncher, 'utf8'),
@@ -692,12 +716,48 @@ test('launchers encode the transactional lifecycle and custom-port environment b
   assert.match(sh, /mkdir "\$LOCK_DIR"/)
   assert.match(sh, /schemaVersion: Number\(stateVersion\)/)
   assert.match(sh, /creationToken/)
-  assert.match(sh, /TASKDECK_API_BASE_URL="\$API_BASE_URL" "\$NPM_BIN" run demo:seed/)
+  assert.match(sh, /seed_args=\(run demo:seed\)/)
+  assert.match(sh, /TASKDECK_API_BASE_URL="\$API_BASE_URL" "\$NPM_BIN" "\$\{seed_args\[@\]\}"/)
   assert.match(sh, /VITE_API_BASE_URL="\$API_BASE_URL" exec "\$NPM_BIN" run dev/)
   assert.match(sh, /redirect: "manual"/)
   assert.match(sh, /r\.headers\.get\("taskdeck-dev-run-id"\) === expectedRunId/)
   assert.doesNotMatch(sh, /export (?:TASKDECK_API_BASE_URL|VITE_API_BASE_URL)/)
 })
+
+for (const platform of platforms) {
+  test(`${platform.name}: reset seed option is rejected before launcher side effects without seed`, { concurrency: false }, async () => {
+    const fixture = await createFixture(platform)
+    try {
+      const result = runLauncher(platform, fixture, { resetSeed: true })
+      assertFailedClosed(result)
+      assert.match(combinedOutput(result), /reset.?seed.*only with.*seed/i)
+      assert.deepEqual(await readEvents(fixture), [])
+      assert.equal(await readOptional(fixture.stateFile), null)
+    } finally {
+      await removeFixture(fixture)
+    }
+  })
+
+  let repeatedUseFixture = null
+  const getRepeatedUseFixture = async () => {
+    repeatedUseFixture ||= await createFixture(platform)
+    return repeatedUseFixture
+  }
+
+  test.after(async () => {
+    if (!repeatedUseFixture) return
+    if (existsSync(repeatedUseFixture.stateFile)) runLauncher(platform, repeatedUseFixture, { stop: true })
+    await removeFixture(repeatedUseFixture)
+  })
+
+  test(`${platform.name}: reset seed forwards --reset and preserves ordinary seed arguments on first use`, { concurrency: false }, async () => {
+    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 1)
+  })
+
+  test(`${platform.name}: reset seed forwards --reset again after a clean stop`, { concurrency: false }, async () => {
+    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 2)
+  })
+}
 
 if (powershell) {
   test('PowerShell: pipeline cancellation runs transactional cleanup from finally', { concurrency: false }, async () => {
@@ -1011,12 +1071,13 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: API exit, readiness timeout, and seed failure clean transactionally`, { concurrency: false }, async (t) => {
+  test(`${platform.name}: API exit, readiness timeout, seed failure, and reset-seed failure clean transactionally`, { concurrency: false }, async (t) => {
     for (const scenario of [
       { name: 'API exit', env: { FAKE_API_MODE: 'exit' }, seed: false },
       { name: 'API timeout', env: { FAKE_API_MODE: 'timeout' }, seed: false },
       { name: 'API exits after readiness', env: { FAKE_API_MODE: 'exit-after-ready' }, seed: false },
       { name: 'seed failure', env: { FAKE_SEED_MODE: 'fail' }, seed: true },
+      { name: 'reset seed failure', env: { FAKE_SEED_MODE: 'fail' }, seed: true, resetSeed: true },
     ]) {
       await t.test(scenario.name, async () => {
         const fixture = await createFixture(platform)
@@ -1026,6 +1087,7 @@ for (const platform of platforms) {
           const result = runLauncher(platform, fixture, {
             apiPort,
             seed: scenario.seed,
+            resetSeed: scenario.resetSeed,
             env: {
               ...scenario.env,
               FAKE_FRONTEND_PORT: String(frontendPort),
@@ -1037,7 +1099,7 @@ for (const platform of platforms) {
           assertFailedClosed(result)
           await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
           if (scenario.seed) {
-            const seedEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run demo:seed')
+            const seedEvent = (await readEvents(fixture)).find((event) => event.args[0] === 'run' && event.args[1] === 'demo:seed')
             assert.equal(seedEvent.taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
           }
         } finally {
@@ -1057,6 +1119,7 @@ for (const platform of platforms) {
           const result = runLauncher(platform, fixture, {
             apiPort,
             seed: true,
+            resetSeed: true,
             env: {
               FAKE_API_PROOF_MODE: proofMode,
               FAKE_FRONTEND_PORT: String(frontendPort),
@@ -1066,7 +1129,7 @@ for (const platform of platforms) {
           assertFailedClosed(result)
           await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
           const events = await readEvents(fixture)
-          assert.equal(events.some((event) => event.args.join(' ') === 'run demo:seed'), false)
+          assert.equal(events.some((event) => event.args[0] === 'run' && event.args[1] === 'demo:seed'), false)
           assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
         } finally {
           await removeFixture(fixture)
@@ -1132,7 +1195,11 @@ for (const platform of platforms) {
   })
 
   for (const mode of ['missing', 'malformed', 'duplicate-property', 'duplicate', 'late', 'transform-failure', 'exit-after-entry-response', 'stderr-marker', 'spoof']) {
-    test(`${platform.name}: invalid Vite outcome ${mode} cleans both trees and never reports success`, { concurrency: false }, async () => {
+    const isSpoofMode = mode === 'spoof'
+    test(`${platform.name}: invalid Vite outcome ${mode} cleans both trees and never reports success`, {
+      concurrency: false,
+      ...(isSpoofMode ? { timeout: 40_000 } : {}),
+    }, async () => {
       const fixture = await createFixture(platform)
       const apiPort = await getFreePort()
       const frontendPort = await getFreePort()
@@ -1140,6 +1207,7 @@ for (const platform of platforms) {
       try {
         const result = runLauncher(platform, fixture, {
           apiPort,
+          ...(isSpoofMode ? { timeout: 30_000 } : {}),
           env: {
             FAKE_FRONTEND_PORT: String(frontendPort),
             FAKE_FRONTEND_MODE: mode,

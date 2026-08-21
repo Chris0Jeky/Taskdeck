@@ -17,6 +17,9 @@
 .PARAMETER Seed
     Seed demo/demo123 after the API is ready. A seed failure is fatal.
 
+.PARAMETER ResetSeed
+    With -Seed, delete only preflighted DEMO:* rehearsal boards before reseeding. Any deletion failure is fatal.
+
 .PARAMETER Stop
     Stop the exact process trees recorded by a prior successful invocation.
 
@@ -26,6 +29,7 @@
 .EXAMPLE
     .\scripts\dev-up.ps1
     .\scripts\dev-up.ps1 -Seed
+    .\scripts\dev-up.ps1 -Seed -ResetSeed
     .\scripts\dev-up.ps1 -Stop
     .\scripts\dev-up.ps1 -ApiPort 5001
 #>
@@ -33,6 +37,7 @@
 [CmdletBinding()]
 param(
     [switch]$Seed,
+    [switch]$ResetSeed,
     [switch]$Stop,
     [ValidateRange(1, 65535)]
     [int]$ApiPort = 5000
@@ -40,6 +45,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ($ResetSeed -and ((-not $Seed) -or $Stop)) {
+    throw "-ResetSeed is valid only with -Seed and cannot be combined with -Stop. No process or demo state was changed."
+}
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
@@ -775,7 +784,9 @@ function Invoke-Main {
         if (-not (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId)) {
             throw "API run identity changed before demo seeding."
         }
-        $seedExit = Invoke-NpmStage -Arguments @("run", "demo:seed") -Stage "seed" -EnvironmentOverrides @{
+        $seedArguments = @("run", "demo:seed")
+        if ($ResetSeed) { $seedArguments += @("--", "--reset") }
+        $seedExit = Invoke-NpmStage -Arguments $seedArguments -Stage "seed" -EnvironmentOverrides @{
             TASKDECK_DEV_RUN_ID = $runId
             TASKDECK_API_BASE_URL = $apiBaseUrl
         }

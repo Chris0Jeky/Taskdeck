@@ -196,6 +196,75 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
     }
 
     [Fact]
+    public async Task GetActiveByUserIdAsync_ExcludesArchivedBoardsBeforeLimit_AndPreservesHistoryReads()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-active-archive", "ap-active-archive@example.com", "hash");
+        var activeBoard = new Board("Active proposal board", ownerId: user.Id);
+        var archivedBoard = new Board("Archived proposal board", ownerId: user.Id);
+        archivedBoard.Archive();
+        db.Users.Add(user);
+        db.Boards.AddRange(activeBoard, archivedBoard);
+
+        var activeBoardProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Active board proposal",
+            RiskLevel.Low,
+            $"corr-active-board-{Guid.NewGuid():N}",
+            activeBoard.Id);
+        var boardlessProposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            user.Id,
+            "Boardless proposal",
+            RiskLevel.Low,
+            $"corr-active-boardless-{Guid.NewGuid():N}");
+        var archivedProposals = Enumerable.Range(0, 6)
+            .Select(index => new AutomationProposal(
+                ProposalSourceType.Queue,
+                user.Id,
+                $"Archived proposal {index}",
+                RiskLevel.Low,
+                $"corr-archived-{index}-{Guid.NewGuid():N}",
+                archivedBoard.Id))
+            .ToList();
+        db.AutomationProposals.AddRange(activeBoardProposal, boardlessProposal);
+        db.AutomationProposals.AddRange(archivedProposals);
+
+        var baseTime = DateTimeOffset.UtcNow.AddHours(-1);
+        db.Entry(activeBoardProposal).Property("CreatedAt").CurrentValue = baseTime;
+        db.Entry(boardlessProposal).Property("CreatedAt").CurrentValue = baseTime.AddMinutes(1);
+        for (var index = 0; index < archivedProposals.Count; index++)
+        {
+            db.Entry(archivedProposals[index]).Property("CreatedAt").CurrentValue =
+                baseTime.AddMinutes(10 + index);
+        }
+
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var activePage = (await repo.GetActiveByUserIdAsync(
+            user.Id,
+            limit: 2,
+            status: ProposalStatus.PendingReview,
+            riskLevel: RiskLevel.Low)).ToList();
+
+        activePage.Should().HaveCount(2);
+        activePage.Select(proposal => proposal.Id)
+            .Should().BeEquivalentTo(new[] { activeBoardProposal.Id, boardlessProposal.Id });
+
+        var completeHistory = (await repo.GetByUserIdAsync(user.Id, limit: 20)).ToList();
+        completeHistory.Should().Contain(proposal => proposal.Id == archivedProposals[0].Id);
+
+        var archivedBoardHistory = (await repo.GetByBoardIdAsync(archivedBoard.Id, limit: 20)).ToList();
+        archivedBoardHistory.Should().HaveCount(archivedProposals.Count);
+        (await repo.GetByIdAsync(archivedProposals[0].Id)).Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task GetByUserIdAsync_ResurfacedDeferredProposal_DoesNotEvictFresherPendingFromFullPage()
     {
         // #1247: the bounded top-N selection must order by CreatedAt (the display order), not the

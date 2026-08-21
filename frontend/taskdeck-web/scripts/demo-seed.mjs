@@ -7,7 +7,7 @@
  * Usage:
  *   cd frontend/taskdeck-web
  *   npm run demo:seed
- *   npm run demo:seed -- --reset    # delete demo boards first
+ *   npm run demo:seed -- --reset    # retire demo boards to tombstones, then recreate them
  *   npm run demo:seed -- --help     # print usage
  *
  * Optional env vars:
@@ -389,6 +389,8 @@ const DEMO_BOARD_SPECS = {
   },
 }
 
+const DEMO_RESET_TOMBSTONE_PREFIX = 'RESET: Taskdeck demo board '
+
 const SEEDED_CAPTURE_TEXT = {
   ignored: 'Duplicate onboarding note from a prior client thread (demo).',
   triageApplied:
@@ -742,6 +744,114 @@ function isDemoBoard(board) {
   return typeof board?.name === 'string' && board.name.startsWith('DEMO:')
 }
 
+export function buildDemoResetTombstoneName(boardId) {
+  return `${DEMO_RESET_TOMBSTONE_PREFIX}${boardId}`
+}
+
+function findDemoBoardSpecKey(name) {
+  return Object.entries(DEMO_BOARD_SPECS).find(([, spec]) => spec.reusableNames.includes(name))?.[0] || null
+}
+
+export function planDemoBoardReset(boards) {
+  if (!Array.isArray(boards)) {
+    throw new Error('Clean demo reset requires an unambiguous board list before changing anything.')
+  }
+
+  const candidates = []
+  const tombstones = []
+  const specKeys = new Set()
+  const boardIds = new Set()
+
+  for (const board of boards) {
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    if (!id) continue
+    if (boardIds.has(id)) {
+      throw new Error('Clean demo reset found duplicate board ids; no boards were changed.')
+    }
+    boardIds.add(id)
+  }
+
+  for (const board of boards) {
+    const isCandidate = isDemoBoard(board)
+    const isTombstone =
+      typeof board?.name === 'string' && board.name.startsWith(DEMO_RESET_TOMBSTONE_PREFIX)
+    if (!isCandidate && !isTombstone) continue
+
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    const name = typeof board?.name === 'string' ? board.name.trim() : ''
+    if (!id || (isCandidate && (name === 'DEMO:' || typeof board.isArchived !== 'boolean'))) {
+      throw new Error('Clean demo reset found a malformed DEMO:* board candidate; no boards were changed.')
+    }
+    if (isTombstone) {
+      if (name !== buildDemoResetTombstoneName(id) || board.isArchived !== true) {
+        throw new Error(
+          'Clean demo reset found a malformed reserved reset tombstone; no boards were changed.',
+        )
+      }
+      tombstones.push({ id, name, isArchived: true })
+      continue
+    }
+
+    const specKey = findDemoBoardSpecKey(name)
+    if (!specKey || specKeys.has(specKey)) {
+      throw new Error(
+        'Clean demo reset found an unknown, duplicate, or ambiguous DEMO:* board candidate; no boards were changed.',
+      )
+    }
+
+    const tombstoneName = buildDemoResetTombstoneName(id)
+    if (tombstoneName.length > 100) {
+      throw new Error('Clean demo reset cannot form a safe tombstone for a malformed board id; no boards were changed.')
+    }
+
+    specKeys.add(specKey)
+    candidates.push({ id, name, specKey, isArchived: board.isArchived, tombstoneName })
+  }
+
+  return { candidates, tombstones }
+}
+
+export async function quarantineDemoBoardsForCleanReset(
+  candidates,
+  token,
+  { request = http, onQuarantined = () => {} } = {},
+) {
+  let quarantinedCount = 0
+  for (const board of candidates) {
+    try {
+      await request('PUT', `/boards/${board.id}`, {
+        token,
+        body: {
+          name: board.tombstoneName || buildDemoResetTombstoneName(board.id),
+          isArchived: true,
+        },
+      })
+      quarantinedCount += 1
+      onQuarantined(board)
+    } catch (err) {
+      throw new Error(
+        `Clean demo reset stopped after quarantining ${quarantinedCount} of ${candidates.length} DEMO:* board(s); ` +
+          'no reseed was attempted. The launcher will clean only its owned process tree, so inspect the remaining demo state before retrying.',
+        { cause: err },
+      )
+    }
+  }
+}
+
+function verifyDemoBoardQuarantine(resetPlan, boards) {
+  const freshPlan = planDemoBoardReset(boards)
+  const tombstoneIds = new Set(freshPlan.tombstones.map((board) => board.id))
+  const missingTombstone = resetPlan.candidates.find((board) => !tombstoneIds.has(board.id))
+
+  if (freshPlan.candidates.length || missingTombstone) {
+    throw new Error(
+      'Clean demo reset could not verify the archived tombstone state; no fresh boards or demo artifacts were seeded.',
+    )
+  }
+
+  return freshPlan
+}
+
 function pickReusableBoard(boards, reusableNames) {
   const names = new Set(reusableNames)
   const candidates = (boards || []).filter((b) => names.has(b.name))
@@ -750,24 +860,32 @@ function pickReusableBoard(boards, reusableNames) {
   return candidates.find((b) => !b.isArchived) || candidates[0]
 }
 
-async function ensureDemoBoard(spec, boards, token) {
+async function createDemoBoard(spec, token, request = http) {
+  const created = await request('POST', '/boards', {
+    token,
+    body: {
+      name: spec.canonicalName,
+      description: spec.description,
+    },
+  })
+  const createdId = typeof created?.id === 'string' ? created.id.trim() : ''
+  if (!createdId) {
+    throw new Error('Clean demo reset received a malformed created board; no demo artifacts were seeded.')
+  }
+  if (spec.isArchived) {
+    const archived = await request('PUT', `/boards/${createdId}`, {
+      token,
+      body: { isArchived: true },
+    })
+    return archived || { ...created, isArchived: true }
+  }
+  return created
+}
+
+async function ensureDemoBoard(spec, boards, token, request = http) {
   const existing = pickReusableBoard(boards, spec.reusableNames)
   if (!existing) {
-    const created = await http('POST', '/boards', {
-      token,
-      body: {
-        name: spec.canonicalName,
-        description: spec.description,
-      },
-    })
-    if (spec.isArchived) {
-      await http('PUT', `/boards/${created.id}`, {
-        token,
-        body: { isArchived: true },
-      })
-      return { ...created, isArchived: true }
-    }
-    return created
+    return createDemoBoard(spec, token, request)
   }
 
   const updateBody = {}
@@ -785,11 +903,119 @@ async function ensureDemoBoard(spec, boards, token) {
     return existing
   }
 
-  const updated = await http('PUT', `/boards/${existing.id}`, {
+  const updated = await request('PUT', `/boards/${existing.id}`, {
     token,
     body: updateBody,
   })
   return updated || { ...existing, ...updateBody }
+}
+
+function validateFreshCanonicalDemoBoards(canonicalBoards, preResetBoardIds, boards) {
+  const createdIds = new Set()
+
+  for (const [specKey, spec] of Object.entries(DEMO_BOARD_SPECS)) {
+    const board = canonicalBoards[specKey]
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    if (
+      !id ||
+      preResetBoardIds.has(id) ||
+      createdIds.has(id) ||
+      board.name !== spec.canonicalName ||
+      board.isArchived !== spec.isArchived
+    ) {
+      throw new Error(
+        'Clean demo reset could not verify fresh canonical board creation; no demo artifacts were seeded.',
+      )
+    }
+    createdIds.add(id)
+  }
+
+  const persistedPlan = planDemoBoardReset(boards)
+  if (persistedPlan.candidates.length !== Object.keys(DEMO_BOARD_SPECS).length) {
+    throw new Error(
+      'Clean demo reset could not verify the persisted canonical board set; no demo artifacts were seeded.',
+    )
+  }
+
+  for (const candidate of persistedPlan.candidates) {
+    const expected = canonicalBoards[candidate.specKey]
+    const persisted = boards.find((board) => board.id === candidate.id)
+    const spec = DEMO_BOARD_SPECS[candidate.specKey]
+    if (
+      !expected ||
+      candidate.id !== expected.id ||
+      candidate.name !== spec.canonicalName ||
+      persisted?.isArchived !== spec.isArchived
+    ) {
+      throw new Error(
+        'Clean demo reset could not verify the persisted canonical board set; no demo artifacts were seeded.',
+      )
+    }
+  }
+
+  return persistedPlan
+}
+
+export async function prepareDemoBoardsForSeed(
+  boards,
+  token,
+  {
+    reset = false,
+    request = http,
+    refreshBoards = () => listBoards(token),
+    onQuarantined = () => {},
+  } = {},
+) {
+  let demoBoards = (boards || []).filter(isDemoBoard)
+  let resetPlan = null
+  let canonicalBoards
+
+  if (reset) {
+    const preResetBoardIds = new Set(
+      boards
+        .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
+        .filter(Boolean),
+    )
+    resetPlan = planDemoBoardReset(boards)
+    await quarantineDemoBoardsForCleanReset(resetPlan.candidates, token, { request, onQuarantined })
+
+    let quarantinedBoards
+    try {
+      quarantinedBoards = await refreshBoards()
+      verifyDemoBoardQuarantine(resetPlan, quarantinedBoards)
+    } catch (err) {
+      throw new Error(
+        'Clean demo reset could not verify the archived tombstone state; no fresh boards or demo artifacts were seeded.',
+        { cause: err },
+      )
+    }
+
+    canonicalBoards = {}
+    for (const [specKey, spec] of Object.entries(DEMO_BOARD_SPECS)) {
+      canonicalBoards[specKey] = await createDemoBoard(spec, token, request)
+    }
+
+    let persistedBoards
+    try {
+      persistedBoards = await refreshBoards()
+      validateFreshCanonicalDemoBoards(canonicalBoards, preResetBoardIds, persistedBoards)
+    } catch (err) {
+      throw new Error(
+        'Clean demo reset could not verify fresh canonical board creation; no demo artifacts were seeded.',
+        { cause: err },
+      )
+    }
+    demoBoards = persistedBoards.filter(isDemoBoard)
+  } else {
+    canonicalBoards = {
+      capture: await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, token, request),
+      content: await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, token, request),
+      blank: await ensureDemoBoard(DEMO_BOARD_SPECS.blank, demoBoards, token, request),
+      archived: await ensureDemoBoard(DEMO_BOARD_SPECS.archived, demoBoards, token, request),
+    }
+  }
+
+  return { ...canonicalBoards, demoBoards, resetPlan }
 }
 
 async function ensureUser({ username, email, password }) {
@@ -1252,7 +1478,7 @@ async function seedDemo({ reset = false } = {}) {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
-  if (reset) console.log('  --reset: will delete all demo boards before seeding')
+  if (reset) console.log('  --reset: will quarantine documented demo boards and create fresh replacements')
   console.log('----------------------------------------')
 
   // 1) Ensure demo users exist
@@ -1267,39 +1493,27 @@ async function seedDemo({ reset = false } = {}) {
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
   console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
-  // 2) Reuse/create canonical demo boards and archive extra active DEMO boards.
-  let boards = await listBoards(demoToken)
-  let demoBoards = (boards || []).filter(isDemoBoard)
+  // 2) Reuse canonical boards normally; protected reset retires them to ID-bound tombstones first.
+  const boards = await listBoards(demoToken)
+  const preparedBoards = await prepareDemoBoardsForSeed(boards, demoToken, {
+    reset,
+    refreshBoards: () => listBoards(demoToken),
+    onQuarantined: (board) => console.log(`  - quarantined ${board.name}`),
+  })
+  const {
+    capture: captureBoard,
+    content: contentBoard,
+    blank: blankBoard,
+    archived: archivedBoard,
+    demoBoards,
+    resetPlan,
+  } = preparedBoards
 
-  if (reset && demoBoards.length) {
-    console.log(`\n--reset: deleting ${demoBoards.length} demo board(s)...`)
-    for (const b of demoBoards) {
-      try {
-        await http('DELETE', `/boards/${b.id}`, { token: demoToken })
-        console.log(`  - deleted ${b.name}`)
-      } catch (err) {
-        if (getHttpStatus(err) === 403) {
-          console.log(`  - skipped ${b.name} (403 Forbidden)`)
-          continue
-        }
-        throw err
-      }
-    }
-    // Re-fetch after deletion
-    boards = await listBoards(demoToken)
-    demoBoards = (boards || []).filter(isDemoBoard)
-    if (demoBoards.length) {
-      console.warn(
-        `  WARNING: ${demoBoards.length} demo board(s) could not be deleted (403). ` +
-        `Re-seed may reuse them instead of starting fresh.`,
-      )
-    }
+  if (reset) {
+    console.log(
+      `\n--reset: quarantined ${resetPlan.candidates.length} documented DEMO:* board(s) and verified fresh canonical replacements`,
+    )
   }
-
-  const captureBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, demoToken)
-  const contentBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, demoToken)
-  const blankBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.blank, demoBoards, demoToken)
-  const archivedBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.archived, demoBoards, demoToken)
 
   const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
   const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))
@@ -1467,7 +1681,7 @@ function printUsage() {
 Usage: npm run demo:seed [-- [options]]
 
 Options:
-  --reset      Delete all demo boards before seeding (clean start)
+  --reset      Quarantine documented demo boards and create fresh replacements
   --help, -h   Print this usage information and exit
 
 Environment variables:

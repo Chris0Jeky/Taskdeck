@@ -285,8 +285,27 @@ public class AutomationProposalService : IAutomationProposalService
         // Apply filters in order of specificity
         if (filter.UserId.HasValue)
         {
-            // Review-queue read: keep the default includeDeferred:false so snoozed pending proposals stay hidden.
-            proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(filter.UserId.Value, limit, cancellationToken: cancellationToken);
+            if (!filter.BoardId.HasValue)
+            {
+                // The unscoped Review queue is an active-work surface. Archived-board history is
+                // retained but excluded before the repository applies LIMIT; status/risk are also
+                // pushed into that bounded query so hidden history cannot under-fill the page.
+                proposals = await _unitOfWork.AutomationProposals.GetActiveByUserIdAsync(
+                    filter.UserId.Value,
+                    limit,
+                    filter.Status,
+                    filter.RiskLevel,
+                    cancellationToken);
+            }
+            else
+            {
+                // Explicit board history (including archived boards) remains available. Keep the
+                // user predicate first for MCP callers that supply both UserId and BoardId.
+                proposals = await _unitOfWork.AutomationProposals.GetByUserIdAsync(
+                    filter.UserId.Value,
+                    limit,
+                    cancellationToken: cancellationToken);
+            }
         }
         else if (filter.BoardId.HasValue)
         {

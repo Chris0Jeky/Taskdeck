@@ -51,7 +51,7 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
   $env:Llm__Provider = "Mock"
   $env:Llm__EnableLiveProviders = "false"
   $env:Llm__AllowLiveProvidersInDevelopment = "false"
-  & ".\scripts\dev-up.ps1" -Seed
+  & ".\scripts\dev-up.ps1" -Seed -ResetSeed
 }'
 ```
 
@@ -60,7 +60,7 @@ env \
   Llm__Provider=Mock \
   Llm__EnableLiveProviders=false \
   Llm__AllowLiveProvidersInDevelopment=false \
-  ./scripts/dev-up.sh --seed
+  ./scripts/dev-up.sh --seed --reset-seed
 ```
 
 Continue only after the launcher prints `Stack is up.` and its `API` line reports
@@ -69,6 +69,16 @@ every seed request to the API process it started. Do not replace this step with 
 `npm run demo:seed` or `npm run demo:run`; those commands do not carry the launcher-owned
 connection proof. If port 5000 is unavailable, stop the launcher, free the port, and rerun this
 default-port contract rather than switching the rehearsal to another listener.
+
+The explicit reset flag is required for a clean rehearsal and is never implied by normal seeding.
+It is valid only with `-Seed` / `--seed`. Before changing anything, the run-bound seeder validates
+the complete board list and fails closed on unknown, duplicate, or malformed `DEMO:*` candidates or
+malformed reserved tombstones. It atomically renames each documented demo board to an ID-bound
+non-demo tombstone and archives it, then re-fetches that quarantine before creating and verifying
+four fresh canonical board IDs. Prior valid tombstones and non-demo boards are preserved. A 403 or
+any quarantine/fresh-state failure stops before child artifacts are seeded. A failure can leave a
+partial quarantine or fresh board set: the launcher cleans only the process trees it started, and
+the operator must inspect the remaining demo state before retrying.
 
 This is the canonical rehearsal state:
 - board: `DEMO: Client Onboarding Demo`
@@ -145,7 +155,7 @@ Required files:
 If rehearsal fails, use this order:
 
 1. Stop only the launcher-owned stack with `.\scripts\dev-up.ps1 -Stop` or `./scripts/dev-up.sh --stop`.
-2. Confirm port 5000 is free, then rerun the matching `dev-up` seed command above; do not fall back to bare `demo:seed` or `demo:run`.
+2. Confirm port 5000 is free, then rerun the matching protected reset-and-seed command above; do not fall back to bare `demo:seed` or `demo:run`.
 3. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
 4. Confirm the launcher's `API` line again reports exactly `http://localhost:5000` before opening the rehearsal.
 5. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.

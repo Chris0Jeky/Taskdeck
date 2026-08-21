@@ -113,6 +113,24 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             cancellationToken);
     }
 
+    public async Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(
+        Guid userId,
+        int limit = 100,
+        ProposalStatus? status = null,
+        RiskLevel? riskLevel = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetLimitedWithOperationsAsync(
+            nameof(AutomationProposal.RequestedByUserId),
+            userId,
+            limit,
+            includeDeferred: false,
+            cancellationToken,
+            excludeArchivedBoards: true,
+            additionalStatus: status,
+            additionalRiskLevel: riskLevel);
+    }
+
     public async Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
     {
         return await GetLimitedWithOperationsAsync(
@@ -433,7 +451,10 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         object filterValue,
         int limit,
         bool includeDeferred,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool excludeArchivedBoards = false,
+        ProposalStatus? additionalStatus = null,
+        RiskLevel? additionalRiskLevel = null)
     {
         if (!AllowedFilterColumns.Contains(filterColumn))
             throw new ArgumentOutOfRangeException(nameof(filterColumn), filterColumn, "Unsupported filter column.");
@@ -458,6 +479,28 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 parameters.Add((int)ProposalStatus.PendingReview);
                 sql.Append(" OR DeferredUntil IS NULL OR DeferredUntil <= {").Append(parameters.Count).Append("})");
                 parameters.Add(now);
+            }
+
+            if (excludeArchivedBoards)
+            {
+                // AutomationProposal intentionally has no Board navigation/FK. Keep board-less and
+                // legacy dangling records visible, but exclude a proposal whose extant board is archived.
+                // This predicate runs before LIMIT so retained reset history cannot under-fill Review.
+                sql.Append(
+                    " AND (BoardId IS NULL OR NOT EXISTS " +
+                    "(SELECT 1 FROM Boards WHERE Boards.Id = AutomationProposals.BoardId AND Boards.IsArchived = 1))");
+            }
+
+            if (additionalStatus.HasValue)
+            {
+                sql.Append(" AND Status = {").Append(parameters.Count).Append('}');
+                parameters.Add((int)additionalStatus.Value);
+            }
+
+            if (additionalRiskLevel.HasValue)
+            {
+                sql.Append(" AND RiskLevel = {").Append(parameters.Count).Append('}');
+                parameters.Add((int)additionalRiskLevel.Value);
             }
 
             sql.Append(" ORDER BY CreatedAt DESC, Id LIMIT {").Append(parameters.Count).Append('}');
@@ -495,6 +538,19 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 p.DeferredUntil == null ||
                 p.DeferredUntil <= now);
         }
+
+        if (excludeArchivedBoards)
+        {
+            query = query.Where(p =>
+                !p.BoardId.HasValue ||
+                !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived));
+        }
+
+        if (additionalStatus.HasValue)
+            query = query.Where(p => p.Status == additionalStatus.Value);
+
+        if (additionalRiskLevel.HasValue)
+            query = query.Where(p => p.RiskLevel == additionalRiskLevel.Value);
 
         return await query
             .Include(p => p.Operations)

@@ -135,6 +135,7 @@ public class CaptureService : ICaptureService
             if (batch.Count > 0)
             {
                 var appliedProposalLookup = await LoadAppliedProposalLookupAsync(batch, cancellationToken);
+                var resolvedBatch = new List<(LlmRequest Item, CapturePayloadV1 Payload, Guid? EffectiveBoardId)>(batch.Count);
                 foreach (var candidate in batch)
                 {
                     var item = candidate.Item;
@@ -146,7 +147,46 @@ public class CaptureService : ICaptureService
                         GetAppliedProposal(appliedProposalLookup, candidate.Payload),
                         allowFallbackLookup: false);
 
+                    resolvedBatch.Add((item, effectivePayload, effectiveBoardId));
+                }
+
+                // The unscoped Inbox is the active-work view. Resolve provenance before this lookup so
+                // a legacy null-board capture converted onto an archived board is hidden alongside a
+                // capture whose raw BoardId points there. Board-filtered reads are the explicit history
+                // path and deliberately retain archived artifacts. Load the page's boards in one batch,
+                // then let the outer paging loop continue until the requested active limit is filled.
+                var archivedBoardIds = new HashSet<Guid>();
+                if (!filter.BoardId.HasValue)
+                {
+                    var effectiveBoardIds = resolvedBatch
+                        .Where(candidate => candidate.EffectiveBoardId.HasValue)
+                        .Select(candidate => candidate.EffectiveBoardId!.Value)
+                        .Distinct()
+                        .ToList();
+                    if (effectiveBoardIds.Count > 0)
+                    {
+                        var effectiveBoards = await _unitOfWork.Boards.GetByIdsAsync(effectiveBoardIds, cancellationToken);
+                        archivedBoardIds = effectiveBoards
+                            .Where(board => board.IsArchived)
+                            .Select(board => board.Id)
+                            .ToHashSet();
+                    }
+                }
+
+                foreach (var candidate in resolvedBatch)
+                {
+                    var item = candidate.Item;
+                    var effectivePayload = candidate.Payload;
+                    var effectiveBoardId = candidate.EffectiveBoardId;
+
                     if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+                    {
+                        continue;
+                    }
+
+                    if (!filter.BoardId.HasValue &&
+                        effectiveBoardId.HasValue &&
+                        archivedBoardIds.Contains(effectiveBoardId.Value))
                     {
                         continue;
                     }
@@ -679,12 +719,16 @@ public class CaptureService : ICaptureService
         AutomationProposal? preloadedProposal = null,
         bool allowFallbackLookup = true)
     {
+        // Server-stamped provenance is the authoritative legacy fallback when the raw request's
+        // BoardId was never backfilled. Prefer the raw FK when both exist; a client cannot inject
+        // this attribution because capture contract parsing rejects client-supplied provenance.
+        var storedEffectiveBoardId = item.BoardId ?? payload.Provenance?.BoardId;
         var proposalId = payload.Provenance?.ProposalId;
         if (!proposalId.HasValue ||
             proposalId.Value == Guid.Empty ||
             payload.Provenance?.ConvertedAt is not null)
         {
-            return (payload, item.BoardId, false);
+            return (payload, storedEffectiveBoardId, false);
         }
 
         var proposal = preloadedProposal;
@@ -699,10 +743,10 @@ public class CaptureService : ICaptureService
             !string.Equals(proposal.SourceReferenceId, item.Id.ToString(), StringComparison.OrdinalIgnoreCase) ||
             proposal.RequestedByUserId != item.UserId)
         {
-            return (payload, item.BoardId, false);
+            return (payload, storedEffectiveBoardId, false);
         }
 
-        var resolvedBoardId = item.BoardId ?? proposal.BoardId;
+        var resolvedBoardId = storedEffectiveBoardId ?? proposal.BoardId;
         var convertedPayload = CaptureRequestContract.WithProvenance(
             payload,
             item.Id,

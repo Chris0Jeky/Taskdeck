@@ -1789,7 +1789,7 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
   $env:Llm__Provider = "Mock"
   $env:Llm__EnableLiveProviders = "false"
   $env:Llm__AllowLiveProvidersInDevelopment = "false"
-  & ".\scripts\dev-up.ps1" -Seed
+  & ".\scripts\dev-up.ps1" -Seed -ResetSeed
 }'
 ```
 
@@ -1799,7 +1799,7 @@ env \
   Llm__Provider=Mock \
   Llm__EnableLiveProviders=false \
   Llm__AllowLiveProvidersInDevelopment=false \
-  ./scripts/dev-up.sh --seed
+  ./scripts/dev-up.sh --seed --reset-seed
 ```
 
 Continue only after `Stack is up.` and the launcher's API line reports
