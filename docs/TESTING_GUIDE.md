@@ -41,9 +41,16 @@ manual clean-machine acceptance:
   `legacy=adjacent/retained`, `durable=app-data/imported`, `database=app-data/reused`, and
   `board=app-data/created`; both migration launches report `jwtCreated=false` and
   `connectorCreated=false`. Local offline and live-OpenAI ZIP rehearsals passed, and exact-head
-  no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation. Pair
-  this migration proof with `#1889`'s clean-install proof; `#1903` tracks running both journeys in
-  the current gate and adding a harmless non-identity config sentinel.
+  no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation.
+- Merged PR `#1908` / closed issue `#1903`: schema 5 makes clean install and migration separate,
+  mandatory create/restart journeys in one current-gate run. The clean-install journey proves
+  bootstrap identity `true/true` then `false/false`; the migration journey keeps the four states
+  above while running its own create/restart product path. The complete parsed durable config must
+  equal the synthetic fixture, including the non-identity `ArchiveAcceptance.Sentinel`; harmless
+  formatting-only reserialization is accepted. The archive harness passed 26/26 and the release
+  structure contract passed 60/60. Exact-head no-publish run `32453648121` passed both journeys and
+  the untouched-ZIP gate, then skipped `Create GitHub Release`; it proves neither a public v0.1.1
+  release nor manual clean-machine acceptance.
 - PR `#1902`: the identity-bound `demo:seed` transport established a 10,000 ms response deadline.
   PR `#1909` keeps that deadline for ordinary requests and grants only the exact provider
   chat-message `POST` 700,000 ms: up to three 30-second tool rounds, the supported 600-second
