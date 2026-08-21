@@ -926,33 +926,31 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: invalid Vite outcomes clean both trees and never report success`, { concurrency: false }, async (t) => {
-    for (const mode of ['missing', 'malformed', 'duplicate-property', 'duplicate', 'late', 'transform-failure', 'exit-after-entry-response', 'stderr-marker', 'spoof']) {
-      await t.test(mode, async () => {
-        const fixture = await createFixture(platform)
-        const apiPort = await getFreePort()
-        const frontendPort = await getFreePort()
-        const spoofPort = await getFreePort()
-        try {
-          const result = runLauncher(platform, fixture, {
-            apiPort,
-            env: {
-              FAKE_FRONTEND_PORT: String(frontendPort),
-              FAKE_FRONTEND_MODE: mode,
-              FAKE_SPOOF_PORT: String(spoofPort),
-              TASKDECK_DEV_FRONTEND_READY_TIMEOUT_SECONDS: '1',
-            },
-          })
-          assertFailedClosed(result)
-          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort, spoofPort])
-          const viteEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run dev')
-          assert.equal(viteEvent.viteApiBaseUrl, `http://localhost:${apiPort}/api`)
-        } finally {
-          await removeFixture(fixture)
-        }
-      })
-    }
-  })
+  for (const mode of ['missing', 'malformed', 'duplicate-property', 'duplicate', 'late', 'transform-failure', 'exit-after-entry-response', 'stderr-marker', 'spoof']) {
+    test(`${platform.name}: invalid Vite outcome ${mode} cleans both trees and never reports success`, { concurrency: false }, async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const frontendPort = await getFreePort()
+      const spoofPort = await getFreePort()
+      try {
+        const result = runLauncher(platform, fixture, {
+          apiPort,
+          env: {
+            FAKE_FRONTEND_PORT: String(frontendPort),
+            FAKE_FRONTEND_MODE: mode,
+            FAKE_SPOOF_PORT: String(spoofPort),
+            TASKDECK_DEV_FRONTEND_READY_TIMEOUT_SECONDS: '1',
+          },
+        })
+        assertFailedClosed(result)
+        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort, spoofPort])
+        const viteEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run dev')
+        assert.equal(viteEvent.viteApiBaseUrl, `http://localhost:${apiPort}/api`)
+      } finally {
+        await removeFixture(fixture)
+      }
+    })
+  }
 
   test(`${platform.name}: success uses exact marker URL, isolated env, versioned identity state, and safe Stop`, { concurrency: false }, async () => {
     const fixture = await createFixture(platform)
