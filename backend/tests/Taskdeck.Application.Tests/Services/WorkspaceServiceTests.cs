@@ -324,6 +324,38 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task HomeAndToday_ShouldKeepHistoricalCaptureOnboarding_WhenActiveWorkloadIsEmpty()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((3, 0, 0, 0, 0));
+
+        var home = await _service.GetHomeAsync(userId);
+        var today = await _service.GetTodayAsync(userId);
+
+        home.IsSuccess.Should().BeTrue();
+        home.Value.IsFirstRun.Should().BeFalse("historical captures must keep an established user out of first-run mode");
+        home.Value.Workload.CapturesNeedingTriage.Should().Be(0);
+        home.Value.Workload.CapturesInProgress.Should().Be(0);
+        home.Value.Workload.CapturesReadyForFollowUp.Should().Be(0);
+        home.Value.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
+
+        today.IsSuccess.Should().BeTrue();
+        today.Value.Summary.CapturesNeedingTriage.Should().Be(0);
+        today.Value.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetHomeAsync_ShouldKeepApplyStepIncomplete_WhenProposalReviewedButNotApplied()
     {
         // Regression for the capture→review→apply contract (#1301): reviewing a proposal

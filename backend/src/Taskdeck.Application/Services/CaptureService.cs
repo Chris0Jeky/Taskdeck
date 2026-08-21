@@ -722,7 +722,13 @@ public class CaptureService : ICaptureService
         // Server-stamped provenance is the authoritative legacy fallback when the raw request's
         // BoardId was never backfilled. Prefer the raw FK when both exist; a client cannot inject
         // this attribution because capture contract parsing rejects client-supplied provenance.
-        var storedEffectiveBoardId = item.BoardId ?? payload.Provenance?.BoardId;
+        var storedEffectiveBoardId = CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+            item.Id,
+            item.UserId,
+            item.BoardId,
+            payload.Provenance?.BoardId,
+            payload.Provenance?.ProposalId,
+            payload.Provenance?.ConvertedAt);
         var proposalId = payload.Provenance?.ProposalId;
         if (!proposalId.HasValue ||
             proposalId.Value == Guid.Empty ||
@@ -737,22 +743,31 @@ public class CaptureService : ICaptureService
             proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
         }
 
-        if (proposal == null ||
-            proposal.Status != ProposalStatus.Applied ||
-            proposal.SourceType != ProposalSourceType.Queue ||
-            !string.Equals(proposal.SourceReferenceId, item.Id.ToString(), StringComparison.OrdinalIgnoreCase) ||
-            proposal.RequestedByUserId != item.UserId)
+        if (!CaptureEffectiveBoardPolicy.IsValidatedAppliedProposal(
+                item.Id,
+                item.UserId,
+                proposalId,
+                payload.Provenance?.ConvertedAt,
+                proposal))
         {
             return (payload, storedEffectiveBoardId, false);
         }
 
-        var resolvedBoardId = storedEffectiveBoardId ?? proposal.BoardId;
+        var validatedProposal = proposal!;
+        var resolvedBoardId = CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+            item.Id,
+            item.UserId,
+            item.BoardId,
+            payload.Provenance?.BoardId,
+            proposalId,
+            payload.Provenance?.ConvertedAt,
+            validatedProposal);
         var convertedPayload = CaptureRequestContract.WithProvenance(
             payload,
             item.Id,
-            proposalId: proposal.Id,
+            proposalId: validatedProposal.Id,
             boardId: resolvedBoardId,
-            convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt));
+            convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(validatedProposal.AppliedAt));
 
         if (!persistChanges)
         {
@@ -770,14 +785,7 @@ public class CaptureService : ICaptureService
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
     {
-        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
-        if (payloadResult.IsSuccess)
-            return payloadResult.Value;
-
-        return new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            item.Payload);
+        return CaptureRequestContract.ParseStoredPayload(item.Payload);
     }
 
     private static CaptureStatus ResolveCaptureStatus(LlmRequest item, CapturePayloadV1 payload)

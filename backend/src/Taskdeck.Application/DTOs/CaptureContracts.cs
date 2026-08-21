@@ -188,6 +188,18 @@ public static class CaptureRequestContract
         }
     }
 
+    /// <summary>
+    /// Parses a payload already accepted into persistence, including server attribution. Legacy
+    /// plain-text or malformed rows remain readable as typed capture text with no provenance.
+    /// </summary>
+    public static CapturePayloadV1 ParseStoredPayload(string payload)
+    {
+        var payloadResult = ParsePayload(payload, allowServerAttributionFields: true);
+        return payloadResult.IsSuccess
+            ? payloadResult.Value
+            : new CapturePayloadV1(CurrentSchemaVersion, CaptureSource.Typed, payload);
+    }
+
     public static Result<CapturePayloadV1> ValidatePayload(CapturePayloadV1 payload)
     {
         if (payload.Version != CurrentSchemaVersion)
