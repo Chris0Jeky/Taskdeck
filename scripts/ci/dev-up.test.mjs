@@ -766,6 +766,81 @@ if stop_recorded_process api 100 root root-token; then exit 90; fi
       await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     }
   })
+
+  test('Bash: Windows fallback binds MSYS PID to StartTime and mismatch sends no signal', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-windows-identity-'))
+    const harness = join(fixtureRoot, 'windows-identity.sh')
+    const fakePowerShell = join(fixtureRoot, 'fake-powershell')
+    const tickFile = join(fixtureRoot, 'ticks')
+    const windowsPidLog = join(fixtureRoot, 'windows-pid.log')
+    const signalLog = join(fixtureRoot, 'signal.log')
+    try {
+      await writeFile(tickFile, '638000000000000001\n')
+      await writeFile(
+        fakePowerShell,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$TASKDECK_DEV_WINDOWS_PID" > "$WINDOWS_PID_LOG"
+tr -d '\\r\\n' < "$TICK_FILE"
+`,
+      )
+      await chmod(fakePowerShell, 0o755)
+      await writeFile(
+        harness,
+        `#!/usr/bin/env bash
+set -euo pipefail
+SYSTEM_BOOT_ID=''
+windows_powershell_bin() { printf '%s\n' "$FAKE_POWERSHELL"; }
+ps() {
+  if [[ "$#" -eq 2 && "$1" == '-p' && "$2" == '42424242' ]]; then
+    printf '%s\n' '      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND'
+    printf '%s\n' ' 42424242       1 42424242       9001  ?        197609 01:23:45 /usr/bin/bash'
+    return 0
+  fi
+  printf 'ps -o lstart is unavailable\n' >&2
+  return 2
+}
+process_name() { printf 'bash\n'; }
+warn() { :; }
+kill() {
+  if [[ "$1" == '-0' ]]; then return 0; fi
+  printf '%s\n' "$*" >> "$SIGNAL_LOG"
+}
+${extractBashFunction(source, 'msys_windows_pid')}
+${extractBashFunction(source, 'windows_process_creation_token')}
+${extractBashFunction(source, 'process_creation_token')}
+${extractBashFunction(source, 'process_identity_status')}
+${extractBashFunction(source, 'wait_for_identity_exit')}
+${extractBashFunction(source, 'stop_exact_process')}
+expected="$(process_creation_token 42424242)"
+[[ "$expected" == 'windows:9001:638000000000000001' ]]
+[[ "$(<"$WINDOWS_PID_LOG")" == '9001' ]]
+printf '638000000000000002\n' > "$TICK_FILE"
+[[ "$(process_creation_token 42424242)" == 'windows:9001:638000000000000002' ]]
+stop_exact_process api 42424242 bash "$expected"
+[[ ! -e "$SIGNAL_LOG" ]]
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          FAKE_POWERSHELL: toPosixPath(fakePowerShell),
+          TICK_FILE: toPosixPath(tickFile),
+          WINDOWS_PID_LOG: toPosixPath(windowsPidLog),
+          SIGNAL_LOG: toPosixPath(signalLog),
+        },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+      assert.equal(await readOptional(signalLog), null)
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    }
+  })
 }
 
 for (const platform of platforms) {

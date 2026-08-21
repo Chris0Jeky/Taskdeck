@@ -66,8 +66,55 @@ get_system_boot_id() {
 
 SYSTEM_BOOT_ID="$(get_system_boot_id)"
 
+windows_powershell_bin() {
+  local candidate=/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+  [[ -x "$candidate" ]] || return 1
+  printf '%s\n' "$candidate"
+}
+
+msys_windows_pid() {
+  local pid="$1"
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  ps -p "$pid" 2>/dev/null | awk -v target="$pid" '
+    NR == 1 {
+      for (column = 1; column <= NF; column++) {
+        if ($column == "PID") pid_column = column
+        if ($column == "WINPID") winpid_column = column
+      }
+      next
+    }
+    pid_column && winpid_column && $pid_column == target && $winpid_column ~ /^[1-9][0-9]*$/ {
+      windows_pid = $winpid_column
+      matches++
+    }
+    END {
+      if (matches == 1) print windows_pid
+      else exit 1
+    }
+  '
+}
+
+windows_process_creation_token() {
+  local pid="$1" powershell_bin windows_pid confirmed_windows_pid ticks
+  powershell_bin="$(windows_powershell_bin 2>/dev/null)" || return 1
+  windows_pid="$(msys_windows_pid "$pid" 2>/dev/null)" || return 1
+  ticks="$(
+    # PowerShell expands this script; Bash must pass every '$' literally.
+    # shellcheck disable=SC2016
+    TASKDECK_DEV_WINDOWS_PID="$windows_pid" MSYS2_ARG_CONV_EXCL='*' \
+      "$powershell_bin" -NoLogo -NoProfile -NonInteractive -Command \
+      '$ErrorActionPreference = "Stop"; $targetPid = [int]$env:TASKDECK_DEV_WINDOWS_PID; $process = Get-Process -Id $targetPid -ErrorAction Stop; [Console]::Out.Write($process.StartTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture))' \
+      2>/dev/null | tr -d '\r\n'
+  )"
+  [[ "$ticks" =~ ^[1-9][0-9]*$ ]] || return 1
+  confirmed_windows_pid="$(msys_windows_pid "$pid" 2>/dev/null)" || return 1
+  [[ "$confirmed_windows_pid" == "$windows_pid" ]] || return 1
+  printf 'windows:%s:%s\n' "$windows_pid" "$ticks"
+}
+
 # Creation identity is PID + executable name + an immutable start token. Linux
-# uses boot identity and /proc start ticks; other POSIX hosts use ps lstart.
+# uses boot identity and /proc start ticks; Git Bash maps its PID to the current
+# Windows PID and UTC StartTime ticks; other POSIX hosts use ps lstart.
 process_creation_token() {
   local pid="$1" start_ticks boot_id started
   if [[ -r "/proc/$pid/stat" ]]; then
@@ -77,6 +124,9 @@ process_creation_token() {
       printf 'proc:%s:%s\n' "$boot_id" "$start_ticks"
       return 0
     fi
+  fi
+  if windows_process_creation_token "$pid"; then
+    return 0
   fi
   started="$(ps -p "$pid" -o lstart= 2>/dev/null | awk '{$1=$1; print; exit}')"
   if [[ -n "$started" ]]; then
