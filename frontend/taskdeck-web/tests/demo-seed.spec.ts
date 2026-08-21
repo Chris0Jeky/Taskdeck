@@ -15,6 +15,7 @@ import {
   planDemoSeedRerunState,
   prepareDemoBoardsForSeed,
   quarantineDemoBoardsForCleanReset,
+  seedDemo,
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
 import { extractListItems } from '../scripts/demo-shared.mjs'
@@ -183,7 +184,7 @@ function createStatefulDemoBoardApi(initialBoards: StatefulDemoBoard[]) {
 describe('demo seed rerun planning', () => {
   it('preflights only documented DEMO:* boards and preserves non-demo boards during quarantine', async () => {
     const plan = planDemoBoardReset([
-      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo (Chat)', isArchived: false },
       { id: 'real-board', name: 'Client work', isArchived: false },
       { id: 'demo-archive', name: 'DEMO: Archived Board', isArchived: true },
       {
@@ -229,6 +230,17 @@ describe('demo seed rerun planning', () => {
         { id: 'duplicate-two', name: 'DEMO: Capture Loop', isArchived: true },
       ]),
     ).toThrow(/duplicate.*ambiguous/i)
+    expect(() =>
+      planDemoBoardReset([
+        { id: 'canonical', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+        { id: 'interrupted', name: 'DEMO: Client Onboarding Demo (Chat)', isArchived: false },
+      ]),
+    ).toThrow(/duplicate.*ambiguous/i)
+    expect(() =>
+      planDemoBoardReset([
+        { id: 'near-miss', name: 'DEMO: Client Onboarding Demo (Chat copy)', isArchived: false },
+      ]),
+    ).toThrow(/unknown/i)
     expect(() => planDemoBoardReset([{ id: '', name: 'DEMO: Broken' }])).toThrow(/malformed/i)
     expect(() =>
       planDemoBoardReset([{ id: 'user-demo', name: 'DEMO: User Board', isArchived: false }]),
@@ -242,6 +254,36 @@ describe('demo seed rerun planning', () => {
         },
       ]),
     ).toThrow(/malformed reserved reset tombstone/i)
+  })
+
+  it('rejects an invalid reset preflight before collaborator provisioning or product writes', async () => {
+    const authAttempts: string[] = []
+    const productWrites: string[] = []
+    const reads: string[] = []
+
+    await expect(
+      seedDemo(
+        { reset: true },
+        {
+          ensureUser: async (account) => {
+            authAttempts.push(account.username)
+            if (account.username === 'collab') productWrites.push('POST /auth/register')
+            return {
+              token: `${account.username}-token`,
+              user: { id: `${account.username}-id`, username: account.username, email: account.email },
+            }
+          },
+          listBoards: async (token) => {
+            reads.push(`GET /boards as ${token}`)
+            return [{ id: 'unknown-demo', name: 'DEMO: User Board', isArchived: false }]
+          },
+        },
+      ),
+    ).rejects.toThrow(/unknown.*no boards were changed/i)
+
+    expect(authAttempts).toEqual(['demo'])
+    expect(reads).toEqual(['GET /boards as demo-token'])
+    expect(productWrites).toEqual([])
   })
 
   it('stops after a reset quarantine failure and does not attempt a reseed', async () => {
