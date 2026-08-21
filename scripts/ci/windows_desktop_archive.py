@@ -68,10 +68,14 @@ APP_ENV_PREFIXES_TO_REMOVE = (
 )
 
 PLAYWRIGHT_SECRET_ENV_NAMES = {
+    "GEMINI_API_KEY",
     "LLM__OPENAI__APIKEY",
     "OPENAI_API_KEY",
+    "TASKDECK_DEMO_GEMINI_API_KEY",
     "TASKDECK_DEMO_OPENAI_API_KEY",
     "TASKDECK_LLM_GEMINI_API_KEY",
+    "TASKDECK_LLM_OPENAI_API_KEY",
+    "TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY",
     "TASKDECK_RELEASE_OPENAI_API_KEY",
 }
 
@@ -305,10 +309,14 @@ def build_playwright_environment(
     environment = _remove_environment_prefixes(
         source,
         (
+            "GEMINI_API_KEY",
             "LLM__",
             "OPENAI_API_KEY",
+            "TASKDECK_DEMO_GEMINI_API_KEY",
             "TASKDECK_DEMO_OPENAI_API_KEY",
             "TASKDECK_LLM_GEMINI_API_KEY",
+            "TASKDECK_LLM_OPENAI_API_KEY",
+            "TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY",
             "TASKDECK_RELEASE_OPENAI_API_KEY",
             "TASKDECK_PACKAGED_",
         ),
