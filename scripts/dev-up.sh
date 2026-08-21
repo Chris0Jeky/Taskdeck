@@ -690,9 +690,9 @@ write_state
 
 probe_api_ready() {
   "$NODE_BIN" -e '
-    const url = process.argv[1]; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 1000);
-    fetch(url, { signal: controller.signal }).then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1)).finally(() => clearTimeout(timer));
-  ' "$READY_URL" >/dev/null 2>&1
+    const url = process.argv[1]; const expectedRunId = process.argv[2]; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 1000);
+    fetch(url, { signal: controller.signal, redirect: "manual" }).then(r => process.exit(r.status === 200 && r.headers.get("taskdeck-dev-run-id") === expectedRunId ? 0 : 1)).catch(() => process.exit(1)).finally(() => clearTimeout(timer));
+  ' "$READY_URL" "$STATE_RUN_ID" >/dev/null 2>&1
 }
 
 step "Waiting for $READY_URL (up to ${API_READY_TIMEOUT_SECONDS}s)..."
@@ -712,9 +712,11 @@ step "API is ready."
 
 if [[ "$SEED" -eq 1 ]]; then
   step "Seeding demo account (demo / demo123) against $API_BASE_URL..."
+  probe_api_ready || fatal "API run identity changed before demo seeding."
   if ! ( cd "$FRONTEND_DIR" && TASKDECK_DEV_RUN_ID="$STATE_RUN_ID" TASKDECK_API_BASE_URL="$API_BASE_URL" "$NPM_BIN" run demo:seed ); then
     fatal "demo:seed failed; the partially started stack will be stopped."
   fi
+  probe_api_ready || fatal "API run identity changed after demo seeding."
   [[ "$(process_identity_status "$STATE_API_PID" "$STATE_API_NAME" "$STATE_API_TOKEN")" == "match" ]] || fatal "API identity changed during demo seeding."
 fi
 
@@ -808,7 +810,7 @@ done
 
 scan_marker_files
 [[ -z "$marker_error" && "$marker_count" -eq 1 ]] || fatal "Vite readiness marker was not unique at transactional commit."
-probe_api_ready || fatal "API lost readiness before transactional commit."
+probe_api_ready || fatal "API lost readiness or changed run identity before transactional commit."
 probe_frontend_marker_url "$marker_url" || fatal "Frontend entry page became unavailable before transactional commit."
 scan_marker_files
 [[ -z "$marker_error" && "$marker_count" -eq 1 ]] || fatal "Vite readiness marker was not unique after final endpoint probes."
@@ -817,6 +819,7 @@ scan_marker_files
 
 STATE_FRONTEND_URL="$marker_url"; STATE_FRONTEND_PORT="$marker_port"
 write_state
+probe_api_ready || fatal "API lost readiness or changed run identity after final state commit."
 [[ "$(process_identity_status "$STATE_API_PID" "$STATE_API_NAME" "$STATE_API_TOKEN")" == "match" ]] || fatal "API identity changed after final state commit."
 [[ "$(process_identity_status "$STATE_FRONTEND_PID" "$STATE_FRONTEND_NAME" "$STATE_FRONTEND_TOKEN")" == "match" ]] || fatal "Frontend identity changed after final state commit."
 TRANSACTION_ACTIVE=0

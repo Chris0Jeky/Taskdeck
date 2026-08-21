@@ -158,6 +158,10 @@ if (kind === 'npm') {
 } else if (kind === 'dotnet') {
   appendEvent({})
   const mode = process.env.FAKE_API_MODE ?? 'ready'
+  const proofMode = process.env.FAKE_API_PROOF_MODE ?? 'match'
+  const expectedRunId = process.env.TASKDECK_DEV_RUN_ID ?? ''
+  const mismatchRunId = '11111111-1111-4111-8111-111111111111'
+  let readyRequestCount = 0
   if (mode === 'exit') {
     console.error('synthetic API exit')
     process.exit(45)
@@ -166,8 +170,42 @@ if (kind === 'npm') {
   if (urlsIndex < 0) process.exit(92)
   const port = Number(new URL(args[urlsIndex + 1]).port)
   let scheduledExit = false
+  const seedHasRun = () => {
+    try {
+      return fs.readFileSync(process.env.TASKDECK_NPM_LOG, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .some((event) => event.args?.join(' ') === 'run demo:seed')
+    } catch {
+      return false
+    }
+  }
+  const finalStateHasBeenWritten = () => {
+    try {
+      return JSON.parse(fs.readFileSync(process.env.TASKDECK_TEST_STATE_FILE, 'utf8')).frontend !== null
+    } catch {
+      return false
+    }
+  }
+  const runIdHeaderValues = () => {
+    readyRequestCount += 1
+    if (proofMode === 'missing') return []
+    if (proofMode === 'mismatch') return [mismatchRunId]
+    if (proofMode === 'duplicate') return [expectedRunId, expectedRunId]
+    if (proofMode === 'flip-after-first-valid' && readyRequestCount > 1) return [mismatchRunId]
+    if (proofMode === 'flip-after-seed' && seedHasRun()) return [mismatchRunId]
+    if (proofMode === 'flip-after-final-state' && finalStateHasBeenWritten()) return [mismatchRunId]
+    return [expectedRunId]
+  }
   const server = http.createServer((request, response) => {
     if (request.url === '/health/ready' && (mode === 'ready' || mode === 'exit-after-ready')) {
+      const runIdValues = runIdHeaderValues()
+      if (runIdValues.length > 0) {
+        response.setHeader('Taskdeck-Dev-Run-Id', runIdValues.length === 1 ? runIdValues[0] : runIdValues)
+        response.setHeader('Cache-Control', 'no-store')
+      }
       response.writeHead(200)
       response.end('ready', () => {
         if (mode === 'exit-after-ready' && !scheduledExit) {
@@ -407,6 +445,7 @@ function fixtureEnvironment(platform, fixture, overrides = {}) {
     TASKDECK_REAL_NODE: process.execPath,
     TASKDECK_HELPER: fixture.helper,
     TASKDECK_NPM_LOG: fixture.npmLog,
+    TASKDECK_TEST_STATE_FILE: fixture.stateFile,
     FAKE_NPM_RELEASE_FILE: fixture.npmReleaseFile,
     ...overrides,
   }
@@ -643,6 +682,11 @@ test('launchers encode the transactional lifecycle and custom-port environment b
   assert.match(ps, /creationToken/)
   assert.match(ps, /schemaVersion = \$StateVersion/)
   assert.match(ps, /TASKDECK_DEV_FRONTEND_READY/)
+  assert.match(ps, /\$DevRunIdHeaderName = "Taskdeck-Dev-Run-Id"/)
+  assert.match(ps, /AllowAutoRedirect = \$false/)
+  assert.match(ps, /\$request\.Proxy = \$null/)
+  assert.match(ps, /GetValues\(\$DevRunIdHeaderName\)/)
+  assert.doesNotMatch(ps, /\$request\.Headers\[[^\]]*DevRunId/)
 
   assert.match(sh, /node_major != 24 \|\| node_minor < 13/)
   assert.match(sh, /mkdir "\$LOCK_DIR"/)
@@ -650,6 +694,8 @@ test('launchers encode the transactional lifecycle and custom-port environment b
   assert.match(sh, /creationToken/)
   assert.match(sh, /TASKDECK_API_BASE_URL="\$API_BASE_URL" "\$NPM_BIN" run demo:seed/)
   assert.match(sh, /VITE_API_BASE_URL="\$API_BASE_URL" exec "\$NPM_BIN" run dev/)
+  assert.match(sh, /redirect: "manual"/)
+  assert.match(sh, /r\.headers\.get\("taskdeck-dev-run-id"\) === expectedRunId/)
   assert.doesNotMatch(sh, /export (?:TASKDECK_API_BASE_URL|VITE_API_BASE_URL)/)
 })
 
@@ -994,6 +1040,90 @@ for (const platform of platforms) {
             const seedEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run demo:seed')
             assert.equal(seedEvent.taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
           }
+        } finally {
+          await removeFixture(fixture)
+        }
+      })
+    }
+  })
+
+  test(`${platform.name}: HTTP 200 without one exact matching run identity never seeds or succeeds`, { concurrency: false }, async (t) => {
+    for (const proofMode of ['missing', 'mismatch', 'duplicate']) {
+      await t.test(proofMode, async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const frontendPort = await getFreePort()
+        try {
+          const result = runLauncher(platform, fixture, {
+            apiPort,
+            seed: true,
+            env: {
+              FAKE_API_PROOF_MODE: proofMode,
+              FAKE_FRONTEND_PORT: String(frontendPort),
+              TASKDECK_DEV_API_READY_TIMEOUT_SECONDS: '1',
+            },
+          })
+          assertFailedClosed(result)
+          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+          const events = await readEvents(fixture)
+          assert.equal(events.some((event) => event.args.join(' ') === 'run demo:seed'), false)
+          assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
+        } finally {
+          await removeFixture(fixture)
+        }
+      })
+    }
+  })
+
+  test(`${platform.name}: run identity is rechecked around seed and after the final state write`, { concurrency: false }, async (t) => {
+    for (const scenario of [
+      {
+        name: 'changes before seed',
+        proofMode: 'flip-after-first-valid',
+        seed: true,
+        expectedSeedCount: 0,
+        expectedFailure: /before demo seeding/,
+      },
+      {
+        name: 'changes after seed',
+        proofMode: 'flip-after-seed',
+        seed: true,
+        expectedSeedCount: 1,
+        expectedFailure: /after demo seeding/,
+      },
+      {
+        name: 'changes after final state write',
+        proofMode: 'flip-after-final-state',
+        seed: false,
+        expectedSeedCount: 0,
+        expectedFailure: /after final state commit/,
+      },
+    ]) {
+      await t.test(scenario.name, async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const frontendPort = await getFreePort()
+        try {
+          const result = runLauncher(platform, fixture, {
+            apiPort,
+            seed: scenario.seed,
+            env: {
+              FAKE_API_PROOF_MODE: scenario.proofMode,
+              FAKE_FRONTEND_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), scenario.expectedFailure)
+          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+          const events = await readEvents(fixture)
+          assert.equal(
+            events.filter((event) => event.args.join(' ') === 'run demo:seed').length,
+            scenario.expectedSeedCount,
+          )
+          assert.equal(
+            events.some((event) => event.args.join(' ') === 'run dev'),
+            scenario.proofMode === 'flip-after-final-state',
+          )
         } finally {
           await removeFixture(fixture)
         }

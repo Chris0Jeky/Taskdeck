@@ -53,6 +53,7 @@ $OperationLockFile = Join-Path $DataDir "dev-up.operation.lock"
 
 $MinimumNodeVersion = [version]"24.13.1"
 $MaximumNodeVersion = [version]"25.0.0"
+$DevRunIdHeaderName = "Taskdeck-Dev-Run-Id"
 $ReadyMarker = "TASKDECK_DEV_FRONTEND_READY"
 $StateVersion = 1
 
@@ -528,15 +529,20 @@ function Invoke-NpmStage {
 }
 
 function Test-HttpReady {
-    param([string]$Url)
+    param([string]$Url, [string]$ExpectedRunId)
     $response = $null
     try {
         $request = [System.Net.HttpWebRequest]::Create($Url)
         $request.Proxy = $null
+        $request.AllowAutoRedirect = $false
         $request.Timeout = 1000
         $request.ReadWriteTimeout = 1000
         $response = $request.GetResponse()
-        return [int]$response.StatusCode -eq 200
+        if ([int]$response.StatusCode -ne 200) { return $false }
+        $runIdValues = $response.Headers.GetValues($DevRunIdHeaderName)
+        return $null -ne $runIdValues -and
+            $runIdValues.Count -eq 1 -and
+            [string]::Equals($runIdValues[0], $ExpectedRunId, [System.StringComparison]::Ordinal)
     } catch {
         return $false
     } finally {
@@ -754,7 +760,7 @@ function Invoke-Main {
             if (-not [string]::IsNullOrWhiteSpace($tail)) { [Console]::Error.WriteLine($tail) }
             throw "API process identity became $($identity.ToLowerInvariant()) before readiness."
         }
-        if (Test-HttpReady -Url $readyUrl) { $apiReady = $true; break }
+        if (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId) { $apiReady = $true; break }
         Start-Sleep -Milliseconds 200
     }
     if (-not $apiReady) {
@@ -766,11 +772,17 @@ function Invoke-Main {
 
     if ($Seed) {
         Write-Step "Seeding demo account (demo / demo123) against $apiBaseUrl..."
+        if (-not (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId)) {
+            throw "API run identity changed before demo seeding."
+        }
         $seedExit = Invoke-NpmStage -Arguments @("run", "demo:seed") -Stage "seed" -EnvironmentOverrides @{
             TASKDECK_DEV_RUN_ID = $runId
             TASKDECK_API_BASE_URL = $apiBaseUrl
         }
         if ($seedExit -ne 0) { throw "demo:seed failed (exit $seedExit); the partially started stack will be stopped." }
+        if (-not (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId)) {
+            throw "API run identity changed after demo seeding."
+        }
         Assert-ProcessIdentityMatch -Record $script:State.ApiRecord -Context "during demo seeding"
     }
 
@@ -814,7 +826,7 @@ function Invoke-Main {
 
     Update-MarkerScan -Scan $scan -Timer $frontendTimer
     if ($scan.MarkerCount -ne 1) { throw "Vite readiness marker was not unique at transactional commit." }
-    if (-not (Test-HttpReady -Url $readyUrl)) { throw "API lost readiness before transactional commit." }
+    if (-not (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId)) { throw "API lost readiness or changed run identity before transactional commit." }
     if (-not (Test-FrontendEndpoint -Url $scan.Marker.Url)) { throw "Frontend entry page became unavailable before transactional commit." }
     Update-MarkerScan -Scan $scan -Timer $frontendTimer
     if ($scan.MarkerCount -ne 1) { throw "Vite readiness marker was not unique after final endpoint probes." }
@@ -823,6 +835,7 @@ function Invoke-Main {
 
     $script:State.Frontend = [pscustomobject]@{ Url = [string]$scan.Marker.Url; Port = [int]$scan.Marker.Port }
     Write-StateFile
+    if (-not (Test-HttpReady -Url $readyUrl -ExpectedRunId $runId)) { throw "API lost readiness or changed run identity after final state commit." }
     Assert-ProcessIdentityMatch -Record $script:State.ApiRecord -Context "after final state commit"
     Assert-ProcessIdentityMatch -Record $script:State.FrontendRecord -Context "after final state commit"
     Disconnect-LoggedBroker -Process $apiProcess
