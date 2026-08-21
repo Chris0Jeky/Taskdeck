@@ -1808,7 +1808,7 @@ env \
   Llm__AllowLiveProvidersInDevelopment=false \
   TASKDECK_DEMO_LLM_PROVIDER=Mock \
   TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
-  bash -c 'cd frontend/taskdeck-web && exec npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal'
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 ```
 
 ```powershell
@@ -1818,7 +1818,6 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
   $env:Llm__AllowLiveProvidersInDevelopment = "false"
   $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
   $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
-  Set-Location ".\frontend\taskdeck-web"
   npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 }'
 ```

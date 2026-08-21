@@ -37,6 +37,8 @@ them off from this rehearsal.
 - demo credentials are valid (`demo` / `demo123` unless overridden)
 - the commands below scope deterministic Mock/live-disabled settings to a child process tree; they
   do not display, read, persist, or overwrite any provider key value
+- remove any retired Taskdeck `Llm__Gemini__*` setting before the rehearsal; the intentional
+  migration guard rejects that retired provider configuration even when these commands select Mock
 
 ## Canonical Bootstrap
 
@@ -99,7 +101,7 @@ env \
   Llm__AllowLiveProvidersInDevelopment=false \
   TASKDECK_DEMO_LLM_PROVIDER=Mock \
   TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
-  bash -c 'cd frontend/taskdeck-web && exec npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal'
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 ```
 
 ```powershell
@@ -109,7 +111,6 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
   $env:Llm__AllowLiveProvidersInDevelopment = "false"
   $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
   $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
-  Set-Location ".\frontend\taskdeck-web"
   npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 }'
 ```
