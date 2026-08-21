@@ -742,6 +742,52 @@ function isDemoBoard(board) {
   return typeof board?.name === 'string' && board.name.startsWith('DEMO:')
 }
 
+export function planDemoBoardReset(boards) {
+  if (!Array.isArray(boards)) {
+    throw new Error('Clean demo reset requires an unambiguous board list before deleting anything.')
+  }
+
+  const candidates = boards.filter(isDemoBoard)
+  const ids = new Set()
+  const names = new Set()
+
+  for (const board of candidates) {
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    const name = typeof board?.name === 'string' ? board.name.trim() : ''
+    if (!id || name === 'DEMO:') {
+      throw new Error('Clean demo reset found a malformed DEMO:* board candidate; no boards were deleted.')
+    }
+    if (ids.has(id) || names.has(name)) {
+      throw new Error('Clean demo reset found duplicate or ambiguous DEMO:* board candidates; no boards were deleted.')
+    }
+    ids.add(id)
+    names.add(name)
+  }
+
+  return candidates.map((board) => ({ id: board.id.trim(), name: board.name.trim() }))
+}
+
+export async function deleteDemoBoardsForCleanReset(
+  candidates,
+  token,
+  { request = http, onDeleted = () => {} } = {},
+) {
+  let deletedCount = 0
+  for (const board of candidates) {
+    try {
+      await request('DELETE', `/boards/${board.id}`, { token })
+      deletedCount += 1
+      onDeleted(board)
+    } catch (err) {
+      throw new Error(
+        `Clean demo reset stopped after deleting ${deletedCount} of ${candidates.length} DEMO:* board(s); ` +
+          'no reseed was attempted. The launcher will clean only its owned process tree, so inspect the remaining demo state before retrying.',
+        { cause: err },
+      )
+    }
+  }
+}
+
 function pickReusableBoard(boards, reusableNames) {
   const names = new Set(reusableNames)
   const candidates = (boards || []).filter((b) => names.has(b.name))
@@ -1271,29 +1317,17 @@ async function seedDemo({ reset = false } = {}) {
   let boards = await listBoards(demoToken)
   let demoBoards = (boards || []).filter(isDemoBoard)
 
-  if (reset && demoBoards.length) {
-    console.log(`\n--reset: deleting ${demoBoards.length} demo board(s)...`)
-    for (const b of demoBoards) {
-      try {
-        await http('DELETE', `/boards/${b.id}`, { token: demoToken })
-        console.log(`  - deleted ${b.name}`)
-      } catch (err) {
-        if (getHttpStatus(err) === 403) {
-          console.log(`  - skipped ${b.name} (403 Forbidden)`)
-          continue
-        }
-        throw err
-      }
+  if (reset) {
+    const resetCandidates = planDemoBoardReset(demoBoards)
+    if (resetCandidates.length) {
+      console.log(`\n--reset: deleting ${resetCandidates.length} documented DEMO:* board(s)...`)
+      await deleteDemoBoardsForCleanReset(resetCandidates, demoToken, {
+        onDeleted: (board) => console.log(`  - deleted ${board.name}`),
+      })
     }
-    // Re-fetch after deletion
+    // Re-fetch only after every planned delete succeeded. A failed delete intentionally aborts before reseeding.
     boards = await listBoards(demoToken)
     demoBoards = (boards || []).filter(isDemoBoard)
-    if (demoBoards.length) {
-      console.warn(
-        `  WARNING: ${demoBoards.length} demo board(s) could not be deleted (403). ` +
-        `Re-seed may reuse them instead of starting fresh.`,
-      )
-    }
   }
 
   const captureBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, demoToken)

@@ -7,9 +7,11 @@ import {
   collectSeededChatProposalIds,
   createRunBoundApiTransport,
   createRunBoundApiTransportFromEnvironment,
+  deleteDemoBoardsForCleanReset,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
   parseSeedArgs,
+  planDemoBoardReset,
   planDemoSeedRerunState,
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
@@ -93,6 +95,57 @@ function createManualResponseDeadline() {
 }
 
 describe('demo seed rerun planning', () => {
+  it('preflights only documented DEMO:* boards and preserves non-demo boards during a clean reset', async () => {
+    const candidates = planDemoBoardReset([
+      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo' },
+      { id: 'real-board', name: 'Client work' },
+      { id: 'demo-archive', name: 'DEMO: Archived Board' },
+    ])
+    const requests: string[] = []
+
+    await deleteDemoBoardsForCleanReset(candidates, 'token', {
+      request: async (method, path) => {
+        requests.push(`${method} ${path}`)
+        return null
+      },
+    })
+
+    expect(requests).toEqual(['DELETE /boards/demo-capture', 'DELETE /boards/demo-archive'])
+  })
+
+  it('rejects duplicate or malformed DEMO:* reset candidates before any DELETE', () => {
+    expect(() =>
+      planDemoBoardReset([
+        { id: 'duplicate-one', name: 'DEMO: Client Onboarding Demo' },
+        { id: 'duplicate-two', name: 'DEMO: Client Onboarding Demo' },
+      ]),
+    ).toThrow(/duplicate or ambiguous/i)
+    expect(() => planDemoBoardReset([{ id: '', name: 'DEMO: Broken' }])).toThrow(/malformed/i)
+  })
+
+  it('stops after a reset delete failure and does not attempt a reseed', async () => {
+    const requests: string[] = []
+    const candidates = planDemoBoardReset([
+      { id: 'demo-one', name: 'DEMO: One' },
+      { id: 'demo-two', name: 'DEMO: Two' },
+    ])
+
+    await expect(
+      deleteDemoBoardsForCleanReset(candidates, 'token', {
+        request: async (method, path) => {
+          requests.push(`${method} ${path}`)
+          if (path.endsWith('demo-two')) {
+            const error = new Error('Forbidden') as Error & { status?: number }
+            error.status = 403
+            throw error
+          }
+          return null
+        },
+      }),
+    ).rejects.toThrow(/no reseed was attempted/i)
+    expect(requests).toEqual(['DELETE /boards/demo-one', 'DELETE /boards/demo-two'])
+  })
+
   it('normalizes paginated API responses for demo board discovery', () => {
     expect(extractListItems([{ id: 'legacy-board' }], 'boards')).toEqual([{ id: 'legacy-board' }])
     expect(extractListItems({ items: [{ id: 'board-1' }] }, 'boards')).toEqual([{ id: 'board-1' }])

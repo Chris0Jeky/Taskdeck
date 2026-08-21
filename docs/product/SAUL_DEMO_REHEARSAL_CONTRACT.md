@@ -37,11 +37,11 @@ Out of scope:
 From the repository root, choose the command for the current shell:
 
 ```powershell
-.\scripts\dev-up.ps1 -Seed
+.\scripts\dev-up.ps1 -Seed -ResetSeed
 ```
 
 ```bash
-./scripts/dev-up.sh --seed
+./scripts/dev-up.sh --seed --reset-seed
 ```
 
 Continue only after the launcher prints `Stack is up.` and its `API` line reports
@@ -50,6 +50,13 @@ every seed request to the API process it started. Do not replace this step with 
 `npm run demo:seed` or `npm run demo:run`; those commands do not carry the launcher-owned
 connection proof. If port 5000 is unavailable, stop the launcher, free the port, and rerun this
 default-port contract rather than switching the rehearsal to another listener.
+
+The explicit reset flag is required for a clean rehearsal and is never implied by normal seeding.
+It is valid only with `-Seed` / `--seed`. Before deleting anything, the run-bound seeder validates
+all `DEMO:*` candidates for duplicates and malformed records; non-demo boards are not reset. A 403
+or any delete failure fails the command without reseeding. Deletions are sequential, so a failure
+can leave a partial demo reset: the launcher cleans only the process trees it started, and the
+operator must inspect the remaining demo boards before retrying.
 
 This is the canonical rehearsal state:
 - board: `DEMO: Client Onboarding Demo`
@@ -106,7 +113,7 @@ Required files:
 If rehearsal fails, use this order:
 
 1. Stop only the launcher-owned stack with `.\scripts\dev-up.ps1 -Stop` or `./scripts/dev-up.sh --stop`.
-2. Confirm port 5000 is free, then rerun the matching `dev-up` seed command above; do not fall back to bare `demo:seed` or `demo:run`.
+2. Confirm port 5000 is free, then rerun the matching protected reset-and-seed command above; do not fall back to bare `demo:seed` or `demo:run`.
 3. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
 4. Confirm the launcher's `API` line again reports exactly `http://localhost:5000` before opening the rehearsal.
 5. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.

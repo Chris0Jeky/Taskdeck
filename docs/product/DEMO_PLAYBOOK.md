@@ -61,6 +61,27 @@ the Windows release. If a launcher-owned source stack is already running, stop i
 recognised baseline artifacts instead of appending a duplicate copy on every run. Do not refresh a
 running stack through the lower-level bare seed command, which has no listener-identity proof.
 
+### Clean rehearsal reset
+
+To restore the source-demo story after a rehearsal changes it, first stop the launcher-owned stack,
+then use the protected reset-and-seed form from the repository root:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed -ResetSeed
+```
+
+```bash
+scripts/dev-up.sh --seed --reset-seed
+```
+
+`-ResetSeed` / `--reset-seed` is invalid without the corresponding seed flag and is never implicit.
+After the launcher proves its exact run identity, the one-socket seeder preflights every `DEMO:*`
+candidate (including duplicate or malformed candidates) before any DELETE. It deletes only those
+documented demo boards and preserves non-demo boards. A 403 or any delete failure exits nonzero and
+does not reseed; because an earlier delete may already have succeeded, inspect the remaining demo
+state before retrying. The launcher then cleans only its own API/frontend process trees and does not
+claim that the database was fully restored.
+
 ### Database location
 
 The canonical source-launcher database is stable and independent of the repository working directory:

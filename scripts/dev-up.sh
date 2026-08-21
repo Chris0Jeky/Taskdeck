@@ -4,6 +4,7 @@
 # Usage:
 #   scripts/dev-up.sh
 #   scripts/dev-up.sh --seed
+#   scripts/dev-up.sh --seed --reset-seed
 #   scripts/dev-up.sh --stop
 #   TASKDECK_API_PORT=5001 scripts/dev-up.sh
 #
@@ -28,14 +29,21 @@ READY_MARKER="TASKDECK_DEV_FRONTEND_READY"
 STATE_VERSION=1
 
 SEED=0
+RESET_SEED=0
 STOP=0
 for arg in "$@"; do
   case "$arg" in
     --seed) SEED=1 ;;
+    --reset-seed) RESET_SEED=1 ;;
     --stop) STOP=1 ;;
     *) printf '[dev-up] Unknown argument: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
+
+if [[ "$RESET_SEED" -eq 1 && ( "$SEED" -ne 1 || "$STOP" -eq 1 ) ]]; then
+  printf '[dev-up] FATAL: --reset-seed is valid only with --seed and cannot be combined with --stop. No process or demo state was changed.\n' >&2
+  exit 2
+fi
 
 step() { printf '\033[36m[dev-up] %s\033[0m\n' "$1"; }
 info() { printf '\033[90m[dev-up] %s\033[0m\n' "$1"; }
@@ -713,7 +721,9 @@ step "API is ready."
 if [[ "$SEED" -eq 1 ]]; then
   step "Seeding demo account (demo / demo123) against $API_BASE_URL..."
   probe_api_ready || fatal "API run identity changed before demo seeding."
-  if ! ( cd "$FRONTEND_DIR" && TASKDECK_DEV_RUN_ID="$STATE_RUN_ID" TASKDECK_API_BASE_URL="$API_BASE_URL" "$NPM_BIN" run demo:seed ); then
+  seed_args=(run demo:seed)
+  [[ "$RESET_SEED" -eq 1 ]] && seed_args+=(-- --reset)
+  if ! ( cd "$FRONTEND_DIR" && TASKDECK_DEV_RUN_ID="$STATE_RUN_ID" TASKDECK_API_BASE_URL="$API_BASE_URL" "$NPM_BIN" "${seed_args[@]}" ); then
     fatal "demo:seed failed; the partially started stack will be stopped."
   fi
   probe_api_ready || fatal "API run identity changed after demo seeding."
