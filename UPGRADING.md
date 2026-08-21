@@ -116,7 +116,12 @@ to a later release applies every intervening migration in one startup.
 
 ## v0.1.1 — 2026-08-21
 
-**BREAKING: none.**
+**BREAKING (configuration):** Gemini live-provider support is removed. Before upgrading, replace
+`Llm:Provider=Gemini` with `OpenAI` (or `Mock` for offline use) and remove any `Llm:Gemini`
+configuration section or retired Compose wrapper. Taskdeck fails startup with fixed migration
+guidance when those retired selectors remain; an ambient `GEMINI_API_KEY` no longer selects a live
+provider. OpenAI live use requires the `Llm:OpenAi` configuration described in
+[`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`](docs/platform/LLM_PROVIDER_SETUP_GUIDE.md).
 
 - **Automatic pre-migration database backup.** Taskdeck now snapshots the SQLite file before
   applying pending migrations, keeps the last `Database:Backup:RetainCount` (default 5) snapshots,

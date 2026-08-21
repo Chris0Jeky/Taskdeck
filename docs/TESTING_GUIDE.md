@@ -15,6 +15,8 @@ Companion Active Docs:
 The public v0.1.1 Windows x64 artifact is proven end to end, with the unavailable Windows Sandbox
 lane recorded separately as an owner waiver rather than a passing clean-machine result:
 
+Durable public-artifact evidence: [issue #1876 final record](https://github.com/Chris0Jeky/Taskdeck/issues/1876#issuecomment-5373235996).
+
 - **Published source and assets:** annotated tag `v0.1.1` peels exactly to
   `e338566d0f3d1fc65004beb5a29c10778e6e61bc`. Release Container `32505993267`, Release Security
   `32505993558`, CI Release `32505993464`, and Release Desktop `32505993397` all passed. The public
@@ -1890,8 +1892,9 @@ Acceptance focus for this rehearsal:
 - prove `Home -> Inbox/Capture -> Review -> Board`
 - prove review-first trust language is visible without narration
 - prove ACME onboarding capture becomes clean board work after explicit approval
-- this rehearsal is local evidence only; public release approval and the manual clean-machine
-  Explorer/shortcut/default-browser/SmartScreen gates remain open (`#1242`, `#1876`, `#1877`)
+- this rehearsal remains local evidence only and does not itself prove or authorize a public
+  release; the separate v0.1.1 public-artifact proof plus the explicit clean-Sandbox waiver
+  satisfies `#1876`/`#1877`, while `#1242` remains open for its distinct maintainer record decision
 
 ## Load Harness (k6 + Playwright Concurrency)
 
