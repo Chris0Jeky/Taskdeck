@@ -116,6 +116,31 @@ public class ArchivedBoardArtifactVisibilityApiTests : IClassFixture<TestWebAppl
         var review = await reviewResponse.Content.ReadFromJsonAsync<List<ProposalDto>>();
         review.Should().ContainSingle(item => item.Id == expected.Proposal.Id);
         review.Should().ContainSingle();
+        var inboxCount = inbox!.Count;
+        var reviewCount = review!.Count;
+
+        var homeResponse = await client.GetAsync("/api/workspace/home");
+        homeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var home = await homeResponse.Content.ReadFromJsonAsync<WorkspaceHomeDto>();
+        home.Should().NotBeNull();
+        home!.IsFirstRun.Should().BeFalse("retained capture history must preserve established-user onboarding semantics");
+        home.Workload.CapturesNeedingTriage.Should().Be(inboxCount);
+        home.Workload.CapturesInProgress.Should().Be(0);
+        home.Workload.CapturesReadyForFollowUp.Should().Be(0);
+        home.Workload.ProposalsPendingReview.Should().Be(reviewCount);
+        home.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
+
+        var todayResponse = await client.GetAsync("/api/workspace/today");
+        todayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var today = await todayResponse.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        today.Should().NotBeNull();
+        today!.Summary.CapturesNeedingTriage.Should().Be(inboxCount);
+        today.Summary.ProposalsPendingReview.Should().Be(reviewCount);
+        today.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
     }
 
     private static async Task AssertHistoricalStoryAsync(HttpClient client, DemoStory expected)

@@ -468,6 +468,54 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
     }
 
     [Fact]
+    public async Task CountPendingReviewByUserIdAsync_MatchesActiveReview_ForArchivedBoardAndUserScope()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var user = new User($"ap-active-count-{suffix}", $"ap-active-count-{suffix}@example.com", "hash");
+        var otherUser = new User($"ap-active-count-other-{suffix}", $"ap-active-count-other-{suffix}@example.com", "hash");
+        var activeBoard = new Board("Active proposal board", ownerId: user.Id);
+        var archivedBoard = new Board("Archived proposal board", ownerId: user.Id);
+        archivedBoard.Archive();
+        db.AddRange(user, otherUser, activeBoard, archivedBoard);
+
+        AutomationProposal Pending(Guid requestedByUserId, string summary, Guid? boardId = null) =>
+            new(
+                ProposalSourceType.Queue,
+                requestedByUserId,
+                summary,
+                RiskLevel.Low,
+                $"corr-active-count-{Guid.NewGuid():N}",
+                boardId);
+
+        var active = Pending(user.Id, "Active pending", activeBoard.Id);
+        var archived = Pending(user.Id, "Archived pending", archivedBoard.Id);
+        var boardless = Pending(user.Id, "Boardless pending");
+        var dangling = Pending(user.Id, "Dangling pending", Guid.NewGuid());
+        var snoozed = Pending(user.Id, "Snoozed active-board pending", activeBoard.Id);
+        snoozed.Defer(TimeSpan.FromMinutes(30));
+        var otherUsers = Pending(otherUser.Id, "Other user's pending", activeBoard.Id);
+        db.AddRange(active, archived, boardless, dangling, snoozed, otherUsers);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var count = await repo.CountPendingReviewByUserIdAsync(user.Id);
+        var activeReview = (await repo.GetActiveByUserIdAsync(
+                user.Id,
+                limit: 100,
+                status: ProposalStatus.PendingReview))
+            .ToList();
+
+        count.Should().Be(3);
+        activeReview.Select(proposal => proposal.Id).Should().BeEquivalentTo(
+            [active.Id, boardless.Id, dangling.Id]);
+        count.Should().Be(activeReview.Count);
+    }
+
+    [Fact]
     public async Task HasReviewedByUserIdAsync_ShouldDetectReviewedDecision()
     {
         using var scope = _factory.Services.CreateScope();
