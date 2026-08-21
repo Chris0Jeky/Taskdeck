@@ -56,10 +56,10 @@ Closing the shell that launched the stack is not the documented stop path. Defau
   `http://localhost:5000/health/ready`
 
 The source-only seeded accounts are `demo` / `demo123` and `collab` / `demo123`. They do not exist in
-the Windows release. If a source stack is already running, seed or refresh it from
-`frontend/taskdeck-web` with `npm run demo:seed`; `npm run demo:seed -- --reset` removes the demo
-boards before reseeding, and `npm run demo:seed -- --help` lists the options. The seeder reuses
-recognised baseline artifacts instead of appending a duplicate copy on every run.
+the Windows release. If a launcher-owned source stack is already running, stop it with the matching
+`-Stop` / `--stop` command, then rerun the seeded launcher above. The protected seeder reuses
+recognised baseline artifacts instead of appending a duplicate copy on every run. Do not refresh a
+running stack through the lower-level bare seed command, which has no listener-identity proof.
 
 ### Database location
 
@@ -72,8 +72,8 @@ The canonical source-launcher database is stable and independent of the reposito
 `dotnet run` is an alternative developer-only path: its relative `Data Source=taskdeck.db` resolves
 from that command's working directory, so it is not the canonical seeded-demo database. Likewise,
 `npm run demo:reset-db` targets the legacy repository-local raw-`dotnet run` database; it does not
-reset the stable `dev-up` database. Prefer `npm run demo:seed -- --reset` unless you deliberately own
-that lower-level developer path.
+reset the stable `dev-up` database. Lower-level reset/seed commands are not the canonical demo path
+and must be confined to an isolated developer environment whose API and database you explicitly own.
 
 Other repository-local DB files are per-purpose:
 
@@ -88,10 +88,11 @@ Other repository-local DB files are per-purpose:
   another one; it refuses to overwrite live PIDs because that would orphan the old processes.
 - If the API exits before readiness, read the API window/output named by the launcher. Do not keep
   restarting over an unexamined database or configuration error.
-- The canonical seeded path requires port 5000. Stop a listener you recognise before starting it;
-  do not combine the launcher's custom API-port option with `-Seed` / `--seed`, because the seeder and
-  browser client currently continue to target port 5000. For a UI collision, restore/read the Vite
-  dev-server output and use its `Local:` fallback URL rather than assuming 5173.
+- The launcher passes its selected API base URL and run identity to the seeder, and passes the same
+  API base to Vite. General seeded demos may use PowerShell's checked `-ApiPort N` option or Bash's
+  `TASKDECK_API_PORT=N ./scripts/dev-up.sh --seed` form and must use the printed URLs. Only the Saul
+  rehearsal contract is deliberately restricted to port 5000. For a UI collision, use the printed
+  frontend URL rather than assuming 5173.
 - Confirm the printed database path before deleting or resetting anything. Stop the stack first so
   SQLite can checkpoint its WAL cleanly.
 
@@ -133,51 +134,17 @@ cd frontend/taskdeck-web
 npm run demo:run -- --list
 ```
 
-Run scenarios:
+Execute a scenario in an isolated fresh-server director run:
 
 ```bash
-npm run demo:run -- engineering-sprint
-npm run demo:run -- support-triage
-npm run demo:run -- content-calendar
-npm run demo:run -- --clean engineering-sprint
-npm run demo:run -- --clean --dry-run engineering-sprint
+cd frontend/taskdeck-web
+npm run demo:director -- --output-dir ./demo-artifacts/engineering-sprint --e2e-db ./taskdeck.demo.engineering-sprint.db --reset-e2e-db --fresh-servers --scenario engineering-sprint --skip-llm --turns 0 --rng-seed engineering-sprint
 ```
 
-JSON-runner flags:
-
-```bash
-# skip default LLM-dependent steps and any step marked requiresLlm: true
-npm run demo:run -- support-triage --skip-llm
-
-# keep running after a failed step
-npm run demo:run -- engineering-sprint --continue-on-error
-```
-
-Autopilot simulation:
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain heuristic
-```
-
-Deterministic autopilot simulation (seeded):
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain heuristic --rng-seed 42
-```
-
-Optional chat-driven autopilot (requires live provider setup):
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain taskdeck-chat
-```
-
-Loop-specific autopilot runs:
-
-```bash
-npm run demo:autopilot -- --loop queue
-npm run demo:autopilot -- --loop capture
-npm run demo:autopilot -- --loop mixed
-```
+Change the scenario/output/database/rng names together for another deterministic story. The lower-level
+scenario and autopilot commands remain useful implementation tools, but they do not carry the
+launcher's listener-identity proof and are not copyable operator paths. Their flags and schemas are
+documented in [SCENARIOS.md](SCENARIOS.md).
 
 ## 5-Minute Stakeholder Flow
 
@@ -235,7 +202,8 @@ These surfaces are event-driven:
 - `Ops -> Logs` needs Ops runs.
 - `Access` needs board-specific entries.
 
-Use `npm run demo:seed` and/or `npm run demo:run` before a manual walkthrough.
+Use the identity-bound `dev-up -Seed` / `dev-up.sh --seed` path before a manual walkthrough, or use
+the isolated fresh-server director command above for a scenario-specific rehearsal.
 
 ## Feature Flags for Demos
 

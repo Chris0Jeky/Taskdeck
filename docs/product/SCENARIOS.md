@@ -21,20 +21,18 @@ From `frontend/taskdeck-web`:
 # list available scenarios
 npm run demo:run -- --list
 
-# run a scenario
-npm run demo:run -- engineering-sprint
-npm run demo:run -- support-triage
-npm run demo:run -- content-calendar
-
-# skip default LLM-dependent steps and any step marked requiresLlm: true
-npm run demo:run -- support-triage --skip-llm
-
-# continue after a failed step
-npm run demo:run -- engineering-sprint --continue-on-error
-
-# archive DEMO:* boards first
-npm run demo:run -- engineering-sprint --clean
+# execute one deterministic story through isolated fresh servers
+npm run demo:director -- --output-dir ./demo-artifacts/engineering-sprint --e2e-db ./taskdeck.demo.engineering-sprint.db --reset-e2e-db --fresh-servers --scenario engineering-sprint --skip-llm --turns 0 --rng-seed engineering-sprint
 ```
+
+`--list` exits before configuration, authentication, or HTTP traffic. For execution, change the
+scenario/output/database/rng names together. `--skip-llm` keeps the fresh-server run deterministic;
+remove it only when the director's documented live-provider setup is intentional.
+
+The lower-level `demo:run` flags `--skip-llm`, `--continue-on-error`, and `--clean` remain supported
+for implementation work. That runner does not carry the source launcher's listener-identity proof,
+so do not use its mutating modes as an operator or shared-machine command. Confine them to an
+isolated API/database environment that you explicitly own.
 
 CI note:
 

@@ -1,6 +1,6 @@
 # Saul-Facing Demo Rehearsal Contract
 
-Last Updated: 2026-03-26
+Last Updated: 2026-08-21
 
 ## Purpose
 
@@ -26,19 +26,30 @@ Out of scope:
 
 ## Preconditions
 
-- backend API is reachable at `http://localhost:5000/api`
-- frontend is running from `frontend/taskdeck-web`
+- run the launcher from the repository root; it owns both backend and frontend processes
+- the canonical Saul rehearsal is default-port only: the launcher's `API` line must report `http://localhost:5000`
+- if the launcher selects or is given another API port, stop; do not continue this rehearsal against it
 - demo credentials are valid (`demo` / `demo123` unless overridden)
-- local run uses deterministic/mock-safe mode (`--skip-llm`)
+- local provider configuration is deterministic/mock-safe
 
 ## Canonical Bootstrap
 
-Run from `frontend/taskdeck-web`:
+From the repository root, choose the command for the current shell:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
 
 ```bash
-npm run demo:seed
-npm run demo:run -- --clean --skip-llm client-onboarding
+./scripts/dev-up.sh --seed
 ```
+
+Continue only after the launcher prints `Stack is up.` and its `API` line reports
+`http://localhost:5000`. The launcher passes a fresh run identity to the seeder and binds
+every seed request to the API process it started. Do not replace this step with bare
+`npm run demo:seed` or `npm run demo:run`; those commands do not carry the launcher-owned
+connection proof. If port 5000 is unavailable, stop the launcher, free the port, and rerun this
+default-port contract rather than switching the rehearsal to another listener.
 
 This is the canonical rehearsal state:
 - board: `DEMO: Client Onboarding Demo`
@@ -94,15 +105,16 @@ Required files:
 
 If rehearsal fails, use this order:
 
-1. Rerun bootstrap commands exactly (`demo:seed` then `demo:run -- --clean --skip-llm client-onboarding`).
-2. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
-3. Confirm API target is local and reachable (`http://localhost:5000/api` unless explicitly overridden).
-4. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.
-5. Treat any missing trust cue, missing ACME lineage, or unclear board reveal as fail-no-recording.
+1. Stop only the launcher-owned stack with `.\scripts\dev-up.ps1 -Stop` or `./scripts/dev-up.sh --stop`.
+2. Confirm port 5000 is free, then rerun the matching `dev-up` seed command above; do not fall back to bare `demo:seed` or `demo:run`.
+3. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
+4. Confirm the launcher's `API` line again reports exactly `http://localhost:5000` before opening the rehearsal.
+5. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.
+6. Treat any missing trust cue, missing ACME lineage, or unclear board reveal as fail-no-recording.
 
 ## Pass/Fail Checklist
 
-- [ ] Bootstrap commands completed without errors.
+- [ ] The launcher seed completed without errors and its `API` line reported `http://localhost:5000`.
 - [ ] Canonical board is `DEMO: Client Onboarding Demo`.
 - [ ] ACME capture text is present and maps to proposal output.
 - [ ] Review screen shows explicit trust-first gating language.

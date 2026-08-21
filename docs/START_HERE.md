@@ -130,10 +130,22 @@ If you are evaluating Taskdeck for the first time, stay in `Home`, `Today`, `Inb
 
 If you want a populated workspace instead of starting mostly empty:
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
+From the repository root on Windows:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
 ```
+
+Or on Linux/macOS:
+
+```bash
+./scripts/dev-up.sh --seed
+```
+
+Continue only after the launcher prints `Stack is up.`, then use its printed API and frontend URLs.
+The launcher binds every seed request to the Development API instance it started. If a
+launcher-owned stack is already running, stop it with `-Stop` / `--stop`, then rerun the seeded
+launcher instead of calling the lower-level demo scripts directly.
 
 Use this when:
 

@@ -323,13 +323,20 @@ This user manual is chaptered under `docs/manual`. The primary chapters are:
 
 ## Demo And Testing Workflows
 
-From `frontend/taskdeck-web`:
+From the repository root, `dev-up` starts an identity-bound source stack and seeds a reusable
+baseline workspace:
 
-- `npm run demo:seed` seeds a reusable baseline workspace
-- `npm run demo:run -- --list` lists scenarios
-- `npm run demo:run -- engineering-sprint` runs one scenario
-- `npm run demo:autopilot -- --turns 5 --brain heuristic` simulates activity
-- `npm run demo:director:smoke` runs the deterministic smoke or demo regression path
+- Windows: `.\scripts\dev-up.ps1 -Seed`
+- Linux/macOS: `./scripts/dev-up.sh --seed`
+
+Continue only after `Stack is up.`, and use the API/frontend URLs printed by that invocation. Stop
+an existing launcher-owned stack with `-Stop` / `--stop` before reseeding. Do not use the lower-level
+bare seed or scenario runners as a substitute for this protected path.
+
+From `frontend/taskdeck-web`, `npm run demo:run -- --list` safely lists scenarios without making an
+HTTP request. Use `npm run demo:director:smoke` for the deterministic isolated regression path, or
+the fresh-server director command in [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) to execute
+a specific scenario.
 
 For direct API walkthroughs:
 
