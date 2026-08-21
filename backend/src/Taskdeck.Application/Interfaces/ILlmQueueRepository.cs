@@ -5,6 +5,11 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ILlmQueueRepository : IRepository<LlmRequest>
 {
+    /// <summary>
+    /// Returns historical total capture progress plus active Inbox workload counts. Active counts
+    /// exclude only captures whose effective extant board is archived; boardless/dangling records
+    /// remain visible. <c>TotalCaptures</c> deliberately retains archived history for onboarding.
+    /// </summary>
     Task<(int TotalCaptures, int NewCount, int FailedCount, int TriagingCount, int TriagedCount)> GetCaptureSummaryByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default);

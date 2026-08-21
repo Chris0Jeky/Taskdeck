@@ -42,6 +42,12 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .Where(proposal =>
                 proposal.DeferredUntil == null ||
                 proposal.DeferredUntil <= now)
+            // Match GetActiveByUserIdAsync: boardless and dangling history stays visible, while a
+            // positively identified extant archived board is excluded before Count on every provider.
+            .Where(proposal =>
+                !proposal.BoardId.HasValue ||
+                !_context.Boards.Any(board =>
+                    board.Id == proposal.BoardId.Value && board.IsArchived))
             .CountAsync(cancellationToken);
     }
 
