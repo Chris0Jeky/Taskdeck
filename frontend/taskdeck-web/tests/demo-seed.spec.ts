@@ -241,6 +241,11 @@ describe('demo seed rerun planning', () => {
         { id: 'near-miss', name: 'DEMO: Client Onboarding Demo (Chat copy)', isArchived: false },
       ]),
     ).toThrow(/unknown/i)
+    expect(() =>
+      planDemoBoardReset([
+        { id: 'whitespace-near-miss', name: 'DEMO: Client Onboarding Demo (Chat) ', isArchived: false },
+      ]),
+    ).toThrow(/unknown/i)
     expect(() => planDemoBoardReset([{ id: '', name: 'DEMO: Broken' }])).toThrow(/malformed/i)
     expect(() =>
       planDemoBoardReset([{ id: 'user-demo', name: 'DEMO: User Board', isArchived: false }]),

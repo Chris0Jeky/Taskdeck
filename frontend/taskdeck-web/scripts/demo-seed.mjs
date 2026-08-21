@@ -783,7 +783,7 @@ export function planDemoBoardReset(boards) {
     if (!isCandidate && !isTombstone) continue
 
     const id = typeof board?.id === 'string' ? board.id.trim() : ''
-    const name = typeof board?.name === 'string' ? board.name.trim() : ''
+    const name = typeof board?.name === 'string' ? board.name : ''
     if (!id || (isCandidate && (name === 'DEMO:' || typeof board.isArchived !== 'boolean'))) {
       throw new Error('Clean demo reset found a malformed DEMO:* board candidate; no boards were changed.')
     }
