@@ -58,9 +58,10 @@ leaving production byte-identical and the reviewed risk boundary unchanged.
 The transport still has no explicit per-response deadline. A peer can accept a request and never
 complete its response, leaving `-Seed` / `--seed` waiting until interruption. This is the
 availability-only `#1897` follow-up: it does not permit a second connection or wrong-instance
-mutation. PR `#1894` is closed unmerged and superseded by `#1896`; `#1875` is complete. None of this
-substitutes for packaged Explorer/shortcut/default-browser/SmartScreen or clean-Windows acceptance
-under `#1876`.
+mutation. Issue `#1898` separately tracks the late connector review's nonblocking zombie, stale-lock,
+ambient-environment, termination-race, and test-port hardening. PR `#1894` is closed unmerged and
+superseded by `#1896`; `#1875` is complete. None of this substitutes for packaged
+Explorer/shortcut/default-browser/SmartScreen or clean-Windows acceptance under `#1876`.
 
 ## 2026-08-20 Windows release and provider-retirement checkpoint
 
