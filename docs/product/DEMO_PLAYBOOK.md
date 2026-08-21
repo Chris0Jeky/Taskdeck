@@ -75,16 +75,20 @@ scripts/dev-up.sh --seed --reset-seed
 ```
 
 `-ResetSeed` / `--reset-seed` is invalid without the corresponding seed flag and is never implicit.
-After the launcher proves its exact run identity, the one-socket seeder preflights the complete board
-list before any write. Unknown, duplicate, or malformed `DEMO:*` candidates and malformed reserved
-tombstones fail closed. Each documented demo board is atomically renamed to an ID-bound non-demo
+After the launcher proves its exact run identity, the one-socket seeder authenticates the demo owner so
+it can read that user's complete board list. A first-ever seed may create that source-only demo owner;
+after owner authentication, an invalid reset preflight performs no board, artifact, or collaborator-account
+write. Unknown, duplicate, or malformed `DEMO:*` candidates and malformed reserved tombstones fail
+closed. The exact script-owned temporary name `DEMO: Client Onboarding Demo (Chat)` is recognised as
+the capture-board family so an interrupted chat rename can be recovered, while duplicate and near-match
+names still fail closed. Each documented demo board is atomically renamed to an ID-bound non-demo
 tombstone and archived; prior valid tombstones and non-demo boards are preserved. The seeder re-fetches
 and verifies that quarantine before creating four fresh canonical boards with new IDs, including a new
-intentionally archived board, and verifies that persisted set before seeding child artifacts. A 403 or
-any quarantine/fresh-state failure exits nonzero without artifact seeding. Because an earlier transition
-or fresh-board creation may already have succeeded, inspect the remaining demo state before retrying.
-The launcher then cleans only its own API/frontend process trees and does not claim that old tombstone
-data was physically deleted.
+intentionally archived board, and verifies that persisted set before provisioning the collaborator or
+seeding child artifacts. A 403 or any quarantine/fresh-state failure exits nonzero without collaborator
+provisioning or artifact seeding. Because an earlier transition or fresh-board creation may already have
+succeeded, inspect the remaining demo state before retrying. The launcher then cleans only its own
+API/frontend process trees and does not claim that old tombstone data was physically deleted.
 
 ### Database location
 
