@@ -120,6 +120,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             "tAsKdEcK_lLm_OpEnAi_ApI_kEy": "synthetic-legacy-openai-value",
             "TaSkDeCk_LlM_oPeNaI_cOmPaTiBlE_aPi_KeY": "synthetic-compatible-value",
             "gEmInI_aPi_KeY": "synthetic-gemini-value",
+            "tAsKdEcK_dEmO_gEmInI_aPi_KeY": "synthetic-demo-gemini-value",
         }
         source = {
             "CI": "true",
