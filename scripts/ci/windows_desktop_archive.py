@@ -9,6 +9,7 @@ credentials, provider payloads, or application logs.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import re
 import shutil
 import signal
 import socket
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -37,7 +39,7 @@ BOOTSTRAP_IDENTITY_PATTERN = re.compile(
 )
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 2
-FINAL_EVIDENCE_SCHEMA_VERSION = 3
+FINAL_EVIDENCE_SCHEMA_VERSION = 4
 MAX_PROBE_LATENCY_MS = 300_000
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
@@ -433,7 +435,94 @@ def run_playwright(frontend_directory: Path, environment: Mapping[str, str]) -> 
             f"The sanitized packaged Playwright journey failed at checkpoint {checkpoint}{status_label}.")
 
 
-def assert_data_isolated(temp_root: Path, local_app_data: Path) -> None:
+def seed_legacy_v01_state(legacy_path: Path, local_app_data: Path) -> bytes:
+    """Create synthetic v0.1 adjacent identity and durable SQLite state without logging either."""
+    taskdeck_data = (local_app_data / "Taskdeck").resolve()
+    taskdeck_data.mkdir(parents=True, exist_ok=True)
+    database = taskdeck_data / "taskdeck.db"
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute(
+            "CREATE TABLE taskdeck_acceptance_legacy_state (marker TEXT NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO taskdeck_acceptance_legacy_state (marker) VALUES (?)",
+            ("synthetic-legacy-state",),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    payload = json.dumps(
+        {
+            "ConnectionStrings": {"DefaultConnection": f"Data Source={database}"},
+            "Jwt": {"SecretKey": base64.b64encode(os.urandom(48)).decode("ascii")},
+            "Connectors": {"EncryptionKey": base64.b64encode(os.urandom(32)).decode("ascii")},
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    legacy_path.write_bytes(payload)
+    return payload
+
+
+def require_absent_legacy_fixture_path(legacy_path: Path) -> None:
+    if legacy_path.exists():
+        raise AcceptanceFailure(
+            "The untouched package contained an adjacent local config and cannot be safely seeded."
+        )
+
+
+def assert_legacy_state_reused(database: Path) -> None:
+    try:
+        connection = sqlite3.connect(database)
+        try:
+            row = connection.execute(
+                "SELECT marker FROM taskdeck_acceptance_legacy_state"
+            ).fetchone()
+        finally:
+            connection.close()
+    except sqlite3.Error as exc:
+        raise AcceptanceFailure("The synthetic legacy app-data state was not reusable.") from exc
+    if row != ("synthetic-legacy-state",):
+        raise AcceptanceFailure("The synthetic legacy app-data state did not survive packaged startup.")
+
+
+def assert_legacy_identity_imported_and_retained(
+    legacy_path: Path,
+    durable_path: Path,
+    expected_payload: bytes,
+) -> None:
+    try:
+        legacy_payload = legacy_path.read_bytes()
+        durable_payload = durable_path.read_bytes()
+    except OSError as exc:
+        raise AcceptanceFailure("The packaged legacy identity was not retained in the expected locations.") from exc
+    if legacy_payload != expected_payload:
+        raise AcceptanceFailure("The packaged legacy identity source was not retained byte-for-byte.")
+    try:
+        expected = json.loads(expected_payload)
+        durable = json.loads(durable_payload)
+        expected_identity = (
+            expected["ConnectionStrings"]["DefaultConnection"],
+            expected["Jwt"]["SecretKey"],
+            expected["Connectors"]["EncryptionKey"],
+        )
+        durable_identity = (
+            durable["ConnectionStrings"]["DefaultConnection"],
+            durable["Jwt"]["SecretKey"],
+            durable["Connectors"]["EncryptionKey"],
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise AcceptanceFailure("The durable packaged identity could not be safely verified.") from exc
+    if durable_identity != expected_identity:
+        raise AcceptanceFailure("The packaged legacy identity was not imported into durable app data.")
+
+
+def assert_data_isolated(
+    temp_root: Path,
+    local_app_data: Path,
+    retained_legacy_path: Path | None = None,
+) -> None:
     taskdeck_data = (local_app_data / "Taskdeck").resolve()
     local_config = taskdeck_data / "appsettings.local.json"
     database = taskdeck_data / "taskdeck.db"
@@ -441,10 +530,15 @@ def assert_data_isolated(temp_root: Path, local_app_data: Path) -> None:
         raise AcceptanceFailure("Durable packaged configuration and database files were not created.")
 
     sensitive_names = {"appsettings.local.json", "taskdeck.db", "taskdeck.db-wal", "taskdeck.db-shm"}
+    allowed_retained_legacy_path = (
+        retained_legacy_path.resolve() if retained_legacy_path is not None else None
+    )
     for path in temp_root.rglob("*"):
         if not path.is_file() or path.name not in sensitive_names:
             continue
         resolved = path.resolve()
+        if resolved == allowed_retained_legacy_path:
+            continue
         if taskdeck_data not in resolved.parents:
             raise AcceptanceFailure("Packaged configuration or database state escaped isolated LOCALAPPDATA.")
 
@@ -571,6 +665,18 @@ def _reject_forbidden_evidence_keys(value: Any) -> None:
             _reject_forbidden_evidence_keys(nested)
 
 
+def validate_migration_evidence(value: Any) -> dict[str, dict[str, str]]:
+    expected = {
+        "legacy": {"location": "adjacent", "state": "retained"},
+        "durable": {"location": "app-data", "state": "imported"},
+        "database": {"location": "app-data", "state": "reused"},
+        "board": {"location": "app-data", "state": "created"},
+    }
+    if value != expected:
+        raise AcceptanceFailure("Packaged migration evidence did not match the retention contract.")
+    return expected
+
+
 def build_final_evidence(
     archive_name: str,
     archive_hash: str,
@@ -580,6 +686,7 @@ def build_final_evidence(
     second_bootstrap_identity: dict[str, bool],
     create_evidence: dict[str, Any],
     restart_evidence: dict[str, Any],
+    migration_evidence: Any,
 ) -> dict[str, Any]:
     for identity in (first_bootstrap_identity, second_bootstrap_identity):
         _require_exact_keys(identity, {"jwtCreated", "connectorCreated"}, "bootstrap identity")
@@ -607,6 +714,7 @@ def build_final_evidence(
         ],
         "create": create_evidence,
         "restart": restart_evidence,
+        "migration": validate_migration_evidence(migration_evidence),
     }
     _reject_forbidden_evidence_keys(final_evidence)
     return final_evidence
@@ -668,6 +776,9 @@ def run(argv: list[str]) -> int:
         local_app_data.mkdir()
         safe_extract_archive(archive, first_extract)
         safe_extract_archive(archive, second_extract)
+        legacy_local_config = first_extract / "appsettings.local.json"
+        require_absent_legacy_fixture_path(legacy_local_config)
+        legacy_payload = seed_legacy_v01_state(legacy_local_config, local_app_data)
         first_snapshot = snapshot_tree(first_extract)
         second_snapshot = snapshot_tree(second_extract)
         cwd_snapshot = snapshot_tree(unrelated_cwd)
@@ -703,7 +814,7 @@ def run(argv: list[str]) -> int:
         first_url, first_port, first_bootstrap_identity = first_monitor.wait_for_ready()
         require_bootstrap_identity(
             first_bootstrap_identity,
-            {"jwtCreated": True, "connectorCreated": True},
+            {"jwtCreated": False, "connectorCreated": False},
         )
         if first_port == 5000:
             raise AcceptanceFailure("The packaged process did not fall back while port 5000 was held.")
@@ -726,7 +837,13 @@ def run(argv: list[str]) -> int:
         )
         stop_packaged_process(first_monitor)
         monitors.remove(first_monitor)
-        assert_data_isolated(temp_root, local_app_data)
+        assert_data_isolated(temp_root, local_app_data, legacy_local_config)
+        assert_legacy_identity_imported_and_retained(
+            legacy_local_config,
+            local_app_data / "Taskdeck" / "appsettings.local.json",
+            legacy_payload,
+        )
+        assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
         assert_tree_unchanged(first_snapshot, first_extract, "first extracted archive")
         assert_tree_unchanged(cwd_snapshot, unrelated_cwd, "unrelated working directory")
 
@@ -758,7 +875,13 @@ def run(argv: list[str]) -> int:
         monitors.remove(second_monitor)
         assert_tree_unchanged(second_snapshot, second_extract, "second extracted archive")
         assert_tree_unchanged(cwd_snapshot, unrelated_cwd, "unrelated working directory")
-        assert_data_isolated(temp_root, local_app_data)
+        assert_data_isolated(temp_root, local_app_data, legacy_local_config)
+        assert_legacy_identity_imported_and_retained(
+            legacy_local_config,
+            local_app_data / "Taskdeck" / "appsettings.local.json",
+            legacy_payload,
+        )
+        assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
 
         if sha256_file(archive) != archive_hash:
             raise AcceptanceFailure("The archive changed during post-ZIP acceptance.")
@@ -782,6 +905,12 @@ def run(argv: list[str]) -> int:
             second_bootstrap_identity,
             create_evidence,
             restart_evidence,
+            {
+                "legacy": {"location": "adjacent", "state": "retained"},
+                "durable": {"location": "app-data", "state": "imported"},
+                "database": {"location": "app-data", "state": "reused"},
+                "board": {"location": "app-data", "state": "created"},
+            },
         )
         evidence_path.write_text(json.dumps(final_evidence, indent=2) + "\n", encoding="utf-8")
         live_result = create_evidence["liveOpenAi"]

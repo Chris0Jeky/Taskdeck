@@ -306,7 +306,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
-    def test_final_evidence_v3_records_only_bounded_bootstrap_booleans(self) -> None:
+    def test_final_evidence_v4_records_bounded_bootstrap_and_migration_states(self) -> None:
         final = harness.build_final_evidence(
             "taskdeck-v0.1.1-win-x64.zip",
             "a" * 64,
@@ -316,10 +316,16 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             {"jwtCreated": False, "connectorCreated": False},
             {"phase": "create"},
             {"phase": "restart"},
+            {
+                "legacy": {"location": "adjacent", "state": "retained"},
+                "durable": {"location": "app-data", "state": "imported"},
+                "database": {"location": "app-data", "state": "reused"},
+                "board": {"location": "app-data", "state": "created"},
+            },
         )
 
         self.assertEqual(2, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
-        self.assertEqual(3, final["schemaVersion"])
+        self.assertEqual(4, final["schemaVersion"])
         self.assertEqual(
             {"jwtCreated": True, "connectorCreated": True},
             final["launches"][0]["bootstrapIdentity"],
@@ -347,6 +353,12 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                         {"jwtCreated": False, "connectorCreated": False},
                         {"phase": "create"},
                         {"phase": "restart"},
+                        {
+                            "legacy": {"location": "adjacent", "state": "retained"},
+                            "durable": {"location": "app-data", "state": "imported"},
+                            "database": {"location": "app-data", "state": "reused"},
+                            "board": {"location": "app-data", "state": "created"},
+                        },
                     )
 
     def test_snapshot_detects_extraction_mutation(self) -> None:
@@ -359,6 +371,46 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             file_path.write_bytes(b"changed")
             with self.assertRaises(harness.AcceptanceFailure):
                 harness.assert_tree_unchanged(before, root, "archive")
+
+    def test_synthetic_legacy_state_is_importable_without_retaining_identity_material(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            local_app_data = root / "local-app-data"
+            legacy_path = root / "legacy-extract" / "appsettings.local.json"
+            legacy_path.parent.mkdir()
+
+            payload = harness.seed_legacy_v01_state(legacy_path, local_app_data)
+            durable_path = local_app_data / "Taskdeck" / "appsettings.local.json"
+            durable_path.write_bytes(payload)
+
+            harness.assert_legacy_identity_imported_and_retained(
+                legacy_path,
+                durable_path,
+                payload,
+            )
+            harness.assert_legacy_state_reused(local_app_data / "Taskdeck" / "taskdeck.db")
+            harness.assert_data_isolated(root, local_app_data, legacy_path)
+
+    def test_legacy_fixture_refuses_to_overwrite_a_packaged_local_config(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            legacy_path = Path(raw) / "appsettings.local.json"
+            legacy_path.write_text("{}", encoding="utf-8")
+
+            with self.assertRaises(harness.AcceptanceFailure):
+                harness.require_absent_legacy_fixture_path(legacy_path)
+
+    def test_migration_evidence_is_an_exact_value_free_whitelist(self) -> None:
+        evidence = {
+            "legacy": {"location": "adjacent", "state": "retained"},
+            "durable": {"location": "app-data", "state": "imported"},
+            "database": {"location": "app-data", "state": "reused"},
+            "board": {"location": "app-data", "state": "created"},
+        }
+        self.assertEqual(evidence, harness.validate_migration_evidence(evidence))
+
+        evidence["durable"] = {"location": "app-data", "state": "created"}
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_migration_evidence(evidence)
 
     @staticmethod
     def _process_monitor(*markers: str) -> harness.ProcessMonitor:
