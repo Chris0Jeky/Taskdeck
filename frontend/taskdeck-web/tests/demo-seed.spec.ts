@@ -3,16 +3,18 @@ import type { AddressInfo, Socket } from 'node:net'
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildDemoResetTombstoneName,
   buildProposalLookupPath,
   collectSeededChatProposalIds,
   createRunBoundApiTransport,
   createRunBoundApiTransportFromEnvironment,
-  deleteDemoBoardsForCleanReset,
   hasSeededChatEvidence,
   mergeSeedPlanChatSessions,
   parseSeedArgs,
   planDemoBoardReset,
   planDemoSeedRerunState,
+  prepareDemoBoardsForSeed,
+  quarantineDemoBoardsForCleanReset,
   shouldRecreateCaptureSeed,
 } from '../scripts/demo-seed.mjs'
 import { extractListItems } from '../scripts/demo-shared.mjs'
@@ -94,44 +96,143 @@ function createManualResponseDeadline() {
   }
 }
 
-describe('demo seed rerun planning', () => {
-  it('preflights only documented DEMO:* boards and preserves non-demo boards during a clean reset', async () => {
-    const candidates = planDemoBoardReset([
-      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo' },
-      { id: 'real-board', name: 'Client work' },
-      { id: 'demo-archive', name: 'DEMO: Archived Board' },
-    ])
-    const requests: string[] = []
+type StatefulDemoBoard = {
+  id: string
+  name: string
+  description?: string
+  isArchived: boolean
+  cards: Array<{ id: string }>
+  proposals: Array<{ id: string }>
+}
 
-    await deleteDemoBoardsForCleanReset(candidates, 'token', {
-      request: async (method, path) => {
-        requests.push(`${method} ${path}`)
+function createStatefulDemoBoardApi(initialBoards: StatefulDemoBoard[]) {
+  const boards = structuredClone(initialBoards)
+  const requests: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
+  let nextBoardId = 1
+
+  const request = async (
+    method: string,
+    path: string,
+    options: { body?: Record<string, unknown> } = {},
+  ) => {
+    requests.push({ method, path, body: structuredClone(options.body) })
+
+    if (method === 'POST' && path === '/boards') {
+      const created: StatefulDemoBoard = {
+        id: `fresh-${nextBoardId++}`,
+        name: String(options.body?.name || ''),
+        description: typeof options.body?.description === 'string' ? options.body.description : undefined,
+        isArchived: false,
+        cards: [],
+        proposals: [],
+      }
+      boards.push(created)
+      return structuredClone(created)
+    }
+
+    const boardId = path.match(/^\/boards\/(.+)$/)?.[1]
+    const board = boards.find((candidate) => candidate.id === boardId)
+    if (!board) throw new Error(`Board not found: ${boardId}`)
+
+    if (method === 'DELETE') {
+      board.isArchived = true
+      return null
+    }
+    if (method === 'PUT') {
+      Object.assign(board, options.body)
+      return structuredClone(board)
+    }
+
+    throw new Error(`Unexpected request: ${method} ${path}`)
+  }
+
+  return {
+    list: () => structuredClone(boards),
+    mutate(boardId: string) {
+      const board = boards.find((candidate) => candidate.id === boardId)
+      if (!board) throw new Error(`Board not found: ${boardId}`)
+      board.cards.push({ id: `dirty-card-${board.cards.length + 1}` })
+      board.proposals.push({ id: `dirty-proposal-${board.proposals.length + 1}` })
+    },
+    request,
+    requests,
+  }
+}
+
+describe('demo seed rerun planning', () => {
+  it('preflights only documented DEMO:* boards and preserves non-demo boards during quarantine', async () => {
+    const plan = planDemoBoardReset([
+      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+      { id: 'real-board', name: 'Client work', isArchived: false },
+      { id: 'demo-archive', name: 'DEMO: Archived Board', isArchived: true },
+      {
+        id: 'prior-reset',
+        name: buildDemoResetTombstoneName('prior-reset'),
+        isArchived: true,
+      },
+    ])
+    const requests: Array<{ method: string; path: string; body?: unknown }> = []
+
+    await quarantineDemoBoardsForCleanReset(plan.candidates, 'token', {
+      request: async (method, path, options) => {
+        requests.push({ method, path, body: options.body })
         return null
       },
     })
 
-    expect(requests).toEqual(['DELETE /boards/demo-capture', 'DELETE /boards/demo-archive'])
+    expect(plan.tombstones).toEqual([
+      {
+        id: 'prior-reset',
+        name: buildDemoResetTombstoneName('prior-reset'),
+        isArchived: true,
+      },
+    ])
+    expect(requests).toEqual([
+      {
+        method: 'PUT',
+        path: '/boards/demo-capture',
+        body: { name: buildDemoResetTombstoneName('demo-capture'), isArchived: true },
+      },
+      {
+        method: 'PUT',
+        path: '/boards/demo-archive',
+        body: { name: buildDemoResetTombstoneName('demo-archive'), isArchived: true },
+      },
+    ])
   })
 
-  it('rejects duplicate or malformed DEMO:* reset candidates before any DELETE', () => {
+  it('rejects duplicate, unknown, or malformed DEMO:* candidates and reserved tombstones before mutation', () => {
     expect(() =>
       planDemoBoardReset([
-        { id: 'duplicate-one', name: 'DEMO: Client Onboarding Demo' },
-        { id: 'duplicate-two', name: 'DEMO: Client Onboarding Demo' },
+        { id: 'duplicate-one', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+        { id: 'duplicate-two', name: 'DEMO: Capture Loop', isArchived: true },
       ]),
-    ).toThrow(/duplicate or ambiguous/i)
+    ).toThrow(/duplicate.*ambiguous/i)
     expect(() => planDemoBoardReset([{ id: '', name: 'DEMO: Broken' }])).toThrow(/malformed/i)
+    expect(() =>
+      planDemoBoardReset([{ id: 'user-demo', name: 'DEMO: User Board', isArchived: false }]),
+    ).toThrow(/unknown/i)
+    expect(() =>
+      planDemoBoardReset([
+        {
+          id: 'old-demo',
+          name: buildDemoResetTombstoneName('different-id'),
+          isArchived: true,
+        },
+      ]),
+    ).toThrow(/malformed reserved reset tombstone/i)
   })
 
-  it('stops after a reset delete failure and does not attempt a reseed', async () => {
+  it('stops after a reset quarantine failure and does not attempt a reseed', async () => {
     const requests: string[] = []
-    const candidates = planDemoBoardReset([
-      { id: 'demo-one', name: 'DEMO: One' },
-      { id: 'demo-two', name: 'DEMO: Two' },
-    ])
+    const boards = [
+      { id: 'demo-one', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+      { id: 'demo-two', name: 'DEMO: Content Calendar', isArchived: false },
+    ]
 
     await expect(
-      deleteDemoBoardsForCleanReset(candidates, 'token', {
+      prepareDemoBoardsForSeed(boards, 'token', {
+        reset: true,
         request: async (method, path) => {
           requests.push(`${method} ${path}`)
           if (path.endsWith('demo-two')) {
@@ -141,9 +242,131 @@ describe('demo seed rerun planning', () => {
           }
           return null
         },
+        refreshBoards: async () => boards,
       }),
     ).rejects.toThrow(/no reseed was attempted/i)
-    expect(requests).toEqual(['DELETE /boards/demo-one', 'DELETE /boards/demo-two'])
+    expect(requests).toEqual(['PUT /boards/demo-one', 'PUT /boards/demo-two'])
+  })
+
+  it('aborts before creating boards when the quarantined state cannot be re-fetched and verified', async () => {
+    const originalBoards = [
+      { id: 'demo-capture', name: 'DEMO: Client Onboarding Demo', isArchived: false },
+    ]
+    const requests: string[] = []
+
+    await expect(
+      prepareDemoBoardsForSeed(originalBoards, 'token', {
+        reset: true,
+        request: async (method, path) => {
+          requests.push(`${method} ${path}`)
+          return null
+        },
+        refreshBoards: async () => originalBoards,
+      }),
+    ).rejects.toThrow(/no fresh boards or demo artifacts were seeded/i)
+    expect(requests).toEqual(['PUT /boards/demo-capture'])
+  })
+
+  it('keeps dirty soft-archived tombstones but creates clean IDs on reset and repeated reset', async () => {
+    const api = createStatefulDemoBoardApi([
+      {
+        id: 'old-capture',
+        name: 'DEMO: Client Onboarding Demo',
+        isArchived: false,
+        cards: [{ id: 'dirty-card' }],
+        proposals: [{ id: 'dirty-proposal' }],
+      },
+      {
+        id: 'old-content',
+        name: 'DEMO: Content Calendar',
+        isArchived: false,
+        cards: [],
+        proposals: [],
+      },
+      {
+        id: 'old-blank',
+        name: 'DEMO: Blank Board',
+        isArchived: false,
+        cards: [],
+        proposals: [],
+      },
+      {
+        id: 'old-archive',
+        name: 'DEMO: Archived Board',
+        isArchived: true,
+        cards: [{ id: 'archived-dirty-card' }],
+        proposals: [],
+      },
+      {
+        id: 'real-board',
+        name: 'Client work',
+        isArchived: false,
+        cards: [{ id: 'real-card' }],
+        proposals: [],
+      },
+    ])
+    const options = {
+      reset: true,
+      request: api.request,
+      refreshBoards: async () => api.list(),
+    }
+    const preResetIds = new Set(api.list().map((board) => board.id))
+
+    const first = await prepareDemoBoardsForSeed(api.list(), 'token', options)
+    const firstIds = new Set([first.capture.id, first.content.id, first.blank.id, first.archived.id])
+    expect(firstIds.size).toBe(4)
+    for (const id of firstIds) expect(preResetIds.has(id)).toBe(false)
+    expect([
+      first.capture.isArchived,
+      first.content.isArchived,
+      first.blank.isArchived,
+      first.archived.isArchived,
+    ]).toEqual([false, false, false, true])
+
+    let snapshot = api.list()
+    expect(snapshot.find((board) => board.id === 'old-capture')).toMatchObject({
+      name: buildDemoResetTombstoneName('old-capture'),
+      isArchived: true,
+      cards: [{ id: 'dirty-card' }],
+      proposals: [{ id: 'dirty-proposal' }],
+    })
+    expect(snapshot.find((board) => board.id === 'old-archive')).toMatchObject({
+      name: buildDemoResetTombstoneName('old-archive'),
+      isArchived: true,
+      cards: [{ id: 'archived-dirty-card' }],
+    })
+    expect(snapshot.find((board) => board.id === 'real-board')).toMatchObject({
+      name: 'Client work',
+      isArchived: false,
+      cards: [{ id: 'real-card' }],
+    })
+    for (const id of firstIds) {
+      expect(snapshot.find((board) => board.id === id)).toMatchObject({ cards: [], proposals: [] })
+    }
+
+    api.mutate(first.capture.id)
+    const second = await prepareDemoBoardsForSeed(api.list(), 'token', options)
+    const secondIds = new Set([second.capture.id, second.content.id, second.blank.id, second.archived.id])
+    expect(secondIds.size).toBe(4)
+    for (const id of secondIds) expect(firstIds.has(id)).toBe(false)
+    expect([
+      second.capture.isArchived,
+      second.content.isArchived,
+      second.blank.isArchived,
+      second.archived.isArchived,
+    ]).toEqual([false, false, false, true])
+
+    snapshot = api.list()
+    expect(snapshot.find((board) => board.id === first.capture.id)).toMatchObject({
+      name: buildDemoResetTombstoneName(first.capture.id),
+      isArchived: true,
+      cards: [{ id: 'dirty-card-1' }],
+      proposals: [{ id: 'dirty-proposal-1' }],
+    })
+    for (const id of secondIds) {
+      expect(snapshot.find((board) => board.id === id)).toMatchObject({ cards: [], proposals: [] })
+    }
+    expect(planDemoBoardReset(snapshot).tombstones).toHaveLength(8)
   })
 
   it('normalizes paginated API responses for demo board discovery', () => {

@@ -75,12 +75,16 @@ scripts/dev-up.sh --seed --reset-seed
 ```
 
 `-ResetSeed` / `--reset-seed` is invalid without the corresponding seed flag and is never implicit.
-After the launcher proves its exact run identity, the one-socket seeder preflights every `DEMO:*`
-candidate (including duplicate or malformed candidates) before any DELETE. It deletes only those
-documented demo boards and preserves non-demo boards. A 403 or any delete failure exits nonzero and
-does not reseed; because an earlier delete may already have succeeded, inspect the remaining demo
-state before retrying. The launcher then cleans only its own API/frontend process trees and does not
-claim that the database was fully restored.
+After the launcher proves its exact run identity, the one-socket seeder preflights the complete board
+list before any write. Unknown, duplicate, or malformed `DEMO:*` candidates and malformed reserved
+tombstones fail closed. Each documented demo board is atomically renamed to an ID-bound non-demo
+tombstone and archived; prior valid tombstones and non-demo boards are preserved. The seeder re-fetches
+and verifies that quarantine before creating four fresh canonical boards with new IDs, including a new
+intentionally archived board, and verifies that persisted set before seeding child artifacts. A 403 or
+any quarantine/fresh-state failure exits nonzero without artifact seeding. Because an earlier transition
+or fresh-board creation may already have succeeded, inspect the remaining demo state before retrying.
+The launcher then cleans only its own API/frontend process trees and does not claim that old tombstone
+data was physically deleted.
 
 ### Database location
 

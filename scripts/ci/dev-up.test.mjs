@@ -660,6 +660,28 @@ async function stopSuccessfulStack(platform, fixture) {
   assert.equal(await readOptional(fixture.stateFile), null)
 }
 
+async function assertResetSeedCycle(platform, fixture, expectedResetSeedEvents) {
+  const apiPort = await getFreePort()
+  const frontendPort = await getFreePort()
+  try {
+    const result = runLauncher(platform, fixture, {
+      apiPort,
+      seed: true,
+      resetSeed: true,
+      env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+    })
+    assert.equal(result.status, 0, combinedOutput(result))
+    const resetSeedEvents = (await readEvents(fixture)).filter(
+      (event) => event.args.join(' ') === 'run demo:seed -- --reset',
+    )
+    assert.equal(resetSeedEvents.length, expectedResetSeedEvents)
+    assert.equal(resetSeedEvents.at(-1).taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
+    await stopSuccessfulStack(platform, fixture)
+  } finally {
+    if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+  }
+}
+
 test('launchers encode the transactional lifecycle and custom-port environment boundary', async () => {
   const [powershellText, bashText, packageJson, nvmrc] = await Promise.all([
     readFile(powershellLauncher, 'utf8'),
@@ -716,41 +738,24 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: reset seed forwards --reset and preserves ordinary seed arguments`, { concurrency: false }, async () => {
-    const fixture = await createFixture(platform)
-    const apiPort = await getFreePort()
-    const frontendPort = await getFreePort()
-    try {
-      const result = runLauncher(platform, fixture, {
-        apiPort,
-        seed: true,
-        resetSeed: true,
-        env: { FAKE_FRONTEND_PORT: String(frontendPort) },
-      })
-      assert.equal(result.status, 0, combinedOutput(result))
-      const seedEvent = (await readEvents(fixture)).find((event) => event.args.join(' ') === 'run demo:seed -- --reset')
-      assert.ok(seedEvent, combinedOutput(result))
-      assert.equal(seedEvent.taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
-      await stopSuccessfulStack(platform, fixture)
+  let repeatedUseFixture = null
+  const getRepeatedUseFixture = async () => {
+    repeatedUseFixture ||= await createFixture(platform)
+    return repeatedUseFixture
+  }
 
-      const repeatedApiPort = await getFreePort()
-      const repeatedFrontendPort = await getFreePort()
-      const repeated = runLauncher(platform, fixture, {
-        apiPort: repeatedApiPort,
-        seed: true,
-        resetSeed: true,
-        env: { FAKE_FRONTEND_PORT: String(repeatedFrontendPort) },
-      })
-      assert.equal(repeated.status, 0, combinedOutput(repeated))
-      const resetSeedEvents = (await readEvents(fixture)).filter(
-        (event) => event.args.join(' ') === 'run demo:seed -- --reset',
-      )
-      assert.equal(resetSeedEvents.length, 2)
-      await stopSuccessfulStack(platform, fixture)
-    } finally {
-      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
-      await removeFixture(fixture)
-    }
+  test.after(async () => {
+    if (!repeatedUseFixture) return
+    if (existsSync(repeatedUseFixture.stateFile)) runLauncher(platform, repeatedUseFixture, { stop: true })
+    await removeFixture(repeatedUseFixture)
+  })
+
+  test(`${platform.name}: reset seed forwards --reset and preserves ordinary seed arguments on first use`, { concurrency: false }, async () => {
+    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 1)
+  })
+
+  test(`${platform.name}: reset seed forwards --reset again after a clean stop`, { concurrency: false }, async () => {
+    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 2)
   })
 }
 

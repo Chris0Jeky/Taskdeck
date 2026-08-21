@@ -71,11 +71,14 @@ connection proof. If port 5000 is unavailable, stop the launcher, free the port,
 default-port contract rather than switching the rehearsal to another listener.
 
 The explicit reset flag is required for a clean rehearsal and is never implied by normal seeding.
-It is valid only with `-Seed` / `--seed`. Before deleting anything, the run-bound seeder validates
-all `DEMO:*` candidates for duplicates and malformed records; non-demo boards are not reset. A 403
-or any delete failure fails the command without reseeding. Deletions are sequential, so a failure
-can leave a partial demo reset: the launcher cleans only the process trees it started, and the
-operator must inspect the remaining demo boards before retrying.
+It is valid only with `-Seed` / `--seed`. Before changing anything, the run-bound seeder validates
+the complete board list and fails closed on unknown, duplicate, or malformed `DEMO:*` candidates or
+malformed reserved tombstones. It atomically renames each documented demo board to an ID-bound
+non-demo tombstone and archives it, then re-fetches that quarantine before creating and verifying
+four fresh canonical board IDs. Prior valid tombstones and non-demo boards are preserved. A 403 or
+any quarantine/fresh-state failure stops before child artifacts are seeded. A failure can leave a
+partial quarantine or fresh board set: the launcher cleans only the process trees it started, and
+the operator must inspect the remaining demo state before retrying.
 
 This is the canonical rehearsal state:
 - board: `DEMO: Client Onboarding Demo`
