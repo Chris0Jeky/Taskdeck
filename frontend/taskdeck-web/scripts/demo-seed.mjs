@@ -51,10 +51,18 @@ const ALLOW_NON_LOCAL_API = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_
 const DEV_RUN_ID_HEADER_NAME = 'taskdeck-dev-run-id'
 const EMPTY_GUID_D = '00000000-0000-0000-0000-000000000000'
 const CANONICAL_GUID_D_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const RUN_BOUND_RESPONSE_DEADLINE_MS = 10_000
 
 let activeRunBoundTransport = null
 
-export function createRunBoundApiTransport({ apiBaseUrl, expectedRunId, allowNonLocal = false }) {
+export function createRunBoundApiTransport({
+  apiBaseUrl,
+  expectedRunId,
+  allowNonLocal = false,
+  responseDeadlineMs = RUN_BOUND_RESPONSE_DEADLINE_MS,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+}) {
   if (
     typeof expectedRunId !== 'string' ||
     !CANONICAL_GUID_D_PATTERN.test(expectedRunId) ||
@@ -64,6 +72,9 @@ export function createRunBoundApiTransport({ apiBaseUrl, expectedRunId, allowNon
   }
   if (allowNonLocal) {
     throw new Error('Run-bound demo seeding cannot use TASKDECK_DEMO_ALLOW_NON_LOCAL_API.')
+  }
+  if (!Number.isSafeInteger(responseDeadlineMs) || responseDeadlineMs <= 0) {
+    throw new Error('Run-bound demo seeding requires a positive whole-millisecond response deadline.')
   }
 
   let parsedApiBase
@@ -166,10 +177,15 @@ export function createRunBoundApiTransport({ apiBaseUrl, expectedRunId, allowNon
       return await new Promise((resolve, reject) => {
         let request
         let settled = false
+        let responseDeadline
 
         const settle = (error, response) => {
           if (settled) return
           settled = true
+          if (responseDeadline !== undefined) {
+            clearTimeoutFn(responseDeadline)
+            responseDeadline = undefined
+          }
           if (error) reject(error)
           else resolve(response)
         }
@@ -225,6 +241,9 @@ export function createRunBoundApiTransport({ apiBaseUrl, expectedRunId, allowNon
               })
             },
           )
+          responseDeadline = setTimeoutFn(() => {
+            failRequest(`Run-bound API response exceeded the ${responseDeadlineMs}ms deadline.`)
+          }, responseDeadlineMs)
         } catch (err) {
           failRequest('Run-bound API request could not be created.', err)
           return
