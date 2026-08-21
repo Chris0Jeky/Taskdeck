@@ -1772,33 +1772,63 @@ Policy notes:
 Canonical operator contract:
 - `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
 
-Deterministic bootstrap for the Saul-facing story:
+Deterministic bootstrap for the Saul-facing story (the wrappers scope only non-secret Mock/live-disabled
+settings to the launcher process tree; they do not display, read, persist, or overwrite any provider
+key value):
 
 ```powershell
 # From the repository root
-.\scripts\dev-up.ps1 -Seed
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  & ".\scripts\dev-up.ps1" -Seed
+}'
 ```
 
 ```bash
 # From the repository root
-./scripts/dev-up.sh --seed
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  ./scripts/dev-up.sh --seed
 ```
 
 Continue only after `Stack is up.` and the launcher's API line reports
 `http://localhost:5000`. This Saul contract is default-port only; stop and abort the rehearsal if
 that URL is different. Do not replace the launcher with bare `demo:seed` or `demo:run` commands.
 
-Deterministic artifact rehearsal bundle:
+Deterministic artifact rehearsal bundle (run from `frontend/taskdeck-web`; the wrappers preserve
+the same child-scoped Mock/live-disabled settings through the director and its fresh servers):
 
 ```bash
-cd frontend/taskdeck-web
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  TASKDECK_DEMO_LLM_PROVIDER=Mock \
+  TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
+  $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
+  npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+}'
 ```
 
 Acceptance focus for this rehearsal:
 - prove `Home -> Inbox/Capture -> Review -> Board`
 - prove review-first trust language is visible without narration
 - prove ACME onboarding capture becomes clean board work after explicit approval
+- this rehearsal is local evidence only; public release approval and the manual clean-machine
+  Explorer/shortcut/default-browser/SmartScreen gates remain open (`#1242`, `#1876`, `#1877`)
 
 ## Load Harness (k6 + Playwright Concurrency)
 
