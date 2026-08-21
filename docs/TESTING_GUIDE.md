@@ -57,6 +57,32 @@ manual clean-machine acceptance:
   Ollama fallback, and 10 seconds of response-delivery allowance. Expiry still marks the one-shot
   transport failed, destroys its agent/socket, and never retries or creates a replacement
   connection. The final focused transport suite passes 38/38.
+- PRs `#1913` and `#1915` hide archived reset generations from active Inbox/Review lists and align
+  Home/Today workload counts with those lists while preserving explicit history and onboarding
+  history. PR `#1920` validates reset inventory and authenticates the collaborator before any
+  quarantine/replacement write; repeated protected resets retain unrelated boards and history but
+  produce one fresh active demo generation. PRs `#1926` and `#1928` keep the exact launcher suite
+  inside per-case CI deadlines and allow only a transient post-`taskkill` unknown identity while
+  preserving fail-closed behavior before signaling or on PID mismatch.
+- PR `#1922` makes local `-LiveOpenAI` acceptance mandatory rather than accepting a missing-key skip,
+  and replaces the old chat-only proof with Transcript capture -> Inbox triage -> proposal review ->
+  apply -> restart. The gate requires exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
+  attribution before approval. PR `#1924` removes current and retired provider credential aliases
+  case-insensitively from the Playwright child environment and fails closed if a recognized name or
+  synthetic value survives.
+- Exact `main` `f9d9b84c` Required CI run `32488801335` accepted all 18 jobs (16 success and 2
+  intentional skips), including dynamic E2E Smoke. No-publish run `32488879613` also completed
+  successfully: `Build win-x64` tested the untouched inner archive and `Create GitHub Release` was
+  skipped. Downloaded artifact
+  `9449039716` contained `taskdeck-v0.0.0-dryrun+f9d9b84-win-x64.zip`; its normalized checksum and
+  independent rehash both equal
+  `d4e5ea79eb8932e0a434ef7630fa5e3eb88377564b16f72730def7dfc10b79af`. Running that unchanged ZIP
+  through `Test-WindowsDesktopArchive.ps1 -LiveOpenAI` returned success and schema-6 evidence proved
+  two extractions, clean-install bootstrap identity `true/true` then `false/false`, adjacent-config
+  retention plus durable identity/database reuse, non-Mock probed/verified OpenAI triage, proposal
+  states before approval/after approval/after apply, card counts `0/0/1`, and one card after restart.
+  The archive remained byte-identical and the recursive evidence validator rejected credential,
+  transcript, prompt, raw provider-response, filesystem-path, and application-log fields.
 
 These results do **not** prove Explorer/shortcut/default-browser/SmartScreen behavior, a genuinely
 clean Windows machine, manual registration, maintainer acceptance of the candidate redacted
