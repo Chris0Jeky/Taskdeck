@@ -21,6 +21,7 @@ const powershellLauncher = join(repoRoot, 'scripts', 'dev-up.ps1')
 const bashLauncher = join(repoRoot, 'scripts', 'dev-up.sh')
 const frontendPackage = join(repoRoot, 'frontend', 'taskdeck-web', 'package.json')
 const trackedNodeVersion = join(repoRoot, '.nvmrc')
+const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
 const powershell =
   process.platform === 'win32'
     ? join(
@@ -56,6 +57,7 @@ const helperSource = String.raw`
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
+import { spawn } from 'node:child_process'
 
 const [, , kind, ...args] = process.argv
 const appendEvent = (event) => {
@@ -71,12 +73,25 @@ const appendEvent = (event) => {
 }
 
 const stopWithServer = (server) => {
-  const stop = () => server.close(() => process.exit(0))
+  const stopDelayMs = Number(process.env.FAKE_STOP_DELAY_MS ?? 0)
+  const stop = () => server.close(() => {
+    if (Number.isFinite(stopDelayMs) && stopDelayMs > 0) {
+      setTimeout(() => process.exit(0), stopDelayMs)
+      return
+    }
+    process.exit(0)
+  })
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
 }
 
-if (kind === 'npm') {
+if (kind === 'linger') {
+  const stopDelayMs = Number(process.env.FAKE_STOP_DELAY_MS ?? 0)
+  const stop = () => setTimeout(() => process.exit(0), stopDelayMs)
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
+  setInterval(() => {}, 1000)
+} else if (kind === 'npm') {
   appendEvent({})
   if (args[0] === 'ci') {
     const mode = process.env.FAKE_NPM_CI_MODE ?? 'success'
@@ -96,6 +111,13 @@ if (kind === 'npm') {
     process.exit(process.env.FAKE_SEED_MODE === 'fail' ? 43 : 0)
   }
   if (args[0] !== 'run' || args[1] !== 'dev') process.exit(91)
+
+  if (process.env.FAKE_STOP_DESCENDANT === '1') {
+    spawn(process.execPath, [process.argv[1], 'linger'], {
+      env: process.env,
+      stdio: 'ignore',
+    })
+  }
 
   let port = Number(process.env.FAKE_FRONTEND_PORT)
   const mode = process.env.FAKE_FRONTEND_MODE ?? 'success'
@@ -652,33 +674,38 @@ async function assertNoStateAndPortsReleased(fixture, ports) {
   for (const port of ports) assert.equal(await canBind(port), true, `port ${port} remained occupied`)
 }
 
-async function stopSuccessfulStack(platform, fixture) {
-  const stopResult = runLauncher(platform, fixture, { stop: true })
+async function stopSuccessfulStack(platform, fixture, { timeout = 20_000 } = {}) {
+  const stopResult = runLauncher(platform, fixture, { stop: true, timeout })
   assert.ifError(stopResult.error)
   assert.equal(stopResult.status, 0, combinedOutput(stopResult))
   assert.match(combinedOutput(stopResult), /Stack stopped/)
   assert.equal(await readOptional(fixture.stateFile), null)
 }
 
-async function assertResetSeedCycle(platform, fixture, expectedResetSeedEvents) {
+async function assertResetSeedCycle(platform, fixture, { env = {} } = {}) {
   const apiPort = await getFreePort()
   const frontendPort = await getFreePort()
+  const resetSeedEventsBefore = (await readEvents(fixture)).filter(
+    (event) => event.args.join(' ') === 'run demo:seed -- --reset',
+  ).length
   try {
     const result = runLauncher(platform, fixture, {
       apiPort,
       seed: true,
       resetSeed: true,
-      env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+      env: { FAKE_FRONTEND_PORT: String(frontendPort), ...env },
     })
     assert.equal(result.status, 0, combinedOutput(result))
     const resetSeedEvents = (await readEvents(fixture)).filter(
       (event) => event.args.join(' ') === 'run demo:seed -- --reset',
     )
-    assert.equal(resetSeedEvents.length, expectedResetSeedEvents)
+    assert.equal(resetSeedEvents.length - resetSeedEventsBefore, 1)
     assert.equal(resetSeedEvents.at(-1).taskdeckApiBaseUrl, `http://localhost:${apiPort}/api`)
-    await stopSuccessfulStack(platform, fixture)
+    await stopSuccessfulStack(platform, fixture, { timeout: RESET_CYCLE_TEARDOWN_TIMEOUT_MS })
   } finally {
-    if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+    if (existsSync(fixture.stateFile)) {
+      runLauncher(platform, fixture, { stop: true, timeout: RESET_CYCLE_TEARDOWN_TIMEOUT_MS })
+    }
   }
 }
 
@@ -738,25 +765,57 @@ for (const platform of platforms) {
     }
   })
 
-  let repeatedUseFixture = null
-  const getRepeatedUseFixture = async () => {
-    repeatedUseFixture ||= await createFixture(platform)
-    return repeatedUseFixture
-  }
+  test(
+    `${platform.name}: reset seed forwards --reset and preserves ordinary seed arguments on first use`,
+    { concurrency: false, timeout: 50_000 },
+    async () => {
+      const fixture = await createFixture(platform)
+      try {
+        await assertResetSeedCycle(platform, fixture)
+      } finally {
+        await removeFixture(fixture)
+      }
+    },
+  )
 
-  test.after(async () => {
-    if (!repeatedUseFixture) return
-    if (existsSync(repeatedUseFixture.stateFile)) runLauncher(platform, repeatedUseFixture, { stop: true })
-    await removeFixture(repeatedUseFixture)
-  })
+  test(
+    `${platform.name}: reset seed forwards --reset again after a clean stop`,
+    { concurrency: false, timeout: 100_000 },
+    async () => {
+      const fixture = await createFixture(platform)
+      try {
+        await assertResetSeedCycle(platform, fixture)
+        await assertResetSeedCycle(platform, fixture)
+      } finally {
+        await removeFixture(fixture)
+      }
+    },
+  )
+}
 
-  test(`${platform.name}: reset seed forwards --reset and preserves ordinary seed arguments on first use`, { concurrency: false }, async () => {
-    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 1)
-  })
-
-  test(`${platform.name}: reset seed forwards --reset again after a clean stop`, { concurrency: false }, async () => {
-    await assertResetSeedCycle(platform, await getRepeatedUseFixture(), 2)
-  })
+if (bash) {
+  test(
+    'Bash: reset seed teardown allows the complete bounded TERM/KILL path',
+    { concurrency: false, timeout: 50_000 },
+    async () => {
+      const platform = { name: 'Bash', launcher: 'dev-up.sh' }
+      const fixture = await createFixture(platform)
+      const startedAt = Date.now()
+      try {
+        await assertResetSeedCycle(platform, fixture, {
+          env: {
+            FAKE_STOP_DESCENDANT: '1',
+            FAKE_STOP_DELAY_MS: '10250',
+          },
+        })
+        const elapsedMs = Date.now() - startedAt
+        assert.ok(elapsedMs >= 10_000, `slow teardown completed unexpectedly quickly in ${elapsedMs}ms`)
+        assert.ok(elapsedMs < RESET_CYCLE_TEARDOWN_TIMEOUT_MS)
+      } finally {
+        await removeFixture(fixture)
+      }
+    },
+  )
 }
 
 if (powershell) {

@@ -365,7 +365,12 @@ const COLLAB = {
 const DEMO_BOARD_SPECS = {
   capture: {
     canonicalName: 'DEMO: Client Onboarding Demo',
-    reusableNames: ['DEMO: Client Onboarding Demo', 'DEMO: Capture Loop', 'DEMO: Capture Loop (Demo)'],
+    reusableNames: [
+      'DEMO: Client Onboarding Demo',
+      'DEMO: Client Onboarding Demo (Chat)',
+      'DEMO: Capture Loop',
+      'DEMO: Capture Loop (Demo)',
+    ],
     description: 'Seeded demo board for review-first client onboarding workflows.',
     isArchived: false,
   },
@@ -778,7 +783,7 @@ export function planDemoBoardReset(boards) {
     if (!isCandidate && !isTombstone) continue
 
     const id = typeof board?.id === 'string' ? board.id.trim() : ''
-    const name = typeof board?.name === 'string' ? board.name.trim() : ''
+    const name = typeof board?.name === 'string' ? board.name : ''
     if (!id || (isCandidate && (name === 'DEMO:' || typeof board.isArchived !== 'boolean'))) {
       throw new Error('Clean demo reset found a malformed DEMO:* board candidate; no boards were changed.')
     }
@@ -809,6 +814,25 @@ export function planDemoBoardReset(boards) {
   }
 
   return { candidates, tombstones }
+}
+
+export function planDemoBoardsForSeed(boards, { reset = false } = {}) {
+  const resetPlan = reset ? planDemoBoardReset(boards) : null
+  const boardInventory = Array.isArray(boards) ? boards : []
+  const preResetBoardIds = new Set(
+    reset
+      ? boardInventory
+          .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
+          .filter(Boolean)
+      : [],
+  )
+
+  return {
+    reset,
+    demoBoards: boardInventory.filter(isDemoBoard),
+    preResetBoardIds,
+    resetPlan,
+  }
 }
 
 export async function quarantineDemoBoardsForCleanReset(
@@ -961,22 +985,17 @@ export async function prepareDemoBoardsForSeed(
   token,
   {
     reset = false,
+    boardPlan = planDemoBoardsForSeed(boards, { reset }),
     request = http,
     refreshBoards = () => listBoards(token),
     onQuarantined = () => {},
   } = {},
 ) {
-  let demoBoards = (boards || []).filter(isDemoBoard)
-  let resetPlan = null
+  let demoBoards = boardPlan.demoBoards
+  const { preResetBoardIds, resetPlan } = boardPlan
   let canonicalBoards
 
   if (reset) {
-    const preResetBoardIds = new Set(
-      boards
-        .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
-        .filter(Boolean),
-    )
-    resetPlan = planDemoBoardReset(boards)
     await quarantineDemoBoardsForCleanReset(resetPlan.candidates, token, { request, onQuarantined })
 
     let quarantinedBoards
@@ -1474,30 +1493,42 @@ async function ensureOpsSeed(token) {
   }
 }
 
-async function seedDemo({ reset = false } = {}) {
+export async function seedDemo(
+  { reset = false } = {},
+  {
+    ensureUser: ensureSeedUser = ensureUser,
+    listBoards: listSeedBoards = listBoards,
+    prepareBoardsForSeed: prepareSeedBoards = prepareDemoBoardsForSeed,
+  } = {},
+) {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
   if (reset) console.log('  --reset: will quarantine documented demo boards and create fresh replacements')
   console.log('----------------------------------------')
 
-  // 1) Ensure demo users exist
-  const demoLogin = await ensureUser(DEMO)
+  // 1) Authenticate the demo owner so its complete board list can be validated.
+  const demoLogin = await ensureSeedUser(DEMO)
   const demoToken = demoLogin.token
   const demoUser = demoLogin.user
 
-  const collabLogin = await ensureUser(COLLAB)
-  const collabToken = collabLogin.token
-  const collabUser = collabLogin.user
-
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
-  console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
-  // 2) Reuse canonical boards normally; protected reset retires them to ID-bound tombstones first.
-  const boards = await listBoards(demoToken)
-  const preparedBoards = await prepareDemoBoardsForSeed(boards, demoToken, {
+  // 2) Complete the pure reset inventory plan before collaborator provisioning or product writes.
+  const boards = await listSeedBoards(demoToken)
+  const boardPlan = planDemoBoardsForSeed(boards, { reset })
+
+  let collabLogin = null
+  if (reset) {
+    collabLogin = await ensureSeedUser(COLLAB)
+    console.log(`Collab user: ${collabLogin.user.username} (${collabLogin.user.email})`)
+  }
+
+  // 3) Reuse canonical boards normally; protected reset retires them only after both accounts authenticate.
+  const preparedBoards = await prepareSeedBoards(boards, demoToken, {
     reset,
-    refreshBoards: () => listBoards(demoToken),
+    boardPlan,
+    refreshBoards: () => listSeedBoards(demoToken),
     onQuarantined: (board) => console.log(`  - quarantined ${board.name}`),
   })
   const {
@@ -1514,6 +1545,12 @@ async function seedDemo({ reset = false } = {}) {
       `\n--reset: quarantined ${resetPlan.candidates.length} documented DEMO:* board(s) and verified fresh canonical replacements`,
     )
   }
+
+  // Ordinary seeds preserve their existing board-before-collaborator ordering.
+  collabLogin ||= await ensureSeedUser(COLLAB)
+  const collabToken = collabLogin.token
+  const collabUser = collabLogin.user
+  if (!reset) console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
   const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))
@@ -1539,7 +1576,7 @@ async function seedDemo({ reset = false } = {}) {
   console.log(`- blank board: ${blankBoard.name}`)
   console.log(`- archived board: ${archivedBoard.name}`)
 
-  // 3) Seed: starter packs
+  // 4) Seed: starter packs
   console.log('\nApplying starter packs...')
   await applyStarterPack(captureBoard.id, demoToken, 'board-blueprint-client-onboarding')
   console.log('- capture board: client onboarding blueprint')
@@ -1547,7 +1584,7 @@ async function seedDemo({ reset = false } = {}) {
   await applyStarterPack(contentBoard.id, demoToken, 'board-blueprint-content-calendar')
   console.log('- content board: content calendar blueprint')
 
-  // 4) Seed: board access entry (so Access view is not empty)
+  // 5) Seed: board access entry (so Access view is not empty)
   await ensureCollaboratorEditorAccess(captureBoard.id, demoToken, collabUser.id)
 
   const captureSummaries = await listCaptureSummaries(captureBoard.id, demoToken)
@@ -1574,7 +1611,7 @@ async function seedDemo({ reset = false } = {}) {
     collabUsername: collabUser.username,
   })
 
-  // 5) Seed: Inbox items (ignored + triage)
+  // 6) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
   await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.ignored, { ignore: true })
   const triageAppliedWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triageApplied, {
@@ -1593,7 +1630,7 @@ async function seedDemo({ reset = false } = {}) {
   console.log(`- triage (pending/ACME) proposal: ${triagePendingAcmeWithProposal.provenance.proposalId} (left for review)`)
   console.log(`- triage (pending/Northwind) proposal: ${triagePendingNorthwindWithProposal.provenance.proposalId} (left for review)`)
 
-  // 6) Seed: Queue requests (1 success + 1 failure)
+  // 7) Seed: Queue requests (1 success + 1 failure)
   console.log('\nCreating Automation Queue items...')
   await ensureQueueSeed(captureBoard.id, demoToken, captureBoardCards)
   console.log(
@@ -1601,13 +1638,13 @@ async function seedDemo({ reset = false } = {}) {
       `failure=${seedPlan.queue.hasFailedRequest ? 'reused' : 'created'}`,
   )
 
-  // 7) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
+  // 8) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
   // Restore canonical naming afterwards so final board references stay consistent.
   console.log('\nCreating a Chat session + temporary board rename proposal...')
   await ensureChatSeed(captureBoard.id, demoToken)
   console.log(`- chat seed: ${seedPlan.chat.seededSession ? 'reused existing session' : 'created seeded session'}`)
 
-  // 8) Seed: Mention comment (Notification + audit)
+  // 9) Seed: Mention comment (Notification + audit)
   console.log('\nCreating a mention comment (generates notification)...')
   const seededCommentCard = await ensureSeededComments(captureBoard.id, demoToken, collabToken, demoUser, collabUser)
   if (seededCommentCard) {
@@ -1619,7 +1656,7 @@ async function seedDemo({ reset = false } = {}) {
     console.log('- no cards found on capture board (unexpected)')
   }
 
-  // 9) Seed: Ops command runs (populate Ops -> Logs)
+  // 10) Seed: Ops command runs (populate Ops -> Logs)
   console.log('\nRunning Ops CLI templates (generates Ops logs)...')
   await ensureOpsSeed(demoToken)
   console.log(
