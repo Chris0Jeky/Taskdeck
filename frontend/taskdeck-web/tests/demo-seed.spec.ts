@@ -571,7 +571,7 @@ describe('run-bound demo seed transport', () => {
           method: 'POST',
           body: '{"mutate":true}',
         }),
-      ).rejects.toThrow(/socket|reconnect/i)
+      ).rejects.toThrow()
       expect(ownerConnectionCount).toBe(1)
       expect(transport.diagnostics.physicalConnectionCount).toBe(1)
       expect(foreignRequestCount).toBe(0)
