@@ -1197,61 +1197,59 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: run identity is rechecked around seed and after the final state write`, { concurrency: false }, async (t) => {
-    for (const scenario of [
-      {
-        name: 'changes before seed',
-        proofMode: 'flip-after-first-valid',
-        seed: true,
-        expectedSeedCount: 0,
-        expectedFailure: /before demo seeding/,
-      },
-      {
-        name: 'changes after seed',
-        proofMode: 'flip-after-seed',
-        seed: true,
-        expectedSeedCount: 1,
-        expectedFailure: /after demo seeding/,
-      },
-      {
-        name: 'changes after final state write',
-        proofMode: 'flip-after-final-state',
-        seed: false,
-        expectedSeedCount: 0,
-        expectedFailure: /after final state commit/,
-      },
-    ]) {
-      await t.test(scenario.name, async () => {
-        const fixture = await createFixture(platform)
-        const apiPort = await getFreePort()
-        const frontendPort = await getFreePort()
-        try {
-          const result = runLauncher(platform, fixture, {
-            apiPort,
-            seed: scenario.seed,
-            env: {
-              FAKE_API_PROOF_MODE: scenario.proofMode,
-              FAKE_FRONTEND_PORT: String(frontendPort),
-            },
-          })
-          assertFailedClosed(result)
-          assert.match(combinedOutput(result), scenario.expectedFailure)
-          await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
-          const events = await readEvents(fixture)
-          assert.equal(
-            events.filter((event) => event.args.join(' ') === 'run demo:seed').length,
-            scenario.expectedSeedCount,
-          )
-          assert.equal(
-            events.some((event) => event.args.join(' ') === 'run dev'),
-            scenario.proofMode === 'flip-after-final-state',
-          )
-        } finally {
-          await removeFixture(fixture)
-        }
-      })
-    }
-  })
+  for (const scenario of [
+    {
+      name: 'changes before seed',
+      proofMode: 'flip-after-first-valid',
+      seed: true,
+      expectedSeedCount: 0,
+      expectedFailure: /before demo seeding/,
+    },
+    {
+      name: 'changes after seed',
+      proofMode: 'flip-after-seed',
+      seed: true,
+      expectedSeedCount: 1,
+      expectedFailure: /after demo seeding/,
+    },
+    {
+      name: 'changes after final state write',
+      proofMode: 'flip-after-final-state',
+      seed: false,
+      expectedSeedCount: 0,
+      expectedFailure: /after final state commit/,
+    },
+  ]) {
+    test(`${platform.name}: run identity ${scenario.name}`, { concurrency: false, timeout: 30_000 }, async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const frontendPort = await getFreePort()
+      try {
+        const result = runLauncher(platform, fixture, {
+          apiPort,
+          seed: scenario.seed,
+          env: {
+            FAKE_API_PROOF_MODE: scenario.proofMode,
+            FAKE_FRONTEND_PORT: String(frontendPort),
+          },
+        })
+        assertFailedClosed(result)
+        assert.match(combinedOutput(result), scenario.expectedFailure)
+        await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
+        const events = await readEvents(fixture)
+        assert.equal(
+          events.filter((event) => event.args.join(' ') === 'run demo:seed').length,
+          scenario.expectedSeedCount,
+        )
+        assert.equal(
+          events.some((event) => event.args.join(' ') === 'run dev'),
+          scenario.proofMode === 'flip-after-final-state',
+        )
+      } finally {
+        await removeFixture(fixture)
+      }
+    })
+  }
 
   for (const mode of ['missing', 'malformed', 'duplicate-property', 'duplicate', 'late', 'transform-failure', 'exit-after-entry-response', 'stderr-marker', 'spoof']) {
     const isSpoofMode = mode === 'spoof'
