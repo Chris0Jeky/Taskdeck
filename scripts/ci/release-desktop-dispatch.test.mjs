@@ -27,11 +27,13 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
 const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
+const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
 // Normalised to LF: a Windows checkout with core.autocrlf=true would otherwise
 // break every structural assertion for a reason that has nothing to do with the
 // workflow's content.
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
 const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
+const archiveHarness = readFileSync(archiveHarnessPath, 'utf8').replace(/\r\n/g, '\n')
 
 const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
 
@@ -310,7 +312,16 @@ test('the untouched ZIP is checksummed, accepted, and only then uploaded', () =>
   assert.match(job, /Test-WindowsDesktopArchive\.ps1/)
   assert.match(job, /npx playwright install chromium/)
   assert.match(job, /TASKDECK_RELEASE_OPENAI_API_KEY: \$\{\{ secrets\.TASKDECK_RELEASE_OPENAI_API_KEY \}\}/)
-  assert.match(job, /-LiveOpenAI/)
+  assert.match(job, /-LiveOpenAIIfConfigured/)
+  assert.doesNotMatch(job, /\s-LiveOpenAI(?:\s|$)/)
+})
+
+test('the archive wrapper keeps required and optional hosted modes distinct', () => {
+  assert.match(archiveHarness, /\[switch\]\$LiveOpenAI\b/)
+  assert.match(archiveHarness, /\[switch\]\$LiveOpenAIIfConfigured\b/)
+  assert.match(archiveHarness, /if \(\$LiveOpenAI -and \$LiveOpenAIIfConfigured\)/)
+  assert.match(archiveHarness, /\$arguments \+= "--live-openai"/)
+  assert.match(archiveHarness, /\$arguments \+= "--live-openai-if-configured"/)
 })
 
 test('the Windows archive stages the reviewed quick start and enforces its content contract', () => {

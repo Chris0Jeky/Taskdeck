@@ -6,8 +6,17 @@ import { attachSessionToPage, type AuthResult } from './support/authSession'
 import { expectApplyConfirmDialog } from './support/applyConfirm'
 
 type HttpEvidence = { method: string; path: string; status: number }
-type ChatSession = { recentMessages: Array<{ proposalId: string | null }> }
 type Proposal = { id: string; status: string | number; summary: string; operations: unknown[] }
+type CaptureItem = {
+  id: string
+  status: string | number
+  provenance?: {
+    proposalId: string | null
+    promptVersion: string | null
+    provider: string | null
+    model: string | null
+  } | null
+}
 type BoardPage = { items: Array<{ id: string; name: string }> }
 type ProviderHealth = {
   isAvailable: boolean
@@ -27,16 +36,21 @@ const phase = requiredEnv('TASKDECK_PACKAGED_JOURNEY_PHASE')
 const liveOpenAi = process.env.TASKDECK_PACKAGED_LIVE_OPENAI === '1'
 const liveOpenAiSkipReason = requiredEnv('TASKDECK_PACKAGED_LIVE_OPENAI_SKIP_REASON')
 const expectedModel = process.env.TASKDECK_PACKAGED_OPENAI_MODEL?.trim() || 'gpt-5.6-luna'
+const expectedPromptVersion = 'llm-triage.v2'
 
 const username = `packaged-${journeyId}`
 const email = `${username}@taskdeck.local`
 const password = 'PackagedAcceptance123!'
 const boardTitle = `Packaged persistence ${journeyId}`
-const cardTitle = `Packaged OpenAI card ${journeyId}`
+const syntheticTranscript = [
+  'Alice: I will send the revised budget to finance by Friday.',
+  'Bob: Confirmed. That is the only action item from this meeting.',
+].join('\n')
 let checkpoint = 'initializing'
 let failureHttpStatus: number | null = null
 
 test('untouched Windows package retains its synthetic journey', async ({ page, request }) => {
+  test.setTimeout(180_000)
   try {
     if (phase === 'create') {
       await runCreatePhase(page, request)
@@ -96,7 +110,7 @@ async function runCreatePhase(page: Page, request: APIRequestContext): Promise<v
     : { outcome: 'skipped', reason: validatedLiveSkipReason(liveOpenAiSkipReason) }
 
   writeEvidence({
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase: 'create',
     journeyId,
     board: { id: boardId, title: boardTitle },
@@ -133,21 +147,21 @@ async function runRestartPhase(page: Page, request: APIRequestContext): Promise<
   let cardCountAfterRestart: number | null = null
   if (liveOpenAi) {
     checkpoint = 'restart_card_persistence'
-    cardCountAfterRestart = await matchingCardCount(request, auth, boardId, http)
+    cardCountAfterRestart = await boardCardCount(request, auth, boardId, http)
     if (cardCountAfterRestart !== 1) {
       throw new Error('[packaged desktop] The applied synthetic card was not retained exactly once after restart.')
     }
   }
 
   writeEvidence({
-    schemaVersion: 2,
+    schemaVersion: 3,
     phase: 'restart',
     journeyId,
     board: { id: boardId, title: boardTitle },
     persistence: { signedIn: true, boardFound: true },
     http,
     liveOpenAi: liveOpenAi
-      ? { outcome: 'passed', cardTitle, cardCountAfterRestart }
+      ? { outcome: 'passed', cardCountAfterRestart }
       : { outcome: 'skipped', reason: validatedLiveSkipReason(liveOpenAiSkipReason) },
   })
 }
@@ -275,18 +289,25 @@ async function runLiveOpenAiJourney(
   const health = await healthResponse.json() as ProviderHealth
   checkpoint = 'live_provider_identity'
   const probeLatencyMs = health.probeLatencyMs
-  if (
-    health.providerName !== 'OpenAI'
-    || health.model !== expectedModel
-    || health.isMock
-    || !health.isAvailable
-    || !health.isProbed
-    || health.verificationStatus !== 'verified'
-    || typeof probeLatencyMs !== 'number'
-    || !Number.isSafeInteger(probeLatencyMs)
-    || probeLatencyMs < 1
-    || probeLatencyMs > 300_000
-  ) {
+  const identityMismatchCode = health.providerName !== 'OpenAI'
+    ? 'provider'
+    : health.model !== expectedModel
+      ? 'model'
+      : health.isMock
+        ? 'mock'
+        : !health.isAvailable
+          ? 'availability'
+          : !health.isProbed
+            ? 'probed'
+            : health.verificationStatus !== 'verified'
+              ? 'verification'
+              : typeof probeLatencyMs !== 'number' || !Number.isSafeInteger(probeLatencyMs)
+                ? 'latency_type'
+                : probeLatencyMs < 1 || probeLatencyMs > 300_000
+                  ? 'latency_range'
+                  : null
+  if (identityMismatchCode) {
+    checkpoint = `live_provider_identity_${identityMismatchCode}`
     throw new Error('[packaged desktop] The live provider did not verify as exact OpenAI/non-mock/verified.')
   }
   checkpoint = 'live_verified_ui'
@@ -299,35 +320,75 @@ async function runLiveOpenAiJourney(
   )
   await expect(verifiedHealthState).toContainText(`Probe completed in ${probeLatencyMs} ms.`)
 
-  const beforeProposal = await matchingCardCount(request, auth, boardId, http)
+  const beforeProposal = await boardCardCount(request, auth, boardId, http)
   if (beforeProposal !== 0) {
     throw new Error('[packaged desktop] The synthetic card existed before proposal creation.')
   }
 
-  checkpoint = 'live_create_proposal'
-  await page.getByPlaceholder('Session title').fill(`Packaged OpenAI ${journeyId}`)
-  await page.getByPlaceholder('Board context (optional)').fill(boardId)
-  await page.getByRole('button', { name: 'Create Session' }).click()
-  const sessionId = await page.locator('.paper-chat__meta').first().getAttribute('data-session-id')
-  if (!sessionId) {
-    throw new Error('[packaged desktop] The chat session did not expose its synthetic identifier.')
+  checkpoint = 'live_open_board'
+  await page.goto(`/workspace/boards/${encodeURIComponent(boardId)}`)
+  const boardActionRail = page.locator('[data-board-action-rail]')
+  await expect(boardActionRail).toBeVisible()
+
+  checkpoint = 'live_capture_transcript'
+  await boardActionRail.getByRole('button', { name: 'Capture here' }).click()
+  const captureModal = page.getByRole('dialog', { name: 'Capture item' })
+  await expect(captureModal).toBeVisible()
+  await captureModal.getByRole('tab', { name: 'Transcript' }).click()
+  await expect(captureModal.getByRole('heading', { name: 'Transcript Capture' })).toBeVisible()
+  await captureModal.getByRole('textbox', { name: 'Transcript content' }).fill(syntheticTranscript)
+  const createCaptureResponsePromise = page.waitForResponse(response =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/capture/items')
+  await captureModal.getByRole('button', { name: 'Save Capture' }).click()
+  const createCaptureResponse = await createCaptureResponsePromise
+  requireOk(createCaptureResponse, 'POST', '/api/capture/items', http)
+  const createdCapture = await createCaptureResponse.json() as { id?: string }
+  const captureId = createdCapture.id
+  if (!captureId) {
+    throw new Error('[packaged desktop] Transcript capture did not return an identifier.')
   }
+  await expect(captureModal).toHaveCount(0)
 
-  await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${cardTitle}"`)
-  await page.getByRole('checkbox', { name: 'Request proposal generation' }).check()
-  await page.getByRole('button', { name: 'Send Message' }).click()
+  checkpoint = 'live_inbox_triage'
+  await boardActionRail.getByRole('button', { name: 'Open Inbox' }).click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
+  const captureRows = page.locator('[data-testid="inbox-item"]')
+  await expect(captureRows).toHaveCount(1)
+  await captureRows.first().click()
+  const triageButton = page.locator('.td-inbox-detail__actions button').filter({ hasText: 'Start Triage' }).first()
+  await expect(triageButton).toBeVisible()
+  const triageResponsePromise = page.waitForResponse(response =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/capture/items/${captureId}/triage`)
+  await triageButton.click()
+  requireOk(await triageResponsePromise, 'POST', '/api/capture/items/{id}/triage', http)
 
-  const proposalId = await waitForProposal(request, auth, sessionId, http)
+  const triagedCapture = await waitForCaptureProposal(request, auth, captureId, http)
+  const provenance = triagedCapture.provenance
+  const proposalId = provenance?.proposalId?.trim()
+  if (
+    !proposalId
+    || provenance?.provider !== 'OpenAI'
+    || provenance.model !== expectedModel
+    || provenance.promptVersion !== expectedPromptVersion
+  ) {
+    throw new Error('[packaged desktop] Transcript triage did not retain exact live attribution.')
+  }
   const proposalBefore = await fetchProposal(request, auth, proposalId, http)
 
   checkpoint = 'live_approve_proposal'
-  await page.goto('/workspace/review')
-  const proposalCard = page.locator('.td-review-card').filter({ hasText: proposalBefore.summary }).first()
+  await page.getByRole('button', { name: 'Refresh Detail' }).click()
+  const openProposalButton = page.getByRole('button', { name: 'Open in Review' })
+  await expect(openProposalButton).toBeVisible()
+  await openProposalButton.click()
+  await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}$`))
+  const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  const afterApproval = await matchingCardCount(request, auth, boardId, http)
+  const afterApproval = await boardCardCount(request, auth, boardId, http)
   if (afterApproval !== 0) {
     throw new Error('[packaged desktop] Approval mutated the board before explicit Apply confirmation.')
   }
@@ -340,20 +401,21 @@ async function runLiveOpenAiJourney(
   )
   await expect(proposalCard).not.toBeVisible()
 
-  const afterApply = await waitForMatchingCardCount(request, auth, boardId, http, 1)
+  const afterApply = await waitForBoardCardCount(request, auth, boardId, http, 1)
   const proposalAfterApply = await fetchProposal(request, auth, proposalId, http)
+  await page.goto(`/workspace/boards/${encodeURIComponent(boardId)}`)
+  await expect(page.locator('[data-card-id]')).toHaveCount(1)
 
   return {
     outcome: 'passed',
     provider: health.providerName,
     model: health.model,
+    promptVersion: provenance.promptVersion,
     isMock: health.isMock,
     isProbed: health.isProbed,
     verificationStatus: health.verificationStatus,
     probeLatencyMs,
-    cardTitle,
     proposal: {
-      id: proposalId,
       statusBeforeApproval: String(proposalBefore.status),
       statusAfterApproval: String(proposalAfterApproval.status),
       statusAfterApply: String(proposalAfterApply.status),
@@ -363,25 +425,31 @@ async function runLiveOpenAiJourney(
   }
 }
 
-async function waitForProposal(
+async function waitForCaptureProposal(
   request: APIRequestContext,
   auth: AuthResult,
-  sessionId: string,
+  captureId: string,
   http: HttpEvidence[],
-): Promise<string> {
-  for (let attempt = 0; attempt < 80; attempt++) {
-    const path = `/api/llm/chat/sessions/${encodeURIComponent(sessionId)}`
-    const response = await request.get(`${apiBaseUrl}/llm/chat/sessions/${encodeURIComponent(sessionId)}`, {
+): Promise<CaptureItem> {
+  for (let attempt = 0; attempt < 240; attempt++) {
+    const response = await request.get(`${apiBaseUrl}/capture/items/${encodeURIComponent(captureId)}`, {
       headers: authHeader(auth),
     })
-    requireOk(response, 'GET', path, http, attempt === 0)
-    const session = await response.json() as ChatSession
-    const proposalId = session.recentMessages.find(message => message.proposalId)?.proposalId
-    if (proposalId) return proposalId
+    requireOk(response, 'GET', '/api/capture/items/{id}', http, attempt === 0)
+    const capture = await response.json() as CaptureItem
+    if (capture.status === 'Failed' || capture.status === 6) {
+      throw new Error('[packaged desktop] Transcript triage failed before proposal review.')
+    }
+    if (
+      (capture.status === 'ProposalCreated' || capture.status === 3)
+      && capture.provenance?.proposalId
+    ) {
+      return capture
+    }
     await new Promise(resolve => setTimeout(resolve, 500))
   }
 
-  throw new Error('[packaged desktop] Timed out waiting for the synthetic proposal.')
+  throw new Error('[packaged desktop] Timed out waiting for transcript triage.')
 }
 
 async function fetchProposal(
@@ -390,11 +458,10 @@ async function fetchProposal(
   proposalId: string,
   http: HttpEvidence[],
 ): Promise<Proposal> {
-  const path = `/api/automation/proposals/${encodeURIComponent(proposalId)}`
   const response = await request.get(`${apiBaseUrl}/automation/proposals/${encodeURIComponent(proposalId)}`, {
     headers: authHeader(auth),
   })
-  requireOk(response, 'GET', path, http)
+  requireOk(response, 'GET', '/api/automation/proposals/{id}', http)
   const proposal = await response.json() as Proposal
   if (!Array.isArray(proposal.operations)) {
     throw new Error('[packaged desktop] The synthetic proposal operation list was invalid.')
@@ -402,7 +469,7 @@ async function fetchProposal(
   return proposal
 }
 
-async function waitForMatchingCardCount(
+async function waitForBoardCardCount(
   request: APIRequestContext,
   auth: AuthResult,
   boardId: string,
@@ -410,34 +477,29 @@ async function waitForMatchingCardCount(
   expected: number,
 ): Promise<number> {
   for (let attempt = 0; attempt < 40; attempt++) {
-    const count = await matchingCardCount(request, auth, boardId, http, attempt === 0)
+    const count = await boardCardCount(request, auth, boardId, http, attempt === 0)
     if (count === expected) return count
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   throw new Error('[packaged desktop] Timed out waiting for the exact synthetic card count.')
 }
 
-async function matchingCardCount(
+async function boardCardCount(
   request: APIRequestContext,
   auth: AuthResult,
   boardId: string,
   http: HttpEvidence[],
   record = true,
 ): Promise<number> {
-  const path = `/api/boards/${encodeURIComponent(boardId)}/cards`
   const response = await request.get(`${apiBaseUrl}/boards/${encodeURIComponent(boardId)}/cards`, {
     headers: authHeader(auth),
   })
-  requireOk(response, 'GET', path, http, record)
-  const cards = await response.json() as Array<{ title: string }>
+  requireOk(response, 'GET', '/api/boards/{id}/cards', http, record)
+  const cards = await response.json() as Array<{ id: string }>
   if (!Array.isArray(cards)) {
     throw new Error('[packaged desktop] The synthetic board card listing was invalid.')
   }
-  const matching = cards.filter(card => card.title === cardTitle).length
-  if (cards.length !== matching) {
-    throw new Error('[packaged desktop] The synthetic board contained an unexpected card.')
-  }
-  return matching
+  return cards.length
 }
 
 function requireOk(
