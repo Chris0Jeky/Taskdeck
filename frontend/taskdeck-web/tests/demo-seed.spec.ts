@@ -59,6 +59,26 @@ async function readRequestBody(request: IncomingMessage) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
+function createManualResponseDeadline() {
+  const deadlines: Array<{ callback: () => void; cleared: boolean; milliseconds: number }> = []
+
+  return {
+    clearTimeoutFn(deadline: { cleared: boolean }) {
+      deadline.cleared = true
+    },
+    fireNext() {
+      const deadline = deadlines.find((candidate) => !candidate.cleared)
+      if (!deadline) throw new Error('No active response deadline was scheduled.')
+      deadline.callback()
+    },
+    setTimeoutFn(callback: () => void, milliseconds: number) {
+      const deadline = { callback, cleared: false, milliseconds }
+      deadlines.push(deadline)
+      return deadline
+    },
+  }
+}
+
 describe('demo seed rerun planning', () => {
   it('normalizes paginated API responses for demo board discovery', () => {
     expect(extractListItems([{ id: 'legacy-board' }], 'boards')).toEqual([{ id: 'legacy-board' }])
@@ -499,6 +519,123 @@ describe('run-bound demo seed transport', () => {
     } finally {
       transport.destroy()
       await closeServer(server, sockets)
+    }
+  })
+
+  it('bounds a stalled readiness response before any seed mutation without reconnecting', async () => {
+    let mutationCount = 0
+    let announceReadinessRequest: () => void
+    const readinessRequest = new Promise<void>((resolve) => {
+      announceReadinessRequest = resolve
+    })
+    const server = createServer((request, response) => {
+      if (request.url === '/health/ready') {
+        announceReadinessRequest()
+        return
+      }
+
+      mutationCount += 1
+      response.statusCode = 200
+      response.end()
+    })
+    const sockets = trackSockets(server)
+    let connectionCount = 0
+    server.on('connection', () => {
+      connectionCount += 1
+    })
+    const port = await listenOnLoopback(server)
+    const deadline = createManualResponseDeadline()
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+      responseDeadlineMs: 123,
+      ...deadline,
+    })
+
+    try {
+      const readiness = transport.verifyReady()
+      await readinessRequest
+      deadline.fireNext()
+
+      await expect(readiness).rejects.toThrow('123ms deadline')
+      await expect(transport.fetch(`http://127.0.0.1:${port}/api/mutate`, { method: 'POST' })).rejects.toThrow(
+        '123ms deadline',
+      )
+      expect(mutationCount).toBe(0)
+      expect(connectionCount).toBe(1)
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+    } finally {
+      transport.destroy()
+      await closeServer(server, sockets)
+    }
+  })
+
+  it('fails a stalled post-proof response without sending a replacement-listener request', async () => {
+    let announceStalledSeedRequest: () => void
+    const stalledSeedRequest = new Promise<void>((resolve) => {
+      announceStalledSeedRequest = resolve
+    })
+    const ownerRequests: string[] = []
+    const owner = createServer((request, response) => {
+      ownerRequests.push(request.url || '')
+      if (request.url === '/health/ready') {
+        response.setHeader('Taskdeck-Dev-Run-Id', DEV_RUN_ID)
+        response.statusCode = 200
+        response.end()
+        return
+      }
+
+      announceStalledSeedRequest()
+    })
+    const ownerSockets = trackSockets(owner)
+    let ownerConnectionCount = 0
+    owner.on('connection', () => {
+      ownerConnectionCount += 1
+    })
+    const port = await listenOnLoopback(owner)
+    const deadline = createManualResponseDeadline()
+    const transport = createRunBoundApiTransport({
+      apiBaseUrl: `http://127.0.0.1:${port}/api`,
+      expectedRunId: DEV_RUN_ID,
+      responseDeadlineMs: 456,
+      ...deadline,
+    })
+
+    let foreign: Server | undefined
+    let foreignSockets: Set<Socket> | undefined
+    try {
+      await transport.verifyReady()
+      const stalledSeed = transport.fetch(`http://127.0.0.1:${port}/api/mutate`, {
+        method: 'POST',
+        body: '{"mutate":true}',
+      })
+      await stalledSeedRequest
+      deadline.fireNext()
+
+      await expect(stalledSeed).rejects.toThrow('456ms deadline')
+      expect(ownerRequests).toEqual(['/health/ready', '/api/mutate'])
+      expect(ownerConnectionCount).toBe(1)
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+
+      await closeServer(owner, ownerSockets)
+      let foreignRequestCount = 0
+      foreign = createServer((_request, response) => {
+        foreignRequestCount += 1
+        response.statusCode = 200
+        response.end()
+      })
+      foreignSockets = trackSockets(foreign)
+      await listenOnLoopback(foreign, port)
+
+      await expect(transport.fetch(`http://127.0.0.1:${port}/api/replacement`, { method: 'POST' })).rejects.toThrow(
+        '456ms deadline',
+      )
+      expect(foreignRequestCount).toBe(0)
+      expect(transport.diagnostics).toEqual({ physicalConnectionCount: 1, refusedConnectionCount: 0 })
+    } finally {
+      transport.destroy()
+      if (foreign && foreignSockets) await closeServer(foreign, foreignSockets)
+      else await closeServer(owner, ownerSockets)
     }
   })
 
