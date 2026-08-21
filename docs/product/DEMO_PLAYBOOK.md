@@ -37,8 +37,10 @@ scripts/dev-up.sh --seed
 
 Each launcher first enforces Node.js `>=24.13.1 <25` and runs
 `npm ci --no-audit --no-fund` from the tracked lockfile, even when `node_modules` already exists. It
-then waits for API readiness and for Vite to transform Taskdeck's entry graph at the exact resolved
-frontend URL. Only then does it report `Stack is up`.
+then requires the exact fresh Development run identity from the API it launched. With `-Seed` /
+`--seed`, the seeder proves that identity and sends every later request over the same
+non-reconnectable HTTP/1.1 socket. Only after seeding and Vite's complete entry-graph proof does the
+launcher report `Stack is up`.
 
 The launcher intentionally leaves the API and Vite frontend running in the background. It prints the
 actual URLs, PIDs, unique per-run stdout/stderr logs, and versioned process-state path. That state
@@ -63,12 +65,14 @@ are:
   `http://localhost:5000/health/ready` (replace `5000` with the selected custom API port)
 
 The source-only seeded accounts are `demo` / `demo123` and `collab` / `demo123`. They do not exist in
-the Windows release. If a source stack is already running on the default API port, seed or refresh
-it from `frontend/taskdeck-web` with `npm run demo:seed`; `npm run demo:seed -- --reset` removes the
-demo boards before reseeding, and `npm run demo:seed -- --help` lists the options. For a custom-port
-stack, stop and restart the launcher's checked custom-port command with `-Seed` / `--seed`. Do not
-run the bare seeder there: it defaults to port 5000 and could target a different local instance. The
-seeder reuses recognised baseline artifacts instead of appending a duplicate copy on every run.
+the Windows release. The protected path is to stop any recorded stack and restart the launcher with
+`-Seed` / `--seed`. A bare `npm run demo:seed` remains available for deliberate manual development,
+but it has no launcher run identity or socket binding; use it only after independently confirming
+that port 5000 is the Taskdeck instance you intend to modify. `npm run demo:seed -- --reset` removes
+the demo boards before reseeding, and `npm run demo:seed -- --help` lists the options. For a
+custom-port stack, use the launcher's checked custom-port command with `-Seed` / `--seed`; the bare
+seeder otherwise defaults to port 5000 and could target a different local instance. The seeder
+reuses recognised baseline artifacts instead of appending a duplicate copy on every run.
 
 ### Database location
 
@@ -81,9 +85,9 @@ The canonical source-launcher database is stable and independent of the reposito
 `dotnet run` is an alternative developer-only path: its relative `Data Source=taskdeck.db` resolves
 from that command's working directory, so it is not the canonical seeded-demo database. Likewise,
 `npm run demo:reset-db` targets the legacy repository-local raw-`dotnet run` database; it does not
-reset the stable `dev-up` database. On a default-port stack, prefer `npm run demo:seed -- --reset`
-unless you deliberately own that lower-level developer path; use the launcher guidance above for a
-custom-port stack.
+reset the stable `dev-up` database. Use the protected launcher `-Seed` / `--seed` path described
+above unless you deliberately own the lower-level bare-seeder path and have independently confirmed
+the listener on port 5000.
 
 Other repository-local DB files are per-purpose:
 
@@ -99,8 +103,8 @@ Other repository-local DB files are per-purpose:
 - If API port 5000 is already occupied, the launcher stops nothing. It identifies the listener where
   possible and prints a checked alternative command: `-ApiPort <port>` on PowerShell or
   `TASKDECK_API_PORT=<port>` on Bash. Retry that printed command and add your original `-Seed` /
-  `--seed` flag if wanted; the launcher passes the selected API URL only to its seed and Vite child
-  processes.
+  `--seed` flag if wanted. The selected API URL is scoped only to the seed and Vite children; the
+  fresh run ID is scoped to the launched API, seeder, Vite, and versioned state.
 - Use the printed `Frontend:` URL instead of assuming port 5173. Missing dependencies, entry-graph
   transform failures, duplicate/malformed/late readiness markers, and endpoint failures trigger
   transactional cleanup of the processes created by that startup attempt and exit nonzero.
@@ -109,6 +113,10 @@ Other repository-local DB files are per-purpose:
   prints the exact log paths. Cleanup removes state only after the owned process trees exit and their
   saved ports are released; an incomplete or unverifiable cleanup retains the state and kills no
   identity it cannot prove.
+- Run-bound seed requests currently have no explicit response deadline. If a local peer accepts a
+  request but never completes its response, startup can wait until interrupted; `#1897` tracks the
+  bounded timeout. Interrupt once, inspect the cleanup result and per-run logs, and do not delete
+  retained state or start another stack until ownership and port release are proven.
 - If `-Stop` / `--stop` reports an identity mismatch, do not delete the state file or kill a PID just
   because its number matches. Inspect the retained state and logs, stop only a process you can
   independently identify, then rerun the stop command so it can prove port release.
@@ -255,7 +263,8 @@ These surfaces are event-driven:
 - `Ops -> Logs` needs Ops runs.
 - `Access` needs board-specific entries.
 
-Use `npm run demo:seed` and/or `npm run demo:run` before a manual walkthrough.
+Use `dev-up` with `-Seed` / `--seed` for the protected source-stack path before a manual walkthrough.
+Use bare `npm run demo:seed` only after the listener-ownership check described above.
 
 ## Feature Flags for Demos
 

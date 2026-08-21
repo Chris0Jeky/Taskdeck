@@ -130,9 +130,16 @@ If you are evaluating Taskdeck for the first time, stay in `Home`, `Today`, `Inb
 
 If you want a populated workspace instead of starting mostly empty:
 
+From the repository root on Windows:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
+
+Or on Linux/macOS:
+
 ```bash
-cd frontend/taskdeck-web
-npm run demo:seed
+scripts/dev-up.sh --seed
 ```
 
 Use this when:
@@ -140,6 +147,11 @@ Use this when:
 - you are evaluating the product quickly
 - you want event-driven pages such as notifications or activity to have realistic content
 - you need a repeatable walkthrough state
+
+The launcher binds seeding to the Development API instance it started. Do not replace this protected
+path with bare `npm run demo:seed` unless you independently confirmed that port 5000 is the exact
+Taskdeck instance you intend to modify. Stop the stack later with `-Stop` / `--stop` as described in
+the playbook.
 
 For seeded demos and stakeholder walkthroughs, use [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md).
 

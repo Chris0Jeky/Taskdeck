@@ -2,13 +2,65 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-20
+Last Updated: 2026-08-21
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-21 Source launcher readiness checkpoint (`#1875`)
+
+The authoritative source-launcher regression command is:
+
+```bash
+node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
+```
+
+At PR `#1896` head `fdcbc34142ce3554f550dca6597dcb4808d2d502`:
+
+- `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`: 75/75 passed on Node 24.13.1.
+- Focused `HealthApiTests`: 17/17 passed.
+- `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 tests/demo-seed.spec.ts`: 33/33 passed.
+- Frontend typecheck, scoped ESLint, `node --check`, PowerShell parse, Bash syntax, range `git diff --check`, and DCO passed.
+- A real isolated Windows custom-port journey completed `-Seed`, returned the exact saved readiness
+  identity plus 200 frontend and persisted-login responses after restart, and stopped twice with
+  versioned state removed and both ports released.
+- Hosted checks: 22 success, 11 intentional skips, zero failures across Required CI run
+  `32439078169` and secondary release-contract run `32439078282`, including both Ubuntu and Windows
+  Frontend Unit launcher steps.
+
+PR `#1893` runs the launcher suite before the real frontend `npm ci` in the Required CI Frontend
+Unit matrix on Ubuntu and Windows. Running before install is part of the contract: a reconciled
+checkout must not hide stale dependencies or a preflight that starts servers too early. The suite covers:
+
+- stale installed dependencies and unsupported/failed Node probes before server startup;
+- API readiness, exit-after-readiness, seed failure, foreign/launcher-owned ports, and custom API
+  propagation only to the seed/Vite children;
+- Development-only canonical run-ID response proof, including missing, invalid, duplicate,
+  mismatched, non-Development, body-leak, redirect, and post-proof identity changes;
+- run-bound seeding that proves readiness and sends every seed request over one physical HTTP/1.1
+  socket, refuses reconnection before bytes are written, never transmits the run ID in a request
+  header/path/body, and rejects listener takeover with zero foreign mutations;
+- missing, malformed, duplicate, late, spoofed, stderr-only, transform-failure, and post-response
+  Vite markers plus actual fallback URL reporting;
+- operation-lock collision, atomic schema-v1 state, PID/name/creation-token checks, PID reuse and
+  descendant-ancestry drift, final root revalidation, cancellation, transactional cleanup, and safe Stop.
+
+Pinned review at `8ccf9f663672a6d7e8bb04bb2393da1811e04535` found one HIGH: a listener
+could replace the API during the multi-request seed stage. Production fix
+`c689e261957d5c489cbb106231810e3d4882d5fe` pins readiness and every mutation to one proven socket;
+scoped re-review reported CRITICAL 0 / HIGH 0. Commit
+`fdcbc34142ce3554f550dca6597dcb4808d2d502` changes only a platform-coupled test message assertion,
+leaving production byte-identical and the reviewed risk boundary unchanged.
+
+The transport still has no explicit per-response deadline. A peer can accept a request and never
+complete its response, leaving `-Seed` / `--seed` waiting until interruption. This is the
+availability-only `#1897` follow-up: it does not permit a second connection or wrong-instance
+mutation. PR `#1894` is closed unmerged and superseded by `#1896`; `#1875` is complete. None of this
+substitutes for packaged Explorer/shortcut/default-browser/SmartScreen or clean-Windows acceptance
+under `#1876`.
 
 ## 2026-08-20 Windows release and provider-retirement checkpoint
 
@@ -1540,6 +1592,9 @@ npm run dev
 ```
 
 Notes:
+- The direct `npm run dev` workflow below is a Vite-only debugging path. The supported one-command
+  source stack uses `scripts/dev-up.ps1` on Windows or `scripts/dev-up.sh` on POSIX and is proved by
+  the source-launcher regression checkpoint above.
 - `npm run dev` now auto-resolves frontend port with fallback order `5173` -> `4173` -> `5001` when a port is restricted or unavailable.
 - launcher now selects a bindable port first; occupied candidate ports (including existing Taskdeck listeners) are skipped for new Vite processes.
 - launcher now applies strict-port startup semantics by default to avoid Vite auto-increment drift.
@@ -1748,7 +1803,10 @@ Policy notes:
 - `demo:director:smoke` runs `engineering-sprint` with `--skip-llm`, zero autopilot turns, a fixed RNG seed, a stable artifact directory (`demo-artifacts/ci-smoke`), an isolated smoke DB (`taskdeck.demo.ci.db`), and fresh backend/frontend startup.
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
 - `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
-- `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
+- The demo seed payload is designed to be rerun-safe on the canonical account: seeded captures,
+  queue examples, chat evidence, comments, and Ops logs should be reused when present. For a source
+  stack, invoke it through `dev-up -Seed` / `--seed`; use bare `npm run demo:seed` only after the
+  listener-ownership check in `docs/product/DEMO_PLAYBOOK.md`.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 - opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
@@ -1760,9 +1818,22 @@ Canonical operator contract:
 
 Deterministic bootstrap for the Saul-facing story:
 
+From the repository root on Windows:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
+
+Or on Linux/macOS:
+
+```bash
+scripts/dev-up.sh --seed
+```
+
+Then, after the launcher reports `Stack is up`:
+
 ```bash
 cd frontend/taskdeck-web
-npm run demo:seed
 npm run demo:run -- --clean --skip-llm client-onboarding
 ```
 
@@ -1952,6 +2023,9 @@ Required workflow: `.github/workflows/ci-required.yml`
   - API integration tests
   - Ubuntu and Windows matrix
 - `frontend-unit`
+  - Before frontend dependency installation, runs the serial source-launcher regression suite with
+    a 30-second per-test bound. This preserves stale-tree/preflight evidence and exercises the
+    PowerShell and POSIX launch contracts in the Ubuntu and Windows matrix.
   - Lint + coverage-threshold Vitest + typecheck + build
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage

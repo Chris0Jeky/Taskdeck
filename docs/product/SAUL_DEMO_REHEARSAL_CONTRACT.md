@@ -1,6 +1,6 @@
 # Saul-Facing Demo Rehearsal Contract
 
-Last Updated: 2026-03-26
+Last Updated: 2026-08-21
 
 ## Purpose
 
@@ -26,17 +26,28 @@ Out of scope:
 
 ## Preconditions
 
-- backend API is reachable at `http://localhost:5000/api`
-- frontend is running from `frontend/taskdeck-web`
+- use the protected source launcher below from the repository root; do not seed a separately started
+  API merely because `http://localhost:5000/api` responds
+- if the launcher reports an existing recorded stack, use its matching `-Stop` / `--stop` command
+  first and retain any state it cannot safely clean
 - demo credentials are valid (`demo` / `demo123` unless overridden)
-- local run uses deterministic/mock-safe mode (`--skip-llm`)
+- local rehearsal uses deterministic/mock-safe mode (`--skip-llm`)
 
 ## Canonical Bootstrap
 
-Run from `frontend/taskdeck-web`:
+From the repository root, start and seed the owned source stack with the launcher for your platform:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
 
 ```bash
-npm run demo:seed
+scripts/dev-up.sh --seed
+```
+
+Only after the launcher reports `Stack is up`, run the scenario from `frontend/taskdeck-web`:
+
+```bash
 npm run demo:run -- --clean --skip-llm client-onboarding
 ```
 

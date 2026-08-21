@@ -94,8 +94,10 @@ scripts/dev-up.sh --seed
 The seeded account is `demo` / `demo123`. These source-only credentials are not present in the
 Windows release. Before starting either server, both launchers enforce the complete Node range and
 reconcile `node_modules` from the tracked lockfile with `npm ci --no-audit --no-fund`. Success is
-reported only after the API is ready and Vite has transformed Taskdeck's entry graph at the exact
-printed `Frontend:` URL; that URL is authoritative when Vite selects a fallback port.
+reported only after the launched Development API returns the exact fresh per-run identity, any
+requested seed completes entirely over that proven API socket without reconnecting, and Vite has
+transformed Taskdeck's entry graph at the exact printed `Frontend:` URL. That URL is authoritative
+when Vite selects a fallback port.
 
 The source launcher intentionally leaves the API and frontend running as background processes. It
 prints their URLs, PIDs, per-run logs, and versioned process-state path, including creation identities
