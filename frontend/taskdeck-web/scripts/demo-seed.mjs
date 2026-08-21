@@ -52,8 +52,8 @@ const DEV_RUN_ID_HEADER_NAME = 'taskdeck-dev-run-id'
 const EMPTY_GUID_D = '00000000-0000-0000-0000-000000000000'
 const CANONICAL_GUID_D_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const RUN_BOUND_RESPONSE_DEADLINE_MS = 10_000
-// Chat messages synchronously await the live-provider tool-calling orchestration (60s maximum).
-const RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS = 65_000
+// Three 30s tool rounds can precede a supported 600s Ollama fallback; retain 10s delivery.
+const RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS = 700_000
 
 let activeRunBoundTransport = null
 
