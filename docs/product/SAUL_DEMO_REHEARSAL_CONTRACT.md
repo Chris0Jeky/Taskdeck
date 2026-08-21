@@ -24,24 +24,43 @@ Out of scope:
 - new architecture or feature expansion
 - public GTM/landing narrative (`#216`)
 
+This rehearsal is local product evidence only. It does not authorize or prove a public release.
+The clean-machine Windows walkthrough, Explorer/shortcut/default-browser behavior, and
+SmartScreen disposition remain open human gates (`#1242`, `#1876`, and `#1877`); do not check
+them off from this rehearsal.
+
 ## Preconditions
 
 - run the launcher from the repository root; it owns both backend and frontend processes
 - the canonical Saul rehearsal is default-port only: the launcher's `API` line must report `http://localhost:5000`
 - if the launcher selects or is given another API port, stop; do not continue this rehearsal against it
 - demo credentials are valid (`demo` / `demo123` unless overridden)
-- local provider configuration is deterministic/mock-safe
+- the commands below scope deterministic Mock/live-disabled settings to a child process tree; they
+  do not display, read, persist, or overwrite any provider key value
+- remove any retired Taskdeck `Llm__Gemini__*` setting before the rehearsal; the intentional
+  migration guard rejects that retired provider configuration even when these commands select Mock
 
 ## Canonical Bootstrap
 
-From the repository root, choose the command for the current shell:
+From the repository root, choose the command for the current shell. Each command scopes only the
+non-secret provider selectors to a child process; no interactive-shell setting or configuration file
+is changed.
 
 ```powershell
-.\scripts\dev-up.ps1 -Seed -ResetSeed
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  & ".\scripts\dev-up.ps1" -Seed -ResetSeed
+}'
 ```
 
 ```bash
-./scripts/dev-up.sh --seed --reset-seed
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  ./scripts/dev-up.sh --seed --reset-seed
 ```
 
 Continue only after the launcher prints `Stack is up.` and its `API` line reports
@@ -77,10 +96,30 @@ New client onboarding - ACME Ltd
 
 ## Artifact Capture Command (Recommended)
 
-For a deterministic artifact bundle before recording:
+For a deterministic artifact bundle before recording, run the npm command from its declared
+working directory, `frontend/taskdeck-web`. The wrappers below keep the Mock/live-disabled posture
+on the director, Playwright, and fresh-server process tree without exposing or changing any key
+value.
 
 ```bash
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  TASKDECK_DEMO_LLM_PROVIDER=Mock \
+  TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
+  $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
+  npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+}'
 ```
 
 Expected artifact root:

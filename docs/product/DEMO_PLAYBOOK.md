@@ -277,7 +277,7 @@ cd frontend/taskdeck-web
 npm run demo:director -- --scenario engineering-sprint --turns 18 --brain heuristic --loop mixed --rng-seed demo-1
 
 # Saul-facing deterministic rehearsal artifacts (no autoplay turns)
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env Llm__Provider=Mock Llm__EnableLiveProviders=false Llm__AllowLiveProvidersInDevelopment=false TASKDECK_DEMO_LLM_PROVIDER=Mock TASKDECK_DEMO_DISABLE_LIVE_LLM=1 npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 
 # CI-style deterministic run without LLM-required steps
 npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --rng-seed ci-1
