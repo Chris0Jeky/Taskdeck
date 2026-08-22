@@ -56,16 +56,46 @@ const headlineParts = computed(() => {
 })
 
 const confirmOpen = computed(() => props.confirmingSeal && !props.sealed)
+const sealButton = ref<InstanceType<typeof PaperHLBtn> | null>(null)
 const confirmButton = ref<InstanceType<typeof PaperHLBtn> | null>(null)
+const sealedReason = ref<HTMLElement | null>(null)
 
-// Move focus onto the confirm CTA when the prompt opens so the irreversible
-// step is reachable from the keyboard and announced, not just painted.
-watch(confirmOpen, async (open) => {
-  if (!open) return
+function focusEl(candidate: unknown) {
+  if (candidate instanceof HTMLElement) candidate.focus()
+}
+
+// Focus has to be handed off explicitly at every edge of the confirm prompt.
+// Each exit destroys or disables the element holding it — cancel and success
+// unmount the `v-else-if` branch, and `:disabled` during the request blurs the
+// confirm CTA — so without this the caret falls to <body> and a keyboard user
+// is parked at the top of the document, worst of all after a FAILED seal where
+// the prompt is still open and still waiting on them.
+watch(confirmOpen, async (open, wasOpen) => {
   await nextTick()
-  const el = confirmButton.value?.$el
-  if (el instanceof HTMLElement) el.focus()
+  if (open) {
+    // The irreversible step must be reachable from the keyboard and announced,
+    // not just painted.
+    focusEl(confirmButton.value?.$el)
+    return
+  }
+  if (!wasOpen) return
+  // Sealed is terminal: send focus to the `role="status"` reason that explains
+  // why the CTA is now dead. Otherwise the prompt was cancelled, and focus
+  // belongs back on the control that opened it (re-enabled by the same tick).
+  focusEl(props.sealed ? sealedReason.value : sealButton.value?.$el)
 })
+
+// A failed seal leaves the prompt open and re-enables both buttons, but the
+// browser already dropped focus when they went disabled. Put it back on the
+// action the user is being asked to retry.
+watch(
+  () => props.sealing,
+  async (sealing, wasSealing) => {
+    if (sealing || !wasSealing || !confirmOpen.value) return
+    await nextTick()
+    focusEl(confirmButton.value?.$el)
+  },
+)
 </script>
 
 <template>
@@ -85,6 +115,7 @@ watch(confirmOpen, async (open) => {
                reason sits next to it rather than arriving as a toast only
                after a click that could never do anything. -->
           <PaperHLBtn
+            ref="sealButton"
             variant="ember"
             :label="sealed ? t('today.seal.sealedAction') : t('today.seal.action')"
             data-action="seal"
@@ -106,9 +137,11 @@ watch(confirmOpen, async (open) => {
         <p
           v-if="sealed"
           id="today-seal-sealed-reason"
+          ref="sealedReason"
           class="today-cover__seal-reason"
           data-testid="seal-sealed-reason"
           role="status"
+          tabindex="-1"
         >
           {{ t('today.seal.sealedReason') }}
         </p>

@@ -410,6 +410,63 @@ describe('PaperTodayView', () => {
     expect(todayApi.sealDay).not.toHaveBeenCalled()
   })
 
+  it('hands focus back to the seal control on cancel, and to the sealed reason on success', async () => {
+    // Every exit from the prompt destroys the element holding focus. Without an
+    // explicit hand-off the caret lands on <body> and a keyboard user is parked
+    // at the top of the document.
+    const wrapper = mount(PaperTodayView, { attachTo: document.body })
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('[data-action="seal-confirm"]').element)
+
+    await wrapper.find('[data-action="seal-cancel"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('[data-action="seal"]').element)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await wrapper.find('[data-action="seal-confirm"]').trigger('click')
+    await flushPromises()
+
+    // Sealed is terminal: focus goes to the role="status" that explains why the
+    // CTA it came from is now disabled.
+    const reason = wrapper.get('[data-testid="seal-sealed-reason"]')
+    expect(reason.attributes('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(reason.element)
+
+    wrapper.unmount()
+  })
+
+  it('returns focus to the confirm CTA when a failed seal re-enables it', async () => {
+    let rejectSeal!: (error: unknown) => void
+    vi.mocked(todayApi.sealDay).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => {
+        rejectSeal = reject
+      }),
+    )
+    const wrapper = mount(PaperTodayView, { attachTo: document.body })
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await wrapper.find('[data-action="seal-confirm"]').trigger('click')
+    await flushPromises()
+
+    // A real browser drops focus off an element the moment it becomes
+    // disabled; happy-dom leaves it there, so move it away explicitly —
+    // otherwise this spec would pass on focus that never actually left.
+    const elsewhere = wrapper.get('[data-action="note"]').element as HTMLElement
+    elsewhere.focus()
+    expect(document.activeElement).toBe(elsewhere)
+
+    rejectSeal(new Error('offline'))
+    await flushPromises()
+
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-action="seal-confirm"]').attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(wrapper.get('[data-action="seal-confirm"]').element)
+
+    wrapper.unmount()
+  })
+
   it('separates "not built yet" panels from panels whose live data did not load', () => {
     const wrapper = mount(PaperTodayView)
 
