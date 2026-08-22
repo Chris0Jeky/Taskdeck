@@ -93,10 +93,16 @@ const operationLabel = computed(() => {
 </script>
 
 <template>
+  <!-- Backdrop dismissal is OFF for this dialog, deliberately (GH-1942).
+       It now opens BY ITSELF the instant approve returns, under a pointer that
+       is still travelling: the habitual second click on the rail's primary
+       button — the very habit GH-1942 exists to serve — lands on the backdrop
+       that just appeared beneath the cursor and would throw the step away. The
+       two deliberate exits remain: Escape and the "Not yet" button. -->
   <TdDialog
     :open="open"
     :title="$t('review.applyDialog.title')"
-    :close-on-backdrop="!busy"
+    :close-on-backdrop="false"
     @close="emit('cancel')"
   >
     <div class="td-apply-confirm" data-testid="apply-confirm-dialog">
