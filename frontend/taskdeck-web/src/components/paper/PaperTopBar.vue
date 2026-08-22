@@ -134,6 +134,21 @@ const accountDisplayName = computed(() => {
   return name && name !== '' ? name : avatarLetter.value
 })
 
+/**
+ * The trigger's accessible name has to carry the IDENTITY, not just the verb.
+ * The control it replaced announced `Profile: D`; a bare "Open account menu"
+ * drops the only cue a non-sighted user had for *whose* account this is, since
+ * the avatar letter is the visual-only carrier of that fact.  Composed from the
+ * two catalog entries that already exist rather than a new key, so every locale
+ * gets it for free and no English is hardcoded here.
+ */
+const accountTriggerLabel = computed(
+  () =>
+    `${t('shell.topbar.account.trigger')} (${t('shell.topbar.account.signedInAs', {
+      name: accountDisplayName.value,
+    })})`,
+)
+
 const canOpenProfile = computed(() => featureFlags.isEnabled('newAuth'))
 
 const accountMenuOpen = ref(false)
@@ -191,6 +206,24 @@ function toggleAccountMenu() {
     return
   }
   openAccountMenu()
+}
+
+/**
+ * Close when focus leaves the account cluster entirely.  Without this, Tab (or
+ * Shift+Tab) walks straight out of the menu and leaves it hanging open over the
+ * page while focus is somewhere else — the pointer-outside handler never fires
+ * because no pointer was ever used.  `restoreFocus: false`: the user just chose
+ * where focus goes, and yanking it back to the avatar would cancel that Tab and
+ * make the menu impossible to leave by keyboard.
+ *
+ * A null `relatedTarget` (focus left the document, e.g. the window lost focus)
+ * also closes — nothing inside the menu holds focus any more either way.
+ */
+function handleAccountFocusOut(event: FocusEvent) {
+  if (!accountMenuOpen.value) return
+  const next = event.relatedTarget
+  if (next instanceof Node && accountRootEl.value?.contains(next)) return
+  closeAccountMenu({ restoreFocus: false })
 }
 
 useEscapeToClose(
@@ -318,12 +351,12 @@ function handleWorkspaceModeChange(event: Event) {
       <PaperIcon name="settings" />
     </button>
 
-    <div ref="accountRootEl" class="paper-topbar__account">
+    <div ref="accountRootEl" class="paper-topbar__account" @focusout="handleAccountFocusOut">
       <button
         ref="accountTriggerEl"
         type="button"
         class="paper-topbar__avatar"
-        :aria-label="t('shell.topbar.account.trigger')"
+        :aria-label="accountTriggerLabel"
         :title="accountDisplayName"
         aria-haspopup="menu"
         :aria-expanded="accountMenuOpen"
@@ -331,37 +364,54 @@ function handleWorkspaceModeChange(event: Event) {
         @click="toggleAccountMenu"
       >{{ avatarLetter }}</button>
 
-      <div
-        v-if="accountMenuOpen"
-        ref="accountMenuEl"
-        class="paper-topbar__menu"
-        role="menu"
-        tabindex="-1"
-        :aria-label="t('shell.topbar.account.label')"
-        @keydown="handleAccountMenuKeydown"
-      >
+      <!--
+        The "Signed in as …" line sits OUTSIDE `role="menu"`: a menu may only
+        own menuitem/menuitemradio/menuitemcheckbox/group/separator children, and
+        a stray <p> inside it is an invalid owned child that assistive tech may
+        skip or announce out of the menu's item count.  The identity it carries
+        is not lost — it is also folded into the trigger's accessible name.
+      -->
+      <div v-if="accountMenuOpen" class="paper-topbar__menu">
         <p class="paper-topbar__menu-head">
           {{ t('shell.topbar.account.signedInAs', { name: accountDisplayName }) }}
         </p>
-        <button
-          v-if="canOpenProfile"
-          type="button"
-          role="menuitem"
-          class="paper-topbar__menu-item"
-          @click="handleAccountProfile"
-        >{{ t('shell.topbar.account.profile') }}</button>
-        <button
-          type="button"
-          role="menuitem"
-          class="paper-topbar__menu-item"
-          @click="handleAccountAppearance"
-        >{{ t('shell.topbar.account.appearance') }}</button>
-        <button
-          type="button"
-          role="menuitem"
-          class="paper-topbar__menu-item paper-topbar__menu-item--signout"
-          @click="handleAccountSignOut"
-        >{{ t('shell.topbar.account.signOut') }}</button>
+        <div
+          ref="accountMenuEl"
+          class="paper-topbar__menu-list"
+          role="menu"
+          tabindex="-1"
+          :aria-label="t('shell.topbar.account.label')"
+          @keydown="handleAccountMenuKeydown"
+        >
+          <!--
+            `tabindex="-1"` on every item: `role="menu"` promises a single tab
+            stop with arrow-key roving inside it, so the items must not each be
+            their own tab stop.  Tab therefore leaves the cluster, which the
+            focusout handler above turns into a close.
+          -->
+          <button
+            v-if="canOpenProfile"
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            class="paper-topbar__menu-item"
+            @click="handleAccountProfile"
+          >{{ t('shell.topbar.account.profile') }}</button>
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            class="paper-topbar__menu-item"
+            @click="handleAccountAppearance"
+          >{{ t('shell.topbar.account.appearance') }}</button>
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            class="paper-topbar__menu-item paper-topbar__menu-item--signout"
+            @click="handleAccountSignOut"
+          >{{ t('shell.topbar.account.signOut') }}</button>
+        </div>
       </div>
     </div>
   </header>

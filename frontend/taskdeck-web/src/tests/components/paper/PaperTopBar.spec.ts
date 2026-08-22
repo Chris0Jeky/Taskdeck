@@ -62,6 +62,17 @@ async function openAccountMenu(wrapper: ReturnType<typeof mountTopBar>) {
   return wrapper.find('[role="menu"]')
 }
 
+/**
+ * A real mouse press on the avatar: `pointerdown` THEN `click`. Vue Test Utils'
+ * `trigger('click')` alone dispatches no pointerdown, so it silently skips the
+ * outside-press handler — which is precisely the interaction that can go wrong.
+ */
+async function pressAccountTrigger(wrapper: ReturnType<typeof mountTopBar>) {
+  const trigger = wrapper.find('[data-topbar-action="account"]')
+  trigger.element.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+  await trigger.trigger('click')
+}
+
 function menuItemLabels(wrapper: ReturnType<typeof mountTopBar>) {
   return wrapper.findAll('[role="menuitem"]').map((item) => item.text())
 }
@@ -230,9 +241,44 @@ describe('PaperTopBar', () => {
       expect(menu.exists()).toBe(true)
       expect(wrapper.find('[data-topbar-action="account"]').attributes('aria-expanded')).toBe('true')
       expect(menuItemLabels(wrapper)).toEqual(['Profile', 'Appearance', 'Sign out'])
-      expect(menu.text()).toContain('Signed in as Dora')
+      expect(wrapper.find('.paper-topbar__menu-head').text()).toBe('Signed in as Dora')
       await nextTick()
       expect(document.activeElement).toBe(wrapper.findAll('[role="menuitem"]')[0].element)
+    })
+
+    it('keeps the signed-in-as line OUT of the menu role, whose only owned children are menuitems', async () => {
+      wrapper = mountTopBar()
+      const menu = await openAccountMenu(wrapper)
+
+      // The head still renders (identity is not lost) …
+      expect(wrapper.find('.paper-topbar__menu-head').exists()).toBe(true)
+      // … but role="menu" must not own it: a <p> is an invalid owned child.
+      expect(menu.find('.paper-topbar__menu-head').exists()).toBe(false)
+      expect(
+        Array.from(menu.element.children).every(
+          (child) => child.getAttribute('role') === 'menuitem',
+        ),
+      ).toBe(true)
+    })
+
+    it('names the avatar trigger with the account identity, not just the verb', async () => {
+      mockSession.username = 'Dora'
+      wrapper = mountTopBar()
+
+      const label = wrapper.find('[data-topbar-action="account"]').attributes('aria-label')
+      // The control this replaced announced "Profile: D" — the identity must
+      // survive, because the avatar letter is a visual-only carrier of it.
+      expect(label).toContain('Dora')
+      expect(label).toContain('Open account menu')
+    })
+
+    it('gives every menu item tabindex="-1" so the menu is one tab stop, not four', async () => {
+      wrapper = mountTopBar()
+      await openAccountMenu(wrapper)
+
+      const items = wrapper.findAll('[role="menuitem"]')
+      expect(items.length).toBe(3)
+      expect(items.map((item) => item.attributes('tabindex'))).toEqual(['-1', '-1', '-1'])
     })
 
     it('navigates to the profile page from the account menu and closes it', async () => {
@@ -285,6 +331,65 @@ describe('PaperTopBar', () => {
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
       await nextTick()
 
+      expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    })
+
+    it('closes the account menu when focus tabs out of it, without yanking focus back', async () => {
+      const outside = document.createElement('button')
+      outside.textContent = 'somewhere else'
+      document.body.appendChild(outside)
+      try {
+        wrapper = mountTopBar()
+        const trigger = wrapper.find('[data-topbar-action="account"]')
+        await openAccountMenu(wrapper)
+        await nextTick()
+        expect(wrapper.find('[role="menu"]').exists()).toBe(true)
+
+        // Tab out: focus lands outside the account cluster, so focusout fires on
+        // the item with the new element as relatedTarget.
+        const focused = document.activeElement as HTMLElement
+        outside.focus()
+        focused.dispatchEvent(
+          new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }),
+        )
+        await nextTick()
+
+        expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+        // Focus must stay where the user put it — restoring it here would cancel
+        // the Tab and make the menu impossible to leave by keyboard.
+        expect(document.activeElement).toBe(outside)
+        expect(document.activeElement).not.toBe(trigger.element)
+      } finally {
+        outside.remove()
+      }
+    })
+
+    it('keeps the account menu open when focus moves between its own items', async () => {
+      wrapper = mountTopBar()
+      const menu = await openAccountMenu(wrapper)
+      await nextTick()
+      const items = wrapper.findAll('[role="menuitem"]')
+
+      items[0].element.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, relatedTarget: items[1].element }),
+      )
+      await nextTick()
+
+      expect(wrapper.find('[role="menu"]').exists()).toBe(true)
+      expect(menu.exists()).toBe(true)
+    })
+
+    it('closes the account menu on a second press of the avatar', async () => {
+      wrapper = mountTopBar()
+
+      await pressAccountTrigger(wrapper)
+      expect(wrapper.find('[role="menu"]').exists()).toBe(true)
+
+      // The trigger lives INSIDE accountRootEl, so its own pointerdown is not an
+      // "outside" press. If it were outside, this pointerdown would close the
+      // menu and the click would immediately re-open it — a control that can
+      // never be dismissed by clicking it again.
+      await pressAccountTrigger(wrapper)
       expect(wrapper.find('[role="menu"]').exists()).toBe(false)
     })
 
