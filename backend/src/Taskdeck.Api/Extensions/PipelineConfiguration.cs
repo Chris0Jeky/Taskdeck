@@ -4,15 +4,25 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Api.Extensions;
 
 public static class PipelineConfiguration
 {
+    /// <summary>
+    /// Request-path prefixes owned by machine-facing surfaces — the REST API, SignalR hubs, health
+    /// probes, and the MCP HTTP transport — rather than by the Vue SPA. An unmatched path under one
+    /// of these is a wrong path, never a client-side route, so it is answered with a 404 error
+    /// contract instead of the SPA shell (#1971).
+    /// </summary>
+    internal static readonly string[] NonSpaPathPrefixes = ["/api", "/hubs", "/health", "/mcp"];
+
     public static WebApplication ConfigureTaskdeckPipeline(
         this WebApplication app,
         RateLimitingSettings rateLimitingSettings)
@@ -163,14 +173,48 @@ public static class PipelineConfiguration
         // before routing and sets an authenticated principal for valid keys, which satisfies the
         // global FallbackPolicy (#1132 AC4). The MCP SDK endpoint does not honor an
         // .AllowAnonymous() convention, so the principal — not endpoint metadata — is the opt-in.
-        // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
-        // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
-        // are matched above and never reach this fallback. AllowAnonymous so the app shell loads for
-        // unauthenticated users (e.g. to reach the login page) under the global FallbackPolicy (#1132 AC4).
+
+        // Machine-facing 404s (#1971). The SPA fallback below matches EVERY unmatched path, so
+        // before this change a typo'd, renamed, or removed API route answered 200 + index.html and
+        // any caller that checks the status code saw a false success. These per-prefix fallbacks
+        // carry a literal first segment, which outranks the SPA catch-all in route precedence, so
+        // an unmatched path under one of them terminates here with the API's JSON error contract
+        // (ApiErrorResponse, application/json) instead of the app shell.
+        //
+        // Only *unmatched* paths reach a fallback: every real controller, hub, and MCP endpoint is
+        // a non-fallback endpoint and still wins the match, so an unauthenticated request to an
+        // existing API route keeps returning 401 rather than 404 (#1132 AC4 ordering preserved).
+        //
+        // AllowAnonymous is deliberate: an unknown path has no resource to protect, and without it
+        // the global FallbackPolicy would answer anonymous callers with 401 — re-hiding the "this
+        // endpoint does not exist" signal behind an auth error for exactly the unauthenticated
+        // scripts and probes this issue is about. The cost is that route existence is discoverable
+        // (404 vs 401) without credentials, which the OpenAPI document already publishes.
+        foreach (var prefix in NonSpaPathPrefixes)
+        {
+            app.MapFallback($"{prefix}/{{**path}}", UnknownEndpointNotFound).AllowAnonymous();
+        }
+
+        // SPA fallback: any other unmatched route returns index.html, enabling Vue Router's
+        // client-side navigation. Paths under NonSpaPathPrefixes cannot reach it — either a real
+        // endpoint above matched them, or the per-prefix 404 fallbacks did. AllowAnonymous so the
+        // app shell loads for unauthenticated users (e.g. to reach the login page) under the global
+        // FallbackPolicy (#1132 AC4).
         app.MapFallbackToFile("index.html").AllowAnonymous();
 
         return app;
     }
+
+    /// <summary>
+    /// Terminal handler for unmatched paths under <see cref="NonSpaPathPrefixes"/>. Returns the same
+    /// <see cref="ApiErrorResponse"/> shape (<c>errorCode</c>/<c>message</c>, application/json) that
+    /// <see cref="ResultExtensions.ToErrorActionResult"/> produces for a controller 404, so a client
+    /// parses one error contract regardless of whether the route existed.
+    /// </summary>
+    private static IResult UnknownEndpointNotFound() =>
+        Results.Json(
+            new ApiErrorResponse(ErrorCodes.NotFound, "The requested endpoint does not exist."),
+            statusCode: StatusCodes.Status404NotFound);
 
     internal static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
     {
