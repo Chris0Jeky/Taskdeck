@@ -42,6 +42,7 @@ export default {
     },
     decision: {
       sending: 'Sending to Review…',
+      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review.',
       inReview: 'Sent to Review — decide there.',
       applied: 'Applied to the board. Nothing left to do here.',
       rejected: 'Rejected. This capture will not reach Review.',

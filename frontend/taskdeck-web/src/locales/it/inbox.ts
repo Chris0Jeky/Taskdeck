@@ -32,6 +32,7 @@ export default {
     },
     decision: {
       sending: 'Invio a Review…',
+      nothingToPropose: 'Lo smistamento non ha trovato nulla da proporre — a Review non è arrivato nulla.',
       inReview: 'Inviata a Review — decidi lì.',
       applied: 'Applicata alla bacheca. Qui non resta altro da fare.',
       rejected: 'Rifiutata. Questa cattura non arriverà a Review.',

@@ -27,8 +27,8 @@ describe('inboxUtils', () => {
     [0, 'undecided'],
     ['Triaging', 'sending'],
     [1, 'sending'],
-    ['Triaged', 'inReview'],
-    [2, 'inReview'],
+    ['Triaged', 'nothingToPropose'],
+    [2, 'nothingToPropose'],
     ['ProposalCreated', 'inReview'],
     [3, 'inReview'],
     ['Converted', 'applied'],
@@ -39,6 +39,16 @@ describe('inboxUtils', () => {
     [6, 'failed'],
   ])('maps capture status %s to a row state', (status, expected) => {
     expect(captureRowState(status)).toBe(expected)
+  })
+
+  it('separates "triaged, nothing to propose" from "a proposal is waiting in Review"', () => {
+    // Backend `CaptureStatusPolicy` (Domain/Enums/CaptureStatus.cs) maps a
+    // COMPLETED triage to ProposalCreated when a proposal was linked and to
+    // Triaged when none was. Collapsing the two into `inReview` sends the user
+    // to Review to decide something that was never created — and Accept/Reject
+    // are disabled on a Triaged row, so the instruction cannot be walked back.
+    expect(captureRowState('Triaged')).not.toBe(captureRowState('ProposalCreated'))
+    expect(captureRowState('ProposalCreated')).toBe('inReview')
   })
 
   it('never reports an unknown or absent status as undecided', () => {
