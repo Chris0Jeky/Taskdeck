@@ -1042,7 +1042,13 @@ describe('captureStore', () => {
     expect(captureApi.updateSuggestion).toHaveBeenCalledWith('c10', { text: 'edited full text' })
     expect(result.rawText).toBe('edited full text')
     expect(store.detailById.c10?.rawText).toBe('edited full text')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture text updated')
+    // Stamped SAVED, never APPLIED: a text correction touches no board, and the
+    // Paper toast renders that word (GH-1951).
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Capture text updated',
+      undefined,
+      { label: 'saved' },
+    )
   })
 
   it('surfaces error when suggestion update fails', async () => {
