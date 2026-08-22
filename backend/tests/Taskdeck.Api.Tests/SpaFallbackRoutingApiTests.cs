@@ -1,6 +1,9 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Tests.Support;
 using Xunit;
@@ -34,6 +37,9 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         // A file-looking segment: the SPA catch-all is {*path:nonfile}, so this never matched the
         // shell — it fell through as a bodyless 404. It must now carry the API error contract too.
         "/api/nonexistent.json",
+        // Route matching is case-insensitive for literal segments, so an upper-case prefix resolves
+        // to the same fallback. If it did not, "/API/..." would be a trivial bypass back to the shell.
+        "/API/definitely-not-a-real-endpoint-hzn",
         "/hubs/definitely-not-a-real-hub",
         "/health/definitely-not-a-real-probe"
     ];
@@ -42,7 +48,12 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
     [
         "/api",
         "/hubs",
-        "/health"
+        "/health",
+        // Trailing slash: "{prefix}/{**path}" matches with an empty catch-all segment, so the bare
+        // prefix and its trailing-slash form answer identically rather than diverging.
+        "/api/",
+        "/hubs/",
+        "/health/"
     ];
 
     [Theory]
@@ -178,6 +189,54 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         var response = await client.GetAsync("/mcp/definitely-not-a-real-mcp-path");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task UnknownMcpPath_Returns404ErrorContract_WithValidApiKey()
+    {
+        // The 401 case above stops at ApiKeyMiddleware and proves nothing about routing, so without
+        // this case the /mcp entry in NonSpaPathPrefixes is exercised only by the array pin. A valid
+        // key is the ONLY way past the middleware and onto the /mcp fallback, which is where the
+        // 200 + index.html regression would actually surface for an MCP client.
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "spa_fallback_mcp");
+
+        using var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("SPA fallback MCP key"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        using var mcpClient = _factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        var response = await mcpClient.GetAsync("/mcp/definitely-not-a-real-mcp-path");
+        var body = await response.Content.ReadAsStringAsync();
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        body.Should().NotContain(
+            SpaShellTestWebApplicationFactory.ShellMarker,
+            "an authenticated MCP client must never be handed the app shell for an unknown path (#1971)");
+    }
+
+    [Theory]
+    [InlineData("/api/definitely-not-a-real-endpoint-hzn")]
+    [InlineData("/hubs/definitely-not-a-real-hub")]
+    [InlineData("/health/definitely-not-a-real-probe")]
+    public async Task HeadOnUnknownNonSpaPath_Returns404(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        // HEAD is in the fallbacks' method metadata because MapFallbackToFile stamps [GET, HEAD] —
+        // dropping it would leave HEAD to the framework's 405 endpoint. The response is bodyless by
+        // protocol, so only the status and the media type are assertable here.
+        using var request = new HttpRequestMessage(HttpMethod.Head, path);
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
     }
 
     [Fact]
