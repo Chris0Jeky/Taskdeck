@@ -651,7 +651,7 @@ describe('PaperTriageTable', () => {
 
   it('does not narrate an open editor as a decision', async () => {
     // The row is still undecided while its text is being corrected — claiming
-    // "Sending to Review…" here is the #1944 lie in a new place.
+    // "Sending to Review…" here is the GH-1944 lie in a new place.
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
     await flushPromises()
