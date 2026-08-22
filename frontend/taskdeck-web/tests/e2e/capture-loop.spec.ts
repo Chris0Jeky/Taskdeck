@@ -37,7 +37,7 @@ test.describe('Paper capture-review-apply loop', () => {
       response.request().method() === 'POST'
       && /\/api\/capture\/items$/i.test(response.url()))
     await captureBody.fill(`- [ ] ${cardTitle}`)
-    await page.getByRole('button', { name: 'Capture' }).click()
+    await page.getByRole('button', { name: /^Capture/ }).click()
     const createCaptureResponse = await createCaptureResponsePromise
     await assertOk(createCaptureResponse, 'create Paper capture')
     const capturePayload = await createCaptureResponse.json() as { id?: string }
