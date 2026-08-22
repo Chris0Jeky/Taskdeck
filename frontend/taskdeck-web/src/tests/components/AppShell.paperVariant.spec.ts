@@ -302,4 +302,31 @@ describe('AppShell — paper variant routing', () => {
     expect(mockSession.logout).toHaveBeenCalledTimes(1)
     expect(mockRouter.push).toHaveBeenCalledWith('/login')
   })
+
+  /**
+   * The topbar's own spec can only prove PaperTopBar EMITS `logout`. An emit
+   * nobody listens to is exactly the class of defect issue #1932 is about, so
+   * pin the other half of the seam here: the shell's `@logout` binding, all the
+   * way through to `session.logout()`.
+   */
+  it('wires the Paper top bar account sign-out to session store', async () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    wrapper = mountShell()
+
+    await wrapper.find('[data-topbar-action="account"]').trigger('click')
+
+    const menu = wrapper.find('.paper-topbar__menu')
+    expect(menu.exists()).toBe(true)
+    const signOut = menu
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text().includes('Sign out'))
+    expect(signOut).toBeDefined()
+
+    await signOut?.trigger('click')
+
+    expect(mockSession.logout).toHaveBeenCalledTimes(1)
+    expect(mockRouter.push).toHaveBeenCalledWith('/login')
+  })
 })
