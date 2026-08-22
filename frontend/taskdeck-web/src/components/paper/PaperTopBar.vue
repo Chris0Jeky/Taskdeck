@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, type RouteLocationMatched } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { useRoute, useRouter, type RouteLocationMatched } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { useEscapeToClose } from '../../composables/useEscapeToClose'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { WorkspaceMode } from '../../types/workspace'
@@ -16,17 +19,37 @@ import PaperStatusPill from './PaperStatusPill.vue'
  * (`TopBar`).  Builds breadcrumb segments from `route.matched`, looking for
  * `route.meta.breadcrumb` first and otherwise humanizing the route name.  The
  * ⌘K trigger emits `palette:open` so the parent shell can wire it into the
- * existing command-palette composable.  Bell + Settings render as ghost icon
- * buttons; the avatar uses the first letter of the session username.
+ * existing command-palette composable.
+ *
+ * Right-hand controls (#1932 — all three used to render enabled and do
+ * nothing):
+ *   - bell   → routes to `/workspace/notifications`
+ *   - gear   → routes to `/workspace/settings/appearance`.  The glyph is a ring
+ *              with radiating spokes and reads as a SUN, so the affordance a
+ *              user expects from it is theme control; Appearance is the page
+ *              that owns theme *and* language, and unlike the profile route it
+ *              is not behind a feature flag.
+ *   - avatar → a real `<button>` opening an account menu.  It used to be a
+ *              `<div aria-label="Profile: D">`: unfocusable, not keyboard
+ *              operable, and announced as a bare label with no action.
+ *
+ * Menu items are rendered only when they lead somewhere: `Profile` sits behind
+ * the `newAuth` flag, and with that flag off the router guard silently bounces
+ * the route to Home — an enabled-and-silent control is exactly the defect this
+ * component is being fixed for, so the item is omitted instead.
  */
 
 const emit = defineEmits<{
   'palette:open': []
+  logout: []
 }>()
 
 const route = useRoute()
+const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
+const featureFlags = useFeatureFlagStore()
+const { t } = useI18n()
 
 const workspaceModeMeta: Record<WorkspaceMode, { label: string; description: string }> = {
   guided: {
@@ -103,8 +126,115 @@ const commandModifierLabel = computed(() => {
   return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? '⌘' : 'Ctrl'
 })
 
+const accountDisplayName = computed(() => {
+  const name = session.username?.trim()
+  return name && name !== '' ? name : avatarLetter.value
+})
+
+const canOpenProfile = computed(() => featureFlags.isEnabled('newAuth'))
+
+const accountMenuOpen = ref(false)
+const accountRootEl = ref<HTMLElement | null>(null)
+const accountTriggerEl = ref<HTMLButtonElement | null>(null)
+const accountMenuEl = ref<HTMLElement | null>(null)
+
 function handlePaletteClick() {
   emit('palette:open')
+}
+
+function goToNotifications() {
+  void router.push({ name: 'workspace-notifications' })
+}
+
+function goToAppearance() {
+  void router.push({ name: 'workspace-settings-appearance' })
+}
+
+/**
+ * Close on any pointer press outside the account cluster. `pointerdown` (not
+ * `click`) so the menu is already gone by the time the press lands on whatever
+ * is underneath, and capture phase so a stopPropagation somewhere downstream
+ * cannot strand the menu open.
+ */
+function handleDocumentPointerDown(event: Event) {
+  const target = event.target
+  if (target instanceof Node && accountRootEl.value?.contains(target)) {
+    return
+  }
+  closeAccountMenu({ restoreFocus: false })
+}
+
+function openAccountMenu() {
+  if (accountMenuOpen.value) return
+  accountMenuOpen.value = true
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true)
+  void nextTick(() => {
+    accountMenuEl.value?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+  })
+}
+
+function closeAccountMenu({ restoreFocus = true }: { restoreFocus?: boolean } = {}) {
+  if (!accountMenuOpen.value) return
+  accountMenuOpen.value = false
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+  if (restoreFocus) {
+    accountTriggerEl.value?.focus()
+  }
+}
+
+function toggleAccountMenu() {
+  if (accountMenuOpen.value) {
+    closeAccountMenu()
+    return
+  }
+  openAccountMenu()
+}
+
+useEscapeToClose(
+  () => accountMenuOpen.value,
+  () => closeAccountMenu(),
+)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
+})
+
+function handleAccountProfile() {
+  closeAccountMenu()
+  void router.push({ name: 'workspace-settings-profile' })
+}
+
+function handleAccountAppearance() {
+  closeAccountMenu()
+  void router.push({ name: 'workspace-settings-appearance' })
+}
+
+function handleAccountSignOut() {
+  closeAccountMenu()
+  emit('logout')
+}
+
+/** Roving arrow-key focus — `role="menu"` promises it, so it has to be real. */
+function handleAccountMenuKeydown(event: KeyboardEvent) {
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+  if (!keys.includes(event.key)) return
+
+  const items = Array.from(
+    accountMenuEl.value?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+  )
+  if (items.length === 0) return
+
+  event.preventDefault()
+  const current = items.findIndex((item) => item === document.activeElement)
+  let next = 0
+  if (event.key === 'End') {
+    next = items.length - 1
+  } else if (event.key === 'ArrowUp') {
+    next = current <= 0 ? items.length - 1 : current - 1
+  } else if (event.key === 'ArrowDown') {
+    next = current === -1 || current === items.length - 1 ? 0 : current + 1
+  }
+  items[next]?.focus()
 }
 
 function handleWorkspaceModeChange(event: Event) {
@@ -164,14 +294,73 @@ function handleWorkspaceModeChange(event: Event) {
 
     <div class="paper-topbar__hairline" aria-hidden="true" />
 
-    <button type="button" class="paper-topbar__icon-btn" aria-label="Notifications">
+    <button
+      type="button"
+      class="paper-topbar__icon-btn"
+      :aria-label="t('shell.topbar.notifications')"
+      :title="t('shell.topbar.notifications')"
+      data-topbar-action="notifications"
+      @click="goToNotifications"
+    >
       <PaperIcon name="bell" />
     </button>
-    <button type="button" class="paper-topbar__icon-btn" aria-label="Settings">
+    <button
+      type="button"
+      class="paper-topbar__icon-btn"
+      :aria-label="t('shell.topbar.appearance')"
+      :title="t('shell.topbar.appearance')"
+      data-topbar-action="appearance"
+      @click="goToAppearance"
+    >
       <PaperIcon name="settings" />
     </button>
 
-    <div class="paper-topbar__avatar" :aria-label="`Profile: ${avatarLetter}`">{{ avatarLetter }}</div>
+    <div ref="accountRootEl" class="paper-topbar__account">
+      <button
+        ref="accountTriggerEl"
+        type="button"
+        class="paper-topbar__avatar"
+        :aria-label="t('shell.topbar.account.trigger')"
+        :title="accountDisplayName"
+        aria-haspopup="menu"
+        :aria-expanded="accountMenuOpen"
+        data-topbar-action="account"
+        @click="toggleAccountMenu"
+      >{{ avatarLetter }}</button>
+
+      <div
+        v-if="accountMenuOpen"
+        ref="accountMenuEl"
+        class="paper-topbar__menu"
+        role="menu"
+        tabindex="-1"
+        :aria-label="t('shell.topbar.account.label')"
+        @keydown="handleAccountMenuKeydown"
+      >
+        <p class="paper-topbar__menu-head">
+          {{ t('shell.topbar.account.signedInAs', { name: accountDisplayName }) }}
+        </p>
+        <button
+          v-if="canOpenProfile"
+          type="button"
+          role="menuitem"
+          class="paper-topbar__menu-item"
+          @click="handleAccountProfile"
+        >{{ t('shell.topbar.account.profile') }}</button>
+        <button
+          type="button"
+          role="menuitem"
+          class="paper-topbar__menu-item"
+          @click="handleAccountAppearance"
+        >{{ t('shell.topbar.account.appearance') }}</button>
+        <button
+          type="button"
+          role="menuitem"
+          class="paper-topbar__menu-item paper-topbar__menu-item--signout"
+          @click="handleAccountSignOut"
+        >{{ t('shell.topbar.account.signOut') }}</button>
+      </div>
+    </div>
   </header>
 </template>
 
@@ -300,9 +489,16 @@ function handleWorkspaceModeChange(event: Event) {
   color: var(--ember);
 }
 
+.paper-topbar__account {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .paper-topbar__avatar {
   width: 26px;
   height: 26px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--paper-card);
@@ -312,6 +508,66 @@ function handleWorkspaceModeChange(event: Event) {
   font-style: italic;
   font-size: 13px;
   color: var(--ink-deep);
+  cursor: pointer;
+}
+
+.paper-topbar__avatar:hover,
+.paper-topbar__avatar[aria-expanded='true'] {
+  border-color: var(--ember);
+  color: var(--ember);
+}
+
+.paper-topbar__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  min-width: 176px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper-card);
+  /* Theme-aware lift token — Paper Night redefines it, a literal shadow would
+     stay light-theme black on the dark shell (PAPER_NIGHT_AUDIT). */
+  box-shadow: var(--shadow-lift);
+  font-family: var(--sans);
+}
+
+.paper-topbar__menu-head {
+  padding: 6px 10px 8px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22ch;
+}
+
+.paper-topbar__menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.paper-topbar__menu-item:hover,
+.paper-topbar__menu-item:focus-visible {
+  background: var(--paper-2);
+  color: var(--ember);
+  outline: none;
+}
+
+.paper-topbar__menu-item--signout {
+  color: var(--ink-2);
 }
 
 @media (max-width: 640px) {
@@ -357,7 +613,7 @@ function handleWorkspaceModeChange(event: Event) {
     padding: 5px 6px;
   }
 
-  .paper-topbar__avatar {
+  .paper-topbar__account {
     flex: 0 0 26px;
   }
 }

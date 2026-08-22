@@ -270,6 +270,7 @@ onUnmounted(() => {
       <PaperTopBar
         v-if="paperTheme.isOn"
         @palette:open="openCommandPalette"
+        @logout="handleLogout"
       />
       <ShellTopbar v-else @open-command-palette="openCommandPalette" />
 
