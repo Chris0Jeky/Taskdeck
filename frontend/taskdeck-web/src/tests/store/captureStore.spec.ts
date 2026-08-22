@@ -352,6 +352,55 @@ describe('captureStore', () => {
 
     expect(captureApi.ignoreItem).toHaveBeenCalledWith('c4')
     expect(store.detailById.c4?.status).toBe('Ignored')
+    // Ignoring takes a capture out of `New + Failed`, so the badge must move.
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the badge a cancelled capture left the pending count', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.cancelItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c4b',
+      userId: 'u1',
+      boardId: null,
+      status: 'Cancelled',
+      source: 'Typed',
+      textExcerpt: 'cancelled',
+      rawText: 'full text',
+      createdAt: new Date().toISOString(),
+      processedAt: new Date().toISOString(),
+      retryCount: 0,
+    })
+
+    await store.cancelItem('c4b')
+
+    expect(captureApi.cancelItem).toHaveBeenCalledWith('c4b')
+    expect(store.detailById['c4b']?.status).toBe('Cancelled')
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not touch the badge when only the capture text is edited', async () => {
+    // The negative that keeps the hook honest: `updateSuggestion` changes text,
+    // never triage state, so it must NOT fire a workload read. Without this,
+    // "refresh after every mutation" would look equally correct.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.updateSuggestion).mockResolvedValue({
+      id: 'c4c',
+      userId: 'u1',
+      boardId: null,
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'edited',
+      rawText: 'edited full text',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    await store.updateSuggestion('c4c', { text: 'edited full text' })
+
+    expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
   })
 
   it('surfaces errors when list loading fails', async () => {
@@ -709,17 +758,23 @@ describe('captureStore', () => {
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(1)
       expect(store.detailById['poll-1']?.status).toBe('Triaging')
+      // A non-terminal poll changes nothing the badge counts.
+      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
 
       // Second tick at 4s — still Triaging
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(2)
       expect(store.detailById['poll-1']?.status).toBe('Triaging')
+      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
 
       // Third tick at 6s — now ProposalCreated, polling should stop
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(3)
       expect(store.detailById['poll-1']?.status).toBe('ProposalCreated')
       expect(store.triagePollingItemId).toBeNull()
+      // Terminal is exactly where the count can move (a `Failed` outcome puts
+      // the capture back into `New + Failed`), so the badge is told once.
+      expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
 
       // No more ticks after terminal
       await vi.advanceTimersByTimeAsync(4_000)
@@ -911,6 +966,8 @@ describe('captureStore', () => {
     expect(result.succeeded).toBe(2)
     expect(toastMocks.success).toHaveBeenCalledWith('2 of 2 items processed')
     expect(captureApi.listItems).toHaveBeenCalled()
+    // A batch moves several captures out of the pending count at once.
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   it('reports partial batch failures with error toast', async () => {
