@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import PaperHomeView from '../../../views/paper/PaperHomeView.vue'
 import type {
@@ -487,11 +487,22 @@ describe('PaperHomeView', () => {
     })
 
     it('keeps the optimistic dismissal when the preference write fails', async () => {
-      const wrapper = mountWithMilestones(
-        buildOnboarding({ isComplete: true, steps: buildOnboardingSteps(4) }),
-      )
       // The real store applies the intent locally, flags it unsaved and raises
       // its own warning toast before rejecting — the view must not re-throw.
+      //
+      // The DOM alone cannot witness that: the optimistic write has already
+      // removed the block, and Vue diverts a rejected async click handler to
+      // the app error handler rather than failing the test. So watch the
+      // channel that DOES change when the view's catch goes away.
+      const onboarding = buildOnboarding({ isComplete: true, steps: buildOnboardingSteps(4) })
+      mockWorkspaceStore.homeSummary = buildSummary({ onboarding })
+      mockWorkspaceStore.onboarding = onboarding
+
+      const appError = vi.fn()
+      const wrapper = mount(PaperHomeView, {
+        global: { config: { errorHandler: appError } },
+      })
+
       mockWorkspaceStore.updateOnboarding.mockImplementationOnce(async () => {
         const base = mockWorkspaceStore.homeSummary!.onboarding
         mockWorkspaceStore.homeSummary = {
@@ -502,8 +513,13 @@ describe('PaperHomeView', () => {
       })
 
       await wrapper.get('[data-testid="paper-home-milestones-dismiss"]').trigger('click')
-      await nextTick()
+      await flushPromises()
 
+      // Swallowed, not re-thrown: a rejection escaping dismissMilestones lands
+      // here instead.
+      expect(appError).not.toHaveBeenCalled()
+      expect(mockWorkspaceStore.updateOnboarding).toHaveBeenCalledWith('dismiss')
+      // And the optimistic dismissal survives the failed write.
       expect(wrapper.find('[data-testid="paper-home-milestones"]').exists()).toBe(false)
     })
   })
