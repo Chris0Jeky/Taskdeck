@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
-import ReviewDecisionRail, { type ApplyPhase } from './ReviewDecisionRail.vue'
+import ReviewDecisionRail, { type ApplyPhase, type EditLock } from './ReviewDecisionRail.vue'
 import ReviewChangeSection, {
   type ChangeBeforeCard,
   type ChangeAfterCard,
@@ -65,8 +65,13 @@ const props = withDefaults(
      * touched yet — the state the #1818 banner exists to make legible.
      */
     applyPhase?: ApplyPhase
+    /**
+     * Whether the revision composer holds the shared decision lock, so the rail
+     * can explain the greyed-out row and carry the exit (GH-1964).
+     */
+    editLock?: EditLock
   }>(),
-  { applyPhase: 'approve' },
+  { applyPhase: 'approve', editLock: 'off' },
 )
 
 const { t } = useI18n()
@@ -88,6 +93,7 @@ const emit = defineEmits<{
   (event: 'request-edit'): void
   (event: 'defer'): void
   (event: 'dismiss'): void
+  (event: 'cancel-edit'): void
   (event: 'report', proposalId: string): void
 }>()
 
@@ -150,12 +156,14 @@ const dialSubline = computed(() =>
       :busy="busy"
       :dismissable="dismissable"
       :apply-phase="applyPhase"
+      :edit-lock="editLock"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
       @request-edit="emit('request-edit')"
       @defer="emit('defer')"
       @dismiss="emit('dismiss')"
+      @cancel-edit="emit('cancel-edit')"
     />
 
     <ReviewChangeSection

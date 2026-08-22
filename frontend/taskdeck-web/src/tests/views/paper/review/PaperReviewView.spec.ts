@@ -2828,4 +2828,126 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
   })
+
+  /**
+   * GH-1964 — "Request edit" bricked the surface.
+   *
+   * Every assertion here is against the RENDERED DOM on purpose. The bug lived
+   * for as long as it did because `revisionEditing === true` was the whole
+   * observable contract: the composer really did exist, just below the fold with
+   * no scroll and no focus, while the shared lock silenced four working buttons
+   * and the entire keymap. A spec asserting only the flag would have passed
+   * throughout, so these assert what the reviewer can actually see and reach.
+   */
+  describe('revision composer entry and lock legibility (GH-1964)', () => {
+    it('scrolls the composer into view and moves focus into it on entry', async () => {
+      const scrollIntoView = vi.fn()
+      const original = Element.prototype.scrollIntoView
+      // happy-dom does not implement scrollIntoView, so install it rather than spy.
+      Element.prototype.scrollIntoView = scrollIntoView
+      try {
+        const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+          attachTo: true,
+        })
+
+        await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+        await flushPromises()
+
+        const composer = wrapper.get('[data-testid="revision-editor"]')
+        expect(scrollIntoView).toHaveBeenCalled()
+        // The composer element itself was the scroll target, not some other node
+        // that happened to scroll during the same tick.
+        expect(scrollIntoView.mock.instances).toContain(composer.element)
+
+        // Focus is INSIDE the composer, on something the reviewer can type into.
+        const active = document.activeElement as HTMLElement | null
+        expect(active).not.toBeNull()
+        expect(composer.element.contains(active)).toBe(true)
+        expect(active?.tagName).toBe('TEXTAREA')
+
+        wrapper.unmount()
+      } finally {
+        Element.prototype.scrollIntoView = original
+      }
+    })
+
+    it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-cancel-edit"]').exists()).toBe(false)
+
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+
+      const note = wrapper.get('[data-testid="decision-lock-note"]')
+      expect(note.text()).toContain('save or cancel the edit')
+      // The four disabled buttons point AT that explanation.
+      const noteId = note.attributes('id')
+      expect(noteId).toBeTruthy()
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeDefined()
+        expect(button.attributes('aria-describedby')).toBe(noteId)
+      }
+
+      // The exit is ON the rail and is NOT itself disabled by the lock it cancels.
+      const cancel = wrapper.get('[data-testid="decision-cancel-edit"]')
+      expect(cancel.attributes('disabled')).toBeUndefined()
+    })
+
+    it('restores every decision button AND the keymap when the rail cancel is used', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+
+      // The keymap is silent while the lock is held.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      await wrapper.get('[data-testid="decision-cancel-edit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('disabled')).toBeUndefined()
+      }
+
+      // …and the keymap answers again, with no reload.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
+
+      wrapper.unmount()
+    })
+
+    it('clears the lock when the reviewer switches to another proposal', async () => {
+      // The persistence half of GH-1964: the proposal-switch watcher in
+      // useProposalRevisions must actually drop `editing`, so re-entering the
+      // surface never finds a rail locked by a composer that is not there.
+      const wrapper = await mountView([
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ])
+
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+    })
+  })
 })

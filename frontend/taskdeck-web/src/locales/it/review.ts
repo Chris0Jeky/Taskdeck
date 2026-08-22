@@ -124,6 +124,11 @@ export default {
       label: 'Archivia',
       ariaLabel: 'Archivia la proposta',
     },
+    editLock: {
+      editing: 'Stai modificando questa proposta qui sotto: le decisioni riprendono quando salvi o annulli la modifica.',
+      saving: 'Salvataggio della modifica: le decisioni riprendono quando è completato.',
+      cancel: 'Annulla modifica',
+    },
   },
 
   change: {
@@ -295,6 +300,7 @@ export default {
 
   revisionEditor: {
     stamp: 'MODIFICA PRIMA DI APPROVARE',
+    regionLabel: 'Modifica questa proposta prima di approvarla',
     jsonError: 'Inserisci un JSON valido prima di salvare.',
     reasonLabel: 'Motivo della modifica',
     reasonPlaceholder: 'Perché stai modificando questa proposta?',

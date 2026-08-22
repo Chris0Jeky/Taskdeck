@@ -7,7 +7,7 @@ import ReviewQueueRail, {
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
-import type { ApplyPhase } from './review/ReviewDecisionRail.vue'
+import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
@@ -737,6 +737,23 @@ const busy = computed(
     applyGuardBusy.value,
 )
 
+/**
+ * GH-1964 — which half of the revision lock the rail should explain.
+ *
+ * `revisionEditing` stays TRUE across a save (`useProposalRevisions.saveRevision`
+ * only clears it once the POST resolves), so the saving state must be tested
+ * first or a save would render as a cancellable edit.
+ *
+ * Only the revision lock gets an explanation. The other `busy` sources are
+ * sub-second network round trips whose disabled treatment is self-explanatory;
+ * this one is held indefinitely by an off-screen composer, which is what made
+ * the rail read as broken.
+ */
+const editLock = computed<EditLock>(() => {
+  if (revisionSaving.value) return 'saving'
+  return revisionEditing.value ? 'editing' : 'off'
+})
+
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
 // Approved-then-expired). Reads the SHARED rule so Paper and Legacy never
 // drift (#1124 / ADR-0038). Reactive to the 60s expiry clock via
@@ -1357,11 +1374,13 @@ function onQueueFilterChange(filter: QueueFilter) {
         :history="selectors.history.value"
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
+        :edit-lock="editLock"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
         @defer="onDefer"
         @dismiss="onFileAway"
+        @cancel-edit="cancelRevisionEditing"
         @report="onReportBadSuggestion"
       />
       <details

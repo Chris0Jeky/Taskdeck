@@ -170,6 +170,14 @@ export default {
       label: 'File away',
       ariaLabel: 'File away proposal',
     },
+    // GH-1964: the rail names the lock and carries its exit. The note is the
+    // accessible description of the four disabled buttons, so it must say what
+    // is holding them AND what ends it — not just "busy".
+    editLock: {
+      editing: 'Editing this proposal below — decisions resume when you save or cancel the edit.',
+      saving: 'Saving your edit — decisions resume when it lands.',
+      cancel: 'Cancel edit',
+    },
   },
 
   // § I — the change
@@ -358,6 +366,8 @@ export default {
   // ── Revision editor ───────────────────────────────────────────────────────
   revisionEditor: {
     stamp: 'EDIT BEFORE APPROVE',
+    // Announced when focus moves into the composer on entry (GH-1964).
+    regionLabel: 'Edit this proposal before approving it',
     jsonError: 'Enter valid JSON before saving.',
     reasonLabel: 'Reason for edit',
     reasonPlaceholder: 'Why are you editing this proposal?',

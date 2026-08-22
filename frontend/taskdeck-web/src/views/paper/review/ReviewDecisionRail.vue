@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -36,6 +36,20 @@ import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
  */
 export type ApplyPhase = 'approve' | 'execute'
 
+/**
+ * Why the shared decision lock is held, when it is held by the revision
+ * composer (GH-1964):
+ *  - `off`     — no edit in progress; the lock, if any, is a short network
+ *                round trip and the disabled treatment carries it alone.
+ *  - `editing` — the composer is open and holds the lock indefinitely. The rail
+ *                must say so and must offer the exit ITSELF: the composer's own
+ *                Cancel sits below the diff, off-screen on a real proposal,
+ *                which is exactly how this became a brick.
+ *  - `saving`  — the revision is being written. Same explanation, but there is
+ *                nothing to cancel: the exit reappears if the save fails.
+ */
+export type EditLock = 'off' | 'editing' | 'saving'
+
 const props = withDefaults(
   defineProps<{
     summary: string
@@ -43,11 +57,34 @@ const props = withDefaults(
     /** When true the proposal is settled; the rail shows only "File away". */
     dismissable?: boolean
     applyPhase?: ApplyPhase
+    editLock?: EditLock
   }>(),
-  { applyPhase: 'approve' },
+  { applyPhase: 'approve', editLock: 'off' },
 )
 
 const { t } = useI18n()
+
+/**
+ * The lock note is only rendered on a decision rail (a settled proposal has no
+ * decisions to explain), so a single id per mounted rail is enough to describe
+ * the disabled buttons. `useId` keeps it unique even when a spec mounts two.
+ */
+const lockNoteId = `paper-review-decision-lock-${useId()}`
+
+const showEditLock = computed(() => !props.dismissable && props.editLock !== 'off')
+
+const editLockNote = computed(() =>
+  props.editLock === 'saving'
+    ? t('review.decisionRail.editLock.saving')
+    : t('review.decisionRail.editLock.editing'),
+)
+
+/**
+ * `aria-describedby` is only attached while the explanation exists — a dangling
+ * reference to an absent id is worse than none, because assistive tech reports
+ * nothing and the markup claims otherwise.
+ */
+const decisionDescribedBy = computed(() => (showEditLock.value ? lockNoteId : undefined))
 
 /**
  * Both phase labels are rendered, always, into the SAME grid cell of the
@@ -79,6 +116,7 @@ const emit = defineEmits<{
   (event: 'request-edit'): void
   (event: 'defer'): void
   (event: 'dismiss'): void
+  (event: 'cancel-edit'): void
 }>()
 </script>
 
@@ -113,6 +151,15 @@ const emit = defineEmits<{
           ? $t('review.decisionRail.step.execute')
           : $t('review.decisionRail.step.approve')
       }}</span>
+      <!-- GH-1964 — the lock says its own name. `role="status"` so the reason a
+           whole toolbar went inert is announced, not only drawn. -->
+      <span
+        v-if="showEditLock"
+        :id="lockNoteId"
+        class="tk-meta paper-review-decision__lock"
+        role="status"
+        data-testid="decision-lock-note"
+      >{{ editLockNote }}</span>
     </div>
 
     <div class="paper-review-decision__actions">
@@ -127,10 +174,24 @@ const emit = defineEmits<{
         />
       </template>
       <template v-else>
+        <!-- GH-1964 — the exit lives ON the rail, never only inside the composer
+             it is exiting. This button is deliberately NOT `:disabled="busy"`:
+             the lock it cancels is the very thing making everything else grey,
+             so gating it on `busy` would recreate the dead end. It is gated on
+             the save instead, which is the one window where there is nothing
+             left to cancel. -->
+        <PaperHLBtn
+          v-if="showEditLock"
+          :label="$t('review.decisionRail.editLock.cancel')"
+          :disabled="editLock === 'saving'"
+          data-testid="decision-cancel-edit"
+          @click="emit('cancel-edit')"
+        />
         <PaperHLBtn
           :label="$t('review.decisionRail.reject')"
           kbd="⌫"
           :disabled="busy"
+          :aria-describedby="decisionDescribedBy"
           data-testid="decision-reject"
           @click="emit('reject')"
         />
@@ -138,6 +199,7 @@ const emit = defineEmits<{
           :label="$t('review.decisionRail.requestEdit')"
           kbd="E"
           :disabled="busy"
+          :aria-describedby="decisionDescribedBy"
           data-testid="decision-edit"
           @click="emit('request-edit')"
         />
@@ -145,6 +207,7 @@ const emit = defineEmits<{
           :label="$t('review.decisionRail.defer')"
           kbd="D"
           :disabled="busy"
+          :aria-describedby="decisionDescribedBy"
           data-testid="decision-defer"
           @click="emit('defer')"
         />
@@ -152,6 +215,7 @@ const emit = defineEmits<{
           kbd="⏎"
           variant="ember"
           :disabled="busy"
+          :aria-describedby="decisionDescribedBy"
           data-testid="decision-apply"
           :data-apply-phase="applyPhase"
           :aria-label="applyAriaLabel"
@@ -263,6 +327,14 @@ const emit = defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  color: var(--ember-ink);
+  font-weight: 600;
+}
+/* GH-1964 — the lock explanation. It may wrap (it is a sentence, not a stamp),
+ * but it must not push the actions group off the rail, so it shares the meta
+ * group's shrink budget. */
+.paper-review-decision__lock {
   min-width: 0;
   color: var(--ember-ink);
   font-weight: 600;

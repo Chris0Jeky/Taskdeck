@@ -123,6 +123,11 @@ export default {
       label: 'Archivar',
       ariaLabel: 'Archivar la propuesta',
     },
+    editLock: {
+      editing: 'Estás editando esta propuesta abajo: las decisiones se reanudan cuando guardes o canceles la edición.',
+      saving: 'Guardando tu edición: las decisiones se reanudan cuando termine.',
+      cancel: 'Cancelar edición',
+    },
   },
 
   change: {
@@ -294,6 +299,7 @@ export default {
 
   revisionEditor: {
     stamp: 'EDITAR ANTES DE APROBAR',
+    regionLabel: 'Edita esta propuesta antes de aprobarla',
     jsonError: 'Escribe un JSON válido antes de guardar.',
     reasonLabel: 'Motivo del cambio',
     reasonPlaceholder: '¿Por qué estás editando esta propuesta?',

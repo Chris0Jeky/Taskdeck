@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
 // Vite's `?raw` rather than `node:fs`: the spec tree is type-checked with
@@ -22,6 +23,7 @@ function mountRail(
     busy: boolean
     dismissable: boolean
     applyPhase: 'approve' | 'execute'
+    editLock: 'off' | 'editing' | 'saving'
   }> = {},
 ) {
   return mount(ReviewDecisionRail, {
@@ -278,6 +280,78 @@ describe('ReviewDecisionRail', () => {
       const fileAway = settled.get('[data-testid="decision-file-away"]')
       expect(fileAway.classes()).toContain('pbtn')
       expect(fileAway.findAll('.phlbtn-label')).toHaveLength(1)
+    })
+  })
+
+  /**
+   * GH-1964 — the rail carries the lock's explanation and its exit.
+   *
+   * The rail is the surface that goes inert, so it is the surface that has to
+   * say why. Before this the only cancel lived inside the composer that caused
+   * the lock, at the bottom of a column the reviewer had not been scrolled to.
+   */
+  describe('edit lock (GH-1964)', () => {
+    it('says nothing extra when no edit is in progress', () => {
+      const wrapper = mountRail({ busy: true })
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-cancel-edit"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('aria-describedby')).toBeUndefined()
+    })
+
+    it('explains the lock and describes the disabled buttons while editing', () => {
+      const wrapper = mountRail({ busy: true, editLock: 'editing' })
+      const note = wrapper.get('[data-testid="decision-lock-note"]')
+      expect(note.attributes('role')).toBe('status')
+      expect(note.text()).toContain('save or cancel the edit')
+
+      const noteId = note.attributes('id')
+      expect(noteId).toBeTruthy()
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('aria-describedby')).toBe(noteId)
+      }
+    })
+
+    it('offers an enabled cancel that emits cancel-edit', async () => {
+      const wrapper = mountRail({ busy: true, editLock: 'editing' })
+      const cancel = wrapper.get('[data-testid="decision-cancel-edit"]')
+      // Not gated on `busy`: `busy` is exactly what this button exists to end.
+      expect(cancel.attributes('disabled')).toBeUndefined()
+      await cancel.trigger('click')
+      expect(wrapper.emitted('cancel-edit')).toHaveLength(1)
+    })
+
+    it('keeps explaining while the revision saves, but has nothing left to cancel', () => {
+      const wrapper = mountRail({ busy: true, editLock: 'saving' })
+      expect(wrapper.get('[data-testid="decision-lock-note"]').text()).toContain('Saving your edit')
+      expect(wrapper.get('[data-testid="decision-cancel-edit"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('never shows the lock on a settled (filing) rail', () => {
+      const wrapper = mountRail({ busy: true, dismissable: true, editLock: 'editing' })
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-cancel-edit"]').exists()).toBe(false)
+    })
+
+    it('gives two rails in the same app distinct note ids', () => {
+      // Two rails never coexist on the Review surface today (one active
+      // proposal, one rail), so this asserts the id is DERIVED rather than
+      // hardcoded — a shared literal id would make `aria-describedby` ambiguous
+      // the first time that changes. Both rails must live in ONE app: `useId`
+      // counts per app instance, so two separate `mount()` calls would both
+      // report the first id and prove nothing.
+      const host = mount({
+        render: () =>
+          h('div', [
+            h(ReviewDecisionRail, { summary: 'first', busy: true, editLock: 'editing' }),
+            h(ReviewDecisionRail, { summary: 'second', busy: true, editLock: 'editing' }),
+          ]),
+      })
+      const ids = host
+        .findAll('[data-testid="decision-lock-note"]')
+        .map((note) => note.attributes('id'))
+      expect(ids).toHaveLength(2)
+      expect(ids[0]).toBeTruthy()
+      expect(ids[0]).not.toBe(ids[1])
     })
   })
 })
