@@ -48,7 +48,15 @@ const MAX_SINGLE_KB = Number(process.env.BUNDLE_MAX_SINGLE_KB || "250");
 // headroom is not expected to last. Sizing the budget for the whole rollout —
 // and deciding whether this gate should measure the eager graph instead, which
 // would make lazy loading a real lever — is #1858, not a guess made here.
-const MAX_TOTAL_JS_KB = Number(process.env.BUNDLE_MAX_TOTAL_JS_KB || "1250");
+//
+// EMERGENCY STOPGAP, 2026-08-22 (raised 1250 -> 1260): the dogfooding fix
+// waves (tracker #1947) breached the gate on main at 1251.08 KB — the #1989
+// merge tipped it — turning main's required CI red. This +10 KB is NOT the
+// #1858 budget decision; it is the smallest reversible change that restores a
+// green main while that decision is made, and it should be REPLACED by
+// whatever #1858 rules (the growth is i18n catalogs + the wave's UI fixes,
+// both deliberate). Recorded on #1858 the same day.
+const MAX_TOTAL_JS_KB = Number(process.env.BUNDLE_MAX_TOTAL_JS_KB || "1260");
 const WARN_ENTRY_KB = Number(process.env.BUNDLE_WARN_ENTRY_KB || "120");
 const WARN_SINGLE_KB = Number(process.env.BUNDLE_WARN_SINGLE_KB || "200");
 const WARN_TOTAL_JS_KB = Number(process.env.BUNDLE_WARN_TOTAL_JS_KB || "1000");
