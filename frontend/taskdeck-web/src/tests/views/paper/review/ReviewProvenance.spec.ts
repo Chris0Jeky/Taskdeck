@@ -156,7 +156,7 @@ describe('classifyProvenanceActor', () => {
     ['live provider', LIVE_PROVIDER, 'provider'],
     ['mock', MOCK, 'mock'],
     ['degraded fallback', DEGRADED, 'deterministic'],
-  ])('classifies %s provenance as %s', (_case, recorded, kind) => {
+  ])('classifies %s provenance by what the record names', (_case, recorded, kind) => {
     expect(classifyProvenanceActor(recorded).kind).toBe(kind)
   })
 
