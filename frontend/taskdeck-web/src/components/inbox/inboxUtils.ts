@@ -38,6 +38,39 @@ export function sourceLabel(source: CaptureSourceValue): string {
   return String(source)
 }
 
+/**
+ * Where a capture stands from the USER's point of view (#1944).
+ *
+ * `statusLabel` names the server status; this names what the user's decision
+ * did and what happens next, so a row can narrate itself. `undecided` is
+ * reserved for a capture still waiting on a decision — that is the invariant
+ * behind "a decided row can never render identically to an undecided one".
+ *
+ * `unknown` is deliberate rather than a fallback to `undecided`: an
+ * out-of-contract status from the server is NOT a fresh capture, and claiming
+ * it is would be the same class of lie this issue is about.
+ */
+export type CaptureRowState =
+  | 'undecided'
+  | 'sending'
+  | 'inReview'
+  | 'applied'
+  | 'rejected'
+  | 'failed'
+  | 'unknown'
+
+export function captureRowState(status: CaptureStatusValue | undefined): CaptureRowState {
+  if (status === undefined) return 'unknown'
+  if (status === 0 || status === 'New') return 'undecided'
+  if (status === 1 || status === 'Triaging') return 'sending'
+  if (status === 2 || status === 'Triaged') return 'inReview'
+  if (status === 3 || status === 'ProposalCreated') return 'inReview'
+  if (status === 4 || status === 'Converted') return 'applied'
+  if (status === 5 || status === 'Ignored') return 'rejected'
+  if (status === 6 || status === 'Failed') return 'failed'
+  return 'unknown'
+}
+
 export function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
   if (status === undefined) {
     return false
