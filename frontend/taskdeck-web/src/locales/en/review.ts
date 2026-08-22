@@ -310,7 +310,6 @@ export default {
     heading: 'Why now',
     noProposal: 'No proposal is selected.',
     fallback: 'This proposal is awaiting review based on the source captured with it.',
-    tune: 'Tune heuristics →',
   },
 
   similarPast: {
