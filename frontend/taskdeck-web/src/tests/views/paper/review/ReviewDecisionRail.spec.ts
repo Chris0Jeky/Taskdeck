@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
+// Vite's `?raw` rather than `node:fs`: the spec tree is type-checked with
+// `types: ["vite/client", ...]` and deliberately WITHOUT node types
+// (tsconfig.vitest.json), so a `readFileSync` here would fail `npm run typecheck`.
+import railSource from '../../../../views/paper/review/ReviewDecisionRail.vue?raw'
+
+/** The label face the user actually sees on the primary button. */
+function activeApplyLabel(wrapper: VueWrapper): string {
+  return wrapper.get('[data-testid="decision-apply-label"]').text()
+}
+
+/** The hidden face that only exists to reserve the button's width (GH-1942). */
+function reservedApplyLabel(wrapper: VueWrapper): string {
+  return wrapper.get('[data-testid="decision-apply-reserve"]').text()
+}
 
 function mountRail(
   props: Partial<{
@@ -76,8 +90,9 @@ describe('ReviewDecisionRail', () => {
     it('phase 1 (pending) offers Approve and says the board is untouched', () => {
       const wrapper = mountRail()
       const apply = wrapper.find('[data-testid="decision-apply"]')
-      expect(apply.text()).toContain('Approve')
-      expect(apply.text()).not.toContain('Confirm apply')
+      // The VISIBLE face — the button also carries the other phase's label as a
+      // hidden width reservation, so assert the face, not the whole button.
+      expect(activeApplyLabel(wrapper)).toBe('Approve')
       expect(apply.attributes('data-apply-phase')).toBe('approve')
       expect(apply.attributes('aria-label')).toContain('step 1 of 2')
       expect(apply.attributes('aria-label')).toContain('does not change the board')
@@ -88,17 +103,17 @@ describe('ReviewDecisionRail', () => {
       expect(wrapper.find('[role="toolbar"]').attributes('data-apply-phase')).toBe('approve')
     })
 
-    it('phase 2 (approved) offers Confirm apply and names the board write', () => {
+    it('phase 2 (approved) offers Apply to board and names the board write', () => {
       const wrapper = mountRail({ applyPhase: 'execute' })
       const apply = wrapper.find('[data-testid="decision-apply"]')
-      expect(apply.text()).toContain('Confirm apply')
+      expect(activeApplyLabel(wrapper)).toBe('Apply to board')
       expect(apply.attributes('data-apply-phase')).toBe('execute')
       expect(apply.attributes('aria-label')).toContain('step 2 of 2')
       expect(apply.attributes('aria-label')).toContain('writes this change to the board')
 
       const hint = wrapper.find('[data-testid="decision-step-hint"]')
       expect(hint.text()).toContain('Step 2 of 2')
-      expect(hint.text()).toContain('write it to the board')
+      expect(hint.text()).toContain('writes it to the board')
       expect(wrapper.find('[role="toolbar"]').attributes('data-apply-phase')).toBe('execute')
     })
 
@@ -107,9 +122,10 @@ describe('ReviewDecisionRail', () => {
       const approved = mountRail({ applyPhase: 'execute' })
 
       // The whole point of #1818: the two states must not look identical.
-      expect(approved.find('[data-testid="decision-apply"]').text()).not.toBe(
-        pending.find('[data-testid="decision-apply"]').text(),
-      )
+      // Compare the visible faces — both buttons carry both labels in the DOM
+      // (the width reservation, GH-1942), so whole-button text is now equal by
+      // construction and would not discriminate.
+      expect(activeApplyLabel(approved)).not.toBe(activeApplyLabel(pending))
       expect(approved.find('[role="toolbar"]').attributes('data-apply-phase')).not.toBe(
         pending.find('[role="toolbar"]').attributes('data-apply-phase'),
       )
@@ -128,6 +144,140 @@ describe('ReviewDecisionRail', () => {
       const wrapper = mountRail({ applyPhase: 'execute' })
       await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       expect(wrapper.emitted('apply')).toHaveLength(1)
+    })
+  })
+
+  // --- GH-1942 / GH-1943: the row's geometry must not be label-driven -------
+  //
+  // These defects are geometric, and neither happy-dom nor jsdom lays out text,
+  // so a height assertion here would be a fake green (every element measures 0).
+  // What IS honestly assertable is the MECHANISM: the DOM-level width
+  // reservation, and the presence of the two CSS rules that make the row's
+  // height independent of any single label. Pixel proof belongs to the
+  // visual-regression baseline the issues point at (#1363) and is NOT claimed
+  // by this file.
+  describe('label-driven geometry', () => {
+    const railStyle = railSource.slice(railSource.indexOf('<style'))
+
+    it('reserves the widest phase label so the phase flip cannot resize the button', () => {
+      const pending = mountRail()
+      const approved = mountRail({ applyPhase: 'execute' })
+
+      // Both phases render BOTH labels, so the button's intrinsic width is
+      // max(labels) either way and cannot grow when the phase flips.
+      const labels = (wrapper: VueWrapper) =>
+        wrapper
+          .findAll('.paper-review-decision__apply-face')
+          .map((face) => face.text())
+          .sort()
+      expect(labels(pending)).toEqual(['Apply to board', 'Approve'])
+      expect(labels(approved)).toEqual(labels(pending))
+
+      // …and exactly one of them is the visible face in each phase.
+      expect(activeApplyLabel(pending)).toBe('Approve')
+      expect(reservedApplyLabel(pending)).toBe('Apply to board')
+      expect(activeApplyLabel(approved)).toBe('Apply to board')
+      expect(reservedApplyLabel(approved)).toBe('Approve')
+
+      // The reserved face must not reach assistive tech or it would read the
+      // button as "Approve Apply to board".
+      const hidden = approved.get('[data-testid="decision-apply-reserve"]')
+      expect(hidden.attributes('aria-hidden')).toBe('true')
+      expect(hidden.attributes('data-active')).toBe('false')
+      expect(
+        approved.get('[data-testid="decision-apply-label"]').attributes('aria-hidden'),
+      ).toBeUndefined()
+    })
+
+    it('declares the rules that keep every decision button the same height', () => {
+      // GH-1943's measured cause: "Request edit" wrapped to two lines because
+      // nothing pinned `white-space` on the button label, so that one button
+      // was taller than Reject / Defer / Approve.
+      expect(railStyle).toMatch(
+        /\.paper-review-decision\s+:deep\(\.phlbtn-label\)\s*\{[^}]*white-space:\s*nowrap/,
+      )
+      // One shared min-height, applied to every button in the rail rather than
+      // to any single one, so no label can drive the row.
+      expect(railStyle).toMatch(/\.paper-review-decision\s+:deep\(\.pbtn\)\s*\{[^}]*min-height:/)
+      // The reservation is width-only: the inactive face keeps its box (and so
+      // its width) instead of being removed from flow with `display: none`.
+      expect(railStyle).toMatch(
+        /\.paper-review-decision__apply-face\[data-active='false'\]\s*\{[^}]*visibility:\s*hidden/,
+      )
+    })
+
+    // GH-1943's own fix is what creates this hazard: `flex: none` + nowrap makes
+    // every button unshrinkable, so a narrowing column has nowhere to put them
+    // but horizontal overflow — sooner in it/es, whose labels ("Applica alla
+    // bacheca", "Chiedi modifica") are longer than the en ones. The rail needs a
+    // wrap path, and the asymmetry fix has to survive it.
+    it('gives the rail a wrap path so the fixed-width buttons cannot overflow', () => {
+      expect(railStyle).toMatch(/\.paper-review-decision\s*\{[^}]*flex-wrap:\s*wrap/)
+      // The buttons wrap among THEMSELVES too, for columns too narrow for one
+      // row of four.
+      expect(railStyle).toMatch(/\.paper-review-decision__actions\s*\{[^}]*flex-wrap:\s*wrap/)
+      // Load-bearing: flexbox breaks lines on items' hypothetical main sizes
+      // BEFORE shrinking them, so a content-sized meta group would wrap the row
+      // while there was still room to ellipsise the summary. `flex: 1 1 0`
+      // keeps the actions group the only item that decides the break.
+      expect(railStyle).toMatch(/\.paper-review-decision__meta\s*\{[^}]*flex:\s*1\s+1\s+0/)
+      // The same rule is what absorbs the leftover width (the job the removed
+      // `__spacer` element did), so the meta group must be able to shrink past
+      // its content or the summary would stop ellipsising.
+      expect(railStyle).toMatch(/\.paper-review-decision__meta\s*\{[^}]*min-width:\s*0/)
+      // On the line it wraps onto, the actions group stays right-aligned.
+      expect(railStyle).toMatch(/\.paper-review-decision__actions\s*\{[^}]*margin-left:\s*auto/)
+    })
+
+    it('keeps the equal-size button rules in force alongside the wrap', () => {
+      // The wrap must not have been bought by letting buttons shrink again —
+      // that is exactly the asymmetry GH-1943 fixed.
+      expect(railStyle).toMatch(/\.paper-review-decision\s+:deep\(\.pbtn\)\s*\{[^}]*flex:\s*none/)
+      expect(railStyle).toMatch(/\.paper-review-decision\s+:deep\(\.pbtn\)\s*\{[^}]*min-height:/)
+      expect(railStyle).toMatch(
+        /\.paper-review-decision\s+:deep\(\.phlbtn-label\)\s*\{[^}]*white-space:\s*nowrap/,
+      )
+    })
+
+    it('puts every decision button inside the wrapping actions group', () => {
+      // The CSS above only bites if the buttons are actually in that group.
+      const wrapper = mountRail()
+      const actions = wrapper.get('.paper-review-decision__actions')
+      for (const testid of [
+        'decision-reject',
+        'decision-edit',
+        'decision-defer',
+        'decision-apply',
+      ]) {
+        expect(actions.find(`[data-testid="${testid}"]`).exists()).toBe(true)
+      }
+      // The meta half holds the text and no controls.
+      const meta = wrapper.get('.paper-review-decision__meta')
+      expect(meta.find('[data-testid="decision-step-hint"]').exists()).toBe(true)
+      expect(meta.findAll('button')).toHaveLength(0)
+
+      const settled = mountRail({ dismissable: true })
+      expect(
+        settled
+          .get('.paper-review-decision__actions')
+          .find('[data-testid="decision-file-away"]')
+          .exists(),
+      ).toBe(true)
+    })
+
+    it('routes every decision button through the shared label element the rules target', () => {
+      const wrapper = mountRail()
+      const buttons = ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']
+      for (const testid of buttons) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.classes()).toContain('pbtn')
+        expect(button.findAll('.phlbtn-label')).toHaveLength(1)
+      }
+      // The filing rail's single button is sized by the same rules.
+      const settled = mountRail({ dismissable: true })
+      const fileAway = settled.get('[data-testid="decision-file-away"]')
+      expect(fileAway.classes()).toContain('pbtn')
+      expect(fileAway.findAll('.phlbtn-label')).toHaveLength(1)
     })
   })
 })

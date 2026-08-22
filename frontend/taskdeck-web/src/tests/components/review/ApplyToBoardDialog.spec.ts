@@ -84,8 +84,13 @@ describe('ApplyToBoardDialog', () => {
   it('states that the board has not been written to yet', () => {
     mountDialog(makeProposal())
     const dialog = document.body.querySelector('[data-testid="apply-confirm-dialog"]')
-    expect(dialog?.textContent).toContain('second and final step')
+    // GH-1942: this dialog now opens straight after approve, so it is THE
+    // remaining step, not a confirmation of the "Confirm apply" click that used
+    // to sit between the two. It must still say the board is untouched.
+    expect(dialog?.textContent).toContain('Approved.')
+    expect(dialog?.textContent).toContain('this is the step that applies it')
     expect(dialog?.textContent).toContain('Nothing has been written to the board yet')
+    expect(dialog?.textContent).not.toContain('second and final step')
   })
 
   it('pluralizes the operation count it is about to apply', () => {
@@ -192,5 +197,64 @@ describe('ApplyToBoardDialog', () => {
       '[data-testid="apply-confirm-accept"]',
     ) as HTMLButtonElement
     expect(accept.disabled).toBe(true)
+  })
+
+  // --- GH-1942: the dialog opens by itself, so the backdrop is a trap --------
+  //
+  // Before GH-1942 this dialog only appeared after a deliberate click on it.
+  // Now approve hands straight to it, so it materializes under a pointer that is
+  // still moving toward the rail's primary button. A backdrop that closes on
+  // click would let the user's habitual second click — the exact habit the
+  // collapsed flow serves — discard the remaining step.
+  describe('backdrop dismissal (GH-1942)', () => {
+    function clickBackdrop() {
+      const backdrop = document.body.querySelector('.td-dialog-backdrop') as HTMLElement | null
+      expect(backdrop, 'expected the dialog backdrop to be rendered').not.toBeNull()
+      // `@click.self` compares target to currentTarget, so click the backdrop
+      // itself rather than anything nested inside it.
+      backdrop!.click()
+      return backdrop!
+    }
+
+    it('does not close when the backdrop is clicked while the dialog is open', async () => {
+      const wrapper = mountDialog(makeProposal())
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      clickBackdrop()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('cancel')).toBeUndefined()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+    })
+
+    it('keeps the backdrop inert whether or not the execute call is in flight', async () => {
+      // The previous binding was `!busy`, i.e. dismissable for the whole time
+      // the dialog is idle — which is all of the window the user clicks in.
+      for (const busy of [false, true]) {
+        const wrapper = mountDialog(makeProposal(), busy)
+        clickBackdrop()
+        await wrapper.vm.$nextTick()
+        expect(wrapper.emitted('cancel')).toBeUndefined()
+        wrapper.unmount()
+        document.body.innerHTML = ''
+      }
+    })
+
+    it('still offers the deliberate exits', async () => {
+      const wrapper = mountDialog(makeProposal())
+      const cancel = document.body.querySelector(
+        '[data-testid="apply-confirm-cancel"]',
+      ) as HTMLButtonElement
+      cancel.click()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('cancel')).toHaveLength(1)
+    })
+
+    it('closes on Escape', async () => {
+      const wrapper = mountDialog(makeProposal())
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('cancel')).toHaveLength(1)
+    })
   })
 })

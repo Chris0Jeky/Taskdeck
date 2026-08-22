@@ -781,6 +781,89 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
   return revisionCount.value
 })
 
+// --- Apply-flow focus restoration (GH-1942) ----------------------------
+//
+// TdDialog restores focus to whatever `document.activeElement` was when it
+// opened. That worked while the dialog opened synchronously inside the click:
+// the rail's primary button still had focus. Now the button is `disabled` for
+// the whole approve round trip, so the browser has already moved focus to
+// <body> by the time the dialog mounts — TdDialog captures <body>, its restore
+// is a no-op, and a keyboard user who backs out lands at the top of the
+// document instead of on the control they just used.
+//
+// So the view captures the trigger itself, BEFORE the approve call, and puts
+// focus back when the dialog closes. A dismissal restores immediately. An
+// accepted apply cannot restore at close time — the rail is disabled for the
+// whole execute round trip and focus() on a disabled control is a no-op — so
+// that path defers the restore until the busy lock clears and re-queries the
+// rail. That covers a failed execute (the rail re-enables for the retry); a
+// SUCCESSFUL apply removes the proposal from the queue and unmounts the rail,
+// leaving nothing to return to — that gap is the decision-feedback work
+// tracked on GH-1940, not something a focus restore can paper over. TdDialog
+// is a shared primitive with no return-focus target prop and is deliberately
+// not touched here.
+const mainColRef = ref<HTMLElement | null>(null)
+let applyReturnFocusEl: HTMLElement | null = null
+
+// The rail's primary control, whichever it currently is: the decision button,
+// or the filing button the rail becomes once the proposal is applied and
+// settled. Scoped to the main column so it cannot reach another surface.
+function decisionRailFocusTarget(): HTMLElement | null {
+  const root = mainColRef.value
+  if (!root) return null
+  return (
+    root.querySelector<HTMLElement>('[data-testid="decision-apply"]') ??
+    root.querySelector<HTMLElement>('[data-testid="decision-file-away"]')
+  )
+}
+
+watch(executeConfirmProposal, (pending, previous) => {
+  // Only on close (open → closed), never on the open itself.
+  if (pending !== null || !previous) return
+  const captured = applyReturnFocusEl
+  applyReturnFocusEl = null
+  // After the flush: the rail may have just re-rendered (execute lands → the
+  // decision rail becomes the filing rail), and TdDialog's own <body> restore
+  // runs in that same flush and would otherwise overwrite this.
+  void nextTick(() => {
+    restoreApplyFocus(captured)
+  })
+})
+
+function isFocusable(el: HTMLElement): boolean {
+  return !('disabled' in el && (el as HTMLButtonElement).disabled)
+}
+
+function restoreApplyFocus(captured: HTMLElement | null) {
+  const target = captured?.isConnected ? captured : decisionRailFocusTarget()
+  if (!target) return
+  if (isFocusable(target)) {
+    target.focus?.()
+    return
+  }
+  // Completed-apply exit: execute is still in flight, the rail is disabled,
+  // and focus() would silently no-op. Retry once when the busy lock clears,
+  // re-querying because the rail re-renders into the filing rail by then.
+  const lateRestore = () => {
+    void nextTick(() => {
+      const late =
+        captured?.isConnected && isFocusable(captured)
+          ? captured
+          : decisionRailFocusTarget()
+      if (late && isFocusable(late)) late.focus?.()
+    })
+  }
+  if (!busy.value) {
+    lateRestore()
+    return
+  }
+  const stop = watch(busy, (isBusy) => {
+    if (isBusy) return
+    stop()
+    lateRestore()
+  })
+}
+
 function onFileAway() {
   const p = activeProposal.value
   if (!p) return
@@ -809,6 +892,9 @@ async function onApply() {
   const p = activeProposal.value
   if (!p) return
   if (applyGuardBusy.value) return
+  // Captured here, before anything can await: the primary button is disabled —
+  // and so blurred — for the whole approve round trip (GH-1942).
+  applyReturnFocusEl = decisionRailFocusTarget()
   if (revisionBusy.value) {
     toast.info(t('review.toast.revisionBusyApply'))
     return
@@ -870,7 +956,41 @@ async function onApply() {
     requestExecuteProposal(p.id)
     return
   }
-  void handleApproveProposal(p.id)
+  await handleApproveProposal(p.id)
+  // GH-1942: a successful approve hands STRAIGHT to the one deliberate execute
+  // step. Before this, the user clicked the primary button, watched it relabel,
+  // clicked it again, and only then got the dialog — three clicks for a
+  // two-phase decision, and the middle one did nothing but open the third.
+  //
+  // ADR-0003 is untouched: approve and execute remain two separate, explicit
+  // API calls in that order. The approve call has already returned here; the
+  // execute call still happens ONLY if the human accepts the dialog, and
+  // dismissing it leaves the proposal approved-but-not-applied with the banner
+  // and the ember rail saying exactly that. Nothing auto-applies.
+  //
+  // GH-1942 L1: the queue rail stays clickable through the approve round trip
+  // (only the decision buttons and the keymap take the busy lock), so the
+  // reviewer can be looking at a different proposal by the time approve
+  // returns. Opening the confirmation then would ask them to write a proposal
+  // they have navigated away from. The approval itself stands either way — the
+  // ember rail and the approved-but-not-applied banner carry it, and the
+  // primary button reopens this same step — so skip the hand-off rather than
+  // open it against a switched context.
+  //
+  // Known caveat: under the `stale` queue filter, approving removes the
+  // proposal from the filtered list (stale is PendingReview-gated), the active
+  // selection moves on, and this guard suppresses the confirmation with none of
+  // the recovery affordances above on screen — the row is simply gone until the
+  // filter changes. Matches pre-collapse behaviour; the durable fix is keeping
+  // a just-decided row visible, which is GH-1940's progressive-disclosure work.
+  if (activeProposal.value?.id !== p.id) return
+  const approved = proposals.value.find((item) => item.id === p.id)
+  if (!approved) return
+  // Approve failed (the composable toasts and leaves the row untouched), or the
+  // row came back as something else entirely — either way there is no approved
+  // proposal to offer, so do not open a confirmation for it.
+  if (normalizeProposalStatus(approved.status) !== 'Approved') return
+  requestExecuteProposal(p.id)
 }
 
 function onReject() {
@@ -1209,7 +1329,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       @file-away-all="onFileAwayBulk"
     />
 
-    <div v-if="activeProposal" class="paper-review-deep__main-col">
+    <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
       <div
         v-if="revisionCount > 0"
         class="paper-review-deep__revision-badge"

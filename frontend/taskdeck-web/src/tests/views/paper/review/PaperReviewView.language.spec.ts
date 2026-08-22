@@ -196,7 +196,9 @@ describe('PaperReviewView — language', () => {
     const wrapper = await mountView([makeProposal()])
 
     expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('awaiting')
-    expect(wrapper.find('[data-testid="decision-apply"]').text()).toContain('Approve')
+    // The visible face of the primary button; the other phase's label is also
+    // in the DOM as the width reservation (GH-1942), so assert the face.
+    expect(wrapper.find('[data-testid="decision-apply-label"]').text()).toBe('Approve')
     expect(wrapper.find('[data-testid="paper-review-key-hint"]').text()).toBe(
       'PRESS ⏎ TO APPROVE · ⌫ TO REJECT',
     )
@@ -219,7 +221,12 @@ describe('PaperReviewView — language', () => {
     expect(wrapper.find('[data-testid="paper-review-key-hint"]').text()).toBe(
       'PREMI ⏎ PER APPROVARE · ⌫ PER RIFIUTARE',
     )
-    expect(wrapper.find('[data-testid="decision-apply"]').text()).toContain('Approva')
+    expect(wrapper.find('[data-testid="decision-apply-label"]').text()).toBe('Approva')
+    // The reserved (hidden) face is translated too — otherwise the button would
+    // reserve the width of an English label it can never show.
+    expect(wrapper.find('[data-testid="decision-apply-reserve"]').text()).toBe(
+      'Applica alla bacheca',
+    )
     // No English left on the decision rail.
     expect(wrapper.find('[data-testid="decision-step-hint"]').text()).not.toContain('Step 1 of 2')
   })

@@ -71,8 +71,10 @@ test.describe('Paper capture-review-apply loop', () => {
       && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
     // The final apply confirmation is a hard gate: expectApplyConfirmDialog FAILS
     // this test if the in-app confirmation is removed (#1818), instead of
-    // silently executing anyway.
-    await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
+    // silently executing anyway. No trigger: since GH-1942 the approve above
+    // hands straight to this dialog, so it must already be open — the board
+    // card count asserted 0 above proves approve did not write anything.
+    await expectApplyConfirmDialog(page)
     await assertOk(await executeResponsePromise, `execute Paper proposal ${proposalId}`)
     const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
 

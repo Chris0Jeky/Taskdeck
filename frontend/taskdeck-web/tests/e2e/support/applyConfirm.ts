@@ -13,16 +13,21 @@ import { expect } from '@playwright/test'
  * guarded execute running silently behind a green test.
  *
  * @param page      the page under test
- * @param trigger   the action that should raise the confirmation
+ * @param trigger   the action that should raise the confirmation. OPTIONAL:
+ *                  on the Paper surface a successful approve now opens this
+ *                  dialog by itself (GH-1942 collapsed the redundant middle
+ *                  click), so those callers pass no trigger and the assertion
+ *                  below is what proves the dialog actually appeared. The
+ *                  Legacy surface still raises it from its own Apply button.
  * @param options.timeout bounded wait for the dialog. Default 15000ms.
  */
 export async function expectApplyConfirmDialog(
   page: Page,
-  trigger: () => Promise<unknown>,
+  trigger?: () => Promise<unknown>,
   options: { timeout?: number } = {},
 ): Promise<void> {
   const timeout = options.timeout ?? 15_000
-  await trigger()
+  if (trigger) await trigger()
 
   const dialog = page.getByTestId('apply-confirm-dialog')
   await expect(
