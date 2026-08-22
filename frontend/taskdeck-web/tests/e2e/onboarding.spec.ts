@@ -44,7 +44,9 @@ test('fresh user today view should show onboarding steps', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
 
   await expect(page.getByText('captures to triage')).toBeVisible()
-  await expect(page.getByText('Open Review for live proposals.')).toBeVisible()
+  // Copy updated by the GH-1939 empty-state honesty pass: the decisions panel
+  // now explains what it is missing instead of promising an unbuilt log.
+  await expect(page.getByText('Open Review for live proposals and the decisions you gave them.')).toBeVisible()
 })
 
 // --- Setup dialog validation ---

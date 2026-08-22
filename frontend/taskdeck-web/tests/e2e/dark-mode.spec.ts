@@ -85,12 +85,24 @@ test('night theme should persist when navigating between Home, Boards, Inbox, an
   await expect(page.locator('[data-paper-today]')).toBeVisible()
   await expect(page.locator('body')).toHaveClass(PAPER_NIGHT_CLASS)
   await expect(page.getByRole('heading', { name: 'Today, at a glance.' })).toBeVisible()
-  await expect(page.locator('[data-empty-state="ledger"]')).toContainText('No events are being invented')
-  await expect(page.locator('[data-empty-state="decisions"]')).toBeVisible()
-  await expect(page.locator('[data-empty-state="boards"]')).toBeVisible()
+
+  // Issue 1939 reworded these three panels: they have NO query behind them, so
+  // each now carries a "Not built yet" tag and says so plainly rather than
+  // reading as broken. The tag is a bordered chip in its own colours — assert it
+  // renders here so the night theme is proven against the copy that ships.
+  for (const section of ['ledger', 'decisions', 'boards']) {
+    const panel = page.locator(`[data-empty-state="${section}"]`)
+    await expect(panel).toBeVisible()
+    await expect(panel.locator('[data-not-built]')).toHaveText('Not built yet')
+    await expect(panel).toContainText('Taskdeck does not record')
+  }
+  await expect(page.locator('[data-empty-state="ledger"]')).toContainText('no events are being invented')
+
   await expect(page.locator('[data-action="pin-tomorrow"]')).toHaveCount(0)
   await expect(page.getByText('A quiet Saturday', { exact: false })).toHaveCount(0)
   await expect(page.getByText('haiku', { exact: false })).toHaveCount(0)
+  // Nothing auto-seals a day, so the countdown that used to claim it is gone.
+  await expect(page.getByText('Auto-seals in', { exact: false })).toHaveCount(0)
 })
 
 // --- Dark mode with board content ---

@@ -17,6 +17,7 @@ import inbox from './inbox'
 import review from './review'
 import settings from './settings'
 import shell from './shell'
+import today from './today'
 
 export default {
   home,
@@ -26,4 +27,5 @@ export default {
   review,
   settings,
   shell,
+  today,
 }
