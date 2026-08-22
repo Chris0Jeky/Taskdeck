@@ -206,6 +206,65 @@ describe('ReviewDecisionRail', () => {
       )
     })
 
+    // GH-1943's own fix is what creates this hazard: `flex: none` + nowrap makes
+    // every button unshrinkable, so a narrowing column has nowhere to put them
+    // but horizontal overflow — sooner in it/es, whose labels ("Applica alla
+    // bacheca", "Chiedi modifica") are longer than the en ones. The rail needs a
+    // wrap path, and the asymmetry fix has to survive it.
+    it('gives the rail a wrap path so the fixed-width buttons cannot overflow', () => {
+      expect(railStyle).toMatch(/\.paper-review-decision\s*\{[^}]*flex-wrap:\s*wrap/)
+      // The buttons wrap among THEMSELVES too, for columns too narrow for one
+      // row of four.
+      expect(railStyle).toMatch(/\.paper-review-decision__actions\s*\{[^}]*flex-wrap:\s*wrap/)
+      // Load-bearing: flexbox breaks lines on items' hypothetical main sizes
+      // BEFORE shrinking them, so a content-sized meta group would wrap the row
+      // while there was still room to ellipsise the summary. `flex: 1 1 0`
+      // keeps the actions group the only item that decides the break.
+      expect(railStyle).toMatch(/\.paper-review-decision__meta\s*\{[^}]*flex:\s*1\s+1\s+0/)
+      // The same rule is what absorbs the leftover width (the job the removed
+      // `__spacer` element did), so the meta group must be able to shrink past
+      // its content or the summary would stop ellipsising.
+      expect(railStyle).toMatch(/\.paper-review-decision__meta\s*\{[^}]*min-width:\s*0/)
+      // On the line it wraps onto, the actions group stays right-aligned.
+      expect(railStyle).toMatch(/\.paper-review-decision__actions\s*\{[^}]*margin-left:\s*auto/)
+    })
+
+    it('keeps the equal-size button rules in force alongside the wrap', () => {
+      // The wrap must not have been bought by letting buttons shrink again —
+      // that is exactly the asymmetry GH-1943 fixed.
+      expect(railStyle).toMatch(/\.paper-review-decision\s+:deep\(\.pbtn\)\s*\{[^}]*flex:\s*none/)
+      expect(railStyle).toMatch(/\.paper-review-decision\s+:deep\(\.pbtn\)\s*\{[^}]*min-height:/)
+      expect(railStyle).toMatch(
+        /\.paper-review-decision\s+:deep\(\.phlbtn-label\)\s*\{[^}]*white-space:\s*nowrap/,
+      )
+    })
+
+    it('puts every decision button inside the wrapping actions group', () => {
+      // The CSS above only bites if the buttons are actually in that group.
+      const wrapper = mountRail()
+      const actions = wrapper.get('.paper-review-decision__actions')
+      for (const testid of [
+        'decision-reject',
+        'decision-edit',
+        'decision-defer',
+        'decision-apply',
+      ]) {
+        expect(actions.find(`[data-testid="${testid}"]`).exists()).toBe(true)
+      }
+      // The meta half holds the text and no controls.
+      const meta = wrapper.get('.paper-review-decision__meta')
+      expect(meta.find('[data-testid="decision-step-hint"]').exists()).toBe(true)
+      expect(meta.findAll('button')).toHaveLength(0)
+
+      const settled = mountRail({ dismissable: true })
+      expect(
+        settled
+          .get('.paper-review-decision__actions')
+          .find('[data-testid="decision-file-away"]')
+          .exists(),
+      ).toBe(true)
+    })
+
     it('routes every decision button through the shared label element the rules target', () => {
       const wrapper = mountRail()
       const buttons = ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']
