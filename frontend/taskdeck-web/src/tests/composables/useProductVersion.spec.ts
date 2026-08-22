@@ -60,6 +60,42 @@ describe('useProductVersion', () => {
     await ensureLoaded()
   })
 
+  it('warns when the backend answers but reports no usable version', async () => {
+    // Reachable-but-useless is the quiet failure: a proxy serving the SPA's
+    // index.html for /health/live resolves fine and yields nothing. The footer
+    // is empty either way, so the warning is the only diagnosable signal.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(versionApi.getProductVersion).mockResolvedValue(null)
+
+    const { displayVersion, ensureLoaded } = useProductVersion()
+    await ensureLoaded()
+
+    expect(displayVersion.value).toBeNull()
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('/health/live returned no usable version'),
+    )
+
+    // Unlike a transport failure, a real answer keeps the memo: a second reader
+    // must not re-ask. (Guards the "behaviour otherwise identical" claim.)
+    const second = useProductVersion()
+    await second.ensureLoaded()
+    expect(versionApi.getProductVersion).toHaveBeenCalledTimes(1)
+
+    warn.mockRestore()
+  })
+
+  it('stays silent when the version resolves', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(versionApi.getProductVersion).mockResolvedValue('0.1.1')
+
+    const { displayVersion, ensureLoaded } = useProductVersion()
+    await ensureLoaded()
+
+    expect(displayVersion.value).toBe('v0.1.1')
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('shows nothing rather than a stale guess when the backend cannot be reached', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.mocked(versionApi.getProductVersion).mockRejectedValue(new Error('Network Error'))

@@ -34,6 +34,14 @@ async function loadProductVersion(): Promise<void> {
 
   try {
     version.value = await versionApi.getProductVersion()
+    if (version.value === null) {
+      // Reached the backend, but the payload carried no usable version — a
+      // reverse proxy answering `/health/live` with the SPA's index.html looks
+      // exactly like this. The memo deliberately stands (the answer was a real
+      // one, not a transport failure), so without this line the footer is
+      // silently empty for the whole session with nothing to diagnose it by.
+      logWarn('[version] /health/live returned no usable version')
+    }
   } catch (error) {
     version.value = null
     // Clear the memo so a later mount can retry a backend that was merely
