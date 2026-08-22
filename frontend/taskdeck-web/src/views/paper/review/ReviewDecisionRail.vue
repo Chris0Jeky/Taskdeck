@@ -217,6 +217,10 @@ const emit = defineEmits<{
   gap: 12px;
   flex: 1 1 0;
   min-width: 0;
+  /* min-width: 0 lets the box shrink below its content; without clipping, the
+     tagstamp's min-content width would paint over the actions group in the
+     band just above the wrap threshold. */
+  overflow: hidden;
 }
 /* The button half. It wraps internally too, so at the narrowest columns the
  * four buttons stack into rows rather than overflowing. `margin-left: auto`

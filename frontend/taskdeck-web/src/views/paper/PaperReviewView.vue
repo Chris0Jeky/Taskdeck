@@ -792,9 +792,16 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // document instead of on the control they just used.
 //
 // So the view captures the trigger itself, BEFORE the approve call, and puts
-// focus back when the dialog closes — on any exit, including a completed
-// apply. TdDialog is a shared primitive with no return-focus target prop and is
-// deliberately not touched here.
+// focus back when the dialog closes. A dismissal restores immediately. An
+// accepted apply cannot restore at close time — the rail is disabled for the
+// whole execute round trip and focus() on a disabled control is a no-op — so
+// that path defers the restore until the busy lock clears and re-queries the
+// rail. That covers a failed execute (the rail re-enables for the retry); a
+// SUCCESSFUL apply removes the proposal from the queue and unmounts the rail,
+// leaving nothing to return to — that gap is the decision-feedback work
+// tracked on GH-1940, not something a focus restore can paper over. TdDialog
+// is a shared primitive with no return-focus target prop and is deliberately
+// not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
 
@@ -819,10 +826,43 @@ watch(executeConfirmProposal, (pending, previous) => {
   // decision rail becomes the filing rail), and TdDialog's own <body> restore
   // runs in that same flush and would otherwise overwrite this.
   void nextTick(() => {
-    const target = captured?.isConnected ? captured : decisionRailFocusTarget()
-    target?.focus?.()
+    restoreApplyFocus(captured)
   })
 })
+
+function isFocusable(el: HTMLElement): boolean {
+  return !('disabled' in el && (el as HTMLButtonElement).disabled)
+}
+
+function restoreApplyFocus(captured: HTMLElement | null) {
+  const target = captured?.isConnected ? captured : decisionRailFocusTarget()
+  if (!target) return
+  if (isFocusable(target)) {
+    target.focus?.()
+    return
+  }
+  // Completed-apply exit: execute is still in flight, the rail is disabled,
+  // and focus() would silently no-op. Retry once when the busy lock clears,
+  // re-querying because the rail re-renders into the filing rail by then.
+  const lateRestore = () => {
+    void nextTick(() => {
+      const late =
+        captured?.isConnected && isFocusable(captured)
+          ? captured
+          : decisionRailFocusTarget()
+      if (late && isFocusable(late)) late.focus?.()
+    })
+  }
+  if (!busy.value) {
+    lateRestore()
+    return
+  }
+  const stop = watch(busy, (isBusy) => {
+    if (isBusy) return
+    stop()
+    lateRestore()
+  })
+}
 
 function onFileAway() {
   const p = activeProposal.value
@@ -936,6 +976,13 @@ async function onApply() {
   // ember rail and the approved-but-not-applied banner carry it, and the
   // primary button reopens this same step — so skip the hand-off rather than
   // open it against a switched context.
+  //
+  // Known caveat: under the `stale` queue filter, approving removes the
+  // proposal from the filtered list (stale is PendingReview-gated), the active
+  // selection moves on, and this guard suppresses the confirmation with none of
+  // the recovery affordances above on screen — the row is simply gone until the
+  // filter changes. Matches pre-collapse behaviour; the durable fix is keeping
+  // a just-decided row visible, which is GH-1940's progressive-disclosure work.
   if (activeProposal.value?.id !== p.id) return
   const approved = proposals.value.find((item) => item.id === p.id)
   if (!approved) return

@@ -2734,6 +2734,66 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('returns focus to the rail after a failed apply, once the busy lock clears', async () => {
+      // The accepted-apply exit cannot restore at dialog-close time: the rail
+      // is disabled for the whole execute round trip and focus() on a disabled
+      // control is a no-op. The restore must defer until the busy lock clears.
+      // The failed-execute path is the one where a target still exists — the
+      // rail re-enables for the retry. (A successful apply unmounts the rail
+      // with the proposal; that gap is GH-1940's decision-feedback work.)
+      let rejectExecute!: (reason: Error) => void
+      mocks.executeProposal.mockImplementationOnce(
+        () =>
+          new Promise<Proposal>((_resolve, reject) => {
+            rejectExecute = reject
+          }),
+      )
+      // Approved-direct path: the click opens the dialog without an approve
+      // round trip, so the completed-apply exit is isolated from the approve
+      // choreography the dismissal spec above already covers.
+      const wrapper = await mountView(
+        [makeProposal({ id: 'focus-2', status: 'Approved' })],
+        '/workspace/review',
+        [],
+        [],
+        { attachTo: true },
+      )
+
+      const trigger = wrapper.get('[data-testid="decision-apply"]').element as HTMLButtonElement
+      trigger.focus()
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+      const accept = document.body.querySelector(
+        '[data-testid="apply-confirm-accept"]',
+      ) as HTMLButtonElement
+      accept.click()
+      await flushPromises()
+      await nextTick()
+
+      // Dialog closed, execute still in flight: the rail is disabled (TdDialog's
+      // own restore no-ops against the disabled trigger), so an eager view-side
+      // restore would no-op too and leave focus on <body>.
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      expect(trigger.disabled).toBe(true)
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
+
+      rejectExecute(new Error('apply failed'))
+      await flushPromises()
+      await nextTick()
+      await nextTick()
+
+      // The rail survived the failure and re-enabled — focus lands back on the
+      // control the user needs for the retry, not on <body>.
+      const active = document.activeElement as HTMLElement | null
+      expect(active).not.toBe(document.body)
+      expect(['decision-apply', 'decision-file-away']).toContain(active?.dataset?.testid)
+
+      wrapper.unmount()
+    })
+
     it('does not open the confirmation against a proposal switched during the approve round trip', async () => {
       let resolveApprove!: (proposal: Proposal) => void
       mocks.approveProposal.mockImplementationOnce(
