@@ -36,8 +36,9 @@ uses Taskdeck as the place where *unstructured input becomes reviewed, trusted b
 1. **Monday 09:40** — sets the workspace up: three boards, columns per board's ceremony level.
 2. **Monday 10:25** — the architecture sync ends. She pastes the transcript into Taskdeck and lets
    triage extract the action items instead of retyping six tasks.
-3. **Monday, mid-flow** — two thoughts hit her while coding. She uses the quick-capture nib without
-   leaving the keyboard, one with no destination, one linked to a board with a label and a due date.
+3. **Monday, mid-flow** — two thoughts hit her while coding. She uses quick capture without leaving
+   the keyboard, one with no destination, one linked to a board with a label and a due date. (She
+   *types* a label and a due date; Step 12 records that neither survives the request.)
 4. **Monday 14:00** — she works the review backlog: approves what is right, applies it, rejects the
    duplicate, and checks the evidence behind each proposal before deciding.
 5. **Monday 17:50** — plans and closes the day in Today, leaves a line for tomorrow-self.
@@ -120,6 +121,50 @@ NF: Good. That is six things. Ship it.
 **Expected extraction:** 6 `create card` operations. Four are `I will …` first-person commitments;
 two are imperatives directed at another person (`Priya, draft …`, `Add a Grafana alert …`). A correct
 extractor must catch both grammatical forms and must *not* emit a card for the discussion turns.
+
+#### 2.3.1 Prerequisite: a live LLM provider (Step 15 is NOT replayable without it)
+
+**A default checkout cannot produce the extraction above.** Both `appsettings.json` and
+`appsettings.Development.json` ship `Llm:EnableLiveProviders: false`,
+`Llm:AllowLiveProvidersInDevelopment: false`, `Llm:Provider: "Mock"`, and an empty
+`Llm:OpenAi:ApiKey`. `LlmCaptureTriageExtractor.ExtractChunkAsync` checks provider health and returns
+the `ProviderIsMock` outcome **before** any extraction is attempted — the in-code rationale is that
+the mock's canned output can never satisfy the triage contract.
+
+**What the Mock path yields instead — and why it is easy to mistake for success.** The
+`ProviderIsMock` outcome is not an error; `CaptureTriageService` falls through to
+`ExtractTaskCandidates`, the **deterministic** extractor. You still get a proposal, so the step
+appears to pass. The difference is in the provenance, which is what to assert on:
+
+| | Live path (this run) | Mock/default path |
+| --- | --- | --- |
+| `promptVersion` | `llm-triage.v2` | `triage.v1` |
+| `provider` | `OpenAI` | `deterministic-extractor` |
+| `model` | `gpt-4o-mini` | `capture-triage-v1` |
+| Operation count | 6, both grammatical forms | deterministic heuristics — do **not** assume 6 |
+
+**Configuration required to replay Step 15 as recorded:**
+
+```bash
+Llm__EnableLiveProviders=true
+Llm__AllowLiveProvidersInDevelopment=true   # only in Development/Test
+Llm__Provider=OpenAI
+Llm__OpenAi__ApiKey=<a real key>
+Llm__OpenAi__Model=gpt-4o-mini              # repo default is gpt-5.6-luna
+```
+
+Note the model: the recorded provenance says `gpt-4o-mini`, but the checked-in default is
+`gpt-5.6-luna`, so the run overrode it. A replay that leaves the default will produce different
+extraction text and cannot be diffed against §Step 15's table verbatim.
+
+**One more trap.** The LLM leg runs only when `CaptureRequestContract.IsTranscriptSource(payload.Source)`
+holds. Captures C1–C3 are `Typed`, so they take the deterministic path **regardless of provider
+configuration** — seeing `deterministic-extractor` on those is correct behaviour, not a misconfiguration.
+Only the §2.3 transcript capture exercises the live path.
+
+**If a live key is unavailable,** treat Step 15 as blocked and record it so, rather than asserting 6
+operations against the deterministic extractor. A deterministic stub standing in for the provider is
+the better long-term fixture; none exists today.
 
 ### 2.4 Tomorrow-note
 
@@ -323,13 +368,24 @@ tells the user they are different surfaces.
 
 ---
 
-### Step 10 — Capture C1 (nib, no board)
+### Step 10 — Capture C1 (global Quick Capture modal, no board)
 
-**Action.** Type C1 in the modal, press `Ctrl+Enter`.
+**Action.** Type C1 in the **global Quick Capture modal** (`Ctrl+Shift+C`), press `Ctrl+Enter`.
 **Observed.** Saved; auto-navigated to `/workspace/inbox`.
 **Evidence.** `POST /api/capture/items → 201`. Toast: `✓ APPLIED — Capture saved to inbox`.
-**Verdict.** PASS (**#1938 did not reproduce**) — but the toast says **"APPLIED"** for an inbox save;
-see finding **H-08**.
+**Verdict.** PASS for the modal (**#1938 did not reproduce there**) — but the toast says
+**"APPLIED"** for an inbox save; see finding **H-08**.
+
+> **This step does not exercise the Inbox nib, and the original heading said it did.** Step 9 already
+> establishes that `Ctrl+Shift+C` and `Ctrl+;` open *different* surfaces; the shortcut is bound in
+> `AppShell.vue:145-148` to `openCaptureModal()`, i.e. the global
+> `components/common/CaptureModal.vue`. The Inbox nib is a separate component,
+> `views/paper/inbox/PaperCaptureNib.vue`, which emits `submit(text)` only and is reached by the
+> Inbox's own variant toggle — nothing binds `Ctrl+Shift+C` to it.
+>
+> **#1937/#1938 are filed against the nib, so this evidence cannot clear them.** To cover the nib,
+> open `/workspace/inbox`, switch to the nib variant, and submit from there. That path is currently
+> **unexercised** by this journey.
 
 ---
 
@@ -346,10 +402,38 @@ see finding **H-08**.
 
 **Action.** Inbox → Composer tab → body, board `[HZN] Payments API Migration`, label `payments`,
 due `2026-08-27` → `Ctrl+Enter`.
-**Observed.** All fields bound correctly; capture saved.
+**Observed.** All fields bound correctly **in the UI**; capture saved.
 **Evidence.** `{board:"[HZN] Payments API Migration", labels:"LABELS PAYMENTS ×", due:"2026-08-27"}`;
 `POST /api/capture/items → 201`.
-**Verdict.** PASS.
+
+**Verdict — split, and the original PASS was a false positive.**
+
+| Sub-capability | Verdict | Basis |
+| --- | --- | --- |
+| Board link | **PASS** | `boardId` is sent and the capture lands on the right board |
+| Label | **BROKEN — not implemented** | discarded client-side before the request |
+| Due date | **BROKEN — not implemented** | discarded client-side before the request |
+
+> **Why the DOM evidence above proves nothing about label/due persistence.** Reading the populated
+> fields and then a generic `201` never touches the persistence path. `PaperInboxView.onComposerSubmit`
+> (`frontend/taskdeck-web/src/views/paper/PaperInboxView.vue:118-131`) accepts `labels` and `dueAt` from
+> the composer and **drops both**, with the reason in the source:
+>
+> ```ts
+> // Labels / dueAt aren't part of CreateCaptureItemDto yet — they're surfaced
+> // for the design but not persisted by the current API.  We still pass the
+> // boardId so the capture lands on the right board.
+> const created = await dispatchCapture(payload.text, { boardId: payload.boardId })
+> ```
+>
+> `PaperCaptureComposer.vue` really does emit them; they die at the view boundary. Neither DTO carries
+> them — frontend `CreateCaptureItemDto` (`src/types/capture.ts:74-80`) and backend
+> (`backend/src/Taskdeck.Application/DTOs/CaptureDtos.cs:5-10`) both expose exactly
+> `boardId`, `text`, `source`, `titleHint`, `externalRef`. The composer collects two fields the API
+> cannot store and gives no indication they were dropped.
+>
+> **To actually exercise these**, assert on the request body or on the resulting capture/card metadata —
+> not on the form state before submit. Today both assertions would fail by design.
 
 > **Important semantic:** the composer states *"Linking to a board creates a proposal, not a card."*
 > In practice **no proposal exists at capture time** — the Review queue stayed at 0. The proposal is
@@ -493,9 +577,27 @@ Step 16 reads:
 | **Approve** (`P-T`) | `⏎` | **PASS** | `POST …/approve → 200`; status → `approved`; no native dialog |
 | **Confirm apply** (`P-T`) | `⏎` again | **PASS** | in-app `.td-dialog`, then `POST …/execute → 200` |
 | **Reject** (`P-C1`) | button | **PASS, but native prompt** | `window.prompt("Optional rejection reason:")` — finding **H-07** |
-| **Request edit** | `E` / button | **BROKEN** | see below — finding **H-02** |
+| **Request edit** | `E` / button | **BROKEN** | see below — finding **H-02**; **you must exit this state before continuing** |
 | **Defer** | `D` | not exercised | — |
 | **Toggle provenance** | `P` | **BROKEN** | `×` closes the drawer; `P` will not reopen it |
+
+> **Recovery step — without it a literal replay stops here.** `Request edit` calls
+> `startRevisionEditing()`, which sets `revisionEditing`. That feeds `revisionBusy`
+> (`PaperReviewView.vue:725`) and then the shared `busy` computed (`:732-739`), and `busy` gates
+> **both** the decision buttons (`ReviewDecisionRail.vue` puts `:disabled="busy"` on file-away, reject,
+> request-edit, defer, and apply) **and** the entire review keymap (`useReviewKeymap` is passed
+> `enabled: () => !busy.value && …` at `:1149-1167`). Reject, apply, and the `⏎` binding are all dead
+> until the state is left.
+>
+> **Do this before Step 17's reject and before Step 19:** scroll to `ReviewRevisionEditor`, which
+> renders **below the fold** (`v-if="revisionEditing"`, `:1377-1382`) and is the reason the pane reads
+> as bricked, then click **Cancel** (or Save). Assert the decision rail is interactive again —
+> `busy === false` — before proceeding.
+>
+> Two escapes worth knowing: switching the active proposal also clears `editing`, and a **failed**
+> save does **not** — the catch only raises a toast, so `editing` stays `true` and the rail stays
+> locked. That latch is the sharper half of #1964; H-02's "brick" framing was corrected to
+> "escapable lock with an off-screen composer" for exactly this reason.
 
 **The two-phase apply is now legible.** After approving, the pane states:
 *"Approved — not yet applied to the board. Press ⏎ (or 'Confirm apply') to execute it on the board;
@@ -531,7 +633,24 @@ confirm → apply → board.
 {"baselineWas":"6","nowShows":"7","updatedWithoutReload":true,"hasNewCard":true}
 ```
 `POST /hubs/boards/negotiate?negotiateVersion=1 → 200` confirms the per-board hub.
-**Verdict.** **PASS.**
+
+**Verdict.** **PASS that the board updated without a reload — but this evidence does not isolate
+SignalR as the mechanism.**
+
+> **A 30-second polling fallback produces the identical 6→7 observation.** `useBoardRealtime.ts:15`
+> sets `FALLBACK_POLL_INTERVAL_MS = 30000`, and `startFallbackPolling` — which just re-calls
+> `options.fetchBoard(boardId)` on an interval — fires from four places: `onreconnecting` (:143),
+> `onclose` (:163), a throw from `hubConnection.start()` (:191), and any post-start state that is not
+> `Connected` (:206). It is cleared only on a confirmed join (:219) or `onreconnected` (:149).
+>
+> A `200` from `/negotiate` is therefore **not** proof of delivery: negotiate can succeed and the
+> socket still fail afterwards, at which point polling silently takes over and the card count updates
+> anyway. The recorded evidence has no timestamp, so a fallback poll is not excluded.
+>
+> **To make this step prove SignalR**, do any one of: assert the `JoinBoard` invocation
+> (`useBoardRealtime.ts:217`) or receipt of the `boardMutation` event (`:12`, handler registered at
+> `:141`); stub `fetchBoard` for the duration; or bound the assertion well under 30s — a 2-second
+> window admits only the hub. Until then this row is evidence of *eventual consistency*, not realtime.
 
 ---
 
@@ -541,12 +660,49 @@ confirm → apply → board.
 **Observed.** `+ CAPTURE` deep-links to
 `/workspace/inbox?boardId=a7408e6f-…&columnId=1ce6374c-…` with the board picker **correctly
 preselected** to `[HZN] Devtools Side Quest`. After apply, the card landed in **Backlog**.
-**Verdict.** PASS for the round trip — but the same URL silently filters the Inbox to
-`0 IN QUEUE` with no filter chip (finding **H-04**).
+
+**Verdict — PASS for the *board*-scoped round trip only. This step does not prove column scoping,
+and the step title overstated it.**
+
+> **`columnId` is written into the URL and then read by nothing.** `useInboxOrchestrator` takes exactly
+> one value off the query string — `frontend/taskdeck-web/src/composables/useInboxOrchestrator.ts:42`:
+>
+> ```ts
+> const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+> ```
+>
+> A repo-wide search for `route.query.columnId` returns **zero matches**, and `columnId` appears nowhere
+> in the capture path at all — not in `captureApi.ts`, `captureStore.ts`, `types/capture.ts`,
+> `PaperInboxView.vue`, nor either `CreateCaptureItemDto`. The capture carries no column.
+>
+> **The observation is confounded by the fixture.** `[HZN] Devtools Side Quest` has exactly one column
+> (Backlog — that is the Step 7 trap), so "landed in Backlog" is equally explained by the board's
+> default column. The requested column and the default column are indistinguishable on this board,
+> which is precisely why the original PASS looked convincing.
+>
+> **To actually test this:** run the capture from a *non-first* column of a multi-column board — the
+> Payments board's `In Progress` — and assert the card lands there. On today's code it will land in
+> `To Do`, so this is a fair test that should currently fail.
+
+The same URL also silently filters the Inbox to `0 IN QUEUE` with no filter chip (finding **H-04**).
 
 ---
 
 ### Step 21 — Today view: plan, note, seal
+
+> **Prerequisite — the day must ALREADY be sealed, or this step tests something else entirely.** The
+> "Day sealed" finding below is conditional on that state, and this run inherited it rather than
+> creating it (`D-2026-08-22-001`, a fixed date that cannot recur). There is **one** button, never
+> disabled, whose label is cosmetic — `TodayCover.vue:51-57` renders
+> `:label="sealed ? 'Day sealed' : 'Seal day & archive'"` — and the branch is in
+> `useTodayDossier.ts:425-444`, where `sealDay()` returns `{ alreadySealed: true }` **only if**
+> `sealed.value`, and otherwise issues the real `POST /api/today/seal`. On a fresh account the same
+> click therefore *seals the day successfully* and H-13 does not reproduce.
+>
+> **Seed the state first:** `POST /api/today/seal` with `{ "date": "<today, local>" }`, confirm via
+> `GET /api/today/seal` that `isSealed: true`, then reload Today. Better still, exercise the initial
+> seal as its own assertion — the unsealed→sealed transition is a real capability this journey never
+> covers — and only then re-click to observe the inert second press.
 
 **Action.** Open `/workspace/today`.
 **Observed.**
@@ -563,7 +719,11 @@ preselected** to `[HZN] Devtools Side Quest`. After apply, the card landed in **
 **Tomorrow-note.** Typed §2.4 → `PUT /api/today/tomorrow-note → 200`, `Saved · auto`. **PASS.**
 **"Write a note" button.** Focuses the note textarea. **PASS** (subtle but functional).
 **"Day sealed" button.** Still **enabled** after sealing, and **completely inert** — zero network,
-zero DOM change, no dialog. **BROKEN — finding H-13.**
+zero DOM change, no dialog. **BROKEN — finding H-13**, with the seeded-seal precondition above: the
+defect is the *silent* no-op on an enabled control, not a failure to seal. `sealDay()` returns
+`alreadySealed: true` and `PaperTodayView.vue:52-65` maps that to `toast.info('Day is already sealed.')`,
+so the toast exists in code but did not surface here — the enabled-but-inert button is the user-visible
+symptom.
 **Unseal.** None anywhere on the page — confirms **#1939**.
 
 **Verdict.** DEGRADED. The honesty of §II ("No events are being invented") is a genuine strength;
@@ -660,15 +820,21 @@ bindings all work, the single-letter navigation set does not.
 | 2d | Board settings / rename / delete (UI) | yes | **BROKEN** | absent from Paper | #1945 |
 | 2e | Column edit / reorder / delete (UI) | yes | **BROKEN** | absent from Paper | #1945 |
 | 2f | Direct card add (UI) | yes | **BROKEN** | only `+ CAPTURE` | #1945 |
-| 2g | Card edit / delete / comments | yes | **PASS** | full modal; `DELETE …/cards/{id} → 204` | refines #1945 |
-| 3 | Quick-capture nib | yes | PASS | `Ctrl+Shift+C`, `POST /capture/items → 201` | #1937/#1938 not reproduced |
-| 3b | Inbox composer (board+label+due) | yes | PASS | fields bound; 201 | — |
-| 3c | Column-scoped `+ CAPTURE` | yes | PASS | deep-link preselects board | — |
-| 4 | Transcript capture + extraction | yes | **PASS** | 6/6 items, evidence spans | — |
+| 2g | Card **delete** | yes | **PASS** | `DELETE …/cards/{id} → 204` (Step 8 + cleanup) | refines #1945 |
+| 2h | Card **edit** (save a field) | **no** | not exercised | modal rendered only; `PATCH …/cards/{id}` never called | — |
+| 2i | Card **comments** (submit) | **no** | not exercised | modal rendered only; `POST …/cards/{id}/comments` never called | — |
+| 3 | Quick-capture **global modal** | yes | PASS | `Ctrl+Shift+C` → `CaptureModal.vue`; `POST /capture/items → 201` | #1937/#1938 are filed against the **nib** — not cleared |
+| 3a | Quick-capture **Inbox nib** | **no** | not exercised | `PaperCaptureNib.vue` never submitted | #1937, #1938 remain open |
+| 3b | Inbox composer — board link | yes | PASS | `boardId` sent; 201 | — |
+| 3b-i | Inbox composer — label | yes | **BROKEN** | discarded in `PaperInboxView.vue:118-131`; absent from both DTOs | — |
+| 3b-ii | Inbox composer — due date | yes | **BROKEN** | discarded in `PaperInboxView.vue:118-131`; absent from both DTOs | — |
+| 3c | Board-scoped `+ CAPTURE` deep link | yes | PASS | deep-link preselects the board | — |
+| 3d | **Column**-scoped capture | yes | **BROKEN** | `columnId` in URL, read by nothing; no column on either DTO | — |
+| 4 | Transcript capture + extraction | yes | **PASS** | 6/6 items, evidence spans | requires a live provider — §2.3.1; **not replayable on a default checkout** |
 | 5 | Inbox triage accept (with board) | yes | PASS | `POST …/triage → 202` | — |
 | 5b | Accept with no board | yes | **PASS (fixed)** | button correctly `disabled` | **#1944 fixed** |
 | 5c | Pre-triage edit / "Open capture" | yes | **BROKEN** | zero network, no view | #1944 |
-| 5d | Reject capture | not exercised | — | avoided to protect pre-existing rows | — |
+| 5d | Reject capture | **no** | not exercised | avoided to protect pre-existing rows | — |
 | 6 | Review evidence / provenance panes | yes | PASS | §I–§V + confidence breakdown | — |
 | 6b | Before / After diff | yes | PASS | `BEFORE · TODAY` / `AFTER · ON APPLY` | — |
 | 6c | Approve → confirm → apply | yes | PASS | `/approve → 200`, `/execute → 200` | #1818/#1942 improved |
@@ -678,14 +844,17 @@ bindings all work, the single-letter navigation set does not.
 | 6g | Reopen an applied proposal | yes | **BROKEN** | `RECENTLY APPLIED` rows inert | **#1967** (H-05) |
 | 7 | Today plan / counters | yes | DEGRADED | Cadence empty | #1939 |
 | 7b | Tomorrow note | yes | PASS | `PUT /today/tomorrow-note → 200` | — |
-| 7c | Daily seal / unseal | yes | **BROKEN** | seal button enabled + inert; no unseal | #1939 (H-13 folded in as a comment) |
+| 7c | Daily seal — second press on an already-sealed day | yes | **BROKEN** | enabled + inert; `alreadySealed` toast never surfaced | #1939 (H-13 folded in as a comment) |
+| 7d | Daily seal — initial unsealed→sealed transition | **no** | not exercised | run inherited a sealed day; see the Step 21 precondition | — |
+| 7e | Unseal | yes | **BROKEN** | no affordance anywhere on the page | #1939 |
 | 8 | Theme Paper / Night / Legacy / Auto | yes | **PASS** | computed backgrounds differ | — |
 | 8b | Language English ↔ Italiano | yes | DEGRADED | sidebar + composer untranslated | H-14 — not filed (LOW), on #1947 |
 | 9 | Command palette `Ctrl+K` | yes | PASS | full catalog + card search | — |
 | 9b | Keyboard map `?` | yes | PASS | dialog renders | — |
 | 9c | Letter navigation `H/T/B/I/R`, `G T` | yes | **BROKEN** | URL unchanged; no handler exists anywhere | **#1968** (H-06) |
 | 9d | `P` provenance toggle | yes | **BROKEN** | `×` works, `P` does not — handler *does* exist; likely silenced by #1964's `busy` lock | **#1968** (H-06), see **#1964** |
-| 10 | Realtime per-board SignalR | yes | **PASS** | 6→7 cards, no reload | — |
+| 10 | Board updates without a reload | yes | **PASS** | 6→7 cards, no reload | — |
+| 10b | …**via SignalR specifically** | yes | **INCONCLUSIVE** | 30s polling fallback not excluded; no `JoinBoard`/`boardMutation` assertion | — |
 | 11 | Views / Calendar / Metrics / Integrations | yes | PASS | all render | — |
 | 11b | Activity / audit log | yes | **PASS** | proposal-traced entries | — |
 | 11c | Notifications | yes | DEGRADED | 0 after 3 decisions | H-17 — not filed (LOW), on #1947 |
@@ -695,8 +864,36 @@ bindings all work, the single-letter navigation set does not.
 | 12c | `Tune heuristics →` | yes | **BROKEN** | `href="#"`, inert | #1941 |
 | 12d | `View full read-set →` | yes | **BROKEN** | `href="#"`, inert | **#1967** (H-05c) |
 
-**Totals — 44 capability rows:** **19 PASS**, **11 DEGRADED**, **14 BROKEN**, 0 blocked.
-Distinct capability areas from the brief: **12 of 12 exercised**.
+**Totals — 52 capability rows.** Counted from the verdict column above, one row one verdict, nothing
+folded:
+
+| Verdict | Rows |
+| --- | --- |
+| PASS | **22** — 20 plain, plus `PASS (fixed)` (5b) and `PASS (native prompt)` (6d) |
+| BROKEN | **17** |
+| DEGRADED | **6** |
+| not exercised | **5** — 2h, 2i, 3a, 5d, 7d |
+| INCONCLUSIVE | **1** — 10b |
+| PARTIAL | **1** — 12b |
+| **Total** | **52** |
+
+**Aggregation rule:** every row lands in exactly one bucket by its literal verdict string. `PASS
+(fixed)` and `PASS (native prompt)` count as PASS because both record a working capability with a
+qualifier; nothing else is merged. A row is `not exercised` when the journey never invoked the path —
+those are *gaps in this run*, not defects, and must not be read as passes.
+
+> **The previously published totals were wrong in every figure** — "44 rows: 19 PASS, 11 DEGRADED,
+> 14 BROKEN, 0 blocked". The matrix as reviewed held **43** rows (22/13/6/1/1), so the header
+> overstated the row count, understated PASS and BROKEN, and inflated DEGRADED; the residue was
+> silently absorbed rather than reported. The count is now 52 because this revision **split** five
+> rows that each bundled a proven capability with an unproven one — card delete from card
+> edit/comments, the global modal from the Inbox nib, the composer's board link from its label and due
+> fields, board-scoped from column-scoped capture, and a no-reload update from SignalR as its
+> mechanism. The BROKEN count rose from 13 to 17 because four of those splits exposed capabilities
+> that never worked and were previously carried inside a PASS row.
+
+Distinct capability areas from the brief: **12 of 12 exercised** (every numbered group has at least
+one exercised row, though five individual rows within them do not).
 
 **Filed 2026-08-22:** H-01..H-12 → **#1963–#1974** in order. H-13 folded into #1939; H-14..H-19 recorded
 on tracker #1947 rather than filed. Two findings were corrected by source trace before filing — see
@@ -765,12 +962,48 @@ this check, and it is weaker than "nothing remains":
 
 ## 6. Replaying this as a test suite
 
-1. Snapshot `/api/boards`, `/api/capture/items`, `/api/automation/proposals` — assert unchanged at teardown.
-2. Shim `confirm`/`alert`/`prompt` before Step 17 (Reject calls a native `prompt`).
-3. Prefer status-code assertions on `POST /api/capture/items`, `…/triage`, `…/approve`, `…/execute`
-   over screenshots; the UI text for these is stable but the toasts auto-dismiss in ~2s.
-4. The transcript in §2.3 is the fixture: assert **exactly 6 operations** and that operations 4 and 5
+**Preconditions — none of these are optional, and each one silently changes the result if skipped.**
+
+1. **Record the build.** Stamp `git rev-parse HEAD` into the header. The sidebar version string is
+   #1948 and identifies nothing.
+2. **Use a disposable database.** `DELETE /api/boards/{id}` is a soft archive, so no teardown written
+   against the public API can actually remove what the run creates (see §5). A throwaway SQLite file
+   per run is the only teardown that makes the suite idempotent.
+3. **Snapshot everything the run can touch** — `/api/boards`, `/api/capture/items`,
+   `/api/automation/proposals`, **and the tomorrow-note**. The note has no `[HZN]` prefix to protect
+   it and Step 21 overwrites it; restore it verbatim at teardown. `PUT /api/today/tomorrow-note`
+   requires `{ date, text }` and 400s on an empty body.
+4. **Configure a live LLM provider** or mark Step 15 blocked — see §2.3.1. On a default checkout the
+   provider is `Mock`, `ExtractChunkAsync` returns `ProviderIsMock` before extracting, and the
+   deterministic extractor produces a *different* proposal that still returns `201`. Assert on
+   provenance (`llm-triage.v2` / `OpenAI`), never on the mere existence of a proposal.
+5. **Seed the day-seal state.** `POST /api/today/seal`, confirm `isSealed` via `GET /api/today/seal`.
+   The H-13 inert-button finding only reproduces on an already-sealed day; on a fresh account the same
+   button seals successfully.
+6. **Shim `confirm`/`alert`/`prompt`** before Step 17 — Reject calls a native `prompt`.
+
+**Assertions.**
+
+7. Prefer status codes on `POST /api/capture/items`, `…/triage`, `…/approve`, `…/execute` over
+   screenshots; the UI text is stable but toasts auto-dismiss in ~2s.
+8. The §2.3 transcript is the fixture: assert **exactly 6 operations** and that operations 4 and 5
    (the imperative forms) are present — a regression to naive `I will …` matching drops those two.
-5. Realtime: assert the second tab's card count changes **without** a reload.
-6. Teardown by deleting the boards; captures and proposals disappear from the list endpoints with them
-   (via board archiving, not cascade deletion — see #1973 before relying on this for cleanup).
+9. **Realtime must exclude the fallback.** A no-reload card update is also produced by the 30-second
+   polling fallback in `useBoardRealtime.ts`. Assert the `JoinBoard` invocation or the `boardMutation`
+   event, stub `fetchBoard`, or bound the wait well under 30s. A `200` from `/negotiate` is not proof.
+10. **Do not assert composer labels or due dates as persisted** — they are dropped client-side and
+    exist on neither DTO. A test that reads the form fields and then a `201` passes vacuously.
+11. **Do not treat "card landed in Backlog" as column routing.** `columnId` is never read; use a
+    non-first column of a multi-column board if you want a fair test (it should fail today).
+
+**Ordering that later steps depend on.**
+
+12. Route C1 to `[HZN] Payments API Migration` in Step 14b, and follow Step 17's prescribed order —
+    apply `P-T`, reject `P-C1`, leave `P-C2` for Step 19. Any other assignment changes the seventh
+    card and breaks Step 19's 6→7 assertion.
+13. **Exit request-edit mode** after exercising it — the editor is below the fold and `busy` disables
+    every decision button and the whole review keymap until it is cancelled or saved. Assert the
+    decision rail is live again before continuing.
+
+**Coverage this journey does not provide** (do not infer these from a green run): Inbox-nib submission,
+card edit-save, card comment submit, capture reject, and the initial unsealed→sealed transition.
