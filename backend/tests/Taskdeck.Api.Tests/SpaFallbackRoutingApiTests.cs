@@ -181,6 +181,41 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
     }
 
     [Fact]
+    public async Task WrongVerbOnExistingApiRoute_StillReturns405()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_verb");
+
+        // /api/boards declares GET and POST, not PUT. Routing synthesizes its 405 endpoint only
+        // when EVERY candidate is method-mismatched, so an all-verb 404 catch-all would be a valid
+        // candidate here and would silently downgrade this 405 to a 404. The GET/HEAD metadata on
+        // the per-prefix fallbacks is what keeps that from happening (#1971).
+        using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        var response = await client.PutAsync("/api/boards", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Fact]
+    public async Task NonGetVerbOnUnknownApiPath_NeverReturnsTheSpaShell()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_post");
+
+        // Documented boundary of the fix: a non-GET verb on an unknown path resolves to the
+        // framework's 405 endpoint rather than the 404 contract, because the per-prefix fallbacks
+        // are deliberately GET/HEAD-scoped (see WrongVerbOnExistingApiRoute_StillReturns405). That
+        // is unchanged from before #1971 — what must never happen is the 200 + app shell.
+        using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        var response = await client.PostAsync("/api/definitely-not-a-real-endpoint-hzn", body);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
+        responseBody.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Fact]
     public void NonSpaPathPrefixes_CoverEveryMachineFacingSurface()
     {
         // Pins the declared prefix set so adding a machine-facing surface without extending it is a

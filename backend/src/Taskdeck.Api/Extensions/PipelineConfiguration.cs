@@ -23,6 +23,13 @@ public static class PipelineConfiguration
     /// </summary>
     internal static readonly string[] NonSpaPathPrefixes = ["/api", "/hubs", "/health", "/mcp"];
 
+    /// <summary>
+    /// The HTTP methods <c>MapFallbackToFile</c> stamps on the SPA catch-all. The per-prefix 404
+    /// fallbacks match the same set so that a wrong-verb request on a real route still resolves to
+    /// the framework's 405 endpoint rather than being captured as a 404 (#1971).
+    /// </summary>
+    private static readonly string[] SpaFallbackHttpMethods = ["GET", "HEAD"];
+
     public static WebApplication ConfigureTaskdeckPipeline(
         this WebApplication app,
         RateLimitingSettings rateLimitingSettings)
@@ -190,9 +197,22 @@ public static class PipelineConfiguration
         // endpoint does not exist" signal behind an auth error for exactly the unauthenticated
         // scripts and probes this issue is about. The cost is that route existence is discoverable
         // (404 vs 401) without credentials, which the OpenAPI document already publishes.
+        //
+        // GET/HEAD only, mirroring the method metadata MapFallbackToFile puts on the SPA catch-all
+        // (measured: pattern {*path:nonfile}, methods [GET, HEAD]). This is load-bearing, not
+        // decoration. A fallback that accepted every verb would be a VALID candidate for a
+        // wrong-verb request on a REAL route — PUT /api/boards, say — and routing only synthesizes
+        // its 405 endpoint when every candidate is method-mismatched, so an all-verb catch-all
+        // silently downgrades those 405s to 404. Scoped to GET/HEAD, a wrong-verb request on a real
+        // route mismatches every candidate and keeps its 405. The trade is that a non-GET request
+        // to an UNKNOWN path under these prefixes still resolves to that 405 endpoint (and, for an
+        // anonymous caller, to the 401 the global FallbackPolicy applies to it) rather than a 404 —
+        // unchanged from before this fix, and never the 200 + app shell this issue is about.
         foreach (var prefix in NonSpaPathPrefixes)
         {
-            app.MapFallback($"{prefix}/{{**path}}", UnknownEndpointNotFound).AllowAnonymous();
+            app.MapFallback($"{prefix}/{{**path}}", UnknownEndpointNotFound)
+                .WithMetadata(new HttpMethodMetadata(SpaFallbackHttpMethods))
+                .AllowAnonymous();
         }
 
         // SPA fallback: any other unmatched route returns index.html, enabling Vue Router's
