@@ -1,6 +1,6 @@
 # Saul-Facing Demo Rehearsal Contract
 
-Last Updated: 2026-08-21
+Last Updated: 2026-08-22
 
 ## Purpose
 
@@ -25,9 +25,9 @@ Out of scope:
 - public GTM/landing narrative (`#216`)
 
 This rehearsal is local product evidence only. It does not authorize or prove a public release.
-The separate v0.1.1 public-artifact proof plus the maintainer's explicit clean-Sandbox waiver
-satisfies `#1876` and `#1877`; this rehearsal does not. Issue `#1242` remains open for its distinct
-maintainer record decision and must not be checked off from this rehearsal.
+The v0.1.1 public-artifact proof plus the maintainer's explicit clean-Sandbox waiver satisfies
+`#1877`, but the 2026-08-22 ordinary-profile startup incident reopened `#1876`; this rehearsal
+satisfies neither that correction nor `#1242`'s distinct maintainer record decision.
 
 ## Preconditions
 
