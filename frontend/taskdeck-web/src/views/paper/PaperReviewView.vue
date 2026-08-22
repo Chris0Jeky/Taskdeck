@@ -870,7 +870,24 @@ async function onApply() {
     requestExecuteProposal(p.id)
     return
   }
-  void handleApproveProposal(p.id)
+  await handleApproveProposal(p.id)
+  // GH-1942: a successful approve hands STRAIGHT to the one deliberate execute
+  // step. Before this, the user clicked the primary button, watched it relabel,
+  // clicked it again, and only then got the dialog — three clicks for a
+  // two-phase decision, and the middle one did nothing but open the third.
+  //
+  // ADR-0003 is untouched: approve and execute remain two separate, explicit
+  // API calls in that order. The approve call has already returned here; the
+  // execute call still happens ONLY if the human accepts the dialog, and
+  // dismissing it leaves the proposal approved-but-not-applied with the banner
+  // and the ember rail saying exactly that. Nothing auto-applies.
+  const approved = proposals.value.find((item) => item.id === p.id)
+  if (!approved) return
+  // Approve failed (the composable toasts and leaves the row untouched), or the
+  // row came back as something else entirely — either way there is no approved
+  // proposal to offer, so do not open a confirmation for it.
+  if (normalizeProposalStatus(approved.status) !== 'Approved') return
+  requestExecuteProposal(p.id)
 }
 
 function onReject() {

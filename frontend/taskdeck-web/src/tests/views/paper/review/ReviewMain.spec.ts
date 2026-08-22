@@ -155,15 +155,19 @@ describe('ReviewMain', () => {
       const wrapper = mountMain({}, { applyPhase: 'execute' })
       const banner = wrapper.get('[data-testid="paper-review-approved-banner"]')
       expect(banner.text()).toContain('Approved — not yet applied to the board.')
-      // The banner must name the NEXT action, not just the state.
-      expect(banner.text()).toContain('Confirm apply')
+      // The banner must name the NEXT action, not just the state — and after
+      // GH-1942 there is exactly ONE action left, so it must not warn about a
+      // further confirmation step that no longer exists.
+      expect(banner.text()).toContain('Apply to board')
+      expect(banner.text()).toContain('One step left')
+      expect(banner.text()).not.toContain('you will be asked to confirm')
       expect(banner.attributes('role')).toBe('status')
     })
 
     it('makes the keyboard hint name the phase ⏎ will actually run', () => {
       const wrapper = mountMain({}, { applyPhase: 'execute' })
       expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
-        'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT',
+        'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
       )
     })
 

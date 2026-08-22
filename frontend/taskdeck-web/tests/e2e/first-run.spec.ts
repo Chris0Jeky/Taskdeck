@@ -93,8 +93,9 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   // Hard-assert the final apply confirmation (see capture-loop.spec.ts): the
-  // test must FAIL if the phase-2 gate disappears, not execute silently.
-  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
+  // test must FAIL if the phase-2 gate disappears, not execute silently. Since
+  // GH-1942 the approve above opens it directly — no second rail click.
+  await expectApplyConfirmDialog(page)
   await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 

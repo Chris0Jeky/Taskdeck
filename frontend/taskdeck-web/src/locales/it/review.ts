@@ -82,11 +82,11 @@ export default {
     },
     approvedBanner: {
       title: 'Approvata — non ancora applicata alla bacheca.',
-      body: 'Premi ⏎ (o “{action}”) per eseguirla sulla bacheca; ti verrà chiesto di confermare.',
+      body: 'Manca un passo: premi ⏎ (o “{action}”) per scriverla sulla bacheca. Finché non lo fai non cambia niente.',
     },
     keyHint: {
       fileAway: 'PREMI ⌫ PER ARCHIVIARE',
-      confirmApply: 'PREMI ⏎ PER CONFERMARE · ⌫ PER RIFIUTARE',
+      confirmApply: 'PREMI ⏎ PER APPLICARE ALLA BACHECA · ⌫ PER RIFIUTARE',
       approve: 'PREMI ⏎ PER APPROVARE · ⌫ PER RIFIUTARE',
     },
     footer: 'REVISIONE · {serial} · LOCAL-FIRST · REGISTRO',
@@ -108,17 +108,17 @@ export default {
     },
     step: {
       approve: 'Passo 1 di 2 · approvare non cambia la bacheca',
-      execute: 'Passo 2 di 2 · conferma per scriverla sulla bacheca',
+      execute: 'Passo 2 di 2 · questo la scrive sulla bacheca',
     },
     reject: 'Rifiuta',
     requestEdit: 'Chiedi modifica',
     defer: 'Rimanda',
     apply: {
       approve: 'Approva',
-      execute: 'Conferma applicazione',
+      execute: 'Applica alla bacheca',
       approveLabel: 'Approva la proposta — passo 1 di 2, non cambia ancora la bacheca',
       executeLabel:
-        'Conferma l’applicazione alla bacheca — passo 2 di 2, scrive questa modifica sulla bacheca',
+        'Applica alla bacheca — passo 2 di 2, scrive questa modifica sulla bacheca',
     },
     fileAway: {
       label: 'Archivia',
@@ -280,7 +280,7 @@ export default {
     spaceKey: 'spazio',
     enter: {
       approve: 'Approva la proposta · passo 1 di 2',
-      execute: 'Conferma l’applicazione alla bacheca · passo 2 di 2',
+      execute: 'Applica alla bacheca · passo 2 di 2',
     },
     edit: 'Chiedi modifica · apre il Composer',
     reject: 'Rifiuta · con motivo facoltativo',
@@ -339,13 +339,13 @@ export default {
 
   applyDialog: {
     title: 'Applicare alla bacheca?',
-    lede: 'Questo è il secondo e ultimo passo: esegue la proposta approvata sulla tua bacheca. Sulla bacheca non è ancora stato scritto niente.',
+    lede: 'Approvata. Sulla bacheca non è ancora stato scritto niente — questo è il passo che la applica.',
     noSummary: 'Questa proposta non ha un riepilogo.',
     revisionNote:
       'Questa proposta è stata modificata — verrà applicata l’ultima revisione salvata, non le operazioni originali.',
     contentsWillApply: 'Verrà applicato il contenuto approvato di questa proposta.',
     operationsWillApply: 'Verrà applicata {count} operazione. | Verranno applicate {count} operazioni.',
-    cancel: 'Annulla',
+    cancel: 'Non ancora',
     confirm: 'Applica alla bacheca',
   },
 

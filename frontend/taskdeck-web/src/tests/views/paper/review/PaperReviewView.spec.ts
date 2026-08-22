@@ -2381,8 +2381,10 @@ describe('PaperReviewView', () => {
       const wrapper = await mountView([makeProposal({ id: 'pending-1' })])
 
       expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(false)
-      expect(wrapper.get('[data-testid="decision-apply"]').text()).toContain('Approve')
-      expect(wrapper.get('[data-testid="decision-apply"]').text()).not.toContain('Confirm apply')
+      // The VISIBLE face of the primary button; the other phase's label is also
+      // in the DOM as the width reservation (GH-1942).
+      expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Approve')
+      expect(wrapper.get('[data-testid="decision-apply-reserve"]').text()).toBe('Apply to board')
       expect(railPhase(wrapper)).toBe('approve')
       expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
         'PRESS ⏎ TO APPROVE · ⌫ TO REJECT',
@@ -2412,14 +2414,14 @@ describe('PaperReviewView', () => {
 
       const banner = wrapper.get('[data-testid="paper-review-approved-banner"]')
       expect(banner.text()).toContain('Approved — not yet applied to the board.')
-      expect(banner.text()).toContain('Confirm apply')
-      expect(wrapper.get('[data-testid="decision-apply"]').text()).toContain('Confirm apply')
+      expect(banner.text()).toContain('Apply to board')
+      expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Apply to board')
       expect(railPhase(wrapper)).toBe('execute')
       expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
-        'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT',
+        'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
       )
       expect(wrapper.get('[data-testid="paper-review-right-rail"]').text()).toContain(
-        'Confirm apply to board · step 2 of 2',
+        'Apply to board · step 2 of 2',
       )
 
       wrapper.unmount()
@@ -2525,6 +2527,140 @@ describe('PaperReviewView', () => {
       // The dialog is still the only path to the board.
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      wrapper.unmount()
+    })
+  })
+
+  // --- GH-1942: the flow must cost TWO user actions, not three ---------------
+  //
+  // #1818 made the two phases visible; what was left was a third click that did
+  // nothing but open the dialog the second click had already promised. Approve
+  // now hands straight to that dialog. These tests fix the ACTION COUNT so a
+  // later change cannot quietly reinstate the middle step.
+  describe('apply-flow step count (GH-1942)', () => {
+    function railPhase(wrapper: ReturnType<typeof mount>): string | undefined {
+      return wrapper.find('[data-testid="paper-review-decision-rail"]').attributes('data-apply-phase')
+    }
+
+    it('takes exactly two user actions from pending to applied, and the board is untouched until the second', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'flow-1', status: 'Approved' }),
+      )
+      mocks.executeProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'flow-1', status: 'Applied' }),
+      )
+      const wrapper = await mountView([makeProposal({ id: 'flow-1' })])
+
+      let userActions = 0
+
+      // ── Action 1: Approve on the decision rail.
+      expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Approve')
+      userActions += 1
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      // Phase 1 recorded the approval and NOTHING else. The one remaining step
+      // is already on screen — there is no intermediate button to press.
+      expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(railPhase(wrapper)).toBe('execute')
+      expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Apply to board')
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      // ── Action 2: accept that dialog. `confirmApplyDialog` hard-asserts the
+      // accept button is present, so re-adding a middle step fails here rather
+      // than silently passing.
+      userActions += 1
+      await confirmApplyDialog()
+
+      expect(userActions).toBe(2)
+      expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+
+      wrapper.unmount()
+    })
+
+    it('keeps approve and execute as two separate explicit backend calls in order (ADR-0003)', async () => {
+      // The collapse is presentational ONLY. Auto-applying — approve's response
+      // triggering execute without a second human action — is the thing
+      // ADR-0003 forbids, so pin the call sequence and its gating.
+      const calls: string[] = []
+      mocks.approveProposal.mockImplementationOnce(async (id: string) => {
+        // Execute must not have run before, or as part of, the approve call.
+        expect(mocks.executeProposal).not.toHaveBeenCalled()
+        calls.push(`approve:${id}`)
+        return makeProposal({ id, status: 'Approved' })
+      })
+      mocks.executeProposal.mockImplementationOnce(async (id: string) => {
+        calls.push(`execute:${id}`)
+        return makeProposal({ id, status: 'Applied' })
+      })
+      const wrapper = await mountView([makeProposal({ id: 'adr-3' })])
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      // Approve has returned; the board is still untouched and stays that way
+      // for as long as the human does not accept.
+      expect(calls).toEqual(['approve:adr-3'])
+
+      await confirmApplyDialog()
+
+      expect(calls).toEqual(['approve:adr-3', 'execute:adr-3'])
+      expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
+      expect(mocks.approveProposal).toHaveBeenCalledWith('adr-3')
+      // Execute is the mutating half and still carries its Idempotency-Key;
+      // approve takes no such key. Two different calls, not one repeated.
+      expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
+      expect(mocks.executeProposal).toHaveBeenCalledWith('adr-3', expect.any(String))
+
+      wrapper.unmount()
+    })
+
+    it('does not offer the apply confirmation when approve fails', async () => {
+      mocks.approveProposal.mockRejectedValueOnce(new Error('approve exploded'))
+      const wrapper = await mountView([makeProposal({ id: 'approve-fail' })])
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(railPhase(wrapper)).toBe('approve')
+      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(false)
+      expect(mocks.errorToast).toHaveBeenCalled()
+
+      wrapper.unmount()
+    })
+
+    it('backing out of the auto-opened dialog leaves it approved, and the rail reopens it', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'back-out', status: 'Approved' }),
+      )
+      const wrapper = await mountView([makeProposal({ id: 'back-out' })])
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      const cancel = document.body.querySelector(
+        '[data-testid="apply-confirm-cancel"]',
+      ) as HTMLButtonElement
+      // Dismissing does not undo the approval, and the copy says so.
+      expect(cancel.textContent).toContain('Not yet')
+      cancel.click()
+      await flushPromises()
+
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(railPhase(wrapper)).toBe('execute')
+      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(true)
+
+      // The rail's primary button is the way back to the same single step —
+      // and it must not re-approve.
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       wrapper.unmount()

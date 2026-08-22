@@ -121,11 +121,16 @@ export default {
       title: 'Approved — not yet applied to the board.',
       // `{action}` is the primary button's own label, interpolated so the banner
       // can never name a button that says something else.
-      body: 'Press ⏎ (or “{action}”) to execute it on the board; you will be asked to confirm.',
+      //
+      // #1942: this used to end "you will be asked to confirm" — the banner
+      // announcing the app's own redundant third step. Approve now hands
+      // straight to the apply confirmation, so there is exactly one step left
+      // and the copy names it instead of warning about another one.
+      body: 'One step left: press ⏎ (or “{action}”) to write it to the board. Nothing changes until you do.',
     },
     keyHint: {
       fileAway: 'PRESS ⌫ TO FILE AWAY',
-      confirmApply: 'PRESS ⏎ TO CONFIRM APPLY · ⌫ TO REJECT',
+      confirmApply: 'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
       approve: 'PRESS ⏎ TO APPROVE · ⌫ TO REJECT',
     },
     footer: 'REVIEW · {serial} · LOCAL-FIRST · LEDGER',
@@ -147,16 +152,19 @@ export default {
     },
     step: {
       approve: 'Step 1 of 2 · approving does not change the board',
-      execute: 'Step 2 of 2 · confirm to write it to the board',
+      execute: 'Step 2 of 2 · this writes it to the board',
     },
     reject: 'Reject',
     requestEdit: 'Request edit',
     defer: 'Defer',
     apply: {
       approve: 'Approve',
-      execute: 'Confirm apply',
+      // #1942: named for the action itself, matching the dialog's accept
+      // button. "Confirm apply" described a step that only opened another
+      // confirmation — that middle step is gone.
+      execute: 'Apply to board',
       approveLabel: 'Approve proposal — step 1 of 2, does not change the board yet',
-      executeLabel: 'Confirm apply to board — step 2 of 2, writes this change to the board',
+      executeLabel: 'Apply to board — step 2 of 2, writes this change to the board',
     },
     fileAway: {
       label: 'File away',
@@ -330,7 +338,7 @@ export default {
     spaceKey: 'space',
     enter: {
       approve: 'Approve proposal · step 1 of 2',
-      execute: 'Confirm apply to board · step 2 of 2',
+      execute: 'Apply to board · step 2 of 2',
     },
     edit: 'Request edit · opens composer',
     reject: 'Reject · with optional reason',
@@ -397,13 +405,18 @@ export default {
   // ── Phase-2 confirmation dialog (shared with the Legacy shell) ────────────
   applyDialog: {
     title: 'Apply to the board?',
-    lede: 'This is the second and final step: it executes the approved proposal on your board. Nothing has been written to the board yet.',
+    // #1942: this dialog now opens straight after approve, so it is the ONE
+    // remaining step rather than a confirmation of a confirmation. The copy
+    // states what already happened (approved) and what this click does.
+    lede: 'Approved. Nothing has been written to the board yet — this is the step that applies it.',
     noSummary: 'This proposal has no summary.',
     revisionNote:
       'This proposal was edited — its latest saved revision is what will be applied, not the original operations.',
     contentsWillApply: 'The approved contents of this proposal will be applied.',
     operationsWillApply: '{count} operation will be applied. | {count} operations will be applied.',
-    cancel: 'Cancel',
+    // "Not yet" rather than "Cancel": dismissing does not undo the approval, it
+    // just leaves the proposal approved-but-not-applied (#1942).
+    cancel: 'Not yet',
     confirm: 'Apply to board',
   },
 

@@ -276,7 +276,8 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
+  // GH-1942: approve hands straight to the confirmation, so it is already open.
+  await expectApplyConfirmDialog(page)
   await assertOk(await executeResponse, `execute proposal ${proposalId}`)
   await expect(queueItem).toHaveCount(0)
 

@@ -81,11 +81,11 @@ export default {
     },
     approvedBanner: {
       title: 'Aprobada — todavía no aplicada al tablero.',
-      body: 'Pulsa ⏎ (o “{action}”) para ejecutarla en el tablero; se te pedirá confirmación.',
+      body: 'Queda un paso: pulsa ⏎ (o “{action}”) para escribirla en el tablero. Hasta entonces no cambia nada.',
     },
     keyHint: {
       fileAway: 'PULSA ⌫ PARA ARCHIVAR',
-      confirmApply: 'PULSA ⏎ PARA CONFIRMAR · ⌫ PARA RECHAZAR',
+      confirmApply: 'PULSA ⏎ PARA APLICAR AL TABLERO · ⌫ PARA RECHAZAR',
       approve: 'PULSA ⏎ PARA APROBAR · ⌫ PARA RECHAZAR',
     },
     footer: 'REVISIÓN · {serial} · LOCAL-FIRST · REGISTRO',
@@ -107,17 +107,17 @@ export default {
     },
     step: {
       approve: 'Paso 1 de 2 · aprobar no cambia el tablero',
-      execute: 'Paso 2 de 2 · confirma para escribirlo en el tablero',
+      execute: 'Paso 2 de 2 · esto lo escribe en el tablero',
     },
     reject: 'Rechazar',
     requestEdit: 'Pedir cambios',
     defer: 'Posponer',
     apply: {
       approve: 'Aprobar',
-      execute: 'Confirmar aplicación',
+      execute: 'Aplicar al tablero',
       approveLabel: 'Aprobar la propuesta — paso 1 de 2, todavía no cambia el tablero',
       executeLabel:
-        'Confirmar la aplicación al tablero — paso 2 de 2, escribe este cambio en el tablero',
+        'Aplicar al tablero — paso 2 de 2, escribe este cambio en el tablero',
     },
     fileAway: {
       label: 'Archivar',
@@ -279,7 +279,7 @@ export default {
     spaceKey: 'espacio',
     enter: {
       approve: 'Aprobar la propuesta · paso 1 de 2',
-      execute: 'Confirmar la aplicación al tablero · paso 2 de 2',
+      execute: 'Aplicar al tablero · paso 2 de 2',
     },
     edit: 'Pedir cambios · abre el Composer',
     reject: 'Rechazar · con motivo opcional',
@@ -337,13 +337,13 @@ export default {
 
   applyDialog: {
     title: '¿Aplicar al tablero?',
-    lede: 'Este es el segundo y último paso: ejecuta la propuesta aprobada en tu tablero. Todavía no se ha escrito nada en el tablero.',
+    lede: 'Aprobada. Todavía no se ha escrito nada en el tablero — este es el paso que la aplica.',
     noSummary: 'Esta propuesta no tiene resumen.',
     revisionNote:
       'Esta propuesta se editó — se aplicará su última revisión guardada, no las operaciones originales.',
     contentsWillApply: 'Se aplicará el contenido aprobado de esta propuesta.',
     operationsWillApply: 'Se aplicará {count} operación. | Se aplicarán {count} operaciones.',
-    cancel: 'Cancelar',
+    cancel: 'Todavía no',
     confirm: 'Aplicar al tablero',
   },
 

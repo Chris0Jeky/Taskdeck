@@ -84,8 +84,13 @@ describe('ApplyToBoardDialog', () => {
   it('states that the board has not been written to yet', () => {
     mountDialog(makeProposal())
     const dialog = document.body.querySelector('[data-testid="apply-confirm-dialog"]')
-    expect(dialog?.textContent).toContain('second and final step')
+    // GH-1942: this dialog now opens straight after approve, so it is THE
+    // remaining step, not a confirmation of the "Confirm apply" click that used
+    // to sit between the two. It must still say the board is untouched.
+    expect(dialog?.textContent).toContain('Approved.')
+    expect(dialog?.textContent).toContain('this is the step that applies it')
     expect(dialog?.textContent).toContain('Nothing has been written to the board yet')
+    expect(dialog?.textContent).not.toContain('second and final step')
   })
 
   it('pluralizes the operation count it is about to apply', () => {
