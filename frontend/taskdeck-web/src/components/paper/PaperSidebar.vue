@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useProductVersion } from '../../composables/useProductVersion'
 import { useViewportMode } from '../../composables/useViewportMode'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
@@ -41,12 +42,9 @@ type PaperNavItem = PaperNavItemBase & {
 const props = withDefaults(
   defineProps<{
     workspaceName?: string
-    /** Version label shown in the footer (mono). */
-    version?: string
   }>(),
   {
     workspaceName: 'Solo Workspace',
-    version: 'v0.7.2',
   },
 )
 
@@ -59,6 +57,9 @@ const route = useRoute()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+// Footer version stamp (#1948): sourced from the running backend's stamped
+// release version, never a literal in this file.
+const { displayVersion } = useProductVersion()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
 const phoneMoreOpen = ref(false)
@@ -718,7 +719,11 @@ defineExpose({
       <div class="paper-sidebar__footer">
         <div class="paper-sidebar__footer-status">
           <PaperStatusPill kind="live">SYSTEM LIVE</PaperStatusPill>
-          <span class="paper-sidebar__version">{{ version }}</span>
+          <span
+            v-if="displayVersion"
+            class="paper-sidebar__version"
+            data-testid="paper-sidebar-version"
+          >{{ displayVersion }}</span>
         </div>
         <button
           type="button"
