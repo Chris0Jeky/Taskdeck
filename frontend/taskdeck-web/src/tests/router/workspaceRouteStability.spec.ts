@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import router from '../../router'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useMetricsStore } from '../../store/metricsStore'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../../utils/storageKeys'
@@ -406,6 +407,32 @@ describe('metrics board selection route stability (#687)', () => {
     expect(metricsStore.error).toBeNull()
     // Workspace mode must be untouched
     expect(store.mode).toBe('agent')
+  })
+})
+
+// ─── Named route targets relied on by shell controls ──────────────────────────
+
+/**
+ * The Paper top bar's bell and gear navigate by route NAME
+ * (`router.push({ name: 'workspace-notifications' })`), not by path. If either
+ * name is renamed or dropped from the table, vue-router logs a warning and does
+ * not navigate: the buttons go back to rendering enabled and doing nothing,
+ * which is exactly the defect #1932 fixed. A path-based spec would not catch
+ * that, so pin the names against the REAL router table here.
+ */
+describe('named route targets used by the Paper top bar (#1932)', () => {
+  const TOPBAR_ROUTE_NAMES = ['workspace-notifications', 'workspace-settings-appearance']
+
+  it.each(TOPBAR_ROUTE_NAMES)('the router table defines a route named %s', (name) => {
+    const names = router.getRoutes().map((route) => route.name)
+    expect(names).toContain(name)
+  })
+
+  it('resolves each named target to a concrete workspace path', () => {
+    expect(router.resolve({ name: 'workspace-notifications' }).path)
+      .toBe('/workspace/notifications')
+    expect(router.resolve({ name: 'workspace-settings-appearance' }).path)
+      .toBe('/workspace/settings/appearance')
   })
 })
 
