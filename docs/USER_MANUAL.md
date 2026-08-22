@@ -45,8 +45,17 @@ Workspace modes are display preferences, not permission boundaries.
 
 The reduced sidebar keeps the normal loop prominent:
 
-- core destinations: `Home`, `Today`, `Review`, `Boards`, `Inbox`
+- core destinations, in sidebar order: `Home`, `Today`, `Inbox`, `Review`, `Boards`
 - `Search` / `Ctrl+K` is the complete finder for every currently available route
+
+The order is the loop as you actually walk it -- the two orientation surfaces first, then
+capture (`Inbox`) to review (`Review`) to board (`Boards`). `Inbox` used to sit last even though it
+is the loop's entry point. The same order drives the phone tab bar and the command palette.
+
+That order describes the **Paper** skin, which is the canonical UI (ADR-0038). The frozen Legacy
+shell deliberately keeps its older order -- `Today`, `Review`, `Boards`, `Inbox`, with `Home`
+reachable but not pinned to the sidebar -- because ADR-0038 froze it and reordering it would only
+create a second divergence.
 
 Guided mode keeps designated operator destinations under an explicit `Advanced` disclosure and respects feature flags.
 
