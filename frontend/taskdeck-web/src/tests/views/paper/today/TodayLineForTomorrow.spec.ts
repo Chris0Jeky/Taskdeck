@@ -248,6 +248,45 @@ describe('TodayLineForTomorrow', () => {
     expect(wrapper.emitted('save')).toBeUndefined()
   })
 
+  // --- issue 1983: the lifecycle line has to agree with the status ----------
+
+  it('stops describing a successful save while the status reports a rejected one', async () => {
+    // The defect: status said "Save unavailable" while the line beside it still
+    // read "saved with today's date" — two opposite reports of the same save.
+    const save = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(undefined)
+    const wrapper = mount(TodayLineForTomorrow, {
+      props: {
+        storageKey: KEY,
+        debounceMs: 100,
+        initial: '',
+        useStoredDraft: false,
+        save,
+      },
+    })
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+
+    await input.setValue('rejected text')
+    await vi.advanceTimersByTimeAsync(150)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Save unavailable')
+    const failed = wrapper.find('[data-testid="line-for-tomorrow-lifecycle"]').text()
+    expect(failed).toContain('not saved')
+    expect(failed).not.toContain('saved with today’s date')
+
+    // And it comes back when a later save succeeds — the line tracks state, it
+    // is not a one-way switch to the failure wording.
+    await input.setValue('accepted text')
+    await vi.advanceTimersByTimeAsync(150)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saved')
+    expect(wrapper.find('[data-testid="line-for-tomorrow-lifecycle"]').text())
+      .toBe('saved with today’s date')
+  })
+
   it('passes the edit-time save date even if prop changes before debounce flushes', async () => {
     const save = vi.fn().mockResolvedValue(undefined)
     const wrapper = mount(TodayLineForTomorrow, {

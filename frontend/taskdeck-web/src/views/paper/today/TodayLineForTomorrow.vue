@@ -15,6 +15,12 @@ import { useI18n } from 'vue-i18n'
  * SAME date — no day shift happens anywhere in the chain (issue 1640). The meta
  * therefore describes that, and must not promise a tomorrow hand-off. If 1640
  * decides in favour of the shift, this copy moves with it.
+ *
+ * That lifecycle line is state-dependent (issue 1983): when a save is rejected
+ * nothing was written — `flush` sets `error` either because the localStorage
+ * write threw before any backend call, or because `props.save` rejected — so
+ * the line must not keep describing a note "saved with today's date" next to a
+ * status that reads "Save unavailable".
  */
 const props = withDefaults(
   defineProps<{
@@ -171,7 +177,9 @@ onBeforeUnmount(() => {
         <template v-else-if="status === 'error'">Save unavailable</template>
         <template v-else>Saved · auto</template>
       </span>
-      <span data-testid="line-for-tomorrow-lifecycle">{{ t('today.note.meta') }}</span>
+      <span data-testid="line-for-tomorrow-lifecycle">
+        {{ status === 'error' ? t('today.note.metaFailed') : t('today.note.meta') }}
+      </span>
     </div>
   </div>
 </template>
