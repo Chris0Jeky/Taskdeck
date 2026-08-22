@@ -374,9 +374,10 @@ public class DirectCrudAuditActorTests
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
 
-        // Label CRUD has no proposal-apply lane (OperationHandlerRegistry only resolves existing
-        // labels and mutates cards), so this positional-token overload is the whole no-actor
-        // surface: non-request callers such as tests and MCP seeding. It must not invent an actor.
+        // Label CRUD has no proposal-apply lane: OperationHandlerRegistry only resolves existing
+        // labels and routes its writes through CardService, and the MCP surface reads labels only.
+        // So this positional-token overload is the whole no-actor surface — non-request callers,
+        // today just tests. It must not invent an actor.
         var result = await NewLabelService().CreateLabelAsync(dto, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
