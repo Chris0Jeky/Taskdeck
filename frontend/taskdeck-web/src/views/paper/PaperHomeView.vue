@@ -205,10 +205,70 @@ const showFirstBoardSetup = computed(() => summary.value?.boards.totalBoards ===
 const showEmptyState = computed(() =>
   summary.value !== null && queueCards.value.length === 0 && !showFirstBoardSetup.value,
 )
-const completedMilestones = computed(() =>
-  onboarding.value?.steps.filter((step) => step.isComplete).length ?? 0,
-)
 const showSetupModal = ref(false)
+
+// ── Milestones (#1936) ───────────────────────────────────────────────────
+//
+// The first-loop block is first-run onboarding, so it stays prominent while
+// there is anything left to do. Once every step is ticked it has no remaining
+// function, and leaving the largest element on the page as a finished tutorial
+// is what made Home read as a walkthrough instead of a dashboard. So:
+//
+//   • incomplete            → full block, unchanged (prominent onboarding);
+//   • complete              → auto-collapsed to a single line, expandable for
+//                             the session and dismissible for good;
+//   • visibility dismissed  → not rendered at all.
+//
+// Dismissal is NOT a new client-side preference: it reuses the existing
+// server-persisted workspace onboarding visibility (`updateOnboarding`, the
+// same call Legacy Home's Dismiss makes), so it survives reload, a new device,
+// and both skins. Honouring `visibility` here also fixes Paper ignoring a
+// dismissal made from the Legacy Home or Today surfaces.
+
+const milestoneSteps = computed(() => onboarding.value?.steps ?? [])
+const totalMilestones = computed(() => milestoneSteps.value.length)
+const completedMilestones = computed(
+  () => milestoneSteps.value.filter((step) => step.isComplete).length,
+)
+
+// Complete when the server says so OR when every step is ticked — the two
+// agree in practice, and the derived count keeps the collapse honest if a
+// payload's flag ever lags its steps.
+const milestonesComplete = computed(
+  () =>
+    totalMilestones.value > 0 &&
+    (onboarding.value?.isComplete === true ||
+      completedMilestones.value === totalMilestones.value),
+)
+
+const milestonesDismissed = computed(() => onboarding.value?.visibility === 'dismissed')
+const showMilestones = computed(() => totalMilestones.value > 0 && !milestonesDismissed.value)
+
+// Session-scoped override of the auto-collapse. Deliberately not persisted:
+// collapsed is the right default on every visit once the loop is done, and an
+// expand is a one-off "let me look again", not a preference.
+const milestonesExpandedByUser = ref(false)
+const milestonesExpanded = computed(
+  () => !milestonesComplete.value || milestonesExpandedByUser.value,
+)
+const milestonesDismissBusy = ref(false)
+
+function toggleMilestones() {
+  milestonesExpandedByUser.value = !milestonesExpandedByUser.value
+}
+
+async function dismissMilestones() {
+  if (milestonesDismissBusy.value) return
+  milestonesDismissBusy.value = true
+  try {
+    await workspace.updateOnboarding('dismiss')
+  } catch {
+    // The store applies the dismissal optimistically, keeps it flagged unsaved
+    // and raises its own warning toast; nothing to add here.
+  } finally {
+    milestonesDismissBusy.value = false
+  }
+}
 
 function openSetupModal() {
   showSetupModal.value = true
@@ -444,43 +504,73 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     </section>
 
     <section
-      v-if="onboarding?.steps.length"
-      class="paper-home__milestones"
+      v-if="showMilestones"
+      :class="['paper-home__milestones', { 'paper-home__milestones--collapsed': !milestonesExpanded }]"
       aria-labelledby="paper-home-milestones-title"
       data-testid="paper-home-milestones"
+      :data-milestones-state="milestonesExpanded ? 'expanded' : 'collapsed'"
     >
       <div class="paper-home__milestones-heading">
         <div>
-          <p class="tk-eyebrow">{{ $t('home.milestones.eyebrow') }}</p>
+          <p v-if="milestonesExpanded" class="tk-eyebrow">{{ $t('home.milestones.eyebrow') }}</p>
           <h2 id="paper-home-milestones-title" class="paper-home__milestones-title">
-            {{ $t('home.milestones.title') }}
+            {{ milestonesComplete ? $t('home.milestones.completeTitle') : $t('home.milestones.title') }}
           </h2>
         </div>
-        <span class="tk-meta">
-          {{ $t('home.milestones.progress', { completed: completedMilestones, total: onboarding.steps.length }) }}
-        </span>
+        <div class="paper-home__milestones-controls">
+          <span class="tk-meta" data-testid="paper-home-milestones-progress">
+            {{ $t('home.milestones.progress', { completed: completedMilestones, total: totalMilestones }) }}
+          </span>
+          <!--
+            Offered only once the loop is done: while it is unfinished the
+            block is real onboarding and stays whole (#1936).
+          -->
+          <template v-if="milestonesComplete">
+            <button
+              type="button"
+              class="paper-home__milestones-control"
+              :aria-expanded="milestonesExpanded"
+              aria-controls="paper-home-milestones-body"
+              data-testid="paper-home-milestones-toggle"
+              @click="toggleMilestones"
+            >
+              {{ milestonesExpanded ? $t('home.milestones.collapse') : $t('home.milestones.expand') }}
+            </button>
+            <button
+              type="button"
+              class="paper-home__milestones-control"
+              :disabled="milestonesDismissBusy"
+              data-testid="paper-home-milestones-dismiss"
+              @click="dismissMilestones"
+            >
+              {{ $t('home.milestones.dismiss') }}
+            </button>
+          </template>
+        </div>
       </div>
-      <ol class="paper-home__milestone-list">
-        <li
-          v-for="step in onboarding.steps"
-          :key="step.stepId"
-          :class="['paper-home__milestone', { 'paper-home__milestone--complete': step.isComplete }]"
-        >
-          <span class="paper-home__milestone-mark" aria-hidden="true">
-            {{ step.isComplete ? '✓' : '○' }}
-          </span>
-          <span>
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.description }}</small>
-          </span>
-          <span class="sr-only">
-            {{ step.isComplete ? $t('home.milestones.stepComplete') : $t('home.milestones.stepIncomplete') }}
-          </span>
-        </li>
-      </ol>
-      <p class="tk-meta paper-home__milestones-note">
-        {{ $t('home.milestones.note') }}
-      </p>
+      <div v-if="milestonesExpanded" id="paper-home-milestones-body">
+        <ol class="paper-home__milestone-list">
+          <li
+            v-for="step in milestoneSteps"
+            :key="step.stepId"
+            :class="['paper-home__milestone', { 'paper-home__milestone--complete': step.isComplete }]"
+          >
+            <span class="paper-home__milestone-mark" aria-hidden="true">
+              {{ step.isComplete ? '✓' : '○' }}
+            </span>
+            <span>
+              <strong>{{ step.title }}</strong>
+              <small>{{ step.description }}</small>
+            </span>
+            <span class="sr-only">
+              {{ step.isComplete ? $t('home.milestones.stepComplete') : $t('home.milestones.stepIncomplete') }}
+            </span>
+          </li>
+        </ol>
+        <p class="tk-meta paper-home__milestones-note">
+          {{ $t('home.milestones.note') }}
+        </p>
+      </div>
     </section>
 
     <section class="paper-home__capture" :aria-label="$t('home.capture.label')">
@@ -689,12 +779,27 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   box-shadow: var(--shadow-card);
 }
 
+/*
+  Collapsed (#1936): a finished loop is a one-line receipt, not a panel. Drop
+  the card weight so it reads as a footnote under the live content above it.
+*/
+.paper-home__milestones--collapsed {
+  padding: 10px 14px;
+  background: transparent;
+  box-shadow: none;
+}
+
 .paper-home__milestones-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.paper-home__milestones--collapsed .paper-home__milestones-heading {
+  align-items: center;
+  margin-bottom: 0;
 }
 
 .paper-home__milestones-heading p {
@@ -707,6 +812,44 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   font-size: 20px;
   font-weight: 500;
   color: var(--ink-deep);
+}
+
+.paper-home__milestones--collapsed .paper-home__milestones-title {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.paper-home__milestones-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.paper-home__milestones-control {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.paper-home__milestones-control:hover:not(:disabled) {
+  border-color: var(--ember);
+  color: var(--ink-deep);
+}
+
+.paper-home__milestones-control:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+.paper-home__milestones-control:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .paper-home__milestone-list {
