@@ -397,6 +397,15 @@ async function addStarterColumns() {
         </div>
       </header>
 
+      <!--
+        The banner reports; it does not replace. It used to head the same
+        `v-if` chain as the lanes, so ANY store error — including a rejected
+        direct add-card, which sets `state.error` before it rethrows — unmounted
+        every lane and took the user's half-typed draft with it (GH-1959). It
+        now renders above whatever follows. The empty state still wins where it
+        applies: it owns `emptyStateError`, so `!isEmptyBoard` keeps the banner
+        out of its way.
+      -->
       <section
         v-if="boardStore.error && !isEmptyBoard"
         class="paper-board-view__error"
@@ -406,7 +415,7 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-else-if="!boardStore.currentBoard && boardStore.loading"
+        v-if="!boardStore.currentBoard && boardStore.loading"
         class="paper-board-view__loading"
         aria-live="polite"
       >
@@ -414,7 +423,7 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-else-if="sortedColumns.length === 0"
+        v-else-if="isEmptyBoard"
         class="paper-board-view__empty"
         data-testid="paper-board-empty"
       >
@@ -462,8 +471,13 @@ async function addStarterColumns() {
         </p>
       </section>
 
+      <!--
+        `v-else-if` rather than a bare `v-else`: with the banner lifted out of
+        this chain, a board that failed to load (no `currentBoard`) must render
+        neither the column-bootstrap empty state nor an empty lane rail.
+      -->
       <div
-        v-else
+        v-else-if="boardStore.currentBoard"
         class="paper-board-view__lanes"
         :class="{ 'paper-board-view__lanes--snap': viewportMode === 'tablet' }"
         data-testid="paper-board-lanes"

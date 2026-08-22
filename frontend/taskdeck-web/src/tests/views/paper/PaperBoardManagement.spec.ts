@@ -202,22 +202,44 @@ describe('PaperBoardView — direct add-card', () => {
     expect(mockBoardStore.createCard).not.toHaveBeenCalled()
   })
 
-  it('keeps the draft and surfaces an error when the create fails', async () => {
-    mockBoardStore.createCard.mockRejectedValueOnce(new Error('boom'))
+  it('keeps the board, the draft and the inline error when the create fails', async () => {
+    // A stub that only rejects proves nothing here. The REAL store sets
+    // `state.error` inside `handleApiError` and only then rethrows
+    // (`store/board/cardStore.ts` createCard), and it was that store error —
+    // not the rejection — that used to blank the board: the view's error
+    // banner headed the same `v-if` chain as the lanes, so every lane and the
+    // user's draft unmounted, and this very assertion could never have run.
+    mockBoardStore.createCard.mockImplementationOnce(async () => {
+      mockBoardStore.error = 'Failed to create card'
+      throw new Error('boom')
+    })
     const wrapper = mountView()
 
-    const column = wrapper.findAll('[data-column-id]')[1]!
-    await column.get('[data-testid="paper-column-add-card"]').trigger('click')
-    await column.get('[data-action="add-card-input"]').setValue('Write the ADR')
-    await column.get('[data-testid="paper-card-composer"]').trigger('submit')
+    await wrapper.findAll('[data-column-id]')[1]!
+      .get('[data-testid="paper-column-add-card"]')
+      .trigger('click')
+    await wrapper.findAll('[data-column-id]')[1]!
+      .get('[data-action="add-card-input"]')
+      .setValue('Write the ADR')
+    await wrapper.findAll('[data-column-id]')[1]!
+      .get('[data-testid="paper-card-composer"]')
+      .trigger('submit')
     await flushPromises()
 
+    // The board survives the failure — it is what carries the draft.
+    expect(wrapper.find('[data-testid="paper-board-lanes"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-column-id]')).toHaveLength(3)
+
+    // The inline error is reachable at all, and the draft is still there.
     expect(wrapper.get('[data-testid="paper-card-composer-error"]').text()).toContain(
       'Could not add the card',
     )
     expect(
-      (column.get('[data-action="add-card-input"]').element as HTMLTextAreaElement).value,
+      (wrapper.get('[data-action="add-card-input"]').element as HTMLTextAreaElement).value,
     ).toBe('Write the ADR')
+
+    // The store error is still reported — above the board, not instead of it.
+    expect(wrapper.get('.paper-board-view__error').text()).toBe('Failed to create card')
   })
 
   it('cancels the composer without creating anything', async () => {
