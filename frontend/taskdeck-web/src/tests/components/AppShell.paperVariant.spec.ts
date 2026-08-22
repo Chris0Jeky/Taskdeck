@@ -97,6 +97,18 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: 0 }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
+// Every paper-mode mount below renders the real PaperSidebar, which reads the
+// product version through `useProductVersion`. Unstubbed, that fires a genuine
+// request at the configured API root (`http://localhost:5000/health/live`) from
+// happy-dom — passing quietly on a box with no backend, behaving differently on
+// one where the API is up, and repeating on every mount because the failed load
+// clears the memo. Stub the transport; this suite is about shell routing.
+vi.mock('../../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
+}))
+
 function mountShell() {
   return mount(AppShell, {
     global: {
