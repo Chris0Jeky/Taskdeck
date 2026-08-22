@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
@@ -148,6 +149,9 @@ async function mountView(
   path = '/workspace/review',
   boards: unknown[] = [],
   columns: unknown[] = [],
+  // `document.activeElement` only tracks elements that are in the document, so
+  // the focus specs need a real attachment; everything else mounts detached.
+  options: { attachTo?: boolean } = {},
 ) {
   mocks.getProposals.mockResolvedValueOnce(proposals)
   mocks.getBoards.mockResolvedValueOnce(boards)
@@ -163,6 +167,7 @@ async function mountView(
     global: {
       plugins: [router],
     },
+    ...(options.attachTo ? { attachTo: document.body } : {}),
   })
   await flushPromises()
   return wrapper
@@ -2662,6 +2667,103 @@ describe('PaperReviewView', () => {
       await flushPromises()
       expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      wrapper.unmount()
+    })
+
+    // The collapse introduced an await between the click and the dialog. Two
+    // things that used to be impossible now are: focus is elsewhere when the
+    // dialog mounts, and the reviewer can move the queue underneath it.
+
+    it('returns focus to the rail when the auto-opened dialog is dismissed', async () => {
+      // NOTE ON FIDELITY. jsdom does NOT implement the HTML rule that a focused
+      // element losing focusability (here: `disabled` flipping on while the
+      // approve call is in flight) moves focus to the body — it leaves
+      // activeElement pointing at the disabled button. Left implicit, this spec
+      // would pass with the restore deleted, because TdDialog's own capture
+      // would still be holding the trigger. So the blur is performed
+      // explicitly: it is the browser behaviour under test, not a convenience.
+      let resolveApprove!: (proposal: Proposal) => void
+      mocks.approveProposal.mockImplementationOnce(
+        () =>
+          new Promise<Proposal>((resolve) => {
+            resolveApprove = resolve
+          }),
+      )
+      const wrapper = await mountView(
+        [makeProposal({ id: 'focus-1' })],
+        '/workspace/review',
+        [],
+        [],
+        { attachTo: true },
+      )
+
+      const trigger = wrapper.get('[data-testid="decision-apply"]').element as HTMLButtonElement
+      trigger.focus()
+      expect(document.activeElement).toBe(trigger)
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      // The shared busy lock disables the trigger for the whole round trip…
+      expect(trigger.disabled).toBe(true)
+      // …which is what strands focus on <body> in a real browser. (`blur()` is
+      // not the way to model it here: jsdom ignores blur() on an element that
+      // is no longer a focusable area, which a disabled button is not.)
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
+
+      // Only NOW does the dialog open, so the only return target TdDialog can
+      // capture for itself is <body> — a restore it makes into a no-op.
+      resolveApprove(makeProposal({ id: 'focus-1', status: 'Approved' }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      const cancel = document.body.querySelector(
+        '[data-testid="apply-confirm-cancel"]',
+      ) as HTMLButtonElement
+      cancel.click()
+      await flushPromises()
+      await nextTick()
+
+      // Not <body>: a keyboard user picks up on the control they left, rather
+      // than restarting at the top of the document.
+      expect(document.activeElement).not.toBe(document.body)
+      expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
+
+      wrapper.unmount()
+    })
+
+    it('does not open the confirmation against a proposal switched during the approve round trip', async () => {
+      let resolveApprove!: (proposal: Proposal) => void
+      mocks.approveProposal.mockImplementationOnce(
+        () =>
+          new Promise<Proposal>((resolve) => {
+            resolveApprove = resolve
+          }),
+      )
+      const wrapper = await mountView([
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ])
+
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+
+      // The busy lock covers the decision buttons and the keymap, NOT the queue:
+      // switching proposals mid-flight is a real thing a reviewer can do.
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+
+      resolveApprove(makeProposal({ id: 'aaa-1', status: 'Approved' }))
+      await flushPromises()
+
+      // The approval stands, and nothing was written to the board — but the
+      // reviewer is not asked to confirm an apply for a proposal they left.
+      expect(mocks.approveProposal).toHaveBeenCalledWith('aaa-1')
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
 
       wrapper.unmount()
     })

@@ -781,6 +781,49 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
   return revisionCount.value
 })
 
+// --- Apply-flow focus restoration (GH-1942) ----------------------------
+//
+// TdDialog restores focus to whatever `document.activeElement` was when it
+// opened. That worked while the dialog opened synchronously inside the click:
+// the rail's primary button still had focus. Now the button is `disabled` for
+// the whole approve round trip, so the browser has already moved focus to
+// <body> by the time the dialog mounts — TdDialog captures <body>, its restore
+// is a no-op, and a keyboard user who backs out lands at the top of the
+// document instead of on the control they just used.
+//
+// So the view captures the trigger itself, BEFORE the approve call, and puts
+// focus back when the dialog closes — on any exit, including a completed
+// apply. TdDialog is a shared primitive with no return-focus target prop and is
+// deliberately not touched here.
+const mainColRef = ref<HTMLElement | null>(null)
+let applyReturnFocusEl: HTMLElement | null = null
+
+// The rail's primary control, whichever it currently is: the decision button,
+// or the filing button the rail becomes once the proposal is applied and
+// settled. Scoped to the main column so it cannot reach another surface.
+function decisionRailFocusTarget(): HTMLElement | null {
+  const root = mainColRef.value
+  if (!root) return null
+  return (
+    root.querySelector<HTMLElement>('[data-testid="decision-apply"]') ??
+    root.querySelector<HTMLElement>('[data-testid="decision-file-away"]')
+  )
+}
+
+watch(executeConfirmProposal, (pending, previous) => {
+  // Only on close (open → closed), never on the open itself.
+  if (pending !== null || !previous) return
+  const captured = applyReturnFocusEl
+  applyReturnFocusEl = null
+  // After the flush: the rail may have just re-rendered (execute lands → the
+  // decision rail becomes the filing rail), and TdDialog's own <body> restore
+  // runs in that same flush and would otherwise overwrite this.
+  void nextTick(() => {
+    const target = captured?.isConnected ? captured : decisionRailFocusTarget()
+    target?.focus?.()
+  })
+})
+
 function onFileAway() {
   const p = activeProposal.value
   if (!p) return
@@ -809,6 +852,9 @@ async function onApply() {
   const p = activeProposal.value
   if (!p) return
   if (applyGuardBusy.value) return
+  // Captured here, before anything can await: the primary button is disabled —
+  // and so blurred — for the whole approve round trip (GH-1942).
+  applyReturnFocusEl = decisionRailFocusTarget()
   if (revisionBusy.value) {
     toast.info(t('review.toast.revisionBusyApply'))
     return
@@ -881,6 +927,16 @@ async function onApply() {
   // execute call still happens ONLY if the human accepts the dialog, and
   // dismissing it leaves the proposal approved-but-not-applied with the banner
   // and the ember rail saying exactly that. Nothing auto-applies.
+  //
+  // GH-1942 L1: the queue rail stays clickable through the approve round trip
+  // (only the decision buttons and the keymap take the busy lock), so the
+  // reviewer can be looking at a different proposal by the time approve
+  // returns. Opening the confirmation then would ask them to write a proposal
+  // they have navigated away from. The approval itself stands either way — the
+  // ember rail and the approved-but-not-applied banner carry it, and the
+  // primary button reopens this same step — so skip the hand-off rather than
+  // open it against a switched context.
+  if (activeProposal.value?.id !== p.id) return
   const approved = proposals.value.find((item) => item.id === p.id)
   if (!approved) return
   // Approve failed (the composable toasts and leaves the row untouched), or the
@@ -1226,7 +1282,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       @file-away-all="onFileAwayBulk"
     />
 
-    <div v-if="activeProposal" class="paper-review-deep__main-col">
+    <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
       <div
         v-if="revisionCount > 0"
         class="paper-review-deep__revision-badge"
