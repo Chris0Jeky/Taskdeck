@@ -104,6 +104,8 @@ describe('PaperSidebar', () => {
     expect(chip.attributes('tabindex')).toBeUndefined()
     expect(wrapper.find('button.paper-sidebar__workspace').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('Switch workspace')
+    // The initial duplicates the name that follows it; do not read it twice.
+    expect(wrapper.find('.paper-sidebar__workspace-glyph').attributes('aria-hidden')).toBe('true')
   })
 
   // #1934 — the primary group is ordered as the loop is walked:

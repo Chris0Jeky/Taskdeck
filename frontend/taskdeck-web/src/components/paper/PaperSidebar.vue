@@ -620,7 +620,7 @@ defineExpose({
 
       <!-- Non-interactive identity chip, not a switcher — see workspaceInitial (#1934). -->
       <div class="paper-sidebar__workspace" data-testid="paper-sidebar-workspace">
-        <span class="paper-sidebar__workspace-glyph">{{ workspaceInitial }}</span>
+        <span class="paper-sidebar__workspace-glyph" aria-hidden="true">{{ workspaceInitial }}</span>
         <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
       </div>
 
