@@ -212,7 +212,7 @@ export default {
     // is the backend `provider/model` identifier — wire text, interpolated verbatim.
     footnote: {
       deterministic:
-        'Recorded provenance: {label} — Taskdeck’s deterministic offline extractor produced this proposal. No AI provider was called.',
+        'Recorded provenance: {label} — Taskdeck’s deterministic offline extractor produced this proposal.',
       mock: 'Recorded provenance: {label} — Taskdeck’s built-in mock provider produced this proposal, not a live model.',
       provider:
         'Recorded provenance: {label} — your configured AI provider produced this proposal, so its source text was sent to that provider.',
