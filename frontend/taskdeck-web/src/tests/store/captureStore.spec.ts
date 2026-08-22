@@ -8,6 +8,10 @@ const toastMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }))
 
+const workspaceMocks = vi.hoisted(() => ({
+  refreshWorkloadCounts: vi.fn(async () => {}),
+}))
+
 vi.mock('../../api/captureApi', () => ({
   captureApi: {
     createItem: vi.fn(),
@@ -23,6 +27,10 @@ vi.mock('../../api/captureApi', () => ({
 
 vi.mock('../../store/toastStore', () => ({
   useToastStore: () => toastMocks,
+}))
+
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => workspaceMocks,
 }))
 
 vi.mock('../../composables/useErrorMapper', () => ({
@@ -231,7 +239,12 @@ describe('captureStore', () => {
 
     expect(store.items[0].id).toBe('c3')
     expect(store.detailById.c3?.rawText).toBe('new full text')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox')
+    // SAVED, never APPLIED (#1970) — nothing has reached a board yet.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox', undefined, {
+      label: 'saved',
+    })
+    // The sidebar badge counts pending captures, so it must be told (#1974).
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   it('updates selection detail after ignore action', async () => {
@@ -341,7 +354,11 @@ describe('captureStore', () => {
     expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7', undefined)
     expect(captureApi.getItem).toHaveBeenCalledWith('c7')
     expect(store.detailById.c7?.status).toBe('Triaging')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
+    // QUEUED, never APPLIED (#1970) — triage is enqueued, not run.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued', undefined, {
+      label: 'queued',
+    })
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   it('forwards the chosen board id to the API when triaging a board-less capture (#1764)', async () => {
