@@ -157,8 +157,13 @@ export default {
     title: 'Procedencia',
     sub: 'Qué se leyó · qué no · qué se dedujo',
     empty: 'Todavía no hay procedencia para esta propuesta.',
-    footnote:
-      'La procedencia refleja el actor detrás de esta propuesta — un extractor determinista sin conexión para las capturas, o el proveedor de IA que hayas configurado para la automatización por chat.',
+    footnote: {
+      deterministic:
+        'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck. No se llamó a ningún proveedor de IA.',
+      mock: 'Procedencia registrada: {label} — esta propuesta la generó el proveedor simulado integrado de Taskdeck, no un modelo real.',
+      provider:
+        'Procedencia registrada: {label} — esta propuesta la generó el proveedor de IA que has configurado, por lo que su texto de origen se envió a ese proveedor.',
+    },
     viewAll: 'Ver todas las fuentes leídas →',
   },
 

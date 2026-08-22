@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'
 import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
+import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
 const props = defineProps<{
   rows: ProvenanceRow[]
@@ -17,6 +18,26 @@ const emit = defineEmits<{
 
 const empty = computed(() => props.rows.length === 0)
 const drawerOpen = ref(false)
+
+/**
+ * The footnote sentence, chosen by the provenance the backend actually recorded for this
+ * proposal rather than by a constant (GH-1963).
+ *
+ * Returns null — and the footnote sentence is then not rendered at all — whenever the
+ * recorded provenance is absent or incoherent. This surface exists to tell the user what
+ * read their text and who saw it, so an unsupported claim here is worse than silence.
+ *
+ * Resolved as a key + params so the template's `$t` re-renders it on a language switch
+ * (ADR-0054); `label` is backend wire text and is interpolated verbatim, never translated.
+ */
+const footnote = computed<{ key: string; params: Record<string, string> } | null>(() => {
+  const actor = classifyProvenanceActor(props.metadata)
+  if (actor.kind === 'unknown') return null
+  return {
+    key: `review.provenance.footnote.${actor.kind}`,
+    params: { label: formatProvenanceActorLabel(actor) },
+  }
+})
 
 function tone(weight: ProvenanceWeight): string {
   switch (weight) {
@@ -57,7 +78,9 @@ function tone(weight: ProvenanceWeight): string {
       </div>
     </div>
     <p class="tk-meta paper-review-prov__footnote">
-      {{ $t('review.provenance.footnote') }}
+      <span v-if="footnote" data-testid="paper-review-provenance-footnote">{{
+        $t(footnote.key, footnote.params)
+      }}</span>
       <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">{{
         $t('review.provenance.viewAll')
       }}</a>
