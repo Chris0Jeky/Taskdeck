@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
@@ -39,6 +39,19 @@ const props = withDefaults(
   }>(),
   { cardVariant: 'index', selectedCardId: null },
 )
+
+const emit = defineEmits<{
+  /**
+   * Fired whenever this view's modal-dialog state changes.
+   *
+   * `BoardView` owns the board keyboard shortcuts but this view owns the
+   * dialogs, so the gate has to be reported upward (GH-1959). Without it `n`
+   * fired straight through an open dialog: it clicked
+   * `[data-action="toggle-add-card"]` on the column behind the modal and then
+   * yanked focus to the composer a moment later.
+   */
+  (event: 'dialog-open-change', open: boolean): void
+}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -238,6 +251,26 @@ const editingColumnLive = computed<Column | null>(() => {
 const editingColumnCardCount = computed(() =>
   editingColumnLive.value ? (cardsByColumn.value.get(editingColumnLive.value.id)?.length ?? 0) : 0,
 )
+
+/**
+ * Every modal dialog this view can put over the board. The inline card composer
+ * is deliberately NOT one: it lives in the lane, does not cover anything, and
+ * `n` on an already-composing column is a documented no-op.
+ */
+const anyDialogOpen = computed(
+  () =>
+    Boolean(selectedCard.value) || Boolean(editingColumnLive.value) || showBoardSettings.value,
+)
+
+watch(anyDialogOpen, (open) => {
+  emit('dialog-open-change', open)
+})
+
+// A skin switch or a route change unmounts this view outright. Leaving the flag
+// stuck at `true` would disable the board shortcuts for the Legacy skin too.
+onBeforeUnmount(() => {
+  if (anyDialogOpen.value) emit('dialog-open-change', false)
+})
 
 function openComposer(column: Column) {
   // A different column's failure is not this column's failure.

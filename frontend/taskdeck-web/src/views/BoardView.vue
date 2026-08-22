@@ -319,37 +319,62 @@ function standardBoardOnlyShortcutsEnabled() {
   return !paperOn.value
 }
 
+/**
+ * True while a Paper board dialog (column settings / board settings / card
+ * modal) covers the board. `PaperBoardView` owns those dialogs and reports the
+ * state up, because the shortcuts are registered here.
+ */
+const paperDialogOpen = ref(false)
+
+/**
+ * Board shortcuts are inert while a dialog is open (GH-1959).
+ *
+ * `useKeyboardShortcuts` only ignores keys typed into an input or textarea, so
+ * with a dialog open and focus anywhere else inside it, `n` still clicked
+ * `[data-action="toggle-add-card"]` on the column BEHIND the modal and then
+ * pulled focus out of the dialog into the composer. `Escape` is intentionally
+ * left ungated: the dialogs close themselves through the shared escape stack,
+ * and gating it here would only risk stranding one open.
+ */
+function boardShortcutsEnabled() {
+  return !paperDialogOpen.value
+}
+
 // Setup keyboard shortcuts
 // Card movement shortcuts (Alt+Arrow) are listed before plain Arrow navigation
 // so the modifier-qualified binding matches first. Plain arrow navigation
 // explicitly sets `alt: false` to avoid firing when Alt is held.
 // PaperBoardView still uses the shared board keyboard navigation state, but
 // shortcuts that depend on hidden standard-board controls stay scoped out.
+// Every binding below except `Escape` carries `boardShortcutsEnabled`, so an
+// open Paper dialog makes them inert instead of letting them act on the board
+// underneath it.
 useKeyboardShortcuts([
   // Card movement (Alt + Arrow keys)
-  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn },
-  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn },
-  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp },
-  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown },
+  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp, enabled: boardShortcutsEnabled },
+  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown, enabled: boardShortcutsEnabled },
 
   // Navigation
-  { key: 'j', description: 'Next card', action: selectNextCard },
-  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard },
-  { key: 'k', description: 'Previous card', action: selectPreviousCard },
-  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard },
-  { key: 'h', description: 'Previous column', action: selectPreviousColumn },
-  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn },
-  { key: 'l', description: 'Next column', action: selectNextColumn },
-  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn },
+  { key: 'j', description: 'Next card', action: selectNextCard, enabled: boardShortcutsEnabled },
+  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard, enabled: boardShortcutsEnabled },
+  { key: 'k', description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
+  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
+  { key: 'h', description: 'Previous column', action: selectPreviousColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn, enabled: boardShortcutsEnabled },
+  { key: 'l', description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },
 
   // Actions
-  { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
+  { key: 'Enter', description: 'Open selected card', action: openSelectedCard, enabled: boardShortcutsEnabled },
   // `n` is NOT gated to the standard board any more (#1945). It was, because
   // the Paper column had no `[data-action="toggle-add-card"]` button for
   // `createCardInSelectedColumn` to click — so the key was a silent no-op.
   // PaperBoardColumn now renders that button and the `[data-action="add-card-input"]`
-  // textarea it focuses, so the same DOM contract satisfies both skins.
-  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
+  // textarea it focuses, so the same DOM contract satisfies both skins. It is
+  // gated on the DIALOG state instead, which is a different question.
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: boardShortcutsEnabled },
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
@@ -359,7 +384,11 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <PaperBoardView v-if="paperOn" :selected-card-id="selectedCardId" />
+  <PaperBoardView
+    v-if="paperOn"
+    :selected-card-id="selectedCardId"
+    @dialog-open-change="paperDialogOpen = $event"
+  />
   <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">

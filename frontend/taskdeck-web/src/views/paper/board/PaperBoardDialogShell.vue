@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onUnmounted, ref, watch } from 'vue'
 import PaperKbd from '../../../components/paper/PaperKbd.vue'
 import { useEscapeToClose } from '../../../composables/useEscapeToClose'
 
@@ -34,6 +35,44 @@ function close() {
 }
 
 useEscapeToClose(() => props.isOpen, close)
+
+/**
+ * Focus on open, focus back on close (GH-1959).
+ *
+ * Opening a modal that leaves focus on the button behind it is how a keystroke
+ * aimed at the dialog reaches the board instead. This mirrors `TdDialog.vue`'s
+ * approach for these two behaviours ONLY — the full Tab trap and the
+ * visual-viewport sizing are tracked separately as GH-1975 and deliberately not
+ * copied here.
+ *
+ * The restore runs from `onUnmounted` as well as the watcher because these
+ * dialogs are `v-if`-ed by the parent on the same state as `isOpen`: closing
+ * usually destroys the component before the watcher can see `false`. Whichever
+ * path runs first clears the reference, so the other is a no-op.
+ */
+const dialogRef = ref<HTMLElement | null>(null)
+let previouslyFocusedElement: HTMLElement | null = null
+
+function restoreFocus() {
+  previouslyFocusedElement?.focus()
+  previouslyFocusedElement = null
+}
+
+watch(
+  () => props.isOpen,
+  async (isOpen) => {
+    if (isOpen) {
+      previouslyFocusedElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      dialogRef.value?.focus()
+    } else {
+      restoreFocus()
+    }
+  },
+  { immediate: true },
+)
+
+onUnmounted(restoreFocus)
 </script>
 
 <template>
@@ -47,7 +86,9 @@ useEscapeToClose(() => props.isOpen, close)
     :data-testid="testid"
     @click.self="close"
   >
-    <div class="paper-board-dialog">
+    <!-- `tabindex="-1"` is what makes the panel focusable on open; it stays out
+         of the Tab order itself. -->
+    <div ref="dialogRef" class="paper-board-dialog" tabindex="-1">
       <header class="paper-board-dialog__head">
         <div class="paper-board-dialog__head-text">
           <span class="tk-eyebrow">{{ eyebrow }}</span>

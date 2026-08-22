@@ -577,6 +577,67 @@ describe('PaperBoardView — board settings', () => {
   })
 })
 
+describe('PaperBoardView — dialogs and the board shortcuts', () => {
+  it('reports dialog state up so the shortcut owner can gate on it', async () => {
+    const wrapper = mountView()
+
+    expect(wrapper.emitted('dialog-open-change')).toBeUndefined()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([true])
+
+    await wrapper.get('[data-action="close-dialog"]').trigger('click')
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([false])
+  })
+
+  it('reports the column dialog and the card modal too', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([true])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([false])
+
+    await wrapper.get('[data-action="open-card"]').trigger('click')
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(true)
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([true])
+  })
+
+  it('clears the flag if the view unmounts with a dialog still open', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([true])
+
+    // A skin switch destroys this view. A flag stuck at `true` would leave the
+    // Legacy board's shortcuts dead.
+    wrapper.unmount()
+    expect(wrapper.emitted('dialog-open-change')?.at(-1)).toEqual([false])
+  })
+
+  it('moves focus into the dialog on open and hands it back on close', async () => {
+    const wrapper = mountView()
+
+    const opener = wrapper.get('[data-testid="paper-board-settings"]').element as HTMLElement
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await nextTick()
+
+    const panel = document.querySelector('.paper-board-dialog')
+    expect(panel).not.toBeNull()
+    expect(document.activeElement).toBe(panel)
+
+    await wrapper.get('[data-action="close-dialog"]').trigger('click')
+    await nextTick()
+
+    expect(document.activeElement).toBe(opener)
+  })
+})
+
 describe('PaperBoardView — the capture lane still exists', () => {
   it('routes "+ capture" to the column-scoped Inbox composer', async () => {
     const wrapper = mountView()
