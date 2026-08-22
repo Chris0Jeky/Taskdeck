@@ -103,8 +103,11 @@ describe('PaperTodayView', () => {
     vi.useRealTimers()
   })
 
-  it('renders live sections and honest empty states for unavailable dossier queries', () => {
+  it('renders live sections and honest empty states for unavailable dossier queries', async () => {
     const wrapper = mount(PaperTodayView)
+    // The live panels are only "unavailable" once their requests have settled;
+    // before that they are loading (GH-1983), so let the stub rejections land.
+    await flushPromises()
 
     expect(wrapper.find('[data-paper-today]').exists()).toBe(true)
     expect(wrapper.find('[data-section="cover"]').exists()).toBe(true)
@@ -121,7 +124,7 @@ describe('PaperTodayView', () => {
 
     expect(text).toContain('Today, at a glance.')
     expect(text).toContain('no events are being invented')
-    expect(text).toContain('Not recorded yet')
+    expect(text).toContain('No per-day view yet')
     expect(text).toContain('Live carry-over unavailable')
     expect(text).not.toContain('0 entries')
     expect(text).not.toContain('A quiet Saturday')
@@ -467,14 +470,21 @@ describe('PaperTodayView', () => {
     wrapper.unmount()
   })
 
-  it('separates "not built yet" panels from panels whose live data did not load', () => {
+  it('separates "not built yet" panels from panels whose live data did not load', async () => {
     const wrapper = mount(PaperTodayView)
+    await flushPromises()
 
-    // No query exists behind these three — say so plainly, and tag it.
-    for (const section of ['ledger', 'decisions', 'boards']) {
+    // No query exists behind these three — say so plainly, and tag it. The
+    // ledger says it about the QUERY rather than about the records (GH-1983).
+    const unbuiltClaims = [
+      ['ledger', 'no per-day ledger query yet'],
+      ['decisions', 'Taskdeck does not record'],
+      ['boards', 'Taskdeck does not record'],
+    ] as const
+    for (const [section, claim] of unbuiltClaims) {
       const panel = wrapper.get(`[data-empty-state="${section}"]`)
       expect(panel.find('[data-not-built]').text()).toBe('Not built yet')
-      expect(panel.text()).toContain('Taskdeck does not record')
+      expect(panel.text()).toContain(claim)
       expect(panel.text()).not.toContain('not available yet')
     }
 
@@ -487,12 +497,59 @@ describe('PaperTodayView', () => {
     }
   })
 
-  it('points each unbuilt panel at the surface that does hold the truth', () => {
+  it('points each unbuilt panel at the surface that does hold the truth', async () => {
     const wrapper = mount(PaperTodayView)
+    await flushPromises()
 
-    expect(wrapper.get('[data-empty-state="ledger"]').text()).toContain('Inbox and Review')
+    expect(wrapper.get('[data-empty-state="ledger"]').text()).toContain('Activity')
     expect(wrapper.get('[data-empty-state="decisions"]').text()).toContain('Open Review')
     expect(wrapper.get('[data-empty-state="boards"]').text()).toContain('Open Boards')
+  })
+
+  // --- issue 1983: loading precedes failure; the ledger stops denying records -
+
+  it('reads as loading, not as failed, while the live panel requests are in flight', async () => {
+    // The four live calls settle as one `Promise.allSettled` batch, so a single
+    // pending request holds both live panels in flight — exactly the window in
+    // which they used to render "could not be loaded".
+    vi.mocked(todayApi.getCadence).mockImplementationOnce(() => new Promise(() => {}))
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+
+    for (const section of ['cadence', 'streak']) {
+      const pending = wrapper.get(`[data-loading-state="${section}"]`)
+      expect(pending.attributes('role')).toBe('status')
+      expect(pending.attributes('aria-live')).toBe('polite')
+      expect(pending.text()).toContain('Loading')
+      // The defect this spec exists for: a failure claim during normal loading.
+      expect(wrapper.find(`[data-empty-state="${section}"]`).exists()).toBe(false)
+      expect(pending.text()).not.toContain('could not be loaded')
+    }
+  })
+
+  it('swaps the pending state for the failure state once the live requests settle', async () => {
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+
+    for (const section of ['cadence', 'streak']) {
+      expect(wrapper.find(`[data-loading-state="${section}"]`).exists()).toBe(false)
+      expect(wrapper.get(`[data-empty-state="${section}"]`).text()).toContain('could not be loaded')
+    }
+  })
+
+  it('does not deny that board and card changes are recorded', async () => {
+    // Board/card mutations land in audit history and are readable from
+    // Activity. "Not built yet" is a claim about this PANEL — there is no
+    // per-day ledger query — and must not read as "nothing is recorded".
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+    const ledger = wrapper.get('[data-empty-state="ledger"]')
+
+    expect(ledger.find('[data-not-built]').text()).toBe('Not built yet')
+    expect(ledger.text()).toContain('still recorded in audit history')
+    expect(ledger.text()).toContain('Activity')
+    expect(ledger.text()).not.toContain('does not record')
+    expect(wrapper.text()).not.toContain('Not recorded yet')
   })
 
   it('sends "Write a note" to the field it actually writes to', async () => {

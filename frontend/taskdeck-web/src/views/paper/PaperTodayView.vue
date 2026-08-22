@@ -22,10 +22,14 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * `useTodayDossier`. Sections without a shipped query render explicit empty
  * states instead of inferred activity.
  *
- * Two empty-state classes are deliberately worded apart (issue 1939): a panel
- * with NO query behind it (ledger, decisions, boards — all hardcoded empty in
- * `useTodayDossier`) says so plainly, while a panel whose live query failed
- * says that instead. "Not available yet" blurred the two and read as broken.
+ * Three placeholder classes are deliberately worded apart. A panel with NO
+ * query behind it (ledger, decisions, boards — all hardcoded empty in
+ * `useTodayDossier`) says so plainly (issue 1939); a panel whose live query
+ * has not come back yet says it is loading (issue 1983); a panel whose live
+ * query failed says that instead. "Not available yet" blurred the first two
+ * and read as broken, and reporting a failure mid-flight (the cadence and
+ * streak panels did, because `cadenceAvailable`/`streakAvailable` are false
+ * before the request resolves as well as after it fails) read the same way.
  *
  * This view owns the seal state machine (idle → confirming → sealing →
  * sealed); `TodayCover` only renders it. Sealing is irreversible — the domain
@@ -36,7 +40,7 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * `TodayView.vue` shell delegates to this component when `paperThemeStore
  * .isOn`.
  */
-const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
+const { dossier, liveDataLoading, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
 const workspace = useWorkspaceStore()
@@ -217,6 +221,15 @@ async function retryTodaySummary() {
             <span class="tk-meta paper-today__section-sub">When you worked · 24h strip</span>
           </header>
           <TodayCadence v-if="dossier.cadenceAvailable" :cadence="dossier.cadence" />
+          <p
+            v-else-if="liveDataLoading"
+            class="paper-today__empty paper-today__empty--loading"
+            data-loading-state="cadence"
+            role="status"
+            aria-live="polite"
+          >
+            {{ t('today.loading.cadence') }}
+          </p>
           <p v-else class="paper-today__empty" data-empty-state="cadence">
             {{ t('today.empty.cadence') }}
           </p>
@@ -284,6 +297,15 @@ async function retryTodaySummary() {
             <span class="tk-meta paper-today__section-sub">Days in a row · this quarter</span>
           </header>
           <TodayStreak v-if="dossier.streakAvailable" :streak="dossier.streak" />
+          <p
+            v-else-if="liveDataLoading"
+            class="paper-today__empty paper-today__empty--loading"
+            data-loading-state="streak"
+            role="status"
+            aria-live="polite"
+          >
+            {{ t('today.loading.streak') }}
+          </p>
           <p v-else class="paper-today__empty" data-empty-state="streak">
             {{ t('today.empty.streak') }}
           </p>
@@ -420,6 +442,11 @@ async function retryTodaySummary() {
 .paper-today__empty--inset {
   margin: 0;
   padding: 18px 22px;
+}
+/* In-flight, not failed — read as pending rather than as a problem. */
+.paper-today__empty--loading {
+  color: var(--faint);
+  font-style: italic;
 }
 /* Scannable marker for a panel with no query behind it, so "empty" is not
    read as "broken" at a glance (issue 1939). */

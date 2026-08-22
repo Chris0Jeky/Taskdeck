@@ -224,6 +224,62 @@ describe('useTodayDossier', () => {
     expect(dossier.value.lineForTomorrow).toBe('')
   })
 
+  // --- issue 1983: in-flight is a distinct state from failed ----------------
+
+  it('reports live data as loading until the batch settles, not as unavailable', async () => {
+    // `cadenceAvailable` / `streakAvailable` are false both before and after a
+    // failure, so on their own they cannot tell a panel which one it is. This
+    // is the flag that can.
+    let resolveCadence!: (value: CadenceApiResponse) => void
+    vi.mocked(todayApi.getCadence).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCadence = resolve }),
+    )
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('network'))
+
+    const { dossier, liveDataLoading } = await importAndCreate()
+
+    expect(liveDataLoading.value).toBe(true)
+    expect(dossier.value.cadenceAvailable).toBe(false)
+    expect(dossier.value.streakAvailable).toBe(false)
+
+    resolveCadence(cadenceResponse)
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(false)
+    })
+
+    // Settled: cadence arrived, streak genuinely failed.
+    expect(dossier.value.cadenceAvailable).toBe(true)
+    expect(dossier.value.streakAvailable).toBe(false)
+  })
+
+  it('returns to loading — not to failed — when a local-day rollover refetches', async () => {
+    vi.mocked(todayApi.getCadence)
+      .mockResolvedValueOnce(cadenceResponse)
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { dossier, liveDataLoading } = useTodayDossier({ now: nowRef })
+
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(false)
+    })
+    expect(dossier.value.cadenceAvailable).toBe(true)
+
+    // The rollover clears the live values; without the flag the panels would
+    // read as failed for the whole of the refetch.
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(true)
+    })
+    expect(dossier.value.cadenceAvailable).toBe(false)
+  })
+
   it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
     workspaceMock.todaySummary = {
       workspaceMode: 'guided',
