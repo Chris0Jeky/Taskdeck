@@ -354,8 +354,15 @@
     background var(--d-quick) var(--ease-paper),
     border-color var(--d-quick) var(--ease-paper);
 }
-.paper .pbtn:hover, .paper-night .pbtn:hover { background: var(--paper); border-color: var(--ink-2); }
-.paper .pbtn:active, .paper-night .pbtn:active { transform: translateY(1px); }
+/*
+ * Every interactive-state rule below is guarded with `:not(:disabled)`.  CSS
+ * `:hover` and `:active` match a disabled button perfectly happily, so without
+ * the guard a dead control still lights up under the pointer (GH-1953).  The
+ * guard is on the SELECTOR rather than being undone by the `:disabled` block
+ * further down, so a disabled button never enters an interactive state at all.
+ */
+.paper .pbtn:hover:not(:disabled), .paper-night .pbtn:hover:not(:disabled) { background: var(--paper); border-color: var(--ink-2); }
+.paper .pbtn:active:not(:disabled), .paper-night .pbtn:active:not(:disabled) { transform: translateY(1px); }
 .paper .pbtn-primary, .paper-night .pbtn-primary {
   background: var(--ink-deep); color: var(--paper-card); border-color: var(--ink-deep);
 }
@@ -367,17 +374,58 @@
  * is jarring and inverts the visual intent.  Split per theme so the hover
  * always darkens the resting state by a small amount.
  */
-.paper .pbtn-primary:hover { background: #000; border-color: #000; }
-.paper-night .pbtn-primary:hover {
+.paper .pbtn-primary:hover:not(:disabled) { background: #000; border-color: #000; }
+.paper-night .pbtn-primary:hover:not(:disabled) {
   background: var(--ink-2); border-color: var(--ink-2);
 }
 .paper .pbtn-ember, .paper-night .pbtn-ember {
   background: var(--ember); color: #fbf2e8; border-color: var(--ember-deep);
   box-shadow: inset 0 1px 0 #ffffff20, 0 1px 0 var(--ember-deep);
 }
-.paper .pbtn-ember:hover, .paper-night .pbtn-ember:hover { background: var(--ember-deep); }
+.paper .pbtn-ember:hover:not(:disabled), .paper-night .pbtn-ember:hover:not(:disabled) { background: var(--ember-deep); }
 .paper .pbtn-ghost, .paper-night .pbtn-ghost { background: transparent; border-color: transparent; }
-.paper .pbtn-ghost:hover, .paper-night .pbtn-ghost:hover { background: var(--paper-2); }
+.paper .pbtn-ghost:hover:not(:disabled), .paper-night .pbtn-ghost:hover:not(:disabled) { background: var(--paper-2); }
+
+/*
+ * Disabled treatment (GH-1953).
+ *
+ * `.pbtn` shipped with no `:disabled` rule at all, so a disabled Paper button
+ * kept its full fill, its `cursor: pointer` and its hover response: it looked
+ * live, ate the click and said nothing.  That is exactly how GH-1944 presented
+ * — the Inbox "Accept on board" button WAS correctly disabled, the skin just
+ * made it indistinguishable from an enabled control.  PR GH-1952 neutralised
+ * it for the triage row only, via a scoped `:deep()` override; this is the
+ * skin-wide rule that replaces it.
+ *
+ * One rule covers every variant.  `.paper .pbtn:disabled` is two classes plus
+ * a pseudo-class (0,3,0), which outranks the (0,2,0) variant fills
+ * `.pbtn-primary` / `.pbtn-ember` — every variant button also carries the
+ * plain `pbtn` class, so the fill is stripped back to the substrate whatever
+ * the variant.  It is stated in tokens only, so the `.paper-night` set
+ * inverts it for free.  `--mute` on `--paper-2` is a measured rung of the ink
+ * ladder documented at the top of this file (5.28:1 in light), so the label
+ * of a disabled control stays readable instead of dissolving into the page.
+ */
+.paper .pbtn:disabled, .paper-night .pbtn:disabled {
+  background: var(--paper-2);
+  color: var(--mute);
+  border-color: var(--line-soft);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+/*
+ * Ghost is chromeless by design, so giving it the substrate fill above would
+ * make the dead control LOUDER than its live siblings.  Mute the ink and let
+ * the page show through instead; `--faint` against `--ink` is a full rung of
+ * separation, and the `not-allowed` cursor plus the neutralised hover above
+ * still carry the "this is off" signal.
+ */
+.paper .pbtn-ghost:disabled, .paper-night .pbtn-ghost:disabled {
+  background: transparent;
+  border-color: transparent;
+  color: var(--faint);
+}
 
 .paper .pkbd, .paper-night .pkbd {
   display: inline-grid; place-items: center;
