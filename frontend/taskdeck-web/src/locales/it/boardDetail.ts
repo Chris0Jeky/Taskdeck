@@ -27,6 +27,13 @@ export default {
     settingsAria: 'Impostazioni della colonna {column}',
     moveLeft: 'Sposta la colonna a sinistra',
     moveRight: 'Sposta la colonna a destra',
+    add: '+ colonna',
+    addAria: 'Aggiungi una colonna a questa bacheca',
+    addInputLabel: 'Nome della nuova colonna',
+    addPlaceholder: 'Nome della colonna',
+    addSubmit: 'Aggiungi',
+    addCancel: 'Annulla',
+    addError: 'Non è stato possibile creare la colonna. Riprova.',
   },
   columnDialog: {
     eyebrow: 'Colonna',

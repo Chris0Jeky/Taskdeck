@@ -220,6 +220,7 @@ function resetBoardManagementState() {
   composerError.value = null
   editingColumn.value = null
   showBoardSettings.value = false
+  cancelAddColumn()
 }
 
 /**
@@ -349,6 +350,56 @@ async function createFirstColumn() {
   } catch (error) {
     logError('Failed to create first column (paper):', error)
     columnError.value = 'Could not create the column. Please try again.'
+  } finally {
+    creatingColumns.value = false
+  }
+}
+
+/**
+ * Add a column to a board that already has some (GH-1959, horizon finding H-03).
+ *
+ * The empty state above is a first-run bootstrap and only exists at zero
+ * columns, so it was the ONLY add-column door on the whole surface — a board
+ * was permanently capped at the lanes it happened to start with. This is the
+ * ordinary door, at the end of the lane rail, over the same
+ * `boardStore.createColumn` action.
+ *
+ * Deliberately secondary: the primary act on a board is adding a CARD. Position
+ * is omitted so the server appends, exactly as the Legacy toolbar form does.
+ */
+const addColumnOpen = ref(false)
+const newColumnName = ref('')
+const addColumnError = ref<string | null>(null)
+
+const canSubmitNewColumn = computed(
+  () => newColumnName.value.trim().length > 0 && !creatingColumns.value,
+)
+
+function openAddColumn() {
+  addColumnError.value = null
+  addColumnOpen.value = true
+}
+
+function cancelAddColumn() {
+  addColumnOpen.value = false
+  newColumnName.value = ''
+  addColumnError.value = null
+}
+
+async function createColumnAtEnd() {
+  const name = newColumnName.value.trim()
+  // A whitespace-only name is a no-op, never a request the server has to reject.
+  if (!name || creatingColumns.value) return
+
+  creatingColumns.value = true
+  addColumnError.value = null
+  try {
+    await boardStore.createColumn(boardId.value, { name })
+    newColumnName.value = ''
+    addColumnOpen.value = false
+  } catch (error) {
+    logError('Failed to create column (paper):', error)
+    addColumnError.value = t('boardDetail.column.addError')
   } finally {
     creatingColumns.value = false
   }
@@ -523,6 +574,63 @@ async function addStarterColumns() {
             @card-drop="onCardDropOnCard"
           />
         </div>
+
+        <div class="paper-board-view__add-column" data-testid="paper-board-add-column-cell">
+          <PaperHLBtn
+            v-if="!addColumnOpen"
+            :label="t('boardDetail.column.add')"
+            :aria-label="t('boardDetail.column.addAria')"
+            data-testid="paper-board-add-column"
+            @click="openAddColumn"
+          />
+
+          <form
+            v-else
+            class="paper-board-view__add-column-form"
+            data-testid="paper-board-add-column-form"
+            @submit.prevent="createColumnAtEnd"
+          >
+            <label class="sr-only" for="paper-board-add-column-name">
+              {{ t('boardDetail.column.addInputLabel') }}
+            </label>
+            <input
+              id="paper-board-add-column-name"
+              v-model="newColumnName"
+              type="text"
+              class="paper-board-view__add-column-input"
+              :placeholder="t('boardDetail.column.addPlaceholder')"
+              :disabled="creatingColumns"
+              data-testid="paper-board-add-column-name"
+              @keydown.esc.stop.prevent="cancelAddColumn"
+            />
+
+            <div class="paper-board-view__add-column-actions">
+              <PaperHLBtn
+                type="submit"
+                variant="primary"
+                :label="t('boardDetail.column.addSubmit')"
+                :disabled="!canSubmitNewColumn"
+                data-testid="paper-board-add-column-submit"
+              />
+              <PaperHLBtn
+                type="button"
+                variant="ghost"
+                :label="t('boardDetail.column.addCancel')"
+                data-testid="paper-board-add-column-cancel"
+                @click="cancelAddColumn"
+              />
+            </div>
+
+            <p
+              v-if="addColumnError"
+              class="paper-board-view__add-column-error"
+              role="alert"
+              data-testid="paper-board-add-column-error"
+            >
+              {{ addColumnError }}
+            </p>
+          </form>
+        </div>
       </div>
 
       <CardModal
@@ -688,6 +796,60 @@ async function addStarterColumns() {
 
 .paper-board-view__lane {
   display: contents;
+}
+
+/* Clearly secondary to the lanes: narrower, dashed, no card surface. Adding a
+ * CARD is the primary act on a board; adding a lane is occasional. */
+.paper-board-view__add-column {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 12px;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--r-2);
+  background: transparent;
+}
+
+.paper-board-view__add-column-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paper-board-view__add-column-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-1);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.paper-board-view__add-column-input::placeholder {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--mute);
+}
+
+.paper-board-view__add-column-input:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.paper-board-view__add-column-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.paper-board-view__add-column-error {
+  margin: 0;
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
 }
 
 .paper-board-view__lane > * {

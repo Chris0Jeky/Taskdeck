@@ -414,6 +414,90 @@ describe('PaperBoardView — column reorder', () => {
   })
 })
 
+describe('PaperBoardView — add a column to a populated board', () => {
+  it('creates a column from a board that already has columns', async () => {
+    // The zero-column empty state is a first-run bootstrap and disappears the
+    // moment a board has one lane. Before this control it was the only
+    // add-column door, so a populated board was capped at its current lanes.
+    const wrapper = mountView()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="paper-board-add-column"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-add-column-name"]').setValue('  Review  ')
+    await wrapper.get('[data-testid="paper-board-add-column-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).toHaveBeenCalledTimes(1)
+    // Position omitted so the server appends — same call shape as Legacy's
+    // toolbar form.
+    expect(mockBoardStore.createColumn).toHaveBeenCalledWith('board-1', { name: 'Review' })
+    // Direct means direct: no navigation, no proposal.
+    expect(routerMock.push).not.toHaveBeenCalled()
+    // A successful add collapses the form back to the button.
+    expect(wrapper.find('[data-testid="paper-board-add-column-form"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-board-add-column"]').exists()).toBe(true)
+  })
+
+  it('stays clearly secondary to the per-column "+ card" control', async () => {
+    const wrapper = mountView()
+
+    // "Secondary" has to mean something checkable: `+ card` is the primary
+    // button variant, the lane-rail `+ column` is not.
+    expect(
+      wrapper.findAll('[data-testid="paper-column-add-card"]')[0]?.attributes('data-variant'),
+    ).toBe('primary')
+    expect(wrapper.get('[data-testid="paper-board-add-column"]').attributes('data-variant')).toBe(
+      'default',
+    )
+  })
+
+  it('refuses a whitespace-only column name instead of posting it', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-add-column"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-add-column-name"]').setValue('   ')
+
+    expect(
+      wrapper.get('[data-testid="paper-board-add-column-submit"]').attributes('disabled'),
+    ).toBeDefined()
+
+    await wrapper.get('[data-testid="paper-board-add-column-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).not.toHaveBeenCalled()
+  })
+
+  it('cancels the inline form on Escape without creating anything', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-add-column"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-add-column-name"]').setValue('Review')
+    await wrapper.get('[data-testid="paper-board-add-column-name"]').trigger('keydown.esc')
+
+    expect(wrapper.find('[data-testid="paper-board-add-column-form"]').exists()).toBe(false)
+    expect(mockBoardStore.createColumn).not.toHaveBeenCalled()
+    expect(routerMock.push).not.toHaveBeenCalled()
+  })
+
+  it('keeps the form and its draft when the create fails', async () => {
+    mockBoardStore.createColumn.mockRejectedValueOnce(new Error('boom'))
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-add-column"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-add-column-name"]').setValue('Review')
+    await wrapper.get('[data-testid="paper-board-add-column-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-board-add-column-error"]').text()).toContain(
+      'Could not create the column',
+    )
+    expect(
+      (wrapper.get('[data-testid="paper-board-add-column-name"]').element as HTMLInputElement)
+        .value,
+    ).toBe('Review')
+  })
+})
+
 describe('PaperBoardView — board settings', () => {
   it('opens a Paper board dialog seeded from the board', async () => {
     const wrapper = mountView()

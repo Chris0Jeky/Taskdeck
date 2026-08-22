@@ -27,6 +27,13 @@ export default {
     settingsAria: 'Ajustes de la columna {column}',
     moveLeft: 'Mueve la columna a la izquierda',
     moveRight: 'Mueve la columna a la derecha',
+    add: '+ columna',
+    addAria: 'Añade una columna a este tablero',
+    addInputLabel: 'Nombre de la nueva columna',
+    addPlaceholder: 'Nombre de la columna',
+    addSubmit: 'Añadir',
+    addCancel: 'Cancelar',
+    addError: 'No se pudo crear la columna. Inténtalo de nuevo.',
   },
   columnDialog: {
     eyebrow: 'Columna',

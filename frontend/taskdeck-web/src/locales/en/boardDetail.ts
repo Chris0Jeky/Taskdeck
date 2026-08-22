@@ -35,6 +35,17 @@ export default {
     settingsAria: 'Settings for column {column}',
     moveLeft: 'Move column left',
     moveRight: 'Move column right',
+    // The add-column control at the end of the lane rail. Distinct from the
+    // zero-column empty state, which is a first-run bootstrap: this one is the
+    // ordinary "the board needs another lane" affordance, and without it a
+    // board that already has columns is capped at the ones it started with.
+    add: '+ column',
+    addAria: 'Add a column to this board',
+    addInputLabel: 'New column name',
+    addPlaceholder: 'Column name',
+    addSubmit: 'Add',
+    addCancel: 'Cancel',
+    addError: 'Could not create the column. Please try again.',
   },
   columnDialog: {
     eyebrow: 'Column',
