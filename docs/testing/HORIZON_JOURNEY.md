@@ -206,8 +206,13 @@ window.alert=m=>{window.__alerts.push(String(m))};
 window.prompt=(m,d)=>{window.__prompts.push(String(m));return d||'HZN reason'};
 ```
 
-**Why it is part of the golden path:** two flows in this journey call native dialogs. Reject calls
-`window.prompt`; without the shim the run blocks. See Step 17.
+**Why it is still here:** **Reject no longer calls `window.prompt`** — it opens the in-app
+`RejectProposalDialog` on both skins, so Step 17 is driven by filling
+`[data-testid="reject-dialog-reason"]` and clicking `[data-testid="reject-dialog-accept"]`
+(fixed under GH-1969, PR #1998). Apply was already an in-app dialog (GH-1818). The shim is
+therefore no longer a precondition for this journey — keep it as a cheap **detector**: anything
+landing in `window.__prompts` or `window.__confirms` during the run is an unexpected native dialog
+worth recording, not an expected one. See Step 17.
 
 ---
 
@@ -576,7 +581,7 @@ Step 16 reads:
 | --- | --- | --- | --- |
 | **Approve** (`P-T`) | `⏎` | **PASS** | `POST …/approve → 200`; status → `approved`; no native dialog |
 | **Confirm apply** (`P-T`) | `⏎` again | **PASS** | in-app `.td-dialog`, then `POST …/execute → 200` |
-| **Reject** (`P-C1`) | button | **PASS, but native prompt** | `window.prompt("Optional rejection reason:")` — finding **H-07** |
+| **Reject** (`P-C1`) | button | **PASS, but native prompt** | `window.prompt("Optional rejection reason:")` — finding **H-07**; fixed under GH-1969, PR #1998 — a replay now sees the in-app dialog |
 | **Request edit** | `E` / button | **BROKEN** | see below — finding **H-02**; **you must exit this state before continuing** |
 | **Defer** | `D` | not exercised | — |
 | **Toggle provenance** | `P` | **BROKEN** | `×` closes the drawer; `P` will not reopen it |
@@ -838,7 +843,7 @@ bindings all work, the single-letter navigation set does not.
 | 6 | Review evidence / provenance panes | yes | PASS | §I–§V + confidence breakdown | — |
 | 6b | Before / After diff | yes | PASS | `BEFORE · TODAY` / `AFTER · ON APPLY` | — |
 | 6c | Approve → confirm → apply | yes | PASS | `/approve → 200`, `/execute → 200` | #1818/#1942 improved |
-| 6d | Reject proposal | yes | PASS (native prompt) | reason persisted | **#1969** (H-07) |
+| 6d | Reject proposal | yes | PASS (native prompt) | reason persisted | **#1969** (H-07) — fixed, PR #1998 |
 | 6e | Request edit | yes | **BROKEN** | disables all 4 buttons + the whole review keymap; composer renders below the fold | **#1964** (H-02, mechanism corrected) |
 | 6f | Applied proposal materialises | yes | **PASS** | 6 cards in To Do | — |
 | 6g | Reopen an applied proposal | yes | **BROKEN** | `RECENTLY APPLIED` rows inert | **#1967** (H-05) |
@@ -980,7 +985,12 @@ this check, and it is weaker than "nothing remains":
 5. **Seed the day-seal state.** `POST /api/today/seal`, confirm `isSealed` via `GET /api/today/seal`.
    The H-13 inert-button finding only reproduces on an already-sealed day; on a fresh account the same
    button seals successfully.
-6. **Shim `confirm`/`alert`/`prompt`** before Step 17 — Reject calls a native `prompt`.
+6. **Reject is an in-app dialog, not a native `prompt`** (fixed under GH-1969, PR #1998). Drive
+   Step 17 through `[data-testid="reject-dialog-reason"]` +
+   `[data-testid="reject-dialog-accept"]`, and give it a **non-empty** reason: the reason is
+   optional for Low/Medium risk but required for High/Critical, where the accept button stays
+   disabled until the box is non-blank. The Step 0 shim is no longer required to unblock the run;
+   keep it only as a detector for native dialogs that should no longer appear.
 
 **Assertions.**
 
