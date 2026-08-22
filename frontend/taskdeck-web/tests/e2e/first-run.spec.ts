@@ -65,7 +65,7 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     response.request().method() === 'POST'
     && /\/api\/capture\/items$/i.test(response.url()))
   await captureBody.fill(`- [ ] ${cardTitle}`)
-  await page.getByRole('button', { name: 'Capture' }).click()
+  await page.getByRole('button', { name: /^Capture/ }).click()
   const response = await createCaptureResponse
   await assertOk(response, 'create Paper first-run capture')
   const captureId = await parseCreatedCaptureId(response)
