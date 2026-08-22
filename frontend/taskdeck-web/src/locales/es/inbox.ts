@@ -34,6 +34,7 @@ export default {
     },
     decision: {
       sending: 'Enviando a Review…',
+      rejecting: 'Rechazando…',
       nothingToPropose: 'La clasificación no encontró nada que proponer — a Review no llegó nada.',
       inReview: 'Enviada a Review — decide allí.',
       applied: 'Aplicada al tablero. Aquí no queda nada por hacer.',

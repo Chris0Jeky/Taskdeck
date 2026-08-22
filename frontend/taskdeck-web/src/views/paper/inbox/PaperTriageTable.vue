@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -54,6 +54,36 @@ const { t } = useI18n()
 // Item currently awaiting a board choice before its triage can be accepted.
 const boardPickItemId = ref<string | null>(null)
 const pickedBoardId = ref<string | null>(null)
+
+/**
+ * Which action this table started, for which row (#1944).
+ *
+ * `actionBusyItemId` mirrors the captureStore's single busy slot and is action-
+ * AGNOSTIC: `ignoreItem` (Reject) sets it exactly the way `triageItem` (Accept)
+ * does, and the store exposes no kind alongside it. Narrating every in-flight
+ * row as "Sending to Review…" therefore tells a REJECTED row the opposite of
+ * what is happening to it, until the detail refresh lands. The intent is only
+ * knowable at the click, so it is recorded here.
+ *
+ * Scope is deliberately narrow — see `rowState`: it is consulted only while the
+ * busy row is still the row it was recorded for, so it can never speak for a
+ * mutation some other surface started.
+ */
+type PendingAction = { itemId: string; kind: 'accept' | 'reject' }
+const pendingAction = ref<PendingAction | null>(null)
+
+watch(
+  () => props.actionBusyItemId,
+  (busyItemId) => {
+    // The moment the busy row clears or moves, the remembered intent stops
+    // describing anything in flight — keeping it would let a later mutation on
+    // the same row inherit a decision the user never made this time. A null or
+    // absent busy id falls out of the same comparison: it matches no item id.
+    if (busyItemId !== pendingAction.value?.itemId) {
+      pendingAction.value = null
+    }
+  },
+)
 
 /**
  * Write capability comes from the server (`BoardDto.CanWrite`, #1836) — a board
@@ -135,6 +165,7 @@ function isPickingBoard(item: CaptureItemSummary): boolean {
 async function onAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
   if (hasBoard(item)) {
+    pendingAction.value = { itemId: item.id, kind: 'accept' }
     emit('accept', item.id, item.boardId)
     return
   }
@@ -156,6 +187,7 @@ function confirmBoardAndAccept(item: CaptureItemSummary) {
   // board, nor one the server would answer with a 403. Every branch that stops
   // the emit also renders its reason above the button (`boardPickBlock`).
   if (boardPickBlock.value !== null) return
+  pendingAction.value = { itemId: item.id, kind: 'accept' }
   emit('accept', item.id, pickedBoardId.value)
   cancelBoardPick()
 }
@@ -167,6 +199,7 @@ function cancelBoardPick() {
 
 function onReject(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
+  pendingAction.value = { itemId: item.id, kind: 'reject' }
   emit('reject', item.id)
 }
 
@@ -180,12 +213,28 @@ function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue'
 }
 
 /**
- * The row's decision state (#1944). A mutation in flight for THIS row reads as
- * `sending` even before the server status catches up, so the click has a
- * visible consequence immediately rather than after the next poll.
+ * States a row can narrate: the server-derived ones plus `rejecting`, which no
+ * capture status produces — a reject is only observable here, between the click
+ * and the refresh that turns the row into `rejected`.
  */
-function rowState(item: CaptureItemSummary): CaptureRowState {
-  if (props.actionBusyItemId === item.id) return 'sending'
+type TriageRowState = CaptureRowState | 'rejecting'
+
+/**
+ * The row's decision state (#1944). A mutation THIS table started for THIS row
+ * reads as its own intent even before the server status catches up, so the
+ * click has a visible consequence immediately rather than after the next poll.
+ *
+ * The intent gate is the whole point: `actionBusyItemId` alone cannot tell an
+ * accept from a reject, and guessing `sending` narrates a rejection as a trip
+ * to Review. With no recorded intent — a busy flag another surface set, a row
+ * mounted mid-flight — the server status answers instead. Saying less is the
+ * honest failure mode; the row simply stays quiet until the refresh lands.
+ */
+function rowState(item: CaptureItemSummary): TriageRowState {
+  const pending = pendingAction.value
+  if (props.actionBusyItemId === item.id && pending?.itemId === item.id) {
+    return pending.kind === 'reject' ? 'rejecting' : 'sending'
+  }
   return captureRowState(item.status)
 }
 

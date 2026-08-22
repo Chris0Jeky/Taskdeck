@@ -429,7 +429,7 @@ describe('PaperTriageTable', () => {
 
   it.each<[CaptureStatusValue, string, string]>([
     ['Triaging', 'sending', 'Sending to Review'],
-    ['Triaged', 'inReview', 'Sent to Review'],
+    ['Triaged', 'nothingToPropose', 'nothing to propose'],
     ['ProposalCreated', 'inReview', 'Sent to Review'],
     ['Converted', 'applied', 'Applied to the board'],
     ['Ignored', 'rejected', 'Rejected'],
@@ -450,8 +450,62 @@ describe('PaperTriageTable', () => {
     expect(row.text()).not.toBe(undecidedRow().text())
   })
 
-  it('reports a row as sending the moment its own mutation is in flight', () => {
+  it('never tells a "nothing to propose" row to go decide in Review', () => {
+    // A triage that completed with no proposal is a SUCCESS with nothing left
+    // to decide (backend: CaptureStatusPolicy maps completed-without-proposal
+    // to Triaged). Accept and Reject are both disabled on this row and polling
+    // has stopped, so "decide there" would be a permanent instruction the user
+    // has no way to act on.
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Triaged' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const line = wrapper.find('.paper-triage__row [data-testid="capture-row-status"]')
+
+    expect(line.text()).toContain('nothing to propose')
+    expect(line.text()).not.toContain('decide there')
+  })
+
+  // In-flight narration must carry the intent the user actually clicked. The
+  // `actionBusyItemId` prop cannot: captureStore sets the same single slot for
+  // `triageItem` (Accept) and `ignoreItem` (Reject) alike.
+
+  it('reports a row as sending the moment its own accept is in flight', async () => {
     // Feedback must not wait for the next status poll to arrive.
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    const wrapper = mount(PaperTriageTable, {
+      props: { items, actionBusyItemId: null },
+    })
+
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    await wrapper.setProps({ actionBusyItemId: 'capture-1' })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.attributes('data-row-state')).toBe('sending')
+    expect(row.find('[data-testid="capture-row-status"]').text()).toContain('Sending to Review')
+  })
+
+  it('narrates a rejection, not a trip to Review, while its own reject is in flight', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    const wrapper = mount(PaperTriageTable, {
+      props: { items, actionBusyItemId: null },
+    })
+
+    await wrapper.findAll('button[data-action="reject"]')[0].trigger('click')
+    await wrapper.setProps({ actionBusyItemId: 'capture-1' })
+    const row = wrapper.find('.paper-triage__row')
+    const line = row.find('[data-testid="capture-row-status"]')
+
+    expect(row.attributes('data-row-state')).toBe('rejecting')
+    expect(line.text()).toContain('Rejecting')
+    expect(line.text()).not.toContain('Sending to Review')
+  })
+
+  it('falls back to the server status for a busy row this table did not act on', async () => {
+    // The busy slot is shared: another surface (the detail panel) can set it
+    // for a row nobody clicked here. With no intent of our own, the honest
+    // answer is the status — never an invented "Sending to Review…".
     const items = makeItems()
     items[0] = { ...items[0], status: 'New' }
     const wrapper = mount(PaperTriageTable, {
@@ -459,8 +513,8 @@ describe('PaperTriageTable', () => {
     })
     const row = wrapper.find('.paper-triage__row')
 
-    expect(row.attributes('data-row-state')).toBe('sending')
-    expect(row.find('[data-testid="capture-row-status"]').text()).toContain('Sending to Review')
+    expect(row.attributes('data-row-state')).toBe('undecided')
+    expect(row.find('[data-testid="capture-row-status"]').exists()).toBe(false)
   })
 
   it('does not narrate a decision for an out-of-contract status', () => {
