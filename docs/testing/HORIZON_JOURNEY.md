@@ -5,6 +5,15 @@
 **Skin:** Paper (light) · **Workspace mode:** Guided · **Locale:** English
 **Evidence style:** network requests, DOM assertions, and API reads. Screenshots are not the proof mechanism.
 
+> **Tested revision: NOT RECORDED — a gap in this record.** The only build identifier captured was the
+> sidebar string, and that string is itself the subject of #1948, so it identifies nothing. The run can
+> only be *bounded*, by inference from the observations below rather than by measurement: it is after
+> `eab59fd27` (PR #1952 — Step 14b records #1944 as fixed) and before `7a0776ebd` (PR #1957 — Step 16
+> still finds `Tune heuristics →` dead, which #1957 fixes). PRs #1954, #1956, and #1959 all merged after
+> the run and all touch surfaces recorded here, which is why several verdicts below carry a
+> "does not reproduce / gap in PR #xxxx" note. **Any replay must record `git rev-parse HEAD` of the
+> tree it built, in this header, before step 1.**
+
 > **Safety contract used for this run.** Additive-only against pre-existing data. Every entity created
 > was prefixed `[HZN]`. Native `window.confirm/alert/prompt` were shimmed before any destructive or
 > decision action. Baseline captured before step 1 and re-verified after cleanup (see §Cleanup).
@@ -126,6 +135,14 @@ await fetch('/api/boards', {headers:{Authorization:'Bearer '+localStorage.getIte
 
 This run's baseline: **3 boards** (`Enter Key Test Board`, `Calendar QA Board`, `demo`),
 **4 captures**, **3 proposals**. Nothing outside `[HZN]` may change.
+
+> **Also snapshot the tomorrow-note — this run did not, and that is a hole in the safety contract.**
+> Step 21 *overwrites* the note, and the note is a single free-text field with no `[HZN]` prefix to
+> protect it: unlike boards, captures, and proposals, it cannot be made additive. Read and store its
+> exact prior value from the Today surface before step 1, and restore that value verbatim at cleanup
+> (§5). Because this run captured only the three collections above, it had no prior value to restore
+> and cleared the field to `""` instead — destructive on any account where a note already existed.
+> A replay must either restore the snapshot or run against a disposable account.
 
 ---
 
@@ -253,6 +270,22 @@ input elements and only three buttons.
 
 ---
 
+### Step 7b — The third board (On-Call)
+
+**Action.** Boards → `+ New Board` → type `[HZN] On-Call Follow-ups` → **Enter** → **Add starter columns**.
+**Expected.** Third board created with To Do · In Progress · Done, per §2.1.
+**Observed.** Created; same behaviour as Steps 4 and 6 — auto-navigation into the board, then three columns.
+**Evidence.** `POST /api/boards → 201`; `POST /api/boards/{id}/columns → 201` ×3. Cleanup deleted
+**3** boards, which is the record that this board existed for the run.
+**Verdict.** PASS — no new capability; it re-runs the Step 4 + Step 6 paths.
+
+*Why this step is written out even though it proves nothing new:* the scenario in §1 promises three
+workstreams and cleanup deletes three boards, but the original narrative only ever created two. A
+literal replay stopped at two boards and then could not reconcile the cleanup table. This board is
+also the third option in the Step 14b picker, which is why Step 14b now names the board it selects.
+
+---
+
 ### Step 8 — What board management actually exposes (refines #1945)
 
 **Action.** Enumerate every control on a populated board; then open a card.
@@ -342,12 +375,17 @@ API confirms `canEditSuggestion: false`.
 **Observed.** Status `NEW → READY FOR REVIEW`. `POST /api/capture/items/{id}/triage → 202`.
 **Verdict.** PASS.
 
-**14b — capture with no board (the #1944 repro).** Click `Accept`.
+**14b — capture with no board (the #1944 repro).** This is **C1**. Click `Accept`.
 **Observed.** The row now reveals an inline **`BOARD` / `Select a board…`** picker with
 **`Accept on board`** and **`Cancel`**. With nothing selected, `Accept on board` is
 **`disabled: true`** and fires zero requests. Selecting a board enables it; clicking then yields
 `POST …/triage → 202` and status `TRIAGING`.
 **Evidence.** `{before:{selVal:"Select a board…", disabled:true}}` → after selection `{nowEnabled:true}`.
+
+> **Select `[HZN] Payments API Migration` here — the choice is load-bearing, not illustrative.** All
+> three boards are offered by this point. Steps 17, 18 and 19 all assume C1's proposal landed on
+> Payments; routing C1 to Devtools or On-Call changes the Payments review queue, the proposal that
+> Step 17 rejects, and the 6→7 card count that Step 19 asserts.
 **Verdict.** **PASS — #1944 is fixed.** It is no longer a silent no-op on an enabled control; the
 button is correctly disabled and the required input is surfaced inline.
 
@@ -427,11 +465,34 @@ Dead links confirmed here: both **`Tune heuristics →`** (known **#1941**) and
 
 ### Step 17 — The decision actions
 
+**Queue state entering this step — three Payments proposals**, exactly the `QUEUE · 3 AWAITING` that
+Step 16 reads:
+
+| Tag | Origin | Overlaps |
+| --- | --- | --- |
+| **P-T** | the transcript capture, 6 operations (Step 15) | — |
+| **P-C1** | capture C1, accepted onto Payments in Step 14b | duplicates transcript op 0 (rotate the webhook secret) |
+| **P-C2** | capture C2, accepted in Step 14a | duplicates transcript op 2 (idempotency-key contract tests) |
+
+**Prescribed action order — follow it literally; the later steps depend on it:**
+
+1. **Approve + Confirm apply `P-T`** → the 6 cards Step 18 verifies.
+2. **Reject `P-C1`** — this is the "rejects the duplicate" beat in §1.
+3. Leave `P-C2` in the queue; Step 19 approves and applies it as "the remaining Payments proposal",
+   producing the 7th card.
+
+> **Honesty note on this ordering.** `P-C1` and `P-C2` both duplicate a transcript operation, and the
+> run's captured evidence does **not** preserve which of the two actually took the reject — only that
+> one was rejected and one was applied. The order above is therefore **normative for replay**, not a
+> transcription of the original run. It is the assignment consistent with every recorded count
+> (7 Payments cards, 4 proposals, 8 cards deleted at cleanup); pick the other assignment and the counts
+> still hold, but two runs would no longer agree on the seventh card's title.
+
 | Action | Binding | Result | Evidence |
 | --- | --- | --- | --- |
-| **Approve** | `⏎` | **PASS** | `POST …/approve → 200`; status → `approved`; no native dialog |
-| **Confirm apply** | `⏎` again | **PASS** | in-app `.td-dialog`, then `POST …/execute → 200` |
-| **Reject** | button | **PASS, but native prompt** | `window.prompt("Optional rejection reason:")` — finding **H-07** |
+| **Approve** (`P-T`) | `⏎` | **PASS** | `POST …/approve → 200`; status → `approved`; no native dialog |
+| **Confirm apply** (`P-T`) | `⏎` again | **PASS** | in-app `.td-dialog`, then `POST …/execute → 200` |
+| **Reject** (`P-C1`) | button | **PASS, but native prompt** | `window.prompt("Optional rejection reason:")` — finding **H-07** |
 | **Request edit** | `E` / button | **BROKEN** | see below — finding **H-02** |
 | **Defer** | `D` | not exercised | — |
 | **Toggle provenance** | `P` | **BROKEN** | `×` closes the drawer; `P` will not reopen it |
@@ -463,8 +524,8 @@ confirm → apply → board.
 
 ### Step 19 — Realtime (per-board SignalR)
 
-**Action.** Open the Payments board in a **second tab**; record card count; in tab 1 approve+apply the
-remaining Payments proposal; re-read tab 2 **without reloading**.
+**Action.** Open the Payments board in a **second tab**; record card count; in tab 1 approve+apply
+**`P-C2`** — the one Payments proposal Step 17 left in the queue; re-read tab 2 **without reloading**.
 **Observed.**
 ```
 {"baselineWas":"6","nowShows":"7","updatedWithoutReload":true,"hasNewCard":true}
@@ -655,10 +716,17 @@ destroyed). Tracker summary: https://github.com/Chris0Jeky/Taskdeck/issues/1947#
 | Boards | 3 | `DELETE /api/boards/{id}` | all `204` |
 | Captures | 4 | vanished with their boards (**not** a cascade delete — see below) | gone from the list API |
 | Proposals | 4 | vanished with their boards (**not** a cascade delete — see below) | gone from the list API |
-| Tomorrow-note | 1 | cleared in the Today UI (`PUT` rejects an empty body — needs a `date` field) | `Saved · auto`, value `""` |
+| Tomorrow-note | 1 | **cleared**, not restored — see the warning below (`PUT` rejects an empty body — needs a `date` field) | `Saved · auto`, value `""` |
 
 **Settings restored:** theme `paper`, workspace mode `guided`, language `en`.
 **Second tab closed.**
+
+> **The tomorrow-note was cleared, not restored — the one place this run broke its own additive-only
+> contract.** §2.5's baseline recorded boards, captures, and proposals but not the note, so no prior
+> value existed to put back and the field was left at `""`. On this account that cost nothing
+> observable; on any account with an existing note it would have destroyed user content that no
+> snapshot could recover. **Fix before replaying:** snapshot the note in §2.5 and restore the exact
+> string here, or run the journey against a disposable account.
 
 **Post-cleanup verification:**
 ```json
@@ -668,7 +736,18 @@ destroyed). Tracker summary: https://github.com/Chris0Jeky/Taskdeck/issues/1947#
  "anyHZNleft": false}
 ```
 
-**Exactly matches the pre-run baseline. Nothing remains.**
+**Exactly matches the pre-run baseline *as the list endpoints report it*.** That is the honest scope of
+this check, and it is weaker than "nothing remains":
+
+> **The rows are still in the database.** `DELETE /api/boards/{id}` is a **soft archive**, not a delete
+> (`BoardService.cs:357`, `board.Archive(); // Soft delete`), and the captures and proposals were
+> *filtered out* alongside the archived board rather than destroyed — see the #1973 note below. A
+> snapshot comparison against these list endpoints therefore reports equality while the run's boards,
+> captures, and proposals persist, invisibly, forever. **Repeated replays accumulate.**
+>
+> **For a repeatable suite this teardown is not sufficient.** Use a disposable database (a throwaway
+> SQLite file per run is the cheap option) or purge the rows directly and assert their absence by
+> direct inspection, not by re-reading the list APIs that hid them in the first place.
 
 > **Behaviour worth noting during cleanup → filed as #1973.** Deleting a board made its captures and its
 > proposals vanish from every list. Inbox captures are presented as user-owned records that live
