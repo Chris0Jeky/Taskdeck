@@ -28,13 +28,24 @@ export interface LiveHealthResponse {
 }
 
 /**
+ * Pure derivation of the server root from an API base: strips one trailing
+ * `/api` segment, with or without its trailing slash. Split out from
+ * `resolveApiRoot()` because `VITE_API_BASE_URL` is inlined at build time —
+ * a test can only reach the *rule* through a function that takes the base as
+ * an argument, and every deployment shape (`/api`, `/taskdeck/api`, an
+ * absolute origin, empty) has to be covered.
+ */
+export function apiRootFrom(apiBase: string): string {
+  return apiBase.replace(/\/api\/?$/i, '')
+}
+
+/**
  * Server root for endpoints that sit outside the `/api` prefix. Mirrors
  * `useBoardRealtime.resolveHubUrl()`; returns `''` for the packaged deployment
  * (`VITE_API_BASE_URL=/api`), which keeps the request same-origin and relative.
  */
 export function resolveApiRoot(): string {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-  return apiBase.replace(/\/api\/?$/i, '')
+  return apiRootFrom(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api')
 }
 
 export const versionApi = {

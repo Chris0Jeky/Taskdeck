@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AxiosResponse } from 'axios'
 import http from '../../api/http'
-import { resolveApiRoot, versionApi } from '../../api/versionApi'
+import { apiRootFrom, resolveApiRoot, versionApi } from '../../api/versionApi'
+
+// The repo's `.env` pins `VITE_API_BASE_URL=http://localhost:5000/api`, and Vite
+// inlines it into this build, so the request the suite must see is fully
+// determined. Asserting the literal — rather than re-deriving it with the
+// function under test — is what makes a broken derivation fail here.
+const EXPECTED_API_ROOT = 'http://localhost:5000'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -40,7 +46,7 @@ describe('versionApi', () => {
     await versionApi.getProductVersion()
 
     expect(http.get).toHaveBeenCalledWith('/health/live', {
-      baseURL: resolveApiRoot(),
+      baseURL: EXPECTED_API_ROOT,
       skipRetry: true,
     })
   })
@@ -69,14 +75,20 @@ describe('versionApi', () => {
   })
 })
 
-describe('resolveApiRoot', () => {
-  it('yields an /api-free prefix of the configured API base', () => {
-    // `VITE_API_BASE_URL` is inlined at build time, so assert the relationship
-    // to whatever base this build carries instead of a hardcoded URL.
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-    const root = resolveApiRoot()
+describe('apiRootFrom', () => {
+  it.each([
+    ['/api', ''],
+    ['/api/', ''],
+    ['http://localhost:5000/api', 'http://localhost:5000'],
+    ['/taskdeck/api', '/taskdeck'],
+    ['', ''],
+  ])('derives %o -> %o', (apiBase, expected) => {
+    expect(apiRootFrom(apiBase)).toBe(expected)
+  })
+})
 
-    expect(root).not.toMatch(/\/api\/?$/i)
-    expect(apiBase.startsWith(root)).toBe(true)
+describe('resolveApiRoot', () => {
+  it('applies the derivation to the base this build carries', () => {
+    expect(resolveApiRoot()).toBe(EXPECTED_API_ROOT)
   })
 })
