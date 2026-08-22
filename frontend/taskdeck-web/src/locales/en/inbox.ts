@@ -71,5 +71,37 @@ export default {
       state: 'State: {label}. Where this capture stands right now.',
       source: 'Source: {label}. How this capture arrived — not a state.',
     },
+    // Pre-triage text correction (GH-1951) — the Legacy detail panel's
+    // "Edit Text" affordance, ported to the Paper row.
+    //
+    // `blocked.notEditable` states the FACT and not a cause. The server refuses
+    // a text edit for more than one reason (a linked transcript, a status that
+    // has moved on), and an API older than the flag omits it entirely; naming
+    // one of those would be a guess presented as an explanation.
+    //
+    // `loadFailed` / `saveFailed` interpolate the server's own words, and
+    // `unknownReason` fills the slot when it gave none — so the sentence never
+    // trails off into a colon with nothing after it.
+    edit: {
+      action: 'Edit text',
+      label: 'Capture text',
+      placeholder: 'Correct the captured text…',
+      hint: 'Fix the wording before Accept turns this into a proposal. Saving changes the capture only — nothing reaches a board from here.',
+      loading: 'Loading the full capture text…',
+      save: 'Save text',
+      saving: 'Saving…',
+      cancel: 'Cancel',
+      close: 'Close',
+      retry: 'Retry',
+      unknownReason: 'the server gave no reason',
+      loadFailed: 'The full capture text did not load: {reason}',
+      saveFailed: 'The text was not saved: {reason}',
+      decisionBlocked: 'Finish or cancel this edit before you Accept or Reject.',
+      blocked: {
+        notEditable: "This capture's text can't be edited. Accept or Reject it as it stands.",
+        empty: "Text can't be empty. Type something, or cancel to leave the capture as it was.",
+        unchanged: 'Nothing has changed yet. Edit the text, or cancel to leave the capture as it was.',
+      },
+    },
   },
 }

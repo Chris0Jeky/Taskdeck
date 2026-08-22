@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import PaperTriageRowEdit from './PaperTriageRowEdit.vue'
 import { useBoardStore } from '../../../store/boardStore'
 import {
   canMutateSelection,
@@ -25,6 +26,12 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  * Board-less captures (Home quick-capture) can't be triaged into a proposal
  * without a target board, so Accept first reveals an inline board picker
  * (#1764); the chosen board rides the `accept` event and the server links it.
+ *
+ * A pre-triage row can also have its text CORRECTED before Accept turns it into
+ * a proposal (GH-1951) — the Legacy detail panel's `Edit Text` affordance,
+ * ported to a skin that has no detail panel. `PaperTriageRowEdit` owns that
+ * surface; this table owns only which row is open and the fact that a row with
+ * an open editor cannot simultaneously be decided.
  *
  * Every blocked primary action states its reason (#1944). A precondition that
  * is not met disables the button AND renders why — an enabled-looking button
@@ -55,6 +62,11 @@ const { t } = useI18n()
 const boardPickItemId = ref<string | null>(null)
 const pickedBoardId = ref<string | null>(null)
 
+// Row whose text is open for pre-triage correction (GH-1951). One at a time:
+// the editor holds an unsaved draft, and a second open row would give the user
+// two drafts and one Save.
+const editItemId = ref<string | null>(null)
+
 /**
  * Which action this table started, for which row (#1944).
  *
@@ -81,6 +93,17 @@ watch(
     // absent busy id falls out of the same comparison: it matches no item id.
     if (busyItemId !== pendingAction.value?.itemId) {
       pendingAction.value = null
+    }
+  },
+)
+
+watch(
+  () => props.items,
+  (rows) => {
+    // A row that has left the list can no longer be edited, and leaving the id
+    // set would silently reopen the editor if a row with that id came back.
+    if (editItemId.value !== null && !rows.some((row) => row.id === editItemId.value)) {
+      editItemId.value = null
     }
   },
 )
@@ -150,8 +173,36 @@ function canMutate(item: CaptureItemSummary): boolean {
   return canMutateSelection(item.status)
 }
 
+function isEditing(item: CaptureItemSummary): boolean {
+  return editItemId.value === item.id
+}
+
+/**
+ * A row with an open editor is deliberately undecidable (GH-1951).
+ *
+ * Accept while an unsaved draft sits in the textarea would triage the text the
+ * user is in the middle of replacing and discard the correction without a word
+ * — the exact silent-loss failure this surface keeps being reported for. The
+ * row states the reason next to the editor rather than just going grey.
+ */
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return hasMutationInFlight.value || props.triagePollingItemId === item.id || !canMutate(item)
+  return hasMutationInFlight.value ||
+    props.triagePollingItemId === item.id ||
+    !canMutate(item) ||
+    isEditing(item)
+}
+
+function onEdit(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  // Opening the editor cancels a board pick in progress: they compete for the
+  // same row and the same decision, and leaving both open would let a stale
+  // pick confirm against text that is being rewritten.
+  cancelBoardPick()
+  editItemId.value = item.id
+}
+
+function closeEdit() {
+  editItemId.value = null
 }
 
 function hasBoard(item: CaptureItemSummary): boolean {
@@ -413,6 +464,27 @@ function formatTime(iso: string): string {
             data-action="reject"
             @click="onReject(item)"
           />
+          <PaperHLBtn
+            :label="t('inbox.triage.edit.action')"
+            variant="ghost"
+            :disabled="isActionDisabled(item)"
+            data-action="edit"
+            @click="onEdit(item)"
+          />
+        </div>
+
+        <div v-if="isEditing(item)" class="paper-triage__edit">
+          <p
+            class="paper-triage__edit-block"
+            role="status"
+            data-testid="capture-edit-decision-block"
+          >
+            {{ t('inbox.triage.edit.decisionBlocked') }}
+          </p>
+          <PaperTriageRowEdit
+            :item-id="item.id"
+            @close="closeEdit"
+          />
         </div>
 
         <p
@@ -575,6 +647,17 @@ function formatTime(iso: string): string {
   font-size: 12px;
   line-height: 1.4;
   color: var(--overdue);
+}
+
+.paper-triage__edit {
+  grid-column: 1 / -1;
+}
+.paper-triage__edit-block {
+  margin: 6px 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
 }
 
 .paper-triage__decision {

@@ -53,5 +53,32 @@ export default {
       state: 'Stato: {label}. Il punto in cui si trova ora questa cattura.',
       source: 'Origine: {label}. Come è arrivata questa cattura — non è uno stato.',
     },
+    // Correzione del testo prima dello smistamento (GH-1951).
+    //
+    // `blocked.notEditable` dichiara il FATTO, non la causa: il server rifiuta
+    // la modifica per più motivi e indicarne uno solo sarebbe un'ipotesi
+    // presentata come spiegazione. "Accept" e "Reject" restano in inglese
+    // perché sono le etichette dei pulsanti su questa superficie.
+    edit: {
+      action: 'Modifica testo',
+      label: 'Testo della cattura',
+      placeholder: 'Correggi il testo catturato…',
+      hint: 'Sistema le parole prima che Accept trasformi tutto in una proposta. Il salvataggio cambia solo la cattura — da qui non arriva nulla a una bacheca.',
+      loading: 'Caricamento del testo completo…',
+      save: 'Salva testo',
+      saving: 'Salvataggio…',
+      cancel: 'Annulla',
+      close: 'Chiudi',
+      retry: 'Riprova',
+      unknownReason: 'il server non ha indicato un motivo',
+      loadFailed: 'Il testo completo della cattura non è stato caricato: {reason}',
+      saveFailed: 'Il testo non è stato salvato: {reason}',
+      decisionBlocked: 'Concludi o annulla questa modifica prima di premere Accept o Reject.',
+      blocked: {
+        notEditable: 'Il testo di questa cattura non è modificabile. Premi Accept o Reject così com\'è.',
+        empty: 'Il testo non può essere vuoto. Scrivi qualcosa, oppure annulla per lasciare la cattura com\'era.',
+        unchanged: 'Non è ancora cambiato nulla. Modifica il testo, oppure annulla per lasciare la cattura com\'era.',
+      },
+    },
   },
 }

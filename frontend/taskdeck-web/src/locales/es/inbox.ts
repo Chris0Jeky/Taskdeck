@@ -55,5 +55,32 @@ export default {
       state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
       source: 'Origen: {label}. Cómo llegó esta captura — no es un estado.',
     },
+    // Corrección del texto antes de clasificar (GH-1951).
+    //
+    // `blocked.notEditable` enuncia el HECHO, no la causa: el servidor rechaza
+    // la edición por varios motivos y nombrar uno solo sería una suposición
+    // presentada como explicación. "Accept" y "Reject" se quedan en inglés
+    // porque son las etiquetas de los botones de esta superficie.
+    edit: {
+      action: 'Editar texto',
+      label: 'Texto de la captura',
+      placeholder: 'Corrige el texto capturado…',
+      hint: 'Ajusta la redacción antes de que Accept la convierta en una propuesta. Guardar solo cambia la captura — desde aquí no llega nada a un tablero.',
+      loading: 'Cargando el texto completo de la captura…',
+      save: 'Guardar texto',
+      saving: 'Guardando…',
+      cancel: 'Cancelar',
+      close: 'Cerrar',
+      retry: 'Reintentar',
+      unknownReason: 'el servidor no dio ningún motivo',
+      loadFailed: 'El texto completo de la captura no se cargó: {reason}',
+      saveFailed: 'El texto no se guardó: {reason}',
+      decisionBlocked: 'Termina o cancela esta edición antes de pulsar Accept o Reject.',
+      blocked: {
+        notEditable: 'El texto de esta captura no se puede editar. Pulsa Accept o Reject tal como está.',
+        empty: 'El texto no puede estar vacío. Escribe algo, o cancela para dejar la captura como estaba.',
+        unchanged: 'Todavía no ha cambiado nada. Edita el texto, o cancela para dejar la captura como estaba.',
+      },
+    },
   },
 }
