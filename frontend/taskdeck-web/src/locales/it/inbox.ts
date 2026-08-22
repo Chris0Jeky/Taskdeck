@@ -22,4 +22,24 @@ export default {
     viewOnlyOption: '{name} · sola lettura',
     viewOnlyHint: 'Le bacheche in sola lettura richiedono un accesso in scrittura prima di poterci smistare qualcosa.',
   },
+  triage: {
+    boardPick: {
+      blocked: {
+        noBoards: 'Ancora nessuna bacheca. Creane una e poi questa cattura potrà andarci.',
+        noBoard: 'Scegli prima una bacheca. Accept on board resta disattivato finché non ne selezioni una.',
+        viewOnly: 'Quella bacheca è in sola lettura. Scegline una in cui puoi scrivere.',
+      },
+    },
+    decision: {
+      sending: 'Invio a Review…',
+      inReview: 'Inviata a Review — decidi lì.',
+      applied: 'Applicata alla bacheca. Qui non resta altro da fare.',
+      rejected: 'Rifiutata. Questa cattura non arriverà a Review.',
+      failed: 'Smistamento fallito, quindi nulla è arrivato a Review. Risolvi il problema, poi premi di nuovo Accept.',
+    },
+    tag: {
+      state: 'Stato: {label}. Il punto in cui si trova ora questa cattura.',
+      source: 'Origine: {label}. Come è arrivata questa cattura — non è uno stato.',
+    },
+  },
 }

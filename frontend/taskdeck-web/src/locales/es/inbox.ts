@@ -24,4 +24,24 @@ export default {
     viewOnlyOption: '{name} · solo lectura',
     viewOnlyHint: 'Los tableros de solo lectura necesitan acceso de escritura antes de poder clasificar nada en ellos.',
   },
+  triage: {
+    boardPick: {
+      blocked: {
+        noBoards: 'Todavía no hay tableros. Crea uno y esta captura podrá ir ahí.',
+        noBoard: 'Elige primero un tablero. Accept on board sigue desactivado hasta que selecciones uno.',
+        viewOnly: 'Ese tablero es de solo lectura. Elige uno en el que puedas escribir.',
+      },
+    },
+    decision: {
+      sending: 'Enviando a Review…',
+      inReview: 'Enviada a Review — decide allí.',
+      applied: 'Aplicada al tablero. Aquí no queda nada por hacer.',
+      rejected: 'Rechazada. Esta captura no llegará a Review.',
+      failed: 'La clasificación falló, así que nada llegó a Review. Corrige el problema y pulsa Accept de nuevo.',
+    },
+    tag: {
+      state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
+      source: 'Origen: {label}. Cómo llegó esta captura — no es un estado.',
+    },
+  },
 }
