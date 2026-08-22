@@ -57,7 +57,7 @@ const route = useRoute()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
-// Footer version stamp (#1948): sourced from the running backend's stamped
+// Footer version stamp (GH-1948): sourced from the running backend's stamped
 // release version, never a literal in this file.
 const { displayVersion } = useProductVersion()
 const { mode: viewportMode } = useViewportMode()
