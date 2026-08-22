@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 /**
- * Native-browser-dialog guard (GH-1969, extending #1818 from a one-off fix to a
- * rule).
+ * Native-browser-dialog guard (GH-1969, extending GH-1818 from a one-off fix
+ * to a rule).
  *
  * WHY A RULE. `window.prompt` / `confirm` / `alert` are the one class of UI the
  * product cannot style, cannot translate, cannot exercise from a component spec,
  * and cannot rely on at all — several embedded and automation contexts suppress
- * them outright, so whatever they were collecting is silently lost. #1818
+ * them outright, so whatever they were collecting is silently lost. GH-1818
  * removed a `confirm()` from the apply path; the prompt collecting the REJECTION
  * REASON survived that pass unnoticed for exactly the reason this guard exists:
  * the specs had to stub `window.prompt` to test it, so nothing looked wrong.
@@ -58,7 +58,7 @@ const QUARANTINE = ['../../composables/useCardModal.ts']
 
 /**
  * Strip comments so PROSE about a native dialog is not reported as one — several
- * of these files carry doc comments explaining what #1818 and GH-1969 removed,
+ * of these files carry doc comments explaining what GH-1818 and GH-1969 removed,
  * and a guard that punished the explanation would get the explanation deleted.
  *
  * A `//` inside a string literal (a URL) truncates that line early. That can

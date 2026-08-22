@@ -10,11 +10,11 @@ import type { Proposal } from '../../types/automation'
  *
  * GH-1969: replaces the native `window.prompt('Optional rejection reason:')`,
  * the last browser dialog in the decision flow and a sibling of the `confirm()`
- * #1818 removed from the apply path. A native prompt is unstyled by Paper and
+ * GH-1818 removed from the apply path. A native prompt is unstyled by Paper and
  * Paper Night, is not translated, cannot be exercised by the dialog specs, and
  * is suppressed outright in some embedded and automation contexts — where the
  * reason would be silently lost. The reason is decision-ledger content, so it
- * gets the same `TdDialog` treatment (focus trap + shared escape stack, #1407)
+ * gets the same `TdDialog` treatment (focus trap + shared escape stack, GH-1407)
  * as every other confirmation on this surface.
  *
  * The semantics are unchanged: the reason stays OPTIONAL for Low/Medium risk
