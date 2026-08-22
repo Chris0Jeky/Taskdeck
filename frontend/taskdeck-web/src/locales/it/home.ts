@@ -54,7 +54,7 @@ export default {
     stepIncomplete: 'Non completata',
     expand: 'Mostra le tappe',
     collapse: 'Nascondi le tappe',
-    dismiss: 'Nascondi',
+    dismiss: 'Non mostrare più',
     note: 'Queste tappe restano in questa area di lavoro; non vengono inviate come dati di analisi.',
   },
   capture: {

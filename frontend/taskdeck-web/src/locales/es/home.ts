@@ -54,7 +54,7 @@ export default {
     stepIncomplete: 'Sin completar',
     expand: 'Mostrar los hitos',
     collapse: 'Ocultar los hitos',
-    dismiss: 'Ocultar',
+    dismiss: 'Descartar',
     note: 'Estos hitos se quedan en este espacio de trabajo; no se envían como datos de analítica.',
   },
   capture: {
