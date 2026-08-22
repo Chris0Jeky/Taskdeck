@@ -169,6 +169,40 @@ describe('useReviewActions', () => {
     expect(automationApi.rejectProposal).not.toHaveBeenCalled()
   })
 
+  it('should close the reason gate when its proposal leaves the list', () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    expect(actions.rejectPromptProposalId.value).toBe('p-1')
+
+    proposals.value = []
+
+    // Synchronous, without an intervening tick: the watcher uses `flush: 'sync'`
+    // precisely so a set-then-remove inside one tick cannot leave the id behind,
+    // where a later refresh that re-adds the proposal would silently re-open the
+    // dialog over it.
+    expect(actions.rejectPromptProposalId.value).toBeNull()
+    expect(actions.rejectPromptProposal.value).toBeNull()
+  })
+
+  it('should fire only one reject when the gate is confirmed twice', async () => {
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+
+    // Both confirms are issued before the first one's API call settles — the
+    // double-click / double-Enter shape. `confirmRejectProposal` clears the
+    // pending id BEFORE awaiting, so the second call finds a closed gate and
+    // returns without deciding anything. Move that clear after the await and
+    // this test sees two rejects.
+    const first = actions.confirmRejectProposal('double')
+    const second = actions.confirmRejectProposal('double')
+    await Promise.all([first, second])
+
+    expect(automationApi.rejectProposal).toHaveBeenCalledTimes(1)
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'double')
+  })
+
   it('should never use the native prompt() for the rejection reason', async () => {
     const promptSpy = vi.spyOn(globalThis, 'prompt')
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
