@@ -374,8 +374,10 @@ public class BoardMutationAuditTests
 
     #region LabelService Audit Tests
 
-    // The null actor is correct throughout this region: every call below uses a no-actor
-    // LabelService overload. The attributed lane is pinned by DirectCrudAuditActorTests (#1979).
+    // The null actor is correct throughout this region: every call below omits the actor
+    // argument, so actorUserId defaults to null (these are the actor-bearing overloads with the
+    // default applied, not the positional-token overloads). The attributed lane is pinned by
+    // DirectCrudAuditActorTests (#1979).
 
     [Fact]
     public async Task CreateLabel_RecordsAuditLog()

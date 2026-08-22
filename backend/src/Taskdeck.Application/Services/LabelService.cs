@@ -34,10 +34,12 @@ public class LabelService
     /// <summary>
     /// Positional-token overload kept so existing <c>(dto, cancellationToken)</c> call sites keep
     /// binding to the no-actor path instead of failing to compile against the actor parameter.
-    /// Label CRUD has no proposal-apply lane: <c>OperationHandlerRegistry</c> only resolves
+    /// No proposal lane reaches <c>LabelService</c>: <c>OperationHandlerRegistry</c> only resolves
     /// existing labels and routes its writes through <c>CardService</c>, and the MCP surface reads
-    /// labels only. <c>LabelsController</c> is therefore the sole request-path caller and always
-    /// supplies an actor; the unattributed path exists for non-request callers (today, tests).
+    /// labels only. (Starter-pack apply and board import create labels via the repository directly,
+    /// bypassing this service and its audit rows entirely.) <c>LabelsController</c> is therefore the
+    /// sole request-path caller and always supplies an actor; the unattributed path exists for
+    /// non-request callers (today, tests).
     /// </summary>
     public Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken)
     {

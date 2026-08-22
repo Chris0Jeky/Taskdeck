@@ -272,9 +272,9 @@ public class DirectCrudAuditActorTests
 
     #region LabelService
 
-    // Issue #1979. BoardMutationAuditTests pins Created/Updated/Deleted -> null for the *no-actor*
-    // overloads; these three facts pin the actor lane of the same three actions. Each test calls
-    // the exact overload LabelsController calls.
+    // Issue #1979. BoardMutationAuditTests pins Created/Updated/Deleted -> null via calls that
+    // omit the actor argument (actorUserId defaulting to null); these three facts pin the actor
+    // lane of the same three actions. Each test calls the exact overload LabelsController calls.
 
     [Fact]
     public async Task CreateLabel_StampsActingUserOnAuditRow()
