@@ -106,18 +106,27 @@ direct board edit.
 The **audit trail is weaker than that, measured at `69ac993af`**, and this ADR does not pretend
 otherwise:
 
+Every row below was read off the `SafeLogAsync` call sites at `69ac993af` — `CardService.cs`,
+`ColumnService.cs` and `BoardService.cs`. The helper's `userId` parameter is optional and defaults
+to `null`, so a call that does not pass it writes an unattributed row:
+
 | Operation | Audit row | Actor recorded |
 | --- | --- | --- |
-| Card updated | `AuditAction.Updated` | yes (`actorUserId`) |
+| Board created | `Created` | yes (`ownerId`, `BoardService.cs:265`) |
+| Card updated | `AuditAction.Updated` | yes (`actorUserId`, `CardService.cs:164`) |
 | Card created / moved / deleted | `Created` / `Moved` / `Deleted` | **no** (`userId` defaults to `null`) |
 | Column created / updated / deleted / reordered | `Created` / `Updated` / `Deleted` | **no** |
-| Board archived | `Archived` | **no** |
-| Board updated | `Updated` | yes |
+| Board updated / archived / unarchived | `Updated` / `Archived` / `Unarchived` | **no** (`BoardService.cs:312`, `:314`, `:316`, `:362`) |
+
+Board **create** is the only board-level write that stamps an actor. An earlier draft of this table
+claimed "Board updated — yes"; that was wrong, and correcting it is the point of recording
+measurements rather than assertions.
 
 So a direct edit is *authorized* per user but, for most operations, not *attributed* in the audit
 log. Single-user local-first use has not felt this; a collaborator board would. Stamping the acting
 user on the remaining `SafeLogAsync` calls is the obvious fix, is a backend change, and is
-deliberately out of scope for the UI port that prompted this ADR. It is tracked as follow-up work.
+deliberately out of scope for the UI port that prompted this ADR. It is tracked separately as
+[#1960](https://github.com/Chris0Jeky/Taskdeck/issues/1960).
 
 The claim this ADR makes is therefore precise: direct human edits are **immediate**, **authorized
 per user**, and **first-class**. Full audit attribution is a stated goal with a measured gap, not a
