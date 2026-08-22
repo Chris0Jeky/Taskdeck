@@ -247,6 +247,91 @@ describe('captureStore', () => {
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
+  it('skips the badge refresh when the caller opts out because it fetches the full summary itself', async () => {
+    // Paper Home runs its own `fetchHomeSummary()` right after the capture.
+    // Both are GET /workspace/home, so notifying as well would read the
+    // heaviest endpoint on the surface twice for one keystroke (#1974).
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockResolvedValue({
+      id: 'c3b',
+      userId: 'u1',
+      boardId: null,
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'no double fetch',
+      rawText: 'no double fetch',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+    })
+
+    await store.createItem({ boardId: null, text: 'no double fetch' }, { refreshWorkload: false })
+
+    expect(store.items[0].id).toBe('c3b')
+    // The capture itself still lands, and its toast still fires — only the
+    // redundant second read is suppressed.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox', undefined, {
+      label: 'saved',
+    })
+    expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
+  })
+
+  it('never stamps any capture success with the applied label', async () => {
+    // `applied` is caller-opt-in and reserved for a proposal written to a
+    // board (#1970). Nothing in this store may claim it, so drive EVERY
+    // success path that toasts and check the labels they actually carried —
+    // this is what keeps a future "just reuse the success word" edit from
+    // re-introducing the original defect.
+    const store = useCaptureStore()
+    const detail = {
+      id: 'c-labels',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'label check',
+      rawText: 'label check',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+    vi.mocked(captureApi.createItem).mockResolvedValue(detail)
+    vi.mocked(captureApi.getItem).mockResolvedValue(detail)
+    vi.mocked(captureApi.ignoreItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.cancelItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c-labels',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c-labels', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+    vi.mocked(captureApi.updateSuggestion).mockResolvedValue(detail)
+
+    await store.createItem({ boardId: null, text: 'label check' })
+    await store.ignoreItem('c-labels')
+    await store.cancelItem('c-labels')
+    await store.triageItem('c-labels')
+    await store.batchTriage(['c-labels'], 'triage')
+    await store.updateSuggestion('c-labels', { text: 'label check' })
+
+    const labels = toastMocks.success.mock.calls.map(
+      (call) => (call[2] as { label?: string } | undefined)?.label,
+    )
+    // Guards the guard: an empty call list would make this vacuously green.
+    expect(labels.length).toBe(6)
+    expect(labels).toContain('saved')
+    expect(labels).toContain('queued')
+    expect(labels).not.toContain('applied')
+    expect(labels).not.toContain('approved')
+  })
+
   it('updates selection detail after ignore action', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.ignoreItem).mockResolvedValue(undefined)

@@ -681,10 +681,33 @@ describe('PaperHomeView', () => {
       await Promise.resolve()
 
       expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
-      expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
-        boardId: null,
-        text: 'Refactor the queue store',
-        source: 'Typed',
+      expect(mockCaptureStore.createItem).toHaveBeenCalledWith(
+        {
+          boardId: null,
+          text: 'Refactor the queue store',
+          source: 'Typed',
+        },
+        expect.anything(),
+      )
+      // The FULL summary, not the workload slice: a capture also ticks the
+      // `capture-first-item` milestone and moves the recommended actions.
+      expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads /workspace/home once per quick capture, not twice (GH-1974)', async () => {
+      // The store's own badge refresh and this view's summary fetch are the
+      // same endpoint. The view opts the notify OUT because its fetch below is
+      // a superset; without that flag one keystroke fired the heaviest read
+      // on the surface twice.
+      const wrapper = mount(PaperHomeView)
+      const input = wrapper.get('[data-testid="paper-home-capture-input"]')
+
+      await input.setValue('Only one home read')
+      await wrapper.get('form').trigger('submit.prevent')
+      await Promise.resolve()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledWith(expect.anything(), {
+        refreshWorkload: false,
       })
       expect(mockWorkspaceStore.fetchHomeSummary).toHaveBeenCalledTimes(1)
     })

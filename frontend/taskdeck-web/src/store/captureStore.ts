@@ -30,6 +30,21 @@ type DetailLoadOptions = {
   syncSummary?: boolean
 }
 
+type CreateItemOptions = {
+  /**
+   * Whether the badge refresh fires after the capture lands (default true).
+   *
+   * Pass `false` from a caller that runs its OWN `fetchHomeSummary()` next:
+   * both read GET /workspace/home — the heaviest endpoint on the surface —
+   * and the full summary already rewrites `workload`, so leaving the notify
+   * on would fetch it twice for one keystroke. The full fetch is what those
+   * callers need anyway: a capture also moves `onboarding` (the
+   * `capture-first-item` milestone is `TotalCaptures > 0` server-side) and
+   * `recommendedActions`, neither of which the workload-only refresh carries.
+   */
+  refreshWorkload?: boolean
+}
+
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
   const workspace = useWorkspaceStore()
@@ -183,7 +198,7 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function createItem(dto: CreateCaptureItemDto) {
+  async function createItem(dto: CreateCaptureItemDto, options: CreateItemOptions = {}) {
     guardDemoMutation()
     try {
       actionError.value = null
@@ -193,7 +208,9 @@ export const useCaptureStore = defineStore('capture', () => {
       // SAVED, not APPLIED (#1970): a capture sitting in the inbox has touched
       // no board. Duration stays the store default; only the stamp is named.
       toast.success('Capture saved to inbox', undefined, { label: 'saved' })
-      notifyTriageCountChanged()
+      if (options.refreshWorkload !== false) {
+        notifyTriageCountChanged()
+      }
       return created
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to capture item').message
