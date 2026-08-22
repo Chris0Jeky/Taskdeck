@@ -17,6 +17,7 @@ import home from './home'
 import inbox from './inbox'
 import review from './review'
 import settings from './settings'
+import today from './today'
 
 export default {
   home,
@@ -24,4 +25,5 @@ export default {
   boards,
   review,
   settings,
+  today,
 }
