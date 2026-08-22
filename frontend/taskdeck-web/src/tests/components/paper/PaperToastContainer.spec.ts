@@ -3,7 +3,8 @@ import { mount, type VueWrapper, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import PaperToastContainer from '../../../components/paper/PaperToastContainer.vue'
-import { useToastStore } from '../../../store/toastStore'
+import { useToastStore, type Toast, type ToastLabel } from '../../../store/toastStore'
+import { i18n } from '../../../i18n'
 
 describe('PaperToastContainer', () => {
   let wrapper: VueWrapper | null = null
@@ -137,5 +138,92 @@ describe('PaperToastContainer', () => {
     expect(wrapper.emitted('action')?.[0]).toEqual([id])
     // Toast is removed from the store after action.
     expect(store.toasts.find((t) => t.id === id)).toBeUndefined()
+  })
+})
+
+/**
+ * Toast labels tell the truth about what happened (#1970).
+ *
+ * The stamp used to be derived from the Paper TONE, so every success read
+ * "APPLIED" — on an inbox save, on a queued triage, and on an approval whose
+ * own pane simultaneously said "not yet applied". These assertions read the
+ * rendered stamp, never a screenshot or a delayed query: toasts here are
+ * created with `duration: 0`, which disables the auto-dismiss timer entirely.
+ */
+describe('PaperToastContainer outcome labels', () => {
+  let wrapper: VueWrapper | null = null
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = null
+  })
+
+  async function stampFor(type: Toast['type'], label?: ToastLabel): Promise<string> {
+    const store = useToastStore()
+    store.show('message body', type, 0, label ? { label } : {})
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    return wrapper.find('.paper-toast__head .tagstamp').text()
+  }
+
+  it.each([
+    ['saved', 'Saved'],
+    ['queued', 'Queued'],
+    ['approved', 'Approved'],
+    ['applied', 'Applied'],
+  ] as Array<[ToastLabel, string]>)(
+    'stamps a %s success toast "%s"',
+    async (label, expected) => {
+      expect(await stampFor('success', label)).toBe(expected)
+    },
+  )
+
+  it('never stamps the approve toast with the applied label', async () => {
+    // The AC's negative assertion: approving is step 1 of 2, so the toast must
+    // not claim the board was written. Substring, not equality — "Applied"
+    // must not appear anywhere in the stamp.
+    const stamp = await stampFor('success', 'approved')
+    expect(stamp).not.toContain('Applied')
+  })
+
+  it('falls back to a severity word, not an action word, for an unlabelled success', async () => {
+    // This is the reported defect in its purest form: before the fix an
+    // unlabelled success rendered the success TONE's name — "Applied".
+    const stamp = await stampFor('success')
+    expect(stamp).toBe('Done')
+    expect(stamp).not.toContain('Applied')
+  })
+
+  it.each([
+    ['error', 'Failed'],
+    ['warning', 'Warning'],
+    ['info', 'Noted'],
+  ] as Array<[Toast['type'], string]>)(
+    'stamps an unlabelled %s toast "%s"',
+    async (type, expected) => {
+      // The old fallbacks were tone names too — an error toast read "OVERDUE".
+      expect(await stampFor(type, undefined)).toBe(expected)
+    },
+  )
+
+  it('exposes the label kind as a data attribute independent of locale', async () => {
+    const store = useToastStore()
+    store.show('message body', 'success', 0, { label: 'saved' })
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.find('.paper-toast').attributes('data-label')).toBe('saved')
+  })
+
+  it('translates the stamp rather than hardcoding English', async () => {
+    i18n.global.locale.value = 'it'
+    try {
+      expect(await stampFor('success', 'saved')).toBe('Salvato')
+    } finally {
+      i18n.global.locale.value = 'en'
+    }
   })
 })

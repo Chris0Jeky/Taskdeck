@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
+import { i18n } from '../../../i18n'
 import type { CaptureItemSummary } from '../../../types/capture'
 
 const mockCaptureStore = reactive({
@@ -36,6 +37,19 @@ const mockBoardStore = reactive({
 vi.mock('../../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
+
+function captureRow(id: string, status: CaptureItemSummary['status']): CaptureItemSummary {
+  return {
+    id,
+    userId: 'u-1',
+    boardId: null,
+    status,
+    source: 'Typed',
+    textExcerpt: id,
+    createdAt: new Date().toISOString(),
+    processedAt: null,
+  }
+}
 
 describe('PaperInboxView', () => {
   beforeEach(() => {
@@ -465,5 +479,90 @@ describe('PaperInboxView', () => {
     await flushPromises()
 
     expect(orchestratorState.selectedItemId.value).toBe('other-item')
+  })
+
+  /**
+   * The header eyebrow no longer calls the total "the queue" (#1974).
+   *
+   * The reporter saw `INBOX · CAPTURE SURFACE · 5 IN QUEUE` beside a sidebar
+   * badge reading 2, because the header counted every capture fetched —
+   * applied ones included — while the badge counted only pending ones.
+   */
+  it('labels the pending count and the total apart, and does not let applied captures inflate the queue', () => {
+    orchestratorState.items.value = [
+      captureRow('c-new-1', 'New'),
+      captureRow('c-new-2', 'New'),
+      captureRow('c-applied-1', 'Converted'),
+      captureRow('c-applied-2', 'Converted'),
+      captureRow('c-proposed', 'ProposalCreated'),
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    // The exact pair that would have caught the 2-vs-5 divergence.
+    expect(eyebrow).toContain('2 awaiting triage')
+    expect(eyebrow).toContain('5 captured')
+    // The word "queue" is gone from the header — it was the ambiguity itself.
+    expect(eyebrow.toLowerCase()).not.toContain('in queue')
+  })
+
+  it('counts a failed capture as still awaiting triage, matching the badge definition', () => {
+    orchestratorState.items.value = [
+      captureRow('c-new', 'New'),
+      captureRow('c-failed', 'Failed'),
+      captureRow('c-triaging', 'Triaging'),
+    ] as CaptureItemSummary[]
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).toContain('2 awaiting triage')
+    expect(eyebrow).toContain('3 captured')
+  })
+
+  /**
+   * The total is a counted noun, and Italian and Spanish agree their participle
+   * with it. At n=1 the eyebrow read "1 catturati" / "1 capturadas" — the kind
+   * of thing that makes a localized surface look machine-made.
+   */
+  describe('eyebrow singular agreement', () => {
+    function eyebrowFor(locale: 'en' | 'it' | 'es', rows: number): string {
+      i18n.global.locale.value = locale
+      orchestratorState.items.value = Array.from({ length: rows }, (_, index) =>
+        captureRow(`c-${index}`, 'New'),
+      ) as CaptureItemSummary[]
+      const wrapper = mount(PaperInboxView)
+      return wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+    }
+
+    it('agrees the Italian participle with a single capture', () => {
+      const eyebrow = eyebrowFor('it', 1)
+
+      expect(eyebrow).toContain('1 catturato')
+      expect(eyebrow).not.toContain('catturati')
+    })
+
+    it('keeps the Italian plural for more than one', () => {
+      expect(eyebrowFor('it', 3)).toContain('3 catturati')
+    })
+
+    it('agrees the Spanish participle with a single capture', () => {
+      const eyebrow = eyebrowFor('es', 1)
+
+      expect(eyebrow).toContain('1 capturada')
+      expect(eyebrow).not.toContain('capturadas')
+    })
+
+    it('keeps the Spanish plural for more than one', () => {
+      expect(eyebrowFor('es', 3)).toContain('3 capturadas')
+    })
+
+    it('leaves English unchanged in both branches', () => {
+      // "captured" is invariable; the two English forms exist only to give the
+      // other catalogs a singular slot, so neither may drift.
+      expect(eyebrowFor('en', 1)).toContain('1 captured')
+      expect(eyebrowFor('en', 4)).toContain('4 captured')
+    })
   })
 })

@@ -3,8 +3,25 @@
  *
  * "Cuenta" para account, y sesión para lo que se abre y se cierra: "cerrar
  * sesión" es lo que espera leer quien busca salir.
+ *
+ * `toast.label.*`: sellos de resultado. Un sello no concuerda con un sustantivo
+ * concreto — la misma palabra marca una captura y una propuesta — así que los
+ * participios van en masculino impersonal ("Guardado", no "Guardada") y donde
+ * se puede se usa una forma invariable ("En cola", "Error", "Aviso").
  */
 export default {
+  toast: {
+    label: {
+      saved: 'Guardado',
+      queued: 'En cola',
+      approved: 'Aprobado',
+      applied: 'Aplicado',
+      done: 'Hecho',
+      noted: 'Nota',
+      warning: 'Aviso',
+      failed: 'Error',
+    },
+  },
   topbar: {
     notifications: 'Notificaciones',
     appearance: 'Ajustes de apariencia',

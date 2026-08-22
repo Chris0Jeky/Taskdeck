@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
@@ -43,6 +44,11 @@ const {
 } = useInboxOrchestrator({
   scrollToIndex: () => undefined,
 })
+
+// Header counters (GH-1974). `pendingTriageCount` is the sidebar badge's own
+// definition applied to these rows; `capturedCount` is everything fetched.
+// The eyebrow labels them separately — the total is not a queue.
+const { pendingTriageCount, capturedCount } = useInboxCounts(items)
 
 let stopTriagePolling: (() => void) | null = null
 
@@ -191,7 +197,18 @@ defineExpose({ variant, toggleVariant, setVariant })
   <div class="paper-inbox" :data-variant="variant">
     <header class="paper-inbox__header">
       <div>
-        <div class="tk-eyebrow">{{ $t('inbox.eyebrow', { count: items.length }) }}</div>
+        <!-- The third argument is the plural CHOICE: it/es agree the participle
+             with the total ("1 catturato" vs "2 catturati"), so the count has to
+             reach the catalog as a choice and not only as an interpolation. -->
+        <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
+          {{
+            $t(
+              'inbox.eyebrow',
+              { pending: pendingTriageCount, total: capturedCount },
+              capturedCount,
+            )
+          }}
+        </div>
         <h1 class="tk-h1 paper-inbox__title">
           {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>
         </h1>

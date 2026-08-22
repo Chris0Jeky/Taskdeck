@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onUnmounted, reactive, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperTagstamp from './PaperTagstamp.vue'
 import type { PaperTagstampTone } from './PaperTagstamp.vue'
-import { useToastStore, type Toast } from '../../store/toastStore'
+import { useToastStore, type Toast, type ToastLabel } from '../../store/toastStore'
 
 /**
  * PaperToastContainer — bottom-right paper toast stack.  Mirrors
@@ -18,6 +19,9 @@ import { useToastStore, type Toast } from '../../store/toastStore'
  *   └─────────────┴────────────────────────────────┴────────────────────┘
  *
  * Behaviour notes:
+ *   - The tagstamp word comes from `toast.label` (what happened), translated
+ *     via `shell.toast.label.*`; the tagstamp COLOUR comes from `toast.type`
+ *     (severity).  See `FALLBACK_LABEL` for why the two are kept apart.
  *   - The countdown is computed locally from `toast.duration`.
  *   - Hovering/focus pauses both the visual countdown and store removal timer.
  *   - The "undo"/action link emits `action(toast.id)` and runs the toast's
@@ -25,6 +29,7 @@ import { useToastStore, type Toast } from '../../store/toastStore'
  */
 
 const toastStore = useToastStore()
+const { t } = useI18n()
 
 type Tone = 'applied' | 'proposed' | 'captured' | 'overdue' | 'undo'
 
@@ -32,21 +37,49 @@ type ToastDescriptor = {
   tone: Tone
   tagstamp: PaperTagstampTone
   glyph: string
+  labelKind: ToastLabel
   label: string
 }
 
-/** Map the existing toast `type` field to the Paper tone palette. */
+/**
+ * Severity-generic stamp for a toast whose caller named no action (GH-1970).
+ *
+ * These four words describe SEVERITY only. The Paper tone names below
+ * ("applied", "overdue", "proposed", "captured") are palette identities and
+ * must never leak into the stamp: rendering the success tone's name printed
+ * "APPLIED" on inbox saves and on pre-apply approvals, contradicting the very
+ * "not yet applied" copy the approve pane shows at the same moment.
+ */
+const FALLBACK_LABEL: Record<Toast['type'], ToastLabel> = {
+  success: 'done',
+  error: 'failed',
+  warning: 'warning',
+  info: 'noted',
+}
+
+/** The outcome word this toast is stamped with — the caller's, else severity's. */
+function labelKind(toast: Toast): ToastLabel {
+  return toast.label ?? FALLBACK_LABEL[toast.type]
+}
+
+/**
+ * Map a toast to its Paper tone palette (from `type`, i.e. severity) and to
+ * its outcome stamp (from `label`, i.e. what happened). The two are separate
+ * on purpose — a `saved` and an `applied` toast are both green successes.
+ */
 function describe(toast: Toast): ToastDescriptor {
+  const kind = labelKind(toast)
+  const label = t(`shell.toast.label.${kind}`)
   switch (toast.type) {
     case 'success':
-      return { tone: 'applied', tagstamp: 'applied', glyph: '✓', label: 'Applied' }
+      return { tone: 'applied', tagstamp: 'applied', glyph: '✓', labelKind: kind, label }
     case 'error':
-      return { tone: 'overdue', tagstamp: 'overdue', glyph: '‼', label: 'Overdue' }
+      return { tone: 'overdue', tagstamp: 'overdue', glyph: '‼', labelKind: kind, label }
     case 'warning':
-      return { tone: 'proposed', tagstamp: 'ember', glyph: '◆', label: 'Proposed' }
+      return { tone: 'proposed', tagstamp: 'ember', glyph: '◆', labelKind: kind, label }
     case 'info':
     default:
-      return { tone: 'captured', tagstamp: 'mute', glyph: '✎', label: 'Captured' }
+      return { tone: 'captured', tagstamp: 'mute', glyph: '✎', labelKind: kind, label }
   }
 }
 
@@ -225,6 +258,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
         :key="toast.id"
         :data-toast-id="toast.id"
         :data-tone="describe(toast).tone"
+        :data-label="describe(toast).labelKind"
         :class="[
           'paper-toast',
           'card-lift',

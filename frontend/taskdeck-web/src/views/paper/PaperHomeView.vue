@@ -297,7 +297,14 @@ async function submitCapture() {
   if (captureBusy.value) return
   captureBusy.value = true
   try {
-    await capture.createItem({ boardId: null, text, source: 'Typed' })
+    // `refreshWorkload: false` — the full summary fetched below is a superset
+    // of the store's workload-only badge refresh, and both hit the same
+    // /workspace/home endpoint, so letting the store notify too would double
+    // -fetch the heaviest read on this surface for every quick capture
+    // (GH-1974). Home needs the FULL summary, not just the counters: a capture
+    // also ticks the `capture-first-item` milestone and moves the recommended
+    // actions, so this fetch stays.
+    await capture.createItem({ boardId: null, text, source: 'Typed' }, { refreshWorkload: false })
     captureText.value = ''
     await workspace.fetchHomeSummary().catch(() => {
       // Home summary errors are reflected via workspace.homeError.

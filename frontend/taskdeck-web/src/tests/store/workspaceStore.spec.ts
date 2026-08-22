@@ -58,6 +58,27 @@ vi.mock('../../store/sessionStore', () => ({
   useSessionStore: () => sessionMock,
 }))
 
+/** A home summary whose only interesting axis is the pending-triage count. */
+function buildHomeSummary(capturesNeedingTriage: number) {
+  return {
+    workspaceMode: 'guided' as const,
+    isFirstRun: false,
+    onboarding: buildOnboarding(),
+    workload: {
+      capturesNeedingTriage,
+      capturesInProgress: 0,
+      capturesReadyForFollowUp: 0,
+      proposalsPendingReview: 0,
+    },
+    boards: {
+      totalBoards: 1,
+      recentBoardsCount: 0,
+      recentBoards: [],
+    },
+    recommendedActions: [],
+  }
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -225,6 +246,55 @@ describe('workspaceStore', () => {
 
     expect(store.inboxBadgeCount).toBe(0)
     expect(store.reviewBadgeCount).toBe(0)
+  })
+
+  it('does not let a slow badge refresh overwrite a fresher full summary (GH-1974)', async () => {
+    // `fetchHomeSummary` and `refreshWorkloadCounts` read the SAME endpoint and
+    // both write `homeSummary.workload`, so the one that STARTED LAST owns that
+    // field. A refresh that began first but lands last carries a pre-mutation
+    // count; applying it would silently rewind the badge the user just watched
+    // move. The full fetch joins the version guard so that response is dropped.
+    const store = useWorkspaceStore()
+    const stale = createDeferred<Awaited<ReturnType<typeof workspaceApi.getHomeSummary>>>()
+    const fresh = createDeferred<Awaited<ReturnType<typeof workspaceApi.getHomeSummary>>>()
+
+    vi.mocked(workspaceApi.getHomeSummary).mockResolvedValueOnce(buildHomeSummary(5))
+    await store.fetchHomeSummary()
+    expect(store.inboxBadgeCount).toBe(5)
+
+    // Badge refresh starts FIRST...
+    vi.mocked(workspaceApi.getHomeSummary).mockReturnValueOnce(stale.promise)
+    const refreshPromise = store.refreshWorkloadCounts()
+
+    // ...the full summary starts SECOND, so it is the newer read.
+    vi.mocked(workspaceApi.getHomeSummary).mockReturnValueOnce(fresh.promise)
+    const fetchPromise = store.fetchHomeSummary()
+
+    fresh.resolve(buildHomeSummary(1))
+    await fetchPromise
+    expect(store.inboxBadgeCount).toBe(1)
+
+    // The overtaken refresh lands last with a stale count. It must be dropped.
+    stale.resolve(buildHomeSummary(9))
+    await refreshPromise
+
+    expect(store.inboxBadgeCount).toBe(1)
+    expect(store.homeSummary?.workload.capturesNeedingTriage).toBe(1)
+  })
+
+  it('still applies a badge refresh that started after the last full summary', async () => {
+    // The mirror of the test above — the guard must drop only OVERTAKEN
+    // responses, not switch the badge refresh off. Without this, bumping the
+    // version in `fetchHomeSummary` could pass by breaking the feature.
+    const store = useWorkspaceStore()
+
+    vi.mocked(workspaceApi.getHomeSummary).mockResolvedValueOnce(buildHomeSummary(5))
+    await store.fetchHomeSummary()
+
+    vi.mocked(workspaceApi.getHomeSummary).mockResolvedValueOnce(buildHomeSummary(2))
+    await store.refreshWorkloadCounts()
+
+    expect(store.inboxBadgeCount).toBe(2)
   })
 
   it('loads today summary and syncs onboarding state', async () => {

@@ -10,8 +10,25 @@
  * (the Appearance settings page), not by a generic "Settings": the glyph is a
  * ring with radiating spokes and reads as a sun, so a user pressing it is
  * looking for theme controls (#1932).
+ *
+ * `toast.label.*` are the outcome stamps on a Paper toast (#1970). Each names
+ * what actually happened; `applied` is RESERVED for a proposal written to a
+ * board and is never a generic success word. The last four are the
+ * severity-generic fallbacks for a toast whose caller named no action.
  */
 export default {
+  toast: {
+    label: {
+      saved: 'Saved',
+      queued: 'Queued',
+      approved: 'Approved',
+      applied: 'Applied',
+      done: 'Done',
+      noted: 'Noted',
+      warning: 'Warning',
+      failed: 'Failed',
+    },
+  },
   topbar: {
     notifications: 'Notifications',
     appearance: 'Appearance settings',

@@ -173,7 +173,10 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.approveProposal(proposalId)
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success(t('review.toast.approved'))
+      // APPROVED, not APPLIED (GH-1970): phase 1 of the two-phase decision has
+      // landed and NOTHING has reached a board yet — the approve pane says as
+      // much in the same breath, so the stamp must not contradict it.
+      toast.success(t('review.toast.approved'), undefined, { label: 'approved' })
     } catch (e: unknown) {
       toast.error(getErrorDisplay(e, t('review.toast.approveFailed')).message)
     } finally {
@@ -294,7 +297,10 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.executeProposal(proposalId, createRequestId())
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success(t('review.toast.applied'))
+      // The ONE path allowed to stamp APPLIED (GH-1970): phase 2 succeeded, so
+      // the proposal really is written to the board. Every other success in the
+      // app names its own outcome or falls back to a severity word.
+      toast.success(t('review.toast.applied'), undefined, { label: 'applied' })
     } catch (e: unknown) {
       toast.error(getErrorDisplay(e, t('review.toast.applyFailed')).message)
     } finally {

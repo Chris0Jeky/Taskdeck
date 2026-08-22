@@ -53,6 +53,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let onboardingRequestVersion = 0
   let pendingModeWrites = 0
   let pendingOnboardingWrites = 0
+  // Version guard shared by `fetchHomeSummary` and `refreshWorkloadCounts`:
+  // both read GET /workspace/home and both write `homeSummary.workload`, so
+  // whichever STARTS last owns that field. Declared here (not beside
+  // `refreshWorkloadCounts`) because `fetchHomeSummary` bumps it too.
+  let workloadRequestVersion = 0
   // Session-scoped unsaved-local-intent flags. Set when the field's write
   // FAILS while local intent is applied; cleared when a later write of the
   // field succeeds or hydratePreferences confirms the server matches the local
@@ -286,6 +291,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     const guardSnapshot = capturePreferenceReadSnapshot()
+    // Join the workload guard (GH-1974): this read is the NEWER one, and it
+    // writes the whole summary including `workload`. Without the bump, a
+    // badge refresh that started earlier and lands later would overwrite this
+    // fresher `workload` with its own stale slice — the counts would silently
+    // rewind after a full reload of the surface.
+    workloadRequestVersion += 1
 
     try {
       homeLoading.value = true
@@ -308,6 +319,45 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       throw e
     } finally {
       homeLoading.value = false
+    }
+  }
+
+  /**
+   * Re-read ONLY the workload counters behind the sidebar badges (#1974).
+   *
+   * `inboxBadgeCount` / `reviewBadgeCount` read `homeSummary.workload`, which
+   * `AppShell` fetches once when the session authenticates and never again.
+   * A capture created, triaged or rejected mid-session therefore left the
+   * badge showing a pre-capture number until a full page reload.
+   *
+   * This deliberately does NOT go through `fetchHomeSummary`:
+   *   - it must not run the preference-ordering machinery above, so a
+   *     background badge refresh can never re-apply a server mode/onboarding
+   *     over newer local intent;
+   *   - it must not touch `homeLoading`, so a mounted Home surface does not
+   *     flash a skeleton because something was captured elsewhere.
+   *
+   * Best-effort by design: a failure keeps the last known counts rather than
+   * raising an error for a refresh the user never asked for. It is a no-op
+   * until a summary exists — with no summary the badges render nothing, and
+   * `AppShell`'s own fetch is what populates them.
+   */
+  async function refreshWorkloadCounts(): Promise<void> {
+    // Demo summaries are built from a static fixture; re-reading cannot move.
+    if (isDemoMode) return
+    if (!homeSummary.value) return
+
+    const requestVersion = ++workloadRequestVersion
+    try {
+      const summary = await workspaceApi.getHomeSummary()
+      // Drop a response overtaken by a newer refresh, or one that landed after
+      // the summary was cleared (logout) — never resurrect a cleared summary.
+      if (workloadRequestVersion !== requestVersion) return
+      const current = homeSummary.value
+      if (!current) return
+      homeSummary.value = { ...current, workload: summary.workload }
+    } catch {
+      // Intentionally silent — see the doc comment.
     }
   }
 
@@ -415,6 +465,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearHomeSummary() {
+    // Invalidate any in-flight badge refresh so its response cannot write back
+    // into a summary the caller just cleared.
+    workloadRequestVersion += 1
     homeSummary.value = null
     homeError.value = null
   }
@@ -456,6 +509,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     hydratePreferences,
     updateMode,
     fetchHomeSummary,
+    refreshWorkloadCounts,
     fetchTodaySummary,
     updateOnboarding,
     clearHomeSummary,

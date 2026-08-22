@@ -10,15 +10,47 @@ export interface ToastAction {
   handler: () => void
 }
 
-export interface Toast {
-  id: string
-  message: string
-  type: 'success' | 'error' | 'info' | 'warning'
-  duration: number
+/**
+ * The outcome word a toast is stamped with (#1970).
+ *
+ * A toast's `type` is its SEVERITY — which colour to paint — not a statement
+ * about what happened. Paper renders a word beside the message, and deriving
+ * that word from the severity stamped "APPLIED" on every success, including
+ * inbox saves and pre-apply approvals where "applied" is precisely the thing
+ * that had NOT happened yet.
+ *
+ * `label` is that word's identity, chosen by the caller that knows which
+ * action ran. `applied` is reserved for a proposal actually written to a board
+ * (post-`/execute`) and must never be used as a generic success stamp.
+ *
+ * `done` / `noted` / `warning` / `failed` are the severity-generic fallbacks
+ * used when a caller names no action; the renderer picks one from `type`, so
+ * an unlabelled toast degrades to a neutral word, never to an action word.
+ */
+export type ToastLabel =
+  | 'saved'
+  | 'queued'
+  | 'approved'
+  | 'applied'
+  | 'done'
+  | 'noted'
+  | 'warning'
+  | 'failed'
+
+export interface ToastOptions {
   /** Optional title, used by paper-mode rendering for the strong line. */
   title?: string
   /** Optional inline action (e.g. an "open" shortcut). */
   action?: ToastAction
+  /** Outcome word for the paper-mode stamp; falls back to a severity word. */
+  label?: ToastLabel
+}
+
+export interface Toast extends ToastOptions {
+  id: string
+  message: string
+  type: 'success' | 'error' | 'info' | 'warning'
+  duration: number
 }
 
 type ToastTimer = {
@@ -61,7 +93,7 @@ export const useToastStore = defineStore('toast', () => {
     message: string,
     type: Toast['type'] = 'info',
     duration = 3000,
-    options: { title?: string; action?: ToastAction } = {},
+    options: ToastOptions = {},
   ) {
     const id = `toast-${Date.now()}-${Math.random()}`
     const toast: Toast = { id, message, type, duration, ...options }
@@ -72,20 +104,20 @@ export const useToastStore = defineStore('toast', () => {
     return id
   }
 
-  function success(message: string, duration = 3000) {
-    return show(message, 'success', duration)
+  function success(message: string, duration = 3000, options: ToastOptions = {}) {
+    return show(message, 'success', duration, options)
   }
 
-  function error(message: string, duration = 5000) {
-    return show(message, 'error', duration)
+  function error(message: string, duration = 5000, options: ToastOptions = {}) {
+    return show(message, 'error', duration, options)
   }
 
-  function info(message: string, duration = 3000) {
-    return show(message, 'info', duration)
+  function info(message: string, duration = 3000, options: ToastOptions = {}) {
+    return show(message, 'info', duration, options)
   }
 
-  function warning(message: string, duration = 4000) {
-    return show(message, 'warning', duration)
+  function warning(message: string, duration = 4000, options: ToastOptions = {}) {
+    return show(message, 'warning', duration, options)
   }
 
   function remove(id: string) {

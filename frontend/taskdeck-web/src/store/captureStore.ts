@@ -4,6 +4,7 @@ import { captureApi } from '../api/captureApi'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { BatchTriageAction, BatchTriageResult, CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto, UpdateCaptureSuggestionDto } from '../types/capture'
 import { useToastStore } from './toastStore'
+import { useWorkspaceStore } from './workspaceStore'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { buildDemoCaptureItems } from '../utils/demoData'
@@ -29,8 +30,41 @@ type DetailLoadOptions = {
   syncSummary?: boolean
 }
 
+type CreateItemOptions = {
+  /**
+   * Whether the badge refresh fires after the capture lands (default true).
+   *
+   * Pass `false` from a caller that runs its OWN `fetchHomeSummary()` next:
+   * both read GET /workspace/home — the heaviest endpoint on the surface —
+   * and the full summary already rewrites `workload`, so leaving the notify
+   * on would fetch it twice for one keystroke. The full fetch is what those
+   * callers need anyway: a capture also moves `onboarding` (the
+   * `capture-first-item` milestone is `TotalCaptures > 0` server-side) and
+   * `recommendedActions`, neither of which the workload-only refresh carries.
+   */
+  refreshWorkload?: boolean
+}
+
 export const useCaptureStore = defineStore('capture', () => {
   const toast = useToastStore()
+  const workspace = useWorkspaceStore()
+
+  /**
+   * Tell the sidebar badges a capture's triage state moved (#1974).
+   *
+   * The badges read a server-computed workload count (`New + Failed`), which
+   * is fetched once per session; without this the badge kept a pre-mutation
+   * number until a full page reload. Fire-and-forget on purpose: the mutation
+   * has already succeeded and its own toast has already been shown, so a badge
+   * that refreshes a beat later must never delay or fail the action.
+   *
+   * Called only after a mutation that can change `New + Failed`:
+   * create (+1), triage (-1), ignore/cancel (-1), batch, and a triage poll
+   * reaching a terminal status (`Failed` puts one back).
+   */
+  function notifyTriageCountChanged() {
+    void workspace.refreshWorkloadCounts()
+  }
 
   function guardDemoMutation(): never | void {
     if (isDemoMode) {
@@ -164,14 +198,19 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function createItem(dto: CreateCaptureItemDto) {
+  async function createItem(dto: CreateCaptureItemDto, options: CreateItemOptions = {}) {
     guardDemoMutation()
     try {
       actionError.value = null
       const created = await captureApi.createItem(dto)
       detailById.value[created.id] = created
       upsertSummary(toSummary(created))
-      toast.success('Capture saved to inbox')
+      // SAVED, not APPLIED (#1970): a capture sitting in the inbox has touched
+      // no board. Duration stays the store default; only the stamp is named.
+      toast.success('Capture saved to inbox', undefined, { label: 'saved' })
+      if (options.refreshWorkload !== false) {
+        notifyTriageCountChanged()
+      }
       return created
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to capture item').message
@@ -189,6 +228,7 @@ export const useCaptureStore = defineStore('capture', () => {
       await captureApi.ignoreItem(itemId)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item ignored')
+      notifyTriageCountChanged()
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to ignore capture item').message
       actionError.value = message
@@ -207,6 +247,7 @@ export const useCaptureStore = defineStore('capture', () => {
       await captureApi.cancelItem(itemId)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item cancelled')
+      notifyTriageCountChanged()
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to cancel capture item').message
       actionError.value = message
@@ -244,6 +285,9 @@ export const useCaptureStore = defineStore('capture', () => {
         cacheDetail(detail)
 
         if (isTriageTerminalStatus(detail.status)) {
+          // Triage finished while the user watched: the badge moves again here
+          // (a `Failed` outcome puts the capture back into the pending count).
+          notifyTriageCountChanged()
           stop()
           return
         }
@@ -305,7 +349,14 @@ export const useCaptureStore = defineStore('capture', () => {
       }
 
       await fetchDetail(itemId, { forceRefresh: true, showToast: false })
-      toast.success(triageResult.alreadyTriaging ? 'Capture item is already triaging' : 'Capture item triage queued')
+      // QUEUED (#1970): triage has been enqueued, not run and not applied.
+      // Both branches are the same outcome class — the queue already holds it.
+      toast.success(
+        triageResult.alreadyTriaging ? 'Capture item is already triaging' : 'Capture item triage queued',
+        undefined,
+        { label: 'queued' },
+      )
+      notifyTriageCountChanged()
       return triageResult
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to triage capture item').message
@@ -344,6 +395,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
       // Refresh list to pick up status changes
       await fetchItems()
+      notifyTriageCountChanged()
 
       return result
     } catch (e: unknown) {
