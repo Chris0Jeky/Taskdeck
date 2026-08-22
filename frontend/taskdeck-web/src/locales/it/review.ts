@@ -261,7 +261,6 @@ export default {
     heading: 'Perché ora',
     noProposal: 'Nessuna proposta selezionata.',
     fallback: 'Questa proposta è in attesa di revisione in base alla fonte catturata con essa.',
-    tune: 'Regola le euristiche →',
   },
 
   similarPast: {

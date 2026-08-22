@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
+import { useProductVersion } from '../../composables/useProductVersion'
 import { useViewportMode } from '../../composables/useViewportMode'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
@@ -41,12 +42,9 @@ type PaperNavItem = PaperNavItemBase & {
 const props = withDefaults(
   defineProps<{
     workspaceName?: string
-    /** Version label shown in the footer (mono). */
-    version?: string
   }>(),
   {
     workspaceName: 'Solo Workspace',
-    version: 'v0.7.2',
   },
 )
 
@@ -59,6 +57,9 @@ const route = useRoute()
 const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
+// Footer version stamp (GH-1948): sourced from the running backend's stamped
+// release version, never a literal in this file.
+const { displayVersion } = useProductVersion()
 const { mode: viewportMode } = useViewportMode()
 const mobileOpen = ref(false)
 const phoneMoreOpen = ref(false)
@@ -66,20 +67,28 @@ const guidedAdvancedRevealed = ref(false)
 const phoneMoreDrawerId = 'paper-phone-more-drawer'
 const paperAdvancedDrawerId = 'paper-guided-advanced-navigation'
 
+/** Phone tab bar — same capture → review → board ordering as `primaryItems` (GH-1934). */
 const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
   { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today', keywords: '' },
-  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: '' },
   { id: 'inbox', glyph: 'I', label: 'Inbox', path: '/workspace/inbox', keywords: '' },
+  { id: 'review', glyph: 'R', label: 'Review', path: '/workspace/review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: '' },
 ]
 const phoneNavItems = computed<PaperNavItemBase[]>(() => phoneNavItemCandidates.filter(isAvailable))
 
+/**
+ * Primary loop, ordered as the loop is actually WALKED (GH-1934): the two
+ * orientation surfaces first (Home, Today), then capture → review → board —
+ * Inbox, Review, Boards.  Inbox used to sit last even though it is the loop's
+ * entry point, which is the disorientation the dogfooding session reported.
+ * Order here also drives command-palette ordering via `availableNavItems`.
+ */
 const primaryItems: PaperNavItem[] = [
   { id: 'home', label: 'Home', glyph: 'H', path: '/workspace/home', keywords: 'home start summary workspace' },
   { id: 'today', label: 'Today', glyph: 'T', path: '/workspace/today', keywords: 'today agenda daily focus overdue blocked' },
+  { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox', keywords: 'inbox captures triage' },
   { id: 'review', label: 'Review', glyph: 'R', path: '/workspace/review', badgeKey: 'review', flag: 'newAutomation', workbenchBypassesFlag: true, keywords: 'review proposals automations approve reject execute' },
   { id: 'boards', label: 'Boards', glyph: 'B', path: '/workspace/boards', keywords: 'boards projects workspace' },
-  { id: 'inbox', label: 'Inbox', glyph: 'I', path: '/workspace/inbox', badgeKey: 'inbox', keywords: 'inbox captures triage' },
 ]
 
 const workbenchItems: PaperNavItem[] = [
@@ -195,6 +204,17 @@ function isCurrentOrChild(path: string): boolean {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
+/**
+ * Initial shown in the workspace identity chip.
+ *
+ * The chip is deliberately NON-INTERACTIVE (GH-1934). Taskdeck is
+ * single-workspace: `workspaceStore` holds a workspace MODE
+ * (guided/workbench), never a list of workspaces, so there is nothing to
+ * switch to. It used to render as a button with a chevron and an aria-label
+ * announcing a switcher; clicking it opened nothing, which misled sighted and
+ * screen-reader users alike. Restore the button, the chevron and the label
+ * together with a real switcher, once more than one workspace can exist.
+ */
 const workspaceInitial = computed(() =>
   (props.workspaceName?.trim().charAt(0) || 'S').toUpperCase(),
 )
@@ -599,11 +619,11 @@ defineExpose({
         </div>
       </div>
 
-      <button type="button" class="paper-sidebar__workspace" aria-label="Switch workspace">
-        <span class="paper-sidebar__workspace-glyph">{{ workspaceInitial }}</span>
+      <!-- Non-interactive identity chip, not a switcher — see workspaceInitial (GH-1934). -->
+      <div class="paper-sidebar__workspace" data-testid="paper-sidebar-workspace">
+        <span class="paper-sidebar__workspace-glyph" aria-hidden="true">{{ workspaceInitial }}</span>
         <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
-        <PaperIcon name="chevronDown" />
-      </button>
+      </div>
 
       <div class="paper-sidebar__group" data-group="primary">
         <div class="tk-eyebrow paper-sidebar__group-label">Primary loop</div>
@@ -718,7 +738,11 @@ defineExpose({
       <div class="paper-sidebar__footer">
         <div class="paper-sidebar__footer-status">
           <PaperStatusPill kind="live">SYSTEM LIVE</PaperStatusPill>
-          <span class="paper-sidebar__version">{{ version }}</span>
+          <span
+            v-if="displayVersion"
+            class="paper-sidebar__version"
+            data-testid="paper-sidebar-version"
+          >{{ displayVersion }}</span>
         </div>
         <button
           type="button"
@@ -778,7 +802,7 @@ defineExpose({
   color: var(--ember);
 }
 
-/* Workspace switcher */
+/* Workspace identity chip (non-interactive — see GH-1934) */
 .paper-sidebar__workspace {
   margin: 12px 12px 6px;
   padding: 8px 10px;
@@ -788,9 +812,7 @@ defineExpose({
   background: transparent;
   border: 1px solid var(--line-soft);
   border-radius: 4px;
-  cursor: pointer;
   text-align: left;
-  font-family: inherit;
   color: inherit;
 }
 

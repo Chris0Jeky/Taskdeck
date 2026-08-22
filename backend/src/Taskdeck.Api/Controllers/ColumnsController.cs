@@ -95,7 +95,7 @@ public class ColumnsController : AuthenticatedControllerBase
 
         // Ensure boardId from route matches DTO
         var createDto = dto with { BoardId = boardId };
-        var result = await _columnService.CreateColumnAsync(createDto);
+        var result = await _columnService.CreateColumnAsync(createDto, actorUserId: userId);
         return result.IsSuccess
             ? CreatedAtAction(nameof(GetColumns), new { boardId }, result.Value)
             : result.ToErrorActionResult();
@@ -132,7 +132,7 @@ public class ColumnsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _columnService.UpdateColumnAsync(boardId, columnId, dto);
+        var result = await _columnService.UpdateColumnAsync(boardId, columnId, dto, actorUserId: userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -165,7 +165,7 @@ public class ColumnsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _columnService.DeleteColumnAsync(boardId, columnId);
+        var result = await _columnService.DeleteColumnAsync(boardId, columnId, actorUserId: userId);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 
@@ -199,7 +199,7 @@ public class ColumnsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _columnService.ReorderColumnsAsync(boardId, dto);
+        var result = await _columnService.ReorderColumnsAsync(boardId, dto, actorUserId: userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }

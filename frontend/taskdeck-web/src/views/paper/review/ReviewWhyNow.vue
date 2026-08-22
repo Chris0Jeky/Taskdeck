@@ -1,12 +1,18 @@
 <script setup lang="ts">
 /**
  * ReviewWhyNow — "Why now" explanatory card. The body comes from the
- * orchestrator (ultimately the proposal payload). Includes a tune-heuristics
- * link styled in ember.
+ * orchestrator (ultimately the proposal payload).
+ *
+ * NO "tune heuristics" link (#1941). The card used to end in
+ * `<a href="#">Tune heuristics →</a>` with no handler and no route: a dead
+ * link. There is nothing to point it at either — the apply threshold is
+ * `ConfidenceBreakdownService.DefaultThreshold`, a backend constant with no
+ * API and no settings surface behind it. Re-add the link when a surface that
+ * actually owns the threshold exists; until then the card is read-only, and
+ * the confidence dial in `ReviewMain` already states the threshold in force.
  */
 defineProps<{
   body: string
-  tuneHref?: string
 }>()
 </script>
 
@@ -14,10 +20,6 @@ defineProps<{
   <section class="card paper-review-whynow">
     <div class="tk-eyebrow paper-review-whynow__eyebrow">{{ $t('review.whyNow.heading') }}</div>
     <p class="paper-review-whynow__body">{{ body }}</p>
-    <a
-      :href="tuneHref ?? '#'"
-      class="paper-review-whynow__link"
-    >{{ $t('review.whyNow.tune') }}</a>
   </section>
 </template>
 
@@ -33,14 +35,5 @@ defineProps<{
   margin: 0;
   font-size: 12.5px;
   color: var(--ink-2, var(--ink));
-}
-.paper-review-whynow__link {
-  display: inline-block;
-  margin-top: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ember);
-  text-decoration: none;
-  border-bottom: 1px solid var(--ember);
 }
 </style>
