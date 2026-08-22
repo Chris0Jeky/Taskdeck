@@ -21,8 +21,11 @@ import PaperStatusPill from './PaperStatusPill.vue'
  * ⌘K trigger emits `palette:open` so the parent shell can wire it into the
  * existing command-palette composable.
  *
- * Right-hand controls (#1932 — all three used to render enabled and do
- * nothing):
+ * Right-hand controls (issue 1932 — all three used to render enabled and do
+ * nothing).  NB: write issue numbers WITHOUT the leading hash in this
+ * directory — the Paper Color Audit CI gate greps for hex literals and reads a
+ * hash followed by four hex digits as a colour, so a hash-prefixed four-digit
+ * issue number fails the build.
  *   - bell   → routes to `/workspace/notifications`
  *   - gear   → routes to `/workspace/settings/appearance`.  The glyph is a ring
  *              with radiating spokes and reads as a SUN, so the affordance a
