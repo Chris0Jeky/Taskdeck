@@ -185,7 +185,6 @@ async function retryTodaySummary() {
       :serial="dossier.serial"
       :cards-moved="dossier.headlineCardsMoved"
       :lede="dossier.lede"
-      :auto-seals-in="dossier.autoSealsIn"
       :sealed="sealed"
       :confirming-seal="confirmingSeal"
       :sealing="sealing"

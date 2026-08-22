@@ -18,13 +18,17 @@ import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
  *   confirming `seal-confirm` / `seal-cancel`
  *   sealing    both buttons disabled while the request is in flight
  *   sealed     the CTA is DISABLED and a visible reason says why
+ *
+ * There is no auto-seal status line: nothing auto-seals a day (GH-1939) — see
+ * the seal honesty contract in `locales/en/today.ts` for the measurement and
+ * for why `docs/STATUS.md`'s contrary line is corrected in the docs sweep, not
+ * by re-adding the copy here.
  */
 const props = withDefaults(
   defineProps<{
     serial: string
     cardsMoved: number | null
     lede: string
-    autoSealsIn: string | null
     sealed: boolean
     confirmingSeal?: boolean
     sealing?: boolean
@@ -94,10 +98,8 @@ watch(confirmOpen, async (open) => {
             :title="t('today.note.hint')"
             @click="emit('note')"
           />
-          <span class="tk-meta today-cover__auto" data-testid="auto-seals-in">
-            <template v-if="sealed">{{ t('today.seal.sealedStatus') }}</template>
-            <template v-else-if="autoSealsIn">{{ t('today.seal.autoStatus', { duration: autoSealsIn }) }}</template>
-            <template v-else>{{ t('today.seal.idleStatus') }}</template>
+          <span class="tk-meta today-cover__seal-status" data-testid="seal-status">
+            {{ sealed ? t('today.seal.sealedStatus') : t('today.seal.idleStatus') }}
           </span>
         </div>
 
@@ -184,7 +186,7 @@ watch(confirmOpen, async (open) => {
   align-items: center;
   flex-wrap: wrap;
 }
-.today-cover__auto {
+.today-cover__seal-status {
   margin-left: 6px;
 }
 .today-cover__seal-reason {

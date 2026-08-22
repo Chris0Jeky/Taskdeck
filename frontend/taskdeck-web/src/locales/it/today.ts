@@ -13,7 +13,6 @@ export default {
   seal: {
     action: 'Sigilla il giorno',
     idleStatus: 'Sigilla quando la giornata è finita',
-    autoStatus: 'Si sigilla da solo tra {duration}',
     confirmTitle: 'Sigillare oggi? Non si può annullare.',
     confirmEffect:
       'Sigillare marca oggi con un orario di sigillo e segna la giornata come chiusa qui. Non archivia, blocca, nasconde né cancella nulla: le catture, le proposte e le board continuano a funzionare come prima.',

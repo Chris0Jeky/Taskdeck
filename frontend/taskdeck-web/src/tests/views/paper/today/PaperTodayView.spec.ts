@@ -317,18 +317,49 @@ describe('PaperTodayView', () => {
     expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
 
+    // The regression this issue was filed for: a sealed CTA that stayed
+    // clickable and only answered "Day is already sealed." The `disabled`
+    // assertion below is the one that carries that — it is what fails if the
+    // terminal state stops looking terminal.
     const sealButton = wrapper.get('[data-action="seal"]')
     expect(sealButton.text()).toContain('Day sealed')
     expect(sealButton.attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="seal-sealed-reason"]').text()).toContain('no unseal action')
 
-    // The regression this issue was filed for: a sealed CTA that stays
-    // clickable and only answers "Day is already sealed."
+    // Corroboration, not coverage: with the CTA disabled these two cannot
+    // change, so they document the contract rather than test it.
     await sealButton.trigger('click')
     await flushPromises()
     expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
     expect(toastMocks.info).not.toHaveBeenCalled()
   })
+
+  it('renders an already-sealed day as disabled-with-reason on first paint', async () => {
+    // Returning to a day sealed earlier (or on another device): the seal state
+    // arrives from `getSealStatus`, not from a click in this session, and the
+    // terminal rendering has to hold on that path too. `mockResolvedValueOnce`
+    // because `vi.clearAllMocks()` keeps implementations — a persistent one
+    // would leak a sealed day into every later spec in this file.
+    vi.mocked(todayApi.getSealStatus).mockResolvedValueOnce({
+      date: formatLocalDossierDate(new Date()),
+      isSealed: true,
+      sealedAt: '2026-04-25T18:30:00Z',
+    })
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+
+    const sealButton = wrapper.get('[data-action="seal"]')
+    expect(sealButton.text()).toContain('Day sealed')
+    expect(sealButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="seal-sealed-reason"]').text()).toContain('no unseal action')
+
+    // There is nothing left to confirm, so the confirm step must be unreachable.
+    await sealButton.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
+    expect(todayApi.sealDay).not.toHaveBeenCalled()
+  })
+
 
   it('promises no archiving in the seal success toast — a seal only stamps the day', async () => {
     const wrapper = mount(PaperTodayView)

@@ -26,7 +26,6 @@ function baseProps(overrides: Partial<CoverProps> = {}): CoverProps {
     serial: 'D-2026-04-25-001',
     cardsMoved: 9,
     lede: 'lede',
-    autoSealsIn: '2h 18m',
     sealed: false,
     ...overrides,
   }
@@ -48,7 +47,6 @@ describe('TodayCover', () => {
         serial,
         cardsMoved: 9,
         lede: 'Live summary.',
-        autoSealsIn: '2h 18m',
         sealed: false,
       },
     })
@@ -60,20 +58,19 @@ describe('TodayCover', () => {
     expect(() => formatDossierSerial(new Date('2026-04-25T10:00:00Z'), 1)).not.toThrow()
   })
 
-  it('shows "Auto-seals in …" when not sealed and "Sealed for the day" when sealed', async () => {
-    const wrapper = mount(TodayCover, {
-      props: {
-        serial: 'D-2026-04-25-001',
-        cardsMoved: 9,
-        lede: 'lede',
-        autoSealsIn: '2h 18m',
-        sealed: false,
-      },
-    })
-    expect(wrapper.find('[data-testid="auto-seals-in"]').text()).toContain('Auto-seals in 2h 18m')
+  it('states only the two seal states that exist — never an auto-seal that does not', async () => {
+    // GH-1939: "Auto-seals in {duration}" was rendered from `autoSealsIn`,
+    // which `buildHonestDossier` hardcodes to null and never overrides, and no
+    // backend service seals a day on a timer. The copy, the prop, and the
+    // render path are gone; the status line only reports what is true.
+    const wrapper = mount(TodayCover, { props: baseProps() })
+    const status = wrapper.get('[data-testid="seal-status"]')
+
+    expect(status.text()).toBe('Seal when your day is complete')
+    expect(wrapper.text()).not.toContain('Auto-seals in')
 
     await wrapper.setProps({ sealed: true })
-    expect(wrapper.find('[data-testid="auto-seals-in"]').text()).toContain('Sealed for the day')
+    expect(wrapper.get('[data-testid="seal-status"]').text()).toBe('Sealed for the day')
   })
 
   it('uses an honest headline and no invented countdown when movement data is unavailable', () => {
@@ -82,7 +79,6 @@ describe('TodayCover', () => {
         serial: 'D-2026-04-25-001',
         cardsMoved: null,
         lede: 'Activity totals are unavailable.',
-        autoSealsIn: null,
         sealed: false,
       },
     })

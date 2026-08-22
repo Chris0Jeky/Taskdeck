@@ -13,7 +13,6 @@ export default {
   seal: {
     action: 'Sellar el día',
     idleStatus: 'Sella cuando termines el día',
-    autoStatus: 'Se sella solo en {duration}',
     confirmTitle: '¿Sellar hoy? No se puede deshacer.',
     confirmEffect:
       'Sellar marca hoy con una hora de sellado y da el día por cerrado aquí. No archiva, bloquea, oculta ni borra nada: tus capturas, propuestas y tableros siguen funcionando igual.',

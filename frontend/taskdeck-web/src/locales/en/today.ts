@@ -12,6 +12,12 @@
  * locale, may offer an undo, nor claim that sealing archives, locks, hides, or
  * deletes anything. Nothing else in the app reads the seal today.
  *
+ * There is deliberately NO auto-seal string here (GH-1939). Nothing auto-seals
+ * a day: `useTodayDossier` hardcodes `autoSealsIn: null` and never overrides
+ * it, and no backend service seals on a timer. `docs/STATUS.md` still asserts
+ * the opposite; that line is corrected in the wave docs sweep, not here. Do not
+ * reintroduce an "Auto-seals in …" message on the strength of that doc line.
+ *
  * Empty-state contract (issue 1939): `notBuilt` copy is for panels with NO
  * query behind them (ledger, decisions, boards are hardcoded empty arrays).
  * `unavailable` copy is for panels that do have a live query which failed or
@@ -22,7 +28,6 @@ export default {
   seal: {
     action: 'Seal day',
     idleStatus: 'Seal when your day is complete',
-    autoStatus: 'Auto-seals in {duration}',
     confirmTitle: 'Seal today? This cannot be undone.',
     confirmEffect:
       'Sealing stamps today with a seal time and marks the day done here. Nothing is archived, locked, hidden, or deleted — your captures, proposals, and boards keep working exactly as before.',
