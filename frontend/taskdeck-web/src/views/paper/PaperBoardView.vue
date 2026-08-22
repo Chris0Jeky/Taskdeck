@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
+import PaperBoardSettingsDialog from './board/PaperBoardSettingsDialog.vue'
+import PaperColumnSettingsDialog from './board/PaperColumnSettingsDialog.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import CardModal from '../../components/board/CardModal.vue'
 import type { Card, Column } from '../../types/board'
@@ -21,6 +24,12 @@ import { logError } from '../../utils/errorReporting'
  *
  * Mounted at the same route as `BoardView`; the wrapping `BoardView` shell
  * delegates to this view when `paperThemeStore.isOn`.
+ *
+ * Direct board management (#1945 / ADR-0056): add-card, column rename/delete,
+ * column reorder and board settings all live here, driving the same
+ * `boardStore` actions the Legacy skin uses. These are DIRECT human edits —
+ * they take effect immediately and never open a proposal. The `+ capture`
+ * affordance is the separate, secondary door into the review lane.
  */
 const props = withDefaults(
   defineProps<{
@@ -34,6 +43,7 @@ const props = withDefaults(
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
@@ -65,6 +75,9 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 
 watch(boardId, () => {
   selectedCard.value = null
+  // Switching boards must not carry a half-typed card draft, an open column
+  // dialog, or an error banner across to a board they do not belong to.
+  resetBoardManagementState()
 })
 
 const totalCards = computed(() =>
@@ -187,6 +200,117 @@ function openCaptureBoard() {
 }
 
 /**
+ * Direct board management (#1945).
+ *
+ * Every handler below writes through the SAME `boardStore` actions the Legacy
+ * skin uses — `createCard`, `reorderColumns`, plus `updateColumn`/
+ * `deleteColumn`/`updateBoard`/`deleteBoard` inside the two dialogs. Nothing
+ * here creates a proposal: a human's click on their own board is a direct
+ * write, and the review lane governs agent-originated changes (ADR-0056).
+ */
+const composerColumnId = ref<string | null>(null)
+const composerBusy = ref(false)
+const composerError = ref<string | null>(null)
+const editingColumn = ref<Column | null>(null)
+const showBoardSettings = ref(false)
+
+function resetBoardManagementState() {
+  composerColumnId.value = null
+  composerBusy.value = false
+  composerError.value = null
+  editingColumn.value = null
+  showBoardSettings.value = false
+}
+
+/**
+ * The column whose settings dialog is open, re-resolved from the store on every
+ * read. Holding the prop object captured at open time would render stale values
+ * after a realtime refresh replaced the column, and would keep a deleted column
+ * alive in the dialog.
+ */
+const editingColumnLive = computed<Column | null>(() => {
+  const id = editingColumn.value?.id
+  if (!id) return null
+  return sortedColumns.value.find((column) => column.id === id) ?? null
+})
+
+const editingColumnCardCount = computed(() =>
+  editingColumnLive.value ? (cardsByColumn.value.get(editingColumnLive.value.id)?.length ?? 0) : 0,
+)
+
+function openComposer(column: Column) {
+  // A different column's failure is not this column's failure.
+  if (composerColumnId.value !== column.id) {
+    composerError.value = null
+  }
+  composerColumnId.value = column.id
+}
+
+function cancelComposer() {
+  composerColumnId.value = null
+  composerError.value = null
+}
+
+async function createCardInColumn(column: Column, title: string) {
+  if (composerBusy.value) return
+
+  composerBusy.value = true
+  composerError.value = null
+  try {
+    await boardStore.createCard(boardId.value, { columnId: column.id, title })
+    // Parity with the Legacy inline form: a successful add closes the composer.
+    composerColumnId.value = null
+  } catch (error) {
+    logError('Failed to create card (paper):', error)
+    composerError.value = t('boardDetail.card.error')
+  } finally {
+    composerBusy.value = false
+  }
+}
+
+/**
+ * Keyboard/pointer column reorder, alongside the existing drag handle. Drag is
+ * the only reorder Legacy offers; it is unusable without a pointer, so Paper
+ * adds explicit controls over the same `reorderColumns` action.
+ */
+async function moveColumn(column: Column, direction: 'left' | 'right') {
+  const columns = sortedColumns.value
+  const index = columns.findIndex((c) => c.id === column.id)
+  const targetIndex = direction === 'left' ? index - 1 : index + 1
+  if (index === -1 || targetIndex < 0 || targetIndex >= columns.length) return
+
+  const reordered = [...columns]
+  const [removed] = reordered.splice(index, 1)
+  if (!removed) return
+  reordered.splice(targetIndex, 0, removed)
+
+  try {
+    await boardStore.reorderColumns(
+      boardId.value,
+      reordered.map((c) => c.id),
+    )
+  } catch (error) {
+    logError('Failed to reorder columns (paper):', error)
+  }
+}
+
+function openColumnSettings(column: Column) {
+  editingColumn.value = column
+}
+
+function closeColumnSettings() {
+  editingColumn.value = null
+}
+
+function openBoardSettings() {
+  showBoardSettings.value = true
+}
+
+function closeBoardSettings() {
+  showBoardSettings.value = false
+}
+
+/**
  * Empty-board bootstrap (#1765).
  *
  * A board created from the Boards list starts with zero columns, and the paper
@@ -262,6 +386,12 @@ async function addStarterColumns() {
           </p>
         </div>
         <div class="paper-board-view__actions">
+          <PaperHLBtn
+            v-if="boardStore.currentBoard"
+            :label="t('boardDetail.actions.settings')"
+            data-testid="paper-board-settings"
+            @click="openBoardSettings"
+          />
           <PaperHLBtn label="Capture here" kbd="C" @click="openCaptureBoard" />
           <PaperHLBtn variant="ember" label="Review" kbd="R" @click="openReview" />
         </div>
@@ -361,7 +491,17 @@ async function addStarterColumns() {
             :card-variant="props.cardVariant"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
+            :can-move-left="idx > 0"
+            :can-move-right="idx < sortedColumns.length - 1"
+            :composer-open="composerColumnId === column.id"
+            :composer-busy="composerBusy"
+            :composer-error="composerError"
             @capture="openCapture"
+            @edit="openColumnSettings"
+            @move="moveColumn"
+            @open-composer="openComposer"
+            @submit-card="createCardInColumn"
+            @cancel-composer="cancelComposer"
             @card-click="openCard"
             @card-dragstart="(card) => handleCardDragStart(card)"
             @card-dragend="handleCardDragEnd"
@@ -378,6 +518,24 @@ async function addStarterColumns() {
         :labels="boardStore.currentBoardLabels"
         @close="closeCard"
         @updated="closeCard"
+      />
+
+      <PaperColumnSettingsDialog
+        v-if="editingColumnLive"
+        :column="editingColumnLive"
+        :board-id="boardId"
+        :is-open="Boolean(editingColumnLive)"
+        :card-count="editingColumnCardCount"
+        @close="closeColumnSettings"
+        @updated="closeColumnSettings"
+      />
+
+      <PaperBoardSettingsDialog
+        v-if="boardStore.currentBoard && showBoardSettings"
+        :board="boardStore.currentBoard"
+        :is-open="showBoardSettings"
+        @close="closeBoardSettings"
+        @updated="closeBoardSettings"
       />
     </div>
   </div>

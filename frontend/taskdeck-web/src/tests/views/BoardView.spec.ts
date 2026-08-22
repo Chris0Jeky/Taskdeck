@@ -240,7 +240,12 @@ describe('BoardView', () => {
     expect(shortcut('Enter', 'Open selected card')?.enabled).toBeUndefined()
     expect(shortcut('Escape', 'Close open dialog/panel')?.enabled).toBeUndefined()
 
-    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(false)
+    // `n` is ungated as of #1945: PaperBoardColumn now renders the
+    // `[data-action="toggle-add-card"]` button and `[data-action="add-card-input"]`
+    // textarea that `createCardInSelectedColumn` drives, so the shortcut is live
+    // in BOTH skins. `?` and `f` stay gated — Paper has its own shortcuts
+    // overlay and no filter panel, so those controls really are hidden.
+    expect(shortcut('n', 'New card in current column')?.enabled).toBeUndefined()
     expect(shortcut('?', 'Toggle keyboard shortcuts help')?.enabled?.()).toBe(false)
     expect(shortcut('f', 'Toggle filter panel')?.enabled?.()).toBe(false)
   })

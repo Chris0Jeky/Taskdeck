@@ -344,7 +344,12 @@ useKeyboardShortcuts([
 
   // Actions
   { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
-  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: standardBoardOnlyShortcutsEnabled },
+  // `n` is NOT gated to the standard board any more (#1945). It was, because
+  // the Paper column had no `[data-action="toggle-add-card"]` button for
+  // `createCardInSelectedColumn` to click — so the key was a silent no-op.
+  // PaperBoardColumn now renders that button and the `[data-action="add-card-input"]`
+  // textarea it focuses, so the same DOM contract satisfies both skins.
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn },
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
