@@ -1184,17 +1184,26 @@ One row per user per calendar day, marking whether that day has been sealed.
 A short free-text note, at most one per user per date.
 
 **`Date` is the authoring day, not the display day.** The shipped flow is same-day on both sides:
-Paper Today saves with `saveDate = formatLocalDossierDate(dossier.value.date)`
-(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue:50`) and re-reads the *same* key on load
+Paper Today passes the line-for-tomorrow editor a `save-date` of
+`formatLocalDossierDate(dossier.value.date)`
+(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue` -- the computed is
+`lineForTomorrowSaveDate` at `main`, renamed to `dossierLocalDate` by open PR `#1976` with the
+expression unchanged) and re-reads the *same* key on load
 (`useTodayDossier.ts:374-381` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`).
 A note written on day X therefore persists as `Date = X` and is read back on day X; at the local day
 rollover the composable clears the field and day X+1 queries key X+1, which returns 204. Neither the
 backend service nor the API applies a one-day shift.
 
-The "tomorrow" framing is *product intent that no code path implements*: the UI copy ("A note your
-tomorrow-self will see at first open") and the XML doc on `TodayController.GetTomorrowNote` ("written
-the previous day and is displayed on the specified date's morning open") both still describe an
-X -> X+1 handoff. Persist under the current dossier date, not tomorrow's.
+The "tomorrow" framing is *product intent that no code path implements*, and `#1640` still owns the
+open question of which side moves -- whether the server adopts the X -> X+1 handoff or the framing is
+retired. The XML doc on `TodayController.GetTomorrowNote` ("written the previous day and is displayed
+on the specified date's morning open") still describes the X -> X+1 handoff. The Paper UI copy is
+changing in flight: at `main` it reads "A note your tomorrow-self will see at first open"
+(`PaperTodayView.vue`, the `paper-today__section-sub` span in the line-for-tomorrow section), and
+**open PR `#1976` (`#1939`) replaces it** with same-day copy ("Saved with today's date - you see it
+when you reopen Today") plus a spec asserting the surface no longer says "tomorrow-self". That is a
+relabel only: it does not settle `#1640`, and if `#1640` picks the one-day shift the copy moves with
+it. Until then, persist under the current dossier date, not tomorrow's.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
