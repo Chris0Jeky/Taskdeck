@@ -21,7 +21,6 @@ withDefaults(
     proposedTime: string
     proposedNum: string
     whyNowBody: string
-    whyNowHref?: string
     breakdown: ConfidenceBreakdown
     similarPast: SimilarPastRow[]
     similarPastApplyRate: { applied: number; total: number; ratio: number }
@@ -42,7 +41,7 @@ withDefaults(
       :proposed-num="proposedNum"
       :breakdown="breakdown"
     />
-    <ReviewWhyNow :body="whyNowBody" :tune-href="whyNowHref" />
+    <ReviewWhyNow :body="whyNowBody" />
     <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
     <ReviewKeysCard :apply-phase="applyPhase" />
   </aside>
