@@ -123,6 +123,28 @@ guidance when those retired selectors remain; an ambient `GEMINI_API_KEY` no lon
 provider. OpenAI live use requires the `Llm:OpenAi` configuration described in
 [`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`](docs/platform/LLM_PROVIDER_SETUP_GUIDE.md).
 
+**Known v0.1.1 Windows desktop limitation:** the packaged top-level catch hides that migration
+guidance and instead prints a generic port/data-folder failure. If `TASKDECK_DESKTOP_FATAL
+code=startup_failed` appears before any ready URL, check the *names and scopes* of Taskdeck provider
+settings without printing their values. Do not delete or print persistent credential-bearing
+variables merely to start v0.1.1. For a temporary compatibility launch, open a fresh PowerShell
+window and remove the retired Gemini names from that process environment only:
+
+```powershell
+$env:Llm__Provider = 'OpenAI'
+Remove-Item Env:Llm__Gemini__* -ErrorAction SilentlyContinue
+$taskdeckV011 = Join-Path $env:USERPROFILE 'Desktop\taskdeck-v0.1.1-win-x64\Taskdeck.Api.exe'
+& $taskdeckV011
+```
+
+`Env:` changes above apply only to that PowerShell process and its children; the persistent user
+variables and their values remain untouched. Close the PowerShell window to discard the temporary
+environment. Do not paste keys into a terminal transcript or issue. The preserved v0.1.2 draft
+would tolerate those inert child names after an explicit supported selector, but that behavior is
+not yet published.
+See the [v0.1.1 Windows startup incident checkpoint](docs/platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
+for the sanitized diagnosis, attempted paths, current workaround, and exact implementation resume point.
+
 - **Automatic pre-migration database backup.** Taskdeck now snapshots the SQLite file before
   applying pending migrations, keeps the last `Database:Backup:RetainCount` (default 5) snapshots,
   and refuses to migrate if the snapshot cannot be written. See

@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-21
+Last Updated: 2026-08-22
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,10 +10,38 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## 2026-08-22 correction: ordinary inherited Windows profile
+
+The v0.1.1 public-artifact checks below remain valid for the hermetic child environment they ran in,
+but they are not a complete ordinary-Desktop upgrade proof. The archive harness removes all
+inherited `Llm__*` names for credential containment. On the maintainer's ordinary profile, an
+inherited user-scoped `Llm__Provider=Gemini` plus `Llm__Gemini__*` names caused startup to fail
+before listening, and the packaged catch hid the fixed migration reason behind generic port/data
+guidance. See [`V0_1_1_WINDOWS_STARTUP_INCIDENT.md`](platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
+and reopened `#1876`.
+
+A corrective release must prove both paths separately:
+
+1. Keep the existing hermetic clean-install, persistence, migration, browser, and live OpenAI
+   journey; never expose an operator credential to logs/evidence.
+2. Launch a self-contained marked package with synthetic `Llm__Provider=Gemini` and a synthetic
+   retired child setting. Require exit 1, exact
+   `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`, static migration guidance, no
+   ready marker/listener, and zero synthetic-value/raw-exception/stack/URL leakage.
+3. Launch with an explicit supported selector plus inert stale Gemini child names and require
+   readiness. This behavior is drafted, not shipped in v0.1.1.
+4. After publication, test the unchanged downloaded ZIP from the ordinary Desktop path with the
+   explicit user provider migration in place and without deleting credential-bearing variables.
+
+Draft checkpoint: Application 56/56, API 89/89, archive Python 34/34, retirement architecture 4/4,
+release contract 61/61, and an actual marked-package diagnostic passed. The full backend solution,
+PR/CI/review, no-publish rehearsal, v0.1.2 tag, and public artifact remain unverified.
+
 ## 2026-08-21 public Windows v0.1.1 release proof
 
-The public v0.1.1 Windows x64 artifact is proven end to end, with the unavailable Windows Sandbox
-lane recorded separately as an owner waiver rather than a passing clean-machine result:
+The public v0.1.1 Windows x64 artifact passed the following isolated host journey, with the
+unavailable Windows Sandbox lane recorded separately as an owner waiver rather than a passing
+clean-machine result. The 2026-08-22 correction above limits this claim to the hermetic environment:
 
 Durable public-artifact evidence: [issue #1876 final record](https://github.com/Chris0Jeky/Taskdeck/issues/1876#issuecomment-5373235996).
 
@@ -1894,7 +1922,8 @@ Acceptance focus for this rehearsal:
 - prove ACME onboarding capture becomes clean board work after explicit approval
 - this rehearsal remains local evidence only and does not itself prove or authorize a public
   release; the separate v0.1.1 public-artifact proof plus the explicit clean-Sandbox waiver
-  satisfies `#1876`/`#1877`, while `#1242` remains open for its distinct maintainer record decision
+  satisfies `#1877` only. Issue `#1876` was reopened by the 2026-08-22 ordinary-profile incident,
+  while `#1242` remains open for its distinct maintainer record decision
 
 ## Load Harness (k6 + Playwright Concurrency)
 
