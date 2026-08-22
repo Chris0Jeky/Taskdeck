@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { automationApi } from '../../api/automationApi'
 import { proposalRevisionsApi } from '../../api/proposalRevisionsApi'
@@ -75,7 +75,7 @@ function successLabels(): Array<ToastLabel | undefined> {
 }
 
 describe('useReviewActions outcome labels', () => {
-  let proposals: ReturnType<typeof ref<ApiProposal[]>>
+  let proposals: Ref<ApiProposal[]>
   let actions: ReturnType<typeof useReviewActions>
 
   beforeEach(() => {
@@ -122,8 +122,11 @@ describe('useReviewActions outcome labels', () => {
     // the bulk clear name no action word at all and degrade to "Done".
     vi.stubGlobal('prompt', vi.fn(() => 'not useful'))
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
-    vi.mocked(automationApi.deferProposal).mockResolvedValue(makeProposal({ status: 'Deferred' }))
-    vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1, requested: 1 })
+    // A snooze leaves the proposal pending — only its deferredUntil moves.
+    vi.mocked(automationApi.deferProposal).mockResolvedValue(
+      makeProposal({ status: 'PendingReview' }),
+    )
+    vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1 })
 
     await actions.handleRejectProposal('p-1', 'Low')
     await actions.handleDeferProposal('p-1')
