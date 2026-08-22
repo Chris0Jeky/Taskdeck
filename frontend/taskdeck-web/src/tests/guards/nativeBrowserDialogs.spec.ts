@@ -13,8 +13,16 @@ import { describe, expect, it } from 'vitest'
  * the specs had to stub `window.prompt` to test it, so nothing looked wrong.
  *
  * SCOPE. Every `.vue` and `.ts` file under `src/views/paper/`, `src/composables/`
- * and `src/components/review/` — the review and Paper surfaces. It is not a
- * whole-repo rule; widening it means clearing the quarantine below first.
+ * and `src/components/review/`, plus the top-level review shells
+ * `src/views/*Review*.vue` (`ReviewView.vue` and `LegacyReviewView.vue`) — the
+ * review and Paper surfaces. It is not a whole-repo rule; widening it means
+ * clearing the quarantine below first.
+ *
+ * The Legacy shell was the gap this glob closes: GH-1969 removed the reject
+ * prompt from the SHARED composable, but the Legacy view is the other half of
+ * the surface the rule claims to cover and nothing was reading it. A rule whose
+ * scan omits a file it claims to protect is a rule only for the files it
+ * happens to reach.
  *
  * WHAT IT DOES NOT MECHANIZE. It reads source text, so it sees a literal call
  * and nothing else. `globalThis['prom' + 'pt']()`, an aliased
@@ -40,6 +48,14 @@ const SOURCES: Record<string, string> = {
     eager: true,
   }) as Record<string, string>),
   ...(import.meta.glob('../../components/review/**/*.{vue,ts}', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>),
+  // Non-recursive on purpose: the top-level route shells only. `src/views/paper/`
+  // is already globbed above, and the other `src/views/*.vue` files are board,
+  // inbox and settings surfaces this rule does not yet claim.
+  ...(import.meta.glob('../../views/*Review*.vue', {
     query: '?raw',
     import: 'default',
     eager: true,
@@ -98,6 +114,11 @@ describe('native browser dialogs', () => {
     expect(SOURCES['../../composables/useReviewActions.ts']).toBeTruthy()
     expect(SOURCES['../../views/paper/PaperReviewView.vue']).toBeTruthy()
     expect(SOURCES['../../components/review/RejectProposalDialog.vue']).toBeTruthy()
+    // Both review shells, named individually: a `*Review*` glob that matched
+    // only the 12-line switch would look like coverage while leaving the
+    // 300-line Legacy shell — the one that used to raise the prompt — unread.
+    expect(SOURCES['../../views/ReviewView.vue']).toBeTruthy()
+    expect(SOURCES['../../views/LegacyReviewView.vue']).toBeTruthy()
   })
 
   it('never calls prompt(), confirm() or alert()', () => {

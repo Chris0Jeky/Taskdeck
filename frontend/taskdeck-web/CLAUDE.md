@@ -10,8 +10,11 @@ axios, `@microsoft/signalr` board realtime). Orientation only.
   (`components/review/ApplyToBoardDialog.vue` / `RejectProposalDialog.vue`), requested through
   `useReviewActions.ts` — only the dialog's accept reaches the API, and High/Critical `reject`
   requires a reason. **No native `prompt`/`confirm`/`alert`** on these surfaces; enforced by
-  `src/tests/guards/nativeBrowserDialogs.spec.ts`. approve/defer/dismiss are status-gated, not
-  dialog-gated. Never auto-apply.
+  `src/tests/guards/nativeBrowserDialogs.spec.ts` — a source-text scan over
+  `src/views/paper/**`, `src/composables/**`, `src/components/review/**` and
+  `src/views/*Review*.vue`, with `useCardModal.ts` quarantined (GH-1997). It proves the literal
+  call is absent from those paths, not that the surfaces are dialog-free.
+  approve/defer/dismiss are status-gated, not dialog-gated. Never auto-apply.
 - Thin-shell decomposition is real for extracted sub-components/modals (e.g. `CardModal.vue`
   191 lines + `useCardModal`), but top-level route shells (`BoardView`/`TodayView`/`HomeView`)
   still run 600-900 total lines (inline template + scoped CSS). Keep new logic in
