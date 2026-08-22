@@ -78,6 +78,8 @@ export default {
         notEditable: 'Il testo di questa cattura non è modificabile. Premi Accept o Reject così com\'è.',
         empty: 'Il testo non può essere vuoto. Scrivi qualcosa, oppure annulla per lasciare la cattura com\'era.',
         unchanged: 'Non è ancora cambiato nulla. Modifica il testo, oppure annulla per lasciare la cattura com\'era.',
+        editorOpen: 'Un\'altra cattura è aperta in modifica. Salva o annulla quella modifica: passare ora scarterebbe il testo scritto lì.',
+        busyElsewhere: 'Un\'altra azione su una cattura si sta concludendo. Salva torna disponibile appena termina.',
       },
     },
   },

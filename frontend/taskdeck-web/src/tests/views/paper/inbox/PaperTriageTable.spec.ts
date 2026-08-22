@@ -683,6 +683,94 @@ describe('PaperTriageTable', () => {
     expect(wrapper.findAll('.paper-triage__row')[1].find('[data-testid="capture-edit"]').exists()).toBe(true)
   })
 
+  it('refuses to switch the editor to another row and says the draft is why', async () => {
+    // `editItemId` is one slot. Edit on row 1 would move it, unmounting row 0's
+    // editor and taking the typed draft with it — silently, with no undo.
+    //
+    // Row 1 is forced to `New`: the fixture's `Triaging` row is already off for
+    // an unrelated reason, so it could not tell this gate from its absence.
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    const typed = 'a correction the user is halfway through'
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue(typed)
+
+    const siblingEdit = wrapper.findAll('button[data-action="edit"]')[1]
+    expect(siblingEdit.attributes('disabled')).toBeDefined()
+
+    const rows = wrapper.findAll('.paper-triage__row')
+    const reason = rows[1].get('[data-testid="capture-editor-open-block"]')
+    expect(reason.text()).toContain('Another capture is open for editing')
+    // Off-and-silent is the failure this surface was reported for (GH-1944).
+    expect(siblingEdit.attributes('aria-describedby')).toBe(reason.attributes('id'))
+
+    // The guard behind the disabled button, not just the binding.
+    await siblingEdit.trigger('click')
+    await flushPromises()
+
+    expect(rows[1].find('[data-testid="capture-edit"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('freezes a sibling row\'s Accept and Reject while an editor is open', async () => {
+    // Accepting row 1 takes the shared busy slot and refreshes the list under
+    // the open editor; the draft on row 0 has no claim on either.
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('.paper-triage__row')[1]
+    expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeDefined()
+    expect(row.get('button[data-action="reject"]').attributes('disabled')).toBeDefined()
+
+    await row.get('button[data-action="accept"]').trigger('click')
+    await row.get('button[data-action="reject"]').trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    expect(wrapper.emitted('reject')).toBeUndefined()
+  })
+
+  it('gives the sibling rows back the moment the editor closes', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('.paper-triage__row')[1]
+    expect(row.find('[data-testid="capture-editor-open-block"]').exists()).toBe(false)
+    expect(row.get('button[data-action="edit"]').attributes('disabled')).toBeUndefined()
+    expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('hands the editor the shared busy slot so its Save respects it', async () => {
+    // `updateSuggestion` writes `actionBusyItemId` the way Accept and Reject do,
+    // and the editor cannot see that slot on its own.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    // Edit is shut while a mutation is in flight, so the editor is opened first
+    // and the slot taken afterwards — the order this hazard actually occurs in.
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    // A draft that WOULD save, so the only thing holding Save is the slot.
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.setProps({ actionBusyItemId: 'capture-2' })
+    await flushPromises()
+
+    const reason = wrapper.get('[data-testid="capture-edit-save-reason"]')
+    expect(reason.attributes('data-reason')).toBe('busyElsewhere')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeDefined()
+  })
+
   it('closes a stale editor when its row leaves the list', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')

@@ -80,6 +80,8 @@ export default {
         notEditable: 'El texto de esta captura no se puede editar. Pulsa Accept o Reject tal como está.',
         empty: 'El texto no puede estar vacío. Escribe algo, o cancela para dejar la captura como estaba.',
         unchanged: 'Todavía no ha cambiado nada. Edita el texto, o cancela para dejar la captura como estaba.',
+        editorOpen: 'Otra captura está abierta para editar. Guarda o cancela esa edición: cambiar ahora descartaría el texto escrito allí.',
+        busyElsewhere: 'Otra acción sobre una captura aún está terminando. Guardar vuelve en cuanto acabe.',
       },
     },
   },

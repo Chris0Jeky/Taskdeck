@@ -101,6 +101,8 @@ export default {
         notEditable: "This capture's text can't be edited. Accept or Reject it as it stands.",
         empty: "Text can't be empty. Type something, or cancel to leave the capture as it was.",
         unchanged: 'Nothing has changed yet. Edit the text, or cancel to leave the capture as it was.',
+        editorOpen: 'Another capture is open for editing. Save or cancel that edit first — switching now would drop the text typed there.',
+        busyElsewhere: 'Another capture action is still finishing. Save comes back the moment it lands.',
       },
     },
   },

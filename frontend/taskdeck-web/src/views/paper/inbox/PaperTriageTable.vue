@@ -178,18 +178,44 @@ function isEditing(item: CaptureItemSummary): boolean {
 }
 
 /**
+ * A SIBLING row, while some other row holds an open editor (GH-1951).
+ *
+ * `editItemId` is a single slot, so Edit here would move it — unmounting the
+ * open editor and taking the draft inside it with no warning and no undo: the
+ * same silent loss the editing row is already protected from, one row over.
+ *
+ * The gate is on the editor being OPEN, not on the draft being dirty. The
+ * table cannot see the child's draft without new plumbing, and an open-editor
+ * gate is the discipline Accept and Reject already follow on the editing row —
+ * guessing "probably not dirty" would be exactly the assumption that loses the
+ * text on the one occasion it is wrong.
+ */
+function isEditingElsewhere(item: CaptureItemSummary): boolean {
+  return editItemId.value !== null && editItemId.value !== item.id
+}
+
+function editorOpenReasonId(item: CaptureItemSummary): string {
+  return `capture-editor-open-reason-${item.id}`
+}
+
+/**
  * A row with an open editor is deliberately undecidable (GH-1951).
  *
  * Accept while an unsaved draft sits in the textarea would triage the text the
  * user is in the middle of replacing and discard the correction without a word
  * — the exact silent-loss failure this surface keeps being reported for. The
  * row states the reason next to the editor rather than just going grey.
+ *
+ * The open editor freezes the OTHER rows too, for the same reason and with its
+ * own visible reason next to each of them (GH-1944): every decision on this
+ * surface either replaces the draft's row or moves the editor off it.
  */
 function isActionDisabled(item: CaptureItemSummary): boolean {
   return hasMutationInFlight.value ||
     props.triagePollingItemId === item.id ||
     !canMutate(item) ||
-    isEditing(item)
+    isEditing(item) ||
+    isEditingElsewhere(item)
 }
 
 function onEdit(item: CaptureItemSummary) {
@@ -454,6 +480,7 @@ function formatTime(iso: string): string {
             label="Accept"
             variant="ember"
             :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="accept"
             @click="onAccept(item)"
           />
@@ -461,6 +488,7 @@ function formatTime(iso: string): string {
             label="Reject"
             variant="ghost"
             :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="reject"
             @click="onReject(item)"
           />
@@ -468,10 +496,21 @@ function formatTime(iso: string): string {
             :label="t('inbox.triage.edit.action')"
             variant="ghost"
             :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="edit"
             @click="onEdit(item)"
           />
         </div>
+
+        <p
+          v-if="isEditingElsewhere(item)"
+          :id="editorOpenReasonId(item)"
+          class="paper-triage__edit-block paper-triage__edit-block--row"
+          role="status"
+          data-testid="capture-editor-open-block"
+        >
+          {{ t('inbox.triage.edit.blocked.editorOpen') }}
+        </p>
 
         <div v-if="isEditing(item)" class="paper-triage__edit">
           <p
@@ -481,8 +520,18 @@ function formatTime(iso: string): string {
           >
             {{ t('inbox.triage.edit.decisionBlocked') }}
           </p>
+          <!--
+            The editor's Save writes through `captureStore.updateSuggestion`,
+            which takes the SAME single busy slot Accept and Reject take. A save
+            started while another row's mutation is in flight overwrites that
+            row's slot, and the `actionBusyItemId` watch above then drops its
+            recorded intent — the row loses its "Sending to Review…" narration
+            mid-flight, and the early release re-opens a second enqueue. The
+            editor cannot see the slot, so the table hands it over.
+          -->
           <PaperTriageRowEdit
             :item-id="item.id"
+            :mutation-in-flight="hasMutationInFlight"
             @close="closeEdit"
           />
         </div>
@@ -658,6 +707,14 @@ function formatTime(iso: string): string {
   font-size: 12px;
   line-height: 1.4;
   color: var(--ink-2);
+}
+/*
+ * The same note, but hung directly off the row grid rather than inside the
+ * editor block — a sibling row states why its buttons are off without an
+ * editor of its own to sit under.
+ */
+.paper-triage__edit-block--row {
+  grid-column: 1 / -1;
 }
 
 .paper-triage__decision {

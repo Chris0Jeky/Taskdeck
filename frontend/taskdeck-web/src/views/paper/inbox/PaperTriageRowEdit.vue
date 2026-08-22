@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import { getErrorDisplay } from '../../../composables/useErrorMapper'
@@ -37,9 +37,17 @@ import type { CaptureItem } from '../../../types/capture'
  * Provenance is untouched. The request carries text only, and the server keeps
  * an existing title hint when the field is omitted (`TitleHint ?? current`), so
  * a text-only edit cannot silently clear it.
+ *
+ * `mutationInFlight` is the table's view of the capture store's single busy
+ * slot (`actionBusyItemId`). Save writes through that same slot, so starting
+ * one while another row's Accept or Reject is still going would overwrite it —
+ * stealing the other row's in-flight narration and releasing the shared lock as
+ * soon as THIS write finishes, which re-enables a second enqueue on a mutation
+ * that has not landed. The slot is not visible from in here, so it is passed.
  */
 const props = defineProps<{
   itemId: string
+  mutationInFlight?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -66,6 +74,7 @@ const originalText = ref('')
 
 const textareaId = computed(() => `capture-edit-text-${props.itemId}`)
 const saveReasonId = computed(() => `capture-edit-reason-${props.itemId}`)
+const saveErrorId = computed(() => `capture-edit-save-error-${props.itemId}`)
 
 /**
  * Why Save is off, or `null` when it is live.
@@ -74,13 +83,16 @@ const saveReasonId = computed(() => `capture-edit-reason-${props.itemId}`)
  * the visible reason — exactly as `boardPickBlock` is in `PaperTriageTable`, so
  * the button can never end up off for a reason nobody stated.
  *
- * `empty` is reported first: an emptied textarea is also `unchanged` when the
- * capture was empty to begin with, and "text can't be empty" is the reason the
- * server would give.
+ * `busyElsewhere` is reported first because it is the one block the user cannot
+ * clear from this textarea: while another capture mutation owns the shared busy
+ * slot, what the draft says is beside the point. `empty` comes next: an emptied
+ * textarea is also `unchanged` when the capture was empty to begin with, and
+ * "text can't be empty" is the reason the server would give.
  */
-type SaveBlock = 'empty' | 'unchanged'
+type SaveBlock = 'busyElsewhere' | 'empty' | 'unchanged'
 
 const saveBlock = computed<SaveBlock | null>(() => {
+  if (props.mutationInFlight === true) return 'busyElsewhere'
   if (draft.value.trim().length === 0) return 'empty'
   if (draft.value === originalText.value) return 'unchanged'
   return null
@@ -89,6 +101,28 @@ const saveBlock = computed<SaveBlock | null>(() => {
 const saveBlockMessage = computed(() =>
   saveBlock.value ? t(`inbox.triage.edit.blocked.${saveBlock.value}`) : '',
 )
+
+/**
+ * The node the Save button actually points at (GH-1944).
+ *
+ * The reason and the error share one slot in the template and the error wins,
+ * so describing the button by the reason id whenever a block exists pointed
+ * assistive tech at an element that was not rendered. This mirrors the template's
+ * own v-if / v-else-if order, so the two cannot drift into a dangling reference.
+ */
+const saveDescribedById = computed<string | undefined>(() => {
+  if (saveErrorMessage.value) return saveErrorId.value
+  if (saveBlock.value) return saveReasonId.value
+  return undefined
+})
+
+// A failed save states its reason next to the control that failed — but that
+// reason describes text the user has since changed. Editing again makes it
+// stale, and a stale failure over a fresh draft is a claim about a write that
+// never happened. The next save posts its own outcome.
+watch(draft, () => {
+  saveErrorMessage.value = null
+})
 
 async function load() {
   loadState.value = 'loading'
@@ -128,7 +162,10 @@ async function load() {
 
 async function save() {
   // Belt and braces behind the disabled button — every branch that stops the
-  // write also renders its reason above the button (`saveBlock`).
+  // write also renders its reason above the button (`saveBlock`). `saveBlock`
+  // is deliberately the ONLY gate here, `busyElsewhere` included: a second copy
+  // of the shared-slot test could go out of step with the one the button and
+  // the reason line read, which is the drift this shape exists to prevent.
   if (saveBlock.value !== null || saving.value) return
   saving.value = true
   saveErrorMessage.value = null
@@ -221,6 +258,7 @@ onMounted(() => {
       <p class="paper-triage-edit__hint tk-meta">{{ t('inbox.triage.edit.hint') }}</p>
       <p
         v-if="saveErrorMessage"
+        :id="saveErrorId"
         class="paper-triage-edit__reason"
         role="alert"
         data-testid="capture-edit-save-error"
@@ -242,7 +280,7 @@ onMounted(() => {
           :label="saving ? t('inbox.triage.edit.saving') : t('inbox.triage.edit.save')"
           variant="ember"
           :disabled="saveBlock !== null || saving"
-          :aria-describedby="saveBlock ? saveReasonId : undefined"
+          :aria-describedby="saveDescribedById"
           data-action="edit-save"
           @click="save"
         />

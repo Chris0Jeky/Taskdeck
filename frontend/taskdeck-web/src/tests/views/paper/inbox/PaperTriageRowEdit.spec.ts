@@ -37,8 +37,8 @@ function makeDetail(overrides: Partial<CaptureItem> = {}): CaptureItem {
   }
 }
 
-async function mountEditor(itemId = 'capture-1') {
-  const wrapper = mount(PaperTriageRowEdit, { props: { itemId } })
+async function mountEditor(itemId = 'capture-1', mutationInFlight = false) {
+  const wrapper = mount(PaperTriageRowEdit, { props: { itemId, mutationInFlight } })
   await flushPromises()
   return wrapper
 }
@@ -205,6 +205,63 @@ describe('PaperTriageRowEdit', () => {
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
     await flushPromises()
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('holds Save shut while another capture mutation owns the shared busy slot', async () => {
+    // `updateSuggestion` takes the same single `actionBusyItemId` Accept and
+    // Reject take. Saving into an occupied slot overwrites the other row's
+    // in-flight state and releases the lock when THIS write ends, not that one.
+    const wrapper = await mountEditor()
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.setProps({ mutationInFlight: true })
+
+    const reason = wrapper.get('[data-testid="capture-edit-save-reason"]')
+    expect(reason.attributes('data-reason')).toBe('busyElsewhere')
+    expect(reason.text()).toContain('Another capture action is still finishing')
+    const save = wrapper.get('button[data-action="edit-save"]')
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(save.attributes('aria-describedby')).toBe(reason.attributes('id'))
+
+    // The guard behind the disabled button, not just the binding.
+    await save.trigger('click')
+    await flushPromises()
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+
+    // And it comes back, rather than stranding a draft the user can never save.
+    await wrapper.setProps({ mutationInFlight: false })
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('drops a stale save failure as soon as the draft changes again', async () => {
+    // The failure describes a write of text that no longer exists. Left up, it
+    // reads as a verdict on what is in the textarea now.
+    mockCaptureStore.updateSuggestion.mockRejectedValue(new Error('network'))
+    const wrapper = await mountEditor()
+
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
+    const save = wrapper.get('button[data-action="edit-save"]')
+    await save.trigger('click')
+    await flushPromises()
+
+    const error = wrapper.get('[data-testid="capture-edit-save-error"]')
+    // The error is the node that renders, so it must be the node Save names —
+    // the reason id points at an element the v-if branch never produced.
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('aria-describedby'))
+      .toBe(error.attributes('id'))
+    expect(wrapper.find('[data-testid="capture-edit-save-reason"]').exists()).toBe(false)
+
+    // Reverting to the original text: the failure is gone and the honest reason
+    // for Save being off is now "nothing has changed".
+    await wrapper.get('[data-testid="capture-edit-textarea"]')
+      .setValue('Ship teh releaes notes before Friday')
+
+    expect(wrapper.find('[data-testid="capture-edit-save-error"]').exists()).toBe(false)
+    const reason = wrapper.get('[data-testid="capture-edit-save-reason"]')
+    expect(reason.attributes('data-reason')).toBe('unchanged')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('aria-describedby'))
+      .toBe(reason.attributes('id'))
   })
 
   it('cancels without writing anything', async () => {
