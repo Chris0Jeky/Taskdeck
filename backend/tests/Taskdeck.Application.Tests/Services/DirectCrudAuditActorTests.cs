@@ -13,10 +13,12 @@ using Xunit;
 namespace Taskdeck.Application.Tests.Services;
 
 /// <summary>
-/// Issue #1960 / ADR-0056 section 5: direct human board edits are attributable, so every
+/// Issue #1960 (+ #1979 for labels) / ADR-0056 section 5: direct human board edits are
+/// attributable, so every
 /// user-initiated mutation must stamp the acting user on its audit row. These tests pin the
 /// actor per mutation class (card create/move/delete; column create/update/delete/reorder;
-/// board update/archive/unarchive) and pin the two lanes that must stay unattributed: the proposal apply
+/// board update/archive/unarchive; label create/update/delete) and pin the lanes that must stay
+/// unattributed: the proposal apply
 /// pipeline and the CLI/no-actor overloads, whose attribution comes from proposal provenance.
 ///
 /// The actor is always server-side: the services take it from the caller that already
@@ -31,6 +33,7 @@ public class DirectCrudAuditActorTests
     private readonly Mock<IBoardRepository> _boardRepoMock = new();
     private readonly Mock<IColumnRepository> _columnRepoMock = new();
     private readonly Mock<ICardRepository> _cardRepoMock = new();
+    private readonly Mock<ILabelRepository> _labelRepoMock = new();
     private readonly Mock<IHistoryService> _historyServiceMock = new();
 
     public DirectCrudAuditActorTests()
@@ -38,6 +41,7 @@ public class DirectCrudAuditActorTests
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
 
         _historyServiceMock
             .Setup(h => h.LogActionAsync(
@@ -50,6 +54,9 @@ public class DirectCrudAuditActorTests
         new(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: _historyServiceMock.Object);
 
     private ColumnService NewColumnService() =>
+        new(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: _historyServiceMock.Object);
+
+    private LabelService NewLabelService() =>
         new(_unitOfWorkMock.Object, realtimeNotifier: null, historyService: _historyServiceMock.Object);
 
     private BoardService NewBoardService() =>
@@ -263,6 +270,60 @@ public class DirectCrudAuditActorTests
 
     #endregion
 
+    #region LabelService
+
+    // Issue #1979. BoardMutationAuditTests pins Created/Updated/Deleted -> null for the *no-actor*
+    // overloads; these three facts pin the actor lane of the same three actions. Each test calls
+    // the exact overload LabelsController calls.
+
+    [Fact]
+    public async Task CreateLabel_StampsActingUserOnAuditRow()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var dto = new CreateLabelDto(board.Id, "Urgent", "#FF0000");
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        var result = await NewLabelService().CreateLabelAsync(dto, actorUserId: ActorId);
+
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("label", It.IsAny<Guid>(), AuditAction.Created, ActorId, It.IsAny<string?>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateLabel_StampsActingUserOnAuditRow()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
+        var dto = new UpdateLabelDto("Feature", "#00FF00");
+
+        _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default)).ReturnsAsync(label);
+
+        // Board-scoped overload: the exact call the labels controller makes.
+        var result = await NewLabelService().UpdateLabelAsync(board.Id, label.Id, dto, actorUserId: ActorId);
+
+        result.IsSuccess.Should().BeTrue();
+        VerifyActorStamped("label", label.Id, AuditAction.Updated, ActorId);
+    }
+
+    [Fact]
+    public async Task DeleteLabel_StampsActingUserOnAuditRow()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var label = TestDataBuilder.CreateLabel(board.Id, "Bug", "#FF0000");
+
+        _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default)).ReturnsAsync(label);
+
+        var result = await NewLabelService().DeleteLabelAsync(board.Id, label.Id, actorUserId: ActorId);
+
+        result.IsSuccess.Should().BeTrue();
+        VerifyActorStamped("label", label.Id, AuditAction.Deleted, ActorId);
+    }
+
+    #endregion
+
     #region Lanes that must stay unattributed
 
     [Fact]
@@ -305,14 +366,38 @@ public class DirectCrudAuditActorTests
         VerifyActorStamped("column", second.Id, AuditAction.Updated, null);
     }
 
+    [Fact]
+    public async Task CreateLabel_PositionalTokenOverload_LeavesAuditRowUnattributed()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var dto = new CreateLabelDto(board.Id, "Seeded", "#FF0000");
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        // Label CRUD has no proposal-apply lane (OperationHandlerRegistry only resolves existing
+        // labels and mutates cards), so this positional-token overload is the whole no-actor
+        // surface: non-request callers such as tests and MCP seeding. It must not invent an actor.
+        var result = await NewLabelService().CreateLabelAsync(dto, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _historyServiceMock.Verify(
+            h => h.LogActionAsync("label", It.IsAny<Guid>(), AuditAction.Created, null, It.IsAny<string?>()),
+            Times.Once);
+    }
+
     #endregion
 
     #region Overload-resolution regressions
 
     // The actor parameter sits where a Guid already lived on the board-scoped overloads
-    // (DeleteCardAsync(boardId, id) / DeleteColumnAsync(boardId, id)). These two tests fail
+    // (DeleteCardAsync(boardId, id) / DeleteColumnAsync(boardId, id) / DeleteLabelAsync(boardId, id)).
+    // These tests fail
     // loudly if a two-argument call ever rebinds to the single-id + actor overload, which
     // would silently drop the board scoping instead of just losing the actor.
+    //
+    // Only the delete pairs are exposed: UpdateLabelAsync(boardId, id, dto) cannot rebind to
+    // UpdateLabelAsync(id, dto, actorUserId) because the second argument is a Guid and that
+    // parameter is an UpdateLabelDto, so no overload guard is owed there.
     //
     // NotFound + "never deleted" alone would NOT discriminate: under the rebinding the service
     // looks up the *board* id, the loose mock returns null, and it fails NotFound without
@@ -362,6 +447,28 @@ public class DirectCrudAuditActorTests
         _columnRepoMock.Verify(r => r.GetByIdWithCardsAsync(column.Id, default), Times.Once);
         _columnRepoMock.Verify(r => r.GetByIdWithCardsAsync(board.Id, default), Times.Never);
         _columnRepoMock.Verify(r => r.DeleteAsync(It.IsAny<Column>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteLabel_TwoArgumentCall_StillScopesToBoard()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var otherBoardId = Guid.NewGuid();
+        var label = TestDataBuilder.CreateLabel(otherBoardId, "Bug", "#FF0000");
+
+        _labelRepoMock.Setup(r => r.GetByIdAsync(label.Id, default)).ReturnsAsync(label);
+
+        var result = await NewLabelService().DeleteLabelAsync(board.Id, label.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        // Only the board-scoped overload appends "in board {boardId}"; the single-id overload
+        // that a rebinding would select fails with the unscoped "Label with ID {id} not found".
+        result.ErrorMessage.Should().Contain($"in board {board.Id}");
+        // And the lookup argument is the label — a rebinding would query board.Id instead.
+        _labelRepoMock.Verify(r => r.GetByIdAsync(label.Id, default), Times.Once);
+        _labelRepoMock.Verify(r => r.GetByIdAsync(board.Id, default), Times.Never);
+        _labelRepoMock.Verify(r => r.DeleteAsync(It.IsAny<Label>(), default), Times.Never);
     }
 
     #endregion

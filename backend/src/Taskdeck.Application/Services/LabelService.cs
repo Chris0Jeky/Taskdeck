@@ -31,7 +31,19 @@ public class LabelService
     private Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
         => AuditLogWriter.SafeLogAsync(_historyService, _logger, entityType, entityId, action, userId, changes);
 
-    public async Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Positional-token overload kept so existing <c>(dto, cancellationToken)</c> call sites keep
+    /// binding to the no-actor path instead of failing to compile against the actor parameter.
+    /// Label CRUD has no proposal-apply lane (<c>OperationHandlerRegistry</c> only resolves
+    /// existing labels and routes through <c>CardService</c>), so the unattributed path here is
+    /// for non-request callers — tests and MCP seeding — not for the automation pipeline.
+    /// </summary>
+    public Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, CancellationToken cancellationToken)
+    {
+        return CreateLabelAsync(dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<LabelDto>> CreateLabelAsync(CreateLabelDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -45,7 +57,7 @@ public class LabelService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(label.BoardId, "label", "created", label.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("label", label.Id, AuditAction.Created, changes: $"name={label.Name}");
+            await SafeLogAsync("label", label.Id, AuditAction.Created, actorUserId, $"name={label.Name}");
 
             return Result.Success(MapToDto(label));
         }
@@ -55,7 +67,12 @@ public class LabelService
         }
     }
 
-    public async Task<Result<LabelDto>> UpdateLabelAsync(Guid id, UpdateLabelDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<LabelDto>> UpdateLabelAsync(Guid id, UpdateLabelDto dto, CancellationToken cancellationToken)
+    {
+        return UpdateLabelAsync(id, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<LabelDto>> UpdateLabelAsync(Guid id, UpdateLabelDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -74,7 +91,7 @@ public class LabelService
                 cancellationToken);
 
             var changeSummary = BuildLabelChangeSummary(dto, oldName, oldColorHex);
-            await SafeLogAsync("label", label.Id, AuditAction.Updated, changes: changeSummary);
+            await SafeLogAsync("label", label.Id, AuditAction.Updated, actorUserId, changeSummary);
 
             return Result.Success(MapToDto(label));
         }
@@ -94,13 +111,18 @@ public class LabelService
         return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
-    public async Task<Result<LabelDto>> UpdateLabelAsync(Guid boardId, Guid id, UpdateLabelDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<LabelDto>> UpdateLabelAsync(Guid boardId, Guid id, UpdateLabelDto dto, CancellationToken cancellationToken)
+    {
+        return UpdateLabelAsync(boardId, id, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<LabelDto>> UpdateLabelAsync(Guid boardId, Guid id, UpdateLabelDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
         if (label == null || label.BoardId != boardId)
             return Result.Failure<LabelDto>(ErrorCodes.NotFound, $"Label with ID {id} not found in board {boardId}");
 
-        return await UpdateLabelAsync(id, dto, cancellationToken);
+        return await UpdateLabelAsync(id, dto, actorUserId, cancellationToken);
     }
 
     public async Task<Result<IEnumerable<LabelDto>>> GetLabelsByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
@@ -109,7 +131,12 @@ public class LabelService
         return Result.Success(labels.Select(MapToDto));
     }
 
-    public async Task<Result> DeleteLabelAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteLabelAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return DeleteLabelAsync(id, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result> DeleteLabelAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
         if (label == null)
@@ -120,18 +147,23 @@ public class LabelService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(label.BoardId, "label", "deleted", label.Id, DateTimeOffset.UtcNow),
             cancellationToken);
-        await SafeLogAsync("label", label.Id, AuditAction.Deleted, changes: $"name={label.Name}");
+        await SafeLogAsync("label", label.Id, AuditAction.Deleted, actorUserId, $"name={label.Name}");
 
         return Result.Success();
     }
 
-    public async Task<Result> DeleteLabelAsync(Guid boardId, Guid id, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteLabelAsync(Guid boardId, Guid id, CancellationToken cancellationToken)
+    {
+        return DeleteLabelAsync(boardId, id, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result> DeleteLabelAsync(Guid boardId, Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var label = await _unitOfWork.Labels.GetByIdAsync(id, cancellationToken);
         if (label == null || label.BoardId != boardId)
             return Result.Failure(ErrorCodes.NotFound, $"Label with ID {id} not found in board {boardId}");
 
-        return await DeleteLabelAsync(id, cancellationToken);
+        return await DeleteLabelAsync(id, actorUserId, cancellationToken);
     }
 
     private static LabelDto MapToDto(Label label)
