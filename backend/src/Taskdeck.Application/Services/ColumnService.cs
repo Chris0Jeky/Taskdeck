@@ -31,7 +31,12 @@ public class ColumnService
     private Task SafeLogAsync(string entityType, Guid entityId, AuditAction action, Guid? userId = null, string? changes = null)
         => AuditLogWriter.SafeLogAsync(_historyService, _logger, entityType, entityId, action, userId, changes);
 
-    public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, CancellationToken cancellationToken)
+    {
+        return CreateColumnAsync(dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<ColumnDto>> CreateColumnAsync(CreateColumnDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -54,7 +59,7 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(column.BoardId, "column", "created", column.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("column", column.Id, AuditAction.Created, changes: $"name={column.Name}");
+            await SafeLogAsync("column", column.Id, AuditAction.Created, actorUserId, $"name={column.Name}");
 
             return Result.Success(MapToDto(column));
         }
@@ -64,7 +69,12 @@ public class ColumnService
         }
     }
 
-    public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid id, UpdateColumnDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<ColumnDto>> UpdateColumnAsync(Guid id, UpdateColumnDto dto, CancellationToken cancellationToken)
+    {
+        return UpdateColumnAsync(id, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid id, UpdateColumnDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -84,7 +94,7 @@ public class ColumnService
                 cancellationToken);
 
             var changeSummary = BuildColumnChangeSummary(dto, oldName, oldWipLimit, oldPosition);
-            await SafeLogAsync("column", column.Id, AuditAction.Updated, changes: changeSummary);
+            await SafeLogAsync("column", column.Id, AuditAction.Updated, actorUserId, changeSummary);
 
             return Result.Success(MapToDto(column));
         }
@@ -106,13 +116,18 @@ public class ColumnService
         return parts.Count > 0 ? string.Join("; ", parts) : "no fields changed";
     }
 
-    public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid boardId, Guid id, UpdateColumnDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<ColumnDto>> UpdateColumnAsync(Guid boardId, Guid id, UpdateColumnDto dto, CancellationToken cancellationToken)
+    {
+        return UpdateColumnAsync(boardId, id, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<ColumnDto>> UpdateColumnAsync(Guid boardId, Guid id, UpdateColumnDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var column = await _unitOfWork.Columns.GetByIdAsync(id, cancellationToken);
         if (column == null || column.BoardId != boardId)
             return Result.Failure<ColumnDto>(ErrorCodes.NotFound, $"Column with ID {id} not found in board {boardId}");
 
-        return await UpdateColumnAsync(id, dto, cancellationToken);
+        return await UpdateColumnAsync(id, dto, actorUserId, cancellationToken);
     }
 
     public async Task<Result<IEnumerable<ColumnDto>>> GetColumnsByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
@@ -121,7 +136,12 @@ public class ColumnService
         return Result.Success(columns.OrderBy(c => c.Position).Select(MapToDto));
     }
 
-    public async Task<Result> DeleteColumnAsync(Guid id, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteColumnAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return DeleteColumnAsync(id, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result> DeleteColumnAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(id, cancellationToken);
         if (column == null)
@@ -135,21 +155,31 @@ public class ColumnService
         await _realtimeNotifier.NotifyBoardMutationAsync(
             new BoardRealtimeEvent(column.BoardId, "column", "deleted", column.Id, DateTimeOffset.UtcNow),
             cancellationToken);
-        await SafeLogAsync("column", column.Id, AuditAction.Deleted, changes: $"name={column.Name}");
+        await SafeLogAsync("column", column.Id, AuditAction.Deleted, actorUserId, $"name={column.Name}");
 
         return Result.Success();
     }
 
-    public async Task<Result> DeleteColumnAsync(Guid boardId, Guid id, CancellationToken cancellationToken = default)
+    public Task<Result> DeleteColumnAsync(Guid boardId, Guid id, CancellationToken cancellationToken)
+    {
+        return DeleteColumnAsync(boardId, id, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result> DeleteColumnAsync(Guid boardId, Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(id, cancellationToken);
         if (column == null || column.BoardId != boardId)
             return Result.Failure(ErrorCodes.NotFound, $"Column with ID {id} not found in board {boardId}");
 
-        return await DeleteColumnAsync(id, cancellationToken);
+        return await DeleteColumnAsync(id, actorUserId, cancellationToken);
     }
 
-    public async Task<Result<IEnumerable<ColumnDto>>> ReorderColumnsAsync(Guid boardId, ReorderColumnsDto dto, CancellationToken cancellationToken = default)
+    public Task<Result<IEnumerable<ColumnDto>>> ReorderColumnsAsync(Guid boardId, ReorderColumnsDto dto, CancellationToken cancellationToken)
+    {
+        return ReorderColumnsAsync(boardId, dto, actorUserId: null, cancellationToken);
+    }
+
+    public async Task<Result<IEnumerable<ColumnDto>>> ReorderColumnsAsync(Guid boardId, ReorderColumnsDto dto, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -182,7 +212,7 @@ public class ColumnService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(boardId, "column", "reordered", null, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("column", boardId, AuditAction.Updated, changes: $"reordered; count={dto.ColumnIds.Count}");
+            await SafeLogAsync("column", boardId, AuditAction.Updated, actorUserId, $"reordered; count={dto.ColumnIds.Count}");
 
             // Return reordered columns
             var reorderedColumns = dto.ColumnIds.Select(id => MapToDto(columnDict[id]));
@@ -199,6 +229,10 @@ public class ColumnService
     /// reindexes the remaining columns to a contiguous 0..n-1 sequence. The move is
     /// atomic (no transient unique-index collision) and lossless (WipLimit/Name are
     /// preserved). Used by the proposal "reorder column" apply operation.
+    ///
+    /// Proposal-lane only: no human actor is threaded here, so the audit row stays
+    /// unattributed (the proposal's own provenance carries the attribution). The
+    /// user-initiated board reorder is <see cref="ReorderColumnsAsync(Guid, ReorderColumnsDto, Guid?, CancellationToken)"/>.
     /// </summary>
     public async Task<Result<ColumnDto>> ReorderColumnAsync(Guid columnId, int newPosition, CancellationToken cancellationToken = default)
     {
