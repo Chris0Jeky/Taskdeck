@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ApplyToBoardDialog from '../../../components/review/ApplyToBoardDialog.vue'
 import type { Proposal } from '../../../types/automation'
@@ -255,6 +255,147 @@ describe('ApplyToBoardDialog', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await wrapper.vm.$nextTick()
       expect(wrapper.emitted('cancel')).toHaveLength(1)
+    })
+  })
+
+  /**
+   * GH-1983 — reaching the accept from the keyboard.
+   *
+   * The dialog opens by itself the instant approve returns and TdDialog focuses
+   * its container, so ⏎ did nothing here and a keyboard reviewer had to Tab
+   * first — on the one dialog they did not open by hand. Container focus stays
+   * (focusing the accept would let a HELD ⏎ auto-repeat straight into an
+   * execute); the dialog binds ⏎ itself instead, guarded so the accept is
+   * reachable from the keyboard but never by accident.
+   */
+  describe('Enter-to-confirm (GH-1983)', () => {
+    function dialogEl(): HTMLElement {
+      const el = document.body.querySelector('.td-dialog') as HTMLElement | null
+      expect(el).not.toBeNull()
+      return el!
+    }
+
+    function pressEnter(options: KeyboardEventInit = {}) {
+      dialogEl().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options }),
+      )
+    }
+
+    /**
+     * Mount and let the dialog settle. The binding is attached from a watcher on
+     * the body element, so it lands one tick after the dialog's DOM does —
+     * irrelevant to a human keypress, but a synchronous dispatch in the same
+     * tick as `mount()` would miss it and prove nothing.
+     */
+    async function openDialog(busy = false) {
+      const wrapper = mountDialog(makeProposal(), busy)
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+      return wrapper
+    }
+
+    it('confirms on a deliberate Enter while focus is still on the container', async () => {
+      const wrapper = await openDialog()
+      // The premise: focus is on the container, not the accept button.
+      expect(document.activeElement).toBe(dialogEl())
+
+      pressEnter()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+    })
+
+    it('ignores an auto-repeat Enter — the approving keypress, still held', async () => {
+      const wrapper = await openDialog()
+      pressEnter({ repeat: true })
+      pressEnter({ repeat: true })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toBeUndefined()
+
+      // A genuine press after the key is released still works.
+      pressEnter()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+    })
+
+    it('fires at most once per open', async () => {
+      const wrapper = await openDialog()
+      pressEnter()
+      pressEnter()
+      pressEnter()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+    })
+
+    it('re-arms when the dialog opens again', async () => {
+      const wrapper = await openDialog()
+      pressEnter()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+
+      await wrapper.setProps({ proposal: null })
+      await wrapper.vm.$nextTick()
+      await wrapper.setProps({ proposal: makeProposal() })
+      await wrapper.vm.$nextTick()
+
+      pressEnter()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toHaveLength(2)
+    })
+
+    it('leaves Enter on a focused control to that control', async () => {
+      const wrapper = await openDialog()
+      const cancel = document.body.querySelector(
+        '[data-testid="apply-confirm-cancel"]',
+      ) as HTMLButtonElement
+      cancel.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+      await wrapper.vm.$nextTick()
+
+      // The browser turns that into a click on the button itself; what must NOT
+      // happen is the dialog reading it as an accept.
+      expect(wrapper.emitted('confirm')).toBeUndefined()
+    })
+
+    it('does not confirm while the execute is already in flight', async () => {
+      const wrapper = await openDialog(true)
+      pressEnter()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toBeUndefined()
+    })
+
+    it('does not let the confirming Enter reach the surface behind it', async () => {
+      // Confirming closes the dialog synchronously, so a propagating event
+      // reaches the window with the keymap's dialog-open guard already dropped.
+      // On the live surface the busy lock catches it anyway (see the component
+      // comment); this pins the containment as the dialog's OWN property, so it
+      // does not silently become load-bearing if that ordering changes.
+      const wrapper = await openDialog()
+      const behind = vi.fn()
+      window.addEventListener('keydown', behind)
+      try {
+        pressEnter()
+        await wrapper.vm.$nextTick()
+        expect(wrapper.emitted('confirm')).toHaveLength(1)
+        expect(behind).not.toHaveBeenCalled()
+      } finally {
+        window.removeEventListener('keydown', behind)
+      }
+    })
+
+    it('binds nothing once the dialog is closed', async () => {
+      const wrapper = await openDialog()
+      await wrapper.setProps({ proposal: null })
+      await wrapper.vm.$nextTick()
+
+      expect(document.body.querySelector('.td-dialog')).toBeNull()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toBeUndefined()
     })
   })
 })

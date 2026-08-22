@@ -2857,6 +2857,76 @@ describe('PaperReviewView', () => {
   })
 
   /**
+   * GH-1983 — the keyboard path through the two-phase apply.
+   *
+   * ⏎ approves; the confirmation opens by itself (GH-1942) with focus on the
+   * dialog container; a SECOND, deliberate ⏎ applies. The two calls stay
+   * separate and explicit (ADR-0003) — this only makes the second one reachable
+   * without a Tab on the one dialog the reviewer did not open by hand.
+   */
+  describe('keyboard path through the apply confirmation (GH-1983)', () => {
+    function pressEnterInDialog(options: KeyboardEventInit = {}) {
+      const dialog = document.body.querySelector('.td-dialog') as HTMLElement | null
+      expect(dialog, 'expected the apply confirmation to be open').not.toBeNull()
+      dialog!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options }),
+      )
+    }
+
+    it('approves on ⏎ and applies on a second deliberate ⏎', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      mocks.executeProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Applied' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+
+      expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      pressEnterInDialog()
+      await flushPromises()
+
+      expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
+      expect(mocks.executeProposal.mock.calls[0][0]).toBe('proposal-001')
+      // Exactly one approve, exactly one execute — the second ⏎ did not also
+      // re-dispatch the surface's own Enter handler behind the closing dialog.
+      expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
+
+      wrapper.unmount()
+    })
+
+    it('a HELD ⏎ carried over from the approve does not apply', async () => {
+      // The keyboard half of the hazard GH-1942 closed for the pointer when it
+      // turned backdrop dismissal off: the dialog appears under an interaction
+      // that is still in progress. Auto-repeat is how a held key presents.
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+
+      pressEnterInDialog({ repeat: true })
+      pressEnterInDialog({ repeat: true })
+      await flushPromises()
+
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      // The proposal is left approved-but-not-applied, with the dialog still
+      // offering the step — nothing was decided and nothing was lost.
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
    * GH-1969 — the rejection reason is collected in-app, not by `window.prompt`.
    *
    * Asserted end to end through the rendered DOM against the reject request
