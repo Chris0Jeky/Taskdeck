@@ -348,6 +348,200 @@ describe('PaperTriageTable', () => {
     expect(wrapper.emitted('accept')).toBeUndefined()
   })
 
+  // --- blocked primary actions state their reason (#1944) -------------------
+  //
+  // The reported defect: "Accept on board" with nothing selected fired zero
+  // network requests and said nothing. Asserting "no request is issued" would
+  // pin the BROKEN behaviour, so these assert the guard instead — the button is
+  // off, the row says why, and the button points at that reason.
+
+  it('blocks "Accept on board" with a visible reason when no board is selected', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+
+    const confirmBtn = wrapper.find('button[data-action="accept-on-board"]')
+    const reason = wrapper.find('[data-testid="board-pick-reason"]')
+
+    expect(confirmBtn.attributes('disabled')).toBeDefined()
+    expect(reason.exists()).toBe(true)
+    expect(reason.attributes('data-reason')).toBe('noBoard')
+    expect(reason.text()).toContain('Choose a board first')
+    // The reason is wired to the button, not merely adjacent to it.
+    expect(confirmBtn.attributes('aria-describedby')).toBe(reason.attributes('id'))
+
+    await confirmBtn.trigger('click')
+    expect(wrapper.emitted('accept')).toBeUndefined()
+  })
+
+  it('clears the blocked reason and enables the confirm once a writable board is chosen', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    await wrapper.find('[data-testid="capture-board-pick"] select').setValue('board-beta')
+
+    const confirmBtn = wrapper.find('button[data-action="accept-on-board"]')
+    expect(wrapper.find('[data-testid="board-pick-reason"]').exists()).toBe(false)
+    expect(confirmBtn.attributes('disabled')).toBeUndefined()
+    expect(confirmBtn.attributes('aria-describedby')).toBeUndefined()
+
+    await confirmBtn.trigger('click')
+    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-1', 'board-beta'])
+  })
+
+  it('states the reason when the picked board turns read-only', async () => {
+    const wrapper = await openBoardPicker([{ id: 'board-alpha', name: 'Alpha', canWrite: true }])
+    await wrapper.find('[data-testid="capture-board-pick"] select').setValue('board-alpha')
+
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: false }]
+    await wrapper.vm.$nextTick()
+
+    const reason = wrapper.find('[data-testid="board-pick-reason"]')
+    expect(reason.attributes('data-reason')).toBe('viewOnly')
+    expect(reason.text()).toContain('view-only')
+    expect(wrapper.find('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('states the reason when the account has no boards at all', async () => {
+    const wrapper = await openBoardPicker([])
+
+    const reason = wrapper.find('[data-testid="board-pick-reason"]')
+    expect(reason.attributes('data-reason')).toBe('noBoards')
+    expect(reason.text()).toContain('No boards yet')
+    expect(wrapper.find('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+  })
+
+  // --- a decided row never looks like an undecided one (#1944) --------------
+
+  const undecidedRow = () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    return mount(PaperTriageTable, { props: { items } }).find('.paper-triage__row')
+  }
+
+  it('says nothing about a decision while the row is still awaiting one', () => {
+    const row = undecidedRow()
+    expect(row.attributes('data-row-state')).toBe('undecided')
+    expect(row.find('[data-testid="capture-row-status"]').exists()).toBe(false)
+  })
+
+  it.each<[CaptureStatusValue, string, string]>([
+    ['Triaging', 'sending', 'Sending to Review'],
+    ['Triaged', 'nothingToPropose', 'nothing to propose'],
+    ['ProposalCreated', 'inReview', 'Sent to Review'],
+    ['Converted', 'applied', 'Applied to the board'],
+    ['Ignored', 'rejected', 'Rejected'],
+    ['Failed', 'failed', 'nothing reached Review'],
+  ])('pins the post-decision state for %s', (status, expectedState, expectedCopy) => {
+    const items = makeItems()
+    items[0] = { ...items[0], status }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const row = wrapper.find('.paper-triage__row')
+    const line = row.find('[data-testid="capture-row-status"]')
+
+    expect(row.attributes('data-row-state')).toBe(expectedState)
+    expect(line.exists()).toBe(true)
+    expect(line.text()).toContain(expectedCopy)
+    // The load-bearing invariant: a decided row cannot render like an
+    // undecided one, in state OR in what the user reads.
+    expect(row.attributes('data-row-state')).not.toBe(undecidedRow().attributes('data-row-state'))
+    expect(row.text()).not.toBe(undecidedRow().text())
+  })
+
+  it('never tells a "nothing to propose" row to go decide in Review', () => {
+    // A triage that completed with no proposal is a SUCCESS with nothing left
+    // to decide (backend: CaptureStatusPolicy maps completed-without-proposal
+    // to Triaged). Accept and Reject are both disabled on this row and polling
+    // has stopped, so "decide there" would be a permanent instruction the user
+    // has no way to act on.
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Triaged' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const line = wrapper.find('.paper-triage__row [data-testid="capture-row-status"]')
+
+    expect(line.text()).toContain('nothing to propose')
+    expect(line.text()).not.toContain('decide there')
+  })
+
+  // In-flight narration must carry the intent the user actually clicked. The
+  // `actionBusyItemId` prop cannot: captureStore sets the same single slot for
+  // `triageItem` (Accept) and `ignoreItem` (Reject) alike.
+
+  it('reports a row as sending the moment its own accept is in flight', async () => {
+    // Feedback must not wait for the next status poll to arrive.
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    const wrapper = mount(PaperTriageTable, {
+      props: { items, actionBusyItemId: null },
+    })
+
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    await wrapper.setProps({ actionBusyItemId: 'capture-1' })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.attributes('data-row-state')).toBe('sending')
+    expect(row.find('[data-testid="capture-row-status"]').text()).toContain('Sending to Review')
+  })
+
+  it('narrates a rejection, not a trip to Review, while its own reject is in flight', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    const wrapper = mount(PaperTriageTable, {
+      props: { items, actionBusyItemId: null },
+    })
+
+    await wrapper.findAll('button[data-action="reject"]')[0].trigger('click')
+    await wrapper.setProps({ actionBusyItemId: 'capture-1' })
+    const row = wrapper.find('.paper-triage__row')
+    const line = row.find('[data-testid="capture-row-status"]')
+
+    expect(row.attributes('data-row-state')).toBe('rejecting')
+    expect(line.text()).toContain('Rejecting')
+    expect(line.text()).not.toContain('Sending to Review')
+  })
+
+  it('falls back to the server status for a busy row this table did not act on', async () => {
+    // The busy slot is shared: another surface (the detail panel) can set it
+    // for a row nobody clicked here. With no intent of our own, the honest
+    // answer is the status — never an invented "Sending to Review…".
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'New' }
+    const wrapper = mount(PaperTriageTable, {
+      props: { items, actionBusyItemId: 'capture-1' },
+    })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.attributes('data-row-state')).toBe('undecided')
+    expect(row.find('[data-testid="capture-row-status"]').exists()).toBe(false)
+  })
+
+  it('does not narrate a decision for an out-of-contract status', () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Quarantined' as unknown as CaptureStatusValue }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.attributes('data-row-state')).toBe('unknown')
+    expect(row.find('[data-testid="capture-row-status"]').exists()).toBe(false)
+  })
+
+  // --- source tags are not state tags (#1944) -------------------------------
+
+  it('marks and explains the source tag separately from the state tag', () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const stateTag = wrapper.find('[data-tag-kind="state"]')
+    const sourceTag = wrapper.find('[data-tag-kind="source"]')
+
+    expect(stateTag.text()).toBe('New')
+    expect(stateTag.attributes('title')).toContain('State: New')
+    expect(sourceTag.text()).toBe('Typed')
+    expect(sourceTag.attributes('title')).toContain('Source: Typed')
+    expect(sourceTag.attributes('title')).toContain('not a state')
+    expect(sourceTag.classes()).toContain('paper-triage__tag--source')
+  })
+
   it('emits open when an item row excerpt is clicked', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const opener = wrapper.findAll('.paper-triage__open')[1]

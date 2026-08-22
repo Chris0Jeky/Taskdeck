@@ -28,4 +28,30 @@ export default {
     viewOnlyOption: '{name} · view-only',
     viewOnlyHint: 'Boards marked view-only need write access before anything can be triaged into them.',
   },
+  // Triage row legibility (#1944). `blocked.*` says WHY the confirm button is
+  // off — an unmet precondition must be visible, never silent. `decision.*` is
+  // the next step after a decision, so a decided row never reads like an
+  // untouched one. `tag.*` separates a capture's SOURCE from its STATE.
+  triage: {
+    boardPick: {
+      blocked: {
+        noBoards: 'No boards yet. Create a board first, then this capture can go onto it.',
+        noBoard: 'Choose a board first. Accept on board stays off until one is selected.',
+        viewOnly: 'That board is view-only. Choose a board you can write to.',
+      },
+    },
+    decision: {
+      sending: 'Sending to Review…',
+      rejecting: 'Rejecting…',
+      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review.',
+      inReview: 'Sent to Review — decide there.',
+      applied: 'Applied to the board. Nothing left to do here.',
+      rejected: 'Rejected. This capture will not reach Review.',
+      failed: 'Triage failed, so nothing reached Review. Fix the problem, then Accept again.',
+    },
+    tag: {
+      state: 'State: {label}. Where this capture stands right now.',
+      source: 'Source: {label}. How this capture arrived — not a state.',
+    },
+  },
 }
