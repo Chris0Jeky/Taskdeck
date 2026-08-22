@@ -12,9 +12,19 @@
  * pending one; the total keeps its own words and never claims to be a queue.
  * "Awaiting triage" is deliberately Home's phrase (`home.status.awaitingTriage`)
  * so the badge, Home's triage line and this eyebrow all name one thing.
+ *
+ * `eyebrow` is a PLURAL message chosen on `{total}`. English needs no agreement
+ * — "captured" is invariable — but Italian and Spanish do ("1 catturato" /
+ * "1 capturada"), and vue-i18n plural forms are whole-message alternatives, not
+ * per-word ones. The catalog guard requires the same number of pipe segments in
+ * every locale, so the two English forms are deliberately identical: they exist
+ * to give `it`/`es` a singular slot to fill. `{pending}` needs no branch — its
+ * label is invariable in all three ("awaiting triage", "da smistare",
+ * "por clasificar").
  */
 export default {
-  eyebrow: 'Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  eyebrow:
+    'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
   // Rendered as `{lead} <em>{emphasis}</em>` — the space before the emphasis
   // comes from the template, so `lead` must not carry a trailing space.
   title: {

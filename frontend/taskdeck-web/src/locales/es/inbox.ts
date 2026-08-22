@@ -10,9 +10,14 @@
  * clasificar" es la cola de verdad — la misma definición que el badge de la
  * barra lateral y que `home.status.awaitingTriage` — y "capturadas" es el
  * total, que nunca se presenta como cola.
+ *
+ * `eyebrow` es un mensaje plural elegido por `{total}`: en singular el
+ * participio concuerda ("1 capturada", no "1 capturadas"). "Por clasificar" es
+ * invariable y no necesita forma propia.
  */
 export default {
-  eyebrow: 'Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  eyebrow:
+    'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
   title: {
     lead: '¿Qué tienes en mente,',
     emphasis: 'en dos palabras?',

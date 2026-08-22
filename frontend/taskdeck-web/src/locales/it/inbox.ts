@@ -8,9 +8,14 @@
  * la coda vera e propria — la stessa definizione del badge nella barra
  * laterale — mentre "catturati" è il totale e non va mai chiamato coda.
  * "Smistare" resta il verbo per triage, come in `./home.ts`.
+ *
+ * `eyebrow` è un messaggio plurale scelto su `{total}`: al singolare il
+ * participio concorda ("1 catturato", non "1 catturati"). "Da smistare" è
+ * invariabile e non richiede una forma propria.
  */
 export default {
-  eyebrow: 'Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
+  eyebrow:
+    'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
   title: {
     lead: 'Cosa hai in mente,',
     emphasis: 'in breve?',

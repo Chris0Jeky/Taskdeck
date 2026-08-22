@@ -197,8 +197,17 @@ defineExpose({ variant, toggleVariant, setVariant })
   <div class="paper-inbox" :data-variant="variant">
     <header class="paper-inbox__header">
       <div>
+        <!-- The third argument is the plural CHOICE: it/es agree the participle
+             with the total ("1 catturato" vs "2 catturati"), so the count has to
+             reach the catalog as a choice and not only as an interpolation. -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
-          {{ $t('inbox.eyebrow', { pending: pendingTriageCount, total: capturedCount }) }}
+          {{
+            $t(
+              'inbox.eyebrow',
+              { pending: pendingTriageCount, total: capturedCount },
+              capturedCount,
+            )
+          }}
         </div>
         <h1 class="tk-h1 paper-inbox__title">
           {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
+import { i18n } from '../../../i18n'
 import type { CaptureItemSummary } from '../../../types/capture'
 
 const mockCaptureStore = reactive({
@@ -518,5 +519,50 @@ describe('PaperInboxView', () => {
 
     expect(eyebrow).toContain('2 awaiting triage')
     expect(eyebrow).toContain('3 captured')
+  })
+
+  /**
+   * The total is a counted noun, and Italian and Spanish agree their participle
+   * with it. At n=1 the eyebrow read "1 catturati" / "1 capturadas" — the kind
+   * of thing that makes a localized surface look machine-made.
+   */
+  describe('eyebrow singular agreement', () => {
+    function eyebrowFor(locale: 'en' | 'it' | 'es', rows: number): string {
+      i18n.global.locale.value = locale
+      orchestratorState.items.value = Array.from({ length: rows }, (_, index) =>
+        captureRow(`c-${index}`, 'New'),
+      ) as CaptureItemSummary[]
+      const wrapper = mount(PaperInboxView)
+      return wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+    }
+
+    it('agrees the Italian participle with a single capture', () => {
+      const eyebrow = eyebrowFor('it', 1)
+
+      expect(eyebrow).toContain('1 catturato')
+      expect(eyebrow).not.toContain('catturati')
+    })
+
+    it('keeps the Italian plural for more than one', () => {
+      expect(eyebrowFor('it', 3)).toContain('3 catturati')
+    })
+
+    it('agrees the Spanish participle with a single capture', () => {
+      const eyebrow = eyebrowFor('es', 1)
+
+      expect(eyebrow).toContain('1 capturada')
+      expect(eyebrow).not.toContain('capturadas')
+    })
+
+    it('keeps the Spanish plural for more than one', () => {
+      expect(eyebrowFor('es', 3)).toContain('3 capturadas')
+    })
+
+    it('leaves English unchanged in both branches', () => {
+      // "captured" is invariable; the two English forms exist only to give the
+      // other catalogs a singular slot, so neither may drift.
+      expect(eyebrowFor('en', 1)).toContain('1 captured')
+      expect(eyebrowFor('en', 4)).toContain('4 captured')
+    })
   })
 })
