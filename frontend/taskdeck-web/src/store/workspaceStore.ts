@@ -53,6 +53,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let onboardingRequestVersion = 0
   let pendingModeWrites = 0
   let pendingOnboardingWrites = 0
+  // Version guard shared by `fetchHomeSummary` and `refreshWorkloadCounts`:
+  // both read GET /workspace/home and both write `homeSummary.workload`, so
+  // whichever STARTS last owns that field. Declared here (not beside
+  // `refreshWorkloadCounts`) because `fetchHomeSummary` bumps it too.
+  let workloadRequestVersion = 0
   // Session-scoped unsaved-local-intent flags. Set when the field's write
   // FAILS while local intent is applied; cleared when a later write of the
   // field succeeds or hydratePreferences confirms the server matches the local
@@ -286,6 +291,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     const guardSnapshot = capturePreferenceReadSnapshot()
+    // Join the workload guard (GH-1974): this read is the NEWER one, and it
+    // writes the whole summary including `workload`. Without the bump, a
+    // badge refresh that started earlier and lands later would overwrite this
+    // fresher `workload` with its own stale slice — the counts would silently
+    // rewind after a full reload of the surface.
+    workloadRequestVersion += 1
 
     try {
       homeLoading.value = true
@@ -331,8 +342,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
    * until a summary exists — with no summary the badges render nothing, and
    * `AppShell`'s own fetch is what populates them.
    */
-  let workloadRequestVersion = 0
-
   async function refreshWorkloadCounts(): Promise<void> {
     // Demo summaries are built from a static fixture; re-reading cannot move.
     if (isDemoMode) return
