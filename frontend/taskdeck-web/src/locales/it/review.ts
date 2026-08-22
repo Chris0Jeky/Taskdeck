@@ -160,7 +160,7 @@ export default {
     empty: 'Provenienza non ancora disponibile per questa proposta.',
     footnote: {
       deterministic:
-        'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck. Nessun provider AI è stato chiamato.',
+        'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck.',
       mock: 'Provenienza registrata: {label} — questa proposta è stata prodotta dal provider mock integrato di Taskdeck, non da un modello reale.',
       provider:
         'Provenienza registrata: {label} — questa proposta è stata prodotta dal provider AI che hai configurato, quindi il testo di origine è stato inviato a quel provider.',

@@ -28,8 +28,12 @@
  *
  * A degraded live run is NOT a special case here and must not become one: when the LLM
  * leg fails the backend keeps the deterministic defaults, so a degraded proposal arrives
- * carrying `deterministic-extractor` and is classified `deterministic` — the honesty
- * follows the recorded data, never the workspace configuration.
+ * carrying `deterministic-extractor` and is classified `deterministic`. That is why the
+ * triple supports only a PRODUCER claim, never an egress claim: on a degraded run the
+ * transcript was dispatched to the provider (and quota-billed) before the fallback
+ * produced the proposal, and the record cannot distinguish that from a never-dispatched
+ * run (GH-1273 stamps provider/model only on Succeeded/EmptyExtraction). Copy in the
+ * deterministic branch must say who produced the output and stop there.
  *
  * ── Fail-closed rules ────────────────────────────────────────────────────────
  * Absent, blank, or `unknown` provenance yields `unknown`, which the footnote renders as

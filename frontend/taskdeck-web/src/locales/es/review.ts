@@ -159,7 +159,7 @@ export default {
     empty: 'Todavía no hay procedencia para esta propuesta.',
     footnote: {
       deterministic:
-        'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck. No se llamó a ningún proveedor de IA.',
+        'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck.',
       mock: 'Procedencia registrada: {label} — esta propuesta la generó el proveedor simulado integrado de Taskdeck, no un modelo real.',
       provider:
         'Procedencia registrada: {label} — esta propuesta la generó el proveedor de IA que has configurado, por lo que su texto de origen se envió a ese proveedor.',

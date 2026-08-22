@@ -79,18 +79,26 @@ describe('ReviewProvenance footnote', () => {
     expect(footnoteText(recorded)).toContain(label)
   })
 
-  it('describes a deterministic capture as deterministic and offline', () => {
+  it('describes a deterministic capture by its producer, without an egress guarantee', () => {
+    // The recorded triple names WHO PRODUCED the output; it structurally cannot
+    // record whether a provider was called (GH-1273: provider/model are stamped
+    // only on Succeeded/EmptyExtraction). A degraded live run — transcript sent,
+    // output discarded, deterministic fallback produced the proposal — carries
+    // this same triple, so the copy must never promise the text stayed local.
     const text = footnoteText(DETERMINISTIC)
     expect(text).toContain('deterministic offline extractor')
-    expect(text).toContain('No AI provider was called')
+    expect(text).not.toContain('No AI provider was called')
   })
 
-  it('describes a degraded live run by what actually ran, not by the configured provider', () => {
+  it('describes a degraded live run by what actually ran, with no egress claim either way', () => {
     // The live leg was attempted and failed; the backend recorded the deterministic
-    // extractor. Naming the configured provider here would be the inverse of GH-1963.
+    // extractor. Naming the configured provider here would be the inverse of GH-1963 —
+    // and claiming no provider was called would be GH-1963 itself, one branch over:
+    // the transcript WAS dispatched (and quota-billed) before the fallback ran.
     const text = footnoteText(DEGRADED)
     expect(text).toContain('deterministic offline extractor')
     expect(text).not.toContain('OpenAI')
+    expect(text).not.toContain('No AI provider was called')
   })
 
   it('tells a live-provider proposal that its source text was sent to that provider', () => {
@@ -119,6 +127,27 @@ describe('ReviewProvenance footnote', () => {
         )
       }
       expect(text).toContain('openai/gpt-4o-mini')
+    },
+  )
+
+  // The inverse guard: the deterministic triple is also what a DEGRADED live run
+  // carries (the transcript was dispatched and quota-billed before the fallback),
+  // so no locale may attach a provider-free/egress guarantee to it. 'offline' is
+  // deliberately absent from this list — it describes the extractor, which is a
+  // supported producer claim; the egress claims are what the record cannot back.
+  it.each(SUPPORTED_LOCALES.map((locale) => [locale]))(
+    '%s: never claims a provider-free run for the deterministic triple',
+    (locale) => {
+      i18n.global.locale.value = locale
+      for (const fixture of [DETERMINISTIC, DEGRADED]) {
+        const text = footnoteText(fixture).toLowerCase()
+        for (const claim of ['no ai provider', 'nessun provider ai', 'ningún proveedor de ia']) {
+          expect(
+            text,
+            `"${claim}" asserted for the deterministic triple in "${locale}"`,
+          ).not.toContain(claim)
+        }
+      }
     },
   )
 
