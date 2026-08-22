@@ -208,10 +208,19 @@ public static class PipelineConfiguration
         // to an UNKNOWN path under these prefixes still resolves to that 405 endpoint (and, for an
         // anonymous caller, to the 401 the global FallbackPolicy applies to it) rather than a 404 —
         // unchanged from before this fix, and never the 200 + app shell this issue is about.
+        //
+        // ExcludeFromDescription keeps them out of the OpenAPI document. Swashbuckle discovers
+        // route-mapped endpoints, so without it these catch-alls are published as real GET operations
+        // next to the genuine routes — in the very document consumers use to learn the surface, and
+        // the one this comment block cites as already publishing route existence. Measured with
+        // scripts/ci/generate-openapi-artifact.ps1 (2026-08-22): without the exclusion the document
+        // carries 160 paths including "/api/{path}", "/hubs/{path}", "/health/{path}" and
+        // "/mcp/{path}"; with it, 156 and no "{path}" template at all (#1971).
         foreach (var prefix in NonSpaPathPrefixes)
         {
             app.MapFallback($"{prefix}/{{**path}}", UnknownEndpointNotFound)
                 .WithMetadata(new HttpMethodMetadata(SpaFallbackHttpMethods))
+                .ExcludeFromDescription()
                 .AllowAnonymous();
         }
 
