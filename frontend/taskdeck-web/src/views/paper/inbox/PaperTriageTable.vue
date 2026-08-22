@@ -4,7 +4,13 @@ import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import { useBoardStore } from '../../../store/boardStore'
-import { canMutateSelection, sourceLabel, statusLabel } from '../../../components/inbox/inboxUtils'
+import {
+  canMutateSelection,
+  captureRowState,
+  sourceLabel,
+  statusLabel,
+} from '../../../components/inbox/inboxUtils'
+import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
 import type { Board } from '../../../types/board'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
@@ -19,6 +25,13 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  * Board-less captures (Home quick-capture) can't be triaged into a proposal
  * without a target board, so Accept first reveals an inline board picker
  * (#1764); the chosen board rides the `accept` event and the server links it.
+ *
+ * Every blocked primary action states its reason (#1944). A precondition that
+ * is not met disables the button AND renders why — an enabled-looking button
+ * that swallows the click is the failure this surface was reported for. The
+ * same rule drives the per-row decision line: once accepted or rejected, the
+ * row says what happened and where the work went, so a decided row can never
+ * render identically to one still waiting on a decision.
  */
 const props = defineProps<{
   items: CaptureItemSummary[]
@@ -69,6 +82,35 @@ const pickedBoardIsWritable = computed(() => {
   return picked ? isBoardWritable(picked) : true
 })
 
+/**
+ * Why the picker's confirm button is off, or `null` when it is live (#1944).
+ *
+ * The button was already `disabled` in this state, but `.pbtn` had no disabled
+ * styling and the row said nothing — so it read as an enabled primary action
+ * that silently did nothing. The single source of truth now drives the
+ * `disabled` binding, the guard inside the handler, AND the visible reason:
+ * they cannot drift apart into "off for a reason nobody stated".
+ *
+ * Order matters: "nothing picked" is reported before "not writable", because
+ * `pickedBoardIsWritable` is also false when nothing is picked.
+ */
+type BoardPickBlock = 'noBoards' | 'noBoard' | 'viewOnly'
+
+const boardPickBlock = computed<BoardPickBlock | null>(() => {
+  if (boardStore.boards.length === 0) return 'noBoards'
+  if (!pickedBoardId.value) return 'noBoard'
+  if (!pickedBoardIsWritable.value) return 'viewOnly'
+  return null
+})
+
+const boardPickBlockMessage = computed(() =>
+  boardPickBlock.value ? t(`inbox.triage.boardPick.blocked.${boardPickBlock.value}`) : '',
+)
+
+function boardPickReasonId(item: CaptureItemSummary): string {
+  return `board-pick-reason-${item.id}`
+}
+
 const hasItems = computed(() => props.items.length > 0)
 const hasMutationInFlight = computed(
   () => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined,
@@ -110,10 +152,10 @@ async function onAccept(item: CaptureItemSummary) {
 
 function confirmBoardAndAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
-  if (!pickedBoardId.value) return
-  // Belt and braces behind the disabled option: never emit an accept the server
-  // would answer with a 403.
-  if (!pickedBoardIsWritable.value) return
+  // Belt and braces behind the disabled button: never emit an accept with no
+  // board, nor one the server would answer with a 403. Every branch that stops
+  // the emit also renders its reason above the button (`boardPickBlock`).
+  if (boardPickBlock.value !== null) return
   emit('accept', item.id, pickedBoardId.value)
   cancelBoardPick()
 }
@@ -135,6 +177,35 @@ function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue'
   if (value.includes('proposed') || value.includes('ready')) return 'ember'
   if (value.includes('applied') || value.includes('accept')) return 'applied'
   return 'mute'
+}
+
+/**
+ * The row's decision state (#1944). A mutation in flight for THIS row reads as
+ * `sending` even before the server status catches up, so the click has a
+ * visible consequence immediately rather than after the next poll.
+ */
+function rowState(item: CaptureItemSummary): CaptureRowState {
+  if (props.actionBusyItemId === item.id) return 'sending'
+  return captureRowState(item.status)
+}
+
+/**
+ * What the user's decision did and what happens next. `undecided` (and an
+ * out-of-contract `unknown`) return null: silence is correct only while the
+ * row is genuinely still waiting on the user.
+ */
+function decisionLine(item: CaptureItemSummary): string | null {
+  const state = rowState(item)
+  if (state === 'undecided' || state === 'unknown') return null
+  return t(`inbox.triage.decision.${state}`)
+}
+
+function stateTagTitle(item: CaptureItemSummary): string {
+  return t('inbox.triage.tag.state', { label: statusLabel(item.status) })
+}
+
+function sourceTagTitle(item: CaptureItemSummary): string {
+  return t('inbox.triage.tag.source', { label: sourceLabel(item.source) })
 }
 
 function failureReason(item: CaptureItemSummary): string | null {
@@ -192,6 +263,7 @@ function formatTime(iso: string): string {
         :key="item.id"
         class="paper-triage__row"
         :data-item-id="item.id"
+        :data-row-state="rowState(item)"
       >
         <button
           type="button"
@@ -213,8 +285,17 @@ function formatTime(iso: string): string {
         </button>
 
         <div class="paper-triage__tags">
-          <PaperTagstamp :tone="statusTone(item.status)">{{ statusLabel(item.status) }}</PaperTagstamp>
-          <PaperTagstamp tone="mute">{{ sourceLabel(item.source) }}</PaperTagstamp>
+          <PaperTagstamp
+            :tone="statusTone(item.status)"
+            data-tag-kind="state"
+            :title="stateTagTitle(item)"
+          >{{ statusLabel(item.status) }}</PaperTagstamp>
+          <PaperTagstamp
+            tone="mute"
+            class="paper-triage__tag--source"
+            data-tag-kind="source"
+            :title="sourceTagTitle(item)"
+          >{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
         <div v-if="isPickingBoard(item)" class="paper-triage__board-pick" data-testid="capture-board-pick">
@@ -240,11 +321,22 @@ function formatTime(iso: string): string {
           <p v-if="hasReadOnlyBoard" class="paper-triage__board-hint" data-testid="board-pick-view-only-hint">
             {{ t('inbox.boardPicker.viewOnlyHint') }}
           </p>
+          <p
+            v-if="boardPickBlock"
+            :id="boardPickReasonId(item)"
+            class="paper-triage__board-reason"
+            role="status"
+            data-testid="board-pick-reason"
+            :data-reason="boardPickBlock"
+          >
+            {{ boardPickBlockMessage }}
+          </p>
           <div class="paper-triage__actions">
             <PaperHLBtn
               label="Accept on board"
               variant="ember"
-              :disabled="isActionDisabled(item) || !pickedBoardId || !pickedBoardIsWritable"
+              :disabled="isActionDisabled(item) || boardPickBlock !== null"
+              :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
               data-action="accept-on-board"
               @click="confirmBoardAndAccept(item)"
             />
@@ -273,6 +365,16 @@ function formatTime(iso: string): string {
             @click="onReject(item)"
           />
         </div>
+
+        <p
+          v-if="decisionLine(item)"
+          class="paper-triage__decision"
+          :data-row-state="rowState(item)"
+          data-testid="capture-row-status"
+          role="status"
+        >
+          {{ decisionLine(item) }}
+        </p>
       </li>
     </ul>
   </section>
@@ -416,5 +518,60 @@ function formatTime(iso: string): string {
 }
 .paper-triage__board-select:focus {
   border-color: var(--ember);
+}
+.paper-triage__board-reason {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--overdue);
+}
+
+/*
+ * `.pbtn` in paper-tokens.css has NO disabled treatment: a disabled ember
+ * button keeps its full fill, its pointer cursor and its hover, so it reads as
+ * a live primary action that does nothing when clicked (#1944). Neutralise it
+ * here for the triage row rather than in the shared token sheet, which every
+ * Paper surface consumes. `:deep` is required — the button is PaperHLBtn's
+ * root, not this component's own element.
+ */
+.paper-triage :deep(.pbtn:disabled),
+.paper-triage :deep(.pbtn:disabled:hover) {
+  background: var(--paper-2);
+  color: var(--mute);
+  border-color: var(--line-soft);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.paper-triage__decision {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.paper-triage__decision[data-row-state='applied'] {
+  color: var(--applied);
+}
+.paper-triage__decision[data-row-state='failed'] {
+  color: var(--overdue);
+}
+.paper-triage__decision[data-row-state='rejected'] {
+  color: var(--mute);
+}
+
+/*
+ * A source tag says how the capture ARRIVED (Typed, Voice, Import); a state tag
+ * says where it stands. They sat in the same visual style, so `TYPED` read as a
+ * fourth state next to NEW / READY FOR REVIEW / APPLIED TO BOARD (#1944). The
+ * dashed hairline marks the source tag as a different kind of fact; the `title`
+ * on each tag names the kind in words.
+ */
+.paper-triage__tag--source {
+  border-style: dashed;
 }
 </style>
