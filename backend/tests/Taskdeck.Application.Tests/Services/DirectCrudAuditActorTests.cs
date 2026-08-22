@@ -16,7 +16,7 @@ namespace Taskdeck.Application.Tests.Services;
 /// Issue #1960 / ADR-0056 section 5: direct human board edits are attributable, so every
 /// user-initiated mutation must stamp the acting user on its audit row. These tests pin the
 /// actor per mutation class (card create/move/delete; column create/update/delete/reorder;
-/// board archive) and pin the two lanes that must stay unattributed: the proposal apply
+/// board update/archive/unarchive) and pin the two lanes that must stay unattributed: the proposal apply
 /// pipeline and the CLI/no-actor overloads, whose attribution comes from proposal provenance.
 ///
 /// The actor is always server-side: the services take it from the caller that already
@@ -200,6 +200,39 @@ public class DirectCrudAuditActorTests
 
     #region BoardService
 
+    // BoardMutationAuditTests pins Updated -> null and Unarchived -> null for the *no-actor*
+    // overload (UpdateBoardAsync(id, dto)). These two facts pin the actor lane of the same two
+    // actions, which is what this PR changed.
+
+    [Fact]
+    public async Task UpdateBoard_StampsActingUserOnAuditRow()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var dto = new UpdateBoardDto("Renamed", null, null);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        var result = await NewBoardService().UpdateBoardAsync(board.Id, dto, ActorId);
+
+        result.IsSuccess.Should().BeTrue();
+        VerifyActorStamped("board", board.Id, AuditAction.Updated, ActorId);
+    }
+
+    [Fact]
+    public async Task UnarchiveBoard_ViaUpdate_StampsActingUserOnAuditRow()
+    {
+        var board = TestDataBuilder.CreateBoard(isArchived: true);
+        var dto = new UpdateBoardDto(null, null, false);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        var result = await NewBoardService().UpdateBoardAsync(board.Id, dto, ActorId);
+
+        result.IsSuccess.Should().BeTrue();
+        // Unarchive audits as Unarchived, not Updated.
+        VerifyActorStamped("board", board.Id, AuditAction.Unarchived, ActorId);
+    }
+
     [Fact]
     public async Task ArchiveBoard_ViaUpdate_StampsActingUserOnAuditRow()
     {
@@ -280,6 +313,11 @@ public class DirectCrudAuditActorTests
     // (DeleteCardAsync(boardId, id) / DeleteColumnAsync(boardId, id)). These two tests fail
     // loudly if a two-argument call ever rebinds to the single-id + actor overload, which
     // would silently drop the board scoping instead of just losing the actor.
+    //
+    // NotFound + "never deleted" alone would NOT discriminate: under the rebinding the service
+    // looks up the *board* id, the loose mock returns null, and it fails NotFound without
+    // deleting anything either. The load-bearing assertions are the ones that separate the two
+    // worlds — the board-scoped error text, and the id the repository was actually queried with.
 
     [Fact]
     public async Task DeleteCard_TwoArgumentCall_StillScopesToBoard()
@@ -295,6 +333,12 @@ public class DirectCrudAuditActorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        // Only the board-scoped overload appends "in board {boardId}"; the single-id overload
+        // that a rebinding would select fails with the unscoped "Card with ID {id} not found".
+        result.ErrorMessage.Should().Contain($"in board {board.Id}");
+        // And the lookup argument is the card — a rebinding would query board.Id instead.
+        _cardRepoMock.Verify(r => r.GetByIdAsync(card.Id, default), Times.Once);
+        _cardRepoMock.Verify(r => r.GetByIdAsync(board.Id, default), Times.Never);
         _cardRepoMock.Verify(r => r.DeleteAsync(It.IsAny<Card>(), default), Times.Never);
     }
 
@@ -311,6 +355,12 @@ public class DirectCrudAuditActorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        // Only the board-scoped overload appends "in board {boardId}"; the single-id overload
+        // that a rebinding would select fails with the unscoped "Column with ID {id} not found".
+        result.ErrorMessage.Should().Contain($"in board {board.Id}");
+        // And the lookup argument is the column — a rebinding would query board.Id instead.
+        _columnRepoMock.Verify(r => r.GetByIdWithCardsAsync(column.Id, default), Times.Once);
+        _columnRepoMock.Verify(r => r.GetByIdWithCardsAsync(board.Id, default), Times.Never);
         _columnRepoMock.Verify(r => r.DeleteAsync(It.IsAny<Column>(), default), Times.Never);
     }
 
