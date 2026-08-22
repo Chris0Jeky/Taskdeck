@@ -66,7 +66,7 @@ const guidedAdvancedRevealed = ref(false)
 const phoneMoreDrawerId = 'paper-phone-more-drawer'
 const paperAdvancedDrawerId = 'paper-guided-advanced-navigation'
 
-/** Phone tab bar — same capture → review → board ordering as `primaryItems` (#1934). */
+/** Phone tab bar — same capture → review → board ordering as `primaryItems` (GH-1934). */
 const phoneNavItemCandidates: PaperNavItem[] = [
   { id: 'home', glyph: 'H', label: 'Home', path: '/workspace/home', keywords: '' },
   { id: 'today', glyph: 'T', label: 'Today', path: '/workspace/today', keywords: '' },
@@ -76,7 +76,7 @@ const phoneNavItemCandidates: PaperNavItem[] = [
 const phoneNavItems = computed<PaperNavItemBase[]>(() => phoneNavItemCandidates.filter(isAvailable))
 
 /**
- * Primary loop, ordered as the loop is actually WALKED (#1934): the two
+ * Primary loop, ordered as the loop is actually WALKED (GH-1934): the two
  * orientation surfaces first (Home, Today), then capture → review → board —
  * Inbox, Review, Boards.  Inbox used to sit last even though it is the loop's
  * entry point, which is the disorientation the dogfooding session reported.
@@ -206,7 +206,7 @@ function isCurrentOrChild(path: string): boolean {
 /**
  * Initial shown in the workspace identity chip.
  *
- * The chip is deliberately NON-INTERACTIVE (#1934). Taskdeck is
+ * The chip is deliberately NON-INTERACTIVE (GH-1934). Taskdeck is
  * single-workspace: `workspaceStore` holds a workspace MODE
  * (guided/workbench), never a list of workspaces, so there is nothing to
  * switch to. It used to render as a button with a chevron and an aria-label
@@ -618,7 +618,7 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Non-interactive identity chip, not a switcher — see workspaceInitial (#1934). -->
+      <!-- Non-interactive identity chip, not a switcher — see workspaceInitial (GH-1934). -->
       <div class="paper-sidebar__workspace" data-testid="paper-sidebar-workspace">
         <span class="paper-sidebar__workspace-glyph" aria-hidden="true">{{ workspaceInitial }}</span>
         <span class="paper-sidebar__workspace-name">{{ workspaceName }}</span>
@@ -797,7 +797,7 @@ defineExpose({
   color: var(--ember);
 }
 
-/* Workspace identity chip (non-interactive — see #1934) */
+/* Workspace identity chip (non-interactive — see GH-1934) */
 .paper-sidebar__workspace {
   margin: 12px 12px 6px;
   padding: 8px 10px;
