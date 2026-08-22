@@ -10,6 +10,7 @@
  * line below — then the same file in `../it` and `../es`. The guard picks it up
  * automatically; no registration list to update.
  */
+import boardDetail from './boardDetail'
 import boards from './boards'
 import home from './home'
 import inbox from './inbox'
@@ -21,6 +22,7 @@ export default {
   home,
   inbox,
   boards,
+  boardDetail,
   review,
   settings,
   shell,

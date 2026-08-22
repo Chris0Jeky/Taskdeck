@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
+import PaperBoardSettingsDialog from './board/PaperBoardSettingsDialog.vue'
+import PaperColumnSettingsDialog from './board/PaperColumnSettingsDialog.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import CardModal from '../../components/board/CardModal.vue'
 import type { Card, Column } from '../../types/board'
@@ -21,6 +24,12 @@ import { logError } from '../../utils/errorReporting'
  *
  * Mounted at the same route as `BoardView`; the wrapping `BoardView` shell
  * delegates to this view when `paperThemeStore.isOn`.
+ *
+ * Direct board management (#1945 / ADR-0056): add-card, column rename/delete,
+ * column reorder and board settings all live here, driving the same
+ * `boardStore` actions the Legacy skin uses. These are DIRECT human edits —
+ * they take effect immediately and never open a proposal. The `+ capture`
+ * affordance is the separate, secondary door into the review lane.
  */
 const props = withDefaults(
   defineProps<{
@@ -31,9 +40,23 @@ const props = withDefaults(
   { cardVariant: 'index', selectedCardId: null },
 )
 
+const emit = defineEmits<{
+  /**
+   * Fired whenever this view's modal-dialog state changes.
+   *
+   * `BoardView` owns the board keyboard shortcuts but this view owns the
+   * dialogs, so the gate has to be reported upward (GH-1959). Without it `n`
+   * fired straight through an open dialog: it clicked
+   * `[data-action="toggle-add-card"]` on the column behind the modal and then
+   * yanked focus to the composer a moment later.
+   */
+  (event: 'dialog-open-change', open: boolean): void
+}>()
+
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
@@ -65,6 +88,9 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 
 watch(boardId, () => {
   selectedCard.value = null
+  // Switching boards must not carry a half-typed card draft, an open column
+  // dialog, or an error banner across to a board they do not belong to.
+  resetBoardManagementState()
 })
 
 const totalCards = computed(() =>
@@ -187,6 +213,138 @@ function openCaptureBoard() {
 }
 
 /**
+ * Direct board management (#1945).
+ *
+ * Every handler below writes through the SAME `boardStore` actions the Legacy
+ * skin uses — `createCard`, `reorderColumns`, plus `updateColumn`/
+ * `deleteColumn`/`updateBoard`/`deleteBoard` inside the two dialogs. Nothing
+ * here creates a proposal: a human's click on their own board is a direct
+ * write, and the review lane governs agent-originated changes (ADR-0056).
+ */
+const composerColumnId = ref<string | null>(null)
+const composerBusy = ref(false)
+const composerError = ref<string | null>(null)
+const editingColumn = ref<Column | null>(null)
+const showBoardSettings = ref(false)
+
+function resetBoardManagementState() {
+  composerColumnId.value = null
+  composerBusy.value = false
+  composerError.value = null
+  editingColumn.value = null
+  showBoardSettings.value = false
+  cancelAddColumn()
+}
+
+/**
+ * The column whose settings dialog is open, re-resolved from the store on every
+ * read. Holding the prop object captured at open time would render stale values
+ * after a realtime refresh replaced the column, and would keep a deleted column
+ * alive in the dialog.
+ */
+const editingColumnLive = computed<Column | null>(() => {
+  const id = editingColumn.value?.id
+  if (!id) return null
+  return sortedColumns.value.find((column) => column.id === id) ?? null
+})
+
+const editingColumnCardCount = computed(() =>
+  editingColumnLive.value ? (cardsByColumn.value.get(editingColumnLive.value.id)?.length ?? 0) : 0,
+)
+
+/**
+ * Every modal dialog this view can put over the board. The inline card composer
+ * is deliberately NOT one: it lives in the lane, does not cover anything, and
+ * `n` on an already-composing column is a documented no-op.
+ */
+const anyDialogOpen = computed(
+  () =>
+    Boolean(selectedCard.value) || Boolean(editingColumnLive.value) || showBoardSettings.value,
+)
+
+watch(anyDialogOpen, (open) => {
+  emit('dialog-open-change', open)
+})
+
+// A skin switch or a route change unmounts this view outright. Leaving the flag
+// stuck at `true` would disable the board shortcuts for the Legacy skin too.
+onBeforeUnmount(() => {
+  if (anyDialogOpen.value) emit('dialog-open-change', false)
+})
+
+function openComposer(column: Column) {
+  // A different column's failure is not this column's failure.
+  if (composerColumnId.value !== column.id) {
+    composerError.value = null
+  }
+  composerColumnId.value = column.id
+}
+
+function cancelComposer() {
+  composerColumnId.value = null
+  composerError.value = null
+}
+
+async function createCardInColumn(column: Column, title: string) {
+  if (composerBusy.value) return
+
+  composerBusy.value = true
+  composerError.value = null
+  try {
+    await boardStore.createCard(boardId.value, { columnId: column.id, title })
+    // Parity with the Legacy inline form: a successful add closes the composer.
+    composerColumnId.value = null
+  } catch (error) {
+    logError('Failed to create card (paper):', error)
+    composerError.value = t('boardDetail.card.error')
+  } finally {
+    composerBusy.value = false
+  }
+}
+
+/**
+ * Keyboard/pointer column reorder, alongside the existing drag handle. Drag is
+ * the only reorder Legacy offers; it is unusable without a pointer, so Paper
+ * adds explicit controls over the same `reorderColumns` action.
+ */
+async function moveColumn(column: Column, direction: 'left' | 'right') {
+  const columns = sortedColumns.value
+  const index = columns.findIndex((c) => c.id === column.id)
+  const targetIndex = direction === 'left' ? index - 1 : index + 1
+  if (index === -1 || targetIndex < 0 || targetIndex >= columns.length) return
+
+  const reordered = [...columns]
+  const [removed] = reordered.splice(index, 1)
+  if (!removed) return
+  reordered.splice(targetIndex, 0, removed)
+
+  try {
+    await boardStore.reorderColumns(
+      boardId.value,
+      reordered.map((c) => c.id),
+    )
+  } catch (error) {
+    logError('Failed to reorder columns (paper):', error)
+  }
+}
+
+function openColumnSettings(column: Column) {
+  editingColumn.value = column
+}
+
+function closeColumnSettings() {
+  editingColumn.value = null
+}
+
+function openBoardSettings() {
+  showBoardSettings.value = true
+}
+
+function closeBoardSettings() {
+  showBoardSettings.value = false
+}
+
+/**
  * Empty-board bootstrap (#1765).
  *
  * A board created from the Boards list starts with zero columns, and the paper
@@ -230,6 +388,56 @@ async function createFirstColumn() {
   }
 }
 
+/**
+ * Add a column to a board that already has some (GH-1959, horizon finding H-03).
+ *
+ * The empty state above is a first-run bootstrap and only exists at zero
+ * columns, so it was the ONLY add-column door on the whole surface — a board
+ * was permanently capped at the lanes it happened to start with. This is the
+ * ordinary door, at the end of the lane rail, over the same
+ * `boardStore.createColumn` action.
+ *
+ * Deliberately secondary: the primary act on a board is adding a CARD. Position
+ * is omitted so the server appends, exactly as the Legacy toolbar form does.
+ */
+const addColumnOpen = ref(false)
+const newColumnName = ref('')
+const addColumnError = ref<string | null>(null)
+
+const canSubmitNewColumn = computed(
+  () => newColumnName.value.trim().length > 0 && !creatingColumns.value,
+)
+
+function openAddColumn() {
+  addColumnError.value = null
+  addColumnOpen.value = true
+}
+
+function cancelAddColumn() {
+  addColumnOpen.value = false
+  newColumnName.value = ''
+  addColumnError.value = null
+}
+
+async function createColumnAtEnd() {
+  const name = newColumnName.value.trim()
+  // A whitespace-only name is a no-op, never a request the server has to reject.
+  if (!name || creatingColumns.value) return
+
+  creatingColumns.value = true
+  addColumnError.value = null
+  try {
+    await boardStore.createColumn(boardId.value, { name })
+    newColumnName.value = ''
+    addColumnOpen.value = false
+  } catch (error) {
+    logError('Failed to create column (paper):', error)
+    addColumnError.value = t('boardDetail.column.addError')
+  } finally {
+    creatingColumns.value = false
+  }
+}
+
 async function addStarterColumns() {
   if (creatingColumns.value) return
 
@@ -262,11 +470,26 @@ async function addStarterColumns() {
           </p>
         </div>
         <div class="paper-board-view__actions">
+          <PaperHLBtn
+            v-if="boardStore.currentBoard"
+            :label="t('boardDetail.actions.settings')"
+            data-testid="paper-board-settings"
+            @click="openBoardSettings"
+          />
           <PaperHLBtn label="Capture here" kbd="C" @click="openCaptureBoard" />
           <PaperHLBtn variant="ember" label="Review" kbd="R" @click="openReview" />
         </div>
       </header>
 
+      <!--
+        The banner reports; it does not replace. It used to head the same
+        `v-if` chain as the lanes, so ANY store error — including a rejected
+        direct add-card, which sets `state.error` before it rethrows — unmounted
+        every lane and took the user's half-typed draft with it (GH-1959). It
+        now renders above whatever follows. The empty state still wins where it
+        applies: it owns `emptyStateError`, so `!isEmptyBoard` keeps the banner
+        out of its way.
+      -->
       <section
         v-if="boardStore.error && !isEmptyBoard"
         class="paper-board-view__error"
@@ -276,7 +499,7 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-else-if="!boardStore.currentBoard && boardStore.loading"
+        v-if="!boardStore.currentBoard && boardStore.loading"
         class="paper-board-view__loading"
         aria-live="polite"
       >
@@ -284,7 +507,7 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-else-if="sortedColumns.length === 0"
+        v-else-if="isEmptyBoard"
         class="paper-board-view__empty"
         data-testid="paper-board-empty"
       >
@@ -332,8 +555,13 @@ async function addStarterColumns() {
         </p>
       </section>
 
+      <!--
+        `v-else-if` rather than a bare `v-else`: with the banner lifted out of
+        this chain, a board that failed to load (no `currentBoard`) must render
+        neither the column-bootstrap empty state nor an empty lane rail.
+      -->
       <div
-        v-else
+        v-else-if="boardStore.currentBoard"
         class="paper-board-view__lanes"
         :class="{ 'paper-board-view__lanes--snap': viewportMode === 'tablet' }"
         data-testid="paper-board-lanes"
@@ -361,13 +589,80 @@ async function addStarterColumns() {
             :card-variant="props.cardVariant"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
+            :can-move-left="idx > 0"
+            :can-move-right="idx < sortedColumns.length - 1"
+            :composer-open="composerColumnId === column.id"
+            :composer-busy="composerBusy"
+            :composer-error="composerError"
             @capture="openCapture"
+            @edit="openColumnSettings"
+            @move="moveColumn"
+            @open-composer="openComposer"
+            @submit-card="createCardInColumn"
+            @cancel-composer="cancelComposer"
             @card-click="openCard"
             @card-dragstart="(card) => handleCardDragStart(card)"
             @card-dragend="handleCardDragEnd"
             @card-dragover="(_card, event) => onCardDragOverCard(event)"
             @card-drop="onCardDropOnCard"
           />
+        </div>
+
+        <div class="paper-board-view__add-column" data-testid="paper-board-add-column-cell">
+          <PaperHLBtn
+            v-if="!addColumnOpen"
+            :label="t('boardDetail.column.add')"
+            :aria-label="t('boardDetail.column.addAria')"
+            data-testid="paper-board-add-column"
+            @click="openAddColumn"
+          />
+
+          <form
+            v-else
+            class="paper-board-view__add-column-form"
+            data-testid="paper-board-add-column-form"
+            @submit.prevent="createColumnAtEnd"
+          >
+            <label class="sr-only" for="paper-board-add-column-name">
+              {{ t('boardDetail.column.addInputLabel') }}
+            </label>
+            <input
+              id="paper-board-add-column-name"
+              v-model="newColumnName"
+              type="text"
+              class="paper-board-view__add-column-input"
+              :placeholder="t('boardDetail.column.addPlaceholder')"
+              :disabled="creatingColumns"
+              data-testid="paper-board-add-column-name"
+              @keydown.esc.stop.prevent="cancelAddColumn"
+            />
+
+            <div class="paper-board-view__add-column-actions">
+              <PaperHLBtn
+                type="submit"
+                variant="primary"
+                :label="t('boardDetail.column.addSubmit')"
+                :disabled="!canSubmitNewColumn"
+                data-testid="paper-board-add-column-submit"
+              />
+              <PaperHLBtn
+                type="button"
+                variant="ghost"
+                :label="t('boardDetail.column.addCancel')"
+                data-testid="paper-board-add-column-cancel"
+                @click="cancelAddColumn"
+              />
+            </div>
+
+            <p
+              v-if="addColumnError"
+              class="paper-board-view__add-column-error"
+              role="alert"
+              data-testid="paper-board-add-column-error"
+            >
+              {{ addColumnError }}
+            </p>
+          </form>
         </div>
       </div>
 
@@ -378,6 +673,24 @@ async function addStarterColumns() {
         :labels="boardStore.currentBoardLabels"
         @close="closeCard"
         @updated="closeCard"
+      />
+
+      <PaperColumnSettingsDialog
+        v-if="editingColumnLive"
+        :column="editingColumnLive"
+        :board-id="boardId"
+        :is-open="Boolean(editingColumnLive)"
+        :card-count="editingColumnCardCount"
+        @close="closeColumnSettings"
+        @updated="closeColumnSettings"
+      />
+
+      <PaperBoardSettingsDialog
+        v-if="boardStore.currentBoard && showBoardSettings"
+        :board="boardStore.currentBoard"
+        :is-open="showBoardSettings"
+        @close="closeBoardSettings"
+        @updated="closeBoardSettings"
       />
     </div>
   </div>
@@ -516,6 +829,60 @@ async function addStarterColumns() {
 
 .paper-board-view__lane {
   display: contents;
+}
+
+/* Clearly secondary to the lanes: narrower, dashed, no card surface. Adding a
+ * CARD is the primary act on a board; adding a lane is occasional. */
+.paper-board-view__add-column {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 12px;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--r-2);
+  background: transparent;
+}
+
+.paper-board-view__add-column-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paper-board-view__add-column-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-1);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.paper-board-view__add-column-input::placeholder {
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--mute);
+}
+
+.paper-board-view__add-column-input:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.paper-board-view__add-column-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.paper-board-view__add-column-error {
+  margin: 0;
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
 }
 
 .paper-board-view__lane > * {

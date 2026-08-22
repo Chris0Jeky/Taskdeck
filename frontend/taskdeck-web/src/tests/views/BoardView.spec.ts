@@ -235,14 +235,51 @@ describe('BoardView', () => {
     const shortcut = (key: string, description: string) =>
       shortcuts.find((s) => s.key === key && s.description === description)
 
-    expect(shortcut('j', 'Next card')?.enabled).toBeUndefined()
-    expect(shortcut('ArrowRight', 'Move card to next column')?.enabled).toBeUndefined()
-    expect(shortcut('Enter', 'Open selected card')?.enabled).toBeUndefined()
+    expect(shortcut('j', 'Next card')?.enabled?.()).toBe(true)
+    expect(shortcut('ArrowRight', 'Move card to next column')?.enabled?.()).toBe(true)
+    expect(shortcut('Enter', 'Open selected card')?.enabled?.()).toBe(true)
+    // Escape stays ungated on purpose — the dialogs close themselves through
+    // the shared escape stack.
     expect(shortcut('Escape', 'Close open dialog/panel')?.enabled).toBeUndefined()
 
-    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(false)
+    // `n` is ungated *by skin* as of #1945: PaperBoardColumn now renders the
+    // `[data-action="toggle-add-card"]` button and `[data-action="add-card-input"]`
+    // textarea that `createCardInSelectedColumn` drives, so the shortcut is live
+    // in BOTH skins. `?` and `f` stay gated — Paper has its own shortcuts
+    // overlay and no filter panel, so those controls really are hidden.
+    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
     expect(shortcut('?', 'Toggle keyboard shortcuts help')?.enabled?.()).toBe(false)
     expect(shortcut('f', 'Toggle filter panel')?.enabled?.()).toBe(false)
+  })
+
+  it('makes the board shortcuts inert while a Paper dialog is open', async () => {
+    usePaperThemeStore().setMode('paper')
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    const shortcuts = vi.mocked(useKeyboardShortcuts).mock.calls.at(-1)?.[0] ?? []
+    const shortcut = (key: string, description: string) =>
+      shortcuts.find((s) => s.key === key && s.description === description)
+
+    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
+
+    // Open a real Paper dialog through the real button, not by poking state:
+    // an ungated `n` here clicked `[data-action="toggle-add-card"]` on the
+    // column behind the modal and then stole focus into the composer.
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await waitForUi()
+
+    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(false)
+    expect(shortcut('j', 'Next card')?.enabled?.()).toBe(false)
+    expect(shortcut('Enter', 'Open selected card')?.enabled?.()).toBe(false)
+    // Escape must still reach its handler.
+    expect(shortcut('Escape', 'Close open dialog/panel')?.enabled).toBeUndefined()
+
+    await wrapper.get('[data-action="close-dialog"]').trigger('click')
+    await waitForUi()
+
+    expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
   })
 
   it('shows a demo-board badge for the client onboarding demo board', async () => {

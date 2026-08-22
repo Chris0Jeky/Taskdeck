@@ -12,6 +12,7 @@
  *
  * Surfaces not present here fall back to English silently, by design.
  */
+import boardDetail from './boardDetail'
 import boards from './boards'
 import home from './home'
 import inbox from './inbox'
@@ -23,6 +24,7 @@ export default {
   home,
   inbox,
   boards,
+  boardDetail,
   review,
   settings,
   shell,
