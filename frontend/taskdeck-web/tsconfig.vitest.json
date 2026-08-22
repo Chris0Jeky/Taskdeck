@@ -26,7 +26,10 @@
   // the same experiment reports only the spec's own errors. Verified both ways.
   //
   // SCOPE: the spec tree is `src/tests/**` only (plus the ambient declarations above). Vitest runs
-  // 302 spec files in total — 284 here plus 18 in the frontend-root `tests/` directory. Those 18 are NOT covered and remain unchecked: they are
+  // 326 spec files in total (re-measured 2026-08-22: 302 under `src/tests/` plus 24 in the
+  // frontend-root `tests/` directory, incl. `paper-disabled-button.spec.ts` added under GH-1953;
+  // the counts below this line date from the 2026-08-07 measurement and describe the quarantine
+  // as created). The frontend-root specs are NOT covered and remain unchecked: they are
   // Node-flavoured — they import the `.mjs` scripts under `scripts/` and use `process`/`NodeJS`, so
   // they need `types: ["node"]`, which is precisely the setting that breaks production source in
   // THIS project. Measured 2026-08-07 with this project's options: 54 errors in the run — 42 across
@@ -41,8 +44,9 @@
   //
   // CURRENT: **40 files remain.** The 24 files that carried exactly one error each were fixed and
   // un-quarantined in #1607 (24 of the 415 errors cleared; 391 remain across the 40). That leaves
-  // **244 of the 302 spec files Vitest runs** type-checked; the 58 that are not are these 40 plus
-  // the 18 in the frontend-root `tests/` directory.
+  // **262 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree
+  // specs minus the 40 quarantined, plus zero of the 24 frontend-root specs); the 64 that are not
+  // are these 40 plus the 24 in the frontend-root `tests/` directory.
   //
   // New spec files under `src/tests/` are checked by default — they are not in this list. The list
   // may only shrink: delete an entry once its file is fixed; never add one to make a red build

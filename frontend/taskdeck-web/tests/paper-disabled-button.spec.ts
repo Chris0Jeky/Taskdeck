@@ -192,6 +192,21 @@ describe('paper-tokens.css cascade model', () => {
     expect(rules.filter((rule) => rule.selector.includes('.pbtn')).length).toBeGreaterThan(0)
   })
 
+  it('covers every variant the sheet defines', () => {
+    // VARIANTS is hand-written; this ties it to the sheet so a future
+    // `.pbtn-quiet` (say) cannot ship interactive rules this guard never
+    // exercises — the new-variant blind spot the GH-1953 review flagged.
+    const sheetVariants = new Set(
+      [...tokensCss.matchAll(/\.pbtn-([a-z0-9-]+)/g)].map((match) => match[1]),
+    )
+    const coveredVariants = new Set(
+      VARIANTS.flatMap((variant) => variant.classes)
+        .filter((cls) => cls !== 'pbtn')
+        .map((cls) => cls.replace(/^pbtn-/, '')),
+    )
+    expect(sheetVariants).toEqual(coveredVariants)
+  })
+
   it('styles Paper buttons with classes and pseudo-classes only', () => {
     // An id or attribute component would outrank every class-level rule and
     // invalidate the simple weighting this guard resolves the cascade with.

@@ -417,9 +417,9 @@
 /*
  * Ghost is chromeless by design, so giving it the substrate fill above would
  * make the dead control LOUDER than its live siblings.  Mute the ink and let
- * the page show through instead; `--faint` against `--ink` is a full rung of
- * separation, and the `not-allowed` cursor plus the neutralised hover above
- * still carry the "this is off" signal.
+ * the page show through instead; `--faint` sits three rungs below `--ink` on
+ * the ladder documented above, and the `not-allowed` cursor plus the
+ * neutralised hover above still carry the "this is off" signal.
  */
 .paper .pbtn-ghost:disabled, .paper-night .pbtn-ghost:disabled {
   background: transparent;
