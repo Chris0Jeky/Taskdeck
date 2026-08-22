@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 /**
  * TodayLineForTomorrow — italic serif textarea with debounced persistence.
@@ -9,6 +10,11 @@ import { onBeforeUnmount, ref, watch } from 'vue'
  * Persistence is keyed by `storageKey`, defaulting to `td.paper.line-for-tomorrow`.
  * `debounceMs` is exposed so tests can drop the timer without forcing real
  * 500ms waits.
+ *
+ * Lifecycle copy (issue 1939): the note is saved under, and read back for, the
+ * SAME date — no day shift happens anywhere in the chain (issue 1640). The meta
+ * therefore describes that, and must not promise a tomorrow hand-off. If 1640
+ * decides in favour of the shift, this copy moves with it.
  */
 const props = withDefaults(
   defineProps<{
@@ -45,8 +51,27 @@ function readStored(): string {
   return props.initial
 }
 
+const { t } = useI18n()
+
 const text = ref<string>(readStored())
 const status = ref<'idle' | 'saving' | 'saved' | 'error'>('saved')
+const input = ref<HTMLTextAreaElement | null>(null)
+
+/**
+ * Focus the field. Exposed so the cover's "Write a note" button can name its
+ * own destination by moving the caret here instead of describing it in a toast.
+ */
+function focus() {
+  const el = input.value
+  if (!el) return
+  el.focus()
+  // happy-dom and older browsers do not implement scrollIntoView.
+  if (typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ block: 'center' })
+  }
+}
+
+defineExpose({ focus })
 
 let timer: ReturnType<typeof setTimeout> | null = null
 let suppressNextSave = false
@@ -133,6 +158,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="today-line" data-section="line-for-tomorrow">
     <textarea
+      ref="input"
       v-model="text"
       class="today-line__input"
       data-testid="line-for-tomorrow-input"
@@ -145,7 +171,7 @@ onBeforeUnmount(() => {
         <template v-else-if="status === 'error'">Save unavailable</template>
         <template v-else>Saved · auto</template>
       </span>
-      <span>shows on tomorrow's open</span>
+      <span data-testid="line-for-tomorrow-lifecycle">{{ t('today.note.meta') }}</span>
     </div>
   </div>
 </template>
