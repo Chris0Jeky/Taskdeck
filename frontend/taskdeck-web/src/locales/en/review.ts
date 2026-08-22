@@ -206,8 +206,17 @@ export default {
     title: 'Provenance',
     sub: "What was read · what wasn't · what was inferred",
     empty: 'Provenance not available for this proposal yet.',
-    footnote:
-      'Provenance reflects the actor behind this proposal — a deterministic offline extractor for captures, or your configured AI provider for chat-driven automation.',
+    // One sentence per recorded engine, selected by `views/paper/review/provenanceActor.ts`
+    // from the proposal's own provenance. There is deliberately NO unconditional variant:
+    // the surface says nothing when the record is absent or incoherent (GH-1963). `{label}`
+    // is the backend `provider/model` identifier — wire text, interpolated verbatim.
+    footnote: {
+      deterministic:
+        'Recorded provenance: {label} — Taskdeck’s deterministic offline extractor produced this proposal.',
+      mock: 'Recorded provenance: {label} — Taskdeck’s built-in mock provider produced this proposal, not a live model.',
+      provider:
+        'Recorded provenance: {label} — your configured AI provider produced this proposal, so its source text was sent to that provider.',
+    },
     viewAll: 'View full read-set →',
   },
 

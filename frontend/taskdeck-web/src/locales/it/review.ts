@@ -158,8 +158,13 @@ export default {
     title: 'Provenienza',
     sub: 'Cosa è stato letto · cosa no · cosa è stato dedotto',
     empty: 'Provenienza non ancora disponibile per questa proposta.',
-    footnote:
-      'La provenienza riflette l’attore dietro questa proposta — un estrattore deterministico offline per le catture, oppure il provider AI che hai configurato per l’automazione via chat.',
+    footnote: {
+      deterministic:
+        'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck.',
+      mock: 'Provenienza registrata: {label} — questa proposta è stata prodotta dal provider mock integrato di Taskdeck, non da un modello reale.',
+      provider:
+        'Provenienza registrata: {label} — questa proposta è stata prodotta dal provider AI che hai configurato, quindi il testo di origine è stato inviato a quel provider.',
+    },
     viewAll: 'Vedi tutte le fonti lette →',
   },
 
