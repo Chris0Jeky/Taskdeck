@@ -260,7 +260,6 @@ export default {
     heading: 'Por qué ahora',
     noProposal: 'Ninguna propuesta seleccionada.',
     fallback: 'Esta propuesta está en espera de revisión según la fuente capturada con ella.',
-    tune: 'Ajustar las heurísticas →',
   },
 
   similarPast: {

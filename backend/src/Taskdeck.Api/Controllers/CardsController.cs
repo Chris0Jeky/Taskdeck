@@ -136,7 +136,7 @@ public class CardsController : AuthenticatedControllerBase
             return permissionError;
 
         var createDto = dto with { BoardId = boardId };
-        var result = await _cardService.CreateCardAsync(createDto);
+        var result = await _cardService.CreateCardAsync(createDto, cardId: null, actorUserId: userId);
         return result.IsSuccess
             ? CreatedAtAction(nameof(GetCards), new { boardId }, result.Value)
             : result.ToErrorActionResult();
@@ -210,7 +210,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.MoveCardAsync(boardId, cardId, dto);
+        var result = await _cardService.MoveCardAsync(boardId, cardId, dto, actorUserId: userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -243,7 +243,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.DeleteCardAsync(boardId, cardId);
+        var result = await _cardService.DeleteCardAsync(boardId, cardId, actorUserId: userId);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }

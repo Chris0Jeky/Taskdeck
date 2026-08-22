@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperSidebar from '../../../components/paper/PaperSidebar.vue'
+import { versionApi } from '../../../api/versionApi'
+import { resetProductVersionForTests } from '../../../composables/useProductVersion'
 import type { FeatureFlags } from '../../../types/feature-flags'
 import type { ViewportMode } from '../../../composables/useViewportMode'
 
@@ -49,6 +51,14 @@ vi.mock('../../../composables/useViewportMode', () => ({
   useViewportMode: () => ({ mode: mockViewportMode }),
 }))
 
+// Only the transport is stubbed: the real `useProductVersion` composable runs,
+// so these specs exercise the whole sidebar -> composable -> API chain (#1948).
+vi.mock('../../../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
+}))
+
 function mountSidebar() {
   return mount(PaperSidebar, {
     global: {
@@ -74,6 +84,8 @@ describe('PaperSidebar', () => {
     mockPaperTheme.mode = 'paper'
     mockPaperTheme.activeClass = 'paper'
     mockViewportMode.value = 'desktop'
+    resetProductVersionForTests()
+    vi.mocked(versionApi.getProductVersion).mockResolvedValue(null)
     document.body.style.overflow = ''
   })
 
@@ -84,10 +96,40 @@ describe('PaperSidebar', () => {
     expect(wrapper.find('.paper-sidebar__eyebrow-active').text()).toContain('active')
   })
 
-  it('renders the workspace switcher chip with the first letter glyph', () => {
+  it('renders the workspace identity chip with the first letter glyph', () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('.paper-sidebar__workspace-glyph').text()).toBe('S')
     expect(wrapper.find('.paper-sidebar__workspace-name').text()).toContain('Solo Workspace')
+  })
+
+  // #1934 — the chip was a `<button aria-label="Switch workspace">` that did
+  // nothing on click. Taskdeck is single-workspace, so it renders as status
+  // until a real switcher exists; it must not read as interactive to anyone.
+  it('renders the workspace chip as non-interactive status, not a dead switcher', () => {
+    const wrapper = mountSidebar()
+    const chip = wrapper.find('[data-testid="paper-sidebar-workspace"]')
+
+    expect(chip.exists()).toBe(true)
+    expect(chip.element.tagName).toBe('DIV')
+    expect(chip.attributes('aria-label')).toBeUndefined()
+    expect(chip.attributes('role')).toBeUndefined()
+    expect(chip.attributes('tabindex')).toBeUndefined()
+    expect(wrapper.find('button.paper-sidebar__workspace').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('Switch workspace')
+    // The initial duplicates the name that follows it; do not read it twice.
+    expect(wrapper.find('.paper-sidebar__workspace-glyph').attributes('aria-hidden')).toBe('true')
+  })
+
+  // #1934 — the primary group is ordered as the loop is walked:
+  // orientation (Home, Today) then capture → review → board.
+  it('orders the primary loop as capture -> review -> board', () => {
+    mockWorkspace.mode = 'workbench'
+    const wrapper = mountSidebar()
+    const labels = wrapper
+      .findAll('[data-group="primary"] .paper-sidebar__label')
+      .map((node) => node.text())
+
+    expect(labels).toEqual(['Home', 'Today', 'Inbox', 'Review', 'Boards'])
   })
 
   it('renders the three IA groups with primary loop, workbench, and meta items', () => {
@@ -253,10 +295,27 @@ describe('PaperSidebar', () => {
     expect(mockPaperTheme.toggleNight).toHaveBeenCalledTimes(1)
   })
 
-  it('renders the live status pill and version in the footer', () => {
+  // #1948 guard: the footer stamp must be whatever the running backend reports,
+  // never a literal in the component. Both cases below assert against the
+  // stubbed source of truth, so re-hardcoding a version fails this suite.
+  it('renders the live status pill and the backend-reported version in the footer', async () => {
+    vi.mocked(versionApi.getProductVersion).mockResolvedValue('9.99.0-guard')
+
     const wrapper = mountSidebar()
+    await flushPromises()
+
     expect(wrapper.text()).toContain('SYSTEM LIVE')
-    expect(wrapper.text()).toContain('v0.7.2')
+    expect(wrapper.get('[data-testid="paper-sidebar-version"]').text()).toBe('v9.99.0-guard')
+  })
+
+  it('renders no version at all when the source of truth cannot supply one', async () => {
+    vi.mocked(versionApi.getProductVersion).mockResolvedValue(null)
+
+    const wrapper = mountSidebar()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('SYSTEM LIVE')
+    expect(wrapper.find('[data-testid="paper-sidebar-version"]').exists()).toBe(false)
   })
 
   it('emits logout when the meta Logout pseudo-link is clicked', async () => {
@@ -355,7 +414,8 @@ describe('PaperSidebar', () => {
     expect(exposed.mobileOpen).toBe(false)
   })
 
-  it('renders bottom-bar variant with H/T/R/I glyphs on phone', () => {
+  // Glyph order follows the primary loop order (#1934): capture (I) before review (R).
+  it('renders bottom-bar variant with H/T/I/R glyphs on phone', () => {
     mockViewportMode.value = 'phone'
     const wrapper = mountSidebar()
 
@@ -363,7 +423,7 @@ describe('PaperSidebar', () => {
     expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(false)
 
     const glyphs = wrapper.findAll('.paper-bottombar__glyph').map((g) => g.text())
-    expect(glyphs).toEqual(['H', 'T', 'R', 'I', '…'])
+    expect(glyphs).toEqual(['H', 'T', 'I', 'R', '…'])
 
     const tabs = wrapper.findAll('.paper-bottombar__tab')
     expect(tabs).toHaveLength(5)

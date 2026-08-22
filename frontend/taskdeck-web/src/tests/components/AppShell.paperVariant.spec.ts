@@ -97,6 +97,18 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: 0 }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
+// Every paper-mode mount below renders the real PaperSidebar, which reads the
+// product version through `useProductVersion`. Unstubbed, that fires a genuine
+// request at the configured API root (`http://localhost:5000/health/live`) from
+// happy-dom — passing quietly on a box with no backend, behaving differently on
+// one where the API is up, and repeating on every mount because the failed load
+// clears the memo. Stub the transport; this suite is about shell routing.
+vi.mock('../../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
+}))
+
 function mountShell() {
   return mount(AppShell, {
     global: {
@@ -286,6 +298,33 @@ describe('AppShell — paper variant routing', () => {
     const logoutLink = wrapper.findAll('a.paper-sidebar__item')
       .find((l) => l.text().includes('Logout'))
     await logoutLink?.trigger('click')
+
+    expect(mockSession.logout).toHaveBeenCalledTimes(1)
+    expect(mockRouter.push).toHaveBeenCalledWith('/login')
+  })
+
+  /**
+   * The topbar's own spec can only prove PaperTopBar EMITS `logout`. An emit
+   * nobody listens to is exactly the class of defect issue #1932 is about, so
+   * pin the other half of the seam here: the shell's `@logout` binding, all the
+   * way through to `session.logout()`.
+   */
+  it('wires the Paper top bar account sign-out to session store', async () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    wrapper = mountShell()
+
+    await wrapper.find('[data-topbar-action="account"]').trigger('click')
+
+    const menu = wrapper.find('.paper-topbar__menu')
+    expect(menu.exists()).toBe(true)
+    const signOut = menu
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text().includes('Sign out'))
+    expect(signOut).toBeDefined()
+
+    await signOut?.trigger('click')
 
     expect(mockSession.logout).toHaveBeenCalledTimes(1)
     expect(mockRouter.push).toHaveBeenCalledWith('/login')

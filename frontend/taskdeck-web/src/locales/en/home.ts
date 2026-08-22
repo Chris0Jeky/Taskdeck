@@ -47,9 +47,15 @@ export default {
   milestones: {
     eyebrow: 'III · Your first loop',
     title: 'From thought to trusted action',
+    // Shown instead of `title` once every milestone is ticked: the block has
+    // stopped being an instruction and is only a receipt (#1936).
+    completeTitle: 'Your first loop is complete',
     progress: '{completed}/{total} complete',
     stepComplete: 'Complete',
     stepIncomplete: 'Not complete',
+    expand: 'Show milestones',
+    collapse: 'Hide milestones',
+    dismiss: 'Dismiss',
     note: 'These milestones stay in this workspace; they are not sent as analytics.',
   },
   capture: {

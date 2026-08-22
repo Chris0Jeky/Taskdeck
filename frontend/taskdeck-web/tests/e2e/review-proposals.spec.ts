@@ -84,7 +84,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     && /\/api\/capture\/items$/i.test(response.url()))
 
   await captureBody.fill(captureText)
-  await page.getByRole('button', { name: 'Capture' }).click()
+  await page.getByRole('button', { name: /^Capture/ }).click()
   const createCaptureResponse = await createCaptureResponsePromise
   await assertOk(createCaptureResponse, 'create Paper review capture')
   const capturePayload = await createCaptureResponse.json() as { id?: string }
