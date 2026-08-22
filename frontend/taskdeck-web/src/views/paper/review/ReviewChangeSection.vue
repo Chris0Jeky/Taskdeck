@@ -152,6 +152,19 @@ defineProps<{
 .paper-review-change__eyebrow--after {
   color: var(--ember);
 }
+/* GH-1943 — the two panes must read as the same kind of container.
+ *
+ * Measured cause: the Before article carried only the bare `.card` token
+ * (background + 1px border, and NO padding), while every After article adds
+ * `padding: 12px` and a 2px left rule. Side by side that reads as two
+ * different boxes: the Before text sat flush against its border. Same
+ * geometry now; only the accent tone differs, because "before" is today's
+ * state (neutral) and "after" is the proposed change (ember/applied). */
+.paper-review-change__before {
+  padding: 12px;
+  background: var(--paper-card);
+  border-left: 2px solid var(--line);
+}
 .paper-review-change__before-title {
   margin: 4px 0;
   font-family: var(--serif);
