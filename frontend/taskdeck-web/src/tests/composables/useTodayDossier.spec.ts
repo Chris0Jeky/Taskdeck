@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { todayApi } from '../../api/todayApi'
 import type { CadenceApiResponse, StreakApiResponse, SealStatusApiResponse, TomorrowNoteApiResponse } from '../../api/todayApi'
 import type { TodaySummary } from '../../types/workspace'
@@ -278,6 +279,36 @@ describe('useTodayDossier', () => {
       expect(liveDataLoading.value).toBe(true)
     })
     expect(dossier.value.cadenceAvailable).toBe(false)
+  })
+
+  it('keeps loading when a SUPERSEDED fetch settles while the newer one is in flight', async () => {
+    // The invariant under guard: only the winning generation may clear the
+    // flag. A bare `finally` (or moving the clear above the generation check)
+    // lets the STALE fetch settle last and flash the failed state for the
+    // whole of the new day's fetch — the GH-1983 defect reintroduced.
+    let resolveStaleCadence!: (value: CadenceApiResponse) => void
+    vi.mocked(todayApi.getCadence)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleCadence = resolve }))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { liveDataLoading } = useTodayDossier({ now: nowRef })
+    expect(liveDataLoading.value).toBe(true)
+
+    // Roll the day over while fetch A is still pending: fetch B (never
+    // settling) becomes the winning generation.
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+    await nextTick()
+
+    // NOW the stale fetch settles. It must not clear the flag — its
+    // replacement is still in flight.
+    resolveStaleCadence(cadenceResponse)
+    await flushPromises()
+    expect(liveDataLoading.value).toBe(true)
   })
 
   it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
