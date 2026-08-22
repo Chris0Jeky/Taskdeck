@@ -49,12 +49,14 @@ on:
         type: string
       bundle-max-total-js-kb:
         # Kept in step with the default in scripts/ci/check-bundle-size.mjs —
-        # raised 1200 -> 1250 on 2026-08-19 (#1770) for the i18n catalogs. If
+        # raised 1200 -> 1250 on 2026-08-19 (#1770) for the i18n catalogs, then
+        # 1250 -> 1280 on 2026-08-22 as the emergency stopgap pending the #1858
+        # budget ruling (see the constant in that script for the full note). If
         # these two drift, the required lane and this gate disagree about
         # identical bytes. The rationale lives on the constant in that script.
         description: Max total JS size in KB (error threshold)
         required: false
-        default: "1250"
+        default: "1280"
         type: string
 
 permissions:
