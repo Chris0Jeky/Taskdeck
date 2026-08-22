@@ -120,8 +120,8 @@ describe('PaperTodayView', () => {
     const text = wrapper.text()
 
     expect(text).toContain('Today, at a glance.')
-    expect(text).toContain('No events are being invented')
-    expect(text).toContain('Live ledger unavailable')
+    expect(text).toContain('no events are being invented')
+    expect(text).toContain('Not recorded yet')
     expect(text).toContain('Live carry-over unavailable')
     expect(text).not.toContain('0 entries')
     expect(text).not.toContain('A quiet Saturday')
@@ -254,10 +254,11 @@ describe('PaperTodayView', () => {
       }),
     )
     const wrapper = mount(PaperTodayView)
-    const sealButton = wrapper.find('[data-action="seal"]')
 
-    await sealButton.trigger('click')
-    await sealButton.trigger('click')
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    const confirmButton = wrapper.find('[data-action="seal-confirm"]')
+    await confirmButton.trigger('click')
+    await confirmButton.trigger('click')
     await flushPromises()
 
     expect(toastMocks.error).not.toHaveBeenCalled()
@@ -268,5 +269,143 @@ describe('PaperTodayView', () => {
     expect(toastMocks.success).toHaveBeenCalledTimes(1)
     expect(toastMocks.error).not.toHaveBeenCalled()
     expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
+  })
+
+  // --- issue 1939: seal state machine + empty-state legibility -------------
+
+  it('never seals on the first click — the irreversible step is behind a confirm', async () => {
+    const wrapper = mount(PaperTodayView)
+
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await flushPromises()
+
+    expect(todayApi.sealDay).not.toHaveBeenCalled()
+    const confirm = wrapper.get('[data-testid="seal-confirm"]')
+    expect(confirm.text()).toContain('This cannot be undone')
+    expect(confirm.text()).toContain('Taskdeck has no unseal action')
+  })
+
+  it('cancelling the confirm leaves the day open and seals nothing', async () => {
+    const wrapper = mount(PaperTodayView)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await wrapper.find('[data-action="seal-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(todayApi.sealDay).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="seal-sealed-reason"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="seal"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('drives unsealed → confirming → sealed, ending disabled-with-reason', async () => {
+    const wrapper = mount(PaperTodayView)
+
+    // unsealed: actionable
+    expect(wrapper.find('[data-action="seal"]').attributes('disabled')).toBeUndefined()
+
+    // confirming
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(true)
+
+    // sealed
+    await wrapper.find('[data-action="seal-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
+
+    const sealButton = wrapper.get('[data-action="seal"]')
+    expect(sealButton.text()).toContain('Day sealed')
+    expect(sealButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="seal-sealed-reason"]').text()).toContain('no unseal action')
+
+    // The regression this issue was filed for: a sealed CTA that stays
+    // clickable and only answers "Day is already sealed."
+    await sealButton.trigger('click')
+    await flushPromises()
+    expect(todayApi.sealDay).toHaveBeenCalledTimes(1)
+    expect(toastMocks.info).not.toHaveBeenCalled()
+  })
+
+  it('promises no archiving in the seal success toast — a seal only stamps the day', async () => {
+    const wrapper = mount(PaperTodayView)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await wrapper.find('[data-action="seal-confirm"]').trigger('click')
+    await flushPromises()
+
+    const message = toastMocks.success.mock.calls[0]?.[0] as string
+    expect(message).toContain('cannot be unsealed')
+    expect(message).not.toContain('archived')
+  })
+
+  it('keeps the seal control usable after a failed seal', async () => {
+    vi.mocked(todayApi.sealDay).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(PaperTodayView)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    await wrapper.find('[data-action="seal-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(toastMocks.error).toHaveBeenCalledTimes(1)
+    expect(toastMocks.success).not.toHaveBeenCalled()
+    // Still confirming, still retryable — a failure must not fake a sealed day.
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="seal-confirm"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="seal-sealed-reason"]').exists()).toBe(false)
+  })
+
+  it('separates "not built yet" panels from panels whose live data did not load', () => {
+    const wrapper = mount(PaperTodayView)
+
+    // No query exists behind these three — say so plainly, and tag it.
+    for (const section of ['ledger', 'decisions', 'boards']) {
+      const panel = wrapper.get(`[data-empty-state="${section}"]`)
+      expect(panel.find('[data-not-built]').text()).toBe('Not built yet')
+      expect(panel.text()).toContain('Taskdeck does not record')
+      expect(panel.text()).not.toContain('not available yet')
+    }
+
+    // These do have a live query; it failed. Different sentence, no tag.
+    for (const section of ['cadence', 'streak']) {
+      const panel = wrapper.get(`[data-empty-state="${section}"]`)
+      expect(panel.text()).toContain('could not be loaded')
+      expect(panel.text()).toContain('rather than a missing feature')
+      expect(panel.find('[data-not-built]').exists()).toBe(false)
+    }
+  })
+
+  it('points each unbuilt panel at the surface that does hold the truth', () => {
+    const wrapper = mount(PaperTodayView)
+
+    expect(wrapper.get('[data-empty-state="ledger"]').text()).toContain('Inbox and Review')
+    expect(wrapper.get('[data-empty-state="decisions"]').text()).toContain('Open Review')
+    expect(wrapper.get('[data-empty-state="boards"]').text()).toContain('Open Boards')
+  })
+
+  it('sends "Write a note" to the field it actually writes to', async () => {
+    const wrapper = mount(PaperTodayView, { attachTo: document.body })
+    const input = wrapper.get('[data-testid="line-for-tomorrow-input"]')
+
+    expect(document.activeElement).not.toBe(input.element)
+    await wrapper.find('[data-action="note"]').trigger('click')
+
+    expect(document.activeElement).toBe(input.element)
+    // The old behaviour was a toast promising a briefing that never arrives.
+    expect(toastMocks.info).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('describes the note lifecycle as same-day, matching what the API does', () => {
+    const wrapper = mount(PaperTodayView)
+
+    expect(wrapper.get('[data-testid="line-for-tomorrow-lifecycle"]').text())
+      .toBe('saved with today’s date')
+    expect(wrapper.text()).not.toContain('tomorrow-self')
+    expect(wrapper.text()).not.toContain('morning briefing')
   })
 })
