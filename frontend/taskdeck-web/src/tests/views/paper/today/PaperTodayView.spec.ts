@@ -389,6 +389,27 @@ describe('PaperTodayView', () => {
     expect(wrapper.find('[data-testid="seal-sealed-reason"]').exists()).toBe(false)
   })
 
+  it('closes an open confirm prompt when the local day rolls over', async () => {
+    // The prompt names the day it was opened on. `useTodayDossier` resets its
+    // own seal state across midnight; if the view-local prompt survived, the
+    // confirm click would POST the NEW day's date and irreversibly seal a day
+    // the warning never described.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 25, 23, 59, 59))
+    const wrapper = mount(PaperTodayView)
+
+    await wrapper.find('[data-action="seal"]').trigger('click')
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-25')
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="dossier-serial"]').text()).toContain('2026-04-26')
+    expect(wrapper.find('[data-testid="seal-confirm"]').exists()).toBe(false)
+    expect(todayApi.sealDay).not.toHaveBeenCalled()
+  })
+
   it('separates "not built yet" panels from panels whose live data did not load', () => {
     const wrapper = mount(PaperTodayView)
 

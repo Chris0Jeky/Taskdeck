@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatLocalDossierDate, useTodayDossier } from '../../composables/useTodayDossier'
 import { useSessionStore } from '../../store/sessionStore'
@@ -58,12 +58,21 @@ const carryOverSummary = computed(() => {
     ? `Showing ${visible} of ${total} live overdue cards`
     : `${total} live overdue card${total === 1 ? '' : 's'}`
 })
+// The dossier's own local calendar day. It rolls in long-lived sessions, and
+// every piece of day-scoped state has to roll with it.
+const dossierLocalDate = computed(() => formatLocalDossierDate(dossier.value.date))
 const lineForTomorrowStorageKey = computed(() => {
   const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
-  const dayPart = formatLocalDossierDate(dossier.value.date)
-  return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
+  return `td.paper.line-for-tomorrow:${userPart}:${dossierLocalDate.value}`
 })
-const lineForTomorrowSaveDate = computed(() => formatLocalDossierDate(dossier.value.date))
+
+// `useTodayDossier` resets its own seal state across a local-day cross, but the
+// confirm prompt is view-local and must join that reset (GH-1939). A prompt
+// opened at 23:59 warns about today; left open, confirming it at 00:01 would
+// POST the NEW day's date — irreversibly sealing a day the warning never named.
+watch(dossierLocalDate, () => {
+  confirmingSeal.value = false
+})
 
 function onSealRequest() {
   if (sealed.value || sealing.value) return
@@ -290,7 +299,7 @@ async function retryTodaySummary() {
             ref="lineForTomorrow"
             :initial="dossier.lineForTomorrow"
             :storage-key="lineForTomorrowStorageKey"
-            :save-date="lineForTomorrowSaveDate"
+            :save-date="dossierLocalDate"
             :save="saveLineForTomorrow"
             :use-stored-draft="false"
           />
