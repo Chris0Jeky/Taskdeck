@@ -84,10 +84,38 @@ describe('PaperSidebar', () => {
     expect(wrapper.find('.paper-sidebar__eyebrow-active').text()).toContain('active')
   })
 
-  it('renders the workspace switcher chip with the first letter glyph', () => {
+  it('renders the workspace identity chip with the first letter glyph', () => {
     const wrapper = mountSidebar()
     expect(wrapper.find('.paper-sidebar__workspace-glyph').text()).toBe('S')
     expect(wrapper.find('.paper-sidebar__workspace-name').text()).toContain('Solo Workspace')
+  })
+
+  // #1934 — the chip was a `<button aria-label="Switch workspace">` that did
+  // nothing on click. Taskdeck is single-workspace, so it renders as status
+  // until a real switcher exists; it must not read as interactive to anyone.
+  it('renders the workspace chip as non-interactive status, not a dead switcher', () => {
+    const wrapper = mountSidebar()
+    const chip = wrapper.find('[data-testid="paper-sidebar-workspace"]')
+
+    expect(chip.exists()).toBe(true)
+    expect(chip.element.tagName).toBe('DIV')
+    expect(chip.attributes('aria-label')).toBeUndefined()
+    expect(chip.attributes('role')).toBeUndefined()
+    expect(chip.attributes('tabindex')).toBeUndefined()
+    expect(wrapper.find('button.paper-sidebar__workspace').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('Switch workspace')
+  })
+
+  // #1934 — the primary group is ordered as the loop is walked:
+  // orientation (Home, Today) then capture → review → board.
+  it('orders the primary loop as capture -> review -> board', () => {
+    mockWorkspace.mode = 'workbench'
+    const wrapper = mountSidebar()
+    const labels = wrapper
+      .findAll('[data-group="primary"] .paper-sidebar__label')
+      .map((node) => node.text())
+
+    expect(labels).toEqual(['Home', 'Today', 'Inbox', 'Review', 'Boards'])
   })
 
   it('renders the three IA groups with primary loop, workbench, and meta items', () => {
@@ -355,7 +383,8 @@ describe('PaperSidebar', () => {
     expect(exposed.mobileOpen).toBe(false)
   })
 
-  it('renders bottom-bar variant with H/T/R/I glyphs on phone', () => {
+  // Glyph order follows the primary loop order (#1934): capture (I) before review (R).
+  it('renders bottom-bar variant with H/T/I/R glyphs on phone', () => {
     mockViewportMode.value = 'phone'
     const wrapper = mountSidebar()
 
@@ -363,7 +392,7 @@ describe('PaperSidebar', () => {
     expect(wrapper.find('.paper-sidebar--rail').exists()).toBe(false)
 
     const glyphs = wrapper.findAll('.paper-bottombar__glyph').map((g) => g.text())
-    expect(glyphs).toEqual(['H', 'T', 'R', 'I', '…'])
+    expect(glyphs).toEqual(['H', 'T', 'I', 'R', '…'])
 
     const tabs = wrapper.findAll('.paper-bottombar__tab')
     expect(tabs).toHaveLength(5)
