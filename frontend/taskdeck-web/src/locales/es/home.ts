@@ -48,9 +48,13 @@ export default {
   milestones: {
     eyebrow: 'III · Tu primer ciclo',
     title: 'Del pensamiento a la acción en la que confías',
+    completeTitle: 'Tu primer ciclo está completo',
     progress: '{completed}/{total} completados',
     stepComplete: 'Completado',
     stepIncomplete: 'Sin completar',
+    expand: 'Mostrar los hitos',
+    collapse: 'Ocultar los hitos',
+    dismiss: 'Ocultar',
     note: 'Estos hitos se quedan en este espacio de trabajo; no se envían como datos de analítica.',
   },
   capture: {
