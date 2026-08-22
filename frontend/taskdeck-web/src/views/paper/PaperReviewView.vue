@@ -9,6 +9,7 @@ import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
 import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
+import RejectProposalDialog from '../../components/review/RejectProposalDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
@@ -140,8 +141,12 @@ const {
   proposalActionBusyId,
   bulkDismissBusy,
   executeConfirmProposal,
+  rejectPromptProposal,
+  rejectRequiresReason,
   handleApproveProposal,
-  handleRejectProposal,
+  requestRejectProposal,
+  cancelRejectProposal,
+  confirmRejectProposal,
   handleDeferProposal,
   requestExecuteProposal,
   cancelExecuteProposal,
@@ -1035,7 +1040,9 @@ function onReject() {
     toast.info(t('review.toast.notRejectable'))
     return
   }
-  void handleRejectProposal(p.id, p.riskLevel)
+  // GH-1969: opens the in-app reason dialog; only its accept button reaches
+  // rejectProposal. The reason stays optional for Low/Medium risk.
+  requestRejectProposal(p.id)
 }
 
 function onRequestEdit() {
@@ -1297,9 +1304,13 @@ useReviewKeymap(
   {
     // #1818: while the apply confirmation is open the dialog owns the keyboard —
     // ⏎ must not re-dispatch onApply behind it, and ⌫/D/E must not decide on a
-    // proposal the user is being asked to confirm.
+    // proposal the user is being asked to confirm. GH-1969 gives the reject
+    // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
-      !busy.value && activeProposal.value !== null && executeConfirmProposal.value === null,
+      !busy.value &&
+      activeProposal.value !== null &&
+      executeConfirmProposal.value === null &&
+      rejectPromptProposal.value === null,
   },
 )
 
@@ -1562,6 +1573,16 @@ function onQueueFilterChange(filter: QueueFilter) {
       :revision-count="applyConfirmRevisionCount"
       @confirm="confirmExecuteProposal"
       @cancel="cancelExecuteProposal"
+    />
+
+    <!-- Reason collection (GH-1969) — the in-app dialog that replaced the native
+         window.prompt, the last browser dialog in the decision flow. -->
+    <RejectProposalDialog
+      :proposal="rejectPromptProposal"
+      :busy="busy"
+      :requires-reason="rejectRequiresReason"
+      @confirm="confirmRejectProposal"
+      @cancel="cancelRejectProposal"
     />
   </div>
 </template>

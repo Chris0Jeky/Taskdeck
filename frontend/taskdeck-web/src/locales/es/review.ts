@@ -357,6 +357,18 @@ export default {
     confirm: 'Aplicar al tablero',
   },
 
+  rejectDialog: {
+    title: '¿Rechazar esta propuesta?',
+    lede: 'Al rechazarla la propuesta se cierra. En el tablero no cambia nada.',
+    noSummary: 'Esta propuesta no tiene resumen.',
+    reasonOptionalLabel: 'Motivo (opcional)',
+    reasonRequiredLabel: 'Motivo (obligatorio)',
+    reasonPlaceholder: '¿Por qué no sigue adelante?',
+    requiredNote: 'Las propuestas de riesgo alto o crítico necesitan un motivo registrado.',
+    cancel: 'Consérvala',
+    confirm: 'Rechazar la propuesta',
+  },
+
   empty: {
     eyebrow: 'Cola · {count} en espera',
     title: 'Nada pendiente. Bien.',
@@ -408,11 +420,6 @@ export default {
   },
 
   headerMeta: '{time} · {status}',
-
-  prompt: {
-    rejectReasonRequired: 'Para este nivel de riesgo el motivo es obligatorio:',
-    rejectReasonOptional: 'Motivo del rechazo (opcional):',
-  },
 
   toast: {
     approved: 'Propuesta aprobada para aplicarla al tablero',

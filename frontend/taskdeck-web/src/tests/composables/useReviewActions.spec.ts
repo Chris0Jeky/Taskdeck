@@ -87,44 +87,99 @@ describe('useReviewActions', () => {
     expect(actions.proposalActionBusyId.value).toBeNull()
   })
 
+  // --- GH-1969: the reason comes from the in-app dialog, not window.prompt ---
+  //
+  // These used to stub `globalThis.prompt`. That stub existed only because the
+  // implementation forced it, and it was the reason a native dialog could sit
+  // in the decision flow unnoticed — the specs could not tell the difference.
+
+  it('requesting reject opens the reason gate without calling the API', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await nextTick()
+
+    expect(actions.rejectPromptProposal.value?.id).toBe('p-1')
+    expect(automationApi.rejectProposal).not.toHaveBeenCalled()
+  })
+
   it('should reject a proposal with Low risk and no reason', async () => {
     const updated = makeProposal({ status: 'Rejected' })
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('')
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'Low')
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('')
+
+    // The reason stays OPTIONAL: an empty box still rejects, and sends null.
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', null)
+  })
+
+  it('should treat an all-whitespace reason as no reason', async () => {
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('   ')
 
     expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', null)
   })
 
-  it('should abort reject when prompt is cancelled', async () => {
-    vi.spyOn(globalThis, 'prompt').mockReturnValue(null)
-
+  it('should abort reject when the reason gate is cancelled', async () => {
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'Low')
+    actions.requestRejectProposal('p-1')
+    actions.cancelRejectProposal()
+    await actions.confirmRejectProposal('too late')
 
     expect(automationApi.rejectProposal).not.toHaveBeenCalled()
   })
 
   it('should require reason for High risk proposals', async () => {
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('')
+    proposals.value = [makeProposal({ riskLevel: 'High' })]
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'High')
+    actions.requestRejectProposal('p-1')
+    await nextTick()
+    expect(actions.rejectRequiresReason.value).toBe(true)
+
+    await actions.confirmRejectProposal('   ')
+
+    expect(automationApi.rejectProposal).not.toHaveBeenCalled()
+    // The gate stays open so the reviewer can supply what it asked for.
+    expect(actions.rejectPromptProposal.value?.id).toBe('p-1')
+  })
+
+  it('should accept reason for High risk proposals', async () => {
+    proposals.value = [makeProposal({ riskLevel: 'High' })]
+    const updated = makeProposal({ status: 'Rejected' })
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(updated)
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('Not needed')
+
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Not needed')
+  })
+
+  it('should not reject a proposal that left the list under the open gate', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    proposals.value = []
+    await actions.confirmRejectProposal('gone')
 
     expect(automationApi.rejectProposal).not.toHaveBeenCalled()
   })
 
-  it('should accept reason for High risk proposals', async () => {
-    const updated = makeProposal({ status: 'Rejected' })
-    vi.mocked(automationApi.rejectProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('Not needed')
+  it('should never use the native prompt() for the rejection reason', async () => {
+    const promptSpy = vi.spyOn(globalThis, 'prompt')
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'High')
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('Superseded')
 
-    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Not needed')
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Superseded')
+    promptSpy.mockRestore()
   })
 
   // --- #1818: phase-2 execute is gated by the in-app dialog, not confirm() ---

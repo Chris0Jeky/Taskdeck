@@ -174,6 +174,29 @@ async function mountView(
 }
 
 /**
+ * Type an optional reason into the GH-1969 reject dialog and accept it. Also
+ * teleported to <body>, and hard-asserting for the same reason as the apply
+ * gate below: a reject that skipped its collector must fail here.
+ */
+async function acceptRejectDialog(reason?: string) {
+  if (reason !== undefined) {
+    const field = document.body.querySelector(
+      '[data-testid="reject-dialog-reason"]',
+    ) as HTMLTextAreaElement | null
+    expect(field, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+    field!.value = reason
+    field!.dispatchEvent(new Event('input'))
+    await flushPromises()
+  }
+  const accept = document.body.querySelector(
+    '[data-testid="reject-dialog-accept"]',
+  ) as HTMLButtonElement | null
+  expect(accept, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+  accept!.click()
+  await flushPromises()
+}
+
+/**
  * Accept the #1818 phase-2 confirmation dialog. It is a TdDialog teleported to
  * <body>, so it is not inside the wrapper's own tree. Hard-asserts the dialog is
  * present: if the confirmation gate were ever removed, executeProposal would
@@ -918,7 +941,7 @@ describe('PaperReviewView', () => {
   })
 
   it('rejects (not files away) with the ⌫ key when the proposal is still actionable', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('')
+    const promptSpy = vi.spyOn(window, 'prompt')
     mocks.rejectProposal.mockResolvedValueOnce(makeProposal({ id: 'pending-xyz', status: 'Rejected' }))
     const wrapper = await mountView([
       makeProposal({ id: 'pending-xyz', status: 'PendingReview', summary: 'Still actionable' }),
@@ -927,8 +950,12 @@ describe('PaperReviewView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
     await flushPromises()
 
+    // GH-1969: ⌫ opens the in-app reason dialog; only its accept rejects.
+    await acceptRejectDialog()
+
     expect(mocks.rejectProposal).toHaveBeenCalled()
     expect(mocks.dismissProposals).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
 
     promptSpy.mockRestore()
     wrapper.unmount()
@@ -2824,6 +2851,107 @@ describe('PaperReviewView', () => {
       expect(mocks.approveProposal).toHaveBeenCalledWith('aaa-1')
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * GH-1969 — the rejection reason is collected in-app, not by `window.prompt`.
+   *
+   * Asserted end to end through the rendered DOM against the reject request
+   * payload, because the reason IS the artifact: it is what a later reader sees
+   * explaining why a proposal did not ship.
+   */
+  describe('reject reason dialog (GH-1969)', () => {
+    it('opens a dialog instead of a native prompt, and decides nothing until accepted', async () => {
+      const promptSpy = vi.spyOn(window, 'prompt')
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      expect(promptSpy).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).not.toBeNull()
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+      promptSpy.mockRestore()
+      wrapper.unmount()
+    })
+
+    it('persists the typed reason on the reject request', async () => {
+      mocks.rejectProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Rejected' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      await acceptRejectDialog('already tracked on the On-Call rota')
+
+      expect(mocks.rejectProposal).toHaveBeenCalledWith(
+        'proposal-001',
+        'already tracked on the On-Call rota',
+      )
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
+
+      wrapper.unmount()
+    })
+
+    it('cancelling the dialog leaves the proposal alone', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      ;(
+        document.body.querySelector('[data-testid="reject-dialog-cancel"]') as HTMLButtonElement
+      ).click()
+      await flushPromises()
+
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
+      // The rail is live again — a cancelled reject is not a decision.
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+
+      wrapper.unmount()
+    })
+
+    it('demands a reason for a high-risk proposal before offering the accept', async () => {
+      mocks.rejectProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', riskLevel: 'High', status: 'Rejected' }),
+      )
+      const wrapper = await mountView([makeProposal({ riskLevel: 'High' })])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      const accept = document.body.querySelector(
+        '[data-testid="reject-dialog-accept"]',
+      ) as HTMLButtonElement
+      expect(accept.disabled).toBe(true)
+
+      await acceptRejectDialog('Duplicates the incident ticket')
+      expect(mocks.rejectProposal).toHaveBeenCalledWith(
+        'proposal-001',
+        'Duplicates the incident ticket',
+      )
+
+      wrapper.unmount()
+    })
+
+    it('silences the review keymap while the reason dialog is open', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      // ⏎ behind the dialog must not approve, and ⌫ must not re-open the gate.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
 
       wrapper.unmount()
     })

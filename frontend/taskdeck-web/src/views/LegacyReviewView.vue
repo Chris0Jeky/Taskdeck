@@ -7,6 +7,7 @@ import ReviewSummaryCards from '../components/review/ReviewSummaryCards.vue'
 import ReviewEmptyState from '../components/review/ReviewEmptyState.vue'
 import ReviewProposalCard from '../components/review/ReviewProposalCard.vue'
 import ApplyToBoardDialog from '../components/review/ApplyToBoardDialog.vue'
+import RejectProposalDialog from '../components/review/RejectProposalDialog.vue'
 import { TdSkeleton } from '../components/ui'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
@@ -46,8 +47,12 @@ const {
   selectedDiffInvalidReason,
   selectedDiffRevised,
   executeConfirmProposal,
+  rejectPromptProposal,
+  rejectRequiresReason,
   handleApproveProposal,
-  handleRejectProposal,
+  requestRejectProposal,
+  cancelRejectProposal,
+  confirmRejectProposal,
   requestExecuteProposal,
   cancelExecuteProposal,
   confirmExecuteProposal,
@@ -233,7 +238,7 @@ onUnmounted(() => {
               :capture-href="captureHrefForProposal(visibleProposals[virtualRow.index]!)"
               :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
               @approve="handleApproveProposal"
-              @reject="handleRejectProposal"
+              @reject="requestRejectProposal"
               @execute="requestExecuteProposal"
               @toggle-diff="handleToggleDiff"
               @dismiss="handleDismissProposal"
@@ -251,6 +256,17 @@ onUnmounted(() => {
       :busy="proposalActionBusyId !== null"
       @confirm="confirmExecuteProposal"
       @cancel="cancelExecuteProposal"
+    />
+
+    <!-- Reason collection (GH-1969): the app dialog idiom in place of the native
+         window.prompt. The gate lives in the shared composable, so both review
+         surfaces collect the reason the same way. -->
+    <RejectProposalDialog
+      :proposal="rejectPromptProposal"
+      :busy="proposalActionBusyId !== null"
+      :requires-reason="rejectRequiresReason"
+      @confirm="confirmRejectProposal"
+      @cancel="cancelRejectProposal"
     />
   </div>
 </template>
