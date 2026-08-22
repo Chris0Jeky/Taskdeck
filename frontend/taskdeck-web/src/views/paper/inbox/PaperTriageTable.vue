@@ -577,24 +577,6 @@ function formatTime(iso: string): string {
   color: var(--overdue);
 }
 
-/*
- * `.pbtn` in paper-tokens.css has NO disabled treatment: a disabled ember
- * button keeps its full fill, its pointer cursor and its hover, so it reads as
- * a live primary action that does nothing when clicked (#1944). Neutralise it
- * here for the triage row rather than in the shared token sheet, which every
- * Paper surface consumes. `:deep` is required — the button is PaperHLBtn's
- * root, not this component's own element.
- */
-.paper-triage :deep(.pbtn:disabled),
-.paper-triage :deep(.pbtn:disabled:hover) {
-  background: var(--paper-2);
-  color: var(--mute);
-  border-color: var(--line-soft);
-  box-shadow: none;
-  cursor: not-allowed;
-  transform: none;
-}
-
 .paper-triage__decision {
   grid-column: 1 / -1;
   margin: 4px 0 0;
