@@ -57,7 +57,7 @@ export default {
     hint: 'Goes to your line for tomorrow, below.',
     sectionSub: 'Saved with today’s date · you see it when you reopen Today',
     meta: 'saved with today’s date',
-    metaFailed: 'not saved · edit again to retry',
+    metaFailed: 'save not confirmed · edit again to retry',
   },
   loading: {
     cadence: 'Loading today’s cadence…',
@@ -70,7 +70,7 @@ export default {
       'Cadence could not be loaded. It is live data rather than a missing feature — no work pattern is being inferred.',
     ledgerSummary: 'No per-day view yet',
     ledger:
-      'Taskdeck has no per-day ledger query yet, so this panel cannot assemble one and no events are being invented. Your board and card changes are still recorded in audit history — open Activity to read it, and Review for the decisions behind it.',
+      'Today is not wired to the activity log yet, so this panel cannot assemble a per-day ledger and no events are being invented. Your board and card changes are still recorded in audit history — open Activity to read it, and Review for the decisions behind it.',
     decisions:
       'Taskdeck does not record a per-day decision log yet, so this panel has nothing behind it. Open Review for live proposals and the decisions you gave them.',
     boards:

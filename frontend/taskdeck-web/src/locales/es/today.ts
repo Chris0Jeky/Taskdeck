@@ -37,7 +37,7 @@ export default {
     hint: 'Va a tu línea para mañana, aquí abajo.',
     sectionSub: 'Guardada con la fecha de hoy · la ves cuando vuelves a abrir Hoy',
     meta: 'guardada con la fecha de hoy',
-    metaFailed: 'sin guardar · edítala de nuevo para reintentar',
+    metaFailed: 'guardado sin confirmar · edítala de nuevo para reintentar',
   },
   loading: {
     cadence: 'Cargando la cadencia de hoy…',
@@ -50,7 +50,7 @@ export default {
       'La cadencia no se pudo cargar. Son datos live, no una función que falte: no se deduce ningún patrón de trabajo.',
     ledgerSummary: 'Aún sin vista por día',
     ledger:
-      'Taskdeck aún no tiene una consulta de diario por día, así que este panel no puede componerlo y no se inventa ningún evento. Tus cambios en tableros y tarjetas sí quedan registrados en el historial de auditoría: abre Actividad para leerlo y Revisión para las decisiones que hay detrás.',
+      'Hoy aún no está conectado al registro de actividad, así que este panel no puede componer un diario por día y no se inventa ningún evento. Tus cambios en tableros y tarjetas sí quedan registrados en el historial de auditoría: abre Actividad para leerlo y Revisión para las decisiones que hay detrás.',
     decisions:
       'Taskdeck aún no registra un diario de decisiones del día, así que este panel no tiene nada detrás. Abre Revisión para ver propuestas live y las decisiones que tomaste.',
     boards:

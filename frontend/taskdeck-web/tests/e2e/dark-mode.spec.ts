@@ -94,7 +94,7 @@ test('night theme should persist when navigating between Home, Boards, Inbox, an
   // missing per-day QUERY, not about the records — board and card changes do
   // land in audit history — so its sentence differs from the other two.
   const unbuiltClaims: Array<[string, string]> = [
-    ['ledger', 'no per-day ledger query yet'],
+    ['ledger', 'not wired to the activity log yet'],
     ['decisions', 'Taskdeck does not record'],
     ['boards', 'Taskdeck does not record'],
   ]

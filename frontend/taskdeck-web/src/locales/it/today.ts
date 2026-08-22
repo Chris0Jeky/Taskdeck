@@ -37,7 +37,7 @@ export default {
     hint: 'Porta alla tua riga per domani, qui sotto.',
     sectionSub: 'Salvata con la data di oggi · la rivedi quando riapri Oggi',
     meta: 'salvata con la data di oggi',
-    metaFailed: 'non salvata · modificala di nuovo per riprovare',
+    metaFailed: 'salvataggio non confermato · modificala di nuovo per riprovare',
   },
   loading: {
     cadence: 'Caricamento della cadenza di oggi…',
@@ -50,7 +50,7 @@ export default {
       'La cadenza non si è caricata. Sono dati live, non una funzione mancante: nessun ritmo di lavoro viene dedotto.',
     ledgerSummary: 'Nessuna vista per giorno',
     ledger:
-      'Taskdeck non ha ancora una query per il diario del giorno, quindi questo pannello non può comporlo e nessun evento viene inventato. Le modifiche a board e schede restano registrate nella cronologia di audit: apri Attività per leggerla e Revisione per le decisioni che ci stanno dietro.',
+      'Oggi non è ancora collegato al registro attività, quindi questo pannello non può comporre un diario del giorno e nessun evento viene inventato. Le modifiche a board e schede restano registrate nella cronologia di audit: apri Attività per leggerla e Revisione per le decisioni che ci stanno dietro.',
     decisions:
       'Taskdeck non registra ancora un diario delle decisioni del giorno, quindi dietro questo pannello non c’è nulla. Apri Revisione per le proposte live e le decisioni che hai preso.',
     boards:

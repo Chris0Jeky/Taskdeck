@@ -273,7 +273,7 @@ describe('TodayLineForTomorrow', () => {
 
     expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Save unavailable')
     const failed = wrapper.find('[data-testid="line-for-tomorrow-lifecycle"]').text()
-    expect(failed).toContain('not saved')
+    expect(failed).toContain('save not confirmed')
     expect(failed).not.toContain('saved with today’s date')
 
     // And it comes back when a later save succeeds — the line tracks state, it

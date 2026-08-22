@@ -477,7 +477,7 @@ describe('PaperTodayView', () => {
     // No query exists behind these three — say so plainly, and tag it. The
     // ledger says it about the QUERY rather than about the records (GH-1983).
     const unbuiltClaims = [
-      ['ledger', 'no per-day ledger query yet'],
+      ['ledger', 'not wired to the activity log yet'],
       ['decisions', 'Taskdeck does not record'],
       ['boards', 'Taskdeck does not record'],
     ] as const
