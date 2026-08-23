@@ -445,6 +445,32 @@ def verify_retired_provider_configuration_failure(
             raise AcceptanceFailure("The retired-provider failure path created a listener.")
 
 
+def verify_supported_provider_ignores_inert_retired_child_settings(
+    executable: Path,
+    cwd: Path,
+    local_app_data: Path,
+) -> None:
+    environment = build_app_environment(os.environ, local_app_data, None)
+    environment.update(
+        {
+            "Llm__Provider": "Mock",
+            "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
+        }
+    )
+    monitor = start_packaged_process(executable, cwd, environment)
+    try:
+        url, port, bootstrap_identity = monitor.wait_for_ready()
+        if port != 5000:
+            raise AcceptanceFailure("The supported-provider regression did not use the available default port.")
+        require_bootstrap_identity(
+            bootstrap_identity,
+            {"jwtCreated": True, "connectorCreated": True},
+        )
+        request_health_and_spa(url)
+    finally:
+        stop_packaged_process(monitor)
+
+
 def stop_packaged_process(monitor: ProcessMonitor, require_clean: bool = True) -> None:
     process = monitor.process
     if process.poll() is None:
@@ -1074,9 +1100,11 @@ def run(argv: list[str]) -> int:
         clean_root = temp_root / "clean-install"
         migration_root = temp_root / "migration"
         retired_provider_root = temp_root / "retired-provider"
+        supported_provider_root = temp_root / "supported-provider"
         clean_root.mkdir()
         migration_root.mkdir()
         retired_provider_root.mkdir()
+        supported_provider_root.mkdir()
         for root in (clean_root, migration_root):
             (root / "unrelated-cwd").mkdir()
             (root / "local-app-data").mkdir()
@@ -1103,6 +1131,30 @@ def run(argv: list[str]) -> int:
             retired_provider_cwd_snapshot,
             retired_provider_cwd,
             "retired-provider unrelated working directory",
+        )
+
+        supported_provider_extract = supported_provider_root / "extract"
+        supported_provider_cwd = supported_provider_root / "unrelated-cwd"
+        supported_provider_local_app_data = supported_provider_root / "local-app-data"
+        supported_provider_cwd.mkdir()
+        supported_provider_local_app_data.mkdir()
+        safe_extract_archive(archive, supported_provider_extract)
+        supported_provider_extract_snapshot = snapshot_tree(supported_provider_extract)
+        supported_provider_cwd_snapshot = snapshot_tree(supported_provider_cwd)
+        verify_supported_provider_ignores_inert_retired_child_settings(
+            (supported_provider_extract / "Taskdeck.Api.exe").resolve(),
+            supported_provider_cwd,
+            supported_provider_local_app_data,
+        )
+        assert_tree_unchanged(
+            supported_provider_extract_snapshot,
+            supported_provider_extract,
+            "supported-provider extracted archive",
+        )
+        assert_tree_unchanged(
+            supported_provider_cwd_snapshot,
+            supported_provider_cwd,
+            "supported-provider unrelated working directory",
         )
 
         clean_first_extract = clean_root / "extract-one"

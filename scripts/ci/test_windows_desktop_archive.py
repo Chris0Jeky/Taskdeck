@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import windows_desktop_archive as harness
 
@@ -387,6 +388,33 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             with self.subTest(invalid=invalid[-80:]):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_retired_provider_failure_output(invalid)
+
+    def test_supported_provider_regression_uses_explicit_mock_with_inert_retired_child_setting(self) -> None:
+        monitor = mock.Mock()
+        monitor.wait_for_ready.return_value = (
+            "http://127.0.0.1:5000",
+            5000,
+            {"jwtCreated": True, "connectorCreated": True},
+        )
+        with (
+            mock.patch.object(harness, "start_packaged_process", return_value=monitor) as start,
+            mock.patch.object(harness, "request_health_and_spa") as request_health,
+            mock.patch.object(harness, "stop_packaged_process") as stop,
+        ):
+            harness.verify_supported_provider_ignores_inert_retired_child_settings(
+                Path("C:/package/Taskdeck.Api.exe"),
+                Path("C:/unrelated-cwd"),
+                Path(tempfile.gettempdir()).resolve() / "taskdeck-unit-localappdata",
+            )
+
+        environment = start.call_args.args[2]
+        self.assertEqual("Mock", environment["Llm__Provider"])
+        self.assertEqual(
+            harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+            environment["Llm__Gemini__ApiKey"],
+        )
+        request_health.assert_called_once_with("http://127.0.0.1:5000")
+        stop.assert_called_once_with(monitor)
 
     def test_clean_bootstrap_gate_requires_created_then_not_created_flags(self) -> None:
         harness.require_bootstrap_identity(
