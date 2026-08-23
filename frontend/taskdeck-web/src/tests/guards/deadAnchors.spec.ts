@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 /**
- * Dead-anchor guard.
+ * Dead-affordance source guard.
  *
- * WHAT THIS MECHANIZES: exactly one shape — an `<a>` tag whose href is the bare
- * `#` placeholder and which binds no click handler. That is a control which
- * looks interactive and does nothing. The GH-1941 defect was the BOUND form,
- * `:href="tuneHref ?? '#'"`, so both forms are detected: a static
- * `href="#"`/`href='#'`, and a `:href`/`v-bind:href` expression that contains a
- * bare `'#'` / `"#"` string literal.
+ * WHAT THIS MECHANIZES: two source shapes that look interactive and do nothing:
+ * an `<a>` tag whose href is the bare `#` placeholder and an enabled-looking
+ * native `<button>` with no detectable action binding or native form semantics.
+ * The GH-1941 defect was the BOUND anchor form, `:href="tuneHref ?? '#'"`, so
+ * both static and bound placeholder hrefs are detected.
  *
  * WHAT THIS DOES NOT MECHANIZE. The dogfooding pass that produced GH-1932 and
  * GH-1934 found dead affordances of several other shapes; this guard does not
  * cover them, and passing it is not evidence that they are gone:
  *  - `href="javascript:void(0)"` and `href=""` — not detected.
- *  - Dead `<button>` elements (no `@click`, no `type="submit"`, no form) —
- *    not detected. Only `<a>` tags are scanned.
+ *  - Runtime-assembled hrefs and dynamic event names are out of reach: this
+ *    guard reads SFC source, not Vue's rendered event table.
+ *  - Button action hidden behind `v-on="{ click: fn }"`, `@[dynamicEvent]`, or
+ *    a runtime-bound `:type` is not inferred. Those forms are reported by the
+ *    synthetic canaries to make the boundary explicit.
  *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are not read as
  *    click bindings, so a tag using one of those AND a bare `#` href would be
  *    reported. No such tag exists today; if one appears, teach CLICK_BINDING
@@ -25,6 +27,10 @@ import { describe, expect, it } from 'vitest'
  *  - An expression that concatenates onto the literal (`:href="'#' + id"`)
  *    resolves to a real fragment but IS reported. The guard prefers that false
  *    positive to missing the GH-1941 shape; no such expression exists today.
+ *  - `PaperStyleGuideView.vue` is intentionally excluded from the button scan:
+ *    it renders static visual specimens, not product affordances. A new
+ *    product control belongs outside that view and is therefore not covered by
+ *    this exception.
  *
  * It proves a click binding EXISTS, not that the handler calls
  * `preventDefault()` — the `#` navigation itself is a component test's job.
@@ -61,7 +67,25 @@ const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/g
 const BARE_HASH_LITERAL = /(['"`])#\1/
 
 /** Any click binding: `@click`, `@click.prevent`, `v-on:click`. `@[dynamic]` is not matched — see the header. */
-const CLICK_BINDING = /(?:@|v-on:)click(?:\.[\w.]+)?\s*=/
+const CLICK_BINDING = /(?:@|v-on:)click(?:\.[\w-]+)*(?=\s*(?:=|\/?>|\s))/
+
+/** Native buttons need an action binding, form semantics, or an explicit disabled state. */
+const FORM_OR_BUTTON_TAG = /<\/?(?:form|button)(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/gi
+const BUTTON_TYPE_ATTR = /\s(?::|v-bind:)?type\s*=\s*(["'])(.*?)\1/i
+const BUTTON_FORM_ATTR = /\s(?::|v-bind:)?form(?:\s*=|\s|\/>)/i
+const BUTTON_DISABLED_ATTR = /\s(?::disabled|v-bind:disabled|disabled)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?(?=[\s/>])/i
+
+/**
+ * A button may intentionally use a pointer or keyboard event instead of
+ * `@click` (for example, the combobox option list selects on mousedown). The
+ * source guard treats those action events as wired controls too. `v-on="…"`
+ * object syntax and `@[dynamicEvent]` remain deliberately outside the rule.
+ */
+const CONTROL_ACTION_BINDING =
+  /(?:@|v-on:)(?:click|mousedown|pointerdown|keydown|keyup|submit)(?:\.[\w-]+)*(?=\s*(?:=|\/?>|\s))/
+
+/** The style-guide view contains intentionally inert visual button specimens. */
+const BUTTON_SOURCE_EXCLUSIONS = new Set(['../../views/PaperStyleGuideView.vue'])
 
 /**
  * Only markup is scanned. `<script>` and `<style>` blocks and HTML comments are
@@ -104,6 +128,33 @@ function findDeadAnchors(source: string): string[] {
   return dead
 }
 
+/** Opening native button tags that look enabled but have no detectable action. */
+function findDeadButtons(source: string): string[] {
+  const dead: string[] = []
+  let formDepth = 0
+  for (const [tag] of markupOnly(source).matchAll(FORM_OR_BUTTON_TAG)) {
+    if (/^<form\b/i.test(tag)) {
+      if (!/\/\s*>$/.test(tag)) formDepth += 1
+      continue
+    }
+    if (/^<\/form\b/i.test(tag)) {
+      formDepth = Math.max(0, formDepth - 1)
+      continue
+    }
+    if (/^<\//.test(tag)) continue
+
+    if (CONTROL_ACTION_BINDING.test(tag)) continue
+    if (BUTTON_DISABLED_ATTR.test(tag)) continue
+
+    const type = BUTTON_TYPE_ATTR.exec(tag)?.[2]?.trim().toLowerCase()
+    if (type === 'submit' || type === 'reset') continue
+    if (BUTTON_FORM_ATTR.test(tag) || formDepth > 0) continue
+
+    dead.push(tag.replace(/\s+/g, ' '))
+  }
+  return dead
+}
+
 /**
  * The GH-1941 defect, verbatim in shape: a bound href falling back to a bare
  * `#` with nothing listening for the click.
@@ -115,7 +166,7 @@ function findDeadAnchors(source: string): string[] {
  */
 const DEAD_ANCHOR_FIXTURE = `<template><a :href="tuneHref ?? '#'" class="tune">Tune heuristics</a></template>`
 
-describe('dead anchors', () => {
+describe('dead affordances', () => {
   const vueFiles = Object.keys(VUE_SOURCES)
 
   it('scans real component source, with a live detector', () => {
@@ -164,11 +215,53 @@ describe('dead anchors', () => {
     expect(findDeadAnchors('<template><!-- was <a href="#">x</a> --><p>ok</p></template>')).toEqual([])
   })
 
+  it('detects enabled-looking buttons without an action binding', () => {
+    expect(findDeadButtons('<template><button type="button">Do nothing</button></template>')).toEqual([
+      '<button type="button">',
+    ])
+    expect(findDeadButtons('<template><button>Do nothing</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button class="x">\n  Do nothing\n</button></template>')).toHaveLength(1)
+  })
+
+  it('keeps wired, disabled, and native form buttons out of the findings', () => {
+    expect(findDeadButtons('<template><button @click="open">Open</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button @click.stop>Stop propagation</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button @mousedown="select">Select</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button type="submit">Save</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button type="reset">Reset</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button form="settings">Submit elsewhere</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><form><button>Submit form</button></form></template>')).toEqual([])
+    expect(findDeadButtons('<template><button disabled>Unavailable</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button :disabled="busy">Busy</button></template>')).toEqual([])
+  })
+
+  it('documents source-only limits for dynamic Vue bindings', () => {
+    // These require template compilation/runtime knowledge and are deliberately
+    // not guessed by a regex guard. A future guard can add compiler-backed
+    // coverage without weakening this source-level rule.
+    expect(findDeadButtons('<template><button @[eventName]="run">Dynamic event</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button v-on="{ click: run }">Object event</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button :type="buttonType">Dynamic type</button></template>')).toHaveLength(1)
+  })
+
   it('never ships an anchor with a placeholder href and no click binding', () => {
     const offenders: string[] = []
 
     for (const [file, source] of Object.entries(VUE_SOURCES)) {
       for (const tag of findDeadAnchors(source)) {
+        offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('never ships an enabled-looking native button without an action', () => {
+    const offenders: string[] = []
+
+    for (const [file, source] of Object.entries(VUE_SOURCES)) {
+      if (BUTTON_SOURCE_EXCLUSIONS.has(file)) continue
+      for (const tag of findDeadButtons(source)) {
         offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
       }
     }
