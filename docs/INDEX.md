@@ -59,7 +59,11 @@ Stable reference material belongs in topical subfolders.
 ## Topical Folders
 
 - `product/`
-  - Product-facing guides, demo playbook, scenario reference, and dogfooding cadence.
+  - Product-facing guides, demo playbook, and scenario reference.
+- `dogfooding/`
+  - The active dogfooding protocol and LOG (the ADR-0044 acceptance test; sprint started
+    2026-08-22, checkpoint floor 2026-09-01 per walkthrough q-8). Supersedes
+    `product/DOGFOODING_GUIDE.md` for cadence truth.
 - `manual/`
   - Shipped manual chapters, future-facing placeholders, and in-app help-to-manual mapping.
 - `ops/`

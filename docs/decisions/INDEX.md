@@ -59,3 +59,8 @@
 | [0055](ADR-0055-openai-only-live-provider-surface.md) | Collapse Supported Live LLM Configuration to OpenAI | Accepted | 2026-08-20 |
 | [0056](ADR-0056-direct-human-board-editing-first-class.md) | Direct Human Board Editing Is First-Class; the Proposal Loop Governs Non-Human Actors | Accepted | 2026-08-22 |
 | [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Proposed (awaiting maintainer ratification; review-first remains operative) | 2026-08-23 |
+
+> Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
+> archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
+> autoscaling, platform expansion) remain parked under the current direction — now pending the
+> post-retention horizon in `docs/strategy/PRODUCT_DIRECTION.md` §5, not the archive.

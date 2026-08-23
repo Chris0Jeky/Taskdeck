@@ -11,7 +11,7 @@ Open PowerShell in the download folder, set the version you downloaded, and comp
 its checksum file:
 
 ```powershell
-$version = 'v0.1.0' # change this to the version you downloaded
+$version = 'v0.1.1' # change this to the version you downloaded
 $zip = "taskdeck-$version-win-x64.zip"
 $expected = ((Get-Content "$zip.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
@@ -154,8 +154,14 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
 
 - No browser: use the exact `Taskdeck is ready at ...` URL printed in the console.
 - Port 5000 busy: use the printed fallback URL. Stop the other listener only if you recognize it.
-- Startup fails: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is writable, and preserve
-  any named database/config recovery files before changing them.
+- Startup fails with `TASKDECK_DESKTOP_FATAL code=startup_failed` (v0.1.1 known issue): if this
+  machine ever configured the retired Gemini provider through user-scoped environment variables
+  (`Llm__Provider=Gemini` or `Llm__Gemini__*`), the app inherits them and exits before listening,
+  and the packaged error wrongly suggests a port/data-folder problem. Follow the provider-migration
+  workaround in [UPGRADING.md](../../UPGRADING.md#version-notes); the v0.1.2 correction ships the
+  accurate diagnostic.
+- Startup fails for another reason: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is
+  writable, and preserve any named database/config recovery files before changing them.
 - Product or packaging problem: search or open a report in
   [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issues). Never include secrets or private
   workspace content.

@@ -2,7 +2,7 @@
 
 **The local-first, review-first action-item engine.**
 
-Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace is a single SQLite file you own. Transcript-aware extraction with evidence spans is planned for v0.2, not shipped today.
+Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace is a single SQLite file you own. Transcript-source captures get LLM-backed extraction with evidence spans that deep-link back to the transcript; ordinary short-form capture triage is deterministic and offline.
 
 [![CI](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml/badge.svg)](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml)
 [![Status: Beta](https://img.shields.io/badge/status-beta-5b5bd6.svg)](https://github.com/Chris0Jeky/Taskdeck/releases)
@@ -10,7 +10,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 
 ![Taskdeck capture, proposal, review, and apply loop](docs/assets/taskdeck-core-loop.gif)
 
-> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). The DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
+> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). The DCO check is active but advisory; the required merge gate covers the secret/dependency/SAST scans (ADR-0035).
 
 ## The loop
 
@@ -19,7 +19,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 3. **Review** - inspect the diff, side effects, provenance, and risk; approve or reject it.
 4. **Apply** - approved changes land on the board with an audit trail.
 
-Taskdeck ships this capture -> proposal -> review -> apply loop today. Transcript-aware extraction with evidence spans is planned for **v0.2**, not claimed as a current beta feature; follow the [revival plan in PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) for that work.
+Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans (transcript-source triage has a separately gated extraction leg that may send bounded content to the configured provider; everything else stays deterministic and offline). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
 
 ## Why Taskdeck
 
@@ -41,8 +41,11 @@ The self-contained desktop executable is the quickest path for v0.1.x. **Windows
 only supported 0.1.x desktop platform.** Download the Windows ZIP and checksum from the
 [latest public release](https://github.com/Chris0Jeky/Taskdeck/releases/latest), then follow the
 [Windows quick start](docs/releases/WINDOWS_QUICK_START.md) for verification, extraction, launch,
-registration, shutdown, backup, and optional OpenAI setup. The non-Windows archives attached to
-v0.1.0 remain available as historical artifacts; they are not a continuing support promise.
+registration, shutdown, backup, and optional OpenAI setup. **Known v0.1.1 limitation:** on a machine
+that previously configured the retired Gemini provider through user-scoped environment variables, the
+app can exit before listening with a misleading port/data-folder error — the workaround is in
+[UPGRADING.md](UPGRADING.md#version-notes) and the fix ships in v0.1.2. The non-Windows archives
+attached to v0.1.0 remain available as historical artifacts; they are not a continuing support promise.
 
 ### 2. Docker
 
@@ -135,13 +138,14 @@ Shipped now:
 - MCP resources, review-gated board changes, and bounded workflow actions;
 - mock, OpenAI, and config-gated compatible/local provider integrations.
 
-Coming through the revival roadmap:
+Shipped releases and the active roadmap:
 
-- **v0.1 First Light:** honest public defaults, Paper onboarding, tested release paths, and licensing posture;
-- **v0.2 Transcript Engine:** transcript-aware triage, evidence spans, and OpenAI-compatible provider support;
-- **v0.3 Open Beta:** a slimmer public surface, packaged MCP setup, and the feedback channel.
+- **v0.1.0 "First Light" (2026-08-19) and v0.1.1 (2026-08-21):** shipped — honest public defaults, Paper onboarding, exercised release paths, licensing posture, Windows desktop ZIP;
+- **v0.1.2 (in progress):** the Windows startup correction plus the open Priority I fixes — the Honest Windows Beta;
+- **v0.2 Coherent Context-to-Action Loop:** capture integrity, grounded chat outcomes, evidence/inference inspection, review legibility;
+- **v0.3 Open Beta + Accountable Agents:** a slimmer public surface, packaged MCP with scoped keys, the feedback channel, launch.
 
-This README follows the maintainer-owned revival direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before that direction update. Taskdeck is not claiming a hosted service, production transcript engine, or stable v1 API today.
+Direction lives in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md); the execution plan is [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md). Taskdeck is not claiming a hosted service or a stable v1 API today.
 
 ## Technology
 
@@ -178,7 +182,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every commit submitted in a pull request must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; promotion into branch protection remains maintainer-owned under [#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173).
+PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every commit submitted in a pull request must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; the required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 

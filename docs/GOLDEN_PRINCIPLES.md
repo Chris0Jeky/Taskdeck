@@ -4,9 +4,10 @@ Last Updated: 2026-08-23
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/REVIVAL_PLAN.md`
+- `docs/strategy/PRODUCT_DIRECTION.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
-- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Purpose
 

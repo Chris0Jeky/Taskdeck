@@ -240,7 +240,8 @@ Inbox actions:
 Proposal review:
 
 - happens in `Review`
-- is the primary trust boundary for board mutation
+- is the primary trust boundary for automation-originated board mutation (a signed-in human edits
+  their board directly; the proposal loop governs non-human actors - ADR-0056)
 - should answer what changes, where, and why
 
 Current review model:
