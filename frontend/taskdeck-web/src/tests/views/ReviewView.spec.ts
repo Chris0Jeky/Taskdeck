@@ -801,19 +801,23 @@ describe('ReviewView', () => {
     expect(selector.find('input').exists()).toBe(true)
   })
 
-  it('clears the board filter when "Show all boards" is clicked', async () => {
+  it('clears only the board filter when "Show all boards" is clicked', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({ boardId: 'board-7' }),
     ])
 
-    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
-    const pushSpy = vi.spyOn(router, 'push')
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7&source=proposal#proposal-proposal-1')
+    const replaceSpy = vi.spyOn(router, 'replace')
 
     const clearButton = wrapper.findAll('button').find((node) => node.text() === 'Show all boards')
     await clearButton?.trigger('click')
     await Promise.resolve()
 
-    expect(pushSpy).toHaveBeenCalledWith({ name: 'workspace-review' })
+    expect(replaceSpy).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { source: 'proposal' },
+      hash: '#proposal-proposal-1',
+    })
   })
 
   it('does not reject a proposal when the reason dialog is cancelled', async () => {
