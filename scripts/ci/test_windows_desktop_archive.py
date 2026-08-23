@@ -362,6 +362,32 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     self._process_monitor(*sequence).wait_for_ready(timeout_seconds=1)
 
+    def test_retired_provider_failure_output_requires_exact_bounded_secret_free_guidance(self) -> None:
+        output = "\n".join(
+            (
+                "TASKDECK_DESKTOP_STARTING",
+                harness.RETIRED_PROVIDER_FATAL_MARKER,
+                harness.RETIRED_PROVIDER_FATAL_GUIDANCE,
+            )
+        )
+
+        harness.validate_retired_provider_failure_output(output)
+
+        invalid_outputs = (
+            output.replace(
+                harness.RETIRED_PROVIDER_FATAL_MARKER,
+                "TASKDECK_DESKTOP_FATAL code=startup_failed",
+            ),
+            f"{output}\nTASKDECK_DESKTOP_READY url=http://127.0.0.1:5000",
+            f"{output}\n{harness.SYNTHETIC_RETIRED_PROVIDER_VALUE}",
+            f"{output}\nTaskdeck.Application.Services.RetiredLlmProviderConfigurationException",
+            f"{output}\n{'x' * 513}",
+        )
+        for invalid in invalid_outputs:
+            with self.subTest(invalid=invalid[-80:]):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_retired_provider_failure_output(invalid)
+
     def test_clean_bootstrap_gate_requires_created_then_not_created_flags(self) -> None:
         harness.require_bootstrap_identity(
             {"jwtCreated": True, "connectorCreated": True},

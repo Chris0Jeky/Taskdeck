@@ -11,7 +11,7 @@ Open PowerShell in the download folder, set the version you downloaded, and comp
 its checksum file:
 
 ```powershell
-$version = 'v0.1.0' # change this to the version you downloaded
+$version = 'v0.1.2' # change this to the version you downloaded
 $zip = "taskdeck-$version-win-x64.zip"
 $expected = ((Get-Content "$zip.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
@@ -154,8 +154,26 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
 
 - No browser: use the exact `Taskdeck is ready at ...` URL printed in the console.
 - Port 5000 busy: use the printed fallback URL. Stop the other listener only if you recognize it.
-- Startup fails: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is writable, and preserve
-  any named database/config recovery files before changing them.
+- `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
+  retired Gemini provider and refused to switch providers silently. Close Taskdeck, then use a fresh
+  PowerShell window to explicitly return **User**-scoped configuration to deterministic Mock and
+  remove only the retired child-setting names; the commands do not read or print their values:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable('Llm__Provider', 'Mock', 'User')
+  @([Environment]::GetEnvironmentVariables('User').Keys) |
+      ForEach-Object { [string]$_ } |
+      Where-Object { $_ -like 'Llm__Gemini__*' } |
+      ForEach-Object { [Environment]::SetEnvironmentVariable($_, $null, 'User') }
+  ```
+
+  Close that PowerShell window before starting Taskdeck again so the new process receives the
+  updated environment. If the failure came from Docker Compose, remove the retired Gemini wrapper
+  variable from the Compose environment and explicitly select OpenAI, OpenAICompatible, Ollama, or
+  Mock instead. A stale Gemini child section is inert after an explicit supported provider is set,
+  so migration can be completed without exposing or copying the retired values.
+- Other startup failure: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is writable, and
+  preserve any named database/config recovery files before changing them.
 - Product or packaging problem: search or open a report in
   [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issues). Never include secrets or private
   workspace content.

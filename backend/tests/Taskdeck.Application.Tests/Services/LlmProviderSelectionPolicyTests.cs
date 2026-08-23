@@ -87,12 +87,13 @@ public class LlmProviderSelectionPolicyTests
 
         var act = () => LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Gemini provider support was removed*")
-            .WithMessage("*OpenAi*")
-            .WithMessage("*OpenAiCompatible*")
-            .WithMessage("*Ollama*")
-            .WithMessage("*Mock*");
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("OpenAi");
+        exception.Message.Should().Contain("OpenAiCompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
     }
 
     [Fact]

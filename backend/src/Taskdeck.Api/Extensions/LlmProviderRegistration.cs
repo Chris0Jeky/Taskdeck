@@ -28,15 +28,21 @@ public static class LlmProviderRegistration
                 "true",
                 StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(RetiredComposeWrapperMessage);
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.ComposeMarker,
+                RetiredComposeWrapperMessage);
         }
 
         var llmSection = configuration.GetSection("Llm");
-        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(llmSection["Provider"]);
-        if (llmSection.GetChildren().Any(section =>
+        var configuredProvider = llmSection["Provider"];
+        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
+        if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(configuredProvider)
+            && llmSection.GetChildren().Any(section =>
                 section.Key.Equals("Gemini", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException(LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.SettingsSection,
+                LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
         }
 
         // LLM quota and kill switch settings
