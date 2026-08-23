@@ -59,6 +59,19 @@ on:
         required: false
         default: "1280"
         type: string
+      bundle-max-eager-js-kb:
+        # THE hard-fail budget since the #1858 ruling: eager graph = entry +
+        # modulepreload. Kept in step with BUNDLE_MAX_EAGER_JS_KB's default in
+        # scripts/ci/check-bundle-size.mjs.
+        description: Max eager-graph JS size in KB (error threshold)
+        required: false
+        default: "1250"
+        type: string
+      bundle-warn-eager-js-kb:
+        description: Warning threshold in KB for eager-graph JS
+        required: false
+        default: "1000"
+        type: string
 
 permissions:
   contents: read
@@ -110,6 +123,8 @@ jobs:
           BUNDLE_MAX_ENTRY_KB: ${{ inputs.bundle-max-entry-kb }}
           BUNDLE_MAX_SINGLE_KB: ${{ inputs.bundle-max-single-kb }}
           BUNDLE_MAX_TOTAL_JS_KB: ${{ inputs.bundle-max-total-js-kb }}
+          BUNDLE_MAX_EAGER_JS_KB: ${{ inputs.bundle-max-eager-js-kb }}
+          BUNDLE_WARN_EAGER_JS_KB: ${{ inputs.bundle-warn-eager-js-kb }}
         run: |
           mkdir -p frontend/taskdeck-web/test-results/perf
           node scripts/ci/check-bundle-size.mjs \
