@@ -17,7 +17,7 @@ product is releasable to macOS. The paragraphs below record the original conflic
 
 **The original conflict (historical):**
 
-- `docs/REVIVAL_PLAN.md:149` — *"Checkpoint (~8 weeks from **Phase 0**)"*, and `:49` says "from start".
+- `docs/REVIVAL_PLAN.md` — *"Checkpoint (~8 weeks from **Phase 0**)"* (line references predate the 2026-08-23 revision; both anchors now carry the q-8 ruling).
 - `docs/decisions/ADR-0044` Decision 6 — *"after Phase 2 ships and the **beta launches** (~8 weeks at demonstrated velocity)"*.
 
 Dogfooding **is** Phase 0, so these are weeks apart: the ADR reading postpones the evidence review

@@ -20,7 +20,7 @@ delegated-autonomy future is ADR-0057, **Proposed only**.
 ## Orient (do NOT bulk-read the big docs)
 
 1. `autodoc/AGENT_INDEX.md` — the seam map. Start here, find your region, jump to entry points.
-2. `docs/STATUS.md` (~1.5k lines) — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
+2. `docs/STATUS.md` (~775 lines after the 2026-08-23 head-lean rotation) — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
 4. Region rules auto-load when you touch files: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
    `scripts/agent_hooks/CLAUDE.md`. Pick a workflow skill from `.claude/skills/README.md` (local skills beat plugins).

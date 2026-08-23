@@ -19,7 +19,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 3. **Review** - inspect the diff, side effects, provenance, and risk; approve or reject it.
 4. **Apply** - approved changes land on the board with an audit trail.
 
-Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans (transcript-source triage has a separately gated extraction leg that may send bounded content to the configured provider; everything else stays deterministic and offline). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
+Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans (transcript-source triage has a separately gated extraction leg, and Automation Chat uses the configured provider when one is enabled - both may send bounded content to it; ordinary short-form capture triage stays deterministic and offline, and the default provider is the offline Mock). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
 
 ## Why Taskdeck
 

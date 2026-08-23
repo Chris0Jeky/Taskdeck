@@ -104,7 +104,7 @@ an Accepted ADR today, the ADR wins.
 | **v0.4** | **Every Artefact, Everyone** | ADR-0046 generalist expansion, unchanged (tracker `#1327`). | POLICY |
 | **Later** | Hosted/commercial exploration | Managed hosting/backup, remote MCP, pricing — only after retention evidence. | LEANING |
 
-GitHub milestones mirror this ladder. Git tags and releases are historical artifacts, never edited
+GitHub milestones mirror this ladder (v0.4 is tracked by the GEN tracker #1327 without a milestone). Git tags and releases are historical artifacts, never edited
 to make documentation agree.
 
 ## 6. Direction guardrails (what this document does NOT change)

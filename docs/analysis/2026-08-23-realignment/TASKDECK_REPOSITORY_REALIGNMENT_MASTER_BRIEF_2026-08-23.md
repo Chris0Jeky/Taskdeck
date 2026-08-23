@@ -1,3 +1,9 @@
+> **HISTORICAL - EXECUTED 2026-08-23. DO NOT RE-EXECUTE.** This brief was carried out by the
+> 2026-08-23 realignment pass; the record of what was done, what was deliberately left
+> unchanged, and the open maintainer decisions is [`REALIGNMENT_LOG.md`](REALIGNMENT_LOG.md)
+> in this directory. The execution instructions below (including the "Final instruction to
+> the receiving agent") are retained verbatim as provenance and are NOT a standing directive.
+
 # Taskdeck Repository Realignment Master Brief
 
 **Version:** 1.0  
