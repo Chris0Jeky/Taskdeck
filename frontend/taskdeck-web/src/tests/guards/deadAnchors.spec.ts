@@ -18,6 +18,8 @@ import { describe, expect, it } from 'vitest'
  *  - Button action hidden behind `v-on="{ click: fn }"`, `@[dynamicEvent]`, or
  *    a runtime-bound `:type` is not inferred. Those forms are reported by the
  *    synthetic canaries to make the boundary explicit.
+ *  - A static `draggable="true"` is treated as native drag activation; the
+ *    guard cannot prove which ancestor receives the drag event.
  *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are not read as
  *    click bindings, so a tag using one of those AND a bare `#` href would be
  *    reported. No such tag exists today; if one appears, teach CLICK_BINDING
@@ -27,10 +29,9 @@ import { describe, expect, it } from 'vitest'
  *  - An expression that concatenates onto the literal (`:href="'#' + id"`)
  *    resolves to a real fragment but IS reported. The guard prefers that false
  *    positive to missing the GH-1941 shape; no such expression exists today.
- *  - `PaperStyleGuideView.vue` is intentionally excluded from the button scan:
- *    it renders static visual specimens, not product affordances. A new
- *    product control belongs outside that view and is therefore not covered by
- *    this exception.
+ *  - The four intentionally inert Paper style-guide specimens carry a narrow
+ *    `data-dead-affordance-exempt="visual-specimen"` marker. A new product
+ *    control must not copy that marker; the rest of the view is scanned.
  *
  * It proves a click binding EXISTS, not that the handler calls
  * `preventDefault()` — the `#` navigation itself is a component test's job.
@@ -66,26 +67,36 @@ const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/g
 /** A bare `#` string literal — `'#'`, `"#"`, `` `#` `` — nothing after the hash. `'#section'` does not match. */
 const BARE_HASH_LITERAL = /(['"`])#\1/
 
-/** Any click binding: `@click`, `@click.prevent`, `v-on:click`. `@[dynamic]` is not matched — see the header. */
-const CLICK_BINDING = /(?:@|v-on:)click(?:\.[\w-]+)*(?=\s*(?:=|\/?>|\s))/
+/** Any click binding with a non-empty handler expression. Dynamic events are not matched. */
+const CLICK_BINDING =
+  /(?:@|v-on:)click(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
 
-/** Native buttons need an action binding, form semantics, or an explicit disabled state. */
+/** Opening/closing form and native-button tags, with quoted values consumed whole. */
 const FORM_OR_BUTTON_TAG = /<\/?(?:form|button)(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/gi
-const BUTTON_TYPE_ATTR = /\s(?::|v-bind:)?type\s*=\s*(["'])(.*?)\1/i
-const BUTTON_FORM_ATTR = /\s(?::|v-bind:)?form(?:\s*=|\s|\/>)/i
-const BUTTON_DISABLED_ATTR = /\s(?::disabled|v-bind:disabled|disabled)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?(?=[\s/>])/i
 
-/**
- * A button may intentionally use a pointer or keyboard event instead of
- * `@click` (for example, the combobox option list selects on mousedown). The
- * source guard treats those action events as wired controls too. `v-on="…"`
- * object syntax and `@[dynamicEvent]` remain deliberately outside the rule.
- */
+/** Static or bound `type`; a bound value is deliberately not resolved. */
+const BUTTON_TYPE_ATTR = /\s(?::|v-bind:)?type\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** Form association may be static or dynamic; only a static ID can prove ownership. */
+const BUTTON_FORM_ATTR =
+  /\s(?:(:|v-bind:)?form)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?(?=\s|\/?>)/i
+const FORM_ID_ATTR = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** Static disabled is always disabled; a bound value is exempt only when literally `true`. */
+const STATIC_DISABLED_ATTR = /(?:^|\s)disabled(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?(?=\s|\/?>)/i
+const BOUND_DISABLED_ATTR =
+  /\s(?::disabled|v-bind:disabled)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** Action events that can make a button live; submit is intentionally not an activation event here. */
 const CONTROL_ACTION_BINDING =
-  /(?:@|v-on:)(?:click|mousedown|pointerdown|keydown|keyup|submit)(?:\.[\w-]+)*(?=\s*(?:=|\/?>|\s))/
+  /(?:@|v-on:)(?:click|mousedown|mouseup|pointerdown|pointerup|keydown|keyup|touchstart|touchend|dblclick|contextmenu)(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
 
-/** The style-guide view contains intentionally inert visual button specimens. */
-const BUTTON_SOURCE_EXCLUSIONS = new Set(['../../views/PaperStyleGuideView.vue'])
+/** Native draggable controls have a browser activation even when the parent owns drag events. */
+const NATIVE_DRAGGABLE = /\sdraggable\s*=\s*(?:"true"|'true'|true)(?=\s|\/?>)/i
+
+/** Explicit, narrow exemption for static style-guide specimens only. */
+const BUTTON_SPECIMEN_MARKER =
+  /\sdata-dead-affordance-exempt\s*=\s*(?:"visual-specimen"|'visual-specimen')(?=\s|\/?>)/i
 
 /**
  * Only markup is scanned. `<script>` and `<style>` blocks and HTML comments are
@@ -122,17 +133,61 @@ function findDeadAnchors(source: string): string[] {
   const dead: string[] = []
   for (const [tag] of markupOnly(source).matchAll(ANCHOR_TAG)) {
     if (!hasPlaceholderHref(tag)) continue
-    if (CLICK_BINDING.test(tag)) continue
+    if (hasNonEmptyBinding(tag, CLICK_BINDING)) continue
     dead.push(tag.replace(/\s+/g, ' '))
   }
   return dead
 }
 
+/** Return true when a binding regex finds a non-whitespace handler expression. */
+function hasNonEmptyBinding(tag: string, binding: RegExp): boolean {
+  for (const match of tag.matchAll(binding)) {
+    const expression = (match[1] ?? match[2] ?? match[3] ?? '').trim()
+    if (expression.length > 0) return true
+  }
+  return false
+}
+
+/** Static form IDs are the only form associations this source guard can prove. */
+function formIds(markup: string): Set<string> {
+  const ids = new Set<string>()
+  for (const [tag] of markup.matchAll(FORM_OR_BUTTON_TAG)) {
+    if (!/^<form\b/i.test(tag)) continue
+    const id = FORM_ID_ATTR.exec(tag)
+    const value = (id?.[1] ?? id?.[2] ?? id?.[3] ?? '').trim()
+    if (value.length > 0) ids.add(value)
+  }
+  return ids
+}
+
+/** A native form owner exists only for an ancestor form or a matching static `form` ID. */
+function hasFormOwner(tag: string, formDepth: number, knownFormIds: Set<string>): boolean {
+  const formAttribute = BUTTON_FORM_ATTR.exec(tag)
+  if (formAttribute) {
+    // A bound/empty/dynamic `form` value cannot prove ownership from source text.
+    if (formAttribute[1]) return false
+    const value = (formAttribute[2] ?? formAttribute[3] ?? formAttribute[4] ?? '').trim()
+    return value.length > 0 && knownFormIds.has(value)
+  }
+  return formDepth > 0
+}
+
+/** Only static disabled or a literal `:disabled="true"` is a permanent exemption. */
+function isPermanentlyDisabled(tag: string): boolean {
+  const boundValues = [...tag.matchAll(BOUND_DISABLED_ATTR)].map(
+    (match) => (match[1] ?? match[2] ?? match[3] ?? '').trim(),
+  )
+  if (boundValues.length > 0) return boundValues.every((value) => value === 'true')
+  return STATIC_DISABLED_ATTR.test(tag)
+}
+
 /** Opening native button tags that look enabled but have no detectable action. */
 function findDeadButtons(source: string): string[] {
   const dead: string[] = []
+  const markup = markupOnly(source)
+  const knownFormIds = formIds(markup)
   let formDepth = 0
-  for (const [tag] of markupOnly(source).matchAll(FORM_OR_BUTTON_TAG)) {
+  for (const [tag] of markup.matchAll(FORM_OR_BUTTON_TAG)) {
     if (/^<form\b/i.test(tag)) {
       if (!/\/\s*>$/.test(tag)) formDepth += 1
       continue
@@ -143,12 +198,17 @@ function findDeadButtons(source: string): string[] {
     }
     if (/^<\//.test(tag)) continue
 
-    if (CONTROL_ACTION_BINDING.test(tag)) continue
-    if (BUTTON_DISABLED_ATTR.test(tag)) continue
+    if (BUTTON_SPECIMEN_MARKER.test(tag)) continue
+    if (hasNonEmptyBinding(tag, CONTROL_ACTION_BINDING)) continue
+    if (NATIVE_DRAGGABLE.test(tag)) continue
+    if (isPermanentlyDisabled(tag)) continue
 
-    const type = BUTTON_TYPE_ATTR.exec(tag)?.[2]?.trim().toLowerCase()
-    if (type === 'submit' || type === 'reset') continue
-    if (BUTTON_FORM_ATTR.test(tag) || formDepth > 0) continue
+    const typeMatch = BUTTON_TYPE_ATTR.exec(tag)
+    const type = (typeMatch?.[1] ?? typeMatch?.[2] ?? typeMatch?.[3] ?? '').trim().toLowerCase()
+    const owner = hasFormOwner(tag, formDepth, knownFormIds)
+    // `type="button"` is inert without an action even inside a form. Submit/reset
+    // (and the missing type default) only have native behavior with a real owner.
+    if (type !== 'button' && owner && (type.length === 0 || type === 'submit' || type === 'reset')) continue
 
     dead.push(tag.replace(/\s+/g, ' '))
   }
@@ -197,6 +257,7 @@ describe('dead affordances', () => {
   it('does not flag anchors that are bound, real, or only talked about', () => {
     expect(findDeadAnchors('<template><a href="#" @click.prevent="open">Live</a></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#" v-on:click="open">Live</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><a href="#" @click.stop>Only propagation</a></template>')).toHaveLength(1)
     // The GH-1941 shape, but wired up.
     expect(
       findDeadAnchors(`<template><a :href="tuneHref ?? '#'" @click.prevent="tune">Live</a></template>`),
@@ -221,18 +282,41 @@ describe('dead affordances', () => {
     ])
     expect(findDeadButtons('<template><button>Do nothing</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button class="x">\n  Do nothing\n</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button @click.stop>Only propagation</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button @click.stop="">Empty handler</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button @submit="save">Submit event is not activation</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button draggable="true" @click.stop>Drag handle</button></template>')).toEqual([])
   })
 
-  it('keeps wired, disabled, and native form buttons out of the findings', () => {
+  it('requires an action for type=button and proves native form ownership', () => {
     expect(findDeadButtons('<template><button @click="open">Open</button></template>')).toEqual([])
-    expect(findDeadButtons('<template><button @click.stop>Stop propagation</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button @click.stop="open">Stop propagation</button></template>')).toEqual([])
     expect(findDeadButtons('<template><button @mousedown="select">Select</button></template>')).toEqual([])
-    expect(findDeadButtons('<template><button type="submit">Save</button></template>')).toEqual([])
-    expect(findDeadButtons('<template><button type="reset">Reset</button></template>')).toEqual([])
-    expect(findDeadButtons('<template><button form="settings">Submit elsewhere</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><form><button type="button">No action</button></form></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button type="submit">No form</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button type="reset">No form</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><form id="settings"></form><button form="settings">Submit elsewhere</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button form="settings">Missing form</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><form><button>Submit form</button></form></template>')).toEqual([])
+    expect(findDeadButtons('<template><form><button type="submit">Submit form</button></form></template>')).toEqual([])
+    expect(findDeadButtons('<template><form><button type="reset">Reset form</button></form></template>')).toEqual([])
+  })
+
+  it('exempts only permanently disabled buttons', () => {
     expect(findDeadButtons('<template><button disabled>Unavailable</button></template>')).toEqual([])
-    expect(findDeadButtons('<template><button :disabled="busy">Busy</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button disabled="false">Still unavailable</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button :disabled="true">Constant disabled</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button v-bind:disabled="true">Constant disabled</button></template>')).toEqual([])
+    expect(findDeadButtons('<template><button :disabled="busy">Conditionally disabled</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button :disabled="false">Enabled</button></template>')).toHaveLength(1)
+    expect(findDeadButtons('<template><button disabled :disabled="busy">Can become enabled</button></template>')).toHaveLength(1)
+  })
+
+  it('accepts only the explicit visual-specimen marker', () => {
+    expect(
+      findDeadButtons('<template><button data-dead-affordance-exempt="visual-specimen">Visual only</button></template>'),
+    ).toEqual([])
+    expect(findDeadButtons('<template><button data-dead-affordance-exempt="other">Not exempt</button></template>')).toHaveLength(1)
   })
 
   it('documents source-only limits for dynamic Vue bindings', () => {
@@ -260,7 +344,6 @@ describe('dead affordances', () => {
     const offenders: string[] = []
 
     for (const [file, source] of Object.entries(VUE_SOURCES)) {
-      if (BUTTON_SOURCE_EXCLUSIONS.has(file)) continue
       for (const tag of findDeadButtons(source)) {
         offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
       }
