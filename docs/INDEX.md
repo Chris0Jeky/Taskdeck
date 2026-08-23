@@ -91,6 +91,8 @@ Stable reference material belongs in topical subfolders.
   - Human or in-review source packs awaiting extraction into canonical docs or issue waves.
 - `archive/`
   - Historical and superseded docs. Non-authoritative by default.
+  - includes `archive/status-history/STATUS_HISTORY_2026-02_to_2026-07.md` — the delivery history
+    rotated out of `STATUS.md` on 2026-08-23 (verbatim, non-authoritative).
 - `WIP/`
   - External or unpromoted working material that has not yet been reconciled.
 - `../autodoc/`
