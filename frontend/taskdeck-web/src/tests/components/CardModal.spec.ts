@@ -4,14 +4,21 @@ import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
 import type { Card, Label } from '../../types/board'
+import type { CardComment } from '../../types/comments'
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }))
 
+vi.mock('../../store/sessionStore', () => ({
+  useSessionStore: vi.fn(),
+}))
+
 describe('CardModal', () => {
   let mockStore: any
+  let mockSessionStore: { userId: string }
   let card: Card
   let labels: Label[]
 
@@ -62,8 +69,10 @@ describe('CardModal', () => {
       editingCardId: null,
       setEditingCard: vi.fn(),
     }
+    mockSessionStore = { userId: 'user-1' }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
+    vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
   })
 
   it('should request capture provenance when modal opens', async () => {
@@ -476,6 +485,76 @@ describe('CardModal', () => {
       content: 'New card comment',
       parentCommentId: null,
     })
+  })
+
+  function makeOwnComment(): CardComment {
+    return {
+      id: 'comment-1',
+      boardId: 'board-1',
+      cardId: 'card-1',
+      parentCommentId: null,
+      authorUserId: 'user-1',
+      authorUsername: 'testuser',
+      content: 'Delete me',
+      isDeleted: false,
+      editedAt: null,
+      mentions: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  async function openCommentDeleteDialog(wrapper: ReturnType<typeof mount>) {
+    await nextTick()
+    const deleteButton = wrapper.findAll('button').find((button) => button.text().trim() === 'Delete')
+    expect(deleteButton).toBeDefined()
+    ;(deleteButton!.element as HTMLButtonElement).focus()
+    await deleteButton!.trigger('click')
+    await nextTick()
+    return deleteButton!
+  }
+
+  it('cancels comment deletion through the dialog and restores focus after Escape', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+      attachTo: document.body,
+    })
+
+    const deleteButton = await openCommentDeleteDialog(wrapper)
+    expect(document.body.querySelector('[data-testid="card-comment-delete-confirm"]')).not.toBeNull()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(mockStore.deleteCardComment).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-testid="card-comment-delete-confirm"]')).toBeNull()
+    expect(document.activeElement).toBe(deleteButton.element)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  it('deletes a confirmed comment exactly once through the rendered dialog', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+      attachTo: document.body,
+    })
+
+    await openCommentDeleteDialog(wrapper)
+    const confirm = document.body.querySelector(
+      '[data-testid="card-comment-delete-confirm"]',
+    ) as HTMLButtonElement
+    confirm.click()
+    confirm.click()
+    await nextTick()
+    await nextTick()
+
+    expect(mockStore.deleteCardComment).toHaveBeenCalledTimes(1)
+    expect(mockStore.deleteCardComment).toHaveBeenCalledWith('board-1', 'card-1', 'comment-1')
+
+    wrapper.unmount()
   })
 
   it('should render "Created manually" empty state when capture provenance is unavailable (manual card)', async () => {

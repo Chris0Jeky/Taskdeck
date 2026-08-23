@@ -33,6 +33,9 @@ export function useCardModal(options: UseCardModalOptions) {
   const replyDraftByParent = ref<Record<string, string>>({})
   const editingCommentId = ref<string | null>(null)
   const editingCommentContent = ref('')
+  const commentPendingDeletion = ref<CardComment | null>(null)
+  const showCommentDeleteConfirm = ref(false)
+  const isDeletingComment = ref(false)
 
   // Provenance state
   const captureProvenance = ref<CardCaptureProvenance | null>(null)
@@ -107,6 +110,9 @@ export function useCardModal(options: UseCardModalOptions) {
       replyDraftByParent.value = {}
       editingCommentId.value = null
       editingCommentContent.value = ''
+      commentPendingDeletion.value = null
+      showCommentDeleteConfirm.value = false
+      isDeletingComment.value = false
       captureProvenance.value = null
       captureProvenanceError.value = null
       loadingCaptureProvenance.value = false
@@ -257,20 +263,40 @@ export function useCardModal(options: UseCardModalOptions) {
     }
   }
 
-  async function handleDeleteComment(comment: CardComment) {
+  function handleDeleteComment(comment: CardComment) {
     if (!canEditComment(comment)) {
       return
     }
 
-    if (!confirm('Delete this comment?')) {
+    commentPendingDeletion.value = comment
+    showCommentDeleteConfirm.value = true
+  }
+
+  function handleCommentDeleteCancel() {
+    if (isDeletingComment.value) {
       return
     }
 
+    showCommentDeleteConfirm.value = false
+    commentPendingDeletion.value = null
+  }
+
+  async function handleCommentDeleteConfirm() {
+    const comment = commentPendingDeletion.value
+    if (!comment || isDeletingComment.value) {
+      return
+    }
+
+    isDeletingComment.value = true
     try {
       await boardStore.deleteCardComment(card.value.boardId, card.value.id, comment.id)
+      showCommentDeleteConfirm.value = false
+      commentPendingDeletion.value = null
     } catch (error) {
       logError('Failed to delete comment:', error)
       toast.error('Failed to delete comment. Please try again.')
+    } finally {
+      isDeletingComment.value = false
     }
   }
 
@@ -294,6 +320,9 @@ export function useCardModal(options: UseCardModalOptions) {
     replyDraftByParent.value = {}
     editingCommentId.value = null
     editingCommentContent.value = ''
+    commentPendingDeletion.value = null
+    showCommentDeleteConfirm.value = false
+    isDeletingComment.value = false
     captureProvenance.value = null
     captureProvenanceError.value = null
     loadingCaptureProvenance.value = false
@@ -328,6 +357,11 @@ export function useCardModal(options: UseCardModalOptions) {
     handleCancelEditComment,
     handleSaveEditComment,
     handleDeleteComment,
+    commentPendingDeletion,
+    showCommentDeleteConfirm,
+    isDeletingComment,
+    handleCommentDeleteCancel,
+    handleCommentDeleteConfirm,
 
     // Provenance
     captureProvenance,
