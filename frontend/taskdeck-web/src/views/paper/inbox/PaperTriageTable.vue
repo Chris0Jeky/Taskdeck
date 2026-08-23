@@ -46,6 +46,8 @@ const props = defineProps<{
   listError?: string | null
   actionBusyItemId?: string | null
   triagePollingItemId?: string | null
+  scopeLabel?: string
+  scopeClearLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +55,7 @@ const emit = defineEmits<{
   (event: 'reject', itemId: string): void
   (event: 'open', itemId: string): void
   (event: 'retry'): void
+  (event: 'clear-scope'): void
 }>()
 
 const boardStore = useBoardStore()
@@ -380,7 +383,13 @@ function formatTime(iso: string): string {
     </div>
 
     <div v-if="!loadingList && !listError && !hasItems" class="paper-triage__empty">
-      <p class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
+      <template v-if="scopeLabel">
+        <p class="tk-body">{{ t('inbox.empty.scoped', { scope: scopeLabel }) }}</p>
+        <button type="button" class="paper-triage__retry" data-testid="paper-triage-clear-scope" @click="emit('clear-scope')">
+          {{ scopeClearLabel }}
+        </button>
+      </template>
+      <p v-else class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
     </div>
 
     <ul v-if="hasItems" class="paper-triage__list">

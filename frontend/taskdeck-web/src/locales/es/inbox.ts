@@ -23,6 +23,14 @@ export default {
     emphasis: 'en dos palabras?',
   },
   lede: 'Suelta la idea. Se queda aquí, intacta, hasta que tú la clasifiques. Nada llega al tablero sin tu aprobación.',
+  scope: {
+    board: 'Tablero: {board}',
+    boardAndColumn: 'Tablero: {board} · Columna: {column}',
+    clear: 'Mostrar todas las capturas',
+  },
+  empty: {
+    scoped: 'No hay capturas en {scope}. Muestra todas las capturas para restaurar el Inbox completo.',
+  },
   variantToggle: {
     label: 'Variante de captura',
   },

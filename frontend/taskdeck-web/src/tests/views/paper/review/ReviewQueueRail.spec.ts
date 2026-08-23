@@ -28,6 +28,8 @@ function mountRail(props?: Partial<{
   busy: boolean
   applyRate: number
   cadence: number[]
+  scopeLabel: string
+  scopeClearLabel: string
 }>) {
   return mount(ReviewQueueRail, {
     props: {
@@ -40,6 +42,7 @@ function mountRail(props?: Partial<{
       recentlyApplied: props?.recentlyApplied ?? [],
       ...(props?.applyRate !== undefined ? { applyRate: props.applyRate } : {}),
       ...(props?.cadence !== undefined ? { cadence: props.cadence } : {}),
+      ...(props?.scopeLabel ? { scopeLabel: props.scopeLabel, scopeClearLabel: props.scopeClearLabel } : {}),
     },
   })
 }
@@ -127,6 +130,20 @@ describe('ReviewQueueRail', () => {
     const wrapper = mountRail()
     expect(wrapper.text()).toContain('3 awaiting')
     expect(wrapper.text()).toContain('2 stale')
+  })
+
+  it('makes the board scope visible alongside the assignment filters and emits its clear action', async () => {
+    const wrapper = mountRail({
+      scopeLabel: 'Board: Payments API Migration',
+      scopeClearLabel: 'Show all boards',
+    })
+
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Board: Payments API Migration')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Show all boards')
+    expect(wrapper.find('.paper-review-rail__pill--active').text()).toBe('All')
+
+    await wrapper.find('[data-testid="paper-scope-clear"]').trigger('click')
+    expect(wrapper.emitted('clear-scope')).toHaveLength(1)
   })
 
   it('hides the bulk file-away action only when there are no settled proposals', () => {

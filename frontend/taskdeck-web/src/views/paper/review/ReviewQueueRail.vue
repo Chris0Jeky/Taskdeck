@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import ReviewQueueItem from './ReviewQueueItem.vue'
 import ReviewRecentApplied, { type RecentlyAppliedRow } from './ReviewRecentApplied.vue'
 import ReviewMiniCadence from './ReviewMiniCadence.vue'
+import PaperScopeDisclosure from '../../../components/paper/PaperScopeDisclosure.vue'
 
 export interface QueueRailItem {
   id: string
@@ -25,6 +26,8 @@ const props = withDefaults(
     activeId: string | null
     awaitingCount: number
     staleCount: number
+    scopeLabel?: string
+    scopeClearLabel?: string
     /** Caller-owned settled proposals on this board; ≥1 reveals the bulk file-away action. */
     dismissableCount?: number
     /** Disables the bulk file-away action while any review action is in flight. */
@@ -52,6 +55,7 @@ const emit = defineEmits<{
   (event: 'select', id: string): void
   (event: 'filter-change', filter: QueueFilter): void
   (event: 'file-away-all'): void
+  (event: 'clear-scope'): void
 }>()
 
 const filter = ref<QueueFilter>('all')
@@ -96,8 +100,19 @@ function setFilter(next: QueueFilter) {
   <aside class="paper-review-rail" data-testid="paper-review-queue-rail">
     <div class="paper-review-rail__head">
       <div class="tk-eyebrow">
-        {{ $t('review.queueRail.eyebrow', { awaiting: awaitingCount, stale: staleCount }) }}
+        {{
+          $t(scopeLabel ? 'review.queueRail.eyebrowScoped' : 'review.queueRail.eyebrow', {
+            awaiting: awaitingCount,
+            stale: staleCount,
+          })
+        }}
       </div>
+      <PaperScopeDisclosure
+        v-if="scopeLabel && scopeClearLabel"
+        :label="scopeLabel"
+        :clear-label="scopeClearLabel"
+        @clear="emit('clear-scope')"
+      />
       <div
         class="paper-review-rail__filters"
         role="group"
