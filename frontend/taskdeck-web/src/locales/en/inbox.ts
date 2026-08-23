@@ -32,6 +32,11 @@ export default {
     emphasis: 'quickly?',
   },
   lede: 'Drop the thought. It will sit here, untouched, until you triage it. Nothing flows to the board without your approval.',
+  capture: {
+    errorLead: 'Capture not saved. Your draft is still here.',
+    errorDetail: 'Details: {reason}',
+    errorFallback: 'Please try again when the connection is available.',
+  },
   scope: {
     board: 'Board: {board}',
     boardAndColumn: 'Board: {board} · Column: {column}',
