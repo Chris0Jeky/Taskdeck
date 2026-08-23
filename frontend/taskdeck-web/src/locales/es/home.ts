@@ -61,5 +61,8 @@ export default {
     label: 'Captura rápida',
     inputLabel: 'Anota una idea',
     placeholder: 'Anota una idea...',
+    errorLead: 'Nota no guardada. Tu texto sigue aquí.',
+    errorDetail: 'Detalles: {reason}',
+    errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
   },
 }

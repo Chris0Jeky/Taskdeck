@@ -62,5 +62,8 @@ export default {
     label: 'Quick capture',
     inputLabel: 'Capture a thought',
     placeholder: 'Capture a thought...',
+    errorLead: 'Capture not saved. Your text is still here.',
+    errorDetail: 'Details: {reason}',
+    errorFallback: 'Please try again when the connection is available.',
   },
 }

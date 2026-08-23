@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { getErrorDisplay } from '../../composables/useErrorMapper'
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
@@ -37,6 +38,7 @@ const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
 const captureSubmitting = ref(false)
+const captureError = ref<string | null>(null)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
@@ -94,6 +96,7 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
     return false
   }
 
+  captureError.value = null
   captureSubmitting.value = true
   try {
     await captureStore.createItem({
@@ -101,10 +104,16 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
       text,
       source: 'Typed',
     })
-    await loadInbox()
+    await loadInbox().catch(() => {
+      // The capture already exists. The orchestrator/store owns listError and
+      // its toast; treating this refresh failure as a rejected create would
+      // retain the draft and invite a duplicate capture on retry.
+    })
     return true
-  } catch {
-    // captureStore handles toast surfacing; we keep the surface usable.
+  } catch (error: unknown) {
+    // The store's toast remains useful global feedback, but it expires. Keep
+    // an inspectable receipt beside the draft until the user retries (GH-1938).
+    captureError.value = getErrorDisplay(error, t('inbox.capture.errorFallback')).message
     return false
   } finally {
     captureSubmitting.value = false
@@ -276,6 +285,15 @@ defineExpose({ variant, toggleVariant, setVariant })
         @submit="onComposerSubmit"
         @attachments-changed="onComposerAttachments"
       />
+      <p
+        v-if="captureError"
+        class="paper-inbox__capture-error"
+        role="alert"
+        data-testid="paper-inbox-capture-error"
+      >
+        <strong>{{ $t('inbox.capture.errorLead') }}</strong>
+        <span>{{ $t('inbox.capture.errorDetail', { reason: captureError }) }}</span>
+      </p>
     </section>
 
     <PaperTriageTable
@@ -334,6 +352,20 @@ defineExpose({ variant, toggleVariant, setVariant })
 }
 .paper-inbox__capture {
   margin-top: 8px;
+}
+.paper-inbox__capture-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-radius: var(--r-1);
+  background: var(--ember-tint);
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
 }
 @media (max-width: 720px) {
   .paper-inbox__header {

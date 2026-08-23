@@ -21,6 +21,11 @@ export default {
     emphasis: 'in breve?',
   },
   lede: 'Lascia qui il pensiero. Resta intatto finché non lo smisti tu. Niente arriva alla bacheca senza la tua approvazione.',
+  capture: {
+    errorLead: 'Appunto non salvato. La bozza è ancora qui.',
+    errorDetail: 'Dettagli: {reason}',
+    errorFallback: 'Riprova quando la connessione è disponibile.',
+  },
   scope: {
     board: 'Bacheca: {board}',
     boardAndColumn: 'Bacheca: {board} · Colonna: {column}',

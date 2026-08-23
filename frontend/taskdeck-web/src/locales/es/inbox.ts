@@ -23,6 +23,11 @@ export default {
     emphasis: 'en dos palabras?',
   },
   lede: 'Suelta la idea. Se queda aquí, intacta, hasta que tú la clasifiques. Nada llega al tablero sin tu aprobación.',
+  capture: {
+    errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
+    errorDetail: 'Detalles: {reason}',
+    errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
+  },
   scope: {
     board: 'Tablero: {board}',
     boardAndColumn: 'Tablero: {board} · Columna: {column}',
