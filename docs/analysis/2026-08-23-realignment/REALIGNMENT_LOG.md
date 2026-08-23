@@ -84,19 +84,28 @@ at start. Worktree `.worktrees/realign-0823`, branch `chore/realignment-2026-08-
 - **Semantic labels applied:** `dogfooding` on the 31 sweep/horizon findings; `product-truth` on 11
   truth defects; `decision` on 10 decision-gated issues; `human-action` on 12 human-gated issues.
 
-## 5. Issue reconciliation (Phase 5)
+## 5. Issue reconciliation (Phase 5 — executed; 74 issues touched)
 
-- **Closed with evidence:** #996 (PAPER-00 — all 12 children delivered; residuals → #1276/#1266),
-  #219 (voice capture — superseded by REVIVAL-08 M4 per its own re-scope). #1553/#1710 were
-  verify-then-close candidates; see their threads for the executed outcome.
+- **Closed with evidence (4):** #996 (PAPER-00 — all 12 children verified delivered; residuals →
+  #1276/#1266), #219 (voice capture — superseded by REVIVAL-08 M4 per its own re-scope; the
+  SpeechRecognition path verified dead by construction), #1553 (guard shipped in PR #1551;
+  `Test-New-CodexIssueWorktree.ps1 -Case git-add-failure` re-run PASS on 2026-08-23), #1710
+  (shipped in PR #1675/#1862; `check-codex-path-trust.ps1` re-run exit 0 on 2026-08-23). The
+  #1553/#1710 closures rest on today's local runs plus the merged PRs' recorded CI — stated on
+  both threads.
 - **Body updates:** #1311 (Phase-1 boxes ticked with PR citations; MIT line annotated to ADR-0050;
   Phase-2 status), #1327 (ratification boxes + delivery truth), #1947 (8 closed children ticked,
   #1948/#1949 added), #1949 (5 fixed rows), #1142 (11-closed/8-open child truth), #1322 (delivered
   aggregations struck), #1967 (refuted finding (c) struck → #1987), #1984 (finding 1 superseded by
   #2005), #1938 (title priority corrected to match label), #1607 (stale 64/415 baseline → 40/391),
   #1879 (retitled to the BYOK decision residual).
-- **Dated evidence/state comments** on ~45 further issues (see each issue's
-  "Realignment 2026-08-23" comment).
+- **Dated evidence/state comments** on ~60 further issues (every one prefixed
+  "Realignment 2026-08-23"). Executor corrections worth noting: #1983 is OPEN (an analysis-pass
+  claim that PR #1993 closed it was refuted); #1935 has seven hardcoded ⌘ sites, not six; the
+  #1628 "degradedReason lost" claim was corrected on-thread (the *classification* is lost, the
+  reason is persisted); #1276's delete list was corrected (`PaperEmptyState.vue` is live).
+- **Post-executor milestone truth:** v0.1.2 open:13 · v0.2 open:7 · v0.3 open:3 ·
+  "v0.1.0 — First Light" closed. Open issues: 172 → 171 (−4 closures, +3 seeded).
 - **Work preservation:** the uncommitted #1876 v0.1.2 draft (10 modified files + 1 new) was
   committed and pushed to `origin/issue-1876/desktop-retired-provider-diagnostics` (base
   `0f38c692c`, needs rebase before review).
