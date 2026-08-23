@@ -126,15 +126,11 @@ describe('PaperCaptureComposer', () => {
     expect(wrapper.text()).not.toContain('nihongo')
   })
 
-  it('emits attachments-changed when files are dropped', async () => {
+  it('marks attachments unavailable instead of accepting files that would be discarded', () => {
     const wrapper = mount(PaperCaptureComposer)
-    const dropZone = wrapper.find('[data-testid="paper-composer-drop"]')
-    const file = new File(['hello'], 'note.txt', { type: 'text/plain' })
-    const dataTransfer = { files: [file] } as unknown as DataTransfer
-    await dropZone.trigger('drop', { dataTransfer })
-    const events = wrapper.emitted('attachments-changed')
-    expect(events).toBeDefined()
-    expect((events?.[0]?.[0] as File[])[0]?.name).toBe('note.txt')
+    expect(wrapper.get('[data-testid="paper-composer-attachments-unavailable"]').text())
+      .toContain('not saved with captures yet')
+    expect(wrapper.find('input[aria-label="Attach files"]').exists()).toBe(false)
   })
 
   it('does not submit when body is empty', async () => {
@@ -149,9 +145,6 @@ describe('PaperCaptureComposer', () => {
     expect(wrapper.find('select[aria-label="Board picker"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('input[aria-label="Add label"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('input[aria-label="Due date"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('input[aria-label="Attach files"]').attributes('disabled')).toBeDefined()
-    const browseButton = wrapper.findAll('button').find((button) => button.text().includes('Browse'))
-    expect(browseButton?.attributes('disabled')).toBeDefined()
 
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
 

@@ -10,10 +10,8 @@ import type { Board } from '../../../types/board'
  * PaperCaptureComposer — variant B of the Paper Inbox capture surface.
  *
  * A multi-line ledger composer sitting on a paper-card with a metadata
- * sidebar (board picker, label multi-select, optional due date, attachment
- * drop zone).  Cmd/Ctrl+Enter submits.  Attachments are surfaced via an
- * `attachments-changed` event; we don't upload them yet — the parent can
- * decide what to do once the upload pipeline lands.
+ * sidebar (board picker, label multi-select, optional due date). Cmd/Ctrl+Enter submits.
+ * Attachments remain visibly unavailable until a persistence lane exists.
  */
 const props = defineProps<{
   /** Optional board id to default the picker to. */
@@ -28,7 +26,6 @@ const emit = defineEmits<{
     labels: string[]
     dueAt: string | null
   }): void
-  (event: 'attachments-changed', files: File[]): void
 }>()
 
 const boardStore = useBoardStore()
@@ -39,11 +36,8 @@ const boardId = ref<string | null>(props.defaultBoardId ?? null)
 const labelInput = ref('')
 const labels = ref<string[]>([])
 const dueAt = ref<string>('')
-const attachments = ref<File[]>([])
 
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const dropActive = ref(false)
 
 const inputsDisabled = computed(() => !!props.submitting)
 
@@ -117,34 +111,6 @@ function removeLabel(label: string) {
   labels.value = labels.value.filter((l) => l !== label)
 }
 
-function onFilesChosen(event: Event) {
-  if (inputsDisabled.value) return
-  const files = (event.target as HTMLInputElement).files
-  if (!files) return
-  appendFiles(Array.from(files))
-}
-
-function onDrop(event: DragEvent) {
-  dropActive.value = false
-  if (inputsDisabled.value) return
-  const files = event.dataTransfer?.files
-  if (!files) return
-  appendFiles(Array.from(files))
-}
-
-function appendFiles(next: File[]) {
-  if (inputsDisabled.value) return
-  if (next.length === 0) return
-  attachments.value = [...attachments.value, ...next]
-  emit('attachments-changed', attachments.value)
-}
-
-function removeAttachment(file: File) {
-  if (inputsDisabled.value) return
-  attachments.value = attachments.value.filter((f) => f !== file)
-  emit('attachments-changed', attachments.value)
-}
-
 function submit() {
   if (!canSubmit.value) return
   emit('submit', {
@@ -159,8 +125,6 @@ function resetDraft() {
   body.value = ''
   labels.value = []
   dueAt.value = ''
-  attachments.value = []
-  emit('attachments-changed', attachments.value)
 }
 
 onMounted(async () => {
@@ -203,50 +167,9 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
           />
         </label>
 
-        <!-- Attachments / drop zone — hairline only.  Real upload pipeline lands later. -->
-        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drop zone trigger handled via the explicit Browse button below; the surrounding region is visual chrome -->
-        <div
-          class="paper-composer__drop"
-          :class="{ 'paper-composer__drop--active': dropActive }"
-          data-testid="paper-composer-drop"
-          @dragenter.prevent="dropActive = true"
-          @dragover.prevent="dropActive = true"
-          @dragleave.prevent="dropActive = false"
-          @drop.prevent="onDrop"
-        >
-          <span class="tk-meta">Drop files here, or</span>
-          <button
-            type="button"
-            class="paper-composer__file-trigger"
-            :disabled="inputsDisabled"
-            @click="fileInputRef?.click()"
-          >
-            Browse
-          </button>
-          <input
-            ref="fileInputRef"
-            type="file"
-            multiple
-            class="paper-composer__file-input"
-            aria-label="Attach files"
-            :disabled="inputsDisabled"
-            @change="onFilesChosen"
-          />
-        </div>
-
-        <ul v-if="attachments.length > 0" class="paper-composer__attachments">
-          <li v-for="file in attachments" :key="file.name + ':' + file.size">
-            <span class="paper-composer__attachment-name">{{ file.name }}</span>
-            <button
-              type="button"
-              class="paper-composer__attachment-remove"
-              :disabled="inputsDisabled"
-              @click="removeAttachment(file)"
-            >
-              Remove
-            </button>
-          </li>
-        </ul>
+        <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
+          Attachments are not saved with captures yet.
+        </p>
       </div>
 
       <aside class="paper-composer__aside">
@@ -406,48 +329,6 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
   background: var(--paper);
   color: var(--mute);
 }
-.paper-composer__drop--active {
-  border-color: var(--ember);
-  color: var(--ember-ink, var(--ember));
-}
-.paper-composer__file-trigger {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink);
-  background: transparent;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  border-bottom: 1px solid var(--line);
-}
-.paper-composer__file-input {
-  display: none;
-}
-.paper-composer__attachments {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.paper-composer__attachments li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-2);
-}
-.paper-composer__attachment-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.paper-composer__attachment-remove,
 .paper-composer__label-remove {
   background: transparent;
   border: 0;
