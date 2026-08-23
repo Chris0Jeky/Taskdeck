@@ -73,6 +73,23 @@ export default {
     empty: 'Hoy no se ha aplicado nada.',
     noSummary: '(aplicada)',
     age: 'hace {age}',
+    open: 'Abrir los detalles de solo lectura de {title}',
+  },
+
+  readOnly: {
+    tagstamp: 'REGISTRO DE DECISIÓN',
+    eyebrow: 'Propuesta cerrada',
+    title: 'Registro de decisión de solo lectura',
+    body: 'Esta propuesta ya no admite acciones. Su decisión y sus operaciones registradas siguen disponibles para consulta.',
+    lede: 'Esta propuesta cerrada se muestra exactamente como se solicitó. No se puede tomar ninguna decisión desde este registro de solo lectura.',
+    ariaLabel: 'Registro de decisión de la propuesta de solo lectura',
+    decision: 'Decisión',
+    actor: 'Autor de la decisión',
+    timestamp: 'Registrada el',
+    operations: 'Operaciones',
+    operationsValue: '{count} operación registrada | {count} operaciones registradas',
+    notRecorded: 'Sin registrar',
+    keyHint: 'REGISTRO DE SOLO LECTURA',
   },
 
   main: {
@@ -388,6 +405,19 @@ export default {
       title: 'Sin resultados en {filter}.',
       body: 'Cambia de filtro para revisar propuestas que siguen en espera en otra parte de la cola.',
     },
+  },
+
+  deepLink: {
+    ariaLabel: 'Estado de la propuesta solicitada',
+    eyebrow: 'Propuesta solicitada · {id}',
+    loadingTitle: 'Cargando la propuesta solicitada…',
+    loadingBody: 'No se mostrará ninguna otra propuesta mientras se carga este registro exacto.',
+    notFoundTitle: 'No se encontró la propuesta',
+    notFoundBody: 'Es posible que la propuesta enlazada se haya eliminado o archivado. No se ha sustituido por ninguna otra.',
+    outsideScopeTitle: 'La propuesta está fuera de este tablero',
+    outsideScopeBody: 'La propuesta enlazada no pertenece al tablero activo. No se ha sustituido por ninguna otra.',
+    errorTitle: 'No se pudo cargar la propuesta',
+    errorBody: 'El enlace solicitado sigue seleccionado. No se muestra ninguna otra propuesta en su lugar.',
   },
 
   summary: {

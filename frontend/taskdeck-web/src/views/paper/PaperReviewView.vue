@@ -10,6 +10,7 @@ import ReviewMain from './review/ReviewMain.vue'
 import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
 import RejectProposalDialog from '../../components/review/RejectProposalDialog.vue'
+import ReviewDeepLinkState from '../../components/review/ReviewDeepLinkState.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
@@ -62,6 +63,7 @@ import type {
 const {
   proposals,
   proposalsLoading,
+  proposalDeepLinkState,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -81,6 +83,7 @@ const {
   startClock,
   stopClock,
   clearBoardFilter,
+  openProposal,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
@@ -214,12 +217,19 @@ function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | 
 }
 
 const activeProposal = computed<ApiProposal | null>(() => {
+  // A deep link is an identity contract, not a selection hint. Until the exact
+  // target is hydrated (or classified unavailable), render no proposal at all;
+  // falling through to another actionable row can decide the wrong proposal.
+  if (hashProposalId.value) {
+    return (
+      proposals.value.find(
+        (proposal) =>
+          proposal.id === hashProposalId.value && matchesActiveBoardFilter(proposal.boardId),
+      ) ?? null
+    )
+  }
   if (explicitActiveId.value) {
     const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
-    if (found) return found
-  }
-  if (hashProposalId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
     if (found) return found
   }
   // Default to the first pending-review item in the queue.
@@ -534,9 +544,16 @@ function splitQuotedSummary(summary: string): Array<{ text: string; emphasis?: b
   return parts.length > 0 ? parts : [{ text: summary, emphasis: true }]
 }
 
-const lede = computed(
-  () => activeProposal.value?.presentation?.plainSummary ?? t('review.main.ledeFallback'),
-)
+const activeReadOnlyProposal = computed<ApiProposal | undefined>(() => {
+  const proposal = activeProposal.value
+  if (!proposal || !isProposalReadOnly(proposal, isProposalExpired(proposal))) return undefined
+  return proposal
+})
+
+const lede = computed(() => {
+  if (activeReadOnlyProposal.value) return t('review.readOnly.lede')
+  return activeProposal.value?.presentation?.plainSummary ?? t('review.main.ledeFallback')
+})
 
 const decisionSummary = computed(() => {
   const p = activeProposal.value
@@ -894,7 +911,7 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
-function onFileAway() {
+async function onFileAway() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -907,7 +924,13 @@ function onFileAway() {
     toast.info(t('review.toast.notDismissableYet'))
     return
   }
-  void handleDismissProposal(p.id)
+  await handleDismissProposal(p.id)
+  // A successful file-away removes the exact record. Clear only that matching
+  // deep link after the local list proves removal; failures retain both the
+  // proposal and hash so the user never lands on a substituted target.
+  if (!proposals.value.some((proposal) => proposal.id === p.id)) {
+    await clearProposalDeepLink(p.id)
+  }
 }
 
 function onFileAwayBulk() {
@@ -1030,7 +1053,7 @@ function onReject() {
   // the same key files it away instead of rejecting (single-key consistency
   // for "remove this from my queue"). #1161
   if (activeDismissable.value) {
-    onFileAway()
+    void onFileAway()
     return
   }
   if (revisionBusy.value) {
@@ -1336,6 +1359,7 @@ onUnmounted(() => {
 
 function selectProposal(id: string) {
   explicitActiveId.value = id
+  openProposal(id)
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
@@ -1345,7 +1369,9 @@ function onQueueFilterChange(filter: QueueFilter) {
     explicitActiveId.value = selectedId
     return
   }
-  explicitActiveId.value = preferredActiveProposalId(filteredVisibleProposals.value)
+  const fallbackId = preferredActiveProposalId(filteredVisibleProposals.value)
+  explicitActiveId.value = fallbackId
+  if (hashProposalId.value && fallbackId) openProposal(fallbackId)
 }
 </script>
 
@@ -1394,6 +1420,8 @@ function onQueueFilterChange(filter: QueueFilter) {
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
+        :read-only-proposal="activeReadOnlyProposal"
+        :read-only-expired="activeProposal ? isProposalExpired(activeProposal) : false"
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"
@@ -1543,7 +1571,15 @@ function onQueueFilterChange(filter: QueueFilter) {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="activeBoardFilter">
+      <template v-if="hashProposalId">
+        <ReviewDeepLinkState
+          :proposal-id="hashProposalId"
+          :state="proposalDeepLinkState"
+          :can-clear-scope="!!activeBoardFilter"
+          @clear-scope="clearBoardFilter"
+        />
+      </template>
+      <template v-else-if="activeBoardFilter">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.scoped.title', { scope: boardScopeLabel }) }}</h2>
         <p class="tk-lede">{{ $t('review.empty.scoped.body') }}</p>
@@ -1580,6 +1616,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
       :apply-phase="applyPhase"
+      :read-only="!!activeReadOnlyProposal"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 

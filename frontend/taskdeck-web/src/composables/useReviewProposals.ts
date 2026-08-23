@@ -24,6 +24,14 @@ import { usePerformanceMark } from './usePerformanceMark'
  */
 export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
 
+export type ProposalDeepLinkState =
+  | 'idle'
+  | 'loading'
+  | 'resolved'
+  | 'not-found'
+  | 'outside-scope'
+  | 'error'
+
 /**
  * Decision rules shared by every review surface (Paper deep-review and the
  * Legacy card). These are pure functions so the prop-driven Legacy components
@@ -108,7 +116,9 @@ export function useReviewProposals() {
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
+  const proposalDeepLinkState = ref<ProposalDeepLinkState>('idle')
   let latestProposalLoadRequestId = 0
+  let latestProposalDeepLinkRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
   const boardFilterInput = ref('')
@@ -219,10 +229,15 @@ export function useReviewProposals() {
     return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
-      if (status === 'Dismissed') return false
+      const isHashTarget = proposal.id === hashTargetId
+      if (status === 'Dismissed' && !isHashTarget) return false
       if (isProposalExpired(proposal)) return true
       if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
-      if (!showCompleted.value && completedStatuses.has(status)) return false
+      // A deep link names an exact record, including a terminal one. Keep only
+      // that completed target visible while the normal queue still hides every
+      // other completed proposal. This lets both Review shells render it
+      // read-only instead of showing a different actionable row.
+      if (!showCompleted.value && completedStatuses.has(status) && !isHashTarget) return false
       return true
     })
   })
@@ -359,36 +374,53 @@ export function useReviewProposals() {
   }
 
   async function openProposalFromHash() {
-    if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
-    if (!proposalId) return
+    const requestId = ++latestProposalDeepLinkRequestId
+    if (!proposalId) {
+      proposalDeepLinkState.value = 'idle'
+      return
+    }
+    if (proposalsLoading.value) {
+      proposalDeepLinkState.value = 'loading'
+      return
+    }
 
     const currentProposal = proposals.value.find((p) => p.id === proposalId)
     if (currentProposal) {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
+        proposalDeepLinkState.value = 'outside-scope'
         return
       }
+      proposalDeepLinkState.value = 'resolved'
       await scrollToProposalFromHash()
       return
     }
 
+    proposalDeepLinkState.value = 'loading'
     try {
       const fetchedProposal = await automationApi.getProposal(proposalId)
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (
+        requestId !== latestProposalDeepLinkRequestId ||
+        getProposalIdFromHash(route.hash) !== proposalId
+      ) return
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
+        proposalDeepLinkState.value = 'outside-scope'
         return
       }
       upsertProposal(fetchedProposal)
+      proposalDeepLinkState.value = 'resolved'
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (
+        requestId !== latestProposalDeepLinkRequestId ||
+        getProposalIdFromHash(route.hash) !== proposalId
+      ) return
       if (isHttpNotFound(e)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
+        proposalDeepLinkState.value = 'not-found'
         return
       }
+      proposalDeepLinkState.value = 'error'
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
     }
   }
@@ -408,6 +440,7 @@ export function useReviewProposals() {
   async function loadProposals() {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
+    if (getProposalIdFromHash(route.hash)) proposalDeepLinkState.value = 'loading'
 
     try {
       proposalsLoading.value = true
@@ -481,6 +514,14 @@ export function useReviewProposals() {
     safeNavigate(path)
   }
 
+  function openProposal(proposalId: string) {
+    safeNavigate({
+      name: 'workspace-review',
+      query: route.query,
+      hash: `#proposal-${encodeURIComponent(proposalId)}`,
+    })
+  }
+
   function openBoard(boardId: string) {
     safeNavigate(`/workspace/boards/${boardId}`)
   }
@@ -517,6 +558,7 @@ export function useReviewProposals() {
   return {
     proposals,
     proposalsLoading,
+    proposalDeepLinkState,
     availableBoards,
     loadingBoards,
     boardFilterInput,
@@ -544,6 +586,7 @@ export function useReviewProposals() {
     proposalHref,
     captureHrefForProposal,
     openRoute,
+    openProposal,
     openBoard,
     applyBoardFilter,
     clearBoardFilter,

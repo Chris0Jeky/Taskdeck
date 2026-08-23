@@ -401,7 +401,7 @@ describe('ReviewView', () => {
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
   })
 
-  it('clears boardless proposal hashes on board-scoped review routes', async () => {
+  it('keeps boardless proposal hashes explicit on board-scoped review routes', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -422,7 +422,13 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-boardless')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-boardless',
+    )
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal is outside this board',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
     expect(wrapper.find('#proposal-proposal-boardless').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Boardless proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
@@ -472,7 +478,65 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Support Triage')
   })
 
-  it('clears stale proposal hashes when the fetched proposal belongs to a different board', async () => {
+  it('hydrates a completed hash target read-only even while completed rows are hidden', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-1',
+        boardId: 'board-7',
+        summary: 'Different pending proposal',
+      }),
+    ])
+    mocks.getProposal.mockResolvedValue(
+      buildProposal({
+        id: 'proposal-applied',
+        boardId: 'board-7',
+        status: 'Applied',
+        summary: 'Applied audit target',
+        appliedAt: '2026-08-23T18:45:00Z',
+        decidedAt: '2026-08-23T18:45:00Z',
+        decidedByUserId: 'user-auditor',
+        operations: [
+          {
+            id: 'operation-applied',
+            proposalId: 'proposal-applied',
+            sequence: 0,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{"title":"Applied audit target"}',
+            idempotencyKey: 'applied-audit-operation',
+            expectedVersion: null,
+          },
+        ],
+      }),
+    )
+
+    const { wrapper } = await mountAt(
+      '/workspace/review?boardId=board-7#proposal-proposal-applied',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    const target = wrapper.get('#proposal-proposal-applied')
+    expect(target.text()).toContain('Applied audit target')
+    expect(target.text()).toContain('Applied')
+    expect(target.get('[data-testid="legacy-review-read-only-decision"]').text()).toBe('Applied')
+    expect(target.get('[data-testid="legacy-review-read-only-actor"]').text()).toBe(
+      'user-auditor',
+    )
+    expect(target.get('[data-testid="legacy-review-read-only-timestamp"]').text()).not.toBe(
+      'Not recorded',
+    )
+    expect(target.get('[data-testid="legacy-review-read-only-operations"]').text()).toContain(
+      '1 recorded operation',
+    )
+    const actionLabels = target.findAll('button').map((button) => button.text())
+    expect(actionLabels).not.toContain('Approve for board')
+    expect(actionLabels).not.toContain('Reject')
+    expect(actionLabels).not.toContain('Apply to board')
+  })
+
+  it('keeps stale hashes explicit when the fetched proposal belongs to a different board', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -493,13 +557,19 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal is outside this board',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Wrong board proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
-  it('clears stale proposal hashes when the target proposal cannot be fetched', async () => {
+  it('keeps stale hashes explicit when the target proposal cannot be fetched', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -518,7 +588,13 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal not found',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
@@ -536,15 +612,19 @@ describe('ReviewView', () => {
       },
     })
 
-    const { router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
     expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7#proposal-proposal-older')
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load proposal')
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal could not be loaded',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
   })
 
-  it('clears cached proposal hashes that no longer match the active board filter', async () => {
+  it('keeps cached proposal hashes explicit when they no longer match the active board filter', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -569,7 +649,13 @@ describe('ReviewView', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-9')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-9#proposal-proposal-older',
+    )
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal is outside this board',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Older board proposal')
   })

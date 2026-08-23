@@ -110,6 +110,23 @@ export default {
     empty: 'Nothing applied yet today.',
     noSummary: '(applied)',
     age: '{age} ago',
+    open: 'Open read-only details for {title}',
+  },
+
+  readOnly: {
+    tagstamp: 'DECISION RECORD',
+    eyebrow: 'Settled proposal',
+    title: 'Read-only decision record',
+    body: 'This proposal is no longer actionable. Its recorded decision and operations remain inspectable.',
+    lede: 'This settled proposal is shown exactly as requested. No review decision can be made from this read-only record.',
+    ariaLabel: 'Read-only proposal decision record',
+    decision: 'Decision',
+    actor: 'Decision actor',
+    timestamp: 'Recorded at',
+    operations: 'Operations',
+    operationsValue: '{count} recorded operation | {count} recorded operations',
+    notRecorded: 'Not recorded',
+    keyHint: 'READ-ONLY RECORD',
   },
 
   // ── Centre column: header, decision rail, sections ────────────────────────
@@ -476,6 +493,19 @@ export default {
       title: 'No matches in {filter}.',
       body: 'Switch filters to review proposals that are still waiting elsewhere in the queue.',
     },
+  },
+
+  deepLink: {
+    ariaLabel: 'Requested proposal status',
+    eyebrow: 'Requested proposal · {id}',
+    loadingTitle: 'Loading the requested proposal…',
+    loadingBody: 'No other proposal will be shown while this exact record is loading.',
+    notFoundTitle: 'Proposal not found',
+    notFoundBody: 'The linked proposal may have been removed or filed away. No other proposal has been substituted.',
+    outsideScopeTitle: 'Proposal is outside this board',
+    outsideScopeBody: 'The linked proposal does not belong to the active board. No other proposal has been substituted.',
+    errorTitle: 'Proposal could not be loaded',
+    errorBody: 'The requested link remains selected. No other proposal is shown in its place.',
   },
 
   // ── Legacy-shell summary cards (data built in `useReviewProposals`) ───────

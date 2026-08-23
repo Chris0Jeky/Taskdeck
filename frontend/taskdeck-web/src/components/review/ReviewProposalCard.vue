@@ -7,8 +7,10 @@ import {
   normalizeProposalStatus,
 } from '../../utils/automation'
 import type { ReviewDiffMode } from '../../composables/useReviewActions'
+import { isProposalReadOnly } from '../../composables/useReviewProposals'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
+import ReviewReadOnlyDecision from './ReviewReadOnlyDecision.vue'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 
 const props = defineProps<{
@@ -180,6 +182,8 @@ const technicalDetails = computed(() => {
   return proposalDisplayNames.technicalDetails(props.proposal)
 })
 
+const isReadOnly = computed(() => isProposalReadOnly(props.proposal, props.isExpired))
+
 const displayedSelectedDiff = computed(() => {
   void displayVersion.value
   return props.selectedDiff
@@ -225,6 +229,13 @@ async function copyTechnicalDetails() {
     <div class="td-review-card__presentation">
       <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
     </div>
+
+    <ReviewReadOnlyDecision
+      v-if="isReadOnly"
+      :proposal="proposal"
+      :is-expired="isExpired"
+      test-id-prefix="legacy-review-read-only"
+    />
 
     <!-- Action footer -->
     <ReviewProposalActions

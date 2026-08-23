@@ -185,6 +185,23 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.text()).not.toContain('sealed')
   })
 
+  it('renders recently-applied rows as labelled buttons and activates the exact row from the keyboard', async () => {
+    const wrapper = mountRail({
+      recentlyApplied: [
+        { id: 'recent-keyboard', serial: '#R01', title: 'Applied with keyboard', age: '12m' },
+      ],
+    })
+
+    const row = wrapper.get('.paper-review-recent__row')
+    expect(row.element.tagName).toBe('BUTTON')
+    expect(row.attributes('type')).toBe('button')
+    expect(row.attributes('aria-label')).toContain('Applied with keyboard')
+
+    await row.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('select')).toEqual([['recent-keyboard']])
+  })
+
   describe('This week apply-rate stat', () => {
     it('shows the empty state and never a fabricated percentage when no apply rate is provided', () => {
       // A fresh account with zero decision history: the rail must not invent a

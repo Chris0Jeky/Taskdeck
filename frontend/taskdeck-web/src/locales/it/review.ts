@@ -74,6 +74,23 @@ export default {
     empty: 'Oggi non è stato applicato niente.',
     noSummary: '(applicata)',
     age: '{age} fa',
+    open: 'Apri i dettagli in sola lettura di {title}',
+  },
+
+  readOnly: {
+    tagstamp: 'REGISTRO DECISIONE',
+    eyebrow: 'Proposta conclusa',
+    title: 'Registro decisione in sola lettura',
+    body: 'Questa proposta non consente più azioni. La decisione e le operazioni registrate restano consultabili.',
+    lede: 'Questa proposta conclusa è mostrata esattamente come richiesto. Da questo registro in sola lettura non è possibile prendere decisioni.',
+    ariaLabel: 'Registro decisione della proposta in sola lettura',
+    decision: 'Decisione',
+    actor: 'Autore della decisione',
+    timestamp: 'Registrata il',
+    operations: 'Operazioni',
+    operationsValue: '{count} operazione registrata | {count} operazioni registrate',
+    notRecorded: 'Non registrato',
+    keyHint: 'REGISTRO IN SOLA LETTURA',
   },
 
   main: {
@@ -390,6 +407,19 @@ export default {
       title: 'Nessun risultato in {filter}.',
       body: 'Cambia filtro per rivedere le proposte ancora in attesa altrove nella coda.',
     },
+  },
+
+  deepLink: {
+    ariaLabel: 'Stato della proposta richiesta',
+    eyebrow: 'Proposta richiesta · {id}',
+    loadingTitle: 'Caricamento della proposta richiesta…',
+    loadingBody: 'Nessun’altra proposta verrà mostrata mentre viene caricato questo record esatto.',
+    notFoundTitle: 'Proposta non trovata',
+    notFoundBody: 'La proposta collegata potrebbe essere stata rimossa o archiviata. Non è stata sostituita con un’altra proposta.',
+    outsideScopeTitle: 'La proposta è fuori da questa bacheca',
+    outsideScopeBody: 'La proposta collegata non appartiene alla bacheca attiva. Non è stata sostituita con un’altra proposta.',
+    errorTitle: 'Impossibile caricare la proposta',
+    errorBody: 'Il collegamento richiesto resta selezionato. Nessun’altra proposta viene mostrata al suo posto.',
   },
 
   summary: {

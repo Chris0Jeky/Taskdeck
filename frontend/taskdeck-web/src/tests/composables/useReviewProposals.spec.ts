@@ -186,6 +186,22 @@ describe('useReviewProposals', () => {
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['3'])
     })
 
+    it('keeps only the exact hash-targeted completed proposal visible read-only', () => {
+      mockRoute.hash = '#proposal-applied-target'
+      const rp = useReviewProposals()
+      rp.showCompleted.value = false
+      rp.proposals.value = [
+        makeProposal({ id: 'applied-target', status: 'Applied' }),
+        makeProposal({ id: 'other-applied', status: 'Applied' }),
+        makeProposal({ id: 'pending', status: 'PendingReview' }),
+      ] as any
+
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual([
+        'applied-target',
+        'pending',
+      ])
+    })
+
     it('shows expired proposals regardless of showCompleted', () => {
       const rp = useReviewProposals()
       rp.showCompleted.value = false
@@ -629,16 +645,15 @@ describe('useReviewProposals', () => {
       expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
     })
 
-    it('clears hash when existing proposal does not match board filter', async () => {
+    it('keeps the hash and marks an existing proposal outside the active board scope', async () => {
       mockRoute.query = { boardId: 'board-A' }
       mockRoute.hash = '#proposal-p-other'
       const mismatchedProposal = makeProposal({ id: 'p-other', boardId: 'board-B' })
       mockAutomationApi.getProposals.mockResolvedValueOnce([mismatchedProposal])
       const rp = useReviewProposals()
       await rp.loadProposals()
-      expect(mockRouter.replace).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'workspace-review' }),
-      )
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+      expect(rp.proposalDeepLinkState.value).toBe('outside-scope')
     })
 
     it('fetches unknown proposal from API and upserts it', async () => {
@@ -649,17 +664,17 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-remote')
       expect(rp.proposals.value.find((p: any) => p.id === 'p-remote')).toBeDefined()
+      expect(rp.proposalDeepLinkState.value).toBe('resolved')
     })
 
-    it('clears hash on 404 from API', async () => {
+    it('keeps the hash and exposes an explicit not-found state on 404', async () => {
       mockRoute.hash = '#proposal-p-missing'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
       mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
       const rp = useReviewProposals()
       await rp.loadProposals()
-      expect(mockRouter.replace).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'workspace-review' }),
-      )
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+      expect(rp.proposalDeepLinkState.value).toBe('not-found')
     })
 
     it('shows toast on non-404 error', async () => {
@@ -669,6 +684,7 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(mockToast.error).toHaveBeenCalled()
+      expect(rp.proposalDeepLinkState.value).toBe('error')
     })
   })
 
@@ -692,6 +708,17 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       rp.openRoute('/settings')
       expect(mockRouter.push).toHaveBeenCalledWith('/settings')
+    })
+
+    it('openProposal preserves the active board query and names the exact proposal in the hash', () => {
+      mockRoute.query = { boardId: 'board-x' }
+      const rp = useReviewProposals()
+      rp.openProposal('proposal with spaces')
+      expect(mockRouter.push).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: { boardId: 'board-x' },
+        hash: '#proposal-proposal%20with%20spaces',
+      })
     })
 
     it('applyBoardFilter navigates with boardId query', () => {

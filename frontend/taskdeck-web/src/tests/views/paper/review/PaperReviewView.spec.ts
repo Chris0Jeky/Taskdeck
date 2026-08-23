@@ -351,6 +351,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
     expect(wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text())).toEqual([
       'Mine low',
       'Mine high',
@@ -393,6 +394,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Pending mine')
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Expired mine')
@@ -488,6 +490,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
@@ -734,7 +737,7 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
   })
 
-  it('lets manual queue selection override a hash-targeted proposal', async () => {
+  it('updates the route hash before manual queue selection renders a different proposal', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(
       [
@@ -745,8 +748,12 @@ describe('PaperReviewView', () => {
     )
 
     await wrapper.findAll('.paper-review-q')[0].trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-proposal-first',
+    )
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
@@ -810,6 +817,95 @@ describe('PaperReviewView', () => {
     expect(railText).toContain('Older applied work')
     expect(railText).toContain('Newer applied work')
     expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
+  })
+
+  it('opens the exact recently-applied proposal from the keyboard in a read-only decision record', async () => {
+    const appliedAt = new Date('2026-08-23T18:45:00Z').toISOString()
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-other', summary: 'Different actionable proposal' }),
+      makeProposal({
+        id: 'applied-keyboard',
+        status: 'Applied',
+        summary: 'Applied audit target',
+        decidedAt: appliedAt,
+        decidedByUserId: 'user-auditor',
+        appliedAt,
+      }),
+    ])
+
+    const row = wrapper.get('.paper-review-recent__row')
+    expect(row.element.tagName).toBe('BUTTON')
+    await row.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-applied-keyboard',
+    )
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain(
+      'Applied audit target',
+    )
+    expect(wrapper.get('[data-testid="paper-review-read-only-decision"]').text()).toBe('Applied')
+    expect(wrapper.get('[data-testid="paper-review-read-only-actor"]').text()).toBe('user-auditor')
+    expect(wrapper.get('[data-testid="paper-review-read-only-operations"]').text()).toContain(
+      '1 recorded operation',
+    )
+    for (const testid of ['decision-apply', 'decision-reject', 'decision-edit', 'decision-defer']) {
+      expect(wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    }
+  })
+
+  it('never substitutes an actionable proposal when a hash target is missing', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'pending-other', summary: 'Different actionable proposal' })],
+      '/workspace/review#proposal-missing-target',
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-deep-link-title"]').text()).toBe(
+      'Proposal not found',
+    )
+    expect(wrapper.get('[data-testid="paper-review-deep-link-body"]').text()).toContain(
+      'No other proposal has been substituted',
+    )
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-missing-target',
+    )
+    for (const testid of ['decision-apply', 'decision-reject', 'decision-edit', 'decision-defer']) {
+      expect(wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    }
+  })
+
+  it('hydrates an applied hash target and renders only that target read-only', async () => {
+    const appliedAt = new Date('2026-08-23T18:45:00Z').toISOString()
+    mocks.getProposal.mockResolvedValueOnce(
+      makeProposal({
+        id: 'applied-remote',
+        status: 'Applied',
+        summary: 'Remote applied target',
+        decidedAt: appliedAt,
+        decidedByUserId: 'user-remote',
+        appliedAt,
+      }),
+    )
+    const wrapper = await mountView(
+      [makeProposal({ id: 'pending-other', summary: 'Different actionable proposal' })],
+      '/workspace/review#proposal-applied-remote',
+    )
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('applied-remote')
+    const main = wrapper.get('[data-testid="paper-review-main"]')
+    expect(main.text()).toContain('Remote applied target')
+    expect(main.text()).not.toContain('Different actionable proposal')
+    expect(wrapper.find('[data-testid="paper-review-read-only-record"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-read-only-decision"]').text()).toBe('Applied')
+    expect(wrapper.get('[data-testid="paper-review-read-only-actor"]').text()).toBe('user-remote')
+    expect(wrapper.get('[data-testid="paper-review-read-only-timestamp"]').text()).not.toBe(
+      'Not recorded',
+    )
+    for (const testid of ['decision-apply', 'decision-reject', 'decision-edit', 'decision-defer']) {
+      expect(wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    }
   })
 
   it('replaces decision buttons with "File away" for an expired proposal', async () => {

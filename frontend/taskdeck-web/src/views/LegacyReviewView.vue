@@ -8,6 +8,7 @@ import ReviewEmptyState from '../components/review/ReviewEmptyState.vue'
 import ReviewProposalCard from '../components/review/ReviewProposalCard.vue'
 import ApplyToBoardDialog from '../components/review/ApplyToBoardDialog.vue'
 import RejectProposalDialog from '../components/review/RejectProposalDialog.vue'
+import ReviewDeepLinkState from '../components/review/ReviewDeepLinkState.vue'
 import { TdSkeleton } from '../components/ui'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
@@ -16,6 +17,7 @@ import { useVirtualList } from '../composables/useVirtualList'
 const {
   proposals,
   proposalsLoading,
+  proposalDeepLinkState,
   boardFilterInput,
   activeBoardFilter,
   activeBoardName,
@@ -82,22 +84,26 @@ const activeReviewIndex = ref(0)
 
 const route = useRoute()
 
+const hashProposalId = computed(() => {
+  const hash = route.hash
+  if (!hash.startsWith('#proposal-')) return null
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) return null
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
+})
+
 /**
  * Scroll the virtualizer to the proposal targeted by the URL hash.
  * This ensures the targeted proposal is rendered in the virtual window
  * before the composable's scrollToProposalFromHash tries getElementById.
  */
 function scrollVirtualizerToHashProposal() {
-  const hash = route.hash
-  if (!hash.startsWith('#proposal-')) return
-  const rawId = hash.slice('#proposal-'.length).trim()
-  if (!rawId) return
-  let proposalId: string
-  try {
-    proposalId = decodeURIComponent(rawId)
-  } catch {
-    return
-  }
+  const proposalId = hashProposalId.value
+  if (!proposalId) return
   const index = visibleProposals.value.findIndex((p) => p.id === proposalId)
   if (index >= 0) {
     _vl.scrollToIndex(index)
@@ -192,6 +198,15 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <ReviewDeepLinkState
+      v-else-if="hashProposalId && proposalDeepLinkState !== 'resolved'"
+      class="td-panel td-review__deep-link"
+      :proposal-id="hashProposalId"
+      :state="proposalDeepLinkState"
+      :can-clear-scope="!!activeBoardFilter"
+      @clear-scope="clearBoardFilter"
+    />
 
     <ReviewEmptyState
       v-else-if="visibleProposals.length === 0"
@@ -300,6 +315,10 @@ onUnmounted(() => {
   display: flex;
   gap: var(--td-space-2);
   margin-top: var(--td-space-2);
+}
+
+.td-review__deep-link {
+  padding: var(--td-space-5);
 }
 
 .td-review__list {

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import ReviewReadOnlyDecision from '../../../components/review/ReviewReadOnlyDecision.vue'
+import type { Proposal } from '../../../types/automation'
 import ReviewDecisionRail, { type ApplyPhase, type EditLock } from './ReviewDecisionRail.vue'
 import ReviewChangeSection, {
   type ChangeBeforeCard,
@@ -57,6 +59,9 @@ const props = withDefaults(
     sideEffects: SideEffects
     conflicts: ConflictRow[]
     history: HistoryRow[]
+    /** Settled proposal audit data. Presence makes the detail non-actionable. */
+    readOnlyProposal?: Proposal
+    readOnlyExpired?: boolean
     /** When true the active proposal is settled; the rail offers "File away" only. */
     dismissable?: boolean
     /**
@@ -71,7 +76,7 @@ const props = withDefaults(
      */
     editLock?: EditLock
   }>(),
-  { applyPhase: 'approve', editLock: 'off' },
+  { applyPhase: 'approve', editLock: 'off', readOnlyExpired: false },
 )
 
 const { t } = useI18n()
@@ -81,6 +86,7 @@ const { t } = useI18n()
  * ⏎ on an approved proposal opens the apply confirmation, it does not re-approve.
  */
 const keyHint = computed(() => {
+  if (props.readOnlyProposal && !props.dismissable) return t('review.readOnly.keyHint')
   if (props.dismissable) return t('review.main.keyHint.fileAway')
   return props.applyPhase === 'execute'
     ? t('review.main.keyHint.confirmApply')
@@ -109,7 +115,9 @@ const dialSubline = computed(() =>
     <header class="paper-review-main__header">
       <div class="paper-review-main__header-text">
         <div class="paper-review-main__tagrow">
-          <PaperTagstamp tone="ember">{{ $t('review.main.tagstamp') }}</PaperTagstamp>
+          <PaperTagstamp :tone="readOnlyProposal ? 'applied' : 'ember'">
+            {{ $t(readOnlyProposal ? 'review.readOnly.tagstamp' : 'review.main.tagstamp') }}
+          </PaperTagstamp>
           <span class="tk-meta">{{ serial }} · {{ meta }}</span>
         </div>
         <h1 class="tk-h1 paper-review-main__title">
@@ -120,7 +128,7 @@ const dialSubline = computed(() =>
         </h1>
         <p class="tk-lede paper-review-main__lede">{{ lede }}</p>
       </div>
-      <div class="paper-review-main__dial card">
+      <div v-if="!readOnlyProposal" class="paper-review-main__dial card">
         <PaperConfidenceDial
           :value="confidence.overall"
           :caption="$t('review.main.dial.caption')"
@@ -151,7 +159,16 @@ const dialSubline = computed(() =>
       }}
     </p>
 
+    <ReviewReadOnlyDecision
+      v-if="readOnlyProposal"
+      class="paper-review-main__read-only card"
+      :proposal="readOnlyProposal"
+      :is-expired="readOnlyExpired"
+      test-id-prefix="paper-review-read-only"
+    />
+
     <ReviewDecisionRail
+      v-if="!readOnlyProposal || dismissable"
       :summary="decisionSummary"
       :busy="busy"
       :dismissable="dismissable"
@@ -234,6 +251,9 @@ const dialSubline = computed(() =>
   color: var(--ember-ink);
   font-size: 13px;
   line-height: 1.45;
+}
+.paper-review-main__read-only {
+  margin-top: 18px;
 }
 .paper-review-main__footer {
   margin-top: 36px;

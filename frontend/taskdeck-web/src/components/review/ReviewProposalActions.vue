@@ -54,8 +54,18 @@ defineEmits<{
 
 <template>
   <div class="td-review-card__actions">
+    <!-- Terminal proposal: retain inspection only; never mount disabled decision controls. -->
+    <template v-if="isReadOnly && !isExpired">
+      <span class="td-review-card__expired-notice" role="status">
+        {{ $t('review.readOnly.body') }}
+      </span>
+      <button class="td-btn td-btn--secondary td-btn--sm" @click="$emit('toggle-diff', proposal.id)">
+        {{ diffToggleLabel }}
+      </button>
+    </template>
+
     <!-- Expired proposal: show dismiss action instead of approve/reject/apply -->
-    <template v-if="isExpired">
+    <template v-else-if="isExpired">
       <span class="td-review-card__expired-notice" role="status">
         This proposal has expired and can no longer be applied.
       </span>

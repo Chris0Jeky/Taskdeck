@@ -133,12 +133,13 @@ describe('ReviewProposalActions gating', () => {
     expect(isDisabled(wrapper, 'Apply to board')).toBe(true)
   })
 
-  it('disables apply/reject/execute for terminal statuses', () => {
+  it('removes apply/reject/execute controls for terminal statuses', () => {
     for (const status of ['Applied', 'Rejected', 'Failed'] as const) {
       const wrapper = mountActions({ proposal: makeProposal({ status }) })
-      expect(isDisabled(wrapper, 'Approve for board')).toBe(true)
-      expect(isDisabled(wrapper, 'Reject')).toBe(true)
-      expect(isDisabled(wrapper, 'Apply to board')).toBe(true)
+      const labels = wrapper.findAll('button').map((button) => button.text())
+      expect(labels).not.toContain('Approve for board')
+      expect(labels).not.toContain('Reject')
+      expect(labels).not.toContain('Apply to board')
     }
   })
 

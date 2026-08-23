@@ -14,6 +14,10 @@ export interface RecentlyAppliedRow {
 defineProps<{
   rows: RecentlyAppliedRow[]
 }>()
+
+const emit = defineEmits<{
+  (event: 'select', id: string): void
+}>()
 </script>
 
 <template>
@@ -22,10 +26,14 @@ defineProps<{
     <div v-if="rows.length === 0" class="tk-meta paper-review-recent__empty">
       {{ $t('review.recent.empty') }}
     </div>
-    <div
+    <button
       v-for="row in rows"
       :key="row.id"
+      type="button"
       class="paper-review-recent__row"
+      :aria-label="$t('review.recent.open', { title: row.title })"
+      @click="emit('select', row.id)"
+      @keydown.enter.space.prevent="emit('select', row.id)"
     >
       <div class="paper-review-recent__head">
         <span class="tk-serial">{{ row.serial }}</span>
@@ -34,7 +42,7 @@ defineProps<{
         }}</span>
       </div>
       <div class="paper-review-recent__title">{{ row.title }}</div>
-    </div>
+    </button>
   </div>
 </template>
 
@@ -51,10 +59,24 @@ defineProps<{
   font-size: 10.5px;
 }
 .paper-review-recent__row {
+  display: block;
+  width: 100%;
   padding: 8px 0;
+  background: transparent;
+  border: 0;
   border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  font-family: inherit;
   font-size: 11.5px;
   color: var(--ink-2, var(--ink));
+  text-align: left;
+}
+.paper-review-recent__row:hover {
+  color: var(--ink);
+}
+.paper-review-recent__row:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
 }
 .paper-review-recent__head {
   display: flex;
