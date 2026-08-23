@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,12 +43,19 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         var column = await columnResponse.Content.ReadFromJsonAsync<ColumnDto>();
         column.Should().NotBeNull();
 
+        var labelResponse = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "shopping", "#22C55E"));
+        labelResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
         // Act 1: Create a capture item with structured checklist text
         var captureResponse = await client.PostAsJsonAsync(
             "/api/capture/items",
             new CreateCaptureItemDto(
                 board.Id,
-                "- [ ] Fix login bug"));
+                "- [ ] Fix login bug",
+                DueDate: new DateOnly(2026, 8, 23),
+                Labels: ["shopping"]));
         captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var capture = await captureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
         capture.Should().NotBeNull();
@@ -76,6 +84,13 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         proposal.Operations.Should().ContainSingle();
         proposal.Operations[0].ActionType.Should().Be("create");
         proposal.Operations[0].TargetType.Should().Be("card");
+        using (var operationParameters = JsonDocument.Parse(proposal.Operations[0].Parameters))
+        {
+            operationParameters.RootElement.GetProperty("dueDate").GetDateTimeOffset().Date.Should().Be(new DateTime(2026, 8, 23));
+            operationParameters.RootElement.GetProperty("labels").EnumerateArray()
+                .Select(label => label.GetString())
+                .Should().Equal("shopping");
+        }
 
         // Act 5: Approve the proposal
         var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
@@ -101,6 +116,8 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         cards![0].Title.Should().Be("Fix login bug");
         cards![0].BoardId.Should().Be(board.Id);
         cards![0].ColumnId.Should().Be(column!.Id, "card should be placed in the first (Backlog) column");
+        cards[0].DueDate!.Value.Date.Should().Be(new DateTime(2026, 8, 23));
+        cards[0].Labels.Select(label => label.Name).Should().Equal("shopping");
 
         // Assert: Capture item is now Converted
         var converted = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Converted);

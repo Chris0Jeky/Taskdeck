@@ -7,7 +7,9 @@ public record CreateCaptureItemDto(
     string Text,
     string? Source = null,
     string? TitleHint = null,
-    string? ExternalRef = null);
+    string? ExternalRef = null,
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null);
 
 public record CaptureItemDto(
     Guid Id,

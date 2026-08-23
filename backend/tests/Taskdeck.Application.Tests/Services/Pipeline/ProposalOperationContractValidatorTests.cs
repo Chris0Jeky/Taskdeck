@@ -563,6 +563,34 @@ public class ProposalOperationContractValidatorTests
         result.ErrorMessage.Should().Contain($"'{missingParameter}'");
     }
 
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateCardLabelNamesOutsideProposalBoard()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        var labels = new Mock<ILabelRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        unitOfWork.Setup(instance => instance.Labels).Returns(labels.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        labels.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new Label(boardId, "shopping", "#22C55E") });
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, columnId = column.Id, title = "Buy milk", labels = new[] { "foreign-board-label" } });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Contain("proposal board");
+    }
+
     [Theory]
     [InlineData("update")]
     [InlineData("add-label")]

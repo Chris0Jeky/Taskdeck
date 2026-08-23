@@ -58,7 +58,9 @@ public class CaptureService : ICaptureService
                 dto.Text,
                 null,
                 dto.TitleHint,
-                dto.ExternalRef);
+                dto.ExternalRef,
+                DueDate: dto.DueDate,
+                Labels: dto.Labels);
 
             var request = new LlmRequest(
                 userId,

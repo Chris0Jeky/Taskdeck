@@ -69,7 +69,12 @@ public class CaptureServiceTests
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         var user = new User("capture-user", "capture-user@example.com", "hash");
-        var dto = new CreateCaptureItemDto(boardId, "quick capture text", "paste");
+        var dto = new CreateCaptureItemDto(
+            boardId,
+            "quick capture text",
+            "paste",
+            DueDate: new DateOnly(2026, 8, 23),
+            Labels: ["shopping"]);
         LlmRequest? persisted = null;
 
         _userRepositoryMock
@@ -92,12 +97,19 @@ public class CaptureServiceTests
         parsedPayload.IsSuccess.Should().BeTrue();
         parsedPayload.Value.Source.Should().Be(CaptureSource.Paste);
         parsedPayload.Value.Text.Should().Be("quick capture text");
+        parsedPayload.Value.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        parsedPayload.Value.Labels.Should().Equal("shopping");
         parsedPayload.Value.Provenance.Should().NotBeNull();
         parsedPayload.Value.Provenance!.CaptureItemId.Should().Be(persisted.Id);
         parsedPayload.Value.Provenance.RequestedByUserId.Should().Be(userId);
         parsedPayload.Value.Provenance.SourceSurface.Should().Be("capture");
         parsedPayload.Value.Provenance.BoardId.Should().Be(boardId);
         parsedPayload.Value.Provenance.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        using var payloadJson = System.Text.Json.JsonDocument.Parse(persisted.Payload);
+        payloadJson.RootElement.GetProperty("dueDate").GetString().Should().Be("2026-08-23");
+        payloadJson.RootElement.GetProperty("labels").EnumerateArray().Select(label => label.GetString()).Should().Equal("shopping");
+        payloadJson.RootElement.GetProperty("provenance").TryGetProperty("dueDate", out _).Should().BeFalse();
+        payloadJson.RootElement.GetProperty("provenance").TryGetProperty("labels", out _).Should().BeFalse();
         result.Value.RawText.Should().Be("quick capture text");
         result.Value.CanEditSuggestion.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);

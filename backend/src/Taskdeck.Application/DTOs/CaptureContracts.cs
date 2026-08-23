@@ -13,7 +13,9 @@ public record CapturePayloadV1(
     DateTimeOffset? ClientCreatedAt = null,
     string? TitleHint = null,
     string? ExternalRef = null,
-    CaptureProvenanceV1? Provenance = null);
+    CaptureProvenanceV1? Provenance = null,
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null);
 
 public record CaptureProvenanceV1(
     Guid CaptureItemId,
@@ -182,7 +184,9 @@ public static class CaptureRequestContract
                 wire.ClientCreatedAt,
                 wire.TitleHint,
                 wire.ExternalRef,
-                wire.Provenance);
+                wire.Provenance,
+                wire.DueDate,
+                wire.Labels);
 
             return ValidatePayload(payloadModel);
         }
@@ -234,6 +238,13 @@ public static class CaptureRequestContract
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
                 $"Capture external reference cannot exceed {MaxExternalRefLength} characters");
+        }
+
+        if (payload.Labels?.Any(string.IsNullOrWhiteSpace) == true)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture labels cannot contain empty values");
         }
 
         if (payload.Provenance?.PromptVersion?.Length > MaxPromptVersionLength)
@@ -497,5 +508,7 @@ public static class CaptureRequestContract
         public string? TitleHint { get; init; }
         public string? ExternalRef { get; init; }
         public CaptureProvenanceV1? Provenance { get; init; }
+        public DateOnly? DueDate { get; init; }
+        public List<string>? Labels { get; init; }
     }
 }
