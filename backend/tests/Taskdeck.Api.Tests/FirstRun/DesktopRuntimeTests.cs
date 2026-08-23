@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Taskdeck.Api.FirstRun;
+using Taskdeck.Application.Services;
 using Xunit;
 
 namespace Taskdeck.Api.Tests.FirstRun;
@@ -139,6 +140,46 @@ public class DesktopRuntimeTests
         Assert.Equal(
             expected,
             DesktopRuntime.ShouldOpenBrowser(isPackaged, configuredAutoOpen, browserSuppressed));
+    }
+
+    [Fact]
+    public void FormatFatalStartup_MapsTypedRetiredProviderFailureToStaticActionableOutput()
+    {
+        var exception = Assert.Throws<RetiredLlmProviderConfigurationException>(
+            () => LlmProviderSelectionPolicy.ThrowIfRetiredProvider("Gemini"));
+
+        var output = DesktopRuntime.FormatFatalStartup(exception);
+
+        Assert.Equal(
+            [
+                "TASKDECK_DESKTOP_FATAL code=retired_provider_configuration",
+                "Taskdeck could not start because retired Gemini provider configuration is still active. " +
+                "Choose OpenAI, OpenAICompatible, Ollama, or Mock, then remove the retired Gemini selector, " +
+                "child settings, and Docker Compose variable. Restart Taskdeck after updating them. " +
+                "No settings were printed."
+            ],
+            output);
+        Assert.DoesNotContain(exception.Message, output);
+    }
+
+    [Fact]
+    public void FormatFatalStartup_MapsUnrelatedExceptionToGenericOutputWithoutContentLeak()
+    {
+        const string secretLikeContent = "synthetic-secret-never-print\r\nsynthetic-stack-line";
+
+        var output = DesktopRuntime.FormatFatalStartup(
+            new InvalidOperationException(secretLikeContent));
+
+        Assert.Equal(
+            [
+                "TASKDECK_DESKTOP_FATAL code=startup_failed",
+                "Taskdeck could not start. Check that the configured port is available and the data folder is writable. " +
+                "No settings were printed."
+            ],
+            output);
+        Assert.All(output, line => Assert.DoesNotContain(secretLikeContent, line));
+        Assert.All(output, line => Assert.DoesNotContain("synthetic-secret", line));
+        Assert.All(output, line => Assert.DoesNotContain("synthetic-stack", line));
     }
 
     private static IConfiguration Configuration(string key, string value)

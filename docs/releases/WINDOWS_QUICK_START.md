@@ -158,10 +158,28 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
   machine ever configured the retired Gemini provider through user-scoped environment variables
   (`Llm__Provider=Gemini` or `Llm__Gemini__*`), the app inherits them and exits before listening,
   and the packaged error wrongly suggests a port/data-folder problem. Follow the provider-migration
-  workaround in [UPGRADING.md](../../UPGRADING.md#version-notes); the v0.1.2 correction ships the
-  accurate diagnostic.
-- Startup fails for another reason: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is
-  writable, and preserve any named database/config recovery files before changing them.
+  workaround in [UPGRADING.md](../../UPGRADING.md#version-notes). A future correction adds the
+  accurate diagnostic below.
+- `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
+  retired Gemini provider and refused to switch providers silently. Close Taskdeck, then use a fresh
+  PowerShell window to explicitly return **User**-scoped configuration to deterministic Mock and
+  remove only the retired child-setting names; the commands do not read or print their values:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable('Llm__Provider', 'Mock', 'User')
+  @([Environment]::GetEnvironmentVariables('User').Keys) |
+      ForEach-Object { [string]$_ } |
+      Where-Object { $_ -like 'Llm__Gemini__*' } |
+      ForEach-Object { [Environment]::SetEnvironmentVariable($_, $null, 'User') }
+  ```
+
+  Close that PowerShell window before starting Taskdeck again so the new process receives the
+  updated environment. If the failure came from Docker Compose, remove the retired Gemini wrapper
+  variable from the Compose environment and explicitly select OpenAI, OpenAICompatible, Ollama, or
+  Mock instead. A stale Gemini child section is inert after an explicit supported provider is set,
+  so migration can be completed without exposing or copying the retired values.
+- Other startup failure: keep the console open, confirm `%LOCALAPPDATA%\Taskdeck` is writable, and
+  preserve any named database/config recovery files before changing them.
 - Product or packaging problem: search or open a report in
   [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issues). Never include secrets or private
   workspace content.

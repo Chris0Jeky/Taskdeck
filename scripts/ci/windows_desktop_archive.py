@@ -38,6 +38,16 @@ BOOTSTRAP_IDENTITY_PREFIX = "TASKDECK_DESKTOP_BOOTSTRAP"
 BOOTSTRAP_IDENTITY_PATTERN = re.compile(
     r"^TASKDECK_DESKTOP_BOOTSTRAP jwt_created=(true|false) connector_created=(true|false)$"
 )
+RETIRED_PROVIDER_FATAL_MARKER = (
+    "TASKDECK_DESKTOP_FATAL code=retired_provider_configuration"
+)
+RETIRED_PROVIDER_FATAL_GUIDANCE = (
+    "Taskdeck could not start because retired Gemini provider configuration is still active. "
+    "Choose OpenAI, OpenAICompatible, Ollama, or Mock, then remove the retired Gemini selector, "
+    "child settings, and Docker Compose variable. Restart Taskdeck after updating them. "
+    "No settings were printed."
+)
+SYNTHETIC_RETIRED_PROVIDER_VALUE = "synthetic-secret-never-print"
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 3
 FINAL_EVIDENCE_SCHEMA_VERSION = 6
@@ -361,6 +371,78 @@ def start_packaged_process(executable: Path, cwd: Path, environment: Mapping[str
         creationflags=creation_flags,
     )
     return ProcessMonitor(process)
+
+
+def validate_retired_provider_failure_output(output: str) -> None:
+    lines = output.splitlines()
+    if len(output) > 4096 or len(lines) > 20 or any(len(line) > 512 for line in lines):
+        raise AcceptanceFailure("The retired-provider failure output exceeded its bounded contract.")
+    if lines.count(RETIRED_PROVIDER_FATAL_MARKER) != 1:
+        raise AcceptanceFailure("The packaged process did not report the retired-provider failure code.")
+    if lines.count(RETIRED_PROVIDER_FATAL_GUIDANCE) != 1:
+        raise AcceptanceFailure("The packaged process did not report fixed retired-provider guidance.")
+    fatal_markers = [line for line in lines if line.startswith("TASKDECK_DESKTOP_FATAL")]
+    if fatal_markers != [RETIRED_PROVIDER_FATAL_MARKER]:
+        raise AcceptanceFailure("The packaged process reported an unexpected fatal marker.")
+    if "TASKDECK_DESKTOP_READY" in output or "http://" in output or "https://" in output:
+        raise AcceptanceFailure("The retired-provider failure path reported a listener or URL.")
+    if (
+        SYNTHETIC_RETIRED_PROVIDER_VALUE in output
+        or "RetiredLlmProviderConfigurationException" in output
+        or " at Taskdeck." in output
+    ):
+        raise AcceptanceFailure("The retired-provider failure path exposed raw diagnostics.")
+
+
+def verify_retired_provider_configuration_failure(
+    executable: Path,
+    cwd: Path,
+    local_app_data: Path,
+) -> None:
+    if not executable.is_absolute() or not executable.is_file():
+        raise AcceptanceFailure("The packaged executable path is not an absolute file.")
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
+        port_probe.bind(("127.0.0.1", 0))
+        expected_port = int(port_probe.getsockname()[1])
+
+    environment = build_app_environment(os.environ, local_app_data, None)
+    environment.update(
+        {
+            "ASPNETCORE_URLS": f"http://127.0.0.1:{expected_port}",
+            "Llm__Provider": "Gemini",
+            "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
+        }
+    )
+    creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = subprocess.Popen(
+        [str(executable)],
+        cwd=str(cwd),
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creation_flags,
+    )
+    try:
+        output, _ = process.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure(
+            "The retired-provider packaged regression did not exit within the bounded wait."
+        ) from None
+
+    if process.returncode != 1:
+        raise AcceptanceFailure("The retired-provider packaged regression did not fail closed.")
+    validate_retired_provider_failure_output(output)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener_probe:
+        listener_probe.settimeout(1)
+        if listener_probe.connect_ex(("127.0.0.1", expected_port)) == 0:
+            raise AcceptanceFailure("The retired-provider failure path created a listener.")
 
 
 def stop_packaged_process(monitor: ProcessMonitor, require_clean: bool = True) -> None:
@@ -991,11 +1073,37 @@ def run(argv: list[str]) -> int:
         journey_stamp = f"{int(time.time())}-{os.getpid()}"
         clean_root = temp_root / "clean-install"
         migration_root = temp_root / "migration"
+        retired_provider_root = temp_root / "retired-provider"
         clean_root.mkdir()
         migration_root.mkdir()
+        retired_provider_root.mkdir()
         for root in (clean_root, migration_root):
             (root / "unrelated-cwd").mkdir()
             (root / "local-app-data").mkdir()
+
+        retired_provider_extract = retired_provider_root / "extract"
+        retired_provider_cwd = retired_provider_root / "unrelated-cwd"
+        retired_provider_local_app_data = retired_provider_root / "local-app-data"
+        retired_provider_cwd.mkdir()
+        retired_provider_local_app_data.mkdir()
+        safe_extract_archive(archive, retired_provider_extract)
+        retired_provider_extract_snapshot = snapshot_tree(retired_provider_extract)
+        retired_provider_cwd_snapshot = snapshot_tree(retired_provider_cwd)
+        verify_retired_provider_configuration_failure(
+            (retired_provider_extract / "Taskdeck.Api.exe").resolve(),
+            retired_provider_cwd,
+            retired_provider_local_app_data,
+        )
+        assert_tree_unchanged(
+            retired_provider_extract_snapshot,
+            retired_provider_extract,
+            "retired-provider extracted archive",
+        )
+        assert_tree_unchanged(
+            retired_provider_cwd_snapshot,
+            retired_provider_cwd,
+            "retired-provider unrelated working directory",
+        )
 
         clean_first_extract = clean_root / "extract-one"
         clean_second_extract = clean_root / "extract-two"
