@@ -168,11 +168,6 @@ async function onComposerSubmit(payload: {
   }
 }
 
-function onComposerAttachments(_files: File[]) {
-  // Real upload pipeline is out of scope for PAPER-07.  Bubble silently for
-  // now; tests assert the event fires.
-}
-
 async function onTriageAccept(itemId: string, boardId?: string | null) {
   if (stopTriagePolling) {
     stopTriagePolling()
@@ -292,7 +287,6 @@ defineExpose({ variant, toggleVariant, setVariant })
         :default-board-id="activeBoardId"
         :submitting="captureSubmitting"
         @submit="onComposerSubmit"
-        @attachments-changed="onComposerAttachments"
       />
       <p
         v-if="captureError"
