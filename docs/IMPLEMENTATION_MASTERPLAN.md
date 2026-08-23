@@ -1,20 +1,75 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-22
+Last Updated: 2026-08-23
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
 - `docs/STATUS.md`
+- `docs/strategy/PRODUCT_DIRECTION.md`
+- `docs/REVIVAL_PLAN.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/GOLDEN_PRINCIPLES.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
-- `docs/GOLDEN_PRINCIPLES.md`
+
+> **Reading order (restructured 2026-08-23):** Purpose → Direction → the dated delivery and governance
+> updates → the historical planning material (principles, horizons, priority tranches, risk register).
+> The dated blocks that used to sit above `## Purpose` are unchanged in content and order; they now live
+> under **Dated delivery and governance updates (newest first)** below the Direction sections.
+
+## Purpose
+
+This is the active execution guide for sequencing past, current, and the revival waves defined in `docs/REVIVAL_PLAN.md` (truth + safety before strangers → transcript engine → open-beta launch → traction checkpoint).
+`docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
+Update this file at the end of each meaningful delivery cycle or when new work is seeded.
+
+## Direction (2026-07-10, maintainer-decided): revival — free open beta → commercial horizon
+
+**The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
+
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
+
+Goals, in order:
+
+1. **Truth + safety before strangers** — de-stub the fabricated Today dossier (`#1272`), remove the fake undo affordance, gate registration, protect main, ship v0.1.0 through the never-exercised release pipeline, make the README/onboarding/fonts honest and welcoming (REVIVAL wave, Phase 1).
+2. **The transcript engine** — build from the shipped durable Transcript persistence foundation (`#1556`) into triage-to-transcript linkage, evidence-span deep links, OpenAI-compatible provider support, and risk-tiered approvals (REVIVAL wave, Phase 2; `#1305` remains open).
+3. **Open-beta launch** — dead-surface amputation, MCP packaging, privacy-respecting feedback channel, launch (REVIVAL wave, Phase 3).
+4. **Generalist expansion** (ADR-0046) — artefact intake (screenshots/PDFs/files → extraction → the review-first triage lane), per-board dossiers from approved state, mode-scoped generalist legibility, friends-family beta channel (GEN wave, Phase 4 — strictly subordinate to the v0.1 ship gate).
+5. **Checkpoint** — re-evaluate on adoption/feedback + friends-family signals; fall back to archive only if there is no organic traction and dogfooding has not stuck, and any mixed outcome requires an explicit maintainer assessment/plan amendment; record the GEN-12 twin-app gate decision. **Instrumented 2026-07-25** (`docs/dogfooding/`): a dedicated dogfooding database, a read-only snapshot script, a friction log, and a rubric fixed before the data existed. **That clock conflict is RESOLVED (2026-08-23, walkthrough q-8).** `REVIVAL_PLAN.md` started the ~8-week clock at **Phase 0** while ADR-0044 Decision 6 started it at **beta launch**; the ruling re-anchors the checkpoint to the dogfooding sprint that actually began **2026-08-22**, giving a **floor** of **2026-09-01** (10+ dogfooding days). The floor is a floor, not eligibility: **ADR-0044's conditions still control** — Phase-2 ship, beta launch, and its traction window — and the ~8-week framing in `REVIVAL_PLAN.md` stands. Fall back to the archive plan only if there is no organic traction **and** dogfooding has not stuck; any mixed outcome needs an explicit maintainer assessment or plan amendment.
+
+**Direction ownership and the trust model (2026-08-23).** Product identity and direction — the three-layer
+framing (adaptive work OS destination · context-to-action engine · transcripts/notes/captures wedge) and the
+release-theme ladder (v0.1.x Honest Windows Beta → v0.2 Coherent Context-to-Action Loop → v0.3 Open Beta +
+Accountable Agents → v0.4 Every Artefact) — are owned by **`docs/strategy/PRODUCT_DIRECTION.md`**, which is now
+the canonical strategy spine. ADR-0044 and `docs/REVIVAL_PLAN.md` remain the execution authority described
+above; `docs/STATUS.md` remains shipped reality. **ADR-0057 (user-sovereign delegated authority) is `Proposed`
+and NOT in force** — the shipped trust model is unchanged and remains review-first (ADR-0003 / GP-06 /
+ADR-0056). Do not plan, implement, or describe delegated agent authority as current behaviour.
+
+## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
+
+> **Superseded by the 2026-07-10 revival pivot above (ADR-0044).** Retained because the closeout analysis and most of its work items remain load-bearing: the archive exit criteria (#1278) are repurposed as the v0.1 ship gate, and the archive path is the documented fallback if the beta checkpoint fails.
+
+**Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
+
+1. **Finish + activate the Paper UI** as canonical (ADR-0038 ratified) — **DONE**: the default-theme flip to `paper` **shipped 2026-06-27** (`#1252`; `paperThemeStore` default `off`→`paper` + a `td.paper.mode.v2` storage migration). All prerequisites shipped first: the `#1161` File-away dismiss affordance (`#1219`) + the reachable in-app Appearance theme toggle / Legacy escape hatch (`#1221`, 2026-06-19), and the Paper-review de-stubs (`onPreviewDiff` `#1234` / `onDefer` + `onReportBadSuggestion` `#1245`, 2026-06-27). Legacy stays reachable behind the Appearance toggle. Remaining Paper work is polish (Wave 4), not activation.
+2. **Trivially easy to run** locally — one-command dev-up plus a self-contained exe as the canonical personal run path.
+3. **General quality** — backend correctness + usability, proactively found.
+4. **Archive cleanly** — docs reflect the final state; de-scoped trackers closed with dated pivot notes.
+
+**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
+
+## Dated delivery and governance updates (newest first)
+
+> These are the delivery, governance, and correction records, newest first. They were hoisted below
+> Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
+> the blocks themselves are unchanged, in their original order.
 
 ## Active correction (2026-08-22, v0.1.1 inherited-provider startup)
 
 - **`#1876` is reopened because the public v0.1.1 ordinary Desktop path exposed a missed upgrade boundary.** A user-scoped retired Gemini selector/settings section made the packaged app exit before listening, while its top-level catch hid the fixed migration reason behind a generic port/data-folder error. Clean `LOCALAPPDATA` reproduced it; the same executable became ready after a child-only explicit OpenAI selector and removal of retired Gemini child names.
 - **The release proof gap is now explicit.** The existing archive journey strips every inherited `Llm__*` name for credential containment and therefore proves a hermetic install, not an ordinary inherited-profile migration. The permanent gate must retain that clean journey and add a synthetic contaminated-environment journey with bounded no-secret diagnostics.
-- **The proposed v0.1.2 slice is preserved, not shipped.** It keeps explicit `Provider=Gemini` and the retired Compose marker fatal, tolerates inert Gemini child keys only after an explicit supported selector, emits a typed secret-free packaged error, and adds the missing archive regression. Focused checks are green; full backend, review, CI, no-publish, merge, tag, and public-download proof remain.
+- **The correction slice is preserved on a branch, and v0.1.2 is now a larger release than that slice.** The draft keeps explicit `Provider=Gemini` and the retired Compose marker fatal, tolerates inert Gemini child keys only after an explicit supported selector, emits a typed secret-free packaged error, and adds the missing archive regression; it was pushed 2026-08-23 as branch `issue-1876/desktop-retired-provider-diagnostics` and still has no PR. **Per walkthrough q-3, v0.1.2 = this `#1876` fix *plus* the open Priority I tranche**, delivered PR-only, with maintainer deck acceptance required before any tag; the `v0.1.2` milestone exists and **no `v0.1.2` tag does**. Focused checks are green; full backend, review, CI, no-publish, merge, tag, and public-download proof remain.
 - **Exact resume authority:** [`docs/platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md`](platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md). Do not infer v0.1.2 publication or close `#1876` from the draft worktree.
 
 ## Delivery update (2026-08-22, dogfooding UX fix wave 2, tracker `#1947`)
@@ -61,6 +116,11 @@ Companion Active Docs:
   This is historical admission evidence rather than a live-status mirror; ProjectV2 is authoritative
   as items move through `Review`, `Blocked`, and `Done`. Paired sanitizer and CLI follow-ups remain
   dependency-sequenced rather than competing for the same seam.
+- **Queue status, 2026-08-23:** the record above is a *seeding* record and is now stale as a queue view — that
+  initial admitted set has since drained, and the live queue was re-seeded by the 2026-08-23 realignment against
+  the q-3 v0.1.2 scope (the `#1876` fix plus the open `Priority I` tranche). The historical record is retained
+  deliberately; **ProjectV2 plus the `v0.1.2` milestone are authoritative** for what is actually admitted now —
+  read them rather than either list on this page.
 
 ## Delivery update (2026-08-18, log sanitization expansion)
 
@@ -254,39 +314,6 @@ Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: indep
 ## Delivery update (2026-07-14)
 
 - **Paper-default regression alignment (`#1274`):** the shared authenticated Playwright session now follows the production Paper default, while frozen Legacy-selector suites opt out explicitly. Core coverage now exercises the real capture → Accept → Review → approve/apply → board flow and runs the full axe WCAG 2.1 A/AA ruleset against settled Paper Home, Today, Inbox, Review, and a seeded Board, plus Login and functional skip-link behavior. The global Vitest Legacy pin remains documented and intentional because those unit tests directly assert the frozen Legacy DOM. Focused Chromium verification: 37/37 across six core specs.
-
-## Purpose
-
-This is the active execution guide for sequencing past, current, and the revival waves defined in `docs/REVIVAL_PLAN.md` (truth + safety before strangers → transcript engine → open-beta launch → traction checkpoint).
-`docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
-Update this file at the end of each meaningful delivery cycle or when new work is seeded.
-
-## Direction (2026-07-10, maintainer-decided): revival — free open beta → commercial horizon
-
-**The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
-
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
-
-Goals, in order:
-
-1. **Truth + safety before strangers** — de-stub the fabricated Today dossier (`#1272`), remove the fake undo affordance, gate registration, protect main, ship v0.1.0 through the never-exercised release pipeline, make the README/onboarding/fonts honest and welcoming (REVIVAL wave, Phase 1).
-2. **The transcript engine** — build from the shipped durable Transcript persistence foundation (`#1556`) into triage-to-transcript linkage, evidence-span deep links, OpenAI-compatible provider support, and risk-tiered approvals (REVIVAL wave, Phase 2; `#1305` remains open).
-3. **Open-beta launch** — dead-surface amputation, MCP packaging, privacy-respecting feedback channel, launch (REVIVAL wave, Phase 3).
-4. **Generalist expansion** (ADR-0046) — artefact intake (screenshots/PDFs/files → extraction → the review-first triage lane), per-board dossiers from approved state, mode-scoped generalist legibility, friends-family beta channel (GEN wave, Phase 4 — strictly subordinate to the v0.1 ship gate).
-5. **Checkpoint** — re-evaluate on adoption/feedback + friends-family signals; fall back to archive only if there is no organic traction and dogfooding has not stuck, and any mixed outcome requires an explicit maintainer assessment/plan amendment; record the GEN-12 twin-app gate decision. **Instrumented 2026-07-25** (`docs/dogfooding/`): a dedicated dogfooding database, a read-only snapshot script, a friction log, and a rubric fixed before the data existed. Note a canonical-doc conflict this surfaced and did not resolve: `REVIVAL_PLAN.md:49/:149` starts the ~8-week clock at **Phase 0**, while ADR-0044 Decision 6 starts it at **beta launch** — weeks apart. The dogfooding guide follows the plan (the named active spine); the conflict itself still needs a ruling.
-
-## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
-
-> **Superseded by the 2026-07-10 revival pivot above (ADR-0044).** Retained because the closeout analysis and most of its work items remain load-bearing: the archive exit criteria (#1278) are repurposed as the v0.1 ship gate, and the archive path is the documented fallback if the beta checkpoint fails.
-
-**Taskdeck will not be distributed.** The maintainer's decision is to finish it as a personal-use tool, then archive it as a completed project. This **supersedes** both the 2026-06-05 ship-first framing (v0.1.0 → … → v1.0.0 GA) and the 2026-03-29 platform-expansion "four pillars" framing. Goals, in order:
-
-1. **Finish + activate the Paper UI** as canonical (ADR-0038 ratified) — **DONE**: the default-theme flip to `paper` **shipped 2026-06-27** (`#1252`; `paperThemeStore` default `off`→`paper` + a `td.paper.mode.v2` storage migration). All prerequisites shipped first: the `#1161` File-away dismiss affordance (`#1219`) + the reachable in-app Appearance theme toggle / Legacy escape hatch (`#1221`, 2026-06-19), and the Paper-review de-stubs (`onPreviewDiff` `#1234` / `onDefer` + `onReportBadSuggestion` `#1245`, 2026-06-27). Legacy stays reachable behind the Appearance toggle. Remaining Paper work is polish (Wave 4), not activation.
-2. **Trivially easy to run** locally — one-command dev-up plus a self-contained exe as the canonical personal run path.
-3. **General quality** — backend correctness + usability, proactively found.
-4. **Archive cleanly** — docs reflect the final state; de-scoped trackers closed with dated pivot notes.
-
-**De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
 
 ## Planning Principles
 
@@ -1415,6 +1442,8 @@ Master tracker: `#531`.
 
 > **Historical priority-model note:** The `Priority I`–`V` / "Phase 4" tranche framing below is retained for traceability, not issue selection. Active sequencing follows the REVIVAL wave in `docs/REVIVAL_PLAN.md`; historical distribution/cloud/mobile/GTM tranches are not reactivated unless that plan admits a specific item.
 
+> **v0.1.2 scope note (2026-08-23, walkthrough q-3):** the **open `Priority I` tranche now defines the v0.1.2 release** together with the `#1876` startup fix — PR-only delivery, maintainer deck acceptance before any tag. The specific 2026-04-era items listed below remain historical traceability, not the v0.1.2 contents; read the live `Priority I` label and the `v0.1.2` milestone for what is actually in scope.
+
 ### Priority I (Current Phase 4 Completion Path)
 
 - ~~**Security bug**: `#722` (SEC-20) — `ChangePassword` does not verify caller identity; any authenticated user can change another user's password. Discovered during 2026-04-03 test audit.~~ **RESOLVED** (`#722`/`#732`, 2026-04-04): `AuthController.ChangePassword` derives `userId` from the JWT and `ChangePasswordApiTests` guard it; STATUS records the fix. (Historical backlog entry retained for context.)
@@ -1752,7 +1781,7 @@ Analysis: `docs/analysis/2026-03-29_chat_nlp_proposal_gap.md`
 
 Additional P1 issues from the same session (tracked in `#510`–`#515`) cover excessive board polling, the missing Inbox capture button, chat not emitting proposals, delete-card without confirmation, dark-mode theming gaps on three surfaces, and text-selected cards being non-draggable. Full findings at `docs/analysis/2026-03-29_manual_testing_consolidated_findings.md`.
 
-## Next Best Steps (Immediate)
+## Next Best Steps (2026-04 snapshot — historical)
 
 > **⚠️ HISTORICAL ORDER.** The "Current active order (2026-04-25)" RFAI roadmap below (`#973`→`#984`, Stage 8, tracker `#972`) is **not** the active sequence. Current execution follows `docs/REVIVAL_PLAN.md`; the list below is retained only for historical continuity — do not restart the RFAI/Stage-8 roadmap from it.
 
@@ -1800,8 +1829,11 @@ Historical next-step list below is retained for continuity with earlier waves. T
 
 ## Documentation Operating Model
 Active docs:
-- `docs/STATUS.md`
-- `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/STATUS.md` — shipped reality
+- `docs/strategy/PRODUCT_DIRECTION.md` — product identity and direction (canonical strategy spine)
+- `docs/REVIVAL_PLAN.md` — the active execution plan
+- `docs/IMPLEMENTATION_MASTERPLAN.md` — this file: delivery history, sequencing, backlog map
+- `docs/GOLDEN_PRINCIPLES.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 
@@ -1816,7 +1848,11 @@ Archived docs:
 Rule:
 - Any behavior-changing PR must update status + masterplan and relevant testing/checklist docs.
 
-## Weekly Cadence
+## Weekly Cadence (historical)
+
+> **Not the operating rhythm since the 2026-07-10 revival pivot.** Work runs as autonomous waves/sessions with
+> guided walkthroughs for the human-action backlog (`OUTSTANDING_TASKS.md`), not on a weekly cycle. Retained
+> because the reconcile-status / ship-slices / update-this-file obligations below still hold per wave.
 
 - Start of week:
   - reconcile `docs/STATUS.md`
@@ -1841,3 +1877,8 @@ Rule:
   - Mitigation: phased improvement — regex delimiter expansion first, LLM-assisted extraction second, semantic pipeline long-term (`#614`)
 - Risk: LLM tool-calling / MCP architecture becomes scope-creep or breaks review-first safety
   - Mitigation: spike-first approach (`#618`, `#619`); write tools MUST produce proposals, never direct mutations; read tools are ungated
+- Risk: release/upgrade migration integrity — inherited environment configuration can break packaged startup
+  (fired 2026-08-22 as the v0.1.1 ordinary-profile incident: a user-scoped retired Gemini selector made the
+  packaged app exit before listening, behind a generic error)
+  - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
+    secret-free startup diagnostics (`#1876`)
