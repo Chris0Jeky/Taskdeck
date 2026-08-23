@@ -109,7 +109,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     (response) => response.url().endsWith(`/automation/proposals/${proposalId}/side-effects`),
   )
 
-  await page.getByRole('link', { name: /^Review\b/ }).click()
+  await page.locator('[data-paper-sidebar] a[href="/workspace/review"]').first().click()
   await expect(page).toHaveURL(/\/workspace\/review$/)
   await expect(
     page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
