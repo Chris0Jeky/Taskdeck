@@ -219,6 +219,24 @@ describe('PaperInboxView', () => {
     expect((textarea.element as HTMLTextAreaElement).value).toBe('')
   })
 
+  it('sends composer due date and labels through the capture request', async () => {
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('textarea[aria-label="Capture body"]').setValue('Buy milk and gas')
+    await wrapper.find('input[aria-label="Add label"]').setValue('shopping')
+    await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.find('input[aria-label="Due date"]').setValue('2026-08-23')
+    await wrapper.find('textarea[aria-label="Capture body"]').trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Buy milk and gas',
+      source: 'Typed',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+  })
+
   it('defaults composer captures to the active board', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
     mockBoardStore.boards = [{ id: 'board-active', name: 'Active board' }]

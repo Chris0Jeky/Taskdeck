@@ -37,6 +37,24 @@ describe('captureApi', () => {
     })
   })
 
+  it('preserves composer due date and label names in the capture request', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'capture-2' } })
+
+    await captureApi.createItem({
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items', {
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+  })
+
   it('loads capture item detail by id', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { id: 'capture-42' } })
 

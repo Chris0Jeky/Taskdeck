@@ -91,7 +91,10 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
-async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}): Promise<boolean> {
+async function dispatchCapture(
+  text: string,
+  opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
+): Promise<boolean> {
   if (captureSubmitting.value) {
     return false
   }
@@ -103,6 +106,9 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
       boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
       source: 'Typed',
+      ...(Object.hasOwn(opts, 'dueDate') || Object.hasOwn(opts, 'labels')
+        ? { dueDate: opts.dueDate ?? null, labels: opts.labels ?? [] }
+        : {}),
     })
     await loadInbox().catch(() => {
       // The capture already exists. The orchestrator/store owns listError and
@@ -150,10 +156,13 @@ async function onComposerSubmit(payload: {
   labels: string[]
   dueAt: string | null
 }) {
-  // Labels / dueAt aren't part of CreateCaptureItemDto yet — they're surfaced
-  // for the design but not persisted by the current API.  We still pass the
-  // boardId so the capture lands on the right board.
-  const created = await dispatchCapture(payload.text, { boardId: payload.boardId })
+  const metadata = payload.dueAt || payload.labels.length > 0
+    ? { dueDate: payload.dueAt, labels: payload.labels }
+    : {}
+  const created = await dispatchCapture(payload.text, {
+    boardId: payload.boardId,
+    ...metadata,
+  })
   if (created) {
     composerRef.value?.resetDraft()
   }
