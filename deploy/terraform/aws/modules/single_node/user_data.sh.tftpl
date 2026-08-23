@@ -213,8 +213,10 @@ server {
     # 'unsafe-inline' can be removed entirely.
     add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; script-src 'self'; connect-src 'self' ws: wss:;" always;
 
-    location /api/ {
-        proxy_pass http://api:8080/api/;
+    # Keep the bare machine prefix and all descendants on the API container.
+    # Omitting a URI from proxy_pass preserves the incoming /api path exactly.
+    location ~ ^/api(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -224,8 +226,8 @@ server {
         proxy_read_timeout 120s;
     }
 
-    location /hubs/ {
-        proxy_pass http://api:8080/hubs/;
+    location ~ ^/hubs(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -237,8 +239,8 @@ server {
         proxy_read_timeout 120s;
     }
 
-    location /health/ {
-        proxy_pass http://api:8080/health/;
+    location ~ ^/health(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -246,6 +248,17 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
         proxy_read_timeout 30s;
+    }
+
+    location ~ ^/mcp(?:/|$) {
+        proxy_pass http://api:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 120s;
     }
 
     location / {
