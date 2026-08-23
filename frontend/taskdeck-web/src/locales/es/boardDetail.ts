@@ -74,6 +74,8 @@ export default {
       'Este tablero está archivado. Restáuralo para devolverlo a las listas de tableros activos.',
     archive: 'Mover al archivo',
     archiveConfirm: '¿Mover "{name}" al archivo? Podrás restaurarlo más tarde.',
+    archiveConfirmHistory:
+      'Las capturas y el historial de decisiones se conservan. Puedes consultarlos en Espacio de trabajo → Archivo; no aparecerán en Inbox ni en Revisión sin filtros mientras el tablero esté archivado.',
     archiveConfirmAction: 'Sí, archívalo',
     archiveConfirmCancel: 'Déjalo aquí',
     restore: 'Restaurar el tablero',

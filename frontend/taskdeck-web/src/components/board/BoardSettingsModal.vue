@@ -48,7 +48,7 @@ const lifecycleActionButtonClass = computed(() => (
 const lifecycleDescription = computed(() => (
   props.board.isArchived
     ? 'Archived boards are hidden from default board lists. Restore this board to move it back to active workspaces.'
-    : 'Move this board to Archive to remove it from default board lists. You can restore it later from Workspace > Archive.'
+    : 'Move this board to Archive to remove it from default board lists. Its captures and decision history stay saved and remain available from Workspace > Archive.'
 ))
 
 const isFormValid = () => {
@@ -76,7 +76,7 @@ async function handleLifecycleTransition() {
   const shouldArchive = !props.board.isArchived
   const actionLabel = shouldArchive ? 'Archive' : 'Restore'
   const guidance = shouldArchive
-    ? 'This action is reversible. You can restore the board from Workspace > Archive.'
+    ? 'Captures and decision history stay saved and can be opened from Workspace > Archive. They will not appear in the unfiltered Inbox or Review while this board is archived.'
     : 'This board will be visible in active board lists again.'
 
   if (!confirm(

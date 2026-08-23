@@ -8,8 +8,13 @@ const mocks = vi.hoisted(() => ({
   restoreItem: vi.fn(),
   getBoards: vi.fn(),
   updateBoard: vi.fn(),
+  routerPush: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mocks.routerPush }),
 }))
 
 vi.mock('../../api/archiveApi', () => ({
@@ -102,6 +107,42 @@ describe('ArchiveView', () => {
     expect(wrapper.text()).toContain('Board To Restore')
     expect(wrapper.text()).toContain('Archived Card')
     expect(mocks.getBoards).toHaveBeenCalledWith(undefined, true)
+  })
+
+  it('opens archived captures and decisions through board-scoped routes', async () => {
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived',
+        name: 'Board With History',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    await findButtonByText(wrapper, 'View captures').trigger('click')
+    expect(findButtonByText(wrapper, 'View captures').attributes('aria-label')).toBe(
+      'View captures for Board With History',
+    )
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({
+      name: 'workspace-inbox',
+      query: { boardId: 'board-archived' },
+    })
+
+    await findButtonByText(wrapper, 'View decisions').trigger('click')
+    expect(findButtonByText(wrapper, 'View decisions').attributes('aria-label')).toBe(
+      'View decisions for Board With History',
+    )
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-archived' },
+    })
+
+    expect(wrapper.text()).toContain('no longer appear in the unfiltered Inbox or Review')
   })
 
   it('keeps archived items visible when archived boards loading fails', async () => {
