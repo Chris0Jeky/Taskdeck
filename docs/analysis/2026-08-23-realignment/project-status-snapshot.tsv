@@ -1,0 +1,173 @@
+number	type	status	title
+219	Issue	Pending	CAP-21: Voice capture and transcription integration (opt-in privacy posture)
+544	Issue	Pending	GTM-00: Market adoption and go-to-market wave tracker
+546	Issue	Pending	GTM-02: Record 90-second demo video showing core capture-review-apply loop
+550	Issue	Pending	BRAND-01: Domain, logo, and social media handles
+655	Issue	Pending	MCP-04: Phase 4 — MCP production hardening (deferred to v0.4.0+)
+996	Issue	Pending	PAPER-00 · Master tracker · Paper & Graphite, Ember Edition overhaul
+1128	Issue	Pending	Harden the test loop for agents (DOM cleanup, non-watch default, single verify command, network guar
+1131	Issue	Pending	CLI hardening: unusable on a fresh machine + bypasses claims-first authorization
+1133	Issue	Pending	Backend query performance: bound notification paging, AsSplitQuery board reads, incrementalize Signa
+1134	Issue	Pending	Backend observability & structure: surface swallowed audit failures, consolidate migrations, decompo
+1135	Issue	Pending	Frontend code-health guardrails + decompose oversized views
+1138	Issue	Pending	Docs truth & rotation: fix STATUS.md drift/bloat, repair broken links, add a link checker
+1140	Issue	Pending	Workspace hygiene & one-command dev-up: clean script, absolute SQLite path, .dockerignore
+1141	Issue	Pending	i18n & accessibility decisions (ADR): English-only + browser-locale dates; Legacy reduced-motion
+1142	Issue	Pending	[TRACKER] Repo health audit 2026-05-31 — gaps & remediation
+1166	Issue	Pending	Harden dev-sandbox DB export/import for WAL (prefer SQLite backup API / VACUUM INTO)
+1167	Issue	Pending	Code-sign + notarize desktop release binaries (Windows Authenticode + macOS Developer ID)
+1174	Issue	Pending	Add a per-advisory dependency-audit allowlist consulted by the enforce step (#1132 follow-up)
+1175	Issue	Pending	Remediate security-scan baseline, then flip dependency + SAST gates to enforcing (#1132 follow-up)
+1210	Issue	Pending	ci-extended.yml lane fails with startup_failure (no jobs run) — Testcontainers integration coverage 
+1222	Issue	Pending	Residual archive-pivot doc drift (leaf docs) — follow-up to #1220
+1226	Issue	Pending	Deliberate framework-major upgrade pass (move off net8.0 as one coordinated migration)
+1227	Issue	Pending	Dated analysis/research snapshots still describe telemetry / agent-substrate / knowledge as unbuilt
+1239	Issue	Pending	Push capture board/status filters into SQL to bound filtered-list round-trips
+1242	Issue	Blocked	Persist bootstrapper secrets (connector key, JWT) in the durable app-data location, not next to the 
+1261	Issue	Pending	GetExpiredAsync: avoid Include(Operations) + consider chunking for large expiry sweeps
+1262	Issue	Pending	CliFirstRunBootstrapper: owner-only Windows ACL + fix write-before-chmod TOCTOU on the connector key
+1266	Issue	Pending	Selected-label ring uses ring-offset-2 with Tailwind's default white offset — 2px white halo on dark
+1271	Issue	Pending	ARCHIVE-03: Dogfooding sprint - 10+ days of real personal use as the pivot's acceptance test
+1276	Issue	Pending	ARCHIVE-08: Dead-surface removal - ink-bleed decision, orphaned Paper code, cohorts stub, voice capt
+1277	Issue	Pending	ARCHIVE-09: Final archive pass - README banner, final doc entries, tag decision, exit-criteria done-
+1278	Issue	Pending	ARCHIVE-00 [TRACKER]: Archive exit criteria, target date, and the closeout waves
+1284	Issue	Pending	Review provenance drawer never receives metadata — provider/model/confidence not surfaced to users
+1285	Issue	Pending	Reconcile LlmSurface.CaptureTriage enum + kill-switch semantics with deterministic triage (#1273 fol
+1291	Issue	Review	Adopt agent-harness T3 profile: harness right-sizing plan
+1304	Issue	Blocked	REVIVAL-08 [EPIC]: LLM transcript triage engine - strategy behind ICaptureTriageService, worker disp
+1305	Issue	Blocked	REVIVAL-09: Durable Transcript entity + evidence spans - every proposed card deep-links to its trans
+1306	Issue	Blocked	REVIVAL-10: OpenAICompatible named provider + true SSE streaming (OpenRouter/Groq/DeepSeek first-cla
+1307	Issue	Pending	REVIVAL-11: Risk-tiered review prioritization + explicit batch-confirm + model-derived confidence
+1308	Issue	Pending	REVIVAL-12: Beta feedback + telemetry posture - Discussions, in-app feedback link, zero-or-opt-in te
+1309	Issue	Pending	REVIVAL-13: Package the MCP story - docs + one-command setup, scoped API keys, wire hash-pinning (fo
+1310	Issue	Pending	REVIVAL-14: Open-beta launch kit - hosted demo, launch posts, pre-written probe answers, 48h presenc
+1311	Issue	Pending	REVIVAL-00 [TRACKER]: Revival pivot (ADR-0044) - v0.1 ship gate, wave sequencing, checkpoint
+1317	Issue	Pending	GEN-03: Consent-gated multimodal image extraction - provider content parts + vision OCR
+1318	Issue	Pending	GEN-04: Artefact-aware capture triage - route extracted text through the LLM triage lane
+1320	Issue	Pending	GEN-06: Paper intake UX - wire the drop zone, paste-image, artefact previews, source affordance
+1321	Issue	Pending	GEN-07: Project dossier - per-board derived read model + Paper panel from approved state
+1322	Issue	Pending	GEN-08: Today enrichment - real attention aggregations (awaiting triage/review, due, stale boards)
+1323	Issue	Review	GEN-09: Untrusted-artefact threat model + prompt-injection rails
+1325	Issue	Pending	GEN-11: Friends & family beta channel - runbook, invite path, feedback loop, activation metrics
+1326	Issue	Pending	GEN-12: Decision gate - twin generalist app extraction (default: no)
+1327	Issue	Pending	GEN-00 [TRACKER]: Generalist expansion wave (ADR-0046) - artefact intake beyond transcripts, project
+1363	Issue	Pending	Testing: commit reviewed visual-regression baselines
+1388	Issue	Pending	Workspace-mode staleness: server-order and cross-device gaps after #1343
+1399	Issue	Pending	Streaming account export: batch extraction-history loads (N+1) with streaming-safe memory design
+1410	Issue	Pending	Workspace-mode guards: three residual interleavings from #1386 round 5 (replay payload, logout inval
+1422	Issue	Pending	Audit DateTimeOffset-vs-TEXT comparison sites for missing UTC normalization (convention-only invaria
+1429	Issue	Pending	Memory-capped extraction worker process (decompression-bomb containment boundary, ADR-0048)
+1431	Issue	Pending	LlmQuota LOW follow-ups (from #1427 review)
+1433	Issue	Pending	AutomationPlannerService persists proposals before ValidatePermissionsAsync (orphaned unauthorized P
+1434	Issue	Pending	Paper/Legacy stored-preview presentation parity (recorded-ops format, banner wording, Applied label)
+1435	Issue	Pending	LLM quota reservation: check-then-insert TOCTOU not closed under cold-start concurrency (redesign)
+1436	Issue	Pending	PR #1414 stored-preview follow-up P2s (parked)
+1446	Issue	Pending	Board-write latency tail: median ~12ms but p90 seconds under 20 VUs (write-serialization convoy)
+1452	Issue	Pending	No test exercises AuditRetentionWorker's real startup/scheduling path (ExecuteAsync)
+1453	Issue	Pending	Rejected proposals: a raced revision with a pre-decision RevisedAt can still render as the rejected 
+1461	Issue	Pending	Overnight manuals depend on a routing source outside the checkout
+1464	Issue	Pending	Review surfaces: the "recorded operations show the original submission" caveat is inverted after #14
+1465	Issue	Pending	Dismissing a rejected proposal drops its decision-time frozen revision back to the originals
+1467	Issue	Pending	Resolve list effective revisions in one bounded snapshot (at most one revision row per proposal)
+1480	Issue	Pending	dogfood-snapshot: active-day count includes demo/E2E fixture activity
+1482	Issue	Pending	Taskdeck name: pre-commercial legal residuals (attorney opinion, UKIPO/EUIPO gaps, perishable namesp
+1494	Issue	Pending	Add a targeted ProjectV2 Status/Priority verification helper
+1495	Issue	Blocked	Document a deterministic PowerShell-to-WSL verification handoff
+1501	Issue	Pending	[Security] Add an externally pinned worktree handoff launcher
+1504	Issue	Blocked	[Deployment] Require real environment protection before staging-gate reactivation
+1512	Issue	Blocked	[CI] Diagnose post-#1373 Windows concurrent-card HTTP 500
+1521	Issue	Pending	[Test] Diagnose recurring presence join HubException under API CI load
+1536	Issue	Pending	[Testing] Assert the complete PR-hook JSON wrapper in smoke tests
+1540	Issue	Blocked	scripts/mcp/Test-DockerMcpProfile.ps1 still defaults to the retired 8-server list
+1542	Issue	Pending	[Test] Route JSON contract CLI launches through the shared lifecycle gate
+1543	Issue	Review	[Gate] Derive the pre-merge secrets verdict from real scan evidence
+1547	Issue	Review	[Gate] Make pre-merge evidence atomic across argument, feedback, and OID changes
+1553	Issue	Blocked	Prevent worktree cleanup from deleting index-hidden modifications
+1564	Issue	Blocked	[Docs] Align navigation manual with palette and Workbench catalogs
+1573	Issue	Blocked	[Capture] Deduplicate overlapping transcript map results by evidence
+1585	Issue	Pending	[Inbox] Make transcript triage polling deadline provider-aware
+1589	Issue	Pending	[Docs] Reconcile Paper and Legacy navigation truth
+1590	Issue	Blocked	[MCP] Make Docker gateway validation leave no persistent containers
+1600	Issue	Pending	Agent worktree inventory: 12 of 22 worktrees hold commits that exist on no remote branch
+1607	Issue	Pending	Burn down the frontend spec typecheck quarantine (64 files, 415 errors)
+1628	Issue	Pending	[LLM] Degraded chat outcome with RequestProposal=true is overwritten to proposal-reference (degraded
+1632	Issue	Pending	[Worker] No telemetry outcome for shutdown-released claims (abandoned_shutdown), and TranscriptTriag
+1635	Issue	Pending	Worktree helper: suppress GIT_ASKPASS / core.askPass for launched Git processes
+1637	Issue	Pending	[MCP][Testing] Standalone MCP host follow-ups from the #1630 review: preflight OPTIONS coverage, inv
+1639	Issue	Blocked	[CI] No CI lane executes test-collect-pre-merge-evidence.sh (evidence-collector canary suite is loca
+1640	Issue	Pending	[Today] TomorrowNote is stored/fetched same-day - the 'tomorrow' hand-off its UI copy and controller
+1644	Issue	Pending	SEC: migrate browser token storage before hosted multi-user deployment
+1651	Issue	Blocked	[Security] Replace project Codex PATH with trusted-only executable roots
+1652	Issue	Next	Harden log sanitizers against Unicode record separators
+1653	Issue	Blocked	[Security] Encrypt MFA TOTP secrets at rest before production use
+1665	Issue	Blocked	[Testing] Align CLI migration-readiness probe with bounded process deadline
+1700	Issue	Pending	[Logging] Avoid splitting surrogate pairs during bounded sanitization
+1704	Issue	Pending	Shell-quote WSL handoff paths and remove checkout literal
+1706	Issue	Pending	[Queue] Preserve dirty tracked fields after raw-SQL capture claim
+1710	Issue	Blocked	[Security] Reject generic write rights in Codex path trust verifier
+1711	Issue	Pending	[Agent safety] Align fingerprint state bounds and provenance tests
+1714	Issue	Pending	[Windows tooling] Keep unchanged Vitest snapshots status-clean
+1721	Issue	Blocked	Make board load failures bounded and retryable
+1736	Issue	Blocked	Keep explicit board retry authoritative over realtime refresh
+1739	Issue	Next	Refresh CardModal fallback height when VisualViewport is unavailable
+1746	Issue	Next	[Frontend] Keep CardModal keyboard-safe at tablet-width breakpoints
+1755	Issue	Next	[Agent safety] Reject attached browser flags in read-only inventory
+1761	Issue	Next	Enrich incomplete move-card proposal headlines with the resolved destination
+1763	Issue	Pending	[Testing] Repair stale command-palette locator in headed manual audit
+1770	Issue	Pending	Seed an i18n translation layer (vue-i18n) with Italian and Spanish locales
+1772	Issue	Pending	Deploy a private shared Taskdeck instance for two-person collaboration dogfooding
+1777	Issue	Pending	Migrate the private shared instance from self-host+tunnel to Render
+1812	Issue	Pending	Two major lines of ws in one frontend tree: @microsoft/signalr pins ^7.5.x while the app carries ws 
+1819	Issue	Pending	Re-enable CodeQL scanning (default setup disabled 2026-08-19 — hung queued Analyze checks)
+1821	Issue	Pending	[Frontend] Bind TdDialog to the visual viewport so nested confirmations stay keyboard-safe
+1837	Issue	Pending	Transcript evidence viewer follow-ups (PR #1835): board-collaborator dead-end, zero-length span guar
+1853	Issue	Pending	[Testing] Follow-ups from the PR #1845 review: failure-dump noise, sibling overlap, worker-isolation
+1854	Issue	Pending	[CI] release-container.yml: executable contract coverage, point-of-failure diagnostics, non-semver t
+1855	Issue	Pending	[Agent tooling] worktree_guard follow-ups from the PR #1851 review: submodule fixture, path flavour,
+1856	Issue	Pending	[Backend] SqlitePreMigrationBackup follow-ups from the PR #1849 review: .tmp orphans, case dedupe, s
+1859	Issue	Pending	[Agent safety] Read-only inventory wrapper: gh value-flag alignment, case-sensitivity, empty-argv di
+1860	Issue	Pending	[Agent safety] Fingerprint guard: lane-throw coverage, deletion classification, anchor precision (PR
+1866	Issue	Pending	[Authz] Sandbox-mode divergence: API-side CanWriteBoardAsync bypass vs policy-engine repository gate
+1867	Issue	Pending	[Frontend] TdDialog/useVisualViewport residuals: pinch-zoom scale, prefix validation, ungated geomet
+1868	Issue	Pending	[Frontend] ADR-0053 guard maintenance residuals: badge dE spacing, dual root lists, guard escape hat
+1871	Issue	Pending	[Frontend] Review-i18n + board-picker polish residuals (PR #1869 / #1870 reviews)
+1872	Issue	Pending	[CI] E2E Smoke: playwright install-deps intermittently times out (10 min) on ubuntu-24.04 - remove a
+1876	Issue	Pending	[Bug][Priority I] Make the Windows release genuinely double-click-to-use
+1879	Issue	Next	[LLM][Priority II] Remove the deprecated Gemini provider and collapse live configuration to OpenAI
+1898	Issue	Pending	[Bug][Priority II] Close remaining dev-up fail-closed availability races
+1900	Issue	Pending	[Bug][Priority II] Make dev readiness truthful for lazy Vite routes
+1916	Issue	Pending	[Performance][Priority III] Bound archived capture payload loading in workspace summaries
+1921	Issue	Pending	[Bug][Priority II] Authenticate ordinary demo collaborator before board writes and align reset docs
+1933	Issue	Pending	[Frontend][Bug] Board creation: pressing Enter in the new-board name field does nothing
+1935	Issue	Pending	[Frontend][UX] Keyboard shortcut presentation: Mac ⌘-style glyph shown on Windows; Ctrl+; as the pri
+1936	Issue	Review	[Frontend][UX] Home view reads as a one-time onboarding tutorial, not a home/dashboard
+1937	Issue	Pending	[Frontend][UX] Quick-capture nib gives no submit affordance, no explanation, and an ambiguous target
+1938	Issue	Pending	[Frontend][Bug][Priority II] Nib capture submit fails with a network-error toast that cannot be insp
+1940	Issue	Pending	[Frontend][UX] Review view is overwhelming, gives weak decision feedback, and the All/Mine filter is
+1946	Issue	Pending	[Frontend][Feature] Global toggleable help/explainer mode covering every control, i18n-ready
+1947	Issue	Pending	TRACKER: dogfooding UX sweep 2026-08-22 — dead affordances, core-loop legibility, board management
+1949	Issue	Pending	[Frontend][Testing] Guard against dead affordances - six enabled-but-inert controls found in one aud
+1955	Issue	Pending	[CI] Paper Color Audit reads a 4-digit issue number (#NNNN) as a hex colour literal
+1961	Issue	Pending	[Frontend] Inbox board picker: distinguish load-failure and loading from a genuinely empty account (
+1962	Issue	Pending	[Frontend] Version-truth residuals from PR #1956: telemetry appVersion literal (already wrong), dupl
+1966	Issue	Pending	[Frontend][UX] ?boardId= silently scopes Review and Inbox with no filter chip — headers report 0 AWA
+1967	Issue	Pending	[Frontend][UX] Applied proposals are unreachable and "Open Proposal" renders a different proposal th
+1968	Issue	Pending	[Frontend][UX] Documented bare-letter shortcuts (H/T/B/I/R, G T, board C/R) have no handler, and Set
+1972	Issue	Pending	[Frontend][UX] "Agent" workspace mode is byte-identical to "Workbench" — a persisted selector option
+1973	Issue	Pending	[Backend][UX] Archiving a board makes its captures and applied-proposal ledger vanish from every lis
+1975	Issue	Pending	[Frontend] Paper board dialog residuals from PR #1959: TdDialog machinery parity, realtime input-clo
+1983	Issue	Pending	[Frontend] Post-wave Codex residuals: Today loading-vs-failed states, note-save copy, ledger empty-s
+1984	Issue	Pending	[Frontend] Composer silently discards label/due metadata; board-link columnId is read by nothing (ho
+1987	Issue	Pending	[Backend][Frontend] Wire the provenance triple (provider/model/promptVersion) into the deep-review p
+1991	Issue	Pending	[Frontend] Toast/counter residuals from PR #1989: board-scoped eyebrow divergence, runtime-assembled
+1992	Issue	Pending	[Backend][Deploy] #1971 routing residuals: nginx doesn't proxy /mcp (split topology), wrong-verb GET
+1997	Issue	Pending	[Frontend][UX] Card comment deletion still confirms through a native window.confirm
+1999	Issue	Pending	[Frontend] Paper triage-edit residuals from PR #1995's Codex round: mobile action stacking, Triaged-
+2003	Issue	Pending	i18n: locale-switch pending state and SW-upgrade catalog warm (lazy-locale polish)
+2004	Issue	Pending	Automation Chat produces prose, never proposals — the chat workflow needs re-thinking
+2005	Issue	Pending	Capture due date (and labels) are silently dropped end-to-end — never reach the proposal or the card
+2006	Issue	Pending	Date fields: calendar should open on click anywhere in the field, not just the icon (keep typing too
+2007	Issue	Pending	Keystroke ledger documents shortcuts that don't exist, omits ones that do, and there are three diver
+2008	Issue	Pending	Modifier keys render three different ways in one app — hardcoded ⌘ glyphs on Windows, deprecated pla
+2009	Issue	Pending	Night theme legibility: control boundaries at 1.15:1, body ink at 14.9:1 — needs a palette spike
+2010	Issue	Pending	Reminders, alarms, and email delivery — configurable notification channels (epic)
