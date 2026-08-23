@@ -351,6 +351,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
     expect(wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text())).toEqual([
       'Mine low',
       'Mine high',
@@ -393,6 +394,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Pending mine')
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Expired mine')
@@ -488,6 +490,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
@@ -716,17 +719,23 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('mine-001')
   })
 
-  it('uses the hash-targeted proposal as the active decision target', async () => {
-    mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-target' }))
+  it('hydrates a mixed-case hash and actions the canonical Paper proposal id', async () => {
+    const canonicalTarget = makeProposal({
+      id: 'proposal-target',
+      summary: 'Target proposal',
+    })
+    mocks.getProposal.mockResolvedValueOnce(canonicalTarget)
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'proposal-target', status: 'Approved' }),
+    )
     const wrapper = await mountView(
-      [
-        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
-        makeProposal({ id: 'proposal-target', summary: 'Target proposal' }),
-      ],
-      '/workspace/review#proposal-proposal-target',
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-TARGET',
     )
 
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-TARGET')
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Target proposal')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('First proposal')
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
@@ -734,7 +743,23 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
   })
 
-  it('lets manual queue selection override a hash-targeted proposal', async () => {
+  it('keeps a genuine missing Paper hash unavailable instead of selecting another proposal', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+    )
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-MISSING')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(
+      (wrapper.vm as unknown as { $route: { fullPath: string } }).$route.fullPath,
+    ).toBe('/workspace/review#proposal-PROPOSAL-MISSING')
+  })
+
+  it('updates the hash when manual queue selection replaces a deep-link target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(
       [
@@ -745,8 +770,12 @@ describe('PaperReviewView', () => {
     )
 
     await wrapper.findAll('.paper-review-q')[0].trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+    expect(
+      (wrapper.vm as unknown as { $route: { fullPath: string } }).$route.fullPath,
+    ).toBe('/workspace/review#proposal-proposal-first')
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()

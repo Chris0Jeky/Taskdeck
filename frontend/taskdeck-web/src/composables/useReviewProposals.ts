@@ -11,6 +11,7 @@ import {
 } from '../utils/automation'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
+import { proposalIdsEqual } from '../utils/proposalIdentity'
 import type { Proposal as ApiProposal } from '../types/automation'
 import type { Board } from '../types/board'
 import { getErrorDisplay } from './useErrorMapper'
@@ -219,9 +220,10 @@ export function useReviewProposals() {
     return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
+      const isHashTarget = proposalIdsEqual(proposal.id, hashTargetId)
       if (status === 'Dismissed') return false
       if (isProposalExpired(proposal)) return true
-      if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
+      if (isProposalDeferred(proposal) && !isHashTarget) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
     })
@@ -324,12 +326,19 @@ export function useReviewProposals() {
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) return
     await nextTick()
-    const element = document.getElementById(`proposal-${proposalId}`)
+    const canonicalProposal = proposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, proposalId),
+    )
+    const element = canonicalProposal
+      ? document.getElementById(`proposal-${canonicalProposal.id}`)
+      : null
     element?.scrollIntoView({ block: 'nearest' })
   }
 
   function upsertProposal(proposal: ApiProposal) {
-    const existingIndex = proposals.value.findIndex((current) => current.id === proposal.id)
+    const existingIndex = proposals.value.findIndex((current) =>
+      proposalIdsEqual(current.id, proposal.id),
+    )
     if (existingIndex >= 0) {
       proposals.value[existingIndex] = proposal
       return
@@ -363,10 +372,9 @@ export function useReviewProposals() {
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) return
 
-    const currentProposal = proposals.value.find((p) => p.id === proposalId)
+    const currentProposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
     if (currentProposal) {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       await scrollToProposalFromHash()
@@ -375,18 +383,20 @@ export function useReviewProposals() {
 
     try {
       const fetchedProposal = await automationApi.getProposal(proposalId)
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
+      // A route lookup may canonicalize GUID hex casing, but it may not return a
+      // different record. Retain the hash as unavailable instead of upserting a
+      // response whose identity does not match the requested proposal.
+      if (!proposalIdsEqual(fetchedProposal.id, proposalId)) return
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       upsertProposal(fetchedProposal)
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       if (isHttpNotFound(e)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
@@ -401,7 +411,7 @@ export function useReviewProposals() {
   // hide an already-snoozed deep-linked target (its prior deferredUntil still in effect) with no
   // retry path.
   async function clearProposalDeepLink(proposalId: string) {
-    if (getProposalIdFromHash(route.hash) !== proposalId) return
+    if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
     await safeReplace({ name: 'workspace-review', query: route.query })
   }
 
@@ -481,6 +491,14 @@ export function useReviewProposals() {
     safeNavigate(path)
   }
 
+  function openProposal(proposalId: string) {
+    safeNavigate({
+      name: 'workspace-review',
+      query: route.query,
+      hash: `#proposal-${encodeURIComponent(proposalId)}`,
+    })
+  }
+
   function openBoard(boardId: string) {
     safeNavigate(`/workspace/boards/${boardId}`)
   }
@@ -544,6 +562,7 @@ export function useReviewProposals() {
     proposalHref,
     captureHrefForProposal,
     openRoute,
+    openProposal,
     openBoard,
     applyBoardFilter,
     clearBoardFilter,

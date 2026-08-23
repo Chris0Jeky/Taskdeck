@@ -27,6 +27,7 @@ import {
   normalizeProposalStatus,
   sortProposalsByRisk,
 } from '../../utils/automation'
+import { proposalIdsEqual } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
@@ -81,6 +82,7 @@ const {
   startClock,
   stopClock,
   clearBoardFilter,
+  openProposal,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
@@ -135,7 +137,7 @@ function isOwnProposal(proposal: ApiProposal): boolean {
 }
 const ownedDismissableIds = computed(() =>
   dismissableProposalIds.value.filter((id) => {
-    const proposal = proposals.value.find((p) => p.id === id)
+    const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, id))
     return !!proposal && isOwnProposal(proposal)
   }),
 )
@@ -214,17 +216,31 @@ function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | 
 }
 
 const activeProposal = computed<ApiProposal | null>(() => {
-  if (explicitActiveId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
-    if (found) return found
-  }
+  // A valid deep link names one exact proposal; it is never a hint to fall back
+  // to the first actionable row. Match case-insensitively, but return the
+  // canonical API object so actions and rendered ids retain its original case.
   if (hashProposalId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
+    return (
+      proposals.value.find(
+        (proposal) =>
+          proposalIdsEqual(proposal.id, hashProposalId.value) &&
+          matchesActiveBoardFilter(proposal.boardId),
+      ) ?? null
+    )
+  }
+  if (explicitActiveId.value) {
+    const found = filteredVisibleProposals.value.find((p) =>
+      proposalIdsEqual(p.id, explicitActiveId.value),
+    )
     if (found) return found
   }
   // Default to the first pending-review item in the queue.
   const preferredId = preferredActiveProposalId(filteredVisibleProposals.value)
-  return filteredVisibleProposals.value.find((proposal) => proposal.id === preferredId) ?? null
+  return (
+    filteredVisibleProposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, preferredId),
+    ) ?? null
+  )
 })
 
 watch(
@@ -241,9 +257,11 @@ watch(
   hashProposalId,
   (id) => {
     if (!id) return
-    if (filteredVisibleProposals.value.some((proposal) => proposal.id === id)) {
-      explicitActiveId.value = id
-    }
+    const target = proposals.value.find(
+      (proposal) =>
+        proposalIdsEqual(proposal.id, id) && matchesActiveBoardFilter(proposal.boardId),
+    )
+    if (target) explicitActiveId.value = target.id
   },
   { immediate: true },
 )
@@ -326,7 +344,7 @@ function scrollDiffIntoView() {
 watch(
   () => activeProposal.value?.id ?? null,
   (id) => {
-    if (previewDiffProposalId.value && previewDiffProposalId.value !== id) {
+    if (previewDiffProposalId.value && !proposalIdsEqual(previewDiffProposalId.value, id)) {
       latestDiffRequestId += 1
       clearPreviewDiff()
     }
@@ -341,7 +359,7 @@ watch(
 watch(
   () => {
     const p = activeProposal.value
-    if (!p || previewDiffProposalId.value !== p.id) return false
+    if (!p || !proposalIdsEqual(previewDiffProposalId.value, p.id)) return false
     return isProposalReadOnly(p, isProposalExpired(p))
   },
   (readOnly) => {
@@ -353,7 +371,7 @@ watch(
     // not depend on that: only an already-stored presentation is skippable.
     if (previewDiffMode.value === 'stored') return
     const p = activeProposal.value
-    if (!p || previewDiffProposalId.value !== p.id) return
+    if (!p || !proposalIdsEqual(previewDiffProposalId.value, p.id)) return
     // Cancel any in-flight live fetch so a late response can't overwrite the
     // read-only presentation.
     const requestId = ++latestDiffRequestId
@@ -806,7 +824,7 @@ const applyPhase = computed<ApplyPhase>(() => {
 const applyConfirmRevisionCount = computed<number | null>(() => {
   const pending = executeConfirmProposal.value
   if (!pending) return null
-  if (activeProposal.value?.id !== pending.id) return null
+  if (!proposalIdsEqual(activeProposal.value?.id, pending.id)) return null
   if (!revisionsLoaded.value) return null
   return revisionCount.value
 })
@@ -894,7 +912,7 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
-function onFileAway() {
+async function onFileAway() {
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -907,15 +925,25 @@ function onFileAway() {
     toast.info(t('review.toast.notDismissableYet'))
     return
   }
-  void handleDismissProposal(p.id)
+  await handleDismissProposal(p.id)
+  if (!proposals.value.some((proposal) => proposalIdsEqual(proposal.id, p.id))) {
+    await clearProposalDeepLink(p.id)
+  }
 }
 
-function onFileAwayBulk() {
+async function onFileAwayBulk() {
   if (busy.value) {
     toast.info(t('review.toast.bulkBusy'))
     return
   }
-  void handleDismissApplied()
+  const deepLinkedId = hashProposalId.value
+  await handleDismissApplied()
+  if (
+    deepLinkedId &&
+    !proposals.value.some((proposal) => proposalIdsEqual(proposal.id, deepLinkedId))
+  ) {
+    await clearProposalDeepLink(deepLinkedId)
+  }
 }
 
 async function onApply() {
@@ -952,7 +980,7 @@ async function onApply() {
         applyGuardBusy.value = false
       }
       // The active proposal can change during the await; only keep deciding on it.
-      if (activeProposal.value?.id !== p.id) return
+      if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
       // #1414 round 4 P2-A: identity is not enough — the proposal's STATE can
       // change under the await from another surface or session (deferred,
       // dismissed, status change) even while the shared busy lock holds this
@@ -1013,8 +1041,8 @@ async function onApply() {
   // the recovery affordances above on screen — the row is simply gone until the
   // filter changes. Matches pre-collapse behaviour; the durable fix is keeping
   // a just-decided row visible, which is GH-1940's progressive-disclosure work.
-  if (activeProposal.value?.id !== p.id) return
-  const approved = proposals.value.find((item) => item.id === p.id)
+  if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
+  const approved = proposals.value.find((item) => proposalIdsEqual(item.id, p.id))
   if (!approved) return
   // Approve failed (the composable toasts and leaves the row untouched), or the
   // row came back as something else entirely — either way there is no approved
@@ -1030,7 +1058,7 @@ function onReject() {
   // the same key files it away instead of rejecting (single-key consistency
   // for "remove this from my queue"). #1161
   if (activeDismissable.value) {
-    onFileAway()
+    void onFileAway()
     return
   }
   if (revisionBusy.value) {
@@ -1106,7 +1134,10 @@ async function verifyStoredPreviewAccess(proposalId: string, requestId: number) 
     await automationApi.getProposal(proposalId)
   } catch (e: unknown) {
     if (!isAccessDeniedError(e)) return
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== proposalId) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, proposalId)
+    ) return
     clearPreviewDiff()
     toast.error(t('review.toast.noLongerAvailable'))
   }
@@ -1132,7 +1163,7 @@ async function onPreviewDiff() {
   if (!p) return
 
   // Already showing this proposal's diff → toggle it off.
-  if (previewDiffProposalId.value === p.id) {
+  if (proposalIdsEqual(previewDiffProposalId.value, p.id)) {
     latestDiffRequestId += 1
     clearPreviewDiff()
     return
@@ -1179,7 +1210,7 @@ async function onPreviewDiff() {
   // can't short-circuit a revised proposal to the invalid surface.
   if (!revisionsLoaded.value) {
     await loadRevisionState(p.id)
-    if (activeProposal.value?.id !== p.id) return
+    if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
     // #1414 final round: identity is not enough. The proposal can transition to
     // read-only DURING the revision-load await — expire on the 60s clock, be
     // refreshed to a terminal status, or be executed from another session — all
@@ -1235,12 +1266,18 @@ async function onPreviewDiff() {
   try {
     const diff = await automationApi.getProposalDiff(p.id)
     // Ignore stale responses and ones whose target proposal has changed.
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, p.id)
+    ) return
     previewDiff.value = diff
     previewDiffMode.value = 'live'
     scrollDiffIntoView()
   } catch (e: unknown) {
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, p.id)
+    ) return
     // A 400 ValidationError means the backend ran Apply's gates at diff time
     // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
     // contain at least one operation" or "Proposal has expired" (the expiry
@@ -1286,7 +1323,7 @@ async function onReportBadSuggestion(proposalId: string) {
     return
   }
   // Don't double-submit while a report for this proposal is already in flight.
-  if (reportingProposalId.value === proposalId) return
+  if (proposalIdsEqual(reportingProposalId.value, proposalId)) return
 
   reportingProposalId.value = proposalId
   try {
@@ -1336,16 +1373,22 @@ onUnmounted(() => {
 
 function selectProposal(id: string) {
   explicitActiveId.value = id
+  openProposal(id)
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
   const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
   queueFilter.value = filter
-  if (selectedId && filteredVisibleProposals.value.some((proposal) => proposal.id === selectedId)) {
-    explicitActiveId.value = selectedId
+  const retained = selectedId
+    ? filteredVisibleProposals.value.find((proposal) => proposalIdsEqual(proposal.id, selectedId))
+    : undefined
+  if (retained) {
+    explicitActiveId.value = retained.id
     return
   }
-  explicitActiveId.value = preferredActiveProposalId(filteredVisibleProposals.value)
+  const fallbackId = preferredActiveProposalId(filteredVisibleProposals.value)
+  explicitActiveId.value = fallbackId
+  if (hashProposalId.value && fallbackId) openProposal(fallbackId)
 }
 </script>
 
@@ -1421,7 +1464,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         <pre :aria-label="$t('review.technical.ariaLabel')">{{ technicalDetails }}</pre>
       </details>
       <section
-        v-if="previewDiffProposalId === activeProposal.id"
+        v-if="proposalIdsEqual(previewDiffProposalId, activeProposal.id)"
         ref="previewDiffSection"
         class="paper-review-deep__diff"
         data-testid="paper-review-diff"

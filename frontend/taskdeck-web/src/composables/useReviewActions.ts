@@ -9,6 +9,7 @@ import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
+import { proposalIdsEqual } from '../utils/proposalIdentity'
 
 /**
  * How the review diff pane presents its content (#1397):
@@ -97,10 +98,16 @@ export function useReviewActions(
   async function loadStoredRevisedSignal(proposalId: string, requestId: number) {
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       selectedDiffRevised.value = revisions.length > 0
     } catch {
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       selectedDiffRevised.value = null
     }
   }
@@ -120,7 +127,10 @@ export function useReviewActions(
       await automationApi.getProposal(proposalId)
     } catch (e: unknown) {
       if (!isAccessDeniedError(e)) return
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       resetDiffState()
       toast.error(t('review.toast.noLongerAvailable'))
     }
@@ -145,7 +155,7 @@ export function useReviewActions(
     () => {
       const id = selectedDiffProposalId.value
       if (!id) return false
-      const proposal = proposals.value.find((p) => p.id === id)
+      const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, id))
       if (!proposal) return false
       return isProposalReadOnly(proposal, isProposalExpired(proposal))
     },
@@ -159,7 +169,9 @@ export function useReviewActions(
       // late response render live UI on a read-only proposal.
       if (selectedDiffMode.value === 'stored') return
       const id = selectedDiffProposalId.value
-      const proposal = id ? proposals.value.find((p) => p.id === id) : undefined
+      const proposal = id
+        ? proposals.value.find((p) => proposalIdsEqual(p.id, id))
+        : undefined
       if (!proposal) return
       // Cancel any in-flight live fetch so its late response can't overwrite
       // the read-only presentation.
@@ -172,7 +184,9 @@ export function useReviewActions(
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.approveProposal(proposalId)
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
       // APPROVED, not APPLIED (GH-1970): phase 1 of the two-phase decision has
       // landed and NOTHING has reached a board yet — the approve pane says as
       // much in the same breath, so the stamp must not contradict it.
@@ -206,7 +220,7 @@ export function useReviewActions(
   const rejectPromptProposal = computed<ApiProposal | null>(() => {
     const id = rejectPromptProposalId.value
     if (!id) return null
-    return proposals.value.find((p) => p.id === id) ?? null
+    return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
   })
 
   /**
@@ -270,7 +284,9 @@ export function useReviewActions(
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.rejectProposal(proposalId, reason)
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
       toast.success(t('review.toast.rejected'))
     } catch (e: unknown) {
       toast.error(getErrorDisplay(e, t('review.toast.rejectFailed')).message)
@@ -288,7 +304,9 @@ export function useReviewActions(
       const updated = await automationApi.deferProposal(proposalId)
       // Map the returned proposal in place so its new deferredUntil/expiresAt are live;
       // the ~60s review clock then resurfaces it when the snooze window elapses.
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
       toast.success(t('review.toast.snoozed'))
       return true
     } catch (e: unknown) {
@@ -315,7 +333,7 @@ export function useReviewActions(
   const executeConfirmProposal = computed<ApiProposal | null>(() => {
     const id = executeConfirmProposalId.value
     if (!id) return null
-    return proposals.value.find((p) => p.id === id) ?? null
+    return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
   })
 
   function requestExecuteProposal(proposalId: string) {
@@ -362,7 +380,9 @@ export function useReviewActions(
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.executeProposal(proposalId, createRequestId())
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
       // The ONE path allowed to stamp APPLIED (GH-1970): phase 2 succeeded, so
       // the proposal really is written to the board. Every other success in the
       // app names its own outcome or falls back to a severity word.
@@ -375,13 +395,13 @@ export function useReviewActions(
   }
 
   async function handleToggleDiff(proposalId: string) {
-    if (selectedDiffProposalId.value === proposalId) {
+    if (proposalIdsEqual(selectedDiffProposalId.value, proposalId)) {
       latestDiffRequestId += 1
       resetDiffState()
       return
     }
 
-    const proposal = proposals.value.find((p) => p.id === proposalId)
+    const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
     // Anchor the pane to this proposal before any await so a concurrent toggle
     // or a stale response can be detected/ignored.
     const requestId = ++latestDiffRequestId
@@ -411,12 +431,18 @@ export function useReviewActions(
     diffRenderPerf.start()
     try {
       const diff = await automationApi.getProposalDiff(proposalId)
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
 
       selectedDiff.value = diff
       selectedDiffMode.value = 'live'
     } catch (e: unknown) {
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
 
       // A 400 ValidationError means the backend ran Apply's gates at diff time
       // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
@@ -448,10 +474,10 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const result = await automationApi.dismissProposals([proposalId])
       if (result.dismissed > 0) {
-        proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+        proposals.value = proposals.value.filter((p) => !proposalIdsEqual(p.id, proposalId))
         toast.success(t('review.toast.dismissed'))
       } else {
-        proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+        proposals.value = proposals.value.filter((p) => !proposalIdsEqual(p.id, proposalId))
         toast.info(t('review.toast.dismissedRefreshing'))
         void loadProposals()
       }
@@ -477,8 +503,9 @@ export function useReviewActions(
       bulkDismissBusy.value = true
       const result = await automationApi.dismissProposals(ids)
       if (result.dismissed === ids.length) {
-        const dismissedSet = new Set(ids)
-        proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+        proposals.value = proposals.value.filter(
+          (proposal) => !ids.some((id) => proposalIdsEqual(proposal.id, id)),
+        )
       } else {
         await loadProposals()
       }
