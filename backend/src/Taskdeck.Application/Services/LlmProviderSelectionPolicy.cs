@@ -115,8 +115,12 @@ public static class LlmProviderSelectionPolicy
         }
     }
 
-    internal static bool IsExplicitlySupportedProvider(string? provider)
-        => !string.IsNullOrWhiteSpace(provider) && ResolveRequestedProviderKind(provider).HasValue;
+    internal static bool IsExplicitlySupportedProvider(
+        string? provider,
+        bool hasHigherPrecedenceProviderSelection)
+        => hasHigherPrecedenceProviderSelection
+            && !string.IsNullOrWhiteSpace(provider)
+            && ResolveRequestedProviderKind(provider).HasValue;
 
     public static bool TryValidateOpenAiSettings(
         LlmProviderSettings settings,

@@ -96,6 +96,24 @@ public class LlmProviderSelectionPolicyTests
         exception.Message.Should().Contain("Mock");
     }
 
+    [Theory]
+    [InlineData("Mock", false, false)]
+    [InlineData("Mock", true, true)]
+    [InlineData("OpenAI", true, true)]
+    [InlineData("Gemini", true, false)]
+    [InlineData("historical-free-form-provider", true, false)]
+    public void IsExplicitlySupportedProvider_RequiresHigherPrecedenceSelection(
+        string provider,
+        bool hasHigherPrecedenceProviderSelection,
+        bool expected)
+    {
+        LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
+                provider,
+                hasHigherPrecedenceProviderSelection)
+            .Should()
+            .Be(expected);
+    }
+
     [Fact]
     public void Evaluate_ShouldSelectOpenAiCompatible_WhenProductionAndConfigurationIsValid()
     {

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
 using Polly.Extensions.Http;
@@ -13,6 +14,8 @@ namespace Taskdeck.Api.Extensions;
 public static class LlmProviderRegistration
 {
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+    private const string LlmProviderKey = "Llm:Provider";
+    private const string BuiltInSettingsPath = "appsettings.json";
     private const string RetiredComposeWrapperPresenceKey =
         "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
     private const string RetiredComposeWrapperMessage =
@@ -35,8 +38,12 @@ public static class LlmProviderRegistration
 
         var llmSection = configuration.GetSection("Llm");
         var configuredProvider = llmSection["Provider"];
+        var hasHigherPrecedenceProviderSelection =
+            HasHigherPrecedenceProviderSelection(configuration);
         LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
-        if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(configuredProvider)
+        if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
+                configuredProvider,
+                hasHigherPrecedenceProviderSelection)
             && llmSection.GetChildren().Any(section =>
                 section.Key.Equals("Gemini", StringComparison.OrdinalIgnoreCase)))
         {
@@ -232,6 +239,31 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    private static bool HasHigherPrecedenceProviderSelection(IConfiguration configuration)
+    {
+        if (configuration is not IConfigurationRoot root)
+        {
+            return false;
+        }
+
+        foreach (var provider in root.Providers.Reverse())
+        {
+            if (!provider.TryGet(LlmProviderKey, out _))
+            {
+                continue;
+            }
+
+            // The checked-in Mock setting is a safe default, not evidence that an operator migrated.
+            return provider is not JsonConfigurationProvider jsonProvider
+                || !string.Equals(
+                    jsonProvider.Source.Path,
+                    BuiltInSettingsPath,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(

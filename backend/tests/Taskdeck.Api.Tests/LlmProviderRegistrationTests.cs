@@ -62,6 +62,42 @@ public class LlmProviderRegistrationTests
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenBuiltInMockIsTheOnlySelector()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration();
+
+        configuration["Llm:Provider"].Should().Be("Mock");
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenEnvironmentExplicitlySelectsMock()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration("Mock");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSelector_WhenEnvironmentExplicitlySelectsIt()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration("Gemini");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -594,6 +630,32 @@ public class LlmProviderRegistrationTests
 
         result.AllowGeneralProviderLocalhost.Should().Be(expectedGeneralProviderLocalhost);
         result.AllowOllamaLocalhost.Should().Be(expected);
+    }
+
+    private static IConfigurationRoot BuildRealProviderConfiguration(string? providerOverride = null)
+    {
+        var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
+        var providerVariable = $"{prefix}Llm__Provider";
+        var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
+        try
+        {
+            if (providerOverride is not null)
+            {
+                Environment.SetEnvironmentVariable(providerVariable, providerOverride);
+            }
+
+            Environment.SetEnvironmentVariable(retiredChildVariable, "stale-test-key");
+            return new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false)
+                .AddEnvironmentVariables(prefix)
+                .Build();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(providerVariable, null);
+            Environment.SetEnvironmentVariable(retiredChildVariable, null);
+        }
     }
 
     private static ServiceProvider BuildServiceProvider(
