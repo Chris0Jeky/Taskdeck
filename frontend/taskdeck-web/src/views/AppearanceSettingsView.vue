@@ -283,6 +283,15 @@ function selectLocale(locale: SupportedLocale) {
   color: var(--mute, #7a7264);
 }
 
+/* On the active (ember) segment the muted ink is ~1.09:1 against the ember
+   fill — invisible. Inherit the segment's own on-ember pair instead; the
+   slight opacity keeps it visually subordinate to the endonym while staying
+   comfortably above 4.5:1. */
+.paper-appearance__segment--active .paper-appearance__segment-note {
+  color: var(--td-on-ember, #fefaf6);
+  opacity: 0.9;
+}
+
 .paper-appearance__segment:hover {
   background: var(--paper-2, #ebe5d8);
   border-color: var(--ink-2, #3a352d);

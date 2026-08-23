@@ -26,7 +26,11 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // Exclude manifest icons from glob — they are precached via the manifest config
         // to prevent duplicate precache entries and Workbox runtime warnings.
-        globIgnores: ['icons/**'],
+        // The it/es locale catalogs are code-split precisely so an English-only
+        // user never downloads them (#1858); precaching would re-add that
+        // background transfer, so they are excluded here and served via the
+        // runtime rule below instead (cached on first real use).
+        globIgnores: ['icons/**', 'assets/it-*.js', 'assets/es-*.js'],
         // Clean stale caches on SW activation
         cleanupOutdatedCaches: true,
         // SPA fallback: serve index.html for navigation requests to unmatched
@@ -36,6 +40,17 @@ export default defineConfig({
         // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
         // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
+          {
+            // Lazy locale catalogs (excluded from precache above): cache on
+            // first use so a user who picked it/es keeps their language offline.
+            urlPattern: /\/assets\/(?:it|es)-[\w-]+\.js$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'taskdeck-locale-chunks',
+              expiration: { maxEntries: 8 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             urlPattern: /^https?:\/\/.*\/api\//i,
             handler: 'NetworkFirst',
