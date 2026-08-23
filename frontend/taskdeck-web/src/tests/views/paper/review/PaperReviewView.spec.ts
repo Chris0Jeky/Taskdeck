@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
@@ -33,6 +33,17 @@ const mocks = vi.hoisted(() => ({
   infoToast: vi.fn(),
   sessionState: { userId: 'u-1' as string | null },
 }))
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+
+  return { promise, resolve, reject }
+}
 
 vi.mock('../../../../api/automationApi', () => ({
   automationApi: {
@@ -990,6 +1001,62 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-a', 'expired-b'])
+  })
+
+  it('keeps a bulk-filed hash target unavailable until its hash is cleared', async () => {
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'expired-hash-target',
+          status: 'Expired',
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+          summary: 'Expired hash target',
+        }),
+        makeProposal({
+          id: 'pending-wrong-target',
+          status: 'PendingReview',
+          summary: 'Different actionable proposal',
+        }),
+      ],
+      '/workspace/review?boardId=board-1#proposal-expired-hash-target',
+    )
+    const router = (wrapper.vm as unknown as { $router: Router }).$router
+    const navigation = createDeferred<void>()
+    const replace = router.replace.bind(router)
+    vi.spyOn(router, 'replace').mockImplementation(async (to) => {
+      await navigation.promise
+      return replace(to)
+    })
+
+    await wrapper.get('[data-testid="queue-file-away-all"]').trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-expired-hash-target')
+    expect(router.currentRoute.value.query.boardId).toBe('board-1')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-deep-link-title"]').text()).toBe(
+      'Proposal not found',
+    )
+    for (const testid of [
+      'decision-apply',
+      'decision-reject',
+      'decision-edit',
+      'decision-defer',
+      'decision-file-away',
+    ]) {
+      expect(wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    }
+
+    navigation.resolve(undefined)
+    await flushPromises()
+
+    expect(router.currentRoute.value.hash).toBe('')
+    expect(router.currentRoute.value.query.boardId).toBe('board-1')
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain(
+      'Different actionable proposal',
+    )
   })
 
   it('shows the bulk "File away" action for a single settled proposal so it is never unclearable', async () => {

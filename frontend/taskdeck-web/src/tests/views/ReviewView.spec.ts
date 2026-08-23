@@ -1089,6 +1089,56 @@ describe('ReviewView', () => {
     expect(mocks.successToast).toHaveBeenCalledWith('Proposal dismissed')
   })
 
+  it('keeps a dismissed hash target unavailable until its hash is cleared', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-hash-target',
+        status: 'Expired',
+        summary: 'Expired hash target',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+      buildProposal({
+        id: 'proposal-wrong-target',
+        status: 'PendingReview',
+        summary: 'Different actionable proposal',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt(
+      '/workspace/review?boardId=board-1#proposal-proposal-hash-target',
+    )
+    const navigation = createDeferred<void>()
+    const replace = router.replace.bind(router)
+    vi.spyOn(router, 'replace').mockImplementation(async (to) => {
+      await navigation.promise
+      return replace(to)
+    })
+
+    const targetCard = wrapper.get('#proposal-proposal-hash-target')
+    await targetCard.findAll('button').find((button) => button.text() === 'Dismiss')!.trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-proposal-hash-target')
+    expect(router.currentRoute.value.query.boardId).toBe('board-1')
+    expect(wrapper.get('[data-testid="review-deep-link-state"]').text()).toContain(
+      'Proposal not found',
+    )
+    expect(wrapper.find('#proposal-proposal-wrong-target').exists()).toBe(false)
+    const staleHashButtons = wrapper.findAll('button').map((button) => button.text())
+    expect(staleHashButtons).not.toContain('Approve for board')
+    expect(staleHashButtons).not.toContain('Reject')
+
+    navigation.resolve(undefined)
+    await flushPromises()
+
+    expect(router.currentRoute.value.hash).toBe('')
+    expect(router.currentRoute.value.query.boardId).toBe('board-1')
+    expect(wrapper.get('#proposal-proposal-wrong-target').text()).toContain(
+      'Different actionable proposal',
+    )
+  })
+
   it('removes a client-side-expired proposal from view when backend returns dismissed 0', async () => {
     mocks.dismissProposals.mockResolvedValue({ dismissed: 0 })
     mocks.getProposals

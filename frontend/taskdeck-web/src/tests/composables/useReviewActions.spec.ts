@@ -558,19 +558,35 @@ describe('useReviewActions', () => {
 
   it('should dismiss a proposal successfully', async () => {
     vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1 })
+    const onProposalsRemoved = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    const actions = useReviewActions(
+      proposals,
+      dismissableIds,
+      loadProposals,
+      undefined,
+      onProposalsRemoved,
+    )
     await actions.handleDismissProposal('p-1')
 
     expect(proposals.value).toHaveLength(0)
+    expect(onProposalsRemoved).toHaveBeenCalledWith(['p-1'])
   })
 
   it('should reload when dismiss returns 0', async () => {
     vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 0 })
+    const onProposalsRemoved = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    const actions = useReviewActions(
+      proposals,
+      dismissableIds,
+      loadProposals,
+      undefined,
+      onProposalsRemoved,
+    )
     await actions.handleDismissProposal('p-1')
 
+    expect(onProposalsRemoved).toHaveBeenCalledWith(['p-1'])
     expect(loadProposals).toHaveBeenCalled()
   })
 
@@ -587,21 +603,40 @@ describe('useReviewActions', () => {
     proposals.value = [p1, p2]
     dismissableIds = computed(() => ['p-1'])
     vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1 })
+    const onProposalsRemoved = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    const actions = useReviewActions(
+      proposals,
+      dismissableIds,
+      loadProposals,
+      undefined,
+      onProposalsRemoved,
+    )
     await actions.handleDismissApplied()
 
     expect(proposals.value).toHaveLength(1)
     expect(proposals.value[0].id).toBe('p-2')
+    expect(onProposalsRemoved).toHaveBeenCalledWith(['p-1'])
   })
 
   it('should reload when partial dismiss occurs', async () => {
     dismissableIds = computed(() => ['p-1', 'p-2'])
     vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1 })
+    const onProposalsRemoved = vi.fn().mockResolvedValue(undefined)
 
-    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    const actions = useReviewActions(
+      proposals,
+      dismissableIds,
+      loadProposals,
+      undefined,
+      onProposalsRemoved,
+    )
     await actions.handleDismissApplied()
 
+    expect(onProposalsRemoved).toHaveBeenCalledWith(['p-1', 'p-2'])
+    expect(onProposalsRemoved.mock.invocationCallOrder[0]).toBeLessThan(
+      loadProposals.mock.invocationCallOrder[0],
+    )
     expect(loadProposals).toHaveBeenCalled()
   })
 })

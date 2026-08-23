@@ -46,6 +46,11 @@ export function useReviewActions(
   // domain Expired status so callers that don't drive a reactive clock (e.g.
   // Paper, which owns its own diff flow) still classify read-only correctly.
   isProposalExpired: (proposal: ApiProposal) => boolean = defaultIsProposalExpired,
+  // Removing a proposal can invalidate a route hash owned by the surrounding
+  // shell. Run this callback in the same action turn as the list mutation so a
+  // stale resolved hash can never render the next actionable proposal while
+  // navigation catches up.
+  onProposalsRemoved: (proposalIds: readonly string[]) => Promise<void> | void = () => {},
 ) {
   const toast = useToastStore()
   const diffRenderPerf = usePerformanceMark('proposal-diff-render')
@@ -449,9 +454,11 @@ export function useReviewActions(
       const result = await automationApi.dismissProposals([proposalId])
       if (result.dismissed > 0) {
         proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+        await onProposalsRemoved([proposalId])
         toast.success(t('review.toast.dismissed'))
       } else {
         proposals.value = proposals.value.filter((p) => p.id !== proposalId)
+        await onProposalsRemoved([proposalId])
         toast.info(t('review.toast.dismissedRefreshing'))
         void loadProposals()
       }
@@ -479,7 +486,12 @@ export function useReviewActions(
       if (result.dismissed === ids.length) {
         const dismissedSet = new Set(ids)
         proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+        await onProposalsRemoved(ids)
       } else {
+        // The API returns only a count, not the dismissed IDs. If any member of
+        // this requested set was removed, conservatively reconcile a matching
+        // hash before reload rather than risk leaving a resolved stale target.
+        if (result.dismissed > 0) await onProposalsRemoved(ids)
         await loadProposals()
       }
       toast.success(t('review.toast.cleared', { count: result.dismissed }, result.dismissed))

@@ -28,6 +28,7 @@ const {
   summaryCards,
   dismissableProposalIds,
   isProposalExpired,
+  clearRemovedProposalDeepLinks,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -61,7 +62,13 @@ const {
   handleToggleDiff,
   handleDismissProposal,
   handleDismissApplied,
-} = useReviewActions(proposals, dismissableProposalIds, loadProposals, isProposalExpired)
+} = useReviewActions(
+  proposals,
+  dismissableProposalIds,
+  loadProposals,
+  isProposalExpired,
+  clearRemovedProposalDeepLinks,
+)
 
 const _vl = useVirtualList({
   count: computed(() => visibleProposals.value.length),

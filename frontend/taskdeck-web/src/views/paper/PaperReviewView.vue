@@ -77,6 +77,7 @@ const {
   isProposalDismissable,
   isStaleProposal,
   clearProposalDeepLink,
+  clearRemovedProposalDeepLinks,
   loadProposals,
   loadBoardOptions,
   availableBoards,
@@ -159,7 +160,13 @@ const {
   confirmExecuteProposal,
   handleDismissProposal,
   handleDismissApplied,
-} = useReviewActions(proposals, ownedDismissableIds, loadProposals, isProposalExpired)
+} = useReviewActions(
+  proposals,
+  ownedDismissableIds,
+  loadProposals,
+  isProposalExpired,
+  clearRemovedProposalDeepLinks,
+)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -925,12 +932,6 @@ async function onFileAway() {
     return
   }
   await handleDismissProposal(p.id)
-  // A successful file-away removes the exact record. Clear only that matching
-  // deep link after the local list proves removal; failures retain both the
-  // proposal and hash so the user never lands on a substituted target.
-  if (!proposals.value.some((proposal) => proposal.id === p.id)) {
-    await clearProposalDeepLink(p.id)
-  }
 }
 
 function onFileAwayBulk() {

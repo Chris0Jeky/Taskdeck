@@ -425,16 +425,24 @@ export function useReviewProposals() {
     }
   }
 
-  // After a user action removes a deep-linked proposal from the queue (a SUCCESSFUL snooze via
-  // Defer), drop the hash so the visibleProposals carve-out stops exempting it from the deferred
-  // filter. Without this, a just-snoozed proposal you reached via #proposal-<id> stays visible —
-  // with live action buttons — until the next navigation/refresh, contradicting the snooze.
-  // Callers MUST gate this on success: clearing the hash for a proposal whose defer FAILED would
-  // hide an already-snoozed deep-linked target (its prior deferredUntil still in effect) with no
-  // retry path.
-  async function clearProposalDeepLink(proposalId: string) {
-    if (getProposalIdFromHash(route.hash) !== proposalId) return
+  // After a successful user action removes one or more proposals from the
+  // current queue, drop a matching hash. Mark it unavailable synchronously and
+  // invalidate any in-flight hydration first: Vue may render the filtered list
+  // before router.replace settles, and a still-resolved stale hash must never
+  // expose a different actionable proposal in that gap.
+  async function clearRemovedProposalDeepLinks(proposalIds: readonly string[]) {
+    const hashProposalId = getProposalIdFromHash(route.hash)
+    if (!hashProposalId || !proposalIds.includes(hashProposalId)) return
+    latestProposalDeepLinkRequestId++
+    proposalDeepLinkState.value = 'not-found'
     await safeReplace({ name: 'workspace-review', query: route.query })
+  }
+
+  // Defer keeps the proposal in the backing list but removes it from the visible
+  // queue. Callers gate this on successful defer so a failed re-snooze retains
+  // the exact target and its retry path.
+  async function clearProposalDeepLink(proposalId: string) {
+    await clearRemovedProposalDeepLinks([proposalId])
   }
 
   async function loadProposals() {
@@ -578,6 +586,7 @@ export function useReviewProposals() {
     isProposalDeferred,
     isStaleProposal,
     clearProposalDeepLink,
+    clearRemovedProposalDeepLinks,
     loadProposals,
     loadBoardOptions,
     startClock,
