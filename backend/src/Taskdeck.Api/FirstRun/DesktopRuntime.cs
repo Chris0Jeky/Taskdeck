@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.FirstRun;
 
@@ -162,9 +163,9 @@ internal static class DesktopRuntime
             return;
         }
 
-        AppDomain.CurrentDomain.UnhandledException += (_, _) =>
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            WriteFatalStartup();
+            WriteFatalStartup(args.ExceptionObject as Exception);
             WaitForFailureAcknowledgement();
         };
     }
@@ -221,11 +222,34 @@ internal static class DesktopRuntime
         Console.WriteLine("Taskdeck stopped. You can close this window.");
     }
 
-    internal static void WriteFatalStartup()
+    internal static IReadOnlyList<string> FormatFatalStartup(Exception? exception)
     {
-        Console.Error.WriteLine("TASKDECK_DESKTOP_FATAL code=startup_failed");
-        Console.Error.WriteLine(
-            "Taskdeck could not start. Check that the configured port is available and the data folder is writable. No settings were printed.");
+        if (exception is RetiredLlmProviderConfigurationException)
+        {
+            return
+            [
+                "TASKDECK_DESKTOP_FATAL code=retired_provider_configuration",
+                "Taskdeck could not start because retired Gemini provider configuration is still active. " +
+                "Choose OpenAI, OpenAICompatible, Ollama, or Mock, then remove the retired Gemini selector, " +
+                "child settings, and Docker Compose variable. Restart Taskdeck after updating them. " +
+                "No settings were printed."
+            ];
+        }
+
+        return
+        [
+            "TASKDECK_DESKTOP_FATAL code=startup_failed",
+            "Taskdeck could not start. Check that the configured port is available and the data folder is writable. " +
+            "No settings were printed."
+        ];
+    }
+
+    internal static void WriteFatalStartup(Exception? exception)
+    {
+        foreach (var line in FormatFatalStartup(exception))
+        {
+            Console.Error.WriteLine(line);
+        }
     }
 
     internal static void WaitForFailureAcknowledgement()

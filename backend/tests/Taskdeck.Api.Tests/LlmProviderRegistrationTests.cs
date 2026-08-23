@@ -31,31 +31,95 @@ public class LlmProviderRegistrationTests
 
         var act = () => services.AddLlmProviders(configuration);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Gemini provider support was removed*")
-            .WithMessage("*OpenAi*")
-            .WithMessage("*OpenAiCompatible*")
-            .WithMessage("*Ollama*")
-            .WithMessage("*Mock*");
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("OpenAi");
+        exception.Message.Should().Contain("OpenAiCompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
     }
 
-    [Fact]
-    public void AddLlmProviders_ShouldRejectRetiredGeminiSectionEvenWhenMockIsSelected()
+    [Theory]
+    [InlineData("Mock")]
+    [InlineData("OpenAI")]
+    [InlineData("OpenAICompatible")]
+    [InlineData("Ollama")]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenSupportedProviderIsExplicit(
+        string provider)
     {
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Llm:Provider"] = "Mock",
+                ["Llm:Provider"] = provider,
                 ["Llm:Gemini:ApiKey"] = "stale-test-key"
             })
             .Build();
 
         var act = () => services.AddLlmProviders(configuration);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Gemini provider support was removed*")
-            .WithMessage("*remove the retired Gemini settings section*");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenBuiltInMockIsTheOnlySelector()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration();
+
+        configuration["Llm:Provider"].Should().Be("Mock");
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenEnvironmentExplicitlySelectsMock()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration("Mock");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSelector_WhenEnvironmentExplicitlySelectsIt()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration("Gemini");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("historical-free-form-provider")]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WithoutExplicitSupportedProvider(
+        string? provider)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = provider,
+                ["Llm:Gemini:ApiKey"] = "stale-test-key"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("remove the retired Gemini settings section");
     }
 
     [Theory]
@@ -75,12 +139,13 @@ public class LlmProviderRegistrationTests
 
         var act = () => services.AddLlmProviders(configuration);
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*TASKDECK_LLM_GEMINI_API_KEY*")
-            .WithMessage("*TASKDECK_LLM_OPENAI_API_KEY*")
-            .WithMessage("*OpenAICompatible*")
-            .WithMessage("*Ollama*")
-            .WithMessage("*Mock*");
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ComposeMarker);
+        exception.Message.Should().Contain("TASKDECK_LLM_GEMINI_API_KEY");
+        exception.Message.Should().Contain("TASKDECK_LLM_OPENAI_API_KEY");
+        exception.Message.Should().Contain("OpenAICompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
     }
 
     [Theory]
@@ -565,6 +630,32 @@ public class LlmProviderRegistrationTests
 
         result.AllowGeneralProviderLocalhost.Should().Be(expectedGeneralProviderLocalhost);
         result.AllowOllamaLocalhost.Should().Be(expected);
+    }
+
+    private static IConfigurationRoot BuildRealProviderConfiguration(string? providerOverride = null)
+    {
+        var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
+        var providerVariable = $"{prefix}Llm__Provider";
+        var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
+        try
+        {
+            if (providerOverride is not null)
+            {
+                Environment.SetEnvironmentVariable(providerVariable, providerOverride);
+            }
+
+            Environment.SetEnvironmentVariable(retiredChildVariable, "stale-test-key");
+            return new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false)
+                .AddEnvironmentVariables(prefix)
+                .Build();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(providerVariable, null);
+            Environment.SetEnvironmentVariable(retiredChildVariable, null);
+        }
     }
 
     private static ServiceProvider BuildServiceProvider(

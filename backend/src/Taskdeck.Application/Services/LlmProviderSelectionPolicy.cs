@@ -109,9 +109,18 @@ public static class LlmProviderSelectionPolicy
     {
         if (provider?.Trim().Equals("Gemini", StringComparison.OrdinalIgnoreCase) == true)
         {
-            throw new InvalidOperationException(RetiredGeminiProviderMessage);
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.ProviderSelector,
+                RetiredGeminiProviderMessage);
         }
     }
+
+    internal static bool IsExplicitlySupportedProvider(
+        string? provider,
+        bool hasHigherPrecedenceProviderSelection)
+        => hasHigherPrecedenceProviderSelection
+            && !string.IsNullOrWhiteSpace(provider)
+            && ResolveRequestedProviderKind(provider).HasValue;
 
     public static bool TryValidateOpenAiSettings(
         LlmProviderSettings settings,

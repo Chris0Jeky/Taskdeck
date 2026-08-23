@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
 using Polly.Extensions.Http;
@@ -13,6 +14,8 @@ namespace Taskdeck.Api.Extensions;
 public static class LlmProviderRegistration
 {
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+    private const string LlmProviderKey = "Llm:Provider";
+    private const string BuiltInSettingsPath = "appsettings.json";
     private const string RetiredComposeWrapperPresenceKey =
         "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
     private const string RetiredComposeWrapperMessage =
@@ -28,15 +31,25 @@ public static class LlmProviderRegistration
                 "true",
                 StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(RetiredComposeWrapperMessage);
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.ComposeMarker,
+                RetiredComposeWrapperMessage);
         }
 
         var llmSection = configuration.GetSection("Llm");
-        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(llmSection["Provider"]);
-        if (llmSection.GetChildren().Any(section =>
+        var configuredProvider = llmSection["Provider"];
+        var hasHigherPrecedenceProviderSelection =
+            HasHigherPrecedenceProviderSelection(configuration);
+        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
+        if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
+                configuredProvider,
+                hasHigherPrecedenceProviderSelection)
+            && llmSection.GetChildren().Any(section =>
                 section.Key.Equals("Gemini", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException(LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.SettingsSection,
+                LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
         }
 
         // LLM quota and kill switch settings
@@ -226,6 +239,31 @@ public static class LlmProviderRegistration
         });
 
         return services;
+    }
+
+    private static bool HasHigherPrecedenceProviderSelection(IConfiguration configuration)
+    {
+        if (configuration is not IConfigurationRoot root)
+        {
+            return false;
+        }
+
+        foreach (var provider in root.Providers.Reverse())
+        {
+            if (!provider.TryGet(LlmProviderKey, out _))
+            {
+                continue;
+            }
+
+            // The checked-in Mock setting is a safe default, not evidence that an operator migrated.
+            return provider is not JsonConfigurationProvider jsonProvider
+                || !string.Equals(
+                    jsonProvider.Source.Path,
+                    BuiltInSettingsPath,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(

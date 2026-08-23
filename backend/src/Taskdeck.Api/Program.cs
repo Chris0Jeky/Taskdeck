@@ -574,9 +574,9 @@ if (DesktopRuntime.IsPackagedDesktop)
 app.Run();
 return 0;
 }
-catch (Exception) when (DesktopRuntime.IsPackagedDesktop)
+catch (Exception ex) when (DesktopRuntime.IsPackagedDesktop)
 {
-    DesktopRuntime.WriteFatalStartup();
+    DesktopRuntime.WriteFatalStartup(ex);
     DesktopRuntime.WaitForFailureAcknowledgement();
     return 1;
 }
