@@ -20,9 +20,20 @@
  *
  * Empty-state contract (issue 1939): `notBuilt` copy is for panels with NO
  * query behind them (ledger, decisions, boards are hardcoded empty arrays).
- * `unavailable` copy is for panels that do have a live query which failed or
- * has not resolved. Never blur the two — "not available yet" read as broken,
- * which is the defect this catalog exists to fix.
+ * `unavailable` copy is for panels that do have a live query which failed.
+ * Never blur the two — "not available yet" read as broken, which is the defect
+ * this catalog exists to fix.
+ *
+ * `loading.*` is the third class (issue 1983) and it is not optional: a live
+ * panel is unavailable-because-it-failed only once its request has settled.
+ * Before that it is loading, and saying "could not be loaded" mid-flight is the
+ * same false report the contract above exists to prevent.
+ *
+ * "Not built yet" is a claim about the PANEL, never about the database (issue
+ * 1983). Board and card mutations are written to audit history and are readable
+ * from Activity; what Today lacks is a per-day ledger query to assemble them
+ * into a day view. Copy here may say the view does not exist. It may not say
+ * the events are not recorded.
  */
 export default {
   seal: {
@@ -46,15 +57,20 @@ export default {
     hint: 'Goes to your line for tomorrow, below.',
     sectionSub: 'Saved with today’s date · you see it when you reopen Today',
     meta: 'saved with today’s date',
+    metaFailed: 'save not confirmed · edit again to retry',
+  },
+  loading: {
+    cadence: 'Loading today’s cadence…',
+    streak: 'Loading your streak…',
   },
   empty: {
     notBuiltTag: 'Not built yet',
     stats: 'Today’s live totals could not be loaded. Inbox and Review remain the source of truth.',
     cadence:
       'Cadence could not be loaded. It is live data rather than a missing feature — no work pattern is being inferred.',
-    ledgerSummary: 'Not recorded yet',
+    ledgerSummary: 'No per-day view yet',
     ledger:
-      'Taskdeck does not record a per-day event ledger yet, so this panel has nothing behind it and no events are being invented. Inbox and Review show what actually happened today.',
+      'Today is not wired to the activity log yet, so this panel cannot assemble a per-day ledger and no events are being invented. Your board and card changes are still recorded in audit history — open Activity to read it, and Review for the decisions behind it.',
     decisions:
       'Taskdeck does not record a per-day decision log yet, so this panel has nothing behind it. Open Review for live proposals and the decisions you gave them.',
     boards:

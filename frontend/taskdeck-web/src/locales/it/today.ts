@@ -7,7 +7,13 @@
  * blocca, nasconde o cancella qualcosa.
  *
  * Stati vuoti: `notBuilt` = il pannello non ha ancora una query dietro;
- * `unavailable` = i dati sono live ma non sono arrivati. Non confondere i due.
+ * `unavailable` = i dati sono live e la richiesta è fallita; `loading` = la
+ * richiesta è ancora in corso (issue 1983). Non confondere i tre: dire "non si
+ * è caricato" mentre la richiesta è in volo è la stessa bugia.
+ *
+ * "Non ancora fatto" parla del PANNELLO, non del database (issue 1983): le
+ * modifiche a board e schede sono registrate nella cronologia di audit e si
+ * leggono da Attività. A mancare è la query per giorno, non i dati.
  */
 export default {
   seal: {
@@ -31,15 +37,20 @@ export default {
     hint: 'Porta alla tua riga per domani, qui sotto.',
     sectionSub: 'Salvata con la data di oggi · la rivedi quando riapri Oggi',
     meta: 'salvata con la data di oggi',
+    metaFailed: 'salvataggio non confermato · modificala di nuovo per riprovare',
+  },
+  loading: {
+    cadence: 'Caricamento della cadenza di oggi…',
+    streak: 'Caricamento della tua serie…',
   },
   empty: {
     notBuiltTag: 'Non ancora fatto',
     stats: 'I totali live di oggi non si sono caricati. Inbox e Revisione restano la fonte affidabile.',
     cadence:
       'La cadenza non si è caricata. Sono dati live, non una funzione mancante: nessun ritmo di lavoro viene dedotto.',
-    ledgerSummary: 'Non ancora registrato',
+    ledgerSummary: 'Nessuna vista per giorno',
     ledger:
-      'Taskdeck non registra ancora un diario degli eventi del giorno, quindi dietro questo pannello non c’è nulla e nessun evento viene inventato. Inbox e Revisione mostrano cosa è successo davvero oggi.',
+      'Oggi non è ancora collegato al registro attività, quindi questo pannello non può comporre un diario del giorno e nessun evento viene inventato. Le modifiche a board e schede restano registrate nella cronologia di audit: apri Attività per leggerla e Revisione per le decisioni che ci stanno dietro.',
     decisions:
       'Taskdeck non registra ancora un diario delle decisioni del giorno, quindi dietro questo pannello non c’è nulla. Apri Revisione per le proposte live e le decisioni che hai preso.',
     boards:

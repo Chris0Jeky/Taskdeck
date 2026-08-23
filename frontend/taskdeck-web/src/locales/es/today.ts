@@ -7,7 +7,13 @@
  * oculta o borra algo.
  *
  * Estados vacíos: `notBuilt` = el panel aún no tiene consulta detrás;
- * `unavailable` = los datos son live pero no llegaron. No mezcles los dos.
+ * `unavailable` = los datos son live y la petición falló; `loading` = la
+ * petición sigue en curso (issue 1983). No mezcles los tres: decir "no se pudo
+ * cargar" mientras la petición está en vuelo es la misma mentira.
+ *
+ * "Todavía sin construir" habla del PANEL, no de la base de datos (issue 1983):
+ * los cambios en tableros y tarjetas sí se registran en el historial de
+ * auditoría y se leen desde Actividad. Lo que falta es la consulta por día.
  */
 export default {
   seal: {
@@ -31,15 +37,20 @@ export default {
     hint: 'Va a tu línea para mañana, aquí abajo.',
     sectionSub: 'Guardada con la fecha de hoy · la ves cuando vuelves a abrir Hoy',
     meta: 'guardada con la fecha de hoy',
+    metaFailed: 'guardado sin confirmar · edítala de nuevo para reintentar',
+  },
+  loading: {
+    cadence: 'Cargando la cadencia de hoy…',
+    streak: 'Cargando tu racha…',
   },
   empty: {
     notBuiltTag: 'Todavía sin construir',
     stats: 'Los totales live de hoy no se pudieron cargar. Inbox y Revisión siguen siendo la fuente fiable.',
     cadence:
       'La cadencia no se pudo cargar. Son datos live, no una función que falte: no se deduce ningún patrón de trabajo.',
-    ledgerSummary: 'Todavía sin registrar',
+    ledgerSummary: 'Aún sin vista por día',
     ledger:
-      'Taskdeck aún no registra un diario de eventos del día, así que este panel no tiene nada detrás y no se inventa ningún evento. Inbox y Revisión muestran lo que pasó de verdad hoy.',
+      'Hoy aún no está conectado al registro de actividad, así que este panel no puede componer un diario por día y no se inventa ningún evento. Tus cambios en tableros y tarjetas sí quedan registrados en el historial de auditoría: abre Actividad para leerlo y Revisión para las decisiones que hay detrás.',
     decisions:
       'Taskdeck aún no registra un diario de decisiones del día, así que este panel no tiene nada detrás. Abre Revisión para ver propuestas live y las decisiones que tomaste.',
     boards:
