@@ -61,18 +61,38 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         capture.Should().NotBeNull();
         capture!.Status.Should().Be(CaptureStatus.New);
 
-        // Act 2: Trigger triage (enqueues for worker processing)
+        // Act 2: Edit the suggestion before triage. Capture metadata must survive this
+        // payload reconstruction as well as reach the review-only operation below.
+        var editResponse = await client.PutAsJsonAsync(
+            $"/api/capture/items/{capture.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("- [ ] Fix login bug after editing"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var persistedItem = await db.LlmRequests.SingleAsync(request => request.Id == capture.Id);
+            var persistedPayload = CaptureRequestContract.ParsePayload(
+                persistedItem.Payload,
+                allowServerAttributionFields: true);
+
+            persistedPayload.IsSuccess.Should().BeTrue();
+            persistedPayload.Value.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+            persistedPayload.Value.Labels.Should().Equal("shopping");
+        }
+
+        // Act 3: Trigger triage (enqueues for worker processing)
         var triageResponse = await client.PostAsync($"/api/capture/items/{capture.Id}/triage", null);
         triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        // Act 3: Wait for worker to generate proposal
+        // Act 4: Wait for worker to generate proposal
         var triaged = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.ProposalCreated);
         triaged.Status.Should().Be(CaptureStatus.ProposalCreated);
         triaged.Provenance.Should().NotBeNull();
         triaged.Provenance!.ProposalId.Should().NotBeNull();
         var proposalId = triaged.Provenance.ProposalId!.Value;
 
-        // Act 4: Verify proposal exists with correct structure
+        // Act 5: Verify proposal exists with correct structure
         var proposalResponse = await client.GetAsync($"/api/automation/proposals/{proposalId}");
         proposalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var proposal = await proposalResponse.Content.ReadFromJsonAsync<ProposalDto>();
@@ -92,13 +112,13 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
                 .Should().Equal("shopping");
         }
 
-        // Act 5: Approve the proposal
+        // Act 6: Approve the proposal
         var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
         approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var approved = await approveResponse.Content.ReadFromJsonAsync<ProposalDto>();
         approved!.Status.Should().Be(ProposalStatus.Approved);
 
-        // Act 6: Execute the proposal
+        // Act 7: Execute the proposal
         var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
         executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var executeResponse = await client.SendAsync(executeRequest);
@@ -113,7 +133,7 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
         var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
         cards.Should().NotBeNull();
         cards!.Should().ContainSingle();
-        cards![0].Title.Should().Be("Fix login bug");
+        cards![0].Title.Should().Be("Fix login bug after editing");
         cards![0].BoardId.Should().Be(board.Id);
         cards![0].ColumnId.Should().Be(column!.Id, "card should be placed in the first (Backlog) column");
         cards[0].DueDate!.Value.Date.Should().Be(new DateTime(2026, 8, 23));
