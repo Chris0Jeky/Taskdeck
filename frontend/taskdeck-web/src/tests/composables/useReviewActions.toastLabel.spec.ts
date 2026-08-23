@@ -120,7 +120,6 @@ describe('useReviewActions outcome labels', () => {
     // `applied` is opt-in per caller, so the guard that keeps it honest is
     // that every OTHER success path leaves it alone. Reject/snooze/dismiss and
     // the bulk clear name no action word at all and degrade to "Done".
-    vi.stubGlobal('prompt', vi.fn(() => 'not useful'))
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
     // A snooze leaves the proposal pending — only its deferredUntil moves.
     vi.mocked(automationApi.deferProposal).mockResolvedValue(
@@ -128,7 +127,8 @@ describe('useReviewActions outcome labels', () => {
     )
     vi.mocked(automationApi.dismissProposals).mockResolvedValue({ dismissed: 1 })
 
-    await actions.handleRejectProposal('p-1', 'Low')
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('not useful')
     await actions.handleDeferProposal('p-1')
     proposals.value = [makeProposal()]
     await actions.handleDismissProposal('p-1')

@@ -170,6 +170,14 @@ export default {
       label: 'File away',
       ariaLabel: 'File away proposal',
     },
+    // GH-1964: the rail names the lock and carries its exit. The note is the
+    // accessible description of the four disabled buttons, so it must say what
+    // is holding them AND what ends it — not just "busy".
+    editLock: {
+      editing: 'Editing this proposal below — decisions resume when you save or cancel the edit.',
+      saving: 'Saving your edit — decisions resume when it lands.',
+      cancel: 'Cancel edit',
+    },
   },
 
   // § I — the change
@@ -358,6 +366,8 @@ export default {
   // ── Revision editor ───────────────────────────────────────────────────────
   revisionEditor: {
     stamp: 'EDIT BEFORE APPROVE',
+    // Announced when focus moves into the composer on entry (GH-1964).
+    regionLabel: 'Edit this proposal before approving it',
     jsonError: 'Enter valid JSON before saving.',
     reasonLabel: 'Reason for edit',
     reasonPlaceholder: 'Why are you editing this proposal?',
@@ -428,6 +438,24 @@ export default {
     confirm: 'Apply to board',
   },
 
+  // GH-1969 — the in-app reason collector that replaced `window.prompt`. The
+  // required and optional labels are separate keys, never one string plus a
+  // conditional suffix: they are different sentences in Italian and Spanish.
+  rejectDialog: {
+    title: 'Reject this proposal?',
+    lede: 'Rejecting closes this proposal. Nothing on the board changes.',
+    noSummary: 'This proposal has no summary.',
+    reasonOptionalLabel: 'Reason (optional)',
+    reasonRequiredLabel: 'Reason (required)',
+    reasonPlaceholder: 'Why is this not going ahead?',
+    // The reason is read later by whoever asks why this did not ship, which is
+    // the whole argument for collecting it somewhere the product can style,
+    // translate and test.
+    requiredNote: 'High and critical risk proposals need a recorded reason.',
+    cancel: 'Keep it',
+    confirm: 'Reject proposal',
+  },
+
   // ── Empty surface ─────────────────────────────────────────────────────────
   empty: {
     eyebrow: 'Queue · {count} awaiting',
@@ -485,14 +513,9 @@ export default {
   // `{time}` is Intl-formatted against the active locale, never a pattern here.
   headerMeta: '{time} · {status}',
 
-  // ── Native prompts and toasts ─────────────────────────────────────────────
-  // Two prompt keys, never one string plus a conditional suffix: the required
-  // and optional variants are different sentences in Italian and Spanish.
-  prompt: {
-    rejectReasonRequired: 'Reason is required for this risk level:',
-    rejectReasonOptional: 'Optional rejection reason:',
-  },
-
+  // ── Toasts ────────────────────────────────────────────────────────────────
+  // The `prompt.*` pair that used to live here fed the native `window.prompt`
+  // for the rejection reason; GH-1969 moved that copy into `rejectDialog.*`.
   toast: {
     approved: 'Proposal approved for board application',
     approveFailed: 'Failed to approve proposal',
