@@ -70,3 +70,13 @@ whole time.
 ---
 
 <!-- New entries go directly below this line, newest first. -->
+
+## 2026-08-23 — sprint formally started (agent-recorded)
+
+Maintainer declaration (guided walkthrough 2026-08-23, q-2 = A): **the ≥10-day dogfooding sprint
+started 2026-08-22** on the v0.1.1 build. Day 1 was not quiet — it produced the workflow/UX-UI
+findings now driving the v0.1.2 scope (#1876 + the Priority I tranche; see the v0.1.2 milestone).
+The ADR-0044 checkpoint is re-anchored to ≥10 days from this start (no earlier than 2026-09-01),
+and the sprint extends to a collaborator once the collaboration surface works, or once the product
+feels good and is releasable to macOS (q-8 = A, recorded on #1271). Maintainer-authored entries in
+the protocol format follow below/above this record as the days accrue.
