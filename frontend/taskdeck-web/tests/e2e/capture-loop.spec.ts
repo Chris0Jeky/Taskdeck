@@ -52,7 +52,7 @@ test.describe('Paper capture-review-apply loop', () => {
     expect(proposalId).toBeTruthy()
     expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
 
-    await page.getByRole('link', { name: /Review$/ }).click()
+    await page.getByRole('link', { name: /^Review/ }).click()
     await expect(page).toHaveURL(/\/workspace\/review$/)
     await expect(page.getByTestId('paper-review-view')).toBeVisible()
     await expect(
