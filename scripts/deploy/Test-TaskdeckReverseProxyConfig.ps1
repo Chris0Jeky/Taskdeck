@@ -93,6 +93,8 @@ foreach ($prefix in @('api', 'hubs', 'mcp')) {
 Assert-Contains $standaloneRoutes.health 'proxy_read_timeout 30s;' '/health must retain the 30s proxy timeout.'
 Assert-Contains $standaloneRoutes.hubs 'proxy_set_header Upgrade $http_upgrade;' '/hubs must preserve WebSocket upgrade headers.'
 Assert-Contains $standaloneRoutes.hubs 'proxy_set_header Connection $connection_upgrade;' '/hubs must preserve WebSocket connection semantics.'
+Assert-Contains $standaloneRoutes.mcp 'proxy_buffering off;' '/mcp must disable proxy buffering for streaming responses.'
+Assert-Contains $renderedRoutes.mcp 'proxy_buffering off;' 'Rendered /mcp must disable proxy buffering for streaming responses.'
 foreach ($prefix in @('api', 'health', 'mcp')) {
     if ($standaloneRoutes[$prefix] -match 'proxy_set_header (Upgrade|Connection) ') {
         throw "/$prefix must not inherit /hubs WebSocket headers."
