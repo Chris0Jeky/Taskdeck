@@ -2,7 +2,7 @@
 
 **The local-first, review-first action-item engine.**
 
-Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace is a single SQLite file you own. Transcript-source captures get LLM-backed extraction with evidence spans that deep-link back to the transcript; ordinary short-form capture triage is deterministic and offline.
+Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turns them into source-linked proposals. You decide what is correct; only then does Taskdeck apply approved board changes. Your entire workspace lives in a single SQLite file you own - back it up together with its local configuration keys (see [UPGRADING.md](UPGRADING.md)). When a live provider is configured, transcript-source captures get LLM-backed extraction with evidence spans that deep-link back to the transcript (deterministic fallback otherwise); ordinary short-form capture triage is always deterministic and offline.
 
 [![CI](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml/badge.svg)](https://github.com/Chris0Jeky/Taskdeck/actions/workflows/ci-required.yml)
 [![Status: Beta](https://img.shields.io/badge/status-beta-5b5bd6.svg)](https://github.com/Chris0Jeky/Taskdeck/releases)
@@ -19,7 +19,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 3. **Review** - inspect the diff, side effects, provenance, and risk; approve or reject it.
 4. **Apply** - approved changes land on the board with an audit trail.
 
-Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans (transcript-source triage has a separately gated extraction leg, and Automation Chat uses the configured provider when one is enabled - both may send bounded content to it; ordinary short-form capture triage stays deterministic and offline, and the default provider is the offline Mock). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
+Taskdeck ships this capture -> proposal -> review -> apply loop today, including transcript-source LLM triage with evidence spans when a live provider is configured - the default Mock provider falls back to deterministic triage without evidence links (transcript-source triage has a separately gated extraction leg, and Automation Chat uses the configured provider when one is enabled - both may send bounded content to it; ordinary short-form capture triage stays deterministic and offline, and the default provider is the offline Mock). The active roadmap lives in [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md) under the direction in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md).
 
 ## Why Taskdeck
 

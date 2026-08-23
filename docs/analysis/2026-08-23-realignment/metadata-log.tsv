@@ -191,3 +191,16 @@
 2026-08-23T17:26:55Z	project-priority	#1853 -> Priority III
 2026-08-23T17:26:56Z	project-priority	#1854 -> Priority III
 2026-08-23T17:26:57Z	project-priority	#2003 -> Priority III
+2026-08-23T17:49:52Z	project-status	#219 -> Done (closed by realignment executors)
+2026-08-23T17:49:53Z	project-status	#996 -> Done (closed by realignment executors)
+2026-08-23T17:49:54Z	project-status	#1553 -> Done (closed by realignment executors)
+2026-08-23T17:49:54Z	project-status	#1710 -> Done (closed by realignment executors)
+2026-08-23T18:16:53Z	label-edit-desc	packaging
+2026-08-23T18:16:54Z	label-edit-desc	mobile
+2026-08-23T18:16:54Z	label-edit-desc	marketing
+2026-08-23T18:17:39Z	project-priority	#2011 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:15Z	project-priority	#2012 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:16Z	project-priority	#2013 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:30Z	label-edit-desc	cloud (retry <=100 chars)
+2026-08-23T18:18:30Z	final-readback	open-issues=171 labels=45 milestones: v0.1.0-closed v0.1.2:13 v0.2:7 v0.3:3
+2026-08-23T18:18:30Z	final-readback	projectv2 open-issue statuses: Now=2 Next=8 Blocked=15 Review=0 Pending=146; closed-in-non-Done=0

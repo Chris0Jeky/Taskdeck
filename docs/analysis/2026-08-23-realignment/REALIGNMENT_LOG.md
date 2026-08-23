@@ -146,7 +146,17 @@ into issues).
 
 ## 9. Verification record
 
-Filled at PR time: governance checks (`check-docs-governance`, `check-golden-principles`,
-`check-github-ops-governance`) green on this branch; exact-head `ci-required.yml` + the
-review-and-ship gate on the PR(s); post-mutation GitHub re-query (labels/milestones/status counts)
-recorded in `metadata-log.tsv` and the PR body.
+Governance checks (`check-docs-governance`, `check-golden-principles`,
+`check-github-ops-governance`): green at every commit on this branch. Exact-head
+`ci-required.yml` + the review-and-ship gate ran on PR #2014 (one fresh-context adversarial
+review round: 0 merge-blocking, 3 MEDIUM + 5 LOW findings all fixed or dispositioned; two Codex
+rounds: 1 P1 + 5 P2s, all confirmed-true and fixed).
+
+**Post-mutation GitHub readback (measured 2026-08-23, after all mutations + closures + seeds):**
+open issues **171** (172 − 4 closures + 3 seeds); labels **45**; milestones: `v0.1.0 — First
+Light` **closed**, `v0.1.2` open:13, `v0.2 — Coherent Context-to-Action Loop` open:7, `v0.3 —
+Open Beta + Accountable Agents` open:3; ProjectV2 for open issues: **Now 2** {#1271 #1876} ·
+**Next 8** {#1512 #1938 #1940 #1949 #1966 #1973 #1997 #2005} · **Blocked 15** (all with named
+blockers) · **Review 0** · **Pending 146**; every open issue is on the project; zero closed
+issues remain in a non-Done status; #2011–#2013 carry `Priority II` labels mirrored into the
+Project `Priority` field.
