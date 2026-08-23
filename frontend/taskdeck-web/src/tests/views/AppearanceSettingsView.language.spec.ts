@@ -38,10 +38,25 @@ describe('AppearanceSettingsView — language', () => {
 
     expect(buttons.map((b) => b.attributes('data-locale'))).toEqual(['en', 'it', 'es'])
     // Endonyms, not translations: a Spanish speaker looks for "Español".
-    expect(buttons.map((b) => b.text())).toEqual(['English', 'Italiano', 'Español'])
-    // Each option is marked with its own language so a screen reader switches
+    const names = wrapper.findAll('.paper-appearance__segment-name')
+    expect(names.map((n) => n.text())).toEqual(['English', 'Italiano', 'Español'])
+    // Each endonym is marked with its own language so a screen reader switches
     // voice for it rather than reading "Español" with an English pronunciation.
-    expect(buttons.map((b) => b.attributes('lang'))).toEqual(['en', 'it', 'es'])
+    // (The `lang` sits on the endonym span, not the button — the MT note below
+    // it is in the active locale.)
+    expect(names.map((n) => n.attributes('lang'))).toEqual(['en', 'it', 'es'])
+  })
+
+  it('discloses unreviewed machine translation on it/es, not on en (#1770)', () => {
+    const wrapper = mount(AppearanceSettingsView)
+
+    expect(localeButton(wrapper, 'en').find('[data-testid="mt-badge"]').exists()).toBe(false)
+    expect(localeButton(wrapper, 'it').find('[data-testid="mt-badge"]').text()).toBe(
+      'Machine-translated',
+    )
+    expect(localeButton(wrapper, 'es').find('[data-testid="mt-badge"]').text()).toBe(
+      'Machine-translated',
+    )
   })
 
   it('defaults to English with no stored preference', () => {

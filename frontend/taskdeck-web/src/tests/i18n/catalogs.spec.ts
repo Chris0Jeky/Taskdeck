@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { SUPPORTED_LOCALES, DEFAULT_LOCALE, messages, type SupportedLocale } from '../../i18n'
+import { SUPPORTED_LOCALES, DEFAULT_LOCALE, type SupportedLocale } from '../../i18n'
+import en from '../../locales/en'
+import itCatalog from '../../locales/it'
+import esCatalog from '../../locales/es'
+
+// Imported directly from `src/locales/*`, NOT from the i18n runtime: since
+// #1858 only `en` is registered eagerly there (it/es are code-split), and this
+// guard is about the catalogs' source-of-truth parity, not the runtime.
+// (`itCatalog` because a bare `it` would shadow vitest's `it`.)
+const messages = { en, it: itCatalog, es: esCatalog }
 
 /**
  * Catalog guard (ADR-0054 §6).

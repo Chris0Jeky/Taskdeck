@@ -48,15 +48,29 @@ on:
         default: "250"
         type: string
       bundle-max-total-js-kb:
-        # Kept in step with the default in scripts/ci/check-bundle-size.mjs —
-        # raised 1200 -> 1250 on 2026-08-19 (#1770) for the i18n catalogs, then
-        # 1250 -> 1280 on 2026-08-22 as the emergency stopgap pending the #1858
-        # budget ruling (see the constant in that script for the full note). If
-        # these two drift, the required lane and this gate disagree about
-        # identical bytes. The rationale lives on the constant in that script.
-        description: Max total JS size in KB (error threshold)
+        # Kept in step with the default in scripts/ci/check-bundle-size.mjs.
+        # Since the #1858 ruling (2026-08-23) this is a WARNING-only report
+        # ceiling: the hard gate is the eager graph (entry + modulepreload) at
+        # BUNDLE_MAX_EAGER_JS_KB, default 1250 KB in that script. History:
+        # 1200 -> 1250 on 2026-08-19 (#1770), 1250 -> 1280 on 2026-08-22 as the
+        # emergency stopgap this ruling retires. If the two files drift, the
+        # required lane and this gate disagree about identical bytes.
+        description: Total-JS report ceiling in KB (warning only; the hard gate is eager JS)
         required: false
         default: "1280"
+        type: string
+      bundle-max-eager-js-kb:
+        # THE hard-fail budget since the #1858 ruling: eager graph = entry +
+        # modulepreload. Kept in step with BUNDLE_MAX_EAGER_JS_KB's default in
+        # scripts/ci/check-bundle-size.mjs.
+        description: Max eager-graph JS size in KB (error threshold)
+        required: false
+        default: "1250"
+        type: string
+      bundle-warn-eager-js-kb:
+        description: Warning threshold in KB for eager-graph JS
+        required: false
+        default: "1000"
         type: string
 
 permissions:
@@ -109,6 +123,8 @@ jobs:
           BUNDLE_MAX_ENTRY_KB: ${{ inputs.bundle-max-entry-kb }}
           BUNDLE_MAX_SINGLE_KB: ${{ inputs.bundle-max-single-kb }}
           BUNDLE_MAX_TOTAL_JS_KB: ${{ inputs.bundle-max-total-js-kb }}
+          BUNDLE_MAX_EAGER_JS_KB: ${{ inputs.bundle-max-eager-js-kb }}
+          BUNDLE_WARN_EAGER_JS_KB: ${{ inputs.bundle-warn-eager-js-kb }}
         run: |
           mkdir -p frontend/taskdeck-web/test-results/perf
           node scripts/ci/check-bundle-size.mjs \

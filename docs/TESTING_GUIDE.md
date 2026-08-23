@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-22
+Last Updated: 2026-08-23
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -2122,7 +2122,7 @@ Required workflow: `.github/workflows/ci-required.yml`
 - `sast-scan` (#1132, ADR-0035)
   - Semgrep SAST via `reusable-sast-scanning.yml`
   - **Advisory** (`enforce-findings: false`) pending the pre-existing finding baseline triage (#1175)
-- Frontend bundle-size budget runs **enforcing** as a step inside `frontend-unit` (`scripts/ci/check-bundle-size.mjs`, total-js < 1200 KB)
+- Frontend bundle-size budget runs **enforcing** as a step inside `frontend-unit` (`scripts/ci/check-bundle-size.mjs`; the hard gate is eager-graph JS — entry + modulepreload — < 1250 KB per the #1858 ruling; total emitted JS warns only)
 
 > Phased enforcement (ADR-0035): only `secret-scan` and the bundle check hard-block today;
 > `dependency-security`/`sast-scan` run on every PR but are advisory until the baseline is clean.

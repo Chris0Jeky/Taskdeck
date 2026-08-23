@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
+  ensureLocaleMessages,
   isSupportedLocale,
   i18n,
   type SupportedLocale,
@@ -55,15 +56,38 @@ export const useLocaleStore = defineStore('locale', {
     },
   },
   actions: {
-    /** Push the current locale into the i18n runtime and `<html lang>`. Idempotent. */
-    apply() {
-      applyLocale(this.locale)
+    /**
+     * Push the current locale into the i18n runtime and `<html lang>`.
+     * Idempotent. Flip FIRST: `it`/`es` catalogs are code-split (#1858), and
+     * until the chunk arrives the silent en-fallback shows English — the same
+     * thing the user already sees for any not-yet-extracted surface;
+     * `setLocaleMessage` is reactive, so translations appear when it lands.
+     *
+     * If the chunk FAILS, the runtime, `<html lang>`, and the in-memory store
+     * value are all reverted to English so the UI never claims a language it
+     * is not rendering (the flip-first window is bounded by the request; a
+     * failure is not). The persisted preference is deliberately KEPT: a
+     * transient failure (offline, stale deployment mid-swap) self-heals on the
+     * next boot or the next manual switch instead of silently discarding the
+     * user's choice. The returned promise settles after any revert; callers
+     * that only care about the switch itself may ignore it.
+     */
+    apply(): Promise<void> {
+      const target = this.locale
+      applyLocale(target)
+      return ensureLocaleMessages(target).then((ok) => {
+        const stillWanted = this.locale === target && i18n.global.locale.value === target
+        if (!ok && stillWanted && target !== DEFAULT_LOCALE) {
+          this.locale = DEFAULT_LOCALE
+          applyLocale(DEFAULT_LOCALE)
+        }
+      })
     },
-    setLocale(locale: SupportedLocale) {
+    setLocale(locale: SupportedLocale): Promise<void> {
       // Guard the public entry point too: a bad value here would otherwise be
       // persisted and only rejected on the NEXT read, leaving the running app
       // on a locale with no catalog.
-      if (!isSupportedLocale(locale)) return
+      if (!isSupportedLocale(locale)) return Promise.resolve()
       this.locale = locale
       try {
         if (typeof window !== 'undefined') {
@@ -72,7 +96,7 @@ export const useLocaleStore = defineStore('locale', {
       } catch {
         // ignore quota / private-mode failures — the in-memory switch still applies
       }
-      this.apply()
+      return this.apply()
     },
   },
 })

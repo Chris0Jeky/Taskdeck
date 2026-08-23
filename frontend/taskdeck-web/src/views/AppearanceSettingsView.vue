@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePaperThemeStore, type PaperMode } from '../store/paperThemeStore'
 import { useLocaleStore } from '../store/localeStore'
-import { LOCALE_LABELS, type SupportedLocale } from '../i18n'
+import { LOCALE_LABELS, MACHINE_TRANSLATED_LOCALES, type SupportedLocale } from '../i18n'
 
 const { t } = useI18n()
 const paperTheme = usePaperThemeStore()
@@ -71,7 +71,13 @@ function selectMode(mode: PaperMode) {
 // speaker scans a language list for "Español", whatever language the UI is in.
 
 const languageOptions = computed(() =>
-  localeStore.available.map((locale) => ({ locale, label: LOCALE_LABELS[locale] })),
+  localeStore.available.map((locale) => ({
+    locale,
+    label: LOCALE_LABELS[locale],
+    // #1770 / walkthrough e-7 (2026-08-23): unreviewed machine translations are
+    // disclosed in the picker until a native speaker signs them off.
+    machineTranslated: MACHINE_TRANSLATED_LOCALES.includes(locale),
+  })),
 )
 
 const activeLocale = computed(() => localeStore.locale)
@@ -141,11 +147,22 @@ function selectLocale(locale: SupportedLocale) {
           class="paper-appearance__segment"
           :class="{ 'paper-appearance__segment--active': activeLocale === option.locale }"
           :data-locale="option.locale"
-          :lang="option.locale"
           :aria-pressed="activeLocale === option.locale"
           @click="selectLocale(option.locale)"
         >
-          {{ option.label }}
+          <!-- `lang` sits on the endonym span, not the button: the endonym is in
+               the option's own language, while the machine-translated note below
+               it is in the ACTIVE locale like the rest of the page. -->
+          <span class="paper-appearance__segment-name" :lang="option.locale">{{
+            option.label
+          }}</span>
+          <span
+            v-if="option.machineTranslated"
+            class="paper-appearance__segment-note"
+            data-testid="mt-badge"
+          >
+            {{ $t('settings.language.machineTranslated') }}
+          </span>
         </button>
       </div>
       <p class="paper-appearance__hint">{{ $t('settings.language.hint') }}</p>
@@ -252,6 +269,27 @@ function selectLocale(locale: SupportedLocale) {
   font-size: var(--t-md, 13.5px);
   transition: background var(--d-quick, 140ms) var(--ease-paper, ease),
     border-color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-appearance__segment-name {
+  display: block;
+}
+
+/* Unreviewed machine-translation disclosure (#1770) — quiet, but present. */
+.paper-appearance__segment-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--t-xs, 11px);
+  color: var(--mute, #7a7264);
+}
+
+/* On the active (ember) segment the muted ink is ~1.09:1 against the ember
+   fill — invisible. Inherit the segment's own on-ember pair instead; the
+   slight opacity keeps it visually subordinate to the endonym while staying
+   comfortably above 4.5:1. */
+.paper-appearance__segment--active .paper-appearance__segment-note {
+  color: var(--td-on-ember, #fefaf6);
+  opacity: 0.9;
 }
 
 .paper-appearance__segment:hover {
