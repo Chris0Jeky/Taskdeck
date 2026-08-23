@@ -896,16 +896,16 @@ describe('useCardModal', () => {
   })
 
   describe('handleDeleteComment', () => {
-    it('deletes the comment when user confirms', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
-
+    it('opens an in-app confirmation before deleting the comment', async () => {
       const ctx = mountComposable()
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
 
-      expect(mockBoardStore.deleteCardComment).toHaveBeenCalledWith('board-1', 'card-1', 'c-1')
+      expect(ctx.result.commentPendingDeletion.value).toEqual(comment)
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(true)
+      expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
     })
 
     it('does nothing when user is not the author', async () => {
@@ -918,20 +918,20 @@ describe('useCardModal', () => {
       expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
     })
 
-    it('does nothing when user cancels confirmation', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(false)
-
+    it('clears the pending comment when confirmation is cancelled', async () => {
       const ctx = mountComposable()
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
+      ctx.result.handleCommentDeleteCancel()
 
       expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(false)
+      expect(ctx.result.commentPendingDeletion.value).toBeNull()
     })
 
     it('handles deleteCardComment failure gracefully', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
       mockBoardStore.deleteCardComment.mockRejectedValue(new Error('fail'))
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -939,9 +939,11 @@ describe('useCardModal', () => {
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
+      await ctx.result.handleCommentDeleteConfirm()
 
       expect(consoleSpy).toHaveBeenCalledWith('Failed to delete comment:', expect.any(Error))
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(true)
       consoleSpy.mockRestore()
     })
   })

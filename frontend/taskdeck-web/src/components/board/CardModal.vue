@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
@@ -24,6 +25,8 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updated'): void
 }>()
+
+const { t } = useI18n()
 
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocusedElement: HTMLElement | null = null
@@ -130,6 +133,10 @@ const {
   handleCancelEditComment,
   handleSaveEditComment,
   handleDeleteComment,
+  showCommentDeleteConfirm,
+  isDeletingComment,
+  handleCommentDeleteCancel,
+  handleCommentDeleteConfirm,
 
   // Provenance
   captureProvenance,
@@ -262,6 +269,35 @@ useEscapeToClose(() => props.isOpen, handleClose)
         @click="handleDeleteConfirm"
       >
         {{ isDeleting ? 'Deleting…' : 'Delete' }}
+      </button>
+    </template>
+  </TdDialog>
+
+  <TdDialog
+    :open="showCommentDeleteConfirm"
+    :title="t('cardModal.commentDelete.title')"
+    :description="t('cardModal.commentDelete.description')"
+    :close-on-backdrop="!isDeletingComment"
+    @close="handleCommentDeleteCancel"
+  >
+    <template #footer>
+      <button
+        type="button"
+        :disabled="isDeletingComment"
+        class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        data-testid="card-comment-delete-cancel"
+        @click="handleCommentDeleteCancel"
+      >
+        {{ t('cardModal.commentDelete.cancel') }}
+      </button>
+      <button
+        type="button"
+        :disabled="isDeletingComment"
+        class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        data-testid="card-comment-delete-confirm"
+        @click="handleCommentDeleteConfirm"
+      >
+        {{ isDeletingComment ? t('cardModal.commentDelete.deleting') : t('cardModal.commentDelete.confirm') }}
       </button>
     </template>
   </TdDialog>
