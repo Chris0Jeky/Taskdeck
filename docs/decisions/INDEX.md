@@ -58,3 +58,4 @@
 | [0054](ADR-0054-i18n-vue-i18n-surface-by-surface.md) | Internationalization — `vue-i18n` in Composition Mode, Per-Surface Catalogs, Surface-by-Surface Rollout | Accepted | 2026-08-19 |
 | [0055](ADR-0055-openai-only-live-provider-surface.md) | Collapse Supported Live LLM Configuration to OpenAI | Accepted | 2026-08-20 |
 | [0056](ADR-0056-direct-human-board-editing-first-class.md) | Direct Human Board Editing Is First-Class; the Proposal Loop Governs Non-Human Actors | Accepted | 2026-08-22 |
+| [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Proposed (awaiting maintainer ratification; review-first remains operative) | 2026-08-23 |
