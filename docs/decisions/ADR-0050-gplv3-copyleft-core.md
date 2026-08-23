@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-12
 - **Decision owner:** Maintainer
+- **Amended:** 2026-08-23 — automated DCO enforcement paused by explicit maintainer decision;
+  `#2019` tracks a possible future restoration
 - **Supersedes:** ADR-0044 Decision 3, ADR-0046's MIT constraint, and the
   MIT-forever portion of REVIVAL-03
 
@@ -22,8 +24,10 @@ preserved where applicable.
 
 1. The current Taskdeck open-source core is licensed `GPL-3.0-only` from the
    repository state released on or after 12 August 2026.
-2. New core contributions use GPL-3.0-only under the existing DCO
-   inbound-equals-outbound process.
+2. New core contributions are accepted for inclusion under GPL-3.0-only. Automated DCO
+   attestation is paused by explicit maintainer decision dated 2026-08-23; `#2019` tracks a
+   possible future restoration, which requires a new explicit decision. This amendment changes
+   neither the core licence nor contributor copyright ownership.
 3. The former MIT text and copyright notice remain in `LICENSES/MIT.txt` to
    preserve prior grants, attribution, and compatibility obligations. They do
    not constitute an alternative MIT licence for the current project as a

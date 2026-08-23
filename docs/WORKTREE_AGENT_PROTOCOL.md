@@ -293,7 +293,7 @@ First PowerShell commands (copy the complete block printed by New-CodexIssueWork
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
-Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
+Keep scope to acceptance criteria. Make small present-tense commits with git commit --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
 Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
@@ -310,10 +310,11 @@ When multiple worktrees run local services:
 
 ## Git Rules
 
-- Commit with `git commit -s --no-gpg-sign` in automated/background terminals.
+- Commit with `git commit --no-gpg-sign` in automated/background terminals. DCO trailers are optional
+  while enforcement is paused; do not repair history to add one.
 - Do not use `--no-verify`.
 - Do not use force push unless the user explicitly asks.
-- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. After a conflict, resolve and stage the files, then use `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`.
+- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --no-gpg-sign BRANCH_NAME`. After a conflict, resolve and stage the files, then use `git commit --no-gpg-sign --no-edit` instead of `git merge --continue`.
 - Check for active Git processes before removing `.git/index.lock`.
 
 ## Post-Run Verification

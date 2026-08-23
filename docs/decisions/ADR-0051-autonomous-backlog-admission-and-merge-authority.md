@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-08-18
 - **Decision owner:** Maintainer
+- **Amended:** 2026-08-23 — automated DCO enforcement removed from merge eligibility by explicit
+  maintainer decision; `#2019` is the inert restoration tracker
 - **Related:** `#1269`, ADR-0044, ADR-0046, `.agent-harness/tier.json`
 - **Supersedes:** the archive-era LIGHT/FULL review proposal in `#1269`, the blanket human-review rule for dependency PRs, and ADR-0013's claim that `CODEOWNERS` itself enforces review
 
@@ -22,14 +24,14 @@ Those restrictions mixed two different concerns:
 
 Taskdeck needs the first. Requiring the second for every PR created an owner-click bottleneck
 without adding a distinct technical check. The repository already has an exact-head required CI
-gate, risk-calibrated review, DCO enforcement, narrow-slice guidance, and explicit boundaries for
-external or irreversible actions.
+gate, risk-calibrated review, narrow-slice guidance, and explicit boundaries for external or
+irreversible actions.
 
 ## Decision
 
 1. **PR merging is agent-executable across all file and dependency classes.** An authorized agent
    may merge a PR, including a dependency, workflow, governance, or major-version PR, when the
-   explicit task scope permits it and the exact head satisfies `ci-required.yml`, DCO, the global
+   explicit task scope permits it and the exact head satisfies `ci-required.yml`, the global
    `review-and-ship` pipeline, and any seam-specific evidence. No separate maintainer approval or
    owner click is required merely because of the changed path or package category.
 2. **`CODEOWNERS` is advisory routing, not merge eligibility.** A requested owner review remains
@@ -82,7 +84,9 @@ external or irreversible actions.
 - Four already-green dependency PRs can enter the canonical merge pipeline without waiting for a
   human review category gate. They still require current-base, exact-head proof before merge.
 - Review quality remains risk-calibrated and evidence-backed. Removing a mandatory human identity
-  does not weaken CI, review, DCO, architecture, security, or product trust invariants.
+  does not weaken CI, review, architecture, security, or product trust invariants. The separate
+  2026-08-23 owner decision pauses DCO enforcement; restoration requires new explicit authority
+  and is tracked by `#2019`.
 - The Project board becomes the durable near-horizon queue: `Now` identifies active ownership and
   `Next` identifies the bounded replenishment set; everything else remains `Pending` or `Blocked`.
 

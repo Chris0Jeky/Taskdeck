@@ -135,9 +135,9 @@ Read before editing — do not assume layout:
 - **Windows/env quirks** (this box): git may resolve to a wrapper — if git misbehaves, use
   `C:\Program Files\Git\cmd\git.exe` explicitly. In PowerShell, `&&` is a parser error — use
   `;` and check `$LASTEXITCODE`, or run POSIX in a bash shell. `reset --hard`/force-push are
-  hook-blocked — recover with `git merge --abort`, `git merge --signoff --no-gpg-sign origin/main`, and
+  hook-blocked — recover with `git merge --abort`, `git merge --no-gpg-sign origin/main`, and
   `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
-  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  resolve and stage the files, then finish with `git commit --no-gpg-sign --no-edit` instead of
   `git merge --continue`.
 
 If a needed convention is genuinely undiscoverable, pick a sane default, **record the

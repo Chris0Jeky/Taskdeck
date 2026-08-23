@@ -65,6 +65,16 @@ ADR-0056). Do not plan, implement, or describe delegated agent authority as curr
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Governance update (2026-08-23, DCO enforcement paused)
+
+- **DCO is no longer a CI or merge-eligibility check.** By explicit maintainer decision, the PR-only
+  job and both upstream/native verifier invocations are removed from `ci-required.yml`, and
+  `Signed-off-by:` trailers are optional. Existing non-DCO CI, review, security, and seam-specific
+  evidence requirements remain in force.
+- **Restoration is a separately authorized future task.** Dormant verifier assets remain under
+  `scripts/ci/`; `#2019` records the restore contract but does not authorize reactivation. The
+  GPL-3.0-only licence and prior MIT grants are unchanged.
+
 ## Active correction (2026-08-22, v0.1.1 inherited-provider startup)
 
 - **`#1876` is reopened because the public v0.1.1 ordinary Desktop path exposed a missed upgrade boundary.** A user-scoped retired Gemini selector/settings section made the packaged app exit before listening, while its top-level catch hid the fixed migration reason behind a generic port/data-folder error. Clean `LOCALAPPDATA` reproduced it; the same executable became ready after a child-only explicit OpenAI selector and removal of retired Gemini child names.
@@ -105,7 +115,7 @@ ADR-0056). Do not plan, implement, or describe delegated agent authority as curr
 
 - **Merge authority is agent-executable across PR classes.** The existing T3 `merge: free`
   declaration now explicitly covers dependency, workflow, governance, and major-version PRs after
-  exact-head required CI, DCO, the canonical risk-calibrated review pipeline, and seam-specific
+  exact-head required CI, the canonical risk-calibrated review pipeline, and seam-specific
   proof. CODEOWNERS provides advisory routing; it does not reserve merge eligibility to a human.
 - **The tracked backlog can continuously replenish execution.** `REVIVAL_PLAN.md` §5 admits up to
   four acceptance-ready issue items in `Now` and eight in `Next` without per-issue owner approval,
@@ -233,7 +243,7 @@ supersedes ADR-0044 Decision 3 and the MIT-forever portion of REVIVAL-03.
 **8 PRs merged; the open-PR queue is down to a single human-gated draft.** Per-PR gate: independent adversarial review, all-severity findings fixed with posted evidence, required CI green on the exact head, every thread triaged.
 
 - **`#1469` (`#1462`)** — frontend `Proposal.approvedRevisionId`, declared **required** (the key is always on the wire), contract-only per `#1298`, guarded against a dead-code sweep by an exported type alias.
-- **`#1337` (`#1299`) — REVIVAL-03 licensing pack shipped, then partially superseded by ADR-0050.** The never-gated free boundary, additive-only commercial posture, reserved `ee/`, DCO guidance, and SHA-pinned advisory CI job remain. On 2026-08-12 the current core, npm metadata, all 11 `.csproj` files, API metadata, and root `LICENSE` moved to GPL-3.0-only; prior MIT grants remain valid and the former notice is retained in `LICENSES/MIT.txt`. Name availability was researched and recorded on `#1299` with filing costs and a **do-not-file-now** recommendation; pre-commercial legal residuals → **`#1482`**.
+- **`#1337` (`#1299`) — REVIVAL-03 licensing pack shipped, then partially superseded by ADR-0050.** The never-gated free boundary, additive-only commercial posture, reserved `ee/`, and licensing guidance remain. Its DCO guidance and SHA-pinned advisory CI job were active at delivery, then paused by explicit maintainer decision on 2026-08-23; `#2019` tracks any future restoration. On 2026-08-12 the current core, npm metadata, all 11 `.csproj` files, API metadata, and root `LICENSE` moved to GPL-3.0-only; prior MIT grants remain valid and the former notice is retained in `LICENSES/MIT.txt`. Name availability was researched and recorded on `#1299` with filing costs and a **do-not-file-now** recommendation; pre-commercial legal residuals → **`#1482`**.
 - **`#1477` + `#1481` (`#1123`)** — the release pipeline can now be **rehearsed without pushing a tag**, which is what makes `#1303`'s tag push verifiable in advance rather than a first-run. Rehearsed live (run `30160400273`): four platforms built, **three smoke-tested**, `create-release` skipped, zero tags/releases created. `osx-x64` is built, packaged, checksummed and uploaded **without ever being launched** — it is cross-arch on the arm64 `macos-latest` runner (`if: matrix.rid != 'osx-x64'`), so that one archive carries less release evidence than the other three. Worth knowing before the `#1303` tag push.
 - **`#1478` (`#1271`) — dogfooding instrumented**, and the baseline measured: sustained use has **not** started (8 active days, three months stale, most boards fixtures), though the core loop works (**17/20 proposals reached Apply**, counted by `AppliedAt` — a status-based count reads 1/20 because `Dismiss()` overwrites an `Applied` status). Residual accuracy questions → **`#1480`**.
 - **`#1471`, `#1472`, `#1479`** — canonical-doc reconciliation, human-action tracking for `#1457`'s trust gate and the recurring worktree prune, and two record-only check-offs taken on explicit maintainer instruction.

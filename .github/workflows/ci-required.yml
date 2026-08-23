@@ -5,7 +5,6 @@
 # Workflow Topology (see docs/analysis/2026-02-21_ci-github-actions-expansion-plan.md):
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
-#     ├── native Git + KineticCafe/actions-dco DCO sign-off signal (PR-only, advisory)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
 #     ├── release-workflow-contract            release-desktop dispatch hardening gate (#1795/#1806)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
@@ -90,33 +89,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Advisory during the initial DCO rollout. The job-level continue-on-error
-  # keeps the required CI workflow green while contributors adopt `git commit -s`.
-  # Promotion into branch protection is a maintainer-owned settings change (#1173).
-  dco:
-    name: DCO (advisory)
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Checkout DCO range
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Run upstream DCO diagnostic
-        continue-on-error: true
-        uses: KineticCafe/actions-dco@5f160e3ee086af8fc0fb567b8add0937d074123e # v3.2.0
-
-      - name: Verify DCO sign-offs with native Git
-        env:
-          DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: scripts/ci/check-dco-signoffs.sh "$DCO_BASE_SHA" "$DCO_HEAD_SHA"
-
   docs-governance:
     name: Docs Governance
     uses: ./.github/workflows/reusable-docs-governance.yml

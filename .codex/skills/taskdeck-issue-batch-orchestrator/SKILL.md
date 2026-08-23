@@ -182,7 +182,8 @@ For each issue:
 4. If the worker entered through Bash, require it to launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; do not resolve bare `powershell`, substitute a PATH-first batch shim, or translate only the switch command.
 5. Tell the worker which files or module it owns.
 6. Tell the worker it is not alone in the codebase and must not revert others' edits.
-7. Require small signed-off commits with `git commit -s --no-gpg-sign` when committing.
+7. Require small present-tense commits with `git commit --no-gpg-sign` when committing. DCO trailers
+   are optional while enforcement is paused; do not repair history to add one.
 8. Require targeted tests before PR.
 9. Require every file-editing worker prompt to restate the structured patch discipline above.
 
