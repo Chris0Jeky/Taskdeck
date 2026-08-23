@@ -139,6 +139,26 @@ describe('PaperToastContainer', () => {
     // Toast is removed from the store after action.
     expect(store.toasts.find((t) => t.id === id)).toBeUndefined()
   })
+
+  it('expands error details with an accessible control and keeps the receipt persistent', async () => {
+    const store = useToastStore()
+    const id = store.error('Network error', undefined, { details: 'status: 503' })
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    const detailsButton = card.get(`button[aria-controls="paper-toast-details-${id}"]`)
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('true')
+    expect(card.get('pre.paper-toast__details').text()).toContain('status: 503')
+    expect(card.find('.paper-toast__countdown').exists()).toBe(false)
+
+    vi.advanceTimersByTime(60_000)
+    expect(store.toasts).toHaveLength(1)
+  })
 })
 
 /**

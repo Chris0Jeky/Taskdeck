@@ -8,9 +8,11 @@ const mockToastStore = reactive({
   toasts: [] as Toast[],
   remove: vi.fn(),
 })
+const copyToastReceipt = vi.hoisted(() => vi.fn().mockResolvedValue(true))
 
 vi.mock('../../store/toastStore', () => ({
   useToastStore: () => mockToastStore,
+  copyToastReceipt,
 }))
 
 describe('ToastContainer', () => {
@@ -87,5 +89,29 @@ describe('ToastContainer', () => {
   it('has aria-live="polite" on the container', () => {
     const wrapper = mount(ToastContainer)
     expect(wrapper.find('[aria-live="polite"]').exists()).toBe(true)
+  })
+
+  it('expands and copies an error receipt with accessible controls', async () => {
+    mockToastStore.toasts = [
+      {
+        id: 't1',
+        message: 'Network error',
+        details: 'status: 503',
+        type: 'error',
+        duration: 0,
+      },
+    ]
+    const wrapper = mount(ToastContainer)
+
+    const detailsButton = wrapper.get('button[aria-controls="toast-details-t1"]')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('#toast-details-t1').text()).toContain('status: 503')
+
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === 'Copy details')
+    expect(copyButton).toBeDefined()
+    await copyButton!.trigger('click')
+    expect(copyToastReceipt).toHaveBeenCalledWith(mockToastStore.toasts[0])
   })
 })

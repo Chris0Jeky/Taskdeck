@@ -3,7 +3,7 @@ import { computed, onUnmounted, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperTagstamp from './PaperTagstamp.vue'
 import type { PaperTagstampTone } from './PaperTagstamp.vue'
-import { useToastStore, type Toast, type ToastLabel } from '../../store/toastStore'
+import { copyToastReceipt, useToastStore, type Toast, type ToastLabel } from '../../store/toastStore'
 
 /**
  * PaperToastContainer — bottom-right paper toast stack.  Mirrors
@@ -30,6 +30,8 @@ import { useToastStore, type Toast, type ToastLabel } from '../../store/toastSto
 
 const toastStore = useToastStore()
 const { t } = useI18n()
+const expanded = reactive<Record<string, boolean>>({})
+const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
 
 type Tone = 'applied' | 'proposed' | 'captured' | 'overdue' | 'undo'
 
@@ -223,6 +225,18 @@ function handleAction(toast: Toast) {
   toastStore.remove(toast.id)
 }
 
+function detailsId(id: string): string {
+  return `paper-toast-details-${id}`
+}
+
+function toggleDetails(id: string) {
+  expanded[id] = !expanded[id]
+}
+
+async function copyReceipt(toast: Toast) {
+  copyState[toast.id] = (await copyToastReceipt(toast)) ? 'copied' : 'failed'
+}
+
 // ── Display helpers ───────────────────────────────────────────────────────
 
 function countdownLabel(toast: Toast): string {
@@ -263,6 +277,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
           'paper-toast',
           'card-lift',
           `paper-toast--${describe(toast).tone}`,
+          { 'paper-toast--expanded': expanded[toast.id] },
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
         @mouseenter="setHover(toast.id, true)"
@@ -281,6 +296,33 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             <span v-if="toast.title" class="paper-toast__title">{{ toast.title }}</span>
           </div>
           <p class="paper-toast__msg">{{ toast.message }}</p>
+          <div v-if="toast.type === 'error'" class="paper-toast__receipt-actions">
+            <button
+              v-if="toast.details"
+              type="button"
+              class="paper-toast__receipt-button"
+              :aria-expanded="expanded[toast.id] ?? false"
+              :aria-controls="detailsId(toast.id)"
+              @click="toggleDetails(toast.id)"
+            >
+              {{ expanded[toast.id] ? 'Hide details' : 'Show details' }}
+            </button>
+            <button
+              type="button"
+              class="paper-toast__receipt-button"
+              @click="copyReceipt(toast)"
+            >
+              {{ copyState[toast.id] === 'copied' ? 'Copied' : copyState[toast.id] === 'failed' ? 'Copy failed' : 'Copy details' }}
+            </button>
+          </div>
+          <pre
+            v-if="toast.type === 'error' && toast.details && expanded[toast.id]"
+            :id="detailsId(toast.id)"
+            class="paper-toast__details"
+            tabindex="0"
+            role="region"
+            :aria-label="`Error details for ${toast.message}`"
+          >{{ toast.details }}</pre>
         </div>
         <div class="paper-toast__action">
           <button
@@ -292,7 +334,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             <span class="paper-toast__undo-label">{{ toast.action.label }}</span>
             <span v-if="toast.action.hint" class="paper-toast__undo-hint">{{ toast.action.hint }}</span>
           </button>
-          <span v-else class="paper-toast__countdown" aria-hidden="true">
+          <span v-else-if="toast.duration > 0" class="paper-toast__countdown" aria-hidden="true">
             {{ countdownLabel(toast) }}
           </span>
           <span
@@ -322,7 +364,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
 .paper-toast {
   pointer-events: auto;
   width: 320px;
-  height: 56px;
+  min-height: 56px;
   display: grid;
   grid-template-columns: 44px 1fr auto;
   align-items: stretch;
@@ -332,6 +374,10 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   font-family: var(--sans);
   color: var(--ink);
   overflow: hidden;
+}
+
+.paper-toast--expanded {
+  height: auto;
 }
 
 .paper-toast--proposed {
@@ -391,6 +437,36 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.paper-toast__receipt-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.paper-toast__receipt-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--overdue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.paper-toast__details {
+  max-height: 140px;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-2);
 }
 
 .paper-toast__action {
