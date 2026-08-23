@@ -11,6 +11,7 @@
  * automatically; no registration list to update.
  */
 import boardDetail from './boardDetail'
+import cardModal from './cardModal'
 import boards from './boards'
 import home from './home'
 import inbox from './inbox'
@@ -24,6 +25,7 @@ export default {
   inbox,
   boards,
   boardDetail,
+  cardModal,
   review,
   settings,
   shell,

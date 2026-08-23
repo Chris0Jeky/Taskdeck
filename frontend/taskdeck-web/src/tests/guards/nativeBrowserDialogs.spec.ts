@@ -66,11 +66,11 @@ const SOURCES: Record<string, string> = {
  * Files with a KNOWN remaining native dialog, tracked separately. This list may
  * only ever shrink: adding to it is how a rule stops being one.
  *
- * `useCardModal.ts` — `confirm('Delete this comment?')` on the card-comment
- * delete path. Same class as the reject prompt, different surface (board/card
- * modal, not review), so GH-1969 did not touch it. Tracked on GH-1997.
+ * GH-1997 cleared the final card-comment confirmation entry. Keeping this
+ * list empty is intentional: a new exception would weaken the rule instead
+ * of fixing the native dialog.
  */
-const QUARANTINE = ['../../composables/useCardModal.ts']
+const QUARANTINE: string[] = []
 
 /**
  * Strip comments so PROSE about a native dialog is not reported as one — several
@@ -138,14 +138,8 @@ describe('native browser dialogs', () => {
     ).toEqual([])
   })
 
-  it('still finds the quarantined call, so the list cannot rot into a no-op', () => {
-    // If this fails because the call is gone, delete the entry — do not relax
-    // the assertion.
-    for (const path of QUARANTINE) {
-      const source = SOURCES[path]
-      expect(source, `quarantined file ${path} is no longer scanned`).toBeTruthy()
-      expect(nativeDialogLines(source!).length).toBeGreaterThan(0)
-    }
+  it('has no quarantine entries', () => {
+    expect(QUARANTINE).toEqual([])
   })
 
   it('detects the shapes it claims to detect', () => {
