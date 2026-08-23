@@ -142,10 +142,10 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
 
         <h3 class="tk-eyebrow">Buttons &amp; kbd</h3>
         <div class="sg-row">
-          <button class="pbtn" type="button">Default <span class="pkbd">⌫</span></button>
-          <button class="pbtn pbtn-primary" type="button">Primary <span class="pkbd">P</span></button>
-          <button class="pbtn pbtn-ember" type="button">Apply <span class="pkbd">⏎</span></button>
-          <button class="pbtn pbtn-ghost" type="button">Ghost</button>
+          <button class="pbtn" type="button" data-dead-affordance-exempt="visual-specimen">Default <span class="pkbd">⌫</span></button>
+          <button class="pbtn pbtn-primary" type="button" data-dead-affordance-exempt="visual-specimen">Primary <span class="pkbd">P</span></button>
+          <button class="pbtn pbtn-ember" type="button" data-dead-affordance-exempt="visual-specimen">Apply <span class="pkbd">⏎</span></button>
+          <button class="pbtn pbtn-ghost" type="button" data-dead-affordance-exempt="visual-specimen">Ghost</button>
           <span class="pkbd">⌘</span>
           <span class="pkbd">K</span>
           <span class="pkbd-light pkbd">space</span>
