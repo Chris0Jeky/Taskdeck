@@ -177,6 +177,94 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldCarryExplicitDueDateAndLabelsIntoCreateOperation()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- [ ] Buy milk",
+            DueDate: new DateOnly(2026, 8, 23),
+            Labels: ["shopping"]);
+
+        var result = await _service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        using var parameters = System.Text.Json.JsonDocument.Parse(createdProposal!.Operations![0].Parameters);
+        parameters.RootElement.GetProperty("dueDate").GetDateTimeOffset().Date.Should().Be(new DateTime(2026, 8, 23));
+        parameters.RootElement.GetProperty("labels").EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().Equal("shopping");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldUseExtractorDueDateHintWhenCaptureHasNoExplicitDueDate()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                new CaptureTriageOutputV2(
+                    CaptureTriageOutputContract.SchemaVersionV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    [new CaptureTriageTaskV2("Send report", "action", null, "2026-08-24", 0.9m, "Send report by Friday")]),
+                "OpenAI",
+                "gpt-4o-mini"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        using var parameters = System.Text.Json.JsonDocument.Parse(createdProposal!.Operations![0].Parameters);
+        parameters.RootElement.GetProperty("dueDate").GetDateTimeOffset().Date.Should().Be(new DateTime(2026, 8, 24));
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldPreferExplicitDueDateOverExtractorHint()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                new CaptureTriageOutputV2(
+                    CaptureTriageOutputContract.SchemaVersionV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    [new CaptureTriageTaskV2("Send report", "action", null, "2026-08-24", 0.9m, "Send report by Friday")]),
+                "OpenAI",
+                "gpt-4o-mini"));
+        var service = BuildServiceWithExtractor(extractorMock);
+        var payload = TranscriptPayload() with { DueDate = new DateOnly(2026, 8, 23) };
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, payload);
+
+        result.IsSuccess.Should().BeTrue();
+        createdProposal.Should().NotBeNull();
+        using var parameters = System.Text.Json.JsonDocument.Parse(createdProposal!.Operations![0].Parameters);
+        parameters.RootElement.GetProperty("dueDate").GetDateTimeOffset().Date.Should().Be(new DateTime(2026, 8, 23));
+    }
+
+    [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldRecordDeterministicExtractorProvenance_NotAnLlmProvider()
     {
         // #1273: capture triage is a deterministic, offline text extractor and never calls an LLM,

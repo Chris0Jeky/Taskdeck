@@ -53,6 +53,35 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void ParsePayload_ShouldKeepNewMetadataOptionalForOlderPayloads()
+    {
+        const string olderPayload = """
+                                    {
+                                      "version": 1,
+                                      "source": "typed",
+                                      "text": "legacy capture"
+                                    }
+                                    """;
+
+        var parsedOlderPayload = CaptureRequestContract.ParsePayload(olderPayload);
+
+        parsedOlderPayload.IsSuccess.Should().BeTrue();
+        parsedOlderPayload.Value.DueDate.Should().BeNull();
+        parsedOlderPayload.Value.Labels.Should().BeNull();
+
+        var serialized = CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "new capture",
+            DueDate: new DateOnly(2026, 8, 23),
+            Labels: ["shopping"]));
+        var roundTripped = CaptureRequestContract.ParseStoredPayload(serialized);
+
+        roundTripped.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        roundTripped.Labels.Should().Equal("shopping");
+    }
+
+    [Fact]
     public void ParsePayload_ShouldFail_WhenTextExceedsMaxLength()
     {
         var longText = new string('a', CaptureRequestContract.MaxRawTextLength + 1);

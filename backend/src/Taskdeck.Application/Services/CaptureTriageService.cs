@@ -210,6 +210,7 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
+        IReadOnlyList<string?>? dueDateHints = null;
         LlmCaptureTriageExtraction? successfulLlmExtraction = null;
         var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
@@ -224,11 +225,14 @@ public class CaptureTriageService : ICaptureTriageService
                 if (outputValidation.IsSuccess)
                 {
                     // Schema-v2's evidence quote remains visible in the proposed card description.
-                    // Its classification, assignee, due-date, and confidence metadata are deliberately
-                    // non-mutating at this boundary: REVIVAL-09/-11 own durable spans/provenance and
-                    // review presentation before any later consumer can act on those model hints.
+                    // Classification, assignee, and confidence stay descriptive at this boundary.
+                    // A validated due-date hint is carried into the reviewable create-card operation;
+                    // it never mutates a board until the user explicitly approves and applies it.
                     proposalTasks = outputValidation.Value.Tasks
                         .Select(task => new CaptureTriageTaskV1(task.Title, task.EvidenceQuote))
+                        .ToList();
+                    dueDateHints = outputValidation.Value.Tasks
+                        .Select(task => task.DueDateHint)
                         .ToList();
                     successfulLlmExtraction = extraction;
                     triagePromptVersion = outputValidation.Value.PromptVersion;
@@ -304,7 +308,10 @@ public class CaptureTriageService : ICaptureTriageService
                 boardId.Value,
                 defaultColumn.Id,
                 task,
-                sequence))
+                sequence,
+                payload.DueDate,
+                dueDateHints?[sequence],
+                payload.Labels))
             .ToList();
 
         var operationDtos = operations
@@ -620,24 +627,55 @@ public class CaptureTriageService : ICaptureTriageService
         Guid boardId,
         Guid columnId,
         CaptureTriageTaskV1 task,
-        int sequence)
+        int sequence,
+        DateOnly? explicitDueDate,
+        string? dueDateHint,
+        IReadOnlyList<string>? labels)
     {
         var cardId = BuildDeterministicCardId(captureItemId, sequence, task.Title);
-        var parameters = JsonSerializer.Serialize(new
+        var parameters = new Dictionary<string, object?>
         {
-            title = task.Title,
-            description = task.Evidence,
-            columnId,
-            boardId
-        });
+            ["title"] = task.Title,
+            ["description"] = task.Evidence,
+            ["columnId"] = columnId,
+            ["boardId"] = boardId
+        };
+
+        // Typed calendar intent wins over an extractor inference. This remains proposal-only;
+        // the normal reviewed create-card path is still the only board mutation route.
+        var dueDate = explicitDueDate ?? ParseDueDateHint(dueDateHint);
+        if (dueDate.HasValue)
+        {
+            parameters["dueDate"] = new DateTimeOffset(
+                dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        }
+
+        // Composer labels are names, not portable ids. The established proposal validator resolves
+        // them against the selected proposal board and rejects unknown or ambiguous names.
+        if (labels is { Count: > 0 })
+        {
+            parameters["labels"] = labels;
+        }
 
         return new CreateProposalOperationDto(
             Sequence: sequence,
             ActionType: "create",
             TargetType: "card",
-            Parameters: parameters,
+            Parameters: JsonSerializer.Serialize(parameters),
             IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, task.Title),
             TargetId: cardId.ToString());
+    }
+
+    private static DateOnly? ParseDueDateHint(string? dueDateHint)
+    {
+        return DateOnly.TryParseExact(
+            dueDateHint,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsed)
+            ? parsed
+            : null;
     }
 
     private static string BuildIdempotencyKey(Guid captureItemId, int sequence, string taskTitle)
