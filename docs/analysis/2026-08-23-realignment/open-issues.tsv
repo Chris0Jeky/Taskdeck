@@ -1,0 +1,172 @@
+2010	-	backend,frontend,Priority III,feature,worker	Reminders, alarms, and email delivery — configurable notification channels (epic)
+2009	-	frontend,ux,Priority II,ui	Night theme legibility: control boundaries at 1.15:1, body ink at 14.9:1 — needs a palette spike
+2008	-	bug,frontend,ux,Priority II,ui	Modifier keys render three different ways in one app — hardcoded ⌘ glyphs on Windows, deprecated platform detection
+2007	-	bug,frontend,ux,tech-debt,Priority II,ui	Keystroke ledger documents shortcuts that don't exist, omits ones that do, and there are three divergent shortcut systems
+2006	-	frontend,ux,Priority II,ui	Date fields: calendar should open on click anywhere in the field, not just the icon (keep typing too)
+2005	-	bug,backend,frontend,Priority I,automation	Capture due date (and labels) are silently dropped end-to-end — never reach the proposal or the card
+2004	-	bug,backend,frontend,ux,llm,Priority I,automation	Automation Chat produces prose, never proposals — the chat workflow needs re-thinking
+2003	-		i18n: locale-switch pending state and SW-upgrade catalog warm (lazy-locale polish)
+1999	-	frontend,ux,testing,Priority II	[Frontend] Paper triage-edit residuals from PR #1995's Codex round: mobile action stacking, Triaged-row edit, filter-change draft, stalled-detail Cancel
+1997	-	bug,frontend,ux,testing,Priority I	[Frontend][UX] Card comment deletion still confirms through a native window.confirm
+1992	-	backend,testing,hardening,Priority I	[Backend][Deploy] #1971 routing residuals: nginx doesn't proxy /mcp (split topology), wrong-verb GET on POST-only routes now 404s not 405s, PWA denylist misses /hubs and /health
+1991	-	frontend,ux,tech-debt,Priority III	[Frontend] Toast/counter residuals from PR #1989: board-scoped eyebrow divergence, runtime-assembled i18n key, unreserved 'applied' label, refusal toasts stamp NOTED
+1987	-	security,backend,frontend,llm,Priority II	[Backend][Frontend] Wire the provenance triple (provider/model/promptVersion) into the deep-review payload so #1963's honest footnote can render
+1984	-	bug,frontend,ux,Priority II,feature	[Frontend] Composer silently discards label/due metadata; board-link columnId is read by nothing (horizon doc round-2 findings)
+1983	-	frontend,ux,testing,Priority II	[Frontend] Post-wave Codex residuals: Today loading-vs-failed states, note-save copy, ledger empty-state precision; Review Enter-in-dialog
+1975	-	bug,frontend,ux,testing,Priority II	[Frontend] Paper board dialog residuals from PR #1959: TdDialog machinery parity, realtime input-clobber (both skins), Enter-swallow in dialogs
+1973	-	bug,backend,frontend,ux,Priority I	[Backend][UX] Archiving a board makes its captures and applied-proposal ledger vanish from every list with no disclosure
+1972	-	bug,frontend,ux,Priority II	[Frontend][UX] "Agent" workspace mode is byte-identical to "Workbench" — a persisted selector option no code reads
+1968	-	frontend,ux,Priority II,feature	[Frontend][UX] Documented bare-letter shortcuts (H/T/B/I/R, G T, board C/R) have no handler, and Settings has no Keyboard page
+1967	-	bug,frontend,ux,Priority I	[Frontend][UX] Applied proposals are unreachable and "Open Proposal" renders a different proposal than it deep-links
+1966	-	bug,frontend,ux,Priority I	[Frontend][UX] ?boardId= silently scopes Review and Inbox with no filter chip — headers report 0 AWAITING / 0 IN QUEUE while work exists
+1962	-	docs,frontend,tech-debt,Priority III	[Frontend] Version-truth residuals from PR #1956: telemetry appVersion literal (already wrong), duplicated root derivation, demo-build stamp decision
+1961	-	bug,frontend,ux,Priority II	[Frontend] Inbox board picker: distinguish load-failure and loading from a genuinely empty account (Codex P2 on PR #1952)
+1955	-	bug,testing,Priority II,ci	[CI] Paper Color Audit reads a 4-digit issue number (#NNNN) as a hex colour literal
+1949	-	bug,frontend,ux,testing,Priority I	[Frontend][Testing] Guard against dead affordances - six enabled-but-inert controls found in one audit pass
+1947	-	frontend,ux,testing,Priority I,strategy	TRACKER: dogfooding UX sweep 2026-08-22 — dead affordances, core-loop legibility, board management
+1946	-	frontend,ux,Priority II,feature	[Frontend][Feature] Global toggleable help/explainer mode covering every control, i18n-ready
+1940	-	frontend,ux,Priority I,feature	[Frontend][UX] Review view is overwhelming, gives weak decision feedback, and the All/Mine filter is confusing
+1938	-	bug,frontend,ux,Priority I	[Frontend][Bug][Priority II] Nib capture submit fails with a network-error toast that cannot be inspected and auto-dismisses
+1937	-	frontend,ux,Priority II,feature	[Frontend][UX] Quick-capture nib gives no submit affordance, no explanation, and an ambiguous target
+1936	-	frontend,ux,Priority II,feature	[Frontend][UX] Home view reads as a one-time onboarding tutorial, not a home/dashboard
+1935	-	frontend,ux,Priority III	[Frontend][UX] Keyboard shortcut presentation: Mac ⌘-style glyph shown on Windows; Ctrl+; as the primary shortcut is unintuitive
+1933	-	bug,frontend,ux,Priority II	[Frontend][Bug] Board creation: pressing Enter in the new-board name field does nothing
+1921	-	bug,frontend,testing,hardening,Priority II	[Bug][Priority II] Authenticate ordinary demo collaborator before board writes and align reset docs
+1916	-	backend,Priority III,performance	[Performance][Priority III] Bound archived capture payload loading in workspace summaries
+1900	-	bug,frontend,testing,hardening,Priority II	[Bug][Priority II] Make dev readiness truthful for lazy Vite routes
+1898	-	bug,testing,hardening,Priority II	[Bug][Priority II] Close remaining dev-up fail-closed availability races
+1879	-	llm,tech-debt,Priority II	[LLM][Priority II] Remove the deprecated Gemini provider and collapse live configuration to OpenAI
+1876	v0.1.2	bug,ux,testing,Priority I,packaging	[Bug][Priority I] Make the Windows release genuinely double-click-to-use
+1872	-	bug,testing,Priority II,performance,ci	[CI] E2E Smoke: playwright install-deps intermittently times out (10 min) on ubuntu-24.04 - remove apt from the hot path
+1871	-	frontend,ux,tech-debt,Priority III	[Frontend] Review-i18n + board-picker polish residuals (PR #1869 / #1870 reviews)
+1868	-	testing,hardening,tech-debt,Priority III	[Frontend] ADR-0053 guard maintenance residuals: badge dE spacing, dual root lists, guard escape hatch (PR #1865 review)
+1867	-	frontend,ux,testing,Priority III	[Frontend] TdDialog/useVisualViewport residuals: pinch-zoom scale, prefix validation, ungated geometric E2E (PR #1864 review)
+1866	-	bug,security,backend,hardening,Priority II	[Authz] Sandbox-mode divergence: API-side CanWriteBoardAsync bypass vs policy-engine repository gate (PR #1861 review)
+1860	-	testing,hardening,tech-debt,Priority III	[Agent safety] Fingerprint guard: lane-throw coverage, deletion classification, anchor precision (PR #1850 review residuals)
+1859	-	testing,hardening,tech-debt,Priority III	[Agent safety] Read-only inventory wrapper: gh value-flag alignment, case-sensitivity, empty-argv diagnostics (PR #1848 review residuals)
+1856	-	backend,hardening,tech-debt,Priority III	[Backend] SqlitePreMigrationBackup follow-ups from the PR #1849 review: .tmp orphans, case dedupe, sequence overflow
+1855	-	testing,hardening,tech-debt,Priority III	[Agent tooling] worktree_guard follow-ups from the PR #1851 review: submodule fixture, path flavour, strict expectations, ADR note
+1854	-	ci	[CI] release-container.yml: executable contract coverage, point-of-failure diagnostics, non-semver tag guard
+1853	-	testing	[Testing] Follow-ups from the PR #1845 review: failure-dump noise, sibling overlap, worker-isolation dependence
+1837	-	security,frontend,ux,testing,Priority II	Transcript evidence viewer follow-ups (PR #1835): board-collaborator dead-end, zero-length span guard, 200k render bound
+1821	-	bug,frontend	[Frontend] Bind TdDialog to the visual viewport so nested confirmations stay keyboard-safe
+1819	-	security,ci	Re-enable CodeQL scanning (default setup disabled 2026-08-19 — hung queued Analyze checks)
+1812	-	frontend	Two major lines of ws in one frontend tree: @microsoft/signalr pins ^7.5.x while the app carries ws 8.x
+1777	-	Priority III,cloud	Migrate the private shared instance from self-host+tunnel to Render
+1772	-	Priority II,feature,cloud	Deploy a private shared Taskdeck instance for two-person collaboration dogfooding
+1770	-	frontend,Priority IV,feature,strategy	Seed an i18n translation layer (vue-i18n) with Italian and Spanish locales
+1763	-	bug,testing,Priority II	[Testing] Repair stale command-palette locator in headed manual audit
+1761	-	bug,frontend,Priority III	Enrich incomplete move-card proposal headlines with the resolved destination
+1755	-	bug,hardening,Priority IV,automation	[Agent safety] Reject attached browser flags in read-only inventory
+1746	-	bug,frontend,Priority III	[Frontend] Keep CardModal keyboard-safe at tablet-width breakpoints
+1739	-	bug,frontend,Priority IV	Refresh CardModal fallback height when VisualViewport is unavailable
+1736	-	bug,frontend,Priority III	Keep explicit board retry authoritative over realtime refresh
+1721	-	bug,frontend,Priority II	Make board load failures bounded and retryable
+1714	-	bug,frontend,testing,Priority III,automation	[Windows tooling] Keep unchanged Vitest snapshots status-clean
+1711	-	bug,testing,hardening,Priority III,automation	[Agent safety] Align fingerprint state bounds and provenance tests
+1710	-	security,hardening,Priority I	[Security] Reject generic write rights in Codex path trust verifier
+1706	-	bug,Priority IV	[Queue] Preserve dirty tracked fields after raw-SQL capture claim
+1704	-	docs,hardening,Priority IV	Shell-quote WSL handoff paths and remove checkout literal
+1700	-	bug,hardening,Priority III	[Logging] Avoid splitting surrogate pairs during bounded sanitization
+1665	-	testing,Priority IV	[Testing] Align CLI migration-readiness probe with bounded process deadline
+1653	-	security,backend,hardening,Priority I	[Security] Encrypt MFA TOTP secrets at rest before production use
+1652	-	Priority III	Harden log sanitizers against Unicode record separators
+1651	-	security,hardening,Priority I	[Security] Replace project Codex PATH with trusted-only executable roots
+1644	-	Priority III	SEC: migrate browser token storage before hosted multi-user deployment
+1640	-	bug,backend,frontend,Priority II	[Today] TomorrowNote is stored/fetched same-day - the 'tomorrow' hand-off its UI copy and controller doc promise never happens; OAuthAuthCode.UserId summary contradicts CreateForLinking
+1639	-	testing,hardening,Priority II,ci	[CI] No CI lane executes test-collect-pre-merge-evidence.sh (evidence-collector canary suite is local-only)
+1637	-	testing,tech-debt,Priority IV,mcp	[MCP][Testing] Standalone MCP host follow-ups from the #1630 review: preflight OPTIONS coverage, invariant-culture env formatting, boot-harness count
+1635	-	Priority III	Worktree helper: suppress GIT_ASKPASS / core.askPass for launched Git processes
+1632	-	tech-debt,Priority III,worker	[Worker] No telemetry outcome for shutdown-released claims (abandoned_shutdown), and TranscriptTriageWorker unchecked for the stranded-Failed window
+1628	-	bug,backend,llm,Priority II	[LLM] Degraded chat outcome with RequestProposal=true is overwritten to proposal-reference (degraded classification lost)
+1607	-	frontend,tech-debt,Priority III	Burn down the frontend spec typecheck quarantine (64 files, 415 errors)
+1600	-	tech-debt,Priority II,automation	Agent worktree inventory: 12 of 22 worktrees hold commits that exist on no remote branch
+1590	-	bug,hardening,Priority I,mcp	[MCP] Make Docker gateway validation leave no persistent containers
+1589	-	docs,frontend,Priority III	[Docs] Reconcile Paper and Legacy navigation truth
+1585	-	bug,frontend,llm,Priority III	[Inbox] Make transcript triage polling deadline provider-aware
+1573	-	bug,backend,llm,Priority III	[Capture] Deduplicate overlapping transcript map results by evidence
+1564	-	docs,frontend,Priority III	[Docs] Align navigation manual with palette and Workbench catalogs
+1553	-	bug,Priority I,automation	Prevent worktree cleanup from deleting index-hidden modifications
+1547	-	bug,hardening,Priority II	[Gate] Make pre-merge evidence atomic across argument, feedback, and OID changes
+1543	-	testing,hardening,Priority III	[Gate] Derive the pre-merge secrets verdict from real scan evidence
+1542	-	bug,testing,Priority III	[Test] Route JSON contract CLI launches through the shared lifecycle gate
+1540	-	Priority III,mcp	scripts/mcp/Test-DockerMcpProfile.ps1 still defaults to the retired 8-server list
+1536	-	testing,hardening,Priority V	[Testing] Assert the complete PR-hook JSON wrapper in smoke tests
+1521	-	bug,backend,testing,hardening,Priority I	[Test] Diagnose recurring presence join HubException under API CI load
+1512	-	bug,testing,hardening,Priority I,ci	[CI] Diagnose post-#1373 Windows concurrent-card HTTP 500
+1504	-	hardening,Priority II,ci	[Deployment] Require real environment protection before staging-gate reactivation
+1501	-	security,hardening,Priority II	[Security] Add an externally pinned worktree handoff launcher
+1495	-	hardening,Priority II	Document a deterministic PowerShell-to-WSL verification handoff
+1494	-	testing,hardening,Priority II	Add a targeted ProjectV2 Status/Priority verification helper
+1482	-	Priority II,strategy	Taskdeck name: pre-commercial legal residuals (attorney opinion, UKIPO/EUIPO gaps, perishable namespaces)
+1480	-	tech-debt,Priority III	dogfood-snapshot: active-day count includes demo/E2E fixture activity
+1467	-	backend,hardening,Priority IV	Resolve list effective revisions in one bounded snapshot (at most one revision row per proposal)
+1465	-	backend,Priority IV	Dismissing a rejected proposal drops its decision-time frozen revision back to the originals
+1464	-	frontend,tech-debt,Priority II	Review surfaces: the "recorded operations show the original submission" caveat is inverted after #1444
+1461	-	docs,tech-debt,Priority III	Overnight manuals depend on a routing source outside the checkout
+1453	-	Priority IV	Rejected proposals: a raced revision with a pre-decision RevisedAt can still render as the rejected content (pin the decided revision)
+1452	-	Priority IV	No test exercises AuditRetentionWorker's real startup/scheduling path (ExecuteAsync)
+1446	-	Priority IV	Board-write latency tail: median ~12ms but p90 seconds under 20 VUs (write-serialization convoy)
+1436	-	Priority III	PR #1414 stored-preview follow-up P2s (parked)
+1435	-	tech-debt,Priority II	LLM quota reservation: check-then-insert TOCTOU not closed under cold-start concurrency (redesign)
+1434	-	Priority IV	Paper/Legacy stored-preview presentation parity (recorded-ops format, banner wording, Applied label)
+1433	-	Priority II	AutomationPlannerService persists proposals before ValidatePermissionsAsync (orphaned unauthorized PendingReview rows)
+1431	-	tech-debt,Priority IV	LlmQuota LOW follow-ups (from #1427 review)
+1429	-	security,backend,testing,hardening,Priority I,worker	Memory-capped extraction worker process (decompression-bomb containment boundary, ADR-0048)
+1422	-	tech-debt,Priority IV	Audit DateTimeOffset-vs-TEXT comparison sites for missing UTC normalization (convention-only invariant after #1403/#1421)
+1410	-	bug,frontend,testing,Priority IV	Workspace-mode guards: three residual interleavings from #1386 round 5 (replay payload, logout invalidation, dirty-mode reconciliation)
+1399	-	Priority IV	Streaming account export: batch extraction-history loads (N+1) with streaming-safe memory design
+1388	-	bug,frontend,Priority IV	Workspace-mode staleness: server-order and cross-device gaps after #1343
+1363	-	frontend,testing,Priority III	Testing: commit reviewed visual-regression baselines
+1327	-	Priority II,strategy,generalist	GEN-00 [TRACKER]: Generalist expansion wave (ADR-0046) - artefact intake beyond transcripts, project dossiers, generalist reach
+1326	-	Priority IV,strategy,generalist	GEN-12: Decision gate - twin generalist app extraction (default: no)
+1325	-	docs,Priority III,generalist	GEN-11: Friends & family beta channel - runbook, invite path, feedback loop, activation metrics
+1323	-	docs,security,Priority II,generalist	GEN-09: Untrusted-artefact threat model + prompt-injection rails
+1322	-	backend,frontend,Priority III,feature,generalist	GEN-08: Today enrichment - real attention aggregations (awaiting triage/review, due, stale boards)
+1321	-	backend,frontend,Priority III,feature,generalist	GEN-07: Project dossier - per-board derived read model + Paper panel from approved state
+1320	-	frontend,ux,Priority II,feature,generalist	GEN-06: Paper intake UX - wire the drop zone, paste-image, artefact previews, source affordance
+1318	-	backend,llm,Priority II,feature,generalist	GEN-04: Artefact-aware capture triage - route extracted text through the LLM triage lane
+1317	-	backend,llm,Priority III,feature,generalist	GEN-03: Consent-gated multimodal image extraction - provider content parts + vision OCR
+1311	-	docs,Priority I,strategy,revival	REVIVAL-00 [TRACKER]: Revival pivot (ADR-0044) - v0.1 ship gate, wave sequencing, checkpoint
+1310	-	Priority II,marketing,strategy,revival	REVIVAL-14: Open-beta launch kit - hosted demo, launch posts, pre-written probe answers, 48h presence plan, metrics baseline
+1309	-	docs,security,Priority II,mcp,revival	REVIVAL-13: Package the MCP story - docs + one-command setup, scoped API keys, wire hash-pinning (folds #1154), fix stdio identity fallback
+1308	-	docs,frontend,Priority II,strategy,revival	REVIVAL-12: Beta feedback + telemetry posture - Discussions, in-app feedback link, zero-or-opt-in telemetry decision, TELEMETRY.md
+1307	-	backend,ux,llm,Priority II,revival	REVIVAL-11: Risk-tiered review prioritization + explicit batch-confirm + model-derived confidence
+1306	-	backend,llm,Priority II,revival	REVIVAL-10: OpenAICompatible named provider + true SSE streaming (OpenRouter/Groq/DeepSeek first-class)
+1305	-	backend,llm,Priority II,feature,revival	REVIVAL-09: Durable Transcript entity + evidence spans - every proposed card deep-links to its transcript span
+1304	-	backend,llm,Priority I,feature,revival	REVIVAL-08 [EPIC]: LLM transcript triage engine - strategy behind ICaptureTriageService, worker dispatch branch, chunking, schema v2
+1291	-	Priority V,archive-closeout	Adopt agent-harness T3 profile: harness right-sizing plan
+1285	-	backend,llm,Priority II,archive-closeout	Reconcile LlmSurface.CaptureTriage enum + kill-switch semantics with deterministic triage (#1273 follow-up)
+1284	-	frontend,Priority II,archive-closeout	Review provenance drawer never receives metadata — provider/model/confidence not surfaced to users
+1278	-	docs,Priority I,strategy,archive-closeout	ARCHIVE-00 [TRACKER]: Archive exit criteria, target date, and the closeout waves
+1277	-	docs,Priority I,strategy,archive-closeout	ARCHIVE-09: Final archive pass - README banner, final doc entries, tag decision, exit-criteria done-check
+1276	-	backend,frontend,tech-debt,Priority II,archive-closeout	ARCHIVE-08: Dead-surface removal - ink-bleed decision, orphaned Paper code, cohorts stub, voice capture, Ollama marking
+1271	-	ux,Priority I,strategy,archive-closeout	ARCHIVE-03: Dogfooding sprint - 10+ days of real personal use as the pivot's acceptance test
+1266	-	frontend,ux,tech-debt,Priority IV	Selected-label ring uses ring-offset-2 with Tailwind's default white offset — 2px white halo on dark surfaces
+1262	-	security,backend,Priority II	CliFirstRunBootstrapper: owner-only Windows ACL + fix write-before-chmod TOCTOU on the connector key file
+1261	-	backend,tech-debt,Priority IV,performance	GetExpiredAsync: avoid Include(Operations) + consider chunking for large expiry sweeps
+1242	-	backend,Priority I	Persist bootstrapper secrets (connector key, JWT) in the durable app-data location, not next to the exe
+1239	-	backend,Priority V,performance	Push capture board/status filters into SQL to bound filtered-list round-trips
+1227	-	Priority V	Dated analysis/research snapshots still describe telemetry / agent-substrate / knowledge as unbuilt
+1226	-	backend,Priority IV,dependencies	Deliberate framework-major upgrade pass (move off net8.0 as one coordinated migration)
+1222	-	Priority V	Residual archive-pivot doc drift (leaf docs) — follow-up to #1220
+1210	-	Priority V,ci	ci-extended.yml lane fails with startup_failure (no jobs run) — Testcontainers integration coverage is dead
+1175	-	security,hardening,Priority II,ci	Remediate security-scan baseline, then flip dependency + SAST gates to enforcing (#1132 follow-up)
+1174	-	security,Priority II,ci	Add a per-advisory dependency-audit allowlist consulted by the enforce step (#1132 follow-up)
+1167	-	Priority V	Code-sign + notarize desktop release binaries (Windows Authenticode + macOS Developer ID)
+1166	-	Priority IV	Harden dev-sandbox DB export/import for WAL (prefer SQLite backup API / VACUUM INTO)
+1142	-	tech-debt,Priority II,strategy	[TRACKER] Repo health audit 2026-05-31 — gaps & remediation
+1141	-	docs,frontend,ux,Priority IV	i18n & accessibility decisions (ADR): English-only + browser-locale dates; Legacy reduced-motion
+1140	-	testing,tech-debt,Priority III	Workspace hygiene & one-command dev-up: clean script, absolute SQLite path, .dockerignore
+1138	-	docs,tech-debt,Priority II	Docs truth & rotation: fix STATUS.md drift/bloat, repair broken links, add a link checker
+1135	-	frontend,refactor,tech-debt,Priority III	Frontend code-health guardrails + decompose oversized views
+1134	-	backend,refactor,hardening,tech-debt,Priority II	Backend observability & structure: surface swallowed audit failures, consolidate migrations, decompose god-files, credential key rotation, MCP identity
+1133	-	backend,Priority III,performance	Backend query performance: bound notification paging, AsSplitQuery board reads, incrementalize SignalR refetch, FTS card search
+1131	-	bug,security,backend,Priority II	CLI hardening: unusable on a fresh machine + bypasses claims-first authorization
+1128	-	frontend,testing,tech-debt,Priority II	Harden the test loop for agents (DOM cleanup, non-watch default, single verify command, network guard, parallelism)
+996	-	frontend,ux,Priority V	PAPER-00 · Master tracker · Paper & Graphite, Ember Edition overhaul
+655	-	backend,llm,hardening,Priority IV,mcp	MCP-04: Phase 4 — MCP production hardening (deferred to v0.4.0+)
+550	-	Priority III,marketing	BRAND-01: Domain, logo, and social media handles
+546	-	Priority II,marketing	GTM-02: Record 90-second demo video showing core capture-review-apply loop
+544	-	Priority II,marketing,strategy	GTM-00: Market adoption and go-to-market wave tracker
+219	-	security,backend,frontend,testing,llm,Priority IV,feature	CAP-21: Voice capture and transcription integration (opt-in privacy posture)

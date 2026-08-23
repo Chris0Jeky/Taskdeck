@@ -1,8 +1,8 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-19
+Last Updated: 2026-08-23
 
-**Status:** Active planning spine (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot).
+**Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
 **Evidence base:** `docs/analysis/2026-07-10_revival_assessment.md` (7 code-review dimensions, ~25 adversarially verified claims; market research with live-verified competitor data) plus the 2026-07-10 business research (monetization/licensing/beta-mechanics; sources cited inline below).
 **Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 = `#1311` (amends `#1278`).
@@ -42,11 +42,12 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 
 | Release | Content | Gate |
 |---|---|---|
-| **v0.1 "First Light"** | Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate |
-| **v0.2 "Transcript Engine"** | Phase 2 complete: LLM transcript triage with evidence spans, OpenAI-compatible provider, risk-tiered approvals | a real 45-min transcript → reviewable, evidence-linked, typed action items on the maintainer's own board |
-| **v0.3 "Open Beta"** | Phase 3 complete: slimmed surface, MCP packaged, feedback channel live, launched | launch executed; 48h response presence done |
+| **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days, running since 2026-08-22, and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
+| **v0.1.2 (in progress)** | Honest-Windows-Beta correction: the `#1876` double-click/startup fix (2026-08-22 inherited-config incident) plus the open Priority I tranche | walkthrough q-3 (2026-08-23): PR-only, maintainer deck acceptance before any tag; milestone `v0.1.2` |
+| **v0.2 "Coherent Context-to-Action Loop"** | Phase 2 complete (the transcript engine — triage, durable transcripts, evidence spans — is largely shipped) widened per `PRODUCT_DIRECTION.md` §5: capture integrity, grounded chat outcomes, evidence/inference inspection, review legibility, guided daily journey, victory/progress export candidate | a real 45-min transcript → reviewable, evidence-linked, typed action items on the maintainer's own board; capture fields never silently dropped |
+| **v0.3 "Open Beta + Accountable Agents"** | Phase 3 complete: slimmed surface, MCP packaged with scoped keys and attribution, feedback channel live, launched; small-team collaboration proof begins | launch executed; 48h response presence done |
 | **v0.4 "Every Artefact"** | Phase 4 complete (ADR-0046): artefact intake (screenshots/PDFs/files), project dossiers, generalist legibility, friends-family channel | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
-| **Checkpoint (~8 weeks from start)** | Traction + dogfooding review | fall back only if both are absent; mixed outcomes require an explicit maintainer plan amendment |
+| **Checkpoint (floor 2026-09-01, walkthrough q-8)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control) | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment |
 
 ## 4. Phases and waves (the issue map)
 
@@ -172,7 +173,7 @@ Not authorized without a plan amendment: the twin generalist application (GEN-12
 
 Tracked without invasive telemetry: GitHub stars + unique Discussion/issue participants per month + issues-to-stars ratio; GitHub Release download counts for the self-contained executable; opt-in ping count as a clearly-labeled lower bound on active installs; local-only activation milestones (first capture, first approved proposal, first board apply) shown to the user as an onboarding checklist and included in the opt-in ping only as an aggregate boolean. GHCR image pulls are not used as a checkpoint metric because the plan does not depend on a public registry counter.
 
-**Checkpoint (~8 weeks from Phase 0):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete.
+**Checkpoint (per the q-8 ruling, 2026-08-23: dogfooding floor 2026-09-01 is a floor, not eligibility - ADR-0044's conditions control and its ~8-week framing stands):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete.
 
 The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-technical activation and retention — reviewed at the same checkpoint against the GEN-12 (`#1326`) twin-app gate criteria.
 

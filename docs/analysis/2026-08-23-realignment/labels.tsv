@@ -1,0 +1,40 @@
+bug	#d73a4a	Something isn't working
+docs	#0075ca	Improvements or additions to documentation
+duplicate	#cfd3d7	This issue or pull request already exists
+good first issue	#7057ff	Good for newcomers
+help wanted	#008672	Extra attention is needed
+invalid	#e4e669	This doesn't seem right
+question	#d876e3	Further information is requested
+wontfix	#ffffff	This will not be worked on
+codex	#ededed	
+security	#e95b37	
+backend	#2cabbc	
+frontend	#0a0d37	
+ux	#d4aa65	
+testing	#730b6a	
+refactor	#ce4ca8	
+starter-packs	#491b97	
+llm	#f23141	
+hardening	#9b8579	
+tech-debt	#7a8f3b	
+Priority I	#a51221	
+Priority II	#bc19f9	
+Priority III	#a245a8	
+Priority IV	#f79812	
+Priority V	#6b9839	
+feature	#117786	
+automation	#8e415c	
+worker	#d1513c	
+performance	#606a0e	
+dependencies	#a6b453	
+cloud	#1d76db	Cloud hosting, SaaS, and online access
+packaging	#0e8a16	Packaging, distribution, and installation
+marketing	#fbca04	Market adoption, GTM, and growth
+mobile	#d93f0b	Mobile platform, PWA, and responsive design
+strategy	#7057ff	Strategic planning and direction
+ci	#5b4699	
+mcp	#d4f6e5	
+ui	#c70ae8	
+archive-closeout	#8B5CF6	Endgame work for the finish-for-personal-use, then archive pivot
+revival	#0E8A16	Revival pivot wave (ADR-0044, docs/REVIVAL_PLAN.md)
+generalist	#5319E7	Generalist expansion wave (ADR-0046): artefact intake, dossiers, generalist reach

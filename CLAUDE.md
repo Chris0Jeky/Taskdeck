@@ -9,15 +9,18 @@ Local-first execution workspace for developers: transcripts/notes in → evidenc
 → human-approved board changes. No silent or destructive mutations; SQLite persistence.
 .NET 8 backend (clean architecture) + Vue 3/Vite frontend + a write-gated MCP server.
 
-**Active direction:** ADR-0044 revival (2026-07-10) — free open beta, spine is `docs/REVIVAL_PLAN.md`.
-ADR-0051 adds a bounded autonomous-admission lane for acceptance-ready tracked backlog while keeping
-new product surfaces inside the plan/ADR boundary. This supersedes the 2026-06-13 archive pivot and
-the archive tracker #1278 (still open, seeded 2026-07-02, kept as the checkpoint fallback).
+**Active direction:** strategy spine is `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23 — adaptive
+work OS destination, context-to-action engine, transcripts/notes/captures wedge); execution plan is
+`docs/REVIVAL_PLAN.md` (ADR-0044 revival, free open beta). ADR-0051 adds a bounded
+autonomous-admission lane for acceptance-ready tracked backlog while keeping new product surfaces
+inside the plan/ADR boundary. The 2026-06-13 archive pivot is superseded (archive remains only the
+checkpoint fallback). Shipped trust model stays review-first (ADR-0003/GP-06/ADR-0056); the
+delegated-autonomy future is ADR-0057, **Proposed only**.
 
 ## Orient (do NOT bulk-read the big docs)
 
 1. `autodoc/AGENT_INDEX.md` — the seam map. Start here, find your region, jump to entry points.
-2. `docs/STATUS.md` (~1.5k lines) — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
+2. `docs/STATUS.md` (~775 lines after the 2026-08-23 head-lean rotation) — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
 4. Region rules auto-load when you touch files: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
    `scripts/agent_hooks/CLAUDE.md`. Pick a workflow skill from `.claude/skills/README.md` (local skills beat plugins).
@@ -111,7 +114,8 @@ canonical global laws and `review-and-ship` pipeline. Human-action file: `OUTSTA
 
 ## Key docs
 
-`docs/REVIVAL_PLAN.md` (active spine) · `docs/STATUS.md` · `docs/IMPLEMENTATION_MASTERPLAN.md` ·
+`docs/strategy/PRODUCT_DIRECTION.md` (strategy spine) · `docs/REVIVAL_PLAN.md` (execution plan) ·
+`docs/STATUS.md` · `docs/IMPLEMENTATION_MASTERPLAN.md` ·
 `docs/GOLDEN_PRINCIPLES.md` · `docs/TESTING_GUIDE.md` · `docs/ISSUE_EXECUTION_GUIDE.md` ·
 `docs/MCP_TOOLING_GUIDE.md` · `docs/decisions/INDEX.md` · `docs/agentic/` (question, failure-ledger,
 guide-update protocols) · `docs/platform/CONFIGURATION_REFERENCE.md` · `docs/platform/EF_MIGRATION_WORKFLOW.md` ·

@@ -25,36 +25,16 @@ Rules:
 Canonical descriptions and usage rules live in:
 - `docs/ops/GITHUB_LABEL_TAXONOMY.md`
 
-Operational labels:
-- `bug` (GitHub default; keep it present because `bug_report` template uses it)
-- `security`
-- `hardening`
-- `backend`
-- `frontend`
-- `ux`
-- `testing`
-- `docs`
-- `refactor`
-- `tech-debt`
-- `starter-packs`
-- `llm`
-- `feature`
-- `automation`
-- `worker`
-- `performance`
-- `Priority I`
-- `Priority II`
-- `Priority III`
-- `Priority IV`
-- `Priority V`
+The full live label set (type, area, semantic/state, wave, and Priority labels) with canonical
+descriptions is `docs/ops/GITHUB_LABEL_TAXONOMY.md` (Last Updated 2026-08-23); this file does not
+duplicate it. `bug` stays present because the `bug_report` template uses it.
 
 Priority label rules:
-- Every issue must have exactly one priority label.
-- `Priority I` = highest urgency / current cycle blockers.
-- `Priority II` = immediate next tranche after `Priority I`.
-- `Priority III` = medium-term expansion tranche.
-- `Priority IV` = later maturity tranche.
-- `Priority V` = meta/historical/lowest urgency.
+- Every issue must have exactly one priority label, mirrored in the Project `Priority` field.
+- Current `Priority I`-`V` semantics live in `docs/ops/GITHUB_LABEL_TAXONOMY.md` (urgency within the
+  active direction; the pre-revival tranche meanings are retired). Per the 2026-08-23 walkthrough
+  ruling q-3, the open `Priority I` tranche together with `#1876` defines the `v0.1.2` milestone
+  scope.
 
 ## Project Views
 

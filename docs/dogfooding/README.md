@@ -7,17 +7,25 @@ revival direction (ADR-0044): at the checkpoint, "no organic traction **and** do
 stuck" is what sends the project back to the archive plan. Every other item in the backlog is
 scaffolding for a product this question decides the fate of.
 
-**When does the checkpoint clock start? The canonical docs disagree, and it changes the answer.**
+**When does the checkpoint clock start? RESOLVED by the 2026-08-23 walkthrough (q-8).**
 
-- `docs/REVIVAL_PLAN.md:149` — *"Checkpoint (~8 weeks from **Phase 0**)"*, and `:49` says "from start".
+The maintainer's q-8 ruling: the dogfooding-days floor is 10+ days from the sprint start of
+**2026-08-22** (so never before 2026-09-01), and that date is a **floor, not eligibility** -
+ADR-0044's conditions (Phase-2 ship, beta launch and its traction window) still control, and the
+~8-week framing stands. The sprint extends to a collaborator once collaboration works, or once the
+product is releasable to macOS. The paragraphs below record the original conflict for history.
+
+**The original conflict (historical):**
+
+- `docs/REVIVAL_PLAN.md` — *"Checkpoint (~8 weeks from **Phase 0**)"* (line references predate the 2026-08-23 revision; both anchors now carry the q-8 ruling).
 - `docs/decisions/ADR-0044` Decision 6 — *"after Phase 2 ships and the **beta launches** (~8 weeks at demonstrated velocity)"*.
 
 Dogfooding **is** Phase 0, so these are weeks apart: the ADR reading postpones the evidence review
 by the entire build-and-launch period. **This guide follows `REVIVAL_PLAN.md`**, which `CLAUDE.md`
 names the active planning spine — so the clock starts when dogfooding starts, i.e. now.
 
-The conflict itself should be resolved in the canonical docs rather than papered over here; it is
-flagged so the next reader does not silently pick the other one.
+The conflict was resolved by the q-8 ruling above (recorded in `OUTSTANDING_TASKS.md` and
+`docs/REVIVAL_PLAN.md`); this section is retained as the record of why the question existed.
 
 It is also the one item that cannot be delegated, which is exactly why it needs structure. The
 failure mode is not "dogfooding goes badly" — a bad result is a *useful* result. The failure mode

@@ -1,0 +1,206 @@
+2026-08-23T17:21:49Z	label-create	historical color=CFD3D7
+2026-08-23T17:21:49Z	label-edit-desc	codex
+2026-08-23T17:21:50Z	label-edit-desc	security
+2026-08-23T17:21:50Z	label-edit-desc	backend
+2026-08-23T17:21:50Z	label-edit-desc	frontend
+2026-08-23T17:21:51Z	label-edit-desc	ux
+2026-08-23T17:21:51Z	label-edit-desc	ui
+2026-08-23T17:21:52Z	label-edit-desc	testing
+2026-08-23T17:21:52Z	label-edit-desc	refactor
+2026-08-23T17:21:53Z	label-edit-desc	starter-packs
+2026-08-23T17:21:53Z	label-edit-desc	llm
+2026-08-23T17:21:54Z	label-edit-desc	hardening
+2026-08-23T17:21:54Z	label-edit-desc	tech-debt
+2026-08-23T17:21:54Z	label-edit-desc	feature
+2026-08-23T17:21:55Z	label-edit-desc	automation
+2026-08-23T17:21:55Z	label-edit-desc	worker
+2026-08-23T17:21:55Z	label-edit-desc	performance
+2026-08-23T17:21:56Z	label-edit-desc	dependencies
+2026-08-23T17:21:56Z	label-edit-desc	ci
+2026-08-23T17:21:57Z	label-edit-desc	mcp
+2026-08-23T17:21:58Z	label-edit-desc	Priority IV
+2026-08-23T17:21:59Z	label-edit-desc	Priority V
+2026-08-23T17:22:24Z	label-edit-desc	archive-closeout
+2026-08-23T17:22:24Z	label-edit-desc	Priority I
+2026-08-23T17:22:25Z	label-edit-desc	Priority II
+2026-08-23T17:22:25Z	label-edit-desc	Priority III
+2026-08-23T17:22:25Z	label-edit-desc	Priority IV
+2026-08-23T17:22:26Z	label-edit-desc	Priority V
+2026-08-23T17:22:57Z	milestone-close	1 v0.1.0 First Light (was open, 0 issues)
+2026-08-23T17:22:57Z	milestone-rename	2 'v0.2.0 Open Doors' -> 'v0.2 Coherent Context-to-Action Loop'
+2026-08-23T17:22:57Z	milestone-desc	3 v0.1.2 q-3 scope
+2026-08-23T17:22:58Z	milestone-create	v0.3 Open Beta + Accountable Agents
+2026-08-23T17:23:22Z	milestone-assign	#2005 -> v0.1.2
+2026-08-23T17:23:23Z	milestone-assign	#2004 -> v0.1.2
+2026-08-23T17:23:24Z	milestone-assign	#1997 -> v0.1.2
+2026-08-23T17:23:25Z	milestone-assign	#1992 -> v0.1.2
+2026-08-23T17:23:26Z	milestone-assign	#1973 -> v0.1.2
+2026-08-23T17:23:28Z	milestone-assign	#1967 -> v0.1.2
+2026-08-23T17:23:29Z	milestone-assign	#1966 -> v0.1.2
+2026-08-23T17:23:30Z	milestone-assign	#1949 -> v0.1.2
+2026-08-23T17:23:32Z	milestone-assign	#1940 -> v0.1.2
+2026-08-23T17:23:33Z	milestone-assign	#1938 -> v0.1.2
+2026-08-23T17:23:34Z	milestone-assign	#1947 -> v0.1.2
+2026-08-23T17:23:35Z	milestone-assign	#1242 -> v0.1.2
+2026-08-23T17:23:37Z	milestone-assign	#1304 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:38Z	milestone-assign	#1305 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:39Z	milestone-assign	#1306 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:41Z	milestone-assign	#1307 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:42Z	milestone-assign	#1308 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:43Z	milestone-assign	#1628 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:45Z	milestone-assign	#1879 -> v0.2 — Coherent Context-to-Action Loop
+2026-08-23T17:23:46Z	milestone-assign	#1309 -> v0.3 — Open Beta + Accountable Agents
+2026-08-23T17:23:47Z	milestone-assign	#1310 -> v0.3 — Open Beta + Accountable Agents
+2026-08-23T17:23:49Z	milestone-assign	#1772 -> v0.3 — Open Beta + Accountable Agents
+2026-08-23T17:23:50Z	labels	#1271 +[revival,human-action,dogfooding] -[archive-closeout]
+2026-08-23T17:23:52Z	labels	#1276 +[revival] -[archive-closeout]
+2026-08-23T17:23:53Z	labels	#1284 +[bug,product-truth] -[archive-closeout]
+2026-08-23T17:23:55Z	labels	#1285 +[docs] -[archive-closeout]
+2026-08-23T17:23:56Z	labels	#1291 +[tech-debt] -[archive-closeout]
+2026-08-23T17:23:57Z	labels	#2003 +[Priority III,frontend] -[]
+2026-08-23T17:23:59Z	labels	#1854 +[Priority III] -[]
+2026-08-23T17:24:00Z	labels	#1853 +[Priority III] -[]
+2026-08-23T17:24:02Z	labels	#1821 +[Priority III,human-action] -[]
+2026-08-23T17:24:03Z	labels	#1812 +[Priority IV] -[]
+2026-08-23T17:24:05Z	labels	#1819 +[Priority IV,human-action] -[]
+2026-08-23T17:24:06Z	labels	#1653 +[decision] -[]
+2026-08-23T17:24:08Z	labels	#1573 +[decision] -[]
+2026-08-23T17:24:09Z	labels	#1936 +[decision] -[]
+2026-08-23T17:24:11Z	labels	#1972 +[decision] -[]
+2026-08-23T17:24:12Z	labels	#1321 +[decision] -[]
+2026-08-23T17:24:13Z	labels	#1326 +[decision] -[]
+2026-08-23T17:24:14Z	labels	#1308 +[decision] -[]
+2026-08-23T17:24:16Z	labels	#1879 +[decision] -[]
+2026-08-23T17:24:17Z	labels	#2004 +[decision] -[]
+2026-08-23T17:24:19Z	labels	#1482 +[decision,human-action] -[]
+2026-08-23T17:24:20Z	labels	#1651 +[human-action] -[]
+2026-08-23T17:24:21Z	labels	#1504 +[human-action] -[]
+2026-08-23T17:24:23Z	labels	#1933 +[human-action] -[]
+2026-08-23T17:24:24Z	labels	#1770 +[human-action] -[]
+2026-08-23T17:24:25Z	labels	#1304 +[human-action] -[]
+2026-08-23T17:24:27Z	labels	#1305 +[human-action] -[]
+2026-08-23T17:24:28Z	labels	#1933 +[dogfooding] -[]
+2026-08-23T17:24:29Z	labels	#1935 +[dogfooding] -[]
+2026-08-23T17:24:31Z	labels	#1936 +[dogfooding] -[]
+2026-08-23T17:24:32Z	labels	#1937 +[dogfooding] -[]
+2026-08-23T17:24:34Z	labels	#1938 +[dogfooding] -[]
+2026-08-23T17:24:35Z	labels	#1940 +[dogfooding] -[]
+2026-08-23T17:24:36Z	labels	#1946 +[dogfooding] -[]
+2026-08-23T17:24:38Z	labels	#1947 +[dogfooding] -[]
+2026-08-23T17:24:39Z	labels	#1949 +[dogfooding] -[]
+2026-08-23T17:24:40Z	labels	#1961 +[dogfooding] -[]
+2026-08-23T17:24:42Z	labels	#1962 +[dogfooding] -[]
+2026-08-23T17:24:43Z	labels	#1966 +[dogfooding] -[]
+2026-08-23T17:24:46Z	labels	#1967 +[dogfooding] -[]
+2026-08-23T17:24:47Z	labels	#1968 +[dogfooding] -[]
+2026-08-23T17:24:49Z	labels	#1972 +[dogfooding] -[]
+2026-08-23T17:24:50Z	labels	#1973 +[dogfooding] -[]
+2026-08-23T17:24:51Z	labels	#1975 +[dogfooding] -[]
+2026-08-23T17:24:53Z	labels	#1983 +[dogfooding] -[]
+2026-08-23T17:24:54Z	labels	#1984 +[dogfooding] -[]
+2026-08-23T17:24:55Z	labels	#1987 +[dogfooding] -[]
+2026-08-23T17:24:57Z	labels	#1991 +[dogfooding] -[]
+2026-08-23T17:24:58Z	labels	#1997 +[dogfooding] -[]
+2026-08-23T17:24:59Z	labels	#1999 +[dogfooding] -[]
+2026-08-23T17:25:00Z	labels	#2003 +[dogfooding] -[]
+2026-08-23T17:25:02Z	labels	#2004 +[dogfooding] -[]
+2026-08-23T17:25:04Z	labels	#2005 +[dogfooding] -[]
+2026-08-23T17:25:05Z	labels	#2006 +[dogfooding] -[]
+2026-08-23T17:25:06Z	labels	#2007 +[dogfooding] -[]
+2026-08-23T17:25:08Z	labels	#2008 +[dogfooding] -[]
+2026-08-23T17:25:09Z	labels	#2009 +[dogfooding] -[]
+2026-08-23T17:25:11Z	labels	#2010 +[dogfooding] -[]
+2026-08-23T17:25:12Z	labels	#2005 +[product-truth] -[]
+2026-08-23T17:25:14Z	labels	#1973 +[product-truth] -[]
+2026-08-23T17:25:15Z	labels	#1966 +[product-truth] -[]
+2026-08-23T17:25:17Z	labels	#1967 +[product-truth] -[]
+2026-08-23T17:25:18Z	labels	#1949 +[product-truth] -[]
+2026-08-23T17:25:19Z	labels	#1972 +[product-truth] -[]
+2026-08-23T17:25:20Z	labels	#1984 +[product-truth] -[]
+2026-08-23T17:25:22Z	labels	#1962 +[product-truth] -[]
+2026-08-23T17:25:23Z	labels	#1227 +[product-truth] -[]
+2026-08-23T17:25:24Z	labels	#1222 +[product-truth] -[]
+2026-08-23T17:25:26Z	labels	#1284 +[product-truth] -[]
+2026-08-23T17:25:27Z	labels	#1644 +[security,frontend] -[]
+2026-08-23T17:25:29Z	labels	#1166 +[backend,hardening] -[]
+2026-08-23T17:25:30Z	labels	#1607 +[testing] -[]
+2026-08-23T17:25:31Z	labels	#1227 +[docs] -[]
+2026-08-23T17:25:33Z	labels	#1222 +[docs] -[]
+2026-08-23T17:25:35Z	labels	#1879 +[ux,feature] -[tech-debt]
+2026-08-23T17:25:36Z	labels	#1278 +[Priority III] -[Priority I]
+2026-08-23T17:25:38Z	labels	#1277 +[Priority III] -[Priority I]
+2026-08-23T17:26:13Z	project-status	#98 Review -> Done
+2026-08-23T17:26:14Z	project-status	#538 Review -> Done
+2026-08-23T17:26:14Z	project-status	#613 Review -> Done
+2026-08-23T17:26:15Z	project-status	#614 Review -> Done
+2026-08-23T17:26:16Z	project-status	#616 Review -> Done
+2026-08-23T17:26:16Z	project-status	#654 Review -> Done
+2026-08-23T17:26:17Z	project-status	#671 Review -> Done
+2026-08-23T17:26:18Z	project-status	#705 Review -> Done
+2026-08-23T17:26:18Z	project-status	#711 Review -> Done
+2026-08-23T17:26:19Z	project-status	#712 Review -> Done
+2026-08-23T17:26:20Z	project-status	#716 Review -> Done
+2026-08-23T17:26:20Z	project-status	#717 Review -> Done
+2026-08-23T17:26:21Z	project-status	#720 Review -> Done
+2026-08-23T17:26:21Z	project-status	#723 Review -> Done
+2026-08-23T17:26:22Z	project-status	#1000 Review -> Done
+2026-08-23T17:26:23Z	project-status	#1125 Review -> Done
+2026-08-23T17:26:23Z	project-status	#1126 Review -> Done
+2026-08-23T17:26:24Z	project-status	#1130 Review -> Done
+2026-08-23T17:26:25Z	project-status	#1269 Review -> Done
+2026-08-23T17:26:26Z	project-status	#1271 Pending -> Now
+2026-08-23T17:26:27Z	project-status	#1277 Pending -> Blocked
+2026-08-23T17:26:28Z	project-status	#1278 Pending -> Blocked
+2026-08-23T17:26:29Z	project-status	#1291 Review -> Pending
+2026-08-23T17:26:29Z	project-status	#1306 Blocked -> Pending
+2026-08-23T17:26:30Z	project-status	#1323 Review -> Pending
+2026-08-23T17:26:31Z	project-status	#1397 Review -> Done
+2026-08-23T17:26:32Z	project-status	#1428 Review -> Done
+2026-08-23T17:26:33Z	project-status	#1438 Review -> Done
+2026-08-23T17:26:34Z	project-status	#1445 Review -> Done
+2026-08-23T17:26:35Z	project-status	#1450 Pending -> Done
+2026-08-23T17:26:35Z	project-status	#1495 Blocked -> Pending
+2026-08-23T17:26:36Z	project-status	#1512 Blocked -> Next
+2026-08-23T17:26:37Z	project-status	#1543 Review -> Pending
+2026-08-23T17:26:37Z	project-status	#1547 Review -> Pending
+2026-08-23T17:26:38Z	project-status	#1553 Blocked -> Pending
+2026-08-23T17:26:39Z	project-status	#1590 Blocked -> Pending
+2026-08-23T17:26:40Z	project-status	#1652 Next -> Pending
+2026-08-23T17:26:41Z	project-status	#1665 Blocked -> Pending
+2026-08-23T17:26:41Z	project-status	#1710 Blocked -> Pending
+2026-08-23T17:26:42Z	project-status	#1721 Blocked -> Pending
+2026-08-23T17:26:43Z	project-status	#1739 Next -> Pending
+2026-08-23T17:26:43Z	project-status	#1746 Next -> Pending
+2026-08-23T17:26:44Z	project-status	#1755 Next -> Pending
+2026-08-23T17:26:45Z	project-status	#1761 Next -> Pending
+2026-08-23T17:26:45Z	project-status	#1876 Pending -> Now
+2026-08-23T17:26:46Z	project-status	#1879 Next -> Blocked
+2026-08-23T17:26:47Z	project-status	#1936 Review -> Blocked
+2026-08-23T17:26:47Z	project-status	#1938 Pending -> Next
+2026-08-23T17:26:48Z	project-status	#1940 Pending -> Next
+2026-08-23T17:26:49Z	project-status	#1949 Pending -> Next
+2026-08-23T17:26:49Z	project-status	#1966 Pending -> Next
+2026-08-23T17:26:50Z	project-status	#1973 Pending -> Next
+2026-08-23T17:26:50Z	project-status	#1997 Pending -> Next
+2026-08-23T17:26:51Z	project-status	#2005 Pending -> Next
+2026-08-23T17:26:52Z	project-priority	#1277 -> Priority III
+2026-08-23T17:26:53Z	project-priority	#1278 -> Priority III
+2026-08-23T17:26:53Z	project-priority	#1812 -> Priority IV
+2026-08-23T17:26:54Z	project-priority	#1819 -> Priority IV
+2026-08-23T17:26:55Z	project-priority	#1821 -> Priority III
+2026-08-23T17:26:55Z	project-priority	#1853 -> Priority III
+2026-08-23T17:26:56Z	project-priority	#1854 -> Priority III
+2026-08-23T17:26:57Z	project-priority	#2003 -> Priority III
+2026-08-23T17:49:52Z	project-status	#219 -> Done (closed by realignment executors)
+2026-08-23T17:49:53Z	project-status	#996 -> Done (closed by realignment executors)
+2026-08-23T17:49:54Z	project-status	#1553 -> Done (closed by realignment executors)
+2026-08-23T17:49:54Z	project-status	#1710 -> Done (closed by realignment executors)
+2026-08-23T18:16:53Z	label-edit-desc	packaging
+2026-08-23T18:16:54Z	label-edit-desc	mobile
+2026-08-23T18:16:54Z	label-edit-desc	marketing
+2026-08-23T18:17:39Z	project-priority	#2011 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:15Z	project-priority	#2012 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:16Z	project-priority	#2013 -> Priority II (Codex P1 mirror)
+2026-08-23T18:18:30Z	label-edit-desc	cloud (retry <=100 chars)
+2026-08-23T18:18:30Z	final-readback	open-issues=171 labels=45 milestones: v0.1.0-closed v0.1.2:13 v0.2:7 v0.3:3
+2026-08-23T18:18:30Z	final-readback	projectv2 open-issue statuses: Now=2 Next=8 Blocked=15 Review=0 Pending=146; closed-in-non-Done=0
