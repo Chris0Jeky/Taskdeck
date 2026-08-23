@@ -77,6 +77,10 @@ export interface CreateCaptureItemDto {
   source?: CaptureSource | null
   titleHint?: string | null
   externalRef?: string | null
+  /** Calendar-day intent from the capture composer; applied only after proposal approval. */
+  dueDate?: string | null
+  /** Names resolve only against the proposal's selected board. */
+  labels?: string[] | null
 }
 
 export interface CaptureListQuery {
