@@ -576,7 +576,9 @@ public class CaptureService : ICaptureService
             currentPayload.ClientCreatedAt,
             dto.TitleHint ?? currentPayload.TitleHint,
             currentPayload.ExternalRef,
-            currentPayload.Provenance);
+            currentPayload.Provenance,
+            DueDate: currentPayload.DueDate,
+            Labels: currentPayload.Labels);
 
         item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
