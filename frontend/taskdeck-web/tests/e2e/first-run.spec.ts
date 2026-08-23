@@ -77,7 +77,7 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
   const proposalId = triagedCapture.provenance?.proposalId
   expect(proposalId).toBeTruthy()
 
-  await page.getByRole('link', { name: /Review$/ }).click()
+  await page.locator('[data-paper-sidebar] a[href="/workspace/review"]').first().click()
   await expect(page.getByTestId('paper-review-view')).toBeVisible()
   await expect(
     page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),

@@ -286,6 +286,14 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   const liveCadence = ref<DossierCadence | null>(null)
   const liveStreak = ref<DossierStreak | null>(null)
   const liveLineForTomorrow = ref('')
+  // `cadenceAvailable` / `streakAvailable` are false both before the request
+  // resolves and after it fails, so on their own they cannot tell a caller
+  // which of the two is happening — and the panels rendered the failure copy
+  // for the whole in-flight window (GH-1983). This flag is the missing half:
+  // true from the moment a live fetch starts until the newest one settles.
+  // One flag covers both panels because both come out of the same
+  // `Promise.allSettled` batch in `fetchLiveData` and therefore settle together.
+  const liveDataLoading = ref(true)
 
   const honestDossier = computed<DossierData>(() => buildHonestDossier(now.value, workspace.todaySummary))
 
@@ -371,31 +379,46 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
   async function fetchLiveData() {
     const generation = ++fetchGeneration
+    // Set synchronously, before the first await: the `immediate: true` watch
+    // below runs during setup, so the very first paint must already read as
+    // loading rather than as failed.
+    liveDataLoading.value = true
     const dateStr = formatLocalDossierDate(now.value)
     const noteMutationAtFetch = tomorrowNoteMutationGeneration
     const sealMutationAtFetch = sealMutationGeneration
-    const results = await Promise.allSettled([
-      todayApi.getCadence(dateStr),
-      todayApi.getStreak(90),
-      todayApi.getSealStatus(dateStr),
-      todayApi.getTomorrowNote(dateStr),
-    ])
+    try {
+      const results = await Promise.allSettled([
+        todayApi.getCadence(dateStr),
+        todayApi.getStreak(90),
+        todayApi.getSealStatus(dateStr),
+        todayApi.getTomorrowNote(dateStr),
+      ])
 
-    if (generation !== fetchGeneration) return
+      if (generation !== fetchGeneration) return
 
-    if (results[0].status === 'fulfilled') {
-      liveCadence.value = mapCadenceResponse(results[0].value)
-    }
-    if (results[1].status === 'fulfilled') {
-      liveStreak.value = mapStreakResponse(results[1].value)
-    }
-    if (sealMutationAtFetch === sealMutationGeneration && results[2].status === 'fulfilled') {
-      sealed.value = results[2].value.isSealed
-    }
-    if (noteMutationAtFetch === tomorrowNoteMutationGeneration) {
-      liveLineForTomorrow.value = results[3].status === 'fulfilled'
-        ? (results[3].value?.text ?? '')
-        : ''
+      if (results[0].status === 'fulfilled') {
+        liveCadence.value = mapCadenceResponse(results[0].value)
+      }
+      if (results[1].status === 'fulfilled') {
+        liveStreak.value = mapStreakResponse(results[1].value)
+      }
+      if (sealMutationAtFetch === sealMutationGeneration && results[2].status === 'fulfilled') {
+        sealed.value = results[2].value.isSealed
+      }
+      if (noteMutationAtFetch === tomorrowNoteMutationGeneration) {
+        liveLineForTomorrow.value = results[3].status === 'fulfilled'
+          ? (results[3].value?.text ?? '')
+          : ''
+      }
+    } finally {
+      // Only the newest fetch clears the flag; a superseded one leaves it set
+      // because its replacement is still in flight. The generation check MUST
+      // stay on this clear — a bare finally would let the stale fetch settle
+      // last and flash the failed state for the whole of the new day's fetch,
+      // which is exactly the GH-1983 defect. The finally itself exists so a
+      // throw from a mapper (malformed 200 body) cannot strand the panels on
+      // "Loading…" forever.
+      if (generation === fetchGeneration) liveDataLoading.value = false
     }
   }
 
@@ -449,6 +472,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
   return {
     dossier,
+    liveDataLoading,
     sealed,
     sealDay,
     saveLineForTomorrow,

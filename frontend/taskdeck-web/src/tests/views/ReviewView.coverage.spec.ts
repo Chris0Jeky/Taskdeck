@@ -221,6 +221,33 @@ async function confirmApplyDialog(wrapper: { vm: { $nextTick: () => Promise<unkn
   await wrapper.vm.$nextTick()
 }
 
+/**
+ * Type a rejection reason into the GH-1969 dialog and accept it. Same shape as
+ * the apply gate above and hard-asserting for the same reason: the reason is
+ * decision-ledger content, so a reject that skipped its collector must fail
+ * here rather than quietly send null.
+ */
+async function confirmRejectDialog(
+  wrapper: { vm: { $nextTick: () => Promise<unknown> } },
+  reason: string,
+) {
+  const field = document.body.querySelector(
+    '[data-testid="reject-dialog-reason"]',
+  ) as HTMLTextAreaElement | null
+  expect(field, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+  field!.value = reason
+  field!.dispatchEvent(new Event('input'))
+  await wrapper.vm.$nextTick()
+
+  const accept = document.body.querySelector(
+    '[data-testid="reject-dialog-accept"]',
+  ) as HTMLButtonElement | null
+  expect(accept).not.toBeNull()
+  accept!.click()
+  await Promise.resolve()
+  await wrapper.vm.$nextTick()
+}
+
 describe('ReviewView — approve and apply actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -358,7 +385,10 @@ describe('ReviewView — approve and apply actions', () => {
     confirmSpy.mockRestore()
   })
 
-  it('rejects a proposal with a reason and updates the card status', async () => {
+  it('rejects a proposal with a reason typed into the in-app dialog', async () => {
+    // GH-1969: the reason is collected through the rendered dialog, asserted
+    // against the reject request payload. This used to stub `window.prompt`,
+    // which existed only because the implementation forced it.
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-to-reject',
@@ -366,7 +396,7 @@ describe('ReviewView — approve and apply actions', () => {
         summary: 'Reject me',
       }),
     ])
-    window.prompt = vi.fn(() => 'Too risky')
+    const promptSpy = vi.spyOn(window, 'prompt')
 
     const { wrapper } = await mountAt('/workspace/review')
 
@@ -376,8 +406,15 @@ describe('ReviewView — approve and apply actions', () => {
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
+    // Opening the gate decides nothing.
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    await confirmRejectDialog(wrapper, 'Too risky')
+
     expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-to-reject', 'Too risky')
     expect(mocks.successToast).toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
+    promptSpy.mockRestore()
   })
 })
 

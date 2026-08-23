@@ -415,7 +415,10 @@ export const useCaptureStore = defineStore('capture', () => {
       actionError.value = null
       const updated = await captureApi.updateSuggestion(itemId, dto)
       cacheDetail(updated)
-      toast.success('Capture text updated')
+      // SAVED, not APPLIED (GH-1970): correcting a capture's text rewrites the
+      // capture and nothing else — no triage ran, no board was touched. The
+      // stamp has to say so now that a Paper surface renders it (GH-1951).
+      toast.success('Capture text updated', undefined, { label: 'saved' })
       return updated
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to update capture text').message

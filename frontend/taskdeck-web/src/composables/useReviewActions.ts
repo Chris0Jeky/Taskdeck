@@ -184,26 +184,92 @@ export function useReviewActions(
     }
   }
 
-  async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['riskLevel']) {
-    const requiresReason = ['High', 'Critical'].includes(normalizeProposalRiskLevel(riskLevel))
-    const promptedReason = prompt(
-      requiresReason
-        ? t('review.prompt.rejectReasonRequired')
-        : t('review.prompt.rejectReasonOptional'),
-    )
-    if (promptedReason === null) return
+  // --- Reject reason collection --------------------------------------------
+  //
+  // GH-1969: the reason used to come from a native `window.prompt`, alone among
+  // the review flow's confirmations. A native prompt is unstyled by either skin,
+  // is NOT translated (it stayed English under `Italiano`), cannot be exercised
+  // by the dialog specs, and is suppressed outright in some embedded and
+  // automation contexts — where the reason would be silently lost rather than
+  // collected. The rejection reason is decision-ledger content: it is what a
+  // future reader sees explaining why a proposal did not ship, so it cannot be
+  // collected through the one mechanism the product can neither style, translate
+  // nor test.
+  //
+  // Same shape as the phase-2 execute gate below: a declarative request the
+  // surface renders with the app's own dialog, and only `confirmRejectProposal`
+  // reaches the API. `performReject` is deliberately NOT exported, so no caller
+  // can reject without collecting a reason through that gate.
+  const rejectPromptProposalId = ref<string | null>(null)
 
-    const reason = promptedReason.trim()
-    if (requiresReason && !reason) {
+  /** The proposal awaiting a rejection reason, so the dialog can show its summary. */
+  const rejectPromptProposal = computed<ApiProposal | null>(() => {
+    const id = rejectPromptProposalId.value
+    if (!id) return null
+    return proposals.value.find((p) => p.id === id) ?? null
+  })
+
+  /**
+   * High/Critical proposals must carry a reason. Derived from the proposal in
+   * the list rather than from an argument captured at request time, so a risk
+   * level that changes under the open dialog is honoured by the gate below.
+   */
+  const rejectRequiresReason = computed(() => {
+    const proposal = rejectPromptProposal.value
+    if (!proposal) return false
+    return ['High', 'Critical'].includes(normalizeProposalRiskLevel(proposal.riskLevel))
+  })
+
+  function requestRejectProposal(proposalId: string) {
+    // Another decision is mid-flight; opening the gate now would let the user
+    // reject against state that is already changing.
+    if (proposalActionBusyId.value !== null) return
+    rejectPromptProposalId.value = proposalId
+  }
+
+  function cancelRejectProposal() {
+    rejectPromptProposalId.value = null
+  }
+
+  async function confirmRejectProposal(reason: string) {
+    const proposalId = rejectPromptProposalId.value
+    if (!proposalId) return
+    // Rejecting a proposal that vanished from the list (refresh, filter change,
+    // decided elsewhere) would decide something no longer on screen — and the
+    // dialog has already closed itself, since its `open` derives from the same
+    // computed. Load-bearing guard, not a tidy-up.
+    const stillPresent = rejectPromptProposal.value !== null
+    const requiresReason = rejectRequiresReason.value
+    const trimmed = reason.trim()
+    // The dialog disables its accept button for this case; re-checked here so
+    // the invariant does not depend on the surface enforcing it.
+    if (requiresReason && !trimmed) {
       toast.error(t('review.toast.rejectReasonRequired'))
       return
     }
+    // Close the gate BEFORE awaiting so a double-confirm cannot fire two rejects.
+    rejectPromptProposalId.value = null
+    if (!stillPresent) return
+    await performReject(proposalId, trimmed.length > 0 ? trimmed : null)
+  }
 
-    const reasonOrNull = reason.length > 0 ? reason : null
+  // Keep the pending id from lingering after its proposal leaves the list, so a
+  // later refresh that re-adds it cannot silently re-open the dialog. Sync flush:
+  // a pre-flush watcher would miss a set-then-remove that happens in one tick.
+  watch(
+    rejectPromptProposal,
+    (proposal) => {
+      if (rejectPromptProposalId.value !== null && proposal === null) {
+        rejectPromptProposalId.value = null
+      }
+    },
+    { flush: 'sync' },
+  )
 
+  async function performReject(proposalId: string, reason: string | null) {
     try {
       proposalActionBusyId.value = proposalId
-      const updated = await automationApi.rejectProposal(proposalId, reasonOrNull)
+      const updated = await automationApi.rejectProposal(proposalId, reason)
       proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
       toast.success(t('review.toast.rejected'))
     } catch (e: unknown) {
@@ -434,8 +500,13 @@ export function useReviewActions(
     selectedDiffRevised,
     executeConfirmProposalId,
     executeConfirmProposal,
+    rejectPromptProposalId,
+    rejectPromptProposal,
+    rejectRequiresReason,
     handleApproveProposal,
-    handleRejectProposal,
+    requestRejectProposal,
+    cancelRejectProposal,
+    confirmRejectProposal,
     handleDeferProposal,
     requestExecuteProposal,
     cancelExecuteProposal,

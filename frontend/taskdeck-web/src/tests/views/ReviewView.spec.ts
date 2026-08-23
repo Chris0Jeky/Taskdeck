@@ -816,29 +816,57 @@ describe('ReviewView', () => {
     expect(pushSpy).toHaveBeenCalledWith({ name: 'workspace-review' })
   })
 
-  it('does not reject a proposal when the rejection prompt is cancelled', async () => {
+  it('does not reject a proposal when the reason dialog is cancelled', async () => {
     mocks.getProposals.mockResolvedValue([buildProposal()])
-    window.prompt = vi.fn(() => null)
 
     const { wrapper } = await mountAt('/workspace/review')
     const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button')[2]!
 
     await rejectButton.trigger('click')
     await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    // GH-1969: the dialog is a TdDialog teleported to <body>.
+    const cancel = document.body.querySelector(
+      '[data-testid="reject-dialog-cancel"]',
+    ) as HTMLButtonElement | null
+    expect(cancel, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+    cancel!.click()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
 
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
     expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
   })
 
   it('sends null when an optional rejection reason is left blank', async () => {
     mocks.getProposals.mockResolvedValue([buildProposal()])
-    window.prompt = vi.fn(() => '   ')
 
     const { wrapper } = await mountAt('/workspace/review')
     const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button').find((node) => node.text() === 'Reject')!
 
     await rejectButton.trigger('click')
     await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    // Whitespace only — the "optional" semantics are preserved: it still
+    // rejects, and the reason is stored as absent rather than as blanks.
+    const field = document.body.querySelector(
+      '[data-testid="reject-dialog-reason"]',
+    ) as HTMLTextAreaElement | null
+    expect(field).not.toBeNull()
+    field!.value = '   '
+    field!.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
+
+    const accept = document.body.querySelector(
+      '[data-testid="reject-dialog-accept"]',
+    ) as HTMLButtonElement | null
+    expect(accept!.disabled).toBe(false)
+    accept!.click()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
 
     expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-1', null)
   })

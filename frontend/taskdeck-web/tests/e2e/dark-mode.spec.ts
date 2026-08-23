@@ -90,11 +90,19 @@ test('night theme should persist when navigating between Home, Boards, Inbox, an
   // each now carries a "Not built yet" tag and says so plainly rather than
   // reading as broken. The tag is a bordered chip in its own colours — assert it
   // renders here so the night theme is proven against the copy that ships.
-  for (const section of ['ledger', 'decisions', 'boards']) {
+  // Issue 1983 narrowed the ledger's claim: "not built yet" is about the
+  // missing per-day QUERY, not about the records — board and card changes do
+  // land in audit history — so its sentence differs from the other two.
+  const unbuiltClaims: Array<[string, string]> = [
+    ['ledger', 'not wired to the activity log yet'],
+    ['decisions', 'Taskdeck does not record'],
+    ['boards', 'Taskdeck does not record'],
+  ]
+  for (const [section, claim] of unbuiltClaims) {
     const panel = page.locator(`[data-empty-state="${section}"]`)
     await expect(panel).toBeVisible()
     await expect(panel.locator('[data-not-built]')).toHaveText('Not built yet')
-    await expect(panel).toContainText('Taskdeck does not record')
+    await expect(panel).toContainText(claim)
   }
   await expect(page.locator('[data-empty-state="ledger"]')).toContainText('no events are being invented')
 

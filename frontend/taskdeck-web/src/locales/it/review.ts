@@ -124,6 +124,11 @@ export default {
       label: 'Archivia',
       ariaLabel: 'Archivia la proposta',
     },
+    editLock: {
+      editing: 'Stai modificando questa proposta qui sotto: le decisioni riprendono quando salvi o annulli la modifica.',
+      saving: 'Salvataggio della modifica: le decisioni riprendono quando è completato.',
+      cancel: 'Annulla modifica',
+    },
   },
 
   change: {
@@ -295,6 +300,7 @@ export default {
 
   revisionEditor: {
     stamp: 'MODIFICA PRIMA DI APPROVARE',
+    regionLabel: 'Modifica questa proposta prima di approvarla',
     jsonError: 'Inserisci un JSON valido prima di salvare.',
     reasonLabel: 'Motivo della modifica',
     reasonPlaceholder: 'Perché stai modificando questa proposta?',
@@ -353,6 +359,18 @@ export default {
     confirm: 'Applica alla bacheca',
   },
 
+  rejectDialog: {
+    title: 'Rifiutare questa proposta?',
+    lede: 'Rifiutandola la proposta si chiude. Sulla bacheca non cambia niente.',
+    noSummary: 'Questa proposta non ha un riepilogo.',
+    reasonOptionalLabel: 'Motivo (facoltativo)',
+    reasonRequiredLabel: 'Motivo (obbligatorio)',
+    reasonPlaceholder: 'Perché non si va avanti?',
+    requiredNote: 'Le proposte a rischio alto o critico richiedono un motivo registrato.',
+    cancel: 'Tienila',
+    confirm: 'Rifiuta la proposta',
+  },
+
   empty: {
     eyebrow: 'Coda · {count} in attesa',
     title: 'Niente in attesa. Bene.',
@@ -404,11 +422,6 @@ export default {
   },
 
   headerMeta: '{time} · {status}',
-
-  prompt: {
-    rejectReasonRequired: 'Per questo livello di rischio il motivo è obbligatorio:',
-    rejectReasonOptional: 'Motivo del rifiuto (facoltativo):',
-  },
 
   toast: {
     approved: 'Proposta approvata per l’applicazione alla bacheca',

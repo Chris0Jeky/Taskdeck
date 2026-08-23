@@ -1,9 +1,25 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 
+/**
+ * ReviewRevisionEditor — the "Request edit" composer.
+ *
+ * ENTRY IS PART OF THE COMPONENT (GH-1964). This is rendered `v-if` at the
+ * bottom of the deep-review column, below the diff section, and it takes the
+ * shared decision lock the moment it exists. Before this, activating "Request
+ * edit" on a real proposal mounted the composer far below the fold with no
+ * scroll and no focus move: the visible result was four decision buttons going
+ * grey and the whole review keymap going silent, which reads as a brick rather
+ * than as "a composer opened". The mount hook below is therefore load-bearing
+ * UX, not a nicety — it is what makes the lock's cause visible.
+ *
+ * It lives here rather than in the orchestrator so EVERY entry path (the rail
+ * button, the `E` shortcut, any future caller) gets it: the component mounts
+ * exactly once per entry.
+ */
 const props = defineProps<{
   operationsPayload: string
   saving?: boolean
@@ -22,9 +38,33 @@ interface EditableField {
 
 const { t } = useI18n()
 
+const rootRef = ref<HTMLElement | null>(null)
 const fields = ref<EditableField[]>([])
 const reason = ref('')
 const parseError = ref(false)
+
+/**
+ * Bring the composer to the reviewer on entry (GH-1964).
+ *
+ * `block: 'nearest'` matches the diff pane's existing scroll idiom: it scrolls
+ * only as far as it must, so a composer already on screen does not jump.
+ * `scrollIntoView` is called optionally because happy-dom (and older browsers)
+ * do not implement it — a missing scroll must never cost the focus move, which
+ * is the half that also announces the composer to assistive tech.
+ *
+ * Focus goes to the first EDITABLE control rather than the container: the
+ * reviewer asked to edit, so they can type immediately, and moving focus inside
+ * the composer is what silences the review keymap by intent (`isEditableTarget`)
+ * instead of only by the shared busy lock.
+ */
+onMounted(() => {
+  const root = rootRef.value
+  if (!root) return
+  root.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+  // Textareas precede the reason input in DOM order, so a payload with fields
+  // focuses its first field and an empty payload falls through to the reason.
+  root.querySelector<HTMLElement>('textarea, input')?.focus?.()
+})
 
 const jsonFieldErrors = computed(() => {
   const errors: Record<string, string> = {}
@@ -92,7 +132,13 @@ function onSave() {
 </script>
 
 <template>
-  <div class="revision-editor card" data-testid="revision-editor">
+  <div
+    ref="rootRef"
+    class="revision-editor card"
+    role="region"
+    :aria-label="$t('review.revisionEditor.regionLabel')"
+    data-testid="revision-editor"
+  >
     <div class="revision-editor__header">
       <PaperTagstamp tone="ember">{{ $t('review.revisionEditor.stamp') }}</PaperTagstamp>
     </div>

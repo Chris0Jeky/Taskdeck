@@ -7,8 +7,9 @@ import ReviewQueueRail, {
 } from './review/ReviewQueueRail.vue'
 import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
-import type { ApplyPhase } from './review/ReviewDecisionRail.vue'
+import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
+import RejectProposalDialog from '../../components/review/RejectProposalDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
@@ -140,8 +141,12 @@ const {
   proposalActionBusyId,
   bulkDismissBusy,
   executeConfirmProposal,
+  rejectPromptProposal,
+  rejectRequiresReason,
   handleApproveProposal,
-  handleRejectProposal,
+  requestRejectProposal,
+  cancelRejectProposal,
+  confirmRejectProposal,
   handleDeferProposal,
   requestExecuteProposal,
   cancelExecuteProposal,
@@ -737,6 +742,23 @@ const busy = computed(
     applyGuardBusy.value,
 )
 
+/**
+ * GH-1964 — which half of the revision lock the rail should explain.
+ *
+ * `revisionEditing` stays TRUE across a save (`useProposalRevisions.saveRevision`
+ * only clears it once the POST resolves), so the saving state must be tested
+ * first or a save would render as a cancellable edit.
+ *
+ * Only the revision lock gets an explanation. The other `busy` sources are
+ * sub-second network round trips whose disabled treatment is self-explanatory;
+ * this one is held indefinitely by an off-screen composer, which is what made
+ * the rail read as broken.
+ */
+const editLock = computed<EditLock>(() => {
+  if (revisionSaving.value) return 'saving'
+  return revisionEditing.value ? 'editing' : 'off'
+})
+
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
 // Approved-then-expired). Reads the SHARED rule so Paper and Legacy never
 // drift (#1124 / ADR-0038). Reactive to the 60s expiry clock via
@@ -1018,7 +1040,9 @@ function onReject() {
     toast.info(t('review.toast.notRejectable'))
     return
   }
-  void handleRejectProposal(p.id, p.riskLevel)
+  // GH-1969: opens the in-app reason dialog; only its accept button reaches
+  // rejectProposal. The reason stays optional for Low/Medium risk.
+  requestRejectProposal(p.id)
 }
 
 function onRequestEdit() {
@@ -1280,9 +1304,13 @@ useReviewKeymap(
   {
     // #1818: while the apply confirmation is open the dialog owns the keyboard —
     // ⏎ must not re-dispatch onApply behind it, and ⌫/D/E must not decide on a
-    // proposal the user is being asked to confirm.
+    // proposal the user is being asked to confirm. GH-1969 gives the reject
+    // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
-      !busy.value && activeProposal.value !== null && executeConfirmProposal.value === null,
+      !busy.value &&
+      activeProposal.value !== null &&
+      executeConfirmProposal.value === null &&
+      rejectPromptProposal.value === null,
   },
 )
 
@@ -1357,11 +1385,13 @@ function onQueueFilterChange(filter: QueueFilter) {
         :history="selectors.history.value"
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
+        :edit-lock="editLock"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
         @defer="onDefer"
         @dismiss="onFileAway"
+        @cancel-edit="cancelRevisionEditing"
         @report="onReportBadSuggestion"
       />
       <details
@@ -1543,6 +1573,16 @@ function onQueueFilterChange(filter: QueueFilter) {
       :revision-count="applyConfirmRevisionCount"
       @confirm="confirmExecuteProposal"
       @cancel="cancelExecuteProposal"
+    />
+
+    <!-- Reason collection (GH-1969) — the in-app dialog that replaced the native
+         window.prompt, the last browser dialog in the decision flow. -->
+    <RejectProposalDialog
+      :proposal="rejectPromptProposal"
+      :busy="busy"
+      :requires-reason="rejectRequiresReason"
+      @confirm="confirmRejectProposal"
+      @cancel="cancelRejectProposal"
     />
   </div>
 </template>

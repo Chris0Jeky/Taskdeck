@@ -174,6 +174,29 @@ async function mountView(
 }
 
 /**
+ * Type an optional reason into the GH-1969 reject dialog and accept it. Also
+ * teleported to <body>, and hard-asserting for the same reason as the apply
+ * gate below: a reject that skipped its collector must fail here.
+ */
+async function acceptRejectDialog(reason?: string) {
+  if (reason !== undefined) {
+    const field = document.body.querySelector(
+      '[data-testid="reject-dialog-reason"]',
+    ) as HTMLTextAreaElement | null
+    expect(field, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+    field!.value = reason
+    field!.dispatchEvent(new Event('input'))
+    await flushPromises()
+  }
+  const accept = document.body.querySelector(
+    '[data-testid="reject-dialog-accept"]',
+  ) as HTMLButtonElement | null
+  expect(accept, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+  accept!.click()
+  await flushPromises()
+}
+
+/**
  * Accept the #1818 phase-2 confirmation dialog. It is a TdDialog teleported to
  * <body>, so it is not inside the wrapper's own tree. Hard-asserts the dialog is
  * present: if the confirmation gate were ever removed, executeProposal would
@@ -918,7 +941,7 @@ describe('PaperReviewView', () => {
   })
 
   it('rejects (not files away) with the ⌫ key when the proposal is still actionable', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('')
+    const promptSpy = vi.spyOn(window, 'prompt')
     mocks.rejectProposal.mockResolvedValueOnce(makeProposal({ id: 'pending-xyz', status: 'Rejected' }))
     const wrapper = await mountView([
       makeProposal({ id: 'pending-xyz', status: 'PendingReview', summary: 'Still actionable' }),
@@ -927,8 +950,12 @@ describe('PaperReviewView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
     await flushPromises()
 
+    // GH-1969: ⌫ opens the in-app reason dialog; only its accept rejects.
+    await acceptRejectDialog()
+
     expect(mocks.rejectProposal).toHaveBeenCalled()
     expect(mocks.dismissProposals).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
 
     promptSpy.mockRestore()
     wrapper.unmount()
@@ -2826,6 +2853,299 @@ describe('PaperReviewView', () => {
       expect(mocks.executeProposal).not.toHaveBeenCalled()
 
       wrapper.unmount()
+    })
+  })
+
+  /**
+   * GH-1983 — the keyboard path through the two-phase apply.
+   *
+   * ⏎ approves; the confirmation opens by itself (GH-1942) with focus on the
+   * dialog container; a SECOND, deliberate ⏎ applies. The two calls stay
+   * separate and explicit (ADR-0003) — this only makes the second one reachable
+   * without a Tab on the one dialog the reviewer did not open by hand.
+   */
+  describe('keyboard path through the apply confirmation (GH-1983)', () => {
+    function pressEnterInDialog(options: KeyboardEventInit = {}) {
+      const dialog = document.body.querySelector('.td-dialog') as HTMLElement | null
+      expect(dialog, 'expected the apply confirmation to be open').not.toBeNull()
+      dialog!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...options }),
+      )
+    }
+
+    it('approves on ⏎ and applies on a second deliberate ⏎', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      mocks.executeProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Applied' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+
+      expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      pressEnterInDialog()
+      await flushPromises()
+
+      expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
+      expect(mocks.executeProposal.mock.calls[0][0]).toBe('proposal-001')
+      // Exactly one approve, exactly one execute — the second ⏎ did not also
+      // re-dispatch the surface's own Enter handler behind the closing dialog.
+      expect(mocks.approveProposal).toHaveBeenCalledTimes(1)
+
+      wrapper.unmount()
+    })
+
+    it('a HELD ⏎ carried over from the approve does not apply', async () => {
+      // The keyboard half of the hazard GH-1942 closed for the pointer when it
+      // turned backdrop dismissal off: the dialog appears under an interaction
+      // that is still in progress. Auto-repeat is how a held key presents.
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+
+      pressEnterInDialog({ repeat: true })
+      pressEnterInDialog({ repeat: true })
+      await flushPromises()
+
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      // The proposal is left approved-but-not-applied, with the dialog still
+      // offering the step — nothing was decided and nothing was lost.
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * GH-1969 — the rejection reason is collected in-app, not by `window.prompt`.
+   *
+   * Asserted end to end through the rendered DOM against the reject request
+   * payload, because the reason IS the artifact: it is what a later reader sees
+   * explaining why a proposal did not ship.
+   */
+  describe('reject reason dialog (GH-1969)', () => {
+    it('opens a dialog instead of a native prompt, and decides nothing until accepted', async () => {
+      const promptSpy = vi.spyOn(window, 'prompt')
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      expect(promptSpy).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).not.toBeNull()
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+      promptSpy.mockRestore()
+      wrapper.unmount()
+    })
+
+    it('persists the typed reason on the reject request', async () => {
+      mocks.rejectProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Rejected' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      await acceptRejectDialog('already tracked on the On-Call rota')
+
+      expect(mocks.rejectProposal).toHaveBeenCalledWith(
+        'proposal-001',
+        'already tracked on the On-Call rota',
+      )
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
+
+      wrapper.unmount()
+    })
+
+    it('cancelling the dialog leaves the proposal alone', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      ;(
+        document.body.querySelector('[data-testid="reject-dialog-cancel"]') as HTMLButtonElement
+      ).click()
+      await flushPromises()
+
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
+      // The rail is live again — a cancelled reject is not a decision.
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+
+      wrapper.unmount()
+    })
+
+    it('demands a reason for a high-risk proposal before offering the accept', async () => {
+      mocks.rejectProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', riskLevel: 'High', status: 'Rejected' }),
+      )
+      const wrapper = await mountView([makeProposal({ riskLevel: 'High' })])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      const accept = document.body.querySelector(
+        '[data-testid="reject-dialog-accept"]',
+      ) as HTMLButtonElement
+      expect(accept.disabled).toBe(true)
+
+      await acceptRejectDialog('Duplicates the incident ticket')
+      expect(mocks.rejectProposal).toHaveBeenCalledWith(
+        'proposal-001',
+        'Duplicates the incident ticket',
+      )
+
+      wrapper.unmount()
+    })
+
+    it('silences the review keymap while the reason dialog is open', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+
+      // ⏎ behind the dialog must not approve, and ⌫ must not re-open the gate.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * GH-1964 — "Request edit" bricked the surface.
+   *
+   * Every assertion here is against the RENDERED DOM on purpose. The bug lived
+   * for as long as it did because `revisionEditing === true` was the whole
+   * observable contract: the composer really did exist, just below the fold with
+   * no scroll and no focus, while the shared lock silenced four working buttons
+   * and the entire keymap. A spec asserting only the flag would have passed
+   * throughout, so these assert what the reviewer can actually see and reach.
+   */
+  describe('revision composer entry and lock legibility (GH-1964)', () => {
+    it('scrolls the composer into view and moves focus into it on entry', async () => {
+      const scrollIntoView = vi.fn()
+      const original = Element.prototype.scrollIntoView
+      // happy-dom does not implement scrollIntoView, so install it rather than spy.
+      Element.prototype.scrollIntoView = scrollIntoView
+      try {
+        const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+          attachTo: true,
+        })
+
+        await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+        await flushPromises()
+
+        const composer = wrapper.get('[data-testid="revision-editor"]')
+        expect(scrollIntoView).toHaveBeenCalled()
+        // The composer element itself was the scroll target, not some other node
+        // that happened to scroll during the same tick.
+        expect(scrollIntoView.mock.instances).toContain(composer.element)
+
+        // Focus is INSIDE the composer, on something the reviewer can type into.
+        const active = document.activeElement as HTMLElement | null
+        expect(active).not.toBeNull()
+        expect(composer.element.contains(active)).toBe(true)
+        expect(active?.tagName).toBe('TEXTAREA')
+
+        wrapper.unmount()
+      } finally {
+        Element.prototype.scrollIntoView = original
+      }
+    })
+
+    it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-cancel-edit"]').exists()).toBe(false)
+
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+
+      const note = wrapper.get('[data-testid="decision-lock-note"]')
+      expect(note.text()).toContain('save or cancel the edit')
+      // The four disabled buttons point AT that explanation.
+      const noteId = note.attributes('id')
+      expect(noteId).toBeTruthy()
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeDefined()
+        expect(button.attributes('aria-describedby')).toBe(noteId)
+      }
+
+      // The exit is ON the rail and is NOT itself disabled by the lock it cancels.
+      const cancel = wrapper.get('[data-testid="decision-cancel-edit"]')
+      expect(cancel.attributes('disabled')).toBeUndefined()
+    })
+
+    it('restores every decision button AND the keymap when the rail cancel is used', async () => {
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'proposal-001', status: 'Approved' }),
+      )
+      const wrapper = await mountView([makeProposal()])
+
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+
+      // The keymap is silent while the lock is held.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      await wrapper.get('[data-testid="decision-cancel-edit"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('disabled')).toBeUndefined()
+      }
+
+      // …and the keymap answers again, with no reload.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
+
+      wrapper.unmount()
+    })
+
+    it('clears the lock when the reviewer switches to another proposal', async () => {
+      // The persistence half of GH-1964: the proposal-switch watcher in
+      // useProposalRevisions must actually drop `editing`, so re-entering the
+      // surface never finds a rail locked by a composer that is not there.
+      const wrapper = await mountView([
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ])
+
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
     })
   })
 })
