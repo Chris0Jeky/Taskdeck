@@ -113,6 +113,9 @@ export function useReviewProposals() {
   const loadingBoards = ref(false)
   const boardFilterInput = ref('')
   const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+  const isArchivedHistory = computed(
+    () => route.query.history === 'archived' && activeBoardFilter.value !== null,
+  )
   const showCompleted = ref(false)
 
   // Reactive clock for client-side expiry detection -- updates every 60 s
@@ -219,8 +222,12 @@ export function useReviewProposals() {
     return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
+      const expired = isProposalExpired(proposal)
+      if (isArchivedHistory.value) {
+        return status === 'Approved' || completedStatuses.has(status) || expired
+      }
       if (status === 'Dismissed') return false
-      if (isProposalExpired(proposal)) return true
+      if (expired) return true
       if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
@@ -301,7 +308,7 @@ export function useReviewProposals() {
   }
 
   const dismissableProposalIds = computed(() =>
-    proposals.value
+    (isArchivedHistory.value ? [] : proposals.value)
       .filter((p) => isProposalDismissable(p))
       .filter((p) => matchesActiveBoardFilter(p.boardId))
       .map((p) => p.id),
@@ -444,8 +451,11 @@ export function useReviewProposals() {
   // --- Navigation helpers ---
 
   function inboxPath(boardId?: string | null, captureItemId?: string): string {
-    const encodedBoardId = boardId ? encodeURIComponent(boardId) : null
-    const query = encodedBoardId ? `?boardId=${encodedBoardId}` : ''
+    const params = new URLSearchParams()
+    if (boardId) params.set('boardId', boardId)
+    if (isArchivedHistory.value) params.set('history', 'archived')
+    const queryString = params.toString()
+    const query = queryString ? `?${queryString}` : ''
     const hash = captureItemId ? `#capture-${encodeURIComponent(captureItemId)}` : ''
     return `/workspace/inbox${query}${hash}`
   }
@@ -463,10 +473,14 @@ export function useReviewProposals() {
   }
 
   function proposalHref(proposal: ApiProposal): string {
-    const query = proposal.boardId ?? activeBoardFilter.value
+    const boardId = proposal.boardId ?? activeBoardFilter.value
+    const params = new URLSearchParams()
+    if (boardId) params.set('boardId', boardId)
+    if (isArchivedHistory.value) params.set('history', 'archived')
+    const query = params.toString()
     const encodedProposalId = encodeURIComponent(proposal.id)
     return query
-      ? `/workspace/review?boardId=${encodeURIComponent(query)}#proposal-${encodedProposalId}`
+      ? `/workspace/review?${query}#proposal-${encodedProposalId}`
       : `/workspace/review#proposal-${encodedProposalId}`
   }
 
@@ -499,6 +513,7 @@ export function useReviewProposals() {
     boardFilterInput.value = ''
     const query = { ...route.query }
     delete query.boardId
+    delete query.history
     await safeReplace({ name: 'workspace-review', query, hash: route.hash })
   }
 
@@ -521,6 +536,7 @@ export function useReviewProposals() {
     loadingBoards,
     boardFilterInput,
     activeBoardFilter,
+    isArchivedHistory,
     activeBoardName,
     showCompleted,
     boardOptions,

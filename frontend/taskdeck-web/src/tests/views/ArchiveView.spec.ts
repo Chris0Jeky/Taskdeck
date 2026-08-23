@@ -130,7 +130,7 @@ describe('ArchiveView', () => {
     )
     expect(mocks.routerPush).toHaveBeenLastCalledWith({
       name: 'workspace-inbox',
-      query: { boardId: 'board-archived' },
+      query: { boardId: 'board-archived', history: 'archived' },
     })
 
     await findButtonByText(wrapper, 'View decisions').trigger('click')
@@ -139,7 +139,7 @@ describe('ArchiveView', () => {
     )
     expect(mocks.routerPush).toHaveBeenLastCalledWith({
       name: 'workspace-review',
-      query: { boardId: 'board-archived' },
+      query: { boardId: 'board-archived', history: 'archived' },
     })
 
     expect(wrapper.text()).toContain('no longer appear in the unfiltered Inbox or Review')

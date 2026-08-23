@@ -375,6 +375,33 @@ describe('InboxView', () => {
     expect(wrapper.text()).toContain('Showing capture items linked to board board-7.')
   })
 
+  it('renders archived board capture history without composer, selection, edit, or triage actions', async () => {
+    routeMock.query = { boardId: 'board-7', history: 'archived' }
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    expect(wrapper.text()).toContain('Archived capture history')
+    expect(wrapper.text()).toContain('Read-only retained captures')
+    expect(wrapper.find('[aria-label="Open capture modal to add a new inbox item"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="select-all"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="inbox-item-checkbox"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="inbox-item"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Start Triage')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Ignore')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Cancel')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Refresh Detail')).toBe(true)
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.ignoreItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.cancelItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
   it('auto-opens capture detail when the route hash points at a capture', async () => {
     routeMock.hash = '#capture-capture-2'
 

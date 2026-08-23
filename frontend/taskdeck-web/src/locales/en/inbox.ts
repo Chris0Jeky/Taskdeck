@@ -32,6 +32,13 @@ export default {
     emphasis: 'quickly?',
   },
   lede: 'Drop the thought. It will sit here, untouched, until you triage it. Nothing flows to the board without your approval.',
+  history: {
+    eyebrow: 'Archive · capture history · read-only',
+    title: 'Archived capture history',
+    lede: 'Inspect the captures retained for this archived board. Restore the board before creating, editing, or triaging work.',
+    tableTitle: 'Archived captures',
+    empty: 'No retained captures were found for this archived board.',
+  },
   capture: {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',

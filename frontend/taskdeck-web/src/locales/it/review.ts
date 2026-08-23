@@ -48,6 +48,10 @@ export default {
     clear: 'Mostra tutte le bacheche',
   },
 
+  historyMode: {
+    notice: 'Cronologia delle decisioni archiviate · sola lettura. Ripristina la bacheca prima di approvare, rifiutare, applicare, modificare, rinviare o archiviare proposte.',
+  },
+
   queueItem: {
     noSummary: '(nessun riepilogo)',
     confidence: 'conf {value}',

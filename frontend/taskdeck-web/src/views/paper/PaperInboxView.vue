@@ -46,6 +46,7 @@ const {
   items,
   activeBoardId,
   activeColumnId,
+  isArchivedHistory,
   activeBoardName,
   activeColumnName,
   loadInbox,
@@ -69,10 +70,12 @@ const scopeLabel = computed(() => {
 let stopTriagePolling: (() => void) | null = null
 
 function toggleVariant() {
+  if (isArchivedHistory.value) return
   setVariant(variant.value === 'nib' ? 'composer' : 'nib')
 }
 
 function setVariant(next: Variant) {
+  if (isArchivedHistory.value) return
   variant.value = next
   void nextTick(() => {
     if (next === 'nib') {
@@ -85,13 +88,16 @@ function setVariant(next: Variant) {
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // ⌘;  or Ctrl+;  toggles between the two capture variants.
-  if ((event.metaKey || event.ctrlKey) && event.key === ';') {
+  if (!isArchivedHistory.value && (event.metaKey || event.ctrlKey) && event.key === ';') {
     event.preventDefault()
     toggleVariant()
   }
 }
 
 async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}): Promise<boolean> {
+  if (isArchivedHistory.value) {
+    return false
+  }
   if (captureSubmitting.value) {
     return false
   }
@@ -165,6 +171,7 @@ function onComposerAttachments(_files: File[]) {
 }
 
 async function onTriageAccept(itemId: string, boardId?: string | null) {
+  if (isArchivedHistory.value) return
   if (stopTriagePolling) {
     stopTriagePolling()
     stopTriagePolling = null
@@ -185,6 +192,7 @@ async function onTriageAccept(itemId: string, boardId?: string | null) {
 }
 
 async function onTriageReject(itemId: string) {
+  if (isArchivedHistory.value) return
   try {
     await captureStore.ignoreItem(itemId)
   } catch {
@@ -217,7 +225,11 @@ defineExpose({ variant, toggleVariant, setVariant })
 </script>
 
 <template>
-  <div class="paper-inbox" :data-variant="variant">
+  <div
+    class="paper-inbox"
+    :data-variant="variant"
+    :data-history-mode="isArchivedHistory ? 'archived' : undefined"
+  >
     <header class="paper-inbox__header">
       <div>
         <!-- The third argument is the plural CHOICE: it/es agree the participle
@@ -225,18 +237,23 @@ defineExpose({ variant, toggleVariant, setVariant })
              reach the catalog as a choice and not only as an interpolation. -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
           {{
-            $t(
-              'inbox.eyebrow',
-              { pending: pendingTriageCount, total: capturedCount },
-              capturedCount,
-            )
+            isArchivedHistory
+              ? $t('inbox.history.eyebrow')
+              : $t(
+                  'inbox.eyebrow',
+                  { pending: pendingTriageCount, total: capturedCount },
+                  capturedCount,
+                )
           }}
         </div>
-        <h1 class="tk-h1 paper-inbox__title">
+        <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">
+          {{ $t('inbox.history.title') }}
+        </h1>
+        <h1 v-else class="tk-h1 paper-inbox__title">
           {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>
         </h1>
         <p class="tk-lede paper-inbox__lede">
-          {{ $t('inbox.lede') }}
+          {{ isArchivedHistory ? $t('inbox.history.lede') : $t('inbox.lede') }}
         </p>
         <PaperScopeDisclosure
           v-if="scopeLabel"
@@ -247,6 +264,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       </div>
 
       <div
+        v-if="!isArchivedHistory"
         class="paper-inbox__variant-toggle"
         role="tablist"
         :aria-label="$t('inbox.variantToggle.label')"
@@ -269,7 +287,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       </div>
     </header>
 
-    <section class="paper-inbox__capture" data-testid="paper-inbox-capture">
+    <section v-if="!isArchivedHistory" class="paper-inbox__capture" data-testid="paper-inbox-capture">
       <PaperCaptureNib
         v-show="variant === 'nib'"
         ref="nibRef"
@@ -304,6 +322,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       :triage-polling-item-id="captureStore.triagePollingItemId"
       :scope-label="scopeLabel"
       :scope-clear-label="$t('inbox.scope.clear')"
+      :read-only="isArchivedHistory"
       @accept="onTriageAccept"
       @reject="onTriageReject"
       @open="onTriageOpen"

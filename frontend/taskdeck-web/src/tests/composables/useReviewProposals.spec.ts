@@ -206,6 +206,49 @@ describe('useReviewProposals', () => {
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['1'])
     })
 
+    it('exposes board-scoped settled records in archived history while keeping the mode mutation-free', async () => {
+      mockRoute.query = { boardId: 'board-A', history: 'archived', source: 'archive' }
+      const rp = useReviewProposals()
+      rp.showCompleted.value = false
+      rp.proposals.value = [
+        makeProposal({ id: 'pending', boardId: 'board-A', status: 'PendingReview' }),
+        makeProposal({ id: 'approved', boardId: 'board-A', status: 'Approved' }),
+        makeProposal({ id: 'applied', boardId: 'board-A', status: 'Applied', sourceType: 'Queue', sourceReferenceId: 'capture-1' }),
+        makeProposal({ id: 'rejected', boardId: 'board-A', status: 'Rejected' }),
+        makeProposal({ id: 'failed', boardId: 'board-A', status: 'Failed' }),
+        makeProposal({ id: 'expired', boardId: 'board-A', status: 'Expired' }),
+        makeProposal({ id: 'dismissed', boardId: 'board-A', status: 'Dismissed' }),
+        makeProposal({ id: 'other-board', boardId: 'board-B', status: 'Applied' }),
+      ] as any
+
+      expect(rp.isArchivedHistory.value).toBe(true)
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual([
+        'approved',
+        'applied',
+        'rejected',
+        'failed',
+        'expired',
+        'dismissed',
+      ])
+      expect(rp.dismissableProposalIds.value).toEqual([])
+      expect(rp.captureHrefForProposal(rp.proposals.value[2] as any)).toBe(
+        '/workspace/inbox?boardId=board-A&history=archived#capture-capture-1',
+      )
+      expect(rp.proposalHref(rp.proposals.value[2] as any)).toBe(
+        '/workspace/review?boardId=board-A&history=archived#proposal-applied',
+      )
+
+      rp.openInbox()
+      expect(mockRouter.push).toHaveBeenCalledWith('/workspace/inbox?boardId=board-A&history=archived')
+
+      await rp.clearBoardFilter()
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: { source: 'archive' },
+        hash: '',
+      })
+    })
+
     it('hides a snoozed PendingReview proposal and resurfaces it after the clock passes deferredUntil', () => {
       const rp = useReviewProposals()
       const base = new Date('2026-06-13T12:00:00.000Z').getTime()

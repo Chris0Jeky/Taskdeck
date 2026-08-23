@@ -23,6 +23,13 @@ export default {
     emphasis: 'en dos palabras?',
   },
   lede: 'Suelta la idea. Se queda aquí, intacta, hasta que tú la clasifiques. Nada llega al tablero sin tu aprobación.',
+  history: {
+    eyebrow: 'Archivo · historial de capturas · solo lectura',
+    title: 'Historial de capturas archivadas',
+    lede: 'Consulta las capturas conservadas para este tablero archivado. Restaura el tablero antes de crear, editar o clasificar trabajo.',
+    tableTitle: 'Capturas archivadas',
+    empty: 'No se encontraron capturas conservadas para este tablero archivado.',
+  },
   capture: {
     errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
     errorDetail: 'Detalles: {reason}',

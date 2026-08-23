@@ -21,6 +21,13 @@ export default {
     emphasis: 'in breve?',
   },
   lede: 'Lascia qui il pensiero. Resta intatto finché non lo smisti tu. Niente arriva alla bacheca senza la tua approvazione.',
+  history: {
+    eyebrow: 'Archivio · cronologia catture · sola lettura',
+    title: 'Cronologia delle catture archiviate',
+    lede: 'Consulta le catture conservate per questa bacheca archiviata. Ripristina la bacheca prima di creare, modificare o smistare il lavoro.',
+    tableTitle: 'Catture archiviate',
+    empty: 'Non sono state trovate catture conservate per questa bacheca archiviata.',
+  },
   capture: {
     errorLead: 'Appunto non salvato. La bozza è ancora qui.',
     errorDetail: 'Dettagli: {reason}',

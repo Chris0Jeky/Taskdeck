@@ -11,7 +11,7 @@ import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   proposal: Proposal
   isExpired: boolean
   isBusy: boolean
@@ -24,7 +24,8 @@ const props = defineProps<{
   selectedDiffRevised: boolean | null
   captureHref: string
   proposalHref: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 const displayVersion = ref(0)
 const technicalDetailsCopied = ref(false)
 
@@ -232,6 +233,7 @@ async function copyTechnicalDetails() {
       :is-expired="isExpired"
       :is-busy="isBusy"
       :selected-diff-proposal-id="selectedDiffProposalId"
+      :read-only="props.readOnly"
       @approve="$emit('approve', $event)"
       @reject="(id, risk) => $emit('reject', id, risk)"
       @execute="$emit('execute', $event)"

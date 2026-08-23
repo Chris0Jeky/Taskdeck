@@ -44,6 +44,9 @@ export function useInboxOrchestrator(options: {
   })
   const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
   const activeColumnId = computed(() => normalizeBoardIdQueryParam(route.query.columnId))
+  const isArchivedHistory = computed(
+    () => route.query.history === 'archived' && activeBoardId.value !== null,
+  )
   const activeBoardName = computed(() => scopedBoard.value?.name ?? activeBoardId.value ?? '')
   const activeColumnName = computed(() => {
     if (!activeColumnId.value) return ''
@@ -69,6 +72,7 @@ export function useInboxOrchestrator(options: {
   // ---- Batch selection ----
 
   function toggleItemSelection(itemId: string) {
+    if (isArchivedHistory.value) return
     const next = new Set(selectedIds.value)
     if (next.has(itemId)) {
       next.delete(itemId)
@@ -79,6 +83,7 @@ export function useInboxOrchestrator(options: {
   }
 
   function toggleSelectAll() {
+    if (isArchivedHistory.value) return
     if (items.value.length > 0 && selectedIds.value.size === items.value.length) {
       selectedIds.value = new Set()
     } else {
@@ -91,6 +96,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
+    if (isArchivedHistory.value) return
     if (selectedIds.value.size === 0) return
     const ids = Array.from(selectedIds.value)
     try {
@@ -104,6 +110,7 @@ export function useInboxOrchestrator(options: {
   // ---- Suggestion editing ----
 
   function startEditSuggestion() {
+    if (isArchivedHistory.value) return
     if (!selectedItem.value) return
     editedText.value = selectedItem.value.rawText
     editedTitleHint.value = ''
@@ -117,6 +124,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function saveEditedSuggestion() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value || !editedText.value.trim()) return
     try {
       await captureStore.updateSuggestion(selectedItemId.value, {
@@ -134,6 +142,7 @@ export function useInboxOrchestrator(options: {
   // ---- Capture modal ----
 
   function openCaptureModal() {
+    if (isArchivedHistory.value) return
     showCaptureModal.value = true
   }
 
@@ -142,6 +151,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function handleCaptureCreated() {
+    if (isArchivedHistory.value) return
     closeCaptureModal()
     await loadInbox()
   }
@@ -346,6 +356,7 @@ export function useInboxOrchestrator(options: {
   // ---- Detail actions ----
 
   async function ignoreSelected() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value) return
     try {
       await captureStore.ignoreItem(selectedItemId.value)
@@ -355,6 +366,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function cancelSelected() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value) return
     try {
       await captureStore.cancelItem(selectedItemId.value)
@@ -364,6 +376,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function triageSelected() {
+    if (isArchivedHistory.value) return
     const itemId = selectedItemId.value
     if (!itemId) return
 
@@ -401,9 +414,11 @@ export function useInboxOrchestrator(options: {
 
   function reviewRoute(proposalId?: string, boardId?: string | null) {
     const effectiveBoardId = boardId ?? activeBoardId.value
+    const query: Record<string, string> = effectiveBoardId ? { boardId: effectiveBoardId } : {}
+    if (isArchivedHistory.value) query.history = 'archived'
     return {
       name: 'workspace-review',
-      query: effectiveBoardId ? { boardId: effectiveBoardId } : undefined,
+      query: Object.keys(query).length > 0 ? query : undefined,
       hash: proposalId ? `#proposal-${encodeURIComponent(proposalId)}` : undefined,
     }
   }
@@ -424,6 +439,7 @@ export function useInboxOrchestrator(options: {
     const query = { ...route.query }
     delete query.boardId
     delete query.columnId
+    delete query.history
     await router.replace({ name: 'workspace-inbox', query })
   }
 
@@ -451,8 +467,10 @@ export function useInboxOrchestrator(options: {
     scrollActiveItemIntoView()
   })
 
-  watch(activeBoardId, () => {
+  watch([activeBoardId, isArchivedHistory], () => {
     selectedItemId.value = null
+    selectedIds.value = new Set()
+    showCaptureModal.value = false
     activeItemIndex.value = 0
     void loadScopedBoard()
     void loadInbox()
@@ -507,6 +525,7 @@ export function useInboxOrchestrator(options: {
     selectedItem,
     activeBoardId,
     activeColumnId,
+    isArchivedHistory,
     activeBoardName,
     activeColumnName,
     showCaptureModal,

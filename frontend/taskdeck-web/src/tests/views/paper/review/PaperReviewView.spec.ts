@@ -263,6 +263,48 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
   })
 
+  it('loads every settled archived decision into a selectable inspection-only queue', async () => {
+    const settled = [
+      makeProposal({ id: 'applied-1', status: 'Applied', summary: 'Applied history one' }),
+      makeProposal({ id: 'applied-2', status: 'Applied', summary: 'Applied history two' }),
+      makeProposal({ id: 'applied-3', status: 'Applied', summary: 'Applied history three' }),
+      makeProposal({ id: 'applied-4', status: 'Applied', summary: 'Applied history four' }),
+      makeProposal({ id: 'applied-5', status: 'Applied', summary: 'Applied history five' }),
+      makeProposal({ id: 'rejected-1', status: 'Rejected', summary: 'Rejected history decision' }),
+    ]
+    const wrapper = await mountView(
+      [
+        ...settled,
+        makeProposal({ id: 'pending-live', status: 'PendingReview', summary: 'Live pending proposal' }),
+      ],
+      '/workspace/review?boardId=board-1&history=archived',
+    )
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-1' })
+    expect(wrapper.get('[data-testid="paper-review-view"]').attributes('data-history-mode')).toBe('archived')
+    expect(wrapper.findAll('.paper-review-q')).toHaveLength(settled.length)
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).not.toContain('Live pending proposal')
+    expect(wrapper.get('[data-testid="paper-review-history-mode"]').text()).toContain('read-only')
+    expect(wrapper.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+
+    const rejectedRow = wrapper
+      .findAll('.paper-review-q')
+      .find((row) => row.text().includes('Rejected history decision'))
+    expect(rejectedRow).toBeDefined()
+    await rejectedRow!.trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Rejected history decision')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    await flushPromises()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.dismissProposals).not.toHaveBeenCalled()
+  })
+
   it('discloses a board-scoped empty queue and clears it back to the loaded proposal', async () => {
     const otherBoardProposal = makeProposal({ id: 'other-board', boardId: 'board-2' })
     mocks.getProposals.mockResolvedValue([otherBoardProposal])

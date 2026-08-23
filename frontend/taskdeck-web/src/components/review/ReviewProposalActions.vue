@@ -9,12 +9,13 @@ import {
   isProposalRejectActionable,
 } from '../../composables/useReviewProposals'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   proposal: Proposal
   isExpired: boolean
   isBusy: boolean
   selectedDiffProposalId: string | null
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 // Decision gating comes from the shared review rules so the Legacy card and the
 // Paper deep-review surface can never drift (#1124 / ADR-0038). Approve and
@@ -54,8 +55,17 @@ defineEmits<{
 
 <template>
   <div class="td-review-card__actions">
+    <template v-if="readOnly">
+      <span class="td-review-card__expired-notice" role="status">
+        Archived decision record · read-only.
+      </span>
+      <button class="td-btn td-btn--secondary td-btn--sm" @click="$emit('toggle-diff', proposal.id)">
+        {{ diffToggleLabel }}
+      </button>
+    </template>
+
     <!-- Expired proposal: show dismiss action instead of approve/reject/apply -->
-    <template v-if="isExpired">
+    <template v-else-if="isExpired">
       <span class="td-review-card__expired-notice" role="status">
         This proposal has expired and can no longer be applied.
       </span>

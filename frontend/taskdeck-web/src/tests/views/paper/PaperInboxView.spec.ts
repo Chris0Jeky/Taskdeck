@@ -22,6 +22,7 @@ const orchestratorState = {
   items: ref<Array<{ id: string }>>([]),
   activeBoardId: ref<string | null>(null),
   activeColumnId: ref<string | null>(null),
+  isArchivedHistory: ref(false),
   activeBoardName: ref(''),
   activeColumnName: ref(''),
   selectedItemId: ref<string | null>(null),
@@ -61,6 +62,7 @@ describe('PaperInboxView', () => {
     orchestratorState.items.value = []
     orchestratorState.activeBoardId.value = null
     orchestratorState.activeColumnId.value = null
+    orchestratorState.isArchivedHistory.value = false
     orchestratorState.activeBoardName.value = ''
     orchestratorState.activeColumnName.value = ''
     orchestratorState.selectedItemId.value = null
@@ -87,6 +89,39 @@ describe('PaperInboxView', () => {
     // Composer renders a textarea with an aria label "Capture body".
     expect(wrapper.find('textarea[aria-label="Capture body"]').exists()).toBe(true)
     expect(wrapper.attributes('data-variant')).toBe('composer')
+  })
+
+  it('renders archived capture history read-only and blocks Paper capture and triage mutations', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.activeBoardName.value = 'Archived board'
+    orchestratorState.items.value = [captureRow('history-capture', 'New')]
+
+    const wrapper = mount(PaperInboxView, { attachTo: document.body })
+
+    expect(wrapper.attributes('data-history-mode')).toBe('archived')
+    expect(wrapper.text()).toContain('Archived capture history')
+    expect(wrapper.find('[data-testid="paper-inbox-capture"]').exists()).toBe(false)
+    expect(wrapper.find('textarea[aria-label="Capture body"]').exists()).toBe(false)
+    expect(wrapper.find('textarea[aria-label="Quick capture input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="accept"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="edit"]').exists()).toBe(false)
+
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.props('readOnly')).toBe(true)
+    table.vm.$emit('accept', 'history-capture', 'board-archived')
+    table.vm.$emit('reject', 'history-capture')
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.ignoreItem).not.toHaveBeenCalled()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ';', metaKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.attributes('data-variant')).toBe('composer')
+    wrapper.unmount()
   })
 
   it('discloses the board and column scope, then clears it without reloading', async () => {

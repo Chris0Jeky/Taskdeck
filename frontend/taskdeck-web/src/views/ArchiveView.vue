@@ -184,11 +184,11 @@ function handleToggleHiddenArchivedBoard(board: Board) {
 }
 
 function viewBoardCaptures(boardId: string) {
-  void router.push({ name: 'workspace-inbox', query: { boardId } })
+  void router.push({ name: 'workspace-inbox', query: { boardId, history: 'archived' } })
 }
 
 function viewBoardDecisions(boardId: string) {
-  void router.push({ name: 'workspace-review', query: { boardId } })
+  void router.push({ name: 'workspace-review', query: { boardId, history: 'archived' } })
 }
 
 onMounted(() => {

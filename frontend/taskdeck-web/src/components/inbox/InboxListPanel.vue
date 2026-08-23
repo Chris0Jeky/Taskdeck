@@ -15,6 +15,7 @@ const props = defineProps<{
   selectedItemId: string | null
   selectedIds: Set<string>
   activeDescendantId: string | undefined
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -65,7 +66,7 @@ defineExpose({
   <section class="td-inbox__list-panel">
     <div class="td-inbox__list-header">
       <div class="td-inbox__list-header-left">
-        <label v-if="items.length > 0" class="td-inbox__select-all" data-testid="select-all">
+        <label v-if="items.length > 0 && !readOnly" class="td-inbox__select-all" data-testid="select-all">
           <input
             type="checkbox"
             :checked="allSelected"
@@ -80,7 +81,7 @@ defineExpose({
       <span class="td-inbox__count">{{ items.length }}</span>
     </div>
 
-    <div v-if="hasSelection" class="td-inbox__batch-bar" data-testid="batch-action-bar">
+    <div v-if="hasSelection && !readOnly" class="td-inbox__batch-bar" data-testid="batch-action-bar">
       <button
         class="td-btn td-btn--primary td-btn--sm"
         :disabled="batchBusy"
@@ -146,8 +147,10 @@ defineExpose({
       </div>
       <TdEmptyState
         v-else-if="!hasItems"
-        title="No capture items yet"
-        description="Capture a note or transcript to get started. Once triage runs, proposals will appear in Review."
+        :title="readOnly ? 'No retained captures found' : 'No capture items yet'"
+        :description="readOnly
+          ? 'This archived board has no retained capture records in the current scope.'
+          : 'Capture a note or transcript to get started. Once triage runs, proposals will appear in Review.'"
         data-testid="inbox-empty-state"
       >
         <template #icon>
@@ -159,6 +162,7 @@ defineExpose({
         <template #action>
           <div class="td-inbox__empty-actions">
             <button
+              v-if="!readOnly"
               class="td-btn td-btn--primary td-btn--sm"
               aria-label="Open capture modal to add a new inbox item"
               @click="emit('open-capture-modal')"
@@ -212,6 +216,7 @@ defineExpose({
               >
                 <div class="td-inbox-row__head">
                   <input
+                    v-if="!readOnly"
                     type="checkbox"
                     class="td-inbox-row__checkbox"
                     data-testid="inbox-item-checkbox"

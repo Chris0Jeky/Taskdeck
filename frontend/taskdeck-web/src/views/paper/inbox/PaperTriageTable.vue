@@ -40,7 +40,7 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  * row says what happened and where the work went, so a decided row can never
  * render identically to one still waiting on a decision.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: CaptureItemSummary[]
   loadingList?: boolean
   listError?: string | null
@@ -48,7 +48,8 @@ const props = defineProps<{
   triagePollingItemId?: string | null
   scopeLabel?: string
   scopeClearLabel?: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   (event: 'accept', itemId: string, boardId?: string | null): void
@@ -108,6 +109,16 @@ watch(
     if (editItemId.value !== null && !rows.some((row) => row.id === editItemId.value)) {
       editItemId.value = null
     }
+  },
+)
+
+watch(
+  () => props.readOnly,
+  (readOnly) => {
+    if (!readOnly) return
+    editItemId.value = null
+    boardPickItemId.value = null
+    pickedBoardId.value = null
   },
 )
 
@@ -214,7 +225,8 @@ function editorOpenReasonId(item: CaptureItemSummary): string {
  * surface either replaces the draft's row or moves the editor off it.
  */
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return hasMutationInFlight.value ||
+  return props.readOnly ||
+    hasMutationInFlight.value ||
     props.triagePollingItemId === item.id ||
     !canMutate(item) ||
     isEditing(item) ||
@@ -346,7 +358,7 @@ function failureReason(item: CaptureItemSummary): string | null {
 onMounted(() => {
   // Prime boards so the picker is ready if the user accepts a board-less capture.
   // Best-effort — the store owns its own error/toast surface.
-  if (boardStore.boards.length === 0) {
+  if (!props.readOnly && boardStore.boards.length === 0) {
     void boardStore.fetchBoards().catch(() => undefined)
   }
 })
@@ -365,7 +377,7 @@ function formatTime(iso: string): string {
 <template>
   <section class="paper-triage" aria-label="Captured items">
     <header class="paper-triage__header">
-      <h2 class="tk-h3 paper-triage__title">Today's captures</h2>
+      <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
       <span class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
@@ -389,7 +401,9 @@ function formatTime(iso: string): string {
           {{ scopeClearLabel }}
         </button>
       </template>
-      <p v-else class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
+      <p v-else class="tk-body">
+        {{ readOnly ? t('inbox.history.empty') : 'A pen and a phrase. Drop a thought above to start.' }}
+      </p>
     </div>
 
     <ul v-if="hasItems" class="paper-triage__list">
@@ -433,7 +447,7 @@ function formatTime(iso: string): string {
           >{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
-        <div v-if="isPickingBoard(item)" class="paper-triage__board-pick" data-testid="capture-board-pick">
+        <div v-if="!readOnly && isPickingBoard(item)" class="paper-triage__board-pick" data-testid="capture-board-pick">
           <label class="paper-triage__board-label">
             <span class="tk-eyebrow">Board</span>
             <select
@@ -484,7 +498,7 @@ function formatTime(iso: string): string {
           </div>
         </div>
 
-        <div v-else class="paper-triage__actions">
+        <div v-else-if="!readOnly" class="paper-triage__actions">
           <PaperHLBtn
             label="Accept"
             variant="ember"
@@ -512,7 +526,7 @@ function formatTime(iso: string): string {
         </div>
 
         <p
-          v-if="isEditingElsewhere(item)"
+          v-if="!readOnly && isEditingElsewhere(item)"
           :id="editorOpenReasonId(item)"
           class="paper-triage__edit-block paper-triage__edit-block--row"
           role="status"
@@ -521,7 +535,7 @@ function formatTime(iso: string): string {
           {{ t('inbox.triage.edit.blocked.editorOpen') }}
         </p>
 
-        <div v-if="isEditing(item)" class="paper-triage__edit">
+        <div v-if="!readOnly && isEditing(item)" class="paper-triage__edit">
           <p
             class="paper-triage__edit-block"
             role="status"

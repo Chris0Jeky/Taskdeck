@@ -70,8 +70,9 @@ const props = withDefaults(
      * can explain the greyed-out row and carry the exit (GH-1964).
      */
     editLock?: EditLock
+    readOnly?: boolean
   }>(),
-  { applyPhase: 'approve', editLock: 'off' },
+  { applyPhase: 'approve', editLock: 'off', readOnly: false },
 )
 
 const { t } = useI18n()
@@ -138,7 +139,7 @@ const dialSubline = computed(() =>
          user reasonably read "approved" as "applied". role="status" so the state
          change is announced, not just drawn. -->
     <p
-      v-if="!dismissable && applyPhase === 'execute'"
+      v-if="!readOnly && !dismissable && applyPhase === 'execute'"
       class="paper-review-main__approved-banner"
       role="status"
       data-testid="paper-review-approved-banner"
@@ -151,7 +152,17 @@ const dialSubline = computed(() =>
       }}
     </p>
 
+    <p
+      v-if="readOnly"
+      class="paper-review-main__history-notice tk-meta"
+      role="status"
+      data-testid="paper-review-history-mode"
+    >
+      {{ $t('review.historyMode.notice') }}
+    </p>
+
     <ReviewDecisionRail
+      v-else
       :summary="decisionSummary"
       :busy="busy"
       :dismissable="dismissable"
@@ -177,6 +188,7 @@ const dialSubline = computed(() =>
       :rows="provenance"
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
+      :read-only="readOnly"
       @report="emit('report', $event)"
     />
     <ReviewSideEffects :data="sideEffects" />
@@ -185,7 +197,7 @@ const dialSubline = computed(() =>
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
-      <span class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
+      <span v-if="!readOnly" class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
     </footer>
   </div>
 </template>
@@ -234,6 +246,13 @@ const dialSubline = computed(() =>
   color: var(--ember-ink);
   font-size: 13px;
   line-height: 1.45;
+}
+.paper-review-main__history-notice {
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink-2);
 }
 .paper-review-main__footer {
   margin-top: 36px;
