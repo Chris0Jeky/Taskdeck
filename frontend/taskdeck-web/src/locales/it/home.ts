@@ -61,5 +61,8 @@ export default {
     label: 'Cattura rapida',
     inputLabel: 'Annota un pensiero',
     placeholder: 'Annota un pensiero...',
+    errorLead: 'Appunto non salvato. Il testo è ancora qui.',
+    errorDetail: 'Dettagli: {reason}',
+    errorFallback: 'Riprova quando la connessione è disponibile.',
   },
 }

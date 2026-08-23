@@ -303,8 +303,8 @@ describe('PaperInboxView', () => {
     await flushPromises()
   })
 
-  it('preserves the nib draft when capture creation fails', async () => {
-    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
+  it('preserves the nib draft and renders an inline error when capture creation fails', async () => {
+    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('Capture service unavailable'))
     const wrapper = mount(PaperInboxView)
     ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
     await wrapper.vm.$nextTick()
@@ -315,6 +315,33 @@ describe('PaperInboxView', () => {
     await flushPromises()
 
     expect((textarea.element as HTMLTextAreaElement).value).toBe('Do not lose this quick note')
+    const error = wrapper.get('[data-testid="paper-inbox-capture-error"]')
+    expect(error.attributes('role')).toBe('alert')
+    expect(error.text()).toContain('Capture not saved. Your draft is still here.')
+    expect(error.text()).toContain('Capture service unavailable')
+  })
+
+  it('does not label a post-create list refresh failure as an unsaved capture', async () => {
+    vi.useFakeTimers()
+    orchestratorState.loadInbox.mockRejectedValueOnce(new Error('Inbox refresh unavailable'))
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Created even if the list refresh fails')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="paper-nib-bleed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1400)
+    await wrapper.vm.$nextTick()
+    expect(
+      (wrapper.find('textarea[aria-label="Quick capture input"]').element as HTMLTextAreaElement).value,
+    ).toBe('')
   })
 
   it('guards nib submissions while capture creation is in flight', async () => {
