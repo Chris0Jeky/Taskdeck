@@ -61,8 +61,8 @@ jobs:
       # (no extra install/build), so it is the "cheap" check the issue asks for. Runs AFTER the
       # unit tests so a bundle regression does not mask test results. Linux-only to avoid a
       # redundant second run on the Windows matrix leg. Error thresholds (entry 150 / single 250 /
-      # total-js 1250 KB) are the defaults in scripts/ci/check-bundle-size.mjs, matching the
-      # existing performance-regression gate.
+      # eager-graph 1250 KB per the #1858 ruling; total JS warns only) are the defaults in
+      # scripts/ci/check-bundle-size.mjs, matching the existing performance-regression gate.
       - name: Check frontend bundle size
         if: runner.os == 'Linux'
         run: node scripts/ci/check-bundle-size.mjs --dist frontend/taskdeck-web/dist --fail-on-error

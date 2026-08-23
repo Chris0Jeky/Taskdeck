@@ -38,6 +38,7 @@ export default {
   },
   language: {
     label: 'Language',
-    hint: 'Taskdeck is being translated one surface at a time. Anything not translated yet stays in English.',
+    hint: 'Taskdeck is being translated one surface at a time. Anything not translated yet stays in English. Options marked "Machine-translated" have not yet been reviewed by a native speaker.',
+    machineTranslated: 'Machine-translated',
   },
 }
