@@ -64,6 +64,34 @@ describe('captureStore', () => {
     expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 100 })
   })
 
+  it('keeps the unfiltered Inbox after a late board-scoped response resolves', async () => {
+    const store = useCaptureStore()
+    let resolveScoped!: (value: any[]) => void
+    let resolveUnfiltered!: (value: any[]) => void
+    const scopedResponse = new Promise<any[]>((resolve) => { resolveScoped = resolve })
+    const unfilteredResponse = new Promise<any[]>((resolve) => { resolveUnfiltered = resolve })
+    vi.mocked(captureApi.listItems)
+      .mockReturnValueOnce(scopedResponse as never)
+      .mockReturnValueOnce(unfilteredResponse as never)
+
+    const scopedLoad = store.fetchItems({ boardId: 'board-7', limit: 200 })
+    const unfilteredLoad = store.fetchItems({ limit: 200 })
+
+    resolveUnfiltered([{
+      id: 'all-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+      textExcerpt: 'visible after clearing scope', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await unfilteredLoad
+
+    resolveScoped([{
+      id: 'scoped-capture', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'late scoped result', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await scopedLoad
+
+    expect(store.items.map((item) => item.id)).toEqual(['all-capture'])
+  })
+
   it('loads and caches capture details', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.getItem).mockResolvedValue({

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
@@ -7,6 +8,7 @@ import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
 import PaperTriageTable from './inbox/PaperTriageTable.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
+import PaperScopeDisclosure from '../../components/paper/PaperScopeDisclosure.vue'
 
 /**
  * PaperInboxView — Paper-themed Inbox / Capture orchestrator.
@@ -30,6 +32,7 @@ import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 type Variant = 'nib' | 'composer'
 
 const variant = ref<Variant>('composer')
+const { t } = useI18n()
 const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
@@ -40,7 +43,11 @@ const {
   captureStore,
   items,
   activeBoardId,
+  activeColumnId,
+  activeBoardName,
+  activeColumnName,
   loadInbox,
+  clearScope,
 } = useInboxOrchestrator({
   scrollToIndex: () => undefined,
 })
@@ -49,6 +56,13 @@ const {
 // definition applied to these rows; `capturedCount` is everything fetched.
 // The eyebrow labels them separately — the total is not a queue.
 const { pendingTriageCount, capturedCount } = useInboxCounts(items)
+
+const scopeLabel = computed(() => {
+  if (!activeBoardId.value) return ''
+  return activeColumnId.value
+    ? t('inbox.scope.boardAndColumn', { board: activeBoardName.value, column: activeColumnName.value })
+    : t('inbox.scope.board', { board: activeBoardName.value })
+})
 
 let stopTriagePolling: (() => void) | null = null
 
@@ -215,6 +229,12 @@ defineExpose({ variant, toggleVariant, setVariant })
         <p class="tk-lede paper-inbox__lede">
           {{ $t('inbox.lede') }}
         </p>
+        <PaperScopeDisclosure
+          v-if="scopeLabel"
+          :label="scopeLabel"
+          :clear-label="$t('inbox.scope.clear')"
+          @clear="clearScope"
+        />
       </div>
 
       <div
@@ -264,10 +284,13 @@ defineExpose({ variant, toggleVariant, setVariant })
       :list-error="captureStore.listError"
       :action-busy-item-id="captureStore.actionBusyItemId"
       :triage-polling-item-id="captureStore.triagePollingItemId"
+      :scope-label="scopeLabel"
+      :scope-clear-label="$t('inbox.scope.clear')"
       @accept="onTriageAccept"
       @reject="onTriageReject"
       @open="onTriageOpen"
       @retry="loadInbox"
+      @clear-scope="clearScope"
     />
   </div>
 </template>

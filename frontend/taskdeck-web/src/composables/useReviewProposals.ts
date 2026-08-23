@@ -495,9 +495,11 @@ export function useReviewProposals() {
     }
   }
 
-  function clearBoardFilter() {
+  async function clearBoardFilter() {
     boardFilterInput.value = ''
-    safeNavigate({ name: 'workspace-review' })
+    const query = { ...route.query }
+    delete query.boardId
+    await safeReplace({ name: 'workspace-review', query, hash: route.hash })
   }
 
   // --- Watchers ---

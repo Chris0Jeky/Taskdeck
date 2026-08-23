@@ -32,6 +32,14 @@ export default {
     emphasis: 'quickly?',
   },
   lede: 'Drop the thought. It will sit here, untouched, until you triage it. Nothing flows to the board without your approval.',
+  scope: {
+    board: 'Board: {board}',
+    boardAndColumn: 'Board: {board} · Column: {column}',
+    clear: 'Show all captures',
+  },
+  empty: {
+    scoped: 'No captures in {scope}. Show all captures to restore the full Inbox.',
+  },
   variantToggle: {
     label: 'Capture variant',
   },

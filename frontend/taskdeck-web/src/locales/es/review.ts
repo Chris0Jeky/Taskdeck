@@ -19,6 +19,7 @@
 export default {
   queueRail: {
     eyebrow: 'Cola · {awaiting} en espera · {stale} estancadas',
+    eyebrowScoped: 'Cola · {awaiting} en espera en este tablero · {stale} estancadas',
     filters: {
       label: 'Filtros de la cola',
     },
@@ -39,6 +40,11 @@ export default {
       applyRateLabel: 'Tasa de aplicación',
       applyRateEmpty: 'Aún sin decisiones',
     },
+  },
+
+  scope: {
+    board: 'Tablero: {board}',
+    clear: 'Mostrar todos los tableros',
   },
 
   queueItem: {
@@ -374,6 +380,10 @@ export default {
     title: 'Nada pendiente. Bien.',
     body: 'Cuando el asistente tenga algo que proponer aparecerá aquí para revisarlo.',
     loading: 'Cargando las propuestas…',
+    scoped: {
+      title: 'No hay propuestas en {scope}.',
+      body: 'Esta lista de revisión está limitada al tablero activo. Muestra todos los tableros para restaurar la cola completa.',
+    },
     filtered: {
       title: 'Sin resultados en {filter}.',
       body: 'Cambia de filtro para revisar propuestas que siguen en espera en otra parte de la cola.',

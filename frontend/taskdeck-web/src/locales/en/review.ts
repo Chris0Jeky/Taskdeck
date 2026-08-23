@@ -52,6 +52,7 @@ export default {
   // ── Left column: queue rail ───────────────────────────────────────────────
   queueRail: {
     eyebrow: 'Queue · {awaiting} awaiting · {stale} stale',
+    eyebrowScoped: 'Queue · {awaiting} awaiting in this board · {stale} stale',
     filters: {
       label: 'Queue filters',
     },
@@ -74,6 +75,11 @@ export default {
       applyRateLabel: 'Apply rate',
       applyRateEmpty: 'No decisions yet',
     },
+  },
+
+  scope: {
+    board: 'Board: {board}',
+    clear: 'Show all boards',
   },
 
   queueItem: {
@@ -462,6 +468,10 @@ export default {
     title: 'Nothing waiting. Good.',
     body: 'When the assistant has something to propose it will appear here for review.',
     loading: 'Loading proposals…',
+    scoped: {
+      title: 'No proposals in {scope}.',
+      body: 'This review list is limited to the active board. Show all boards to restore the full queue.',
+    },
     filtered: {
       title: 'No matches in {filter}.',
       body: 'Switch filters to review proposals that are still waiting elsewhere in the queue.',

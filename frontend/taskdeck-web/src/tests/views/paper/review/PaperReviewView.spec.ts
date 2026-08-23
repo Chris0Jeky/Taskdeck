@@ -263,6 +263,28 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
   })
 
+  it('discloses a board-scoped empty queue and clears it back to the loaded proposal', async () => {
+    const otherBoardProposal = makeProposal({ id: 'other-board', boardId: 'board-2' })
+    mocks.getProposals.mockResolvedValue([otherBoardProposal])
+    const wrapper = await mountView(
+      [otherBoardProposal],
+      '/workspace/review?boardId=board-1',
+      [{ id: 'board-1', name: 'Payments API Migration' }],
+    )
+
+    const scope = wrapper.find('[data-testid="paper-scope-disclosure"]')
+    expect(scope.text()).toContain('Board: Payments API Migration')
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).toContain('0 awaiting in this board')
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('No proposals in Board: Payments API Migration')
+
+    await wrapper.find('[data-testid="paper-review-clear-scope"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Split "dark mode" into 3 cards')
+  })
+
   it('orders Paper queue rows by risk while preserving hash selection and manual actions', async () => {
     const proposals = [
       makeProposal({ id: 'critical', riskLevel: 'Critical', summary: 'Critical proposal' }),

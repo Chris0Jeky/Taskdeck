@@ -135,6 +135,22 @@ describe('useInboxOrchestrator', () => {
     })
   })
 
+  describe('route scope', () => {
+    it('reads board and column context, then clears both without a page reload', async () => {
+      mockRoute.query = { boardId: 'board-1', columnId: 'column-1', source: 'capture' }
+      const orch = createOrchestrator()
+
+      expect(orch.activeBoardId.value).toBe('board-1')
+      expect(orch.activeColumnId.value).toBe('column-1')
+
+      await orch.clearScope()
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-inbox',
+        query: { source: 'capture' },
+      })
+    })
+  })
+
   describe('suggestion editing', () => {
     it('startEditSuggestion returns early when no selectedItem', () => {
       const orch = createOrchestrator()

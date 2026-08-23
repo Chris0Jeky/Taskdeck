@@ -77,6 +77,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const detailById = ref<Record<string, CaptureItem>>({})
   const loadingList = ref(false)
   const loadingDetail = ref(false)
+  let latestListLoadRequestId = 0
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -102,25 +103,33 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function fetchItems(query?: CaptureListQuery) {
+    const requestId = ++latestListLoadRequestId
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
-      items.value = buildDemoCaptureItems()
-      loadingList.value = false
+      if (requestId === latestListLoadRequestId) {
+        items.value = buildDemoCaptureItems()
+        loadingList.value = false
+      }
       return
     }
 
     try {
       loadingList.value = true
       listError.value = null
-      items.value = await captureApi.listItems(query)
+      const loadedItems = await captureApi.listItems(query)
+      if (requestId !== latestListLoadRequestId) return
+      items.value = loadedItems
     } catch (e: unknown) {
+      if (requestId !== latestListLoadRequestId) return
       const message = getErrorDisplay(e, 'Failed to load inbox items').message
       listError.value = message
       toast.error(message)
       throw e
     } finally {
-      loadingList.value = false
+      if (requestId === latestListLoadRequestId) {
+        loadingList.value = false
+      }
     }
   }
 
