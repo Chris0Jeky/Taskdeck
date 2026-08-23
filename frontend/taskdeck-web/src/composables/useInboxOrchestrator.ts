@@ -1,8 +1,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
+import { boardsApi } from '../api/boardsApi'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary } from '../types/capture'
+import type { BoardDetail } from '../types/board'
 import { registerEscapeHandler } from './useEscapeStack'
 import { usePerformanceMark } from './usePerformanceMark'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
@@ -25,6 +27,7 @@ export function useInboxOrchestrator(options: {
   const isEditingSuggestion = ref(false)
   const editedText = ref('')
   const editedTitleHint = ref('')
+  const scopedBoard = ref<BoardDetail | null>(null)
 
   const items = computed(() => captureStore.items)
   const activeDescendantId = computed(() => {
@@ -40,6 +43,28 @@ export function useInboxOrchestrator(options: {
     return captureStore.detailById[selectedItemId.value] ?? null
   })
   const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+  const activeColumnId = computed(() => normalizeBoardIdQueryParam(route.query.columnId))
+  const activeBoardName = computed(() => scopedBoard.value?.name ?? activeBoardId.value ?? '')
+  const activeColumnName = computed(() => {
+    if (!activeColumnId.value) return ''
+    return scopedBoard.value?.columns.find((column) => column.id === activeColumnId.value)?.name ?? activeColumnId.value
+  })
+
+  async function loadScopedBoard() {
+    if (!activeBoardId.value) {
+      scopedBoard.value = null
+      return
+    }
+    try {
+      const board = await boardsApi.getBoard(activeBoardId.value)
+      if (board.id === activeBoardId.value) {
+        scopedBoard.value = board
+      }
+    } catch {
+      // The scoped inbox remains usable when the board metadata is unavailable.
+      scopedBoard.value = null
+    }
+  }
 
   // ---- Batch selection ----
 
@@ -395,6 +420,13 @@ export function useInboxOrchestrator(options: {
     void router.push(path)
   }
 
+  async function clearScope(): Promise<void> {
+    const query = { ...route.query }
+    delete query.boardId
+    delete query.columnId
+    await router.replace({ name: 'workspace-inbox', query })
+  }
+
   // ---- Watchers & lifecycle ----
 
   watch(items, (nextItems) => {
@@ -422,6 +454,7 @@ export function useInboxOrchestrator(options: {
   watch(activeBoardId, () => {
     selectedItemId.value = null
     activeItemIndex.value = 0
+    void loadScopedBoard()
     void loadInbox()
   })
 
@@ -452,6 +485,7 @@ export function useInboxOrchestrator(options: {
   })
 
   onMounted(() => {
+    void loadScopedBoard()
     void loadInbox()
   })
 
@@ -472,6 +506,9 @@ export function useInboxOrchestrator(options: {
     activeDescendantId,
     selectedItem,
     activeBoardId,
+    activeColumnId,
+    activeBoardName,
+    activeColumnName,
     showCaptureModal,
     selectedIds,
     isEditingSuggestion,
@@ -491,6 +528,7 @@ export function useInboxOrchestrator(options: {
     closeCaptureModal,
     handleCaptureCreated,
     openRoute,
+    clearScope,
     openReview,
     closeDetail,
     refreshSelectedDetail,

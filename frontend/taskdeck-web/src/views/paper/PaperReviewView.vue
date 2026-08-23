@@ -65,6 +65,8 @@ const {
   nowMs,
   visibleProposals,
   dismissableProposalIds,
+  activeBoardFilter,
+  activeBoardName,
   matchesActiveBoardFilter,
   isProposalExpired,
   isApplyActionable,
@@ -78,6 +80,7 @@ const {
   availableBoards,
   startClock,
   stopClock,
+  clearBoardFilter,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
@@ -191,6 +194,11 @@ const filteredVisibleProposals = computed(() => {
 })
 
 const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
+const boardScopeLabel = computed(() =>
+  activeBoardFilter.value
+    ? t('review.scope.board', { board: activeBoardName.value })
+    : '',
+)
 
 const hasFilterEmptyState = computed(
   () => visibleProposals.value.length > 0 && filteredVisibleProposals.value.length === 0,
@@ -1348,6 +1356,8 @@ function onQueueFilterChange(filter: QueueFilter) {
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
       :stale-count="staleCount"
+      :scope-label="boardScopeLabel"
+      :scope-clear-label="$t('review.scope.clear')"
       :dismissable-count="bulkDismissableCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
@@ -1355,6 +1365,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
+      @clear-scope="clearBoardFilter"
     />
 
     <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
@@ -1532,7 +1543,15 @@ function onQueueFilterChange(filter: QueueFilter) {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="hasFilterEmptyState">
+      <template v-if="activeBoardFilter">
+        <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
+        <h2 class="tk-h2">{{ $t('review.empty.scoped.title', { scope: boardScopeLabel }) }}</h2>
+        <p class="tk-lede">{{ $t('review.empty.scoped.body') }}</p>
+        <button type="button" class="paper-review-deep__clear-scope" data-testid="paper-review-clear-scope" @click="clearBoardFilter">
+          {{ $t('review.scope.clear') }}
+        </button>
+      </template>
+      <template v-else-if="hasFilterEmptyState">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.filtered.title', { filter: activeFilterLabel }) }}</h2>
         <p class="tk-lede">
@@ -1614,6 +1633,20 @@ function onQueueFilterChange(filter: QueueFilter) {
 .paper-review-deep__empty {
   padding: 80px 56px;
   text-align: left;
+}
+.paper-review-deep__clear-scope {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  background: var(--paper-card);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.paper-review-deep__clear-scope:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
 }
 .paper-review-deep__diff {
   margin: 0 36px 28px;

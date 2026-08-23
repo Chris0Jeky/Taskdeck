@@ -709,10 +709,16 @@ describe('useReviewProposals', () => {
       expect(mockRouter.push).toHaveBeenCalledWith({ name: 'workspace-review' })
     })
 
-    it('clearBoardFilter navigates to review without query', () => {
+    it('clearBoardFilter replaces only the board query without a reload', async () => {
+      mockRoute.query = { boardId: 'board-z', source: 'proposal' }
+      mockRoute.hash = '#proposal-p-1'
       const rp = useReviewProposals()
-      rp.clearBoardFilter()
-      expect(mockRouter.push).toHaveBeenCalledWith({ name: 'workspace-review' })
+      await rp.clearBoardFilter()
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: { source: 'proposal' },
+        hash: '#proposal-p-1',
+      })
       expect(rp.boardFilterInput.value).toBe('')
     })
   })

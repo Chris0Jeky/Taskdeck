@@ -21,6 +21,14 @@ export default {
     emphasis: 'in breve?',
   },
   lede: 'Lascia qui il pensiero. Resta intatto finché non lo smisti tu. Niente arriva alla bacheca senza la tua approvazione.',
+  scope: {
+    board: 'Bacheca: {board}',
+    boardAndColumn: 'Bacheca: {board} · Colonna: {column}',
+    clear: 'Mostra tutte le catture',
+  },
+  empty: {
+    scoped: 'Nessuna cattura in {scope}. Mostra tutte le catture per ripristinare l’Inbox completo.',
+  },
   variantToggle: {
     label: 'Variante di cattura',
   },

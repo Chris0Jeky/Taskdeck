@@ -20,6 +20,7 @@
 export default {
   queueRail: {
     eyebrow: 'Coda · {awaiting} in attesa · {stale} ferme',
+    eyebrowScoped: 'Coda · {awaiting} in attesa in questa bacheca · {stale} ferme',
     filters: {
       label: 'Filtri della coda',
     },
@@ -40,6 +41,11 @@ export default {
       applyRateLabel: 'Tasso di applicazione',
       applyRateEmpty: 'Ancora nessuna decisione',
     },
+  },
+
+  scope: {
+    board: 'Bacheca: {board}',
+    clear: 'Mostra tutte le bacheche',
   },
 
   queueItem: {
@@ -376,6 +382,10 @@ export default {
     title: 'Niente in attesa. Bene.',
     body: 'Quando l’assistente avrà qualcosa da proporre comparirà qui per la revisione.',
     loading: 'Caricamento delle proposte…',
+    scoped: {
+      title: 'Nessuna proposta in {scope}.',
+      body: 'Questo elenco di revisione è limitato alla bacheca attiva. Mostra tutte le bacheche per ripristinare la coda completa.',
+    },
     filtered: {
       title: 'Nessun risultato in {filter}.',
       body: 'Cambia filtro per rivedere le proposte ancora in attesa altrove nella coda.',

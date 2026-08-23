@@ -21,8 +21,12 @@ const orchestratorState = {
   captureStore: mockCaptureStore,
   items: ref<Array<{ id: string }>>([]),
   activeBoardId: ref<string | null>(null),
+  activeColumnId: ref<string | null>(null),
+  activeBoardName: ref(''),
+  activeColumnName: ref(''),
   selectedItemId: ref<string | null>(null),
   loadInbox: vi.fn<() => Promise<void>>(),
+  clearScope: vi.fn<() => Promise<void>>(),
 }
 
 vi.mock('../../../composables/useInboxOrchestrator', () => ({
@@ -56,8 +60,12 @@ describe('PaperInboxView', () => {
     vi.clearAllMocks()
     orchestratorState.items.value = []
     orchestratorState.activeBoardId.value = null
+    orchestratorState.activeColumnId.value = null
+    orchestratorState.activeBoardName.value = ''
+    orchestratorState.activeColumnName.value = ''
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
+    orchestratorState.clearScope.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1' })
     mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
@@ -79,6 +87,40 @@ describe('PaperInboxView', () => {
     // Composer renders a textarea with an aria label "Capture body".
     expect(wrapper.find('textarea[aria-label="Capture body"]').exists()).toBe(true)
     expect(wrapper.attributes('data-variant')).toBe('composer')
+  })
+
+  it('discloses the board and column scope, then clears it without reloading', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeColumnId.value = 'column-ready'
+    orchestratorState.activeBoardName.value = 'Payments API Migration'
+    orchestratorState.activeColumnName.value = 'Ready'
+    orchestratorState.clearScope.mockImplementation(async () => {
+      orchestratorState.activeBoardId.value = null
+      orchestratorState.activeColumnId.value = null
+      orchestratorState.items.value = [captureRow('restored-capture', 'New')]
+    })
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Board: Payments API Migration')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Column: Ready')
+
+    await wrapper.find('[data-testid="paper-scope-clear"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
+    expect(orchestratorState.loadInbox).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('restored-capture')
+  })
+
+  it('names the active scope in an empty Inbox and offers the same clear action', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeBoardName.value = 'Payments API Migration'
+
+    const wrapper = mount(PaperInboxView)
+    const empty = wrapper.find('[data-testid="paper-triage-clear-scope"]')
+    expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
+    await empty.trigger('click')
+    expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
   })
 
   it('toggles between composer and nib when Cmd+; is pressed globally', async () => {
