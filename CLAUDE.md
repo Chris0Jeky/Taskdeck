@@ -79,10 +79,10 @@ Retired Gemini selectors/settings fail startup with migration guidance — `docs
 
 - **Long paths.** A `git worktree add` into a deep directory fails with `Filename too long` —
   `docs/InReview/MVP_EXPANSION/EXPANDED/...` is ~115 chars on its own. Keep worktree roots short.
-- **DCO is enforced.** Every commit needs `Signed-off-by:`. Use `git commit -s --no-gpg-sign`,
-  `git merge --signoff --no-gpg-sign <branch>`, `git commit -s --no-gpg-sign --no-edit` after resolving
-  conflicts. Never `--no-verify`. GitHub's server-side merge commit is outside the PR commit set — do not
-  rewrite shared history to add a trailer to it.
+- **DCO enforcement is paused.** By explicit maintainer decision on 2026-08-23, `Signed-off-by:`
+  trailers are optional and do not affect merge eligibility. Do not rewrite commits or add trailers to
+  another contributor's work. The dormant verifier assets remain under `scripts/ci/`; `#2019` tracks a
+  possible future restoration and does not itself authorize reactivation. Never use `--no-verify`.
 - **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or local command-deny
   list, and the root has no `.codex/hooks.json`. Declared authority, global laws, CI, and worktree guards still
   apply; user-, organization-, and runtime-level hooks are separate effective layers.

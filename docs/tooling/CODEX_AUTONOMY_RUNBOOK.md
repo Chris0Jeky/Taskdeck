@@ -256,7 +256,8 @@ First PowerShell commands (copy the complete block printed by the helper):
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.
-Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
+Make small present-tense commits with git commit --no-gpg-sign. DCO trailers are optional while
+enforcement is paused; do not repair history to add one. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
 Open a PR with Closes #NNN, test evidence, docs impact, and risks.
 Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
@@ -292,7 +293,7 @@ For each PR:
 5. Push and monitor updated CI.
 6. Comment with the fix and verification.
 
-For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. If it conflicts, preserve both branches' intended behavior, stage the resolution, finish with `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`, and re-run tests for both touched areas.
+For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --no-gpg-sign BRANCH_NAME`. If it conflicts, preserve both branches' intended behavior, stage the resolution, finish with `git commit --no-gpg-sign --no-edit` instead of `git merge --continue`, and re-run tests for both touched areas.
 
 ## Deferrals And Follow-Ups
 

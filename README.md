@@ -10,7 +10,7 @@ Paste notes, emails, checklists, or transcript text into Inbox and Taskdeck turn
 
 ![Taskdeck capture, proposal, review, and apply loop](docs/assets/taskdeck-core-loop.gif)
 
-> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). The DCO check is active but advisory; the required merge gate covers the secret/dependency/SAST scans (ADR-0035).
+> **Beta software:** Taskdeck is in the v0.x free open beta. Expect breaking changes while the public run paths, onboarding, and transcript workflow are hardened. The current open-source core is GPL-3.0-only; the transition and treatment of earlier MIT releases are documented in [LICENSING.md](LICENSING.md) and [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md). Automated DCO enforcement is paused; [#2019](https://github.com/Chris0Jeky/Taskdeck/issues/2019) is the future restoration tracker. The required branch-protection gate covers the secret/dependency/SAST scans (ADR-0035).
 
 ## The loop
 
@@ -182,7 +182,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. Every commit submitted in a pull request must include a `Signed-off-by:` trailer; see the [Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin). The pull-request DCO check is active but advisory; the required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
+PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 

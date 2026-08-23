@@ -27,7 +27,7 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 **Commitments made now (cheap now, impossible later):**
 
 1. **Copyleft core from 2026-08-12.** The current core is GPL-3.0-only under [ADR-0050](decisions/ADR-0050-gplv3-copyleft-core.md), which supersedes the earlier MIT-forever commitment. Copies already received under MIT retain those grants; the current project is not dual licensed. Monetization remains *additive* through managed services or explicitly separately licensed modules rather than removing features from the open-source core.
-2. **DCO, not CLA.** Contributions use an inbound-equals-outbound model under GPL-3.0-only. Commercial code may live in explicitly separately licensed modules (the reserved `ee/` pattern), so no blanket relicensing assignment is collected from contributors.
+2. **No CLA; DCO enforcement paused.** Contributions are accepted for inclusion under GPL-3.0-only and no blanket relicensing assignment is collected. By explicit maintainer decision on 2026-08-23, `Signed-off-by:` trailers are optional and no DCO check runs; `#2019` is an inert future-restoration tracker. Commercial code may live in explicitly separately licensed modules (the reserved `ee/` pattern).
 3. **The free boundary** (never gated, ever): the core capture → proposal → review → apply loop; data export/portability; BYO API key and local-LLM use; single-user self-hosting. **Candidate paid surfaces** (not built yet — deliberately absent from the free beta so nothing is later subtracted): managed hosted instance, managed high-accuracy transcription/diarization pipeline, org-level approval policies + audit packs, team workspaces at scale, integrations packs. Features that already ship free (MFA, OIDC, board sharing) stay free.
 4. **The hosted control plane stays private from day one.** Multi-tenant/billing/orchestration for a future cloud is never open-sourced — standard open-core practice that requires no pledge-breaking later.
 5. **Trademark:** search + document first-use for "Taskdeck" before launch; the core code is GPL-3.0-only, while the name/logo are not licensed as trademarks (REVIVAL-03, ADR-0050).
@@ -64,7 +64,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 |---|---|---|
 | Registration gating: `Auth:Registration:Mode` = `Open`/`InviteOnly`/`Closed` | REVIVAL-01 | **Delivered** by PR `#1334`; issue `#1297` closed |
 | Remove the fake undo timeline + correct side-effect copy | REVIVAL-02 | **Delivered** by PR `#1375`; issue `#1298` closed |
-| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | **Delivered** by PR `#1337`; issue `#1299` closed, legal/name residuals moved to `#1482` |
+| Licensing posture pack: LICENSING.md, license commitment, DCO + CI check, `ee/` placeholder, trademark search | REVIVAL-03 | **Delivered** by PR `#1337`; issue `#1299` closed, legal/name residuals moved to `#1482`. The DCO portion is historical: enforcement was paused by owner decision on 2026-08-23; restore tracker `#2019`. |
 | Self-host Paper fonts + favicon + theme-color | REVIVAL-04 | **Delivered** by PR `#1329`; issue `#1300` closed |
 | Paper onboarding: guided first-board path + Login/Register in Paper | REVIVAL-05 | **Delivered** by PR `#1344`; issue `#1301` closed |
 | README revival rewrite + demo GIF + MCP section | REVIVAL-06 | **Delivered** by PR `#1331`; issue `#1302` closed |

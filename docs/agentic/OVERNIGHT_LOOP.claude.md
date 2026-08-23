@@ -84,9 +84,9 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
 - **Inventory** open PRs, issues, red CI, `TODO`/`FIXME`, the failure ledger → seeds the backlog.
 - **Windows/env:** if git misbehaves, use `C:\Program Files\Git\cmd\git.exe`; PowerShell `&&` is
   a parser error (use `;` + `$LASTEXITCODE`, or the Bash tool); `reset --hard`/force-push are
-  hook-blocked — recover via `git merge --abort` / `git merge --signoff --no-gpg-sign origin/main` /
+  hook-blocked — recover via `git merge --abort` / `git merge --no-gpg-sign origin/main` /
   `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
-  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  resolve and stage the files, then finish with `git commit --no-gpg-sign --no-edit` instead of
   `git merge --continue`.
 
 Undiscoverable-but-needed convention → sane default, record the assumption, proceed.

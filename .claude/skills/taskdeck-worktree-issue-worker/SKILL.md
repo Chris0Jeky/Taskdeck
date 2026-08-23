@@ -52,7 +52,7 @@ Own only the files/modules assigned by the coordinator. You are not alone in the
 - do not broaden scope without coordinator approval
 - keep commits small and present tense
 - do not use `--no-verify`
-- require a `Signed-off-by:` trailer on every new commit; use `git commit -s --no-gpg-sign` in automated/background terminals
+- DCO trailers are optional while enforcement is paused; use `git commit --no-gpg-sign` in automated/background terminals and do not repair history to add a trailer
 
 ## Implementation Loop
 

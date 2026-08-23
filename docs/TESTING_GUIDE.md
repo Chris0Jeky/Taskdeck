@@ -313,7 +313,8 @@ Result: **7,660 passed, 5 intentional skips, 0 failed** (Domain 1,636;
 Application 3,678; API 2,189 + 4 skips; CLI 100; Architecture 22 + 1 skip;
 Integration 35). Docs governance, golden-principles governance, GitHub-operations
 governance, and `git diff --check` also passed. The streamed-refusal repair has
-a clean independent review; exact merged-head hosted CI, DCO, and final integration review remain pending. A
+a clean independent review; exact merged-head hosted CI and final integration review remain pending. DCO was
+an active evidence item at that checkpoint but enforcement was paused on 2026-08-23. A
 maintainer-supplied compatible-provider key and a visibly incremental stream in
 the real UI are separate human gates; loopback transport tests do not prove
 either.
@@ -2053,19 +2054,11 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 
 Required workflow: `.github/workflows/ci-required.yml`
 
-- `dco`
-  - Checks the explicit pull-request `base.sha..head.sha` range after a full-history checkout.
-    `scripts/ci/check-dco-signoffs.sh` parses only native Git trailer blocks with
-    `git -c core.commentChar=# interpret-trailers --parse`, checks every submitted commit including
-    multi-parent merges, and requires a nonempty `Signed-off-by: Name <email>` identity matching the
-    commit author or committer case-insensitively. The one repository-established Dependabot mapping
-    (`dependabot[bot]` / GitHub's bot author email to `support@github.com`) remains trailer-required
-    and is not a general bot exemption. Missing objects and Git/range/parser errors fail closed.
-  - The SHA-pinned `KineticCafe/actions-dco` action remains visible as a step-level non-blocking
-    diagnostic. The repository verifier determines the job step result, while the job itself remains
-    **advisory** (`continue-on-error: true`); promotion into branch protection remains maintainer-owned
-    under #1173.
-  - Local contract: `bash scripts/ci/test-check-dco-signoffs.sh`
+- DCO is not an active CI gate. By explicit maintainer decision on 2026-08-23, no workflow invokes
+  `scripts/ci/check-dco-signoffs.sh` or `KineticCafe/actions-dco`, and `Signed-off-by:` trailers are
+  optional. The verifier and `scripts/ci/test-check-dco-signoffs.sh` remain dormant restoration
+  assets; run the synthetic test only when changing those assets or implementing an explicitly
+  authorized restoration. `#2019` is the restoration tracker, not authorization to reactivate it.
 - `docs-governance`
   - Ubuntu `Docs Governance` enforces required active docs, failure-ledger synchronization, Golden
     Principles, and GitHub-operations invariants

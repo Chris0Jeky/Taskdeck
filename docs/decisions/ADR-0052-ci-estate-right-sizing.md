@@ -56,7 +56,8 @@ recorded as **documented capacity**, per the `#1275` 2026-07-10 re-scope comment
 contexts limited to the three security scans — `Dependency Security / Dependency Security Signals`,
 `SAST Scan / SAST Scan (Semgrep)`, `Secret Scan / Gitleaks Scan`. `required_approving_review_count:
 0`, `require_code_owner_reviews: false`, `enforce_admins: false`, `allow_force_pushes: false`,
-`allow_deletions: false`, `required_signatures: false` (DCO is a separate check app). Notably
+`allow_deletions: false`, `required_signatures: false`. DCO was a separate advisory workflow until
+the explicit 2026-08-23 maintainer decision paused it; `#2019` tracks any future restoration. Notably
 `ci-required` is **not** itself a required context; it gates by convention and the `review-and-ship`
 pipeline, not by branch-protection enforcement.
 

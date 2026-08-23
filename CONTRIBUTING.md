@@ -229,31 +229,23 @@ For full test operations, fixtures, and troubleshooting, see
 
 ---
 
-## Developer Certificate of Origin
+## Developer Certificate of Origin (enforcement paused)
 
-Every commit submitted as part of a pull request must include a `Signed-off-by:`
-trailer certifying the [Developer Certificate of Origin 1.1](https://developercertificate.org/).
-Create the trailer from your configured Git name and email with `-s`:
+DCO enforcement is paused by explicit maintainer decision on 23 August 2026.
+`Signed-off-by:` trailers are optional and do not affect merge eligibility. Do
+not add a trailer on another contributor's behalf or rewrite shared history to
+repair a missing trailer.
 
-```bash
-git commit -s -m "Add booking validation to application layer"
-```
-
-The DCO is a lightweight statement that you created the contribution, or have
-the right to submit it under Taskdeck's license, and understand that the public
-record is retained. Taskdeck uses this inbound-equals-outbound model instead of
-a contributor license agreement: contributions to the current core arrive
-under the same GPL-3.0-only terms under which the core is distributed. Earlier
-MIT grants remain valid as documented in [LICENSING.md](LICENSING.md) and
+The current core remains GPL-3.0-only and Taskdeck does not collect a contributor
+license agreement. Pausing DCO enforcement does not change the project licence,
+revoke earlier MIT grants, or assign contributor copyright. See
+[LICENSING.md](LICENSING.md) and
 [ADR-0050](docs/decisions/ADR-0050-gplv3-copyleft-core.md).
 
-The pull-request CI check is active and currently advisory
-(`continue-on-error: true`). Missing sign-offs still need to be corrected, and
-promotion into branch protection remains maintainer-owned under
-[#1173](https://github.com/Chris0Jeky/Taskdeck/issues/1173). A sign-off is not a
-cryptographic signature; do not add one on another contributor's behalf. The
-server-generated merge commit that GitHub creates after accepting a pull request
-is not one of the submitted pull-request commits and is outside this check.
+The former verifier and its synthetic tests remain dormant under `scripts/ci/`;
+no GitHub Actions workflow invokes them. [#2019](https://github.com/Chris0Jeky/Taskdeck/issues/2019)
+records what would need to be decided and rebuilt before any future restoration.
+The issue itself is not authorization to reactivate the check.
 
 ---
 

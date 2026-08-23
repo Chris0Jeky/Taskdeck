@@ -60,13 +60,17 @@ protection settings.
   tracked in `#1819`.
 - Every other `ci-required.yml` lane (Docs Governance, Backend Architecture, Backend Unit, API
   Integration, Migration Validation, Frontend Unit, Paper Color Audit, Container Images, E2E Smoke)
-  and `DCO (advisory)` still run on every PR and are still read before merge — they are simply not
-  enforced by branch protection. Exact-head green `ci-required.yml` remains the repository evidence
-  gate under the canonical review-and-ship pipeline; protection is a floor, not the gate.
+  still runs on every PR and is read before merge — those lanes are simply not enforced by branch
+  protection. Exact-head green `ci-required.yml` remains the repository evidence gate under the
+  canonical review-and-ship pipeline; protection is a floor, not the gate.
+- `DCO (advisory)` was removed from `ci-required.yml` by explicit maintainer decision on 2026-08-23.
+  `Signed-off-by:` trailers are optional and are not merge evidence. The former verifier assets are
+  dormant under `scripts/ci/`; `#2019` tracks a possible restoration and does not authorize it.
 - If you ever add a lane to the required list, use the exact PR-head check-run name including any
   matrix suffix (for example `Backend Unit / Backend Unit (windows-latest)`), and update this
   section in the same change.
-- Require up-to-date branches before merge only if desired; it does not replace the exact-head CI, DCO, canonical review-pipeline, or seam-specific evidence requirements.
+- Require up-to-date branches before merge only if desired; it does not replace the exact-head CI,
+  canonical review-pipeline, or seam-specific evidence requirements.
 
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):

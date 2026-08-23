@@ -42,9 +42,10 @@ Each reusable workflow is independently testable and composable.
 
 - **Positive**: Fast required gate (parallel lanes); optional extended checks don't block PRs; nightly catches regressions; topology is documented in workflow headers.
 - **Negative**: Many workflow files to maintain; dependency ordering between lanes requires explicit `needs` declarations.
-- **Neutral (superseded by ADR-0051)**: `CODEOWNERS` was introduced to request review for workflow
-  changes. It is now advisory routing; exact-head CI, DCO, canonical review, and seam-specific proof
-  determine eligibility without a designated human reviewer.
+- **Neutral (superseded by ADR-0051, amended 2026-08-23)**: `CODEOWNERS` was introduced to request
+  review for workflow changes. It is now advisory routing; exact-head CI, canonical review, and
+  seam-specific proof determine eligibility without a designated human reviewer. Automated DCO
+  enforcement is paused by explicit maintainer decision; restoration is tracked by `#2019`.
 
 ## References
 

@@ -189,7 +189,7 @@ If green:
 1. Review the complete diff and inspect `git status --porcelain --ignored` without deleting proof.
 2. Amend ADR-0055 and active configuration/upgrade docs to distinguish explicit retired selection
    from inert stale child keys after an explicit supported selector.
-3. Commit with DCO, push, and open a ready PR closing `#1876`.
+3. Commit, push, and open a ready PR closing `#1876`.
 4. Run the bounded independent review, exact-head CI, and three-minute head-age gate.
 5. Merge only if green, then run a blank-tag no-publish desktop rehearsal.
 6. Tag and publish v0.1.2 only after the candidate works with both hermetic clean state and a
