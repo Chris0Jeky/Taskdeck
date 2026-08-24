@@ -399,11 +399,11 @@ describe('auth-flow toast regression (#685)', () => {
   })
 
   // -------------------------------------------------------------------------
-  // Toast auto-removal does not affect session state
+  // Durable error receipts do not affect session state
   // -------------------------------------------------------------------------
 
   describe('toast auto-removal is independent of session state', () => {
-    it('auto-removing an error toast does not clear session.error', async () => {
+    it('keeping an error receipt does not clear session.error', async () => {
       vi.useFakeTimers()
 
       vi.mocked(authApi.login).mockRejectedValueOnce(makeLoginError('Bad creds'))
@@ -414,11 +414,11 @@ describe('auth-flow toast regression (#685)', () => {
       expect(session.error).toBe('Bad creds')
       expect(toast.toasts.filter((t) => t.type === 'error')).toHaveLength(1)
 
-      // Let the error toast auto-expire (default duration for error toasts is 5000ms)
+      // Error receipts remain available until the user dismisses them.
       vi.advanceTimersByTime(6000)
 
-      // Toast must be gone, but session error must still be set
-      expect(toast.toasts.filter((t) => t.type === 'error')).toHaveLength(0)
+      // The receipt remains, and session error must still be set.
+      expect(toast.toasts.filter((t) => t.type === 'error')).toHaveLength(1)
       expect(session.error).toBe('Bad creds')
 
       vi.useRealTimers()
