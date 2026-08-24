@@ -60,6 +60,7 @@
 | [0056](ADR-0056-direct-human-board-editing-first-class.md) | Direct Human Board Editing Is First-Class; the Proposal Loop Governs Non-Human Actors | Accepted | 2026-08-22 |
 | [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Proposed (awaiting maintainer ratification; review-first remains operative) | 2026-08-23 |
 | [0058](ADR-0058-due-dates-are-calendar-days.md) | Due Dates Are Calendar Days | Accepted | 2026-08-24 |
+| [0059](ADR-0059-machine-path-404-405-contract.md) | Machine-Facing Paths Answer 405 for a Wrong Verb and 404 Only for a Missing Route | Proposed (awaiting maintainer ratification; `#1992` reserves this disposition) | 2026-08-24 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
