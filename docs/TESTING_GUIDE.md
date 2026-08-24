@@ -2193,6 +2193,8 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 - `container-images`
+  - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
+    static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
   - Validates compose rendering
   - Builds backend/frontend container images
   - Exports compressed image artifacts plus SHA256 checksums
