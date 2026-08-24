@@ -132,10 +132,11 @@ Explorer/SmartScreen acceptance remain unverified.
   16 locale-catalog tests, typecheck, scoped lint, production build, and diff hygiene on the same
   base. Neither has an open PR or hosted exact-head gate. The applied-detail slice has not run the
   full frontend suite, Playwright/native-button keyboard journey, live backend, or packaged desktop.
-- **Final-main manual release seam still owed:** after the prepared slices are dispositioned, run one
-  synthetic desktop capture -> approved receipt -> explicit Apply -> exactly-one-card board journey
-  on the resulting exact main. No post-`55dbf6e14` no-publish Windows candidate or packaged manual
-  journey is claimed here.
+- **Final-main release seam still owed:** after the prepared slices are dispositioned, run one
+  synthetic desktop capture -> approved receipt -> explicit Apply -> exactly-one-card board journey,
+  then dispatch a blank-tag no-publish Windows candidate from that same exact main and verify the
+  untouched inner ZIP plus skipped release creation. Use the downloaded candidate for the packaged
+  manual journey. No post-`55dbf6e14` candidate or packaged journey is claimed here.
 - `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
   hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
   exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on

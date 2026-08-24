@@ -36,8 +36,8 @@ Both are one clean commit over `55dbf6e14`, have no open PR, and need a refreshe
 1. Refresh Git, GitHub, ProjectV2, CI, review threads, and worktrees; live state outranks this checkpoint.
 2. Publish/review the saved `#1949` tokenizer head, then disposition the remaining runtime/a11y/dead-keystroke guard scope.
 3. Independently review and publish the saved `#1967` applied-detail head; run its exact keyboard/read-only browser seam.
-4. Run one final synthetic desktop capture → approved receipt → explicit Apply → exactly-one-card journey on the resulting main.
-5. Reconcile open milestone issues `#1242`, `#1938`, `#1940`, `#1947`, `#1949`, `#1967`, `#1973`, `#1992`, and `#2004`. Never infer the human/owner gates: `#1242` acceptance, `#1973` archive contract, `#1992` 404-vs-405 contract, `#2004` chat contract, ≥10 dogfooding days (not before 2026-09-01), or maintainer release-deck acceptance.
+4. Run one final synthetic desktop capture → approved receipt → explicit Apply → exactly-one-card journey plus a blank-tag no-publish Windows candidate on the resulting exact main.
+5. Reconcile open milestone issues `#1242`, `#1938`, `#1940`, `#1947`, `#1949`, `#1967`, `#1973`, `#1992`, and `#2004`. Never infer the human/owner gates: `#1242` acceptance, `#1973` archive contract, `#1992` 404-vs-405 contract, `#2004` chat contract, or maintainer release-deck acceptance. The ≥10-day dogfooding floor (not before 2026-09-01) is the separate q-8 traction/archive checkpoint, not a v0.1.2 tag prerequisite.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved
