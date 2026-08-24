@@ -84,6 +84,8 @@ export default {
     restoreHint: 'This board is archived. Restore it to bring it back into active board lists.',
     archive: 'Move to archive',
     archiveConfirm: 'Move "{name}" to the archive? You can restore it later.',
+    archiveConfirmHistory:
+      'Captures and decision history stay saved. Open them from Workspace → Archive; they will not appear in the unfiltered Inbox or Review while this board is archived.',
     archiveConfirmAction: 'Yes, archive it',
     archiveConfirmCancel: 'Keep it here',
     restore: 'Restore board',

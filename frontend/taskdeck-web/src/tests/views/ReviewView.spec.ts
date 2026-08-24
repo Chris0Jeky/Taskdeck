@@ -337,6 +337,46 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Applied to board')
   })
 
+  it('renders an exact deep-linked Applied proposal as a read-only Legacy record', async () => {
+    const appliedProposal = buildProposal({
+      id: 'proposal-applied-record',
+      status: 'Applied',
+      summary: 'Exact historical proposal',
+      decidedAt: '2026-08-24T09:00:00.000Z',
+      decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      appliedAt: '2026-08-24T09:30:00.000Z',
+      presentation: {
+        plainSummary: 'Exact historical proposal',
+        impactSummary: 'One effective operation was applied.',
+        riskCue: 'Low risk.',
+        sourceCue: 'Created from Inbox capture triage.',
+        operationHeadlines: ['Create card "Legacy exact record".'],
+        affectedEntities: [],
+      },
+    })
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockResolvedValue(appliedProposal)
+
+    const { wrapper, router } = await mountAt(
+      '/workspace/review#proposal-proposal-applied-record',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-proposal-applied-record')
+    const card = wrapper.get('#proposal-proposal-applied-record')
+    expect(card.get('[data-testid="review-applied-decision-record"]').text()).toContain(
+      'Create card "Legacy exact record".',
+    )
+    expect(card.text()).toContain('Historical applied record')
+    expect(card.text()).not.toContain('Approve for board')
+    expect(card.text()).not.toContain('Reject')
+    expect(card.text()).not.toContain('Apply to board')
+    expect(card.findAll('button').some((button) => button.text() === 'View stored preview')).toBe(
+      true,
+    )
+  })
+
   it('renders capture provenance and canonical review links', async () => {
     const fullCorrelationId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     mocks.getProposals.mockResolvedValue([
@@ -624,6 +664,96 @@ describe('ReviewView', () => {
     await Promise.resolve()
 
     expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-7')
+  })
+
+  it('shows archived board decisions as inspectable read-only history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-applied-history',
+        boardId: 'board-99',
+        status: 'Applied',
+        summary: 'Applied archived decision',
+        diffPreview: 'stored applied preview',
+      }),
+      buildProposal({
+        id: 'proposal-rejected-history',
+        boardId: 'board-99',
+        status: 'Rejected',
+        summary: 'Rejected archived decision',
+        diffPreview: 'stored rejected preview',
+      }),
+      buildProposal({
+        id: 'proposal-pending-history',
+        boardId: 'board-99',
+        status: 'PendingReview',
+        summary: 'Live pending proposal',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99&history=archived')
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-99' })
+    expect(wrapper.text()).toContain('Archived decision history is read-only')
+    expect(wrapper.text()).toContain('Applied archived decision')
+    expect(wrapper.text()).toContain('Rejected archived decision')
+    expect(wrapper.text()).not.toContain('Live pending proposal')
+    expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Clear completed')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+
+    const storedPreviewButton = wrapper
+      .get('#proposal-proposal-applied-history')
+      .findAll('button')
+      .find((button) => button.text() === 'View stored preview')
+    expect(storedPreviewButton).toBeDefined()
+    await storedPreviewButton!.trigger('click')
+    expect(wrapper.text()).toContain('stored applied preview')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    const pushSpy = vi.spyOn(router, 'push')
+    const openInboxButton = wrapper
+      .find('.td-review__hero-actions')
+      .findAll('button')
+      .find((button) => button.text() === 'Open Inbox')
+    await openInboxButton?.trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-99&history=archived')
+  })
+
+  it('closes a pending apply gate when the route enters archived history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-approved-history',
+        boardId: 'board-99',
+        status: 'Approved',
+        summary: 'Approved archived decision',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99')
+    const applyButton = wrapper
+      .get('#proposal-proposal-approved-history')
+      .findAll('button')
+      .find((button) => button.text() === 'Apply to board')
+    expect(applyButton).toBeDefined()
+    await applyButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const staleConfirm = document.body.querySelector(
+      '[data-testid="apply-confirm-accept"]',
+    ) as HTMLButtonElement | null
+    expect(staleConfirm).not.toBeNull()
+
+    await router.push('/workspace/review?boardId=board-99&history=archived')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+    staleConfirm!.click()
+    await flushPromises()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
   })
 
   it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {

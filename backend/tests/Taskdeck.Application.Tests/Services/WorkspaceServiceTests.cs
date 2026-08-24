@@ -758,4 +758,64 @@ public class WorkspaceServiceTests
         result.Value.From.Should().Be(from);
         result.Value.To.Should().Be(to);
     }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldRejectEmptyUserId()
+    {
+        var result = await _service.GetCollaborationAsync(Guid.Empty);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    public async Task GetCollaborationAsync_ShouldReportSoloWorkspace_WhenNoOtherMemberShares(
+        int distinctMembers,
+        int expectedMemberCount)
+    {
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(distinctMembers);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MemberCount.Should().Be(expectedMemberCount);
+        result.Value.HasCollaborators.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldReportCollaborators_WhenASecondMemberExists()
+    {
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(2);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MemberCount.Should().Be(2);
+        result.Value.HasCollaborators.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldNotDeriveMembershipFromProposalsOrPresence()
+    {
+        // Guards the recorded assumption on #1940: membership must come from the board
+        // collaboration graph alone, never from proposal authorship or online presence.
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(1);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.HasCollaborators.Should().BeFalse();
+        _proposalRepositoryMock.VerifyNoOtherCalls();
+    }
 }

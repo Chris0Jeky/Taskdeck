@@ -74,6 +74,8 @@ export default {
       'Questa bacheca è archiviata. Ripristinala per rimetterla negli elenchi delle bacheche attive.',
     archive: "Sposta nell'archivio",
     archiveConfirm: 'Spostare "{name}" nell\'archivio? Potrai ripristinarla più tardi.',
+    archiveConfirmHistory:
+      'Le catture e la cronologia delle decisioni restano salvate. Puoi consultarle da Area di lavoro → Archivio; non appariranno in Inbox o Revisione senza filtri finché la bacheca è archiviata.',
     archiveConfirmAction: 'Sì, archiviala',
     archiveConfirmCancel: 'Lasciala qui',
     restore: 'Ripristina la bacheca',

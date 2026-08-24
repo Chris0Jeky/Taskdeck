@@ -9,10 +9,11 @@ import {
 import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
+import ReviewAppliedDecisionRecord from './ReviewAppliedDecisionRecord.vue'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { proposalIdsEqual } from '../../utils/proposalIdentity'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   proposal: Proposal
   isExpired: boolean
   isBusy: boolean
@@ -25,7 +26,8 @@ const props = defineProps<{
   selectedDiffRevised: boolean | null
   captureHref: string
   proposalHref: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 const displayVersion = ref(0)
 const technicalDetailsCopied = ref(false)
 
@@ -53,6 +55,10 @@ const diffPaneVisible = computed(
     (props.selectedDiffMode === 'stored' ||
       props.selectedDiffMode === 'invalid' ||
       !!props.selectedDiff),
+)
+
+const isAppliedRecord = computed(
+  () => normalizeProposalStatus(props.proposal.status) === 'Applied',
 )
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -227,12 +233,15 @@ async function copyTechnicalDetails() {
       <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
     </div>
 
+    <ReviewAppliedDecisionRecord v-if="isAppliedRecord" :proposal="proposal" />
+
     <!-- Action footer -->
     <ReviewProposalActions
       :proposal="proposal"
       :is-expired="isExpired"
       :is-busy="isBusy"
       :selected-diff-proposal-id="selectedDiffProposalId"
+      :read-only="props.readOnly"
       @approve="$emit('approve', $event)"
       @reject="(id, risk) => $emit('reject', id, risk)"
       @execute="$emit('execute', $event)"
@@ -249,6 +258,7 @@ async function copyTechnicalDetails() {
       :capture-href="captureHref"
       :proposal-href="proposalHref"
       :short-correlation-id="shortCorrelationId(proposal.correlationId)"
+      :read-only="props.readOnly"
       @open-board="$emit('open-board', $event)"
     />
 

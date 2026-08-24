@@ -198,6 +198,9 @@ async function restore() {
       <p class="paper-board-confirm__copy">
         {{ t('boardDetail.boardDialog.archiveConfirm', { name: board.name }) }}
       </p>
+      <p class="paper-board-confirm__copy">
+        {{ t('boardDetail.boardDialog.archiveConfirmHistory') }}
+      </p>
       <div class="paper-board-confirm__actions">
         <PaperHLBtn
           variant="ember"

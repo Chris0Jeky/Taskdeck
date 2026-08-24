@@ -20,6 +20,7 @@ const {
   boardFilterInput,
   activeBoardFilter,
   activeBoardName,
+  isArchivedHistory,
   showCompleted,
   loadingBoards,
   boardOptions,
@@ -63,6 +64,12 @@ const {
   handleDismissApplied,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals, isProposalExpired)
 
+watch(isArchivedHistory, (readOnly) => {
+  if (!readOnly) return
+  cancelExecuteProposal()
+  cancelRejectProposal()
+})
+
 const route = useRoute()
 
 const hashProposalId = computed(() => {
@@ -84,9 +91,20 @@ const hashProposalId = computed(() => {
 const renderedProposals = computed(() => {
   const proposalId = hashProposalId.value
   if (!proposalId) return visibleProposals.value
-  const target = visibleProposals.value.find((proposal) =>
+  // The exact hash is also the inspection path for a completed Applied record.
+  // Completed proposals are intentionally absent from visibleProposals while
+  // "Show completed" is off, so resolve the target from the hydrated canonical
+  // collection and apply the board scope explicitly.
+  const target = proposals.value.find((proposal) =>
     proposalIdsEqual(proposal.id, proposalId),
   )
+  if (
+    target &&
+    activeBoardFilter.value &&
+    (!target.boardId || !proposalIdsEqual(target.boardId, activeBoardFilter.value))
+  ) {
+    return []
+  }
   return target ? [target] : []
 })
 
@@ -191,6 +209,7 @@ onUnmounted(() => {
       :show-completed="showCompleted"
       :proposals-loading="proposalsLoading"
       :dismissable-count="dismissableProposalIds.length"
+      :read-only="isArchivedHistory"
       @update:board-filter-input="boardFilterInput = $event"
       @update:show-completed="showCompleted = $event"
       @select-board="(option) => applyBoardFilter(option.value)"
@@ -276,6 +295,7 @@ onUnmounted(() => {
               :selected-diff-revised="selectedDiffRevised"
               :capture-href="captureHrefForProposal(renderedProposals[virtualRow.index]!)"
               :proposal-href="proposalHref(renderedProposals[virtualRow.index]!)"
+              :read-only="isArchivedHistory"
               @approve="handleApproveProposal"
               @reject="requestRejectProposal"
               @execute="requestExecuteProposal"

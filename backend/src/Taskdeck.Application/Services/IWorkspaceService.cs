@@ -10,6 +10,14 @@ public interface IWorkspaceService
         Guid userId,
         DateOnly? localDate = null,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Returns the authoritative collaboration-membership signal for the given user.
+    /// This is the only supported input for deciding whether author-partitioned UI
+    /// (an "All vs Mine" split) can mean anything for this user.
+    /// </summary>
+    Task<Result<WorkspaceCollaborationDto>> GetCollaborationAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
     Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Result<WorkspacePreferenceDto>> UpdatePreferencesAsync(
         Guid userId,

@@ -47,6 +47,10 @@ export default {
     clear: 'Mostrar todos los tableros',
   },
 
+  historyMode: {
+    notice: 'Historial de decisiones archivadas · solo lectura. Restaura el tablero antes de aprobar, rechazar, aplicar, editar, aplazar o archivar propuestas.',
+  },
+
   queueItem: {
     noSummary: '(sin resumen)',
     confidence: 'conf {value}',
@@ -73,6 +77,33 @@ export default {
     empty: 'Hoy no se ha aplicado nada.',
     noSummary: '(aplicada)',
     age: 'hace {age}',
+    openLabel: 'Abrir propuesta aplicada: {title}',
+  },
+
+  appliedRecord: {
+    ariaLabel: 'Registro de decisi\u00f3n de la propuesta aplicada',
+    tagstamp: 'APLICADA \u00b7 SOLO LECTURA',
+    eyebrow: 'Registro hist\u00f3rico',
+    heading: 'Registro de decisi\u00f3n aplicada',
+    lede:
+      'Esta propuesta ya cambi\u00f3 el tablero. La decisi\u00f3n registrada y las operaciones efectivas son de solo lectura.',
+    filingSummary: 'Registro hist\u00f3rico \u00b7 solo archivo',
+    historicalNotice: 'Registro hist\u00f3rico aplicado. No hay m\u00e1s acciones de revisi\u00f3n disponibles.',
+    field: {
+      outcome: 'Resultado',
+      decision: 'Decisi\u00f3n',
+      decisionActor: 'Actor de la decisi\u00f3n',
+      decisionTime: 'Hora de la decisi\u00f3n',
+      appliedTime: 'Hora de aplicaci\u00f3n',
+    },
+    value: {
+      applied: 'Aplicada',
+      approved: 'Aprobada',
+      notRecorded: 'No registrado',
+    },
+    operations: {
+      heading: 'Operaciones aplicadas',
+    },
   },
 
   main: {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ReviewQueueItem from './ReviewQueueItem.vue'
 import ReviewRecentApplied, { type RecentlyAppliedRow } from './ReviewRecentApplied.vue'
 import ReviewMiniCadence from './ReviewMiniCadence.vue'
@@ -44,10 +44,22 @@ const props = withDefaults(
      * fabricated percentage. There is intentionally no default value.
      */
     applyRate?: number
+    /**
+     * Whether the author partition — the "All" vs "Mine" split — can mean
+     * anything for this viewer. It comes from the server-computed
+     * collaboration-membership contract, never from proposal authorship,
+     * board ACL rows alone, or online presence (#1940).
+     *
+     * Defaults to `true` so a loading, unknown, or failed membership lookup
+     * keeps every control on screen; the pair is removed only from a positive
+     * single-member answer. Stale is never removed.
+     */
+    authorPartitionAvailable?: boolean
   }>(),
   {
     dismissableCount: 0,
     busy: false,
+    authorPartitionAvailable: true,
   },
 )
 
@@ -94,6 +106,39 @@ function setFilter(next: QueueFilter) {
   filter.value = next
   emit('filter-change', next)
 }
+
+/**
+ * Chips to render. On a single-member workspace "Mine" is the whole queue and
+ * "All" is its meaningless counterpart, so the pair is dropped and only Stale
+ * remains. Stale is preserved in every case.
+ */
+const visibleFilters = computed<QueueFilter[]>(() =>
+  props.authorPartitionAvailable ? ['all', 'mine', 'stale'] : ['stale'],
+)
+
+watch(
+  () => props.authorPartitionAvailable,
+  (available) => {
+    // The partition can vanish under a live selection: the membership answer
+    // arrives after first paint, or the last collaborator is removed. "Mine"
+    // then has no chip to return to, so fall back to the unfiltered queue and
+    // tell the parent, which re-resolves the active proposal.
+    if (!available && filter.value === 'mine') {
+      setFilter('all')
+    }
+  },
+)
+
+function onFilterPillClick(key: QueueFilter) {
+  // With the pair hidden, Stale is the only chip, so it toggles against the
+  // whole queue. Without this it would be a one-way switch into a filter the
+  // reviewer has no visible control to leave.
+  if (!props.authorPartitionAvailable && key === 'stale' && filter.value === 'stale') {
+    setFilter('all')
+    return
+  }
+  setFilter(key)
+}
 </script>
 
 <template>
@@ -119,13 +164,13 @@ function setFilter(next: QueueFilter) {
         :aria-label="$t('review.queueRail.filters.label')"
       >
         <button
-          v-for="key in (['all', 'mine', 'stale'] as QueueFilter[])"
+          v-for="key in visibleFilters"
           :key="key"
           type="button"
           class="paper-review-rail__pill"
           :class="{ 'paper-review-rail__pill--active': filter === key }"
           :aria-pressed="filter === key"
-          @click="setFilter(key)"
+          @click="onFilterPillClick(key)"
         >{{ $t(`review.queueRail.filter.${key}`) }}</button>
       </div>
       <p class="paper-review-rail__risk-note tk-meta" role="note" data-testid="paper-review-risk-order-note">
@@ -160,7 +205,11 @@ function setFilter(next: QueueFilter) {
       @select="emit('select', item.id)"
     />
 
-    <ReviewRecentApplied :rows="recentlyApplied" />
+    <ReviewRecentApplied
+      :rows="recentlyApplied"
+      :active-id="activeId"
+      @select="emit('select', $event)"
+    />
 
     <div class="paper-review-rail__cadence">
       <div class="tk-eyebrow paper-review-rail__cadence-heading">

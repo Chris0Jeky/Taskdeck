@@ -35,14 +35,15 @@ export type EvidenceLink = ProvenanceEvidenceLink
  * when the underlying data does — as `usePaperReviewSelectors().evidenceLinks` does today
  * (#1837 item 4).
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   rows: ProvenanceRow[]
   metadata: ProvenanceMetadata | null
   /** Stable reference required — see the caller contract above. */
   evidenceLinks: EvidenceLink[]
   proposalId: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   close: []
@@ -368,7 +369,7 @@ onUnmounted(() => {
                     : $t('review.provenanceDrawer.copyJson')
               }}
             </button>
-            <button class="prov-drawer__action prov-drawer__action--report" @click="reportBadSuggestion">
+            <button v-if="!props.readOnly" class="prov-drawer__action prov-drawer__action--report" @click="reportBadSuggestion">
               {{ $t('review.provenanceDrawer.report') }}
             </button>
           </footer>

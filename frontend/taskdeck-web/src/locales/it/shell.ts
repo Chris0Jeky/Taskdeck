@@ -21,6 +21,15 @@ export default {
       warning: 'Avviso',
       failed: 'Errore',
     },
+    receipt: {
+      showDetails: 'Mostra dettagli',
+      hideDetails: 'Nascondi dettagli',
+      copyDetails: 'Copia dettagli',
+      copied: 'Copiato',
+      copyFailed: 'Copia non riuscita',
+      dismissNotification: 'Chiudi la notifica',
+      errorDetails: 'Dettagli dell’errore: {message}',
+    },
   },
   topbar: {
     notifications: 'Notifiche',

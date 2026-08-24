@@ -85,17 +85,17 @@
               type="button"
               class="underline underline-offset-2 hover:opacity-70"
               :aria-expanded="expanded[toast.id] ?? false"
-              :aria-controls="detailsId(toast.id)"
+              :aria-controls="expanded[toast.id] ? detailsId(toast.id) : undefined"
               @click="toggleDetails(toast.id)"
             >
-              {{ expanded[toast.id] ? 'Hide details' : 'Show details' }}
+              {{ expanded[toast.id] ? t('shell.toast.receipt.hideDetails') : t('shell.toast.receipt.showDetails') }}
             </button>
             <button
               type="button"
               class="underline underline-offset-2 hover:opacity-70"
               @click="copyReceipt(toast)"
             >
-              {{ copyState[toast.id] === 'copied' ? 'Copied' : copyState[toast.id] === 'failed' ? 'Copy failed' : 'Copy details' }}
+              {{ copyState[toast.id] === 'copied' ? t('shell.toast.receipt.copied') : copyState[toast.id] === 'failed' ? t('shell.toast.receipt.copyFailed') : t('shell.toast.receipt.copyDetails') }}
             </button>
           </div>
           <pre
@@ -104,7 +104,7 @@
             class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/5 p-2 text-xs font-normal"
             tabindex="0"
             role="region"
-            :aria-label="`Error details for ${toast.message}`"
+            :aria-label="t('shell.toast.receipt.errorDetails', { message: toast.message })"
           >{{ toast.details }}</pre>
         </div>
 
@@ -112,7 +112,7 @@
         <button
           @click="toastStore.remove(toast.id)"
           class="flex-shrink-0 hover:opacity-70 transition-opacity"
-          aria-label="Close"
+          :aria-label="t('shell.toast.receipt.dismissNotification')"
         >
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
             <path
@@ -129,9 +129,11 @@
 
 <script setup lang="ts">
 import { nextTick, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
 
 const toastStore = useToastStore()
+const { t } = useI18n()
 const expanded = reactive<Record<string, boolean>>({})
 const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
 const politeAnnouncement = ref('')

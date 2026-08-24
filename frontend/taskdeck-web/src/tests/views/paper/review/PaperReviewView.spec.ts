@@ -56,6 +56,16 @@ vi.mock('../../../../api/columnsApi', () => ({
   columnsApi: { getColumns: mocks.getColumns },
 }))
 
+// The view reads the collaboration-membership contract on mount (#1940). These
+// specs are not about that contract, so it resolves to a collaborative
+// workspace, which is the shape that leaves every queue filter on screen.
+// PaperReviewMembershipFilter.spec.ts owns the membership behaviour itself.
+vi.mock('../../../../api/workspaceApi', () => ({
+  workspaceApi: {
+    getCollaboration: vi.fn().mockResolvedValue({ memberCount: 2, hasCollaborators: true }),
+  },
+}))
+
 vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   proposalDeepReviewApi: {
     getProvenance: mocks.getProvenance,
@@ -261,6 +271,48 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').exists()).toBe(true)
     // Active proposal title surfaces in the main column header.
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
+  })
+
+  it('loads every settled archived decision into a selectable inspection-only queue', async () => {
+    const settled = [
+      makeProposal({ id: 'applied-1', status: 'Applied', summary: 'Applied history one' }),
+      makeProposal({ id: 'applied-2', status: 'Applied', summary: 'Applied history two' }),
+      makeProposal({ id: 'applied-3', status: 'Applied', summary: 'Applied history three' }),
+      makeProposal({ id: 'applied-4', status: 'Applied', summary: 'Applied history four' }),
+      makeProposal({ id: 'applied-5', status: 'Applied', summary: 'Applied history five' }),
+      makeProposal({ id: 'rejected-1', status: 'Rejected', summary: 'Rejected history decision' }),
+    ]
+    const wrapper = await mountView(
+      [
+        ...settled,
+        makeProposal({ id: 'pending-live', status: 'PendingReview', summary: 'Live pending proposal' }),
+      ],
+      '/workspace/review?boardId=board-1&history=archived',
+    )
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-1' })
+    expect(wrapper.get('[data-testid="paper-review-view"]').attributes('data-history-mode')).toBe('archived')
+    expect(wrapper.findAll('.paper-review-q')).toHaveLength(settled.length)
+    expect(wrapper.find('[data-testid="paper-review-queue-rail"]').text()).not.toContain('Live pending proposal')
+    expect(wrapper.get('[data-testid="paper-review-history-mode"]').text()).toContain('read-only')
+    expect(wrapper.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="queue-file-away-all"]').exists()).toBe(false)
+
+    const rejectedRow = wrapper
+      .findAll('.paper-review-q')
+      .find((row) => row.text().includes('Rejected history decision'))
+    expect(rejectedRow).toBeDefined()
+    await rejectedRow!.trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Rejected history decision')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    await flushPromises()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.dismissProposals).not.toHaveBeenCalled()
   })
 
   it('discloses a board-scoped empty queue and clears it back to the loaded proposal', async () => {
@@ -883,7 +935,17 @@ describe('PaperReviewView', () => {
         id: 'applied-new',
         status: 'Applied',
         summary: 'Newer applied work',
+        decidedAt: new Date(Date.now() - 35 * 60_000).toISOString(),
+        decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
         appliedAt: newerAppliedAt,
+        presentation: {
+          plainSummary: 'Newer applied work',
+          impactSummary: 'One effective operation was applied.',
+          riskCue: 'Low risk.',
+          sourceCue: 'Created from Inbox capture triage.',
+          operationHeadlines: ['Create card "Exact applied work".'],
+          affectedEntities: [],
+        },
       }),
     ])
 
@@ -892,6 +954,94 @@ describe('PaperReviewView', () => {
     expect(railText).toContain('Older applied work')
     expect(railText).toContain('Newer applied work')
     expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
+
+    const recentButtons = wrapper.findAll('.paper-review-recent__row')
+    const newest = recentButtons.find((button) => button.text().includes('Newer applied work'))!
+    expect(newest.element.tagName).toBe('BUTTON')
+    await newest.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-applied-new',
+    )
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Newer applied work')
+    expect(wrapper.get('[data-testid="review-applied-decision-record"]').text()).toContain(
+      'Create card "Exact applied work".',
+    )
+    expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe(
+      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+    )
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-key-hint"]').exists()).toBe(false)
+    expect(wrapper.find('.paper-review-keys').exists()).toBe(false)
+  })
+
+  it("files away the reviewer's own applied record with the ⌫ key", async () => {
+    // The filing rail still shows "File away ⌫" for an own applied record, so
+    // the keymap must honor exactly that key while every decision key stays
+    // dead — the visible affordance and the keyboard contract may not diverge.
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-own',
+        status: 'Applied',
+        summary: 'Own applied work',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Own applied work'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['applied-own'])
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('keeps decision keys dead on an applied record while ⌫ stays live', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-keys',
+        status: 'Applied',
+        summary: 'Applied keys probe',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Applied keys probe'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    // ⏎ (apply), E (edit), D (defer) must all be inert on an applied record.
+    // The keymap only calls preventDefault() when it dispatches a handler, so
+    // an un-prevented event proves the per-action gate held (#1830 round 2).
+    for (const key of ['Enter', 'e', 'd']) {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      await flushPromises()
+      expect(event.defaultPrevented).toBe(false)
+    }
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.dismissProposals).not.toHaveBeenCalled()
+
+    wrapper.unmount()
   })
 
   it('replaces decision buttons with "File away" for an expired proposal', async () => {

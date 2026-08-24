@@ -48,6 +48,10 @@ export default {
     clear: 'Mostra tutte le bacheche',
   },
 
+  historyMode: {
+    notice: 'Cronologia delle decisioni archiviate · sola lettura. Ripristina la bacheca prima di approvare, rifiutare, applicare, modificare, rinviare o archiviare proposte.',
+  },
+
   queueItem: {
     noSummary: '(nessun riepilogo)',
     confidence: 'conf {value}',
@@ -74,6 +78,33 @@ export default {
     empty: 'Oggi non è stato applicato niente.',
     noSummary: '(applicata)',
     age: '{age} fa',
+    openLabel: 'Apri proposta applicata: {title}',
+  },
+
+  appliedRecord: {
+    ariaLabel: 'Registro della decisione per la proposta applicata',
+    tagstamp: 'APPLICATA \u00b7 SOLA LETTURA',
+    eyebrow: 'Registro storico',
+    heading: 'Registro della decisione applicata',
+    lede:
+      'Questa proposta ha gi\u00e0 modificato la bacheca. La decisione registrata e le operazioni effettive sono in sola lettura.',
+    filingSummary: 'Registro storico \u00b7 solo archiviazione',
+    historicalNotice: 'Registro storico applicato. Non sono disponibili altre azioni di revisione.',
+    field: {
+      outcome: 'Esito',
+      decision: 'Decisione',
+      decisionActor: 'Autore della decisione',
+      decisionTime: 'Ora della decisione',
+      appliedTime: 'Ora di applicazione',
+    },
+    value: {
+      applied: 'Applicata',
+      approved: 'Approvata',
+      notRecorded: 'Non registrato',
+    },
+    operations: {
+      heading: 'Operazioni applicate',
+    },
   },
 
   main: {

@@ -2,7 +2,7 @@
 import InputAssistField from '../common/InputAssistField.vue'
 import type { InputAssistOption } from '../../utils/inputAssist'
 
-defineProps<{
+withDefaults(defineProps<{
   activeBoardFilter: string
   activeBoardName: string
   boardFilterInput: string
@@ -11,7 +11,8 @@ defineProps<{
   showCompleted: boolean
   proposalsLoading: boolean
   dismissableCount: number
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   (e: 'update:boardFilterInput', value: string): void
@@ -35,15 +36,17 @@ function onBoardFilterInput(value: string) {
       <span class="td-review__eyebrow" aria-hidden="true">Review</span>
       <h1 class="td-page-title">Review</h1>
       <p class="td-review__subtitle">
-        Nothing changes on a board until you approve it here.
+        {{ readOnly
+          ? 'Archived decision history is read-only. Restore the board before making or filing decisions.'
+          : 'Nothing changes on a board until you approve it here.' }}
       </p>
       <p v-if="activeBoardFilter" class="td-review__board-filter">
-        Showing proposals for <strong>{{ activeBoardName }}</strong>.
+        Showing {{ readOnly ? 'retained decision records' : 'proposals' }} for <strong>{{ activeBoardName }}</strong>.
         <button class="td-btn td-btn--link td-btn--sm" @click="$emit('clear-board-filter')">Show all boards</button>
       </p>
     </div>
 
-    <div class="td-review__board-selector">
+    <div v-if="!readOnly" class="td-review__board-selector">
       <InputAssistField
         :model-value="boardFilterInput"
         :options="boardOptions"
@@ -57,7 +60,7 @@ function onBoardFilterInput(value: string) {
     </div>
 
     <div class="td-review__hero-actions">
-      <label class="td-review__toggle">
+      <label v-if="!readOnly" class="td-review__toggle">
         <input
           :checked="showCompleted"
           type="checkbox"
@@ -67,6 +70,7 @@ function onBoardFilterInput(value: string) {
         <span class="td-review__toggle-label">Show completed</span>
       </label>
       <button
+        v-if="!readOnly"
         class="td-btn td-btn--secondary"
         :disabled="dismissableCount === 0"
         @click="$emit('dismiss-applied')"

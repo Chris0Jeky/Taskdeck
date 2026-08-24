@@ -18,6 +18,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
+import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollaboration'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
@@ -69,6 +70,7 @@ const {
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
+  isArchivedHistory,
   matchesActiveBoardFilter,
   isProposalExpired,
   isApplyActionable,
@@ -88,6 +90,7 @@ const {
 const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
+const collaboration = useWorkspaceCollaboration()
 const { t, locale } = useI18n()
 const displayVersion = ref(0)
 const technicalDetailsCopied = ref(false)
@@ -198,6 +201,48 @@ const filteredVisibleProposals = computed(() => {
   return sortProposalsByRisk(filtered)
 })
 
+/**
+ * Whether the rendered queue still holds a record authored by somebody other
+ * than this reviewer — that is, something "Mine" can actually isolate.
+ *
+ * This is a PRESERVE-visibility guard, never the membership source, so it does
+ * not breach the recorded #1940 assumption against deriving filter visibility
+ * from proposal authors. The server contract stays the sole prerequisite for
+ * ever WITHDRAWING the pair; authorship may only keep on screen a control that
+ * membership alone would have removed, which is the fail-open direction.
+ *
+ * It is needed because revoking a collaborator's board access deletes the
+ * access row but leaves their proposals on the board, so the workspace can
+ * legitimately report solo while a departed author's records are still
+ * rendered and "Mine" still means something.
+ *
+ * Deliberately reads the pre-filter `visibleProposals`: keying it on the
+ * filtered queue would make selecting "Mine" remove the foreign rows, withdraw
+ * the pair, fall back to "All", and oscillate.
+ */
+const queueHasForeignAuthoredProposal = computed(
+  () =>
+    !!session.userId &&
+    visibleProposals.value.some(
+      (proposal) =>
+        !!proposal.requestedByUserId && proposal.requestedByUserId !== session.userId,
+    ),
+)
+
+/**
+ * Whether the queue rail may offer the author partition ("All" vs "Mine").
+ *
+ * The prerequisite signal is only the server-computed collaboration-membership
+ * contract, per the recorded #1940 prerequisite: proposal authorship, board ACL
+ * rows on their own, and online presence are all wrong proxies for workspace
+ * membership. The pair is withdrawn only when membership is known AND
+ * single-member AND nothing foreign-authored is on screen; loading, unknown,
+ * and failed lookups leave every control exactly as it is today.
+ */
+const authorPartitionAvailable = computed(
+  () => !collaboration.isSoloWorkspace.value || queueHasForeignAuthoredProposal.value,
+)
+
 const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
 const boardScopeLabel = computed(() =>
   activeBoardFilter.value
@@ -263,6 +308,11 @@ const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
     !matchesActiveBoardFilter(activeProposal.value?.boardId)
   ) return null
   return receipt.kind
+})
+
+const activeAppliedProposal = computed<ApiProposal | null>(() => {
+  const proposal = activeProposal.value
+  return proposal && normalizeProposalStatus(proposal.status) === 'Applied' ? proposal : null
 })
 
 function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
@@ -425,6 +475,13 @@ const {
   saveRevision,
   loadRevisionState,
 } = useProposalRevisions(activeProposal)
+
+watch(isArchivedHistory, (readOnly) => {
+  if (!readOnly) return
+  cancelExecuteProposal()
+  cancelRejectProposal()
+  cancelRevisionEditing()
+})
 
 const revisionBadge = computed(() =>
   t('review.revisionEditor.badge', { count: revisionCount.value }, revisionCount.value),
@@ -940,6 +997,7 @@ function restoreApplyFocus(captured: HTMLElement | null) {
 }
 
 async function onFileAway() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -959,6 +1017,7 @@ async function onFileAway() {
 }
 
 async function onFileAwayBulk() {
+  if (isArchivedHistory.value) return
   if (busy.value) {
     toast.info(t('review.toast.bulkBusy'))
     return
@@ -974,6 +1033,7 @@ async function onFileAwayBulk() {
 }
 
 async function onApply() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (applyGuardBusy.value) return
@@ -1094,6 +1154,7 @@ async function onApply() {
 }
 
 function onReject() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   // ⌫ is dual-purpose: on a settled proposal the rail shows "File away", so
@@ -1124,6 +1185,7 @@ function onReject() {
 }
 
 function onRequestEdit() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionSaving.value) return
@@ -1135,6 +1197,7 @@ function onRequestEdit() {
 }
 
 async function onDefer() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -1374,6 +1437,7 @@ async function onPreviewDiff() {
 }
 
 async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
+  if (isArchivedHistory.value) return
   await saveRevision(payload)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
@@ -1385,6 +1449,7 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
 }
 
 async function onReportBadSuggestion(proposalId: string) {
+  if (isArchivedHistory.value) return
   if (!proposalId) {
     toast.error(t('review.toast.noProposalToReport'))
     return
@@ -1419,12 +1484,18 @@ useReviewKeymap(
     // proposal the user is being asked to confirm. GH-1969 gives the reject
     // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
+      !isArchivedHistory.value &&
       !busy.value &&
       activeProposal.value !== null &&
+      (activeAppliedProposal.value === null || activeDismissable.value) &&
       executeConfirmProposal.value === null &&
       rejectPromptProposal.value === null &&
       (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
     isActionEnabled: (action) => {
+      // An applied record is read-only: the only live key is ⌫, whose #1161
+      // dual-purpose branch files the record away — the affordance the filing
+      // rail still advertises for the reviewer's own applied proposal.
+      if (activeAppliedProposal.value !== null) return action === 'onReject'
       const receipt = activeDecisionReceipt.value
       return receipt === null || (receipt === 'approved' && action === 'onApply')
     },
@@ -1437,10 +1508,15 @@ onMounted(() => {
   startClock()
   void loadBoardOptions()
   void loadProposals()
+  // Membership has no realtime event to subscribe to (the only hub is
+  // per-board and silent on access grants), so the composable reads it once
+  // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
+  void collaboration.start()
 })
 
 onUnmounted(() => {
   stopClock()
+  collaboration.stop()
 })
 
 function selectProposal(id: string) {
@@ -1487,7 +1563,11 @@ function onQueueFilterChange(filter: QueueFilter) {
 </script>
 
 <template>
-  <div class="paper paper-review-deep" data-testid="paper-review-view">
+  <div
+    class="paper paper-review-deep"
+    data-testid="paper-review-view"
+    :data-history-mode="isArchivedHistory ? 'archived' : undefined"
+  >
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
@@ -1499,6 +1579,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
+      :author-partition-available="authorPartitionAvailable"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
@@ -1534,7 +1615,9 @@ function onQueueFilterChange(filter: QueueFilter) {
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"
+        :read-only="isArchivedHistory"
         :decision-receipt="activeDecisionReceipt"
+        :applied-proposal="activeAppliedProposal"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1673,7 +1756,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         </div>
       </section>
       <ReviewRevisionEditor
-        v-if="revisionEditing"
+        v-if="revisionEditing && !isArchivedHistory"
         :operations-payload="editablePayload"
         :saving="revisionSaving"
         @save="onSaveRevision"
@@ -1735,6 +1818,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
       :receipt-active="activeDecisionReceipt !== null"
+      :applied-record="activeAppliedProposal !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 

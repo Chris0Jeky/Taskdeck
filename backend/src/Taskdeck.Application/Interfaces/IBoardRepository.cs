@@ -10,6 +10,15 @@ public interface IBoardRepository : IRepository<Board>
         DateTimeOffset updatedSince,
         bool includeArchived,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts the distinct people who can reach at least one board the given user can reach:
+    /// the union of board owners and board-access grantees across every readable board,
+    /// archived boards included. The caller is part of that union whenever they hold any board.
+    /// Returns 0 only when the user can reach no board at all.
+    /// Returns a count, never identities, so no other user is disclosed.
+    /// </summary>
+    Task<int> CountCollaborationMembersAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IEnumerable<Board>> GetReadableByUserIdAsync(
         Guid userId,
         bool includeArchived,

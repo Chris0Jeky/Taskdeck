@@ -7,8 +7,13 @@ const mocks = vi.hoisted(() => ({
   restoreItem: vi.fn(),
   getBoards: vi.fn(),
   updateBoard: vi.fn(),
+  routerPush: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mocks.routerPush }),
 }))
 
 vi.mock('../../api/archiveApi', () => ({
