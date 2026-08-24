@@ -24,6 +24,12 @@ public class ChatService : IChatService
     // precisely so upstream refusal text never reaches a log, a persisted row, or the client (#1617).
     private const string EmptyAssistantContentPlaceholder = "The provider ended the response without returning text.";
     private const string EmptyAssistantContentDegradedReason = "The provider returned no assistant text.";
+    // The honest no-board notice (#2004). Chat can only change a board by creating a proposal for
+    // review, and a proposal needs a bound board, so a session with none must say plainly that the
+    // text above changed nothing — otherwise generated Markdown reads as completed work.
+    private const string NoBoardActionNotice =
+        "(No board is linked to this chat session, so nothing here was created or changed. " +
+        "Open a board-scoped chat session to turn this into a proposal you can review.)";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -454,7 +460,16 @@ public class ChatService : IChatService
                     if (isClarification && messageType != "degraded")
                     {
                         messageType = "clarification";
-                        // No proposal creation — wait for user's clarifying response
+                        // No proposal creation — wait for user's clarifying response.
+                        // The clarification path is only ever entered for a request the model read
+                        // as actionable but ambiguous (see ClarificationDetector
+                        // .BuildClarificationSystemPrompt), so an unbound session has been asked to
+                        // act and structurally cannot. Say so on this turn instead of letting the
+                        // loop end in prose with no signal (#2004). The type stays "clarification"
+                        // so the round still counts toward best-effort forcing and the composer
+                        // still offers the skip action.
+                        if (!session.BoardId.HasValue)
+                            assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                     }
                     else
                     {
@@ -465,7 +480,7 @@ public class ChatService : IChatService
                             if (!session.BoardId.HasValue)
                             {
                                 // Surface a hint so the user knows why no proposal was created
-                                assistantContent = $"{llmResult.Content}\n\n(To act on this, open a board-scoped chat session.)";
+                                assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                                 messageType = "status";
                             }
                             else
@@ -529,6 +544,20 @@ public class ChatService : IChatService
                                     }
                                 }
                             }
+                        }
+                        else if (!session.BoardId.HasValue
+                                 && messageType != "degraded"
+                                 && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort))
+                        {
+                            // The provider answered in prose without flagging its own response
+                            // actionable, but the turn did ask for an action: an explicit proposal
+                            // request, a "just do your best" that ends a clarification round, or a
+                            // user message the local classifier reads as a board action. With no
+                            // bound board none of it could have become a proposal, so the turn says
+                            // so rather than ending in Markdown that reads as completed work
+                            // (#2004). A degraded turn keeps its own classification and reason.
+                            assistantContent = AppendNoBoardActionNotice(llmResult.Content);
+                            messageType = "status";
                         }
                     }
                 }
@@ -886,6 +915,31 @@ public class ChatService : IChatService
             : result.ShouldSettleQuotaReservation
                 ? reservationEstimate
                 : 0;
+    }
+
+    /// <summary>
+    /// Appends the no-board notice to assistant text so an unbound session never returns prose that
+    /// reads as an applied change (#2004).
+    /// </summary>
+    private static string AppendNoBoardActionNotice(string content) =>
+        $"{content}\n\n{NoBoardActionNotice}";
+
+    /// <summary>
+    /// True when the turn asks the assistant to act, independently of whether the provider flagged
+    /// its own response actionable (#2004). This decides only whether an unbound session owes the
+    /// user the no-board notice — it never creates or attempts a proposal, so a false positive
+    /// costs one honest sentence, while a false negative is the silent-prose failure this guards.
+    /// </summary>
+    private static bool TurnRequestsAction(string userContent, bool requestProposal, bool forceBestEffort)
+    {
+        // The user ticked "Request proposal generation", or told a clarification round to proceed.
+        if (requestProposal || forceBestEffort)
+            return true;
+
+        // Otherwise fall back to the same local classifier the no-tool reuse path uses, run over
+        // the user's own message rather than the model's reply.
+        var (userIntentIsActionable, _) = LlmIntentClassifier.Classify(userContent);
+        return userIntentIsActionable;
     }
 
     private static bool ContainsBlockedPromptPattern(string content)
