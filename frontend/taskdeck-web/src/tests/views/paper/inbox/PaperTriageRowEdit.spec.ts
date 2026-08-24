@@ -84,9 +84,10 @@ describe('PaperTriageRowEdit', () => {
   })
 
   it('sends text only, so the server keeps an existing title hint', async () => {
-    // The backend writes `TitleHint ?? current`: a request that carried an
-    // explicit null would CLEAR a hint the user never touched. Asserting the
-    // key is absent is the only way that stays true.
+    // This fixture also models an older API response with no metadata field.
+    // The backend writes `TitleHint ?? current`, while omitted metadata preserves
+    // values the client could not see. Asserting both keys are absent is the
+    // only shape that keeps those compatibility boundaries true.
     const wrapper = await mountEditor()
     await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
@@ -94,6 +95,61 @@ describe('PaperTriageRowEdit', () => {
 
     const dto = mockCaptureStore.updateSuggestion.mock.calls[0][1] as Record<string, unknown>
     expect(Object.keys(dto)).toEqual(['text'])
+    expect(wrapper.get('[data-testid="capture-edit-metadata-unavailable"]').text())
+      .toContain('text-only save will preserve')
+  })
+
+  it('loads persisted metadata and corrects a misspelled label without changing text', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      status: 'Failed',
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: ['shoping'],
+      },
+    }))
+    const wrapper = await mountEditor()
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-due-date"]').element.value)
+      .toBe('2026-08-23')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-labels"]').element.value)
+      .toBe('shoping')
+
+    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('shopping')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Ship teh releaes notes before Friday',
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: ['shopping'],
+      },
+    })
+  })
+
+  it('removes labels and due date through an explicit empty metadata replacement', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      status: 'Failed',
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: ['urgent', 'URGENT'],
+      },
+    }))
+    const wrapper = await mountEditor()
+
+    await wrapper.get('[data-testid="capture-edit-due-date"]').setValue('')
+    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('')
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Ship teh releaes notes before Friday',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
   })
 
   it('shows the saving state and holds Cancel shut while the write is in flight', async () => {
@@ -136,7 +192,7 @@ describe('PaperTriageRowEdit', () => {
     expect(wrapper.emitted('saved')).toBeUndefined()
     expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
       .toBe('corrected text')
-    expect(wrapper.get('[data-testid="capture-edit-save-error"]').text()).toContain('The text was not saved')
+    expect(wrapper.get('[data-testid="capture-edit-save-error"]').text()).toContain('capture changes were not saved')
   })
 
   // ── the not-editable path ──────────────────────────────────────────────────

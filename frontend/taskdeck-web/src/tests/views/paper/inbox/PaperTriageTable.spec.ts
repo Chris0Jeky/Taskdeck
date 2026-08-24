@@ -742,6 +742,45 @@ describe('PaperTriageTable', () => {
     expect(wrapper.findAll('button[data-action="edit"]')[1].attributes('disabled')).toBeUndefined()
   })
 
+  it('lets a failed row correct stranded metadata and then retry Accept', async () => {
+    const items = makeItems()
+    items[0] = {
+      ...items[0],
+      status: 'Failed',
+      errorMessage: "Label 'shoping' was not found on the proposal board",
+    }
+    mockCaptureStore.fetchDetail.mockResolvedValue({
+      ...items[0],
+      rawText: 'First excerpt in full',
+      retryCount: 1,
+      provenance: null,
+      canEditSuggestion: true,
+      metadata: {
+        dueDate: null,
+        labels: ['shoping'],
+      },
+    })
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('shopping')
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'First excerpt in full',
+      metadata: {
+        dueDate: null,
+        labels: ['shopping'],
+      },
+    })
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    expect(wrapper.emitted('accept')?.at(-1)).toEqual(['capture-1', 'board-alpha'])
+  })
+
   it('does not offer the editor on a row that can no longer be mutated', async () => {
     // `capture-2` is Triaging: its text is already on its way through triage,
     // so an edit here would be a promise the server would refuse.

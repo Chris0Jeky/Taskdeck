@@ -153,4 +153,31 @@ describe('captureApi', () => {
     })
     expect(result.rawText).toBe('updated text')
   })
+
+  it('puts an explicit metadata replacement for correction or clearing', async () => {
+    vi.mocked(http.put).mockResolvedValue({
+      data: {
+        id: 'capture-3',
+        rawText: 'updated text',
+        metadata: { dueDate: null, labels: [] },
+      },
+    })
+
+    const result = await captureApi.updateSuggestion('capture-3', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+
+    expect(http.put).toHaveBeenCalledWith('/capture/items/capture-3/suggestion', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+    expect(result.metadata).toEqual({ dueDate: null, labels: [] })
+  })
 })

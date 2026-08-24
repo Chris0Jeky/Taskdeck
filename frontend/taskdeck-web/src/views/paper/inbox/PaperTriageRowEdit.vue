@@ -8,13 +8,14 @@ import type { CaptureItem } from '../../../types/capture'
 
 /**
  * PaperTriageRowEdit — inline pre-triage text editor for one capture row
- * (GH-1951).
+ * (GH-1951, GH-2005). It now edits recoverable due-date and label metadata
+ * alongside the capture text.
  *
  * A port, not a new feature: the Legacy detail panel
  * (`components/inbox/InboxDetailPanel.vue`, `suggestion-edit-*`) has had this
  * affordance since the capture-edit endpoint shipped, and Paper simply had no
- * detail surface to hang it on. Nothing is added to the backend — the text is
- * read through `captureStore.fetchDetail` and written through
+ * detail surface to hang it on. Text and metadata are read through
+ * `captureStore.fetchDetail` and written through
  * `captureStore.updateSuggestion` (`PUT /api/capture/items/{id}/suggestion`).
  *
  * The editor is INLINE in the row rather than behind a drawer, following the
@@ -34,9 +35,10 @@ import type { CaptureItem } from '../../../types/capture'
  * `true` renders the explanation instead of a textarea whose Save would 409:
  * the same never-enabled-and-silent rule the rest of this surface follows.
  *
- * Provenance is untouched. The request carries text only, and the server keeps
- * an existing title hint when the field is omitted (`TitleHint ?? current`), so
- * a text-only edit cannot silently clear it.
+ * Provenance is untouched. Metadata is sent only when the server returned the
+ * new metadata capability; an older response leaves it absent so a text-only
+ * edit cannot silently clear values the client could not see. The server keeps
+ * an existing title hint when that field is omitted (`TitleHint ?? current`).
  *
  * `mutationInFlight` is the table's view of the capture store's single busy
  * slot (`actionBusyItemId`). Save writes through that same slot, so starting
@@ -71,10 +73,39 @@ const saveErrorMessage = ref<string | null>(null)
 const saving = ref(false)
 const draft = ref('')
 const originalText = ref('')
+const metadataAvailable = ref(false)
+const dueDateDraft = ref('')
+const originalDueDate = ref('')
+const labelsDraft = ref('')
+const originalLabels = ref<string[]>([])
 
 const textareaId = computed(() => `capture-edit-text-${props.itemId}`)
+const dueDateId = computed(() => `capture-edit-due-date-${props.itemId}`)
+const labelsId = computed(() => `capture-edit-labels-${props.itemId}`)
+const labelsHintId = computed(() => `capture-edit-labels-hint-${props.itemId}`)
 const saveReasonId = computed(() => `capture-edit-reason-${props.itemId}`)
 const saveErrorId = computed(() => `capture-edit-save-error-${props.itemId}`)
+
+const labels = computed(() => {
+  const seen = new Set<string>()
+  return labelsDraft.value
+    .split(',')
+    .map((label) => label.trim())
+    .filter((label) => {
+      if (label.length === 0 || seen.has(label)) return false
+      seen.add(label)
+      return true
+    })
+})
+
+function labelsEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((label, index) => label === right[index])
+}
+
+const metadataChanged = computed(() => metadataAvailable.value && (
+  dueDateDraft.value !== originalDueDate.value ||
+  !labelsEqual(labels.value, originalLabels.value)
+))
 
 /**
  * Why Save is off, or `null` when it is live.
@@ -94,7 +125,7 @@ type SaveBlock = 'busyElsewhere' | 'empty' | 'unchanged'
 const saveBlock = computed<SaveBlock | null>(() => {
   if (props.mutationInFlight === true) return 'busyElsewhere'
   if (draft.value.trim().length === 0) return 'empty'
-  if (draft.value === originalText.value) return 'unchanged'
+  if (draft.value === originalText.value && !metadataChanged.value) return 'unchanged'
   return null
 })
 
@@ -120,7 +151,7 @@ const saveDescribedById = computed<string | undefined>(() => {
 // reason describes text the user has since changed. Editing again makes it
 // stale, and a stale failure over a fresh draft is a claim about a write that
 // never happened. The next save posts its own outcome.
-watch(draft, () => {
+watch([draft, dueDateDraft, labelsDraft], () => {
   saveErrorMessage.value = null
 })
 
@@ -153,6 +184,11 @@ async function load() {
     }
     originalText.value = detail.rawText
     draft.value = detail.rawText
+    metadataAvailable.value = detail.metadata !== undefined && detail.metadata !== null
+    originalDueDate.value = detail.metadata?.dueDate ?? ''
+    dueDateDraft.value = originalDueDate.value
+    originalLabels.value = [...(detail.metadata?.labels ?? [])]
+    labelsDraft.value = originalLabels.value.join(', ')
     loadState.value = 'ready'
   } catch (e: unknown) {
     loadErrorMessage.value = getErrorDisplay(e, t('inbox.triage.edit.unknownReason')).message
@@ -170,7 +206,17 @@ async function save() {
   saving.value = true
   saveErrorMessage.value = null
   try {
-    await captureStore.updateSuggestion(props.itemId, { text: draft.value })
+    await captureStore.updateSuggestion(props.itemId, {
+      text: draft.value,
+      ...(metadataAvailable.value
+        ? {
+            metadata: {
+              dueDate: dueDateDraft.value || null,
+              labels: [...labels.value],
+            },
+          }
+        : {}),
+    })
     // The store caches the updated detail and rewrites the row summary from it,
     // so the excerpt behind this editor is already the saved text as it closes.
     emit('saved', props.itemId)
@@ -256,6 +302,43 @@ onMounted(() => {
         :placeholder="t('inbox.triage.edit.placeholder')"
       />
       <p class="paper-triage-edit__hint tk-meta">{{ t('inbox.triage.edit.hint') }}</p>
+      <fieldset v-if="metadataAvailable" class="paper-triage-edit__metadata">
+        <legend class="paper-triage-edit__label tk-eyebrow">
+          {{ t('inbox.triage.edit.metadata.legend') }}
+        </legend>
+        <label class="paper-triage-edit__field" :for="dueDateId">
+          <span class="paper-triage-edit__label tk-eyebrow">
+            {{ t('inbox.triage.edit.metadata.dueDate') }}
+          </span>
+          <input
+            :id="dueDateId"
+            v-model="dueDateDraft"
+            class="paper-triage-edit__input"
+            type="date"
+            data-testid="capture-edit-due-date"
+          />
+        </label>
+        <label class="paper-triage-edit__field" :for="labelsId">
+          <span class="paper-triage-edit__label tk-eyebrow">
+            {{ t('inbox.triage.edit.metadata.labels') }}
+          </span>
+          <input
+            :id="labelsId"
+            v-model="labelsDraft"
+            class="paper-triage-edit__input"
+            type="text"
+            data-testid="capture-edit-labels"
+            :placeholder="t('inbox.triage.edit.metadata.labelsPlaceholder')"
+            :aria-describedby="labelsHintId"
+          />
+        </label>
+        <p :id="labelsHintId" class="paper-triage-edit__hint tk-meta">
+          {{ t('inbox.triage.edit.metadata.hint') }}
+        </p>
+      </fieldset>
+      <p v-else class="paper-triage-edit__hint tk-meta" data-testid="capture-edit-metadata-unavailable">
+        {{ t('inbox.triage.edit.metadata.unavailable') }}
+      </p>
       <p
         v-if="saveErrorMessage"
         :id="saveErrorId"
@@ -334,6 +417,41 @@ onMounted(() => {
 .paper-triage-edit__textarea:focus {
   border-color: var(--ember);
 }
+.paper-triage-edit__metadata {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.4fr) minmax(220px, 1fr);
+  gap: 8px 12px;
+  margin: 2px 0;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+}
+.paper-triage-edit__metadata > legend {
+  padding: 0 4px;
+}
+.paper-triage-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.paper-triage-edit__input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line-soft);
+  border-bottom-color: var(--line);
+  border-radius: 2px;
+  background: var(--paper-card);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  outline: none;
+}
+.paper-triage-edit__input:focus {
+  border-color: var(--ember);
+}
+.paper-triage-edit__metadata .paper-triage-edit__hint {
+  grid-column: 1 / -1;
+}
 .paper-triage-edit__hint {
   margin: 0;
   color: var(--mute);
@@ -349,5 +467,13 @@ onMounted(() => {
 .paper-triage-edit__actions {
   display: flex;
   gap: 6px;
+}
+@media (max-width: 620px) {
+  .paper-triage-edit__metadata {
+    grid-template-columns: 1fr;
+  }
+  .paper-triage-edit__metadata .paper-triage-edit__hint {
+    grid-column: auto;
+  }
 }
 </style>

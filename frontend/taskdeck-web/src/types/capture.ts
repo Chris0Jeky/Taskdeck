@@ -62,6 +62,13 @@ export interface CaptureProvenance {
   promptVersion: string | null
 }
 
+export interface CaptureSuggestionMetadata {
+  /** Calendar-day intent. Null explicitly means no due date. */
+  dueDate: string | null
+  /** Existing board label names; triage resolves them without creating labels. */
+  labels: string[]
+}
+
 export interface CaptureItem extends CaptureItemSummary {
   rawText: string
   retryCount: number
@@ -69,6 +76,8 @@ export interface CaptureItem extends CaptureItemSummary {
   provenance?: CaptureProvenance | null
   /** Optional while older API instances roll out; absent is conservatively not editable. */
   canEditSuggestion?: boolean
+  /** Optional while older API instances roll out; absent metadata must never be cleared implicitly. */
+  metadata?: CaptureSuggestionMetadata | null
 }
 
 export interface CreateCaptureItemDto {
@@ -119,4 +128,6 @@ export interface BatchTriageResult {
 export interface UpdateCaptureSuggestionDto {
   text: string
   titleHint?: string | null
+  /** Omit to preserve stored metadata; include as a complete replacement, with null/[] clearing. */
+  metadata?: CaptureSuggestionMetadata
 }
