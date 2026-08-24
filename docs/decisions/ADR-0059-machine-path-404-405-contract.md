@@ -1,9 +1,10 @@
 # ADR-0059: Machine-Facing Paths Answer 405 for a Wrong Verb and 404 Only for a Missing Route
 
-- **Status**: Proposed (awaiting maintainer ratification; `#1992` records that this disposition is
-  the maintainer's to make and must not be inferred from the implementation or its tests)
+- **Status**: Accepted (ratified by the maintainer in-session on 2026-08-24 — guided-walkthrough
+  reply q-2 A, decision map `map:v1:b5c39272…`, recorded on `#1992`; not inferred from the
+  implementation or its tests)
 - **Date**: 2026-08-24
-- **Deciders**: pending — Chris0Jeky (maintainer)
+- **Deciders**: Chris0Jeky (maintainer)
 - **Related**: `#1992`, `#1971`, `#1132` (AC4 auth-outcome ordering), `#1181` (bare `/` handling),
   ADR-0036 amendment 2026-08-22
 
