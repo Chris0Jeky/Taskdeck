@@ -401,7 +401,7 @@ describe('ReviewView', () => {
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
   })
 
-  it('clears boardless proposal hashes on board-scoped review routes', async () => {
+  it('keeps boardless proposal hashes unavailable on board-scoped review routes', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -422,9 +422,12 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-boardless')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-boardless',
+    )
     expect(wrapper.find('#proposal-proposal-boardless').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Boardless proposal')
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
@@ -441,7 +444,7 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Support Triage')
   })
 
-  it('hydrates board-scoped proposal hashes that fall outside the first page', async () => {
+  it('hydrates a mixed-case hash without substituting another Legacy proposal', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -459,20 +462,48 @@ describe('ReviewView', () => {
         id: 'proposal-older',
         boardId: 'board-7',
         summary: 'Older board proposal',
+        operations: [
+          {
+            id: 'operation-older',
+            proposalId: 'proposal-older',
+            sequence: 0,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{}',
+            idempotencyKey: 'operation-older-key',
+            expectedVersion: null,
+          },
+        ],
       }),
     )
+    mocks.approveProposal.mockResolvedValue(
+      buildProposal({ id: 'proposal-older', boardId: 'board-7', status: 'Approved' }),
+    )
 
-    const { wrapper } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    const { wrapper } = await mountAt(
+      '/workspace/review?boardId=board-7#proposal-PROPOSAL-OLDER',
+    )
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-OLDER')
     expect(wrapper.text()).toContain('Older board proposal')
+    expect(wrapper.text()).not.toContain('Newest board proposal')
+    expect(wrapper.text()).not.toContain('Second board proposal')
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(true)
     expect(wrapper.text()).toContain('Support Triage')
+
+    const target = wrapper.get('#proposal-proposal-older')
+    const approve = target.findAll('button').find((button) => button.text() === 'Approve for board')
+    expect(approve).toBeDefined()
+    await approve!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-older')
   })
 
-  it('clears stale proposal hashes when the fetched proposal belongs to a different board', async () => {
+  it('keeps out-of-scope proposal hashes unavailable instead of falling back', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -493,13 +524,16 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Wrong board proposal')
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
-  it('clears stale proposal hashes when the target proposal cannot be fetched', async () => {
+  it('keeps a genuine missing proposal hash unavailable instead of falling back', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -518,7 +552,12 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
+    expect(wrapper.text()).not.toContain('Approve for board')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
@@ -544,7 +583,7 @@ describe('ReviewView', () => {
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load proposal')
   })
 
-  it('clears cached proposal hashes that no longer match the active board filter', async () => {
+  it('keeps cached proposal hashes unavailable when the active board filter changes', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -569,7 +608,9 @@ describe('ReviewView', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-9')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-9#proposal-proposal-older',
+    )
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Older board proposal')
   })

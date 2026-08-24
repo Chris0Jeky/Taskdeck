@@ -78,6 +78,20 @@ describe('useReviewActions', () => {
     expect(actions.proposalActionBusyId.value).toBeNull()
   })
 
+  it('reconciles action state against proposal ids case-insensitively', async () => {
+    const updated = makeProposal({ id: 'p-1', status: 'Approved' })
+    vi.mocked(automationApi.approveProposal).mockResolvedValue(updated)
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleApproveProposal('P-1')
+
+    expect(automationApi.approveProposal).toHaveBeenCalledWith('P-1')
+    expect(proposals.value).toEqual([updated])
+
+    actions.requestExecuteProposal('P-1')
+    expect(actions.executeConfirmProposal.value?.id).toBe('p-1')
+  })
+
   it('should handle approve error gracefully', async () => {
     vi.mocked(automationApi.approveProposal).mockRejectedValue(new Error('Network error'))
 
@@ -295,6 +309,18 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiffProposalId.value).toBeNull()
     expect(actions.selectedDiff.value).toBeNull()
     expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('treats mixed-case diff selections as the same proposal', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('P-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+
+    await actions.handleToggleDiff('p-1')
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(automationApi.getProposalDiff).toHaveBeenCalledTimes(1)
   })
 
   // --- #1397: read-only / expired proposals never fire the live diff ---

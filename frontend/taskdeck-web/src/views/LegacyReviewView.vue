@@ -12,6 +12,7 @@ import { TdSkeleton } from '../components/ui'
 import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
 import { useVirtualList } from '../composables/useVirtualList'
+import { proposalIdsEqual } from '../utils/proposalIdentity'
 
 const {
   proposals,
@@ -26,6 +27,7 @@ const {
   summaryCards,
   dismissableProposalIds,
   isProposalExpired,
+  clearProposalDeepLink,
   loadProposals,
   loadBoardOptions,
   startClock,
@@ -61,8 +63,53 @@ const {
   handleDismissApplied,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals, isProposalExpired)
 
+const route = useRoute()
+
+const hashProposalId = computed(() => {
+  const hash = route.hash
+  if (!hash.startsWith('#proposal-')) return null
+  const rawId = hash.slice('#proposal-'.length).trim()
+  if (!rawId) return null
+  try {
+    return decodeURIComponent(rawId)
+  } catch {
+    return null
+  }
+})
+
+// A valid proposal hash is an exact identity contract. While its target is
+// hydrating or unavailable, render no other proposal's decision controls.
+// Once hydrated, keep the canonical API object (and therefore its original id
+// casing) as the only deep-linked card.
+const renderedProposals = computed(() => {
+  const proposalId = hashProposalId.value
+  if (!proposalId) return visibleProposals.value
+  const target = visibleProposals.value.find((proposal) =>
+    proposalIdsEqual(proposal.id, proposalId),
+  )
+  return target ? [target] : []
+})
+
+async function dismissProposalAndReconcileHash(proposalId: string) {
+  await handleDismissProposal(proposalId)
+  if (!proposals.value.some((proposal) => proposalIdsEqual(proposal.id, proposalId))) {
+    await clearProposalDeepLink(proposalId)
+  }
+}
+
+async function dismissAppliedAndReconcileHash() {
+  const deepLinkedId = hashProposalId.value
+  await handleDismissApplied()
+  if (
+    deepLinkedId &&
+    !proposals.value.some((proposal) => proposalIdsEqual(proposal.id, deepLinkedId))
+  ) {
+    await clearProposalDeepLink(deepLinkedId)
+  }
+}
+
 const _vl = useVirtualList({
-  count: computed(() => visibleProposals.value.length),
+  count: computed(() => renderedProposals.value.length),
   estimateSize: 220,
   overscan: 3,
 })
@@ -80,25 +127,17 @@ const reviewTranslateY = _vl.translateY
 /** Tracked keyboard cursor for ArrowUp/ArrowDown navigation. */
 const activeReviewIndex = ref(0)
 
-const route = useRoute()
-
 /**
  * Scroll the virtualizer to the proposal targeted by the URL hash.
  * This ensures the targeted proposal is rendered in the virtual window
  * before the composable's scrollToProposalFromHash tries getElementById.
  */
 function scrollVirtualizerToHashProposal() {
-  const hash = route.hash
-  if (!hash.startsWith('#proposal-')) return
-  const rawId = hash.slice('#proposal-'.length).trim()
-  if (!rawId) return
-  let proposalId: string
-  try {
-    proposalId = decodeURIComponent(rawId)
-  } catch {
-    return
-  }
-  const index = visibleProposals.value.findIndex((p) => p.id === proposalId)
+  const proposalId = hashProposalId.value
+  if (!proposalId) return
+  const index = renderedProposals.value.findIndex((proposal) =>
+    proposalIdsEqual(proposal.id, proposalId),
+  )
   if (index >= 0) {
     _vl.scrollToIndex(index)
     activeReviewIndex.value = index
@@ -106,7 +145,7 @@ function scrollVirtualizerToHashProposal() {
 }
 
 watch(
-  () => [route.hash, visibleProposals.value.length] as const,
+  () => [route.hash, renderedProposals.value.length] as const,
   async () => {
     scrollVirtualizerToHashProposal()
     await nextTick()
@@ -116,10 +155,10 @@ watch(
 )
 
 function handleReviewKeydown(event: KeyboardEvent) {
-  if (visibleProposals.value.length === 0) return
+  if (renderedProposals.value.length === 0) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
-    const next = Math.min(activeReviewIndex.value + 1, visibleProposals.value.length - 1)
+    const next = Math.min(activeReviewIndex.value + 1, renderedProposals.value.length - 1)
     activeReviewIndex.value = next
     _vl.scrollToIndex(next)
   } else if (event.key === 'ArrowUp') {
@@ -156,7 +195,7 @@ onUnmounted(() => {
       @update:show-completed="showCompleted = $event"
       @select-board="(option) => applyBoardFilter(option.value)"
       @clear-board-filter="clearBoardFilter"
-      @dismiss-applied="handleDismissApplied"
+      @dismiss-applied="dismissAppliedAndReconcileHash"
       @refresh="loadProposals"
       @open-inbox="openInbox"
       @navigate="openRoute"
@@ -194,7 +233,7 @@ onUnmounted(() => {
     </div>
 
     <ReviewEmptyState
-      v-else-if="visibleProposals.length === 0"
+      v-else-if="renderedProposals.length === 0"
       @open-inbox="openInbox"
       @navigate="openRoute"
     />
@@ -220,28 +259,28 @@ onUnmounted(() => {
         >
           <div
             v-for="virtualRow in reviewVirtualRows"
-            :key="visibleProposals[virtualRow.index]?.id ?? String(virtualRow.key)"
+            :key="renderedProposals[virtualRow.index]?.id ?? String(virtualRow.key)"
             :data-index="virtualRow.index"
             ref="reviewVirtualItemEls"
             role="presentation"
           >
             <ReviewProposalCard
-              v-if="visibleProposals[virtualRow.index]"
-              :proposal="visibleProposals[virtualRow.index]!"
-              :is-expired="isProposalExpired(visibleProposals[virtualRow.index]!)"
-              :is-busy="proposalActionBusyId === visibleProposals[virtualRow.index]!.id"
+              v-if="renderedProposals[virtualRow.index]"
+              :proposal="renderedProposals[virtualRow.index]!"
+              :is-expired="isProposalExpired(renderedProposals[virtualRow.index]!)"
+              :is-busy="proposalIdsEqual(proposalActionBusyId, renderedProposals[virtualRow.index]!.id)"
               :selected-diff-proposal-id="selectedDiffProposalId"
               :selected-diff="selectedDiff"
               :selected-diff-mode="selectedDiffMode"
               :selected-diff-invalid-reason="selectedDiffInvalidReason"
               :selected-diff-revised="selectedDiffRevised"
-              :capture-href="captureHrefForProposal(visibleProposals[virtualRow.index]!)"
-              :proposal-href="proposalHref(visibleProposals[virtualRow.index]!)"
+              :capture-href="captureHrefForProposal(renderedProposals[virtualRow.index]!)"
+              :proposal-href="proposalHref(renderedProposals[virtualRow.index]!)"
               @approve="handleApproveProposal"
               @reject="requestRejectProposal"
               @execute="requestExecuteProposal"
               @toggle-diff="handleToggleDiff"
-              @dismiss="handleDismissProposal"
+              @dismiss="dismissProposalAndReconcileHash"
               @open-board="openBoard"
             />
           </div>
