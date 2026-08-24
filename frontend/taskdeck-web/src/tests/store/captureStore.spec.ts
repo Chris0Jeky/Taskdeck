@@ -1109,7 +1109,7 @@ describe('captureStore', () => {
     // Stamped SAVED, never APPLIED: a text correction touches no board, and the
     // Paper toast renders that word (GH-1951).
     expect(toastMocks.success).toHaveBeenCalledWith(
-      'Capture text updated',
+      'Capture updated',
       undefined,
       { label: 'saved' },
     )
@@ -1121,8 +1121,8 @@ describe('captureStore', () => {
 
     await expect(store.updateSuggestion('c11', { text: 'new text' })).rejects.toBeInstanceOf(Error)
 
-    expect(store.actionError).toBe('Failed to update capture text')
-    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture text')
+    expect(store.actionError).toBe('Failed to update capture')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture')
   })
 
   it('tracks actionBusyItemId during suggestion update', async () => {

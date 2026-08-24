@@ -186,4 +186,26 @@ describe('useProposalDisplayNames cache lifecycle', () => {
     expect(resolver.operationTargetLabel(proposal, operation)).toBe('Ready for review')
     expect(resolver.operationHeadline(proposal, operation)).toContain('Ready for review')
   })
+
+  it('keeps due date and labels visible when create-card metadata has structural ids', () => {
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-1')
+    const operation = proposal.operations[0]
+    operation.actionType = 'create'
+    operation.targetType = 'card'
+    operation.parameters = JSON.stringify({
+      title: 'Buy milk',
+      description: 'Shopping list',
+      columnId: 'column-1',
+      boardId: 'board-1',
+      dueDate: '2026-08-23T00:00:00+00:00',
+      labels: ['shopping'],
+    })
+
+    const summary = resolver.summarizeOperation(proposal, operation)
+
+    expect(summary).toContain('dueDate: 2026-08-23T00:00:00+00:00')
+    expect(summary).toContain('labels: ["shopping"]')
+    expect(summary).not.toContain('columnId:')
+  })
 })

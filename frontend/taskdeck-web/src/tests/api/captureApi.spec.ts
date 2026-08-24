@@ -37,6 +37,24 @@ describe('captureApi', () => {
     })
   })
 
+  it('preserves composer due date and label names in the capture request', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'capture-2' } })
+
+    await captureApi.createItem({
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items', {
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+  })
+
   it('loads capture item detail by id', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { id: 'capture-42' } })
 
@@ -134,5 +152,32 @@ describe('captureApi', () => {
       titleHint: 'New Title',
     })
     expect(result.rawText).toBe('updated text')
+  })
+
+  it('puts an explicit metadata replacement for correction or clearing', async () => {
+    vi.mocked(http.put).mockResolvedValue({
+      data: {
+        id: 'capture-3',
+        rawText: 'updated text',
+        metadata: { dueDate: null, labels: [] },
+      },
+    })
+
+    const result = await captureApi.updateSuggestion('capture-3', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+
+    expect(http.put).toHaveBeenCalledWith('/capture/items/capture-3/suggestion', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+    expect(result.metadata).toEqual({ dueDate: null, labels: [] })
   })
 })

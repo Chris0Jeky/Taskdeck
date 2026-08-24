@@ -18,9 +18,20 @@ public class ProposalRevisionService : IProposalRevisionService
         _policyEngine = policyEngine;
     }
 
-    public async Task<Result<ProposalRevisionDto>> CreateRevisionAsync(
+    public Task<Result<ProposalRevisionDto>> CreateRevisionAsync(
         CreateProposalRevisionDto dto,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CreateRevisionCoreAsync(dto, guardPendingCommit: false, cancellationToken);
+
+    public Task<Result<ProposalRevisionDto>> CreateRevisionWithPendingCommitGuardAsync(
+        CreateProposalRevisionDto dto,
+        CancellationToken cancellationToken = default) =>
+        CreateRevisionCoreAsync(dto, guardPendingCommit: true, cancellationToken);
+
+    private async Task<Result<ProposalRevisionDto>> CreateRevisionCoreAsync(
+        CreateProposalRevisionDto dto,
+        bool guardPendingCommit,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -61,6 +72,9 @@ public class ProposalRevisionService : IProposalRevisionService
                 dto.EditorUserId,
                 dto.RevisedPayload,
                 dto.Reason);
+
+            if (guardPendingCommit)
+                proposal.GuardPendingRevisionCommit();
 
             await _unitOfWork.ProposalRevisions.AddAsync(revision, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
