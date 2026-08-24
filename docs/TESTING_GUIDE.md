@@ -70,8 +70,8 @@ Explorer/SmartScreen acceptance remain unverified.
 - A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
   `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
   font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
-- The visual-parity follow-up pins the local Material Symbols 200 face and removes the package's
-  unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
+- The visual-parity follow-up (PR `#2046`) pins the local Material Symbols 200 face and removes the
+  package's unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
   `text-base` close and topbar icons at 16px/200, and offline/update/queue icons at 18px/200; the
   probed ligatures remained visible and the font request stayed same-origin.
   `PaperBranding.spec.ts`, the production build, scoped lint, release/Pages licence contracts, docs
