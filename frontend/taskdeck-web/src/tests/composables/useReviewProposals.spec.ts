@@ -657,6 +657,7 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(rp.proposals.value).toEqual([])
+      expect(rp.unavailableProposalId.value).toBe('p-requested')
       expect(mockRouter.replace).not.toHaveBeenCalled()
     })
 
