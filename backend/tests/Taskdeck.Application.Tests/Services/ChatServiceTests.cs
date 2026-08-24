@@ -269,35 +269,15 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("status");
         result.Value.Content.Should().Contain("board-scoped chat session");
+        // The notice must also say plainly that nothing happened, so the prose above it cannot
+        // read as an applied change (#2004).
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
                 It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
                 It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()),
             Times.Never);
-    }
-
-    [Fact]
-    public async Task SendMessageAsync_ShouldSayNothingChanged_WhenActionableButNoBoardScope()
-    {
-        var userId = Guid.NewGuid();
-        var session = new ChatSession(userId, "No board session");
-
-        _chatSessionRepoMock
-            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
-            .ReturnsAsync(session);
-        _llmProviderMock
-            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
-            .ReturnsAsync(new LlmCompletionResult("I can create that card.", 12, true, "card.create"));
-
-        var result = await _service.SendMessageAsync(
-            session.Id,
-            userId,
-            new SendChatMessageDto("create card \"Test\""),
-            default);
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Content.Should().Contain("nothing here was created or changed");
     }
 
     [Fact]
@@ -325,7 +305,7 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("status");
         result.Value.Content.Should().Contain("Here is a tidier write-up.");
-        result.Value.Content.Should().Contain("nothing here was created or changed");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
         result.Value.Content.Should().Contain("board-scoped chat session");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
@@ -359,7 +339,7 @@ public class ChatServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("status");
-        result.Value.Content.Should().Contain("nothing here was created or changed");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
     }
 
     [Fact]
@@ -384,7 +364,10 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_ShouldKeepDegradedClassification_WhenUnboundTurnRequestsAction()
+    // Scope note: this covers a degraded reply the provider did NOT flag actionable. A degraded
+    // fallback that IS flagged actionable takes the pre-existing status branch and is relabelled
+    // "status" — that flip predates this change and is not asserted here.
+    public async Task SendMessageAsync_ShouldKeepDegradedClassification_WhenUnboundNonActionableTurnRequestsAction()
     {
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "No board session");
@@ -518,7 +501,7 @@ public class ChatServiceTests
         result.Value.MessageType.Should().Be("proposal-reference");
         result.Value.ProposalId.Should().Be(proposalId);
         result.Value.Content.Should().Contain("Proposal created for review");
-        result.Value.Content.Should().NotContain("nothing here was created or changed");
+        result.Value.Content.Should().NotContain("nothing was created or changed on any board");
     }
 
     [Fact]

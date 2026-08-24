@@ -87,7 +87,7 @@ public class ChatServiceClarificationTests
         // and the composer still offers the skip action (#2004).
         result.Value.MessageType.Should().Be("clarification");
         result.Value.Content.Should().Contain("Could you tell me");
-        result.Value.Content.Should().Contain("nothing here was created or changed");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
         result.Value.Content.Should().Contain("board-scoped chat session");
     }
 
@@ -109,7 +109,7 @@ public class ChatServiceClarificationTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("clarification");
         result.Value.Content.Should().Contain("Could you tell me");
-        result.Value.Content.Should().NotContain("nothing here was created or changed");
+        result.Value.Content.Should().NotContain("nothing was created or changed on any board");
     }
 
     [Fact]

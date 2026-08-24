@@ -26,9 +26,11 @@ public class ChatService : IChatService
     private const string EmptyAssistantContentDegradedReason = "The provider returned no assistant text.";
     // The honest no-board notice (#2004). Chat can only change a board by creating a proposal for
     // review, and a proposal needs a bound board, so a session with none must say plainly that the
-    // text above changed nothing — otherwise generated Markdown reads as completed work.
+    // text above changed nothing — otherwise generated Markdown reads as completed work. The claim
+    // is scoped to boards on purpose: the same turn does persist chat messages and any @mention
+    // notifications, so an unqualified "nothing was created" would be literally false.
     private const string NoBoardActionNotice =
-        "(No board is linked to this chat session, so nothing here was created or changed. " +
+        "(No board is linked to this chat session, so nothing was created or changed on any board. " +
         "Open a board-scoped chat session to turn this into a proposal you can review.)";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
@@ -461,15 +463,20 @@ public class ChatService : IChatService
                     {
                         messageType = "clarification";
                         // No proposal creation — wait for user's clarifying response.
-                        // The clarification path is only ever entered for a request the model read
-                        // as actionable but ambiguous (see ClarificationDetector
-                        // .BuildClarificationSystemPrompt), so an unbound session has been asked to
-                        // act and structurally cannot. Say so on this turn instead of letting the
-                        // loop end in prose with no signal (#2004). The type stays "clarification"
-                        // so the round still counts toward best-effort forcing and the composer
-                        // still offers the skip action. A textless clarification is left alone so
-                        // it keeps falling through to the empty-content placeholder below, which
-                        // deliberately reclassifies it as "degraded".
+                        // An unbound session cannot act, so say so here instead of letting the
+                        // clarification loop end in prose with no signal (#2004).
+                        // This site is deliberately NOT gated on TurnRequestsAction. `isClarification`
+                        // above is decided by a text heuristic over the model's *reply* — with a live
+                        // provider, IsClarificationRequest is never set, so two question marks are
+                        // enough — and that says nothing about the user's intent either way. Gating
+                        // here would silence exactly the turns that need the notice most: an ambiguous
+                        // ask like "help me plan the sprint" carries no noun the local classifier
+                        // recognises. Over-firing costs one sentence on a chatty reply that happened to
+                        // end in questions; under-firing restores the silent failure this fixes.
+                        // The type stays "clarification" so the round still counts toward best-effort
+                        // forcing and the composer still offers the skip action. A textless
+                        // clarification is left alone so it keeps falling through to the empty-content
+                        // placeholder below, which deliberately reclassifies it as "degraded".
                         if (!session.BoardId.HasValue && !string.IsNullOrWhiteSpace(llmResult.Content))
                             assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                     }
@@ -554,8 +561,9 @@ public class ChatService : IChatService
                         {
                             // The provider answered in prose without flagging its own response
                             // actionable, but the turn did ask for an action: an explicit proposal
-                            // request, a "just do your best" that ends a clarification round, or a
-                            // user message the local classifier reads as a board action. With no
+                            // request, a skip phrase such as "just do your best" (ClarificationDetector
+                            // matches those anywhere, with or without a prior clarification round), or
+                            // a user message the local classifier reads as a board action. With no
                             // bound board none of it could have become a proposal, so the turn says
                             // so rather than ending in Markdown that reads as completed work
                             // (#2004). A degraded turn keeps its own classification and reason, and
