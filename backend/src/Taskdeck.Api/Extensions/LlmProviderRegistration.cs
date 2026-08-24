@@ -16,8 +16,6 @@ public static class LlmProviderRegistration
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
     private const string LlmProviderKey = "Llm:Provider";
     private const string BuiltInSettingsPath = "appsettings.json";
-    private const string EnvironmentSettingsPathPrefix = "appsettings.";
-    private const string SettingsPathSuffix = ".json";
     private const string LocalSettingsPath = "appsettings.local.json";
     private const string RetiredComposeWrapperPresenceKey =
         "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
@@ -258,6 +256,8 @@ public static class LlmProviderRegistration
                     provider.Source.Path,
                     BuiltInSettingsPath,
                     StringComparison.OrdinalIgnoreCase));
+        var environmentSettingsPath = GetEnvironmentSettingsPath(
+            configuration[WebHostDefaults.EnvironmentKey]);
 
         foreach (var provider in root.Providers.Reverse())
         {
@@ -268,7 +268,10 @@ public static class LlmProviderRegistration
 
             // Checked-in Mock settings are safe defaults, not evidence that an operator migrated.
             return provider is not JsonConfigurationProvider jsonProvider
-                || !IsCheckedInDefaultSettingsProvider(jsonProvider, builtInSettingsProvider);
+                || !IsCheckedInDefaultSettingsProvider(
+                    jsonProvider,
+                    builtInSettingsProvider,
+                    environmentSettingsPath);
         }
 
         return false;
@@ -276,17 +279,20 @@ public static class LlmProviderRegistration
 
     private static bool IsCheckedInDefaultSettingsProvider(
         JsonConfigurationProvider provider,
-        JsonConfigurationProvider? builtInSettingsProvider)
+        JsonConfigurationProvider? builtInSettingsProvider,
+        string? environmentSettingsPath)
     {
         // Relative checked-in JSON sources inherit one file-provider instance from the builder.
         // Absolute operator paths are normalized to a file name by ResolveFileProvider but retain
         // their own provider instance, so path matching alone cannot preserve this boundary.
         return builtInSettingsProvider?.Source.FileProvider is { } builtInFileProvider
             && ReferenceEquals(provider.Source.FileProvider, builtInFileProvider)
-            && IsCheckedInDefaultSettingsPath(provider.Source.Path);
+            && IsCheckedInDefaultSettingsPath(provider.Source.Path, environmentSettingsPath);
     }
 
-    private static bool IsCheckedInDefaultSettingsPath(string? path)
+    private static bool IsCheckedInDefaultSettingsPath(
+        string? path,
+        string? environmentSettingsPath)
     {
         if (string.IsNullOrWhiteSpace(path)
             || !string.Equals(path, Path.GetFileName(path), StringComparison.Ordinal))
@@ -306,9 +312,15 @@ public static class LlmProviderRegistration
             return false;
         }
 
-        return path.StartsWith(EnvironmentSettingsPathPrefix, StringComparison.OrdinalIgnoreCase)
-            && path.EndsWith(SettingsPathSuffix, StringComparison.OrdinalIgnoreCase)
-            && path.Length > EnvironmentSettingsPathPrefix.Length + SettingsPathSuffix.Length;
+        return environmentSettingsPath is not null
+            && string.Equals(path, environmentSettingsPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetEnvironmentSettingsPath(string? environmentName)
+    {
+        return string.IsNullOrWhiteSpace(environmentName)
+            ? null
+            : $"appsettings.{environmentName}.json";
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(

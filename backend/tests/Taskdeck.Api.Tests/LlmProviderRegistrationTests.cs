@@ -119,14 +119,18 @@ public class LlmProviderRegistrationTests
     }
 
     [Theory]
-    [InlineData("appsettings.local.json")]
-    [InlineData("appsettings.FutureEnvironment.json")]
-    [InlineData("operator-provider.json")]
+    [InlineData("appsettings.local.json", "local")]
+    [InlineData("appsettings.FutureEnvironment.json", "FutureEnvironment")]
+    [InlineData("operator-provider.json", "FutureEnvironment")]
     public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenAbsoluteJsonExplicitlySelectsMock(
-        string fileName)
+        string fileName,
+        string environmentName)
     {
         var services = new ServiceCollection();
-        var configuration = BuildSyntheticJsonProviderConfiguration(fileName, useAbsolutePath: true);
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            fileName,
+            useAbsolutePath: true,
+            environmentName: environmentName);
 
         var act = () => services.AddLlmProviders(configuration);
 
@@ -134,16 +138,22 @@ public class LlmProviderRegistrationTests
     }
 
     [Theory]
-    [InlineData("appsettings.FutureEnvironment.json", true)]
-    [InlineData("appsettings..json", false)]
-    [InlineData("appsettings.FutureEnvironment.json.backup", false)]
-    [InlineData("operator-provider.json", false)]
+    [InlineData("appsettings.FutureEnvironment.json", "FutureEnvironment", true)]
+    [InlineData("appsettings.FutureEnvironment.json", "DifferentEnvironment", false)]
+    [InlineData("appsettings.operator.json", "FutureEnvironment", false)]
+    [InlineData("appsettings..json", "FutureEnvironment", false)]
+    [InlineData("appsettings.FutureEnvironment.json.backup", "FutureEnvironment", false)]
+    [InlineData("operator-provider.json", "FutureEnvironment", false)]
     public void AddLlmProviders_ShouldRecognizeOnlyStandardRelativeEnvironmentSettingsAsDefaults(
         string fileName,
+        string environmentName,
         bool shouldTreatAsDefault)
     {
         var services = new ServiceCollection();
-        var configuration = BuildSyntheticJsonProviderConfiguration(fileName, useAbsolutePath: false);
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            fileName,
+            useAbsolutePath: false,
+            environmentName: environmentName);
 
         var act = () => services.AddLlmProviders(configuration);
 
@@ -721,8 +731,16 @@ public class LlmProviderRegistrationTests
 
             Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
             var builder = new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+                .SetBasePath(AppContext.BaseDirectory);
+            if (environmentName is not null)
+            {
+                builder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [WebHostDefaults.EnvironmentKey] = environmentName
+                });
+            }
+
+            builder.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
             if (environmentName is not null)
             {
                 builder.AddJsonFile(
@@ -748,7 +766,8 @@ public class LlmProviderRegistrationTests
 
     private static IConfigurationRoot BuildSyntheticJsonProviderConfiguration(
         string fileName,
-        bool useAbsolutePath)
+        bool useAbsolutePath,
+        string environmentName)
     {
         var tempDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -774,6 +793,10 @@ public class LlmProviderRegistrationTests
             Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
             return new ConfigurationBuilder()
                 .SetBasePath(tempDirectory)
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [WebHostDefaults.EnvironmentKey] = environmentName
+                })
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
                 .AddJsonFile(
                     useAbsolutePath ? path : fileName,
