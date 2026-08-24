@@ -255,6 +255,71 @@ describe('captureStore', () => {
     })
   })
 
+  // Regression for the archived-history list-write boundary (#1973).
+  //
+  // `fetchDetail`'s success path calls `cacheDetail(detail, syncSummary)`, and
+  // `upsertSummary` UNSHIFTS an absent summary to the top of `items` with no
+  // scope or request-generation guard — `latestListLoadRequestId` protects only
+  // `fetchItems`. So a detail GET started inside archived history that resolves
+  // AFTER the mode-exit's unscoped list load would seat the archived board's
+  // capture at the top of the LIVE Inbox, where Triage / Ignore / Cancel are
+  // enabled against an archived board. `syncSummary: false` is what the
+  // orchestrator passes in that mode; this pins that it actually holds under the
+  // late-resolve ordering, which is the ordering that makes the leak reachable.
+  it('keeps a late archived detail out of the live list when the caller opts out of summary sync', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    let resolveDetail: ((value: unknown) => void) | null = null
+    vi.mocked(captureApi.getItem).mockImplementation(
+      () => new Promise((resolve) => { resolveDetail = resolve }) as Promise<never>,
+    )
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      {
+        id: 'live-1',
+        userId: 'u1',
+        boardId: 'live-board',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'a live capture',
+        createdAt,
+        processedAt: null,
+      },
+    ])
+
+    // 1. Inside archived history: open the retained capture. The GET hangs.
+    const detailPromise = store.fetchDetail('archived-capture', { syncSummary: false })
+
+    // 2. Leave archived history. The exit watcher's unscoped list load lands
+    //    first and, correctly, omits the archived board's capture.
+    await store.fetchItems()
+    expect(store.items.map((item) => item.id)).toEqual(['live-1'])
+
+    // 3. The archived detail GET resolves LAST — after the live list is seated.
+    resolveDetail?.({
+      id: 'archived-capture',
+      userId: 'u1',
+      boardId: 'archived-board',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'retained archived capture',
+      rawText: 'retained archived capture',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    })
+    await detailPromise
+
+    // The detail is cached so the read-only panel can render it...
+    expect(store.detailById['archived-capture']).toMatchObject({
+      id: 'archived-capture',
+      rawText: 'retained archived capture',
+    })
+    // ...but it must NOT have been seated into the live queue.
+    expect(store.items.map((item) => item.id)).toEqual(['live-1'])
+    expect(store.items.some((item) => item.boardId === 'archived-board')).toBe(false)
+  })
+
   it('returns cached detail from peekDetail without reloading the API', async () => {
     const store = useCaptureStore()
     const createdAt = new Date().toISOString()

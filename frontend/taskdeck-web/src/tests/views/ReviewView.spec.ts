@@ -666,6 +666,96 @@ describe('ReviewView', () => {
     expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-7')
   })
 
+  it('shows archived board decisions as inspectable read-only history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-applied-history',
+        boardId: 'board-99',
+        status: 'Applied',
+        summary: 'Applied archived decision',
+        diffPreview: 'stored applied preview',
+      }),
+      buildProposal({
+        id: 'proposal-rejected-history',
+        boardId: 'board-99',
+        status: 'Rejected',
+        summary: 'Rejected archived decision',
+        diffPreview: 'stored rejected preview',
+      }),
+      buildProposal({
+        id: 'proposal-pending-history',
+        boardId: 'board-99',
+        status: 'PendingReview',
+        summary: 'Live pending proposal',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99&history=archived')
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-99' })
+    expect(wrapper.text()).toContain('Archived decision history is read-only')
+    expect(wrapper.text()).toContain('Applied archived decision')
+    expect(wrapper.text()).toContain('Rejected archived decision')
+    expect(wrapper.text()).not.toContain('Live pending proposal')
+    expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Clear completed')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+
+    const storedPreviewButton = wrapper
+      .get('#proposal-proposal-applied-history')
+      .findAll('button')
+      .find((button) => button.text() === 'View stored preview')
+    expect(storedPreviewButton).toBeDefined()
+    await storedPreviewButton!.trigger('click')
+    expect(wrapper.text()).toContain('stored applied preview')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    const pushSpy = vi.spyOn(router, 'push')
+    const openInboxButton = wrapper
+      .find('.td-review__hero-actions')
+      .findAll('button')
+      .find((button) => button.text() === 'Open Inbox')
+    await openInboxButton?.trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-99&history=archived')
+  })
+
+  it('closes a pending apply gate when the route enters archived history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-approved-history',
+        boardId: 'board-99',
+        status: 'Approved',
+        summary: 'Approved archived decision',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99')
+    const applyButton = wrapper
+      .get('#proposal-proposal-approved-history')
+      .findAll('button')
+      .find((button) => button.text() === 'Apply to board')
+    expect(applyButton).toBeDefined()
+    await applyButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const staleConfirm = document.body.querySelector(
+      '[data-testid="apply-confirm-accept"]',
+    ) as HTMLButtonElement | null
+    expect(staleConfirm).not.toBeNull()
+
+    await router.push('/workspace/review?boardId=board-99&history=archived')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+    staleConfirm!.click()
+    await flushPromises()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
   it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {
     const initialLoad = createDeferred<Proposal[]>()
     const boardScopedLoad = createDeferred<Proposal[]>()

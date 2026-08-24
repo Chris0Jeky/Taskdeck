@@ -73,12 +73,19 @@ const props = withDefaults(
      * can explain the greyed-out row and carry the exit (GH-1964).
      */
     editLock?: EditLock
+    readOnly?: boolean
     /** The just-recorded outcome, retained at its original decision locus. */
     decisionReceipt?: 'approved' | 'applied' | 'rejected' | 'deferred' | null
     /** The exact Applied proposal when this surface is a historical, read-only record. */
     appliedProposal?: Proposal | null
   }>(),
-  { applyPhase: 'approve', editLock: 'off', decisionReceipt: null, appliedProposal: null },
+  {
+    applyPhase: 'approve',
+    editLock: 'off',
+    readOnly: false,
+    decisionReceipt: null,
+    appliedProposal: null,
+  },
 )
 
 const { t } = useI18n()
@@ -155,7 +162,13 @@ const dialSubline = computed(() =>
          user reasonably read "approved" as "applied". role="status" so the state
          change is announced, not just drawn. -->
     <p
-      v-if="!isAppliedRecord && !dismissable && applyPhase === 'execute' && decisionReceipt !== 'approved'"
+      v-if="
+        !readOnly &&
+        !isAppliedRecord &&
+        !dismissable &&
+        applyPhase === 'execute' &&
+        decisionReceipt !== 'approved'
+      "
       class="paper-review-main__approved-banner"
       role="status"
       data-testid="paper-review-approved-banner"
@@ -169,7 +182,21 @@ const dialSubline = computed(() =>
     </p>
 
     <p
-      v-if="decisionReceipt"
+      v-if="readOnly"
+      class="paper-review-main__history-notice tk-meta"
+      role="status"
+      data-testid="paper-review-history-mode"
+    >
+      {{ $t('review.historyMode.notice') }}
+    </p>
+
+    <!--
+      A decision receipt reports an action THIS session just took. Archived
+      history takes none, so it is suppressed there rather than left to depend
+      on the parent never setting it (#1973).
+    -->
+    <p
+      v-else-if="decisionReceipt"
       class="paper-review-main__decision-receipt"
       role="status"
       data-testid="paper-review-decision-receipt"
@@ -200,9 +227,10 @@ const dialSubline = computed(() =>
 
     <ReviewDecisionRail
       v-if="
-        isAppliedRecord
+        !readOnly &&
+        (isAppliedRecord
           ? dismissable && !decisionReceipt
-          : !decisionReceipt || decisionReceipt === 'approved'
+          : !decisionReceipt || decisionReceipt === 'approved')
       "
       :summary="isAppliedRecord ? $t('review.appliedRecord.filingSummary') : decisionSummary"
       :busy="busy"
@@ -230,6 +258,7 @@ const dialSubline = computed(() =>
       :rows="provenance"
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
+      :read-only="readOnly"
       @report="emit('report', $event)"
     />
     <ReviewSideEffects :data="sideEffects" />
@@ -239,7 +268,7 @@ const dialSubline = computed(() =>
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
       <span
-        v-if="!isAppliedRecord && (!decisionReceipt || decisionReceipt === 'approved')"
+        v-if="!readOnly && !isAppliedRecord && (!decisionReceipt || decisionReceipt === 'approved')"
         class="tk-serial"
         data-testid="paper-review-key-hint"
       >{{ keyHint }}</span>
@@ -291,6 +320,13 @@ const dialSubline = computed(() =>
   color: var(--ember-ink);
   font-size: 13px;
   line-height: 1.45;
+}
+.paper-review-main__history-notice {
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--ink-2);
 }
 .paper-review-main__decision-receipt {
   margin: 18px 0 0;

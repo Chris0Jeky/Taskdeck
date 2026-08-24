@@ -82,6 +82,10 @@ export default {
     clear: 'Show all boards',
   },
 
+  historyMode: {
+    notice: 'Archived decision history · read-only. Restore the board before approving, rejecting, applying, editing, deferring, or filing proposals.',
+  },
+
   queueItem: {
     noSummary: '(no summary)',
     confidence: 'conf {value}',

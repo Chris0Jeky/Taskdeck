@@ -20,6 +20,7 @@ const {
   boardFilterInput,
   activeBoardFilter,
   activeBoardName,
+  isArchivedHistory,
   showCompleted,
   loadingBoards,
   boardOptions,
@@ -62,6 +63,12 @@ const {
   handleDismissProposal,
   handleDismissApplied,
 } = useReviewActions(proposals, dismissableProposalIds, loadProposals, isProposalExpired)
+
+watch(isArchivedHistory, (readOnly) => {
+  if (!readOnly) return
+  cancelExecuteProposal()
+  cancelRejectProposal()
+})
 
 const route = useRoute()
 
@@ -202,6 +209,7 @@ onUnmounted(() => {
       :show-completed="showCompleted"
       :proposals-loading="proposalsLoading"
       :dismissable-count="dismissableProposalIds.length"
+      :read-only="isArchivedHistory"
       @update:board-filter-input="boardFilterInput = $event"
       @update:show-completed="showCompleted = $event"
       @select-board="(option) => applyBoardFilter(option.value)"
@@ -287,6 +295,7 @@ onUnmounted(() => {
               :selected-diff-revised="selectedDiffRevised"
               :capture-href="captureHrefForProposal(renderedProposals[virtualRow.index]!)"
               :proposal-href="proposalHref(renderedProposals[virtualRow.index]!)"
+              :read-only="isArchivedHistory"
               @approve="handleApproveProposal"
               @reject="requestRejectProposal"
               @execute="requestExecuteProposal"

@@ -3,7 +3,7 @@ import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../
 import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel } from './inboxUtils'
 import type { CaptureItem } from '../../types/capture'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   selectedItemId: string | null
   selectedItem: CaptureItem | null
   hashLoadFailedItemId: string | null
@@ -13,7 +13,8 @@ defineProps<{
   isEditingSuggestion: boolean
   editedText: string
   editedTitleHint: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   (e: 'close-detail'): void
@@ -46,7 +47,9 @@ const canTriageSelection = canMutateSelection
     <div v-else-if="!selectedItemId" class="td-inbox__detail-feedback" data-testid="inbox-detail-placeholder">
       <TdEmptyState
         title="No item selected"
-        description="Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it."
+        :description="props.readOnly
+          ? 'Select an item to inspect the retained capture. Archived capture history is read-only.'
+          : 'Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.'"
       >
         <template #icon>
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -96,7 +99,7 @@ const canTriageSelection = canMutateSelection
         <div v-if="loadingDetail" class="td-inbox-detail__spinner">
           <TdSpinner label="Refreshing detail..." />
         </div>
-        <template v-else-if="isEditingSuggestion && selectedItem.canEditSuggestion === true">
+        <template v-else-if="isEditingSuggestion && selectedItem.canEditSuggestion === true && !props.readOnly">
           <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
           <textarea
             id="inbox-edit-text"
@@ -138,7 +141,7 @@ const canTriageSelection = canMutateSelection
         <template v-else>
           <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           <button
-            v-if="selectedItem.canEditSuggestion === true"
+            v-if="selectedItem.canEditSuggestion === true && !props.readOnly"
             class="td-btn td-btn--secondary td-btn--sm td-inbox-detail__edit-btn"
             data-testid="suggestion-edit-btn"
             @click="emit('start-edit-suggestion')"
@@ -155,7 +158,10 @@ const canTriageSelection = canMutateSelection
       >
         <p class="td-inbox-detail__error-title">Triage failed</p>
         <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-msg">{{ selectedItem.errorMessage }}</p>
-        <p v-if="selectedItem.canEditSuggestion === true" class="td-inbox-detail__error-hint">
+        <p v-if="props.readOnly" class="td-inbox-detail__error-hint">
+          This archived capture is retained for inspection. Restore the board before changing its capture workflow.
+        </p>
+        <p v-else-if="selectedItem.canEditSuggestion === true" class="td-inbox-detail__error-hint">
           You can edit the text and retry, or ignore this capture if it is no longer needed.
         </p>
         <p v-else class="td-inbox-detail__error-hint">
@@ -166,7 +172,7 @@ const canTriageSelection = canMutateSelection
       <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link" data-testid="inbox-proposal-link">
         <TdInlineAlert variant="success">
           <div class="td-inbox-detail__proposal-link-content">
-            <span>A proposed board update is ready for approval.</span>
+            <span>{{ props.readOnly ? 'Open the related retained decision record.' : 'A proposed board update is ready for approval.' }}</span>
             <button
               class="td-btn td-btn--primary td-btn--sm"
               @click="emit('open-proposal', selectedItem.provenance!.proposalId!)"
@@ -186,6 +192,7 @@ const canTriageSelection = canMutateSelection
           {{ loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--primary"
           @click="emit('triage-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canTriageSelection(selectedItem.status)"
@@ -193,6 +200,7 @@ const canTriageSelection = canMutateSelection
           {{ actionBusyItemId === selectedItem.id ? 'Working...' : triageButtonLabel(selectedItem.status, triagePollingItemId, selectedItemId) }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--danger"
           @click="emit('ignore-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"
@@ -200,6 +208,7 @@ const canTriageSelection = canMutateSelection
           {{ actionBusyItemId === selectedItem.id ? 'Working...' : 'Ignore' }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--secondary"
           @click="emit('cancel-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"

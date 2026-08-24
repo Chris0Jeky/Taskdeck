@@ -535,6 +535,12 @@ describe('PaperBoardView — board settings', () => {
 
     expect(mockBoardStore.deleteBoard).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="paper-board-dialog-archive-confirm"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-board-dialog-archive-confirm"]').text()).toContain(
+      'Captures and decision history stay saved.',
+    )
+    expect(wrapper.get('[data-testid="paper-board-dialog-archive-confirm"]').text()).toContain(
+      'they will not appear in the unfiltered Inbox or Review while this board is archived.',
+    )
 
     await wrapper.get('[data-testid="paper-board-dialog-archive-confirm-yes"]').trigger('click')
     await flushPromises()

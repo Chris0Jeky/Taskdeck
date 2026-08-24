@@ -47,6 +47,10 @@ export default {
     clear: 'Mostrar todos los tableros',
   },
 
+  historyMode: {
+    notice: 'Historial de decisiones archivadas · solo lectura. Restaura el tablero antes de aprobar, rechazar, aplicar, editar, aplazar o archivar propuestas.',
+  },
+
   queueItem: {
     noSummary: '(sin resumen)',
     confidence: 'conf {value}',

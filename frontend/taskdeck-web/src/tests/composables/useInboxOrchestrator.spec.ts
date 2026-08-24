@@ -121,6 +121,19 @@ async function flushAsyncWork() {
   await Promise.resolve()
 }
 
+function summaryRow(id: string, boardId: string | null) {
+  return {
+    id,
+    userId: 'u1',
+    boardId,
+    status: 'New',
+    source: 'Typed',
+    textExcerpt: id,
+    createdAt: '2026-08-24T00:00:00Z',
+    processedAt: null,
+  } as never
+}
+
 describe('useInboxOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -194,6 +207,57 @@ describe('useInboxOrchestrator', () => {
       expect(mockRouter.replace).toHaveBeenCalledWith({
         name: 'workspace-inbox',
         query: { source: 'capture' },
+      })
+    })
+
+    // The orchestrator half of the archived-history list-write boundary (#1973).
+    // The store half — that `syncSummary: false` actually holds when the detail
+    // GET resolves after the exit's list load — is pinned in
+    // `store/captureStore.spec.ts`. Legacy loads detail through `fetchDetail`
+    // (Paper uses the non-caching `peekDetail`), and `fetchDetail`'s success
+    // path unshifts an absent summary straight into the live `items`, so the
+    // flag is the only thing standing between archived inspection and a
+    // mutation-enabled row at the top of the live Inbox.
+    it('opts out of summary sync for detail loads inside archived history', async () => {
+      mockRoute.query = { boardId: 'archived-board', history: 'archived' }
+      const orch = createOrchestrator()
+      mockCaptureStore.fetchDetail.mockResolvedValue(undefined)
+
+      expect(orch.isArchivedHistory.value).toBe(true)
+
+      await orch.openItemFromList(summaryRow('archived-capture', 'archived-board'), 0)
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
+        syncSummary: false,
+      })
+
+      // Refresh Detail is a READ affordance and stays available in history mode,
+      // but it takes the same boundary — and `forceRefresh` means it always
+      // reaches the caching path rather than the cached early return.
+      mockCaptureStore.fetchDetail.mockClear()
+      await orch.refreshSelectedDetail()
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
+        forceRefresh: true,
+        syncSummary: false,
+      })
+    })
+
+    it('keeps syncing summaries for detail loads in the live Inbox', async () => {
+      mockRoute.query = {}
+      const orch = createOrchestrator()
+      mockCaptureStore.fetchDetail.mockResolvedValue(undefined)
+
+      expect(orch.isArchivedHistory.value).toBe(false)
+
+      await orch.openItemFromList(summaryRow('live-capture', 'live-board'), 0)
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
+        syncSummary: true,
+      })
+
+      mockCaptureStore.fetchDetail.mockClear()
+      await orch.refreshSelectedDetail()
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
+        forceRefresh: true,
+        syncSummary: true,
       })
     })
 
@@ -389,7 +453,7 @@ describe('useInboxOrchestrator', () => {
       const event = { key: 'Enter', preventDefault: vi.fn() } as unknown as KeyboardEvent
       await orch.handleKeydown(event)
       expect(event.preventDefault).toHaveBeenCalled()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc')
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', { syncSummary: true })
     })
   })
 
@@ -398,7 +462,7 @@ describe('useInboxOrchestrator', () => {
       mockRoute.hash = '#capture-deep-id'
       const orch = createOrchestrator()
       await orch.loadInbox()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id')
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', { syncSummary: true })
     })
 
     it('loadInbox does not fetch detail when hash is absent', async () => {
@@ -604,7 +668,10 @@ describe('useInboxOrchestrator', () => {
       const orch = createOrchestrator()
       orch.selectedItemId.value = 'item-r'
       await orch.refreshSelectedDetail()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('item-r', { forceRefresh: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('item-r', {
+        forceRefresh: true,
+        syncSummary: true,
+      })
     })
 
     it('does nothing without selection', async () => {

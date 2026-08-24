@@ -188,6 +188,10 @@ describe('BoardSettingsModal', () => {
     await archiveButton?.trigger('click')
 
     expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy.mock.calls[0]?.[0]).toContain('Captures and decision history stay saved')
+    expect(confirmSpy.mock.calls[0]?.[0]).toContain(
+      'They will not appear in the unfiltered Inbox or Review while this board is archived.',
+    )
     expect(mockStore.updateBoard).not.toHaveBeenCalled()
     expect(mockStore.deleteBoard).not.toHaveBeenCalled()
 

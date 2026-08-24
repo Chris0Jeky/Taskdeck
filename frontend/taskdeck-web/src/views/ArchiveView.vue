@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { archiveApi } from '../api/archiveApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
@@ -12,6 +13,7 @@ import { logWarn } from '../utils/errorReporting'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 
 const toast = useToastStore()
+const router = useRouter()
 const loadingItems = ref(false)
 const loadingBoards = ref(false)
 const restoreBusyId = ref<string | null>(null)
@@ -181,6 +183,14 @@ function handleToggleHiddenArchivedBoard(board: Board) {
     : `Unhid board "${board.name}" in the archive view`)
 }
 
+function viewBoardCaptures(boardId: string) {
+  void router.push({ name: 'workspace-inbox', query: { boardId, history: 'archived' } })
+}
+
+function viewBoardDecisions(boardId: string) {
+  void router.push({ name: 'workspace-review', query: { boardId, history: 'archived' } })
+}
+
 onMounted(() => {
   loadHiddenArchivedBoardIds()
   void loadArchiveItems()
@@ -208,8 +218,9 @@ onMounted(() => {
       </div>
 
       <p class="paper-archive__helper">
-        Archive removes a board from default board lists. Use <strong>Hide</strong> to keep old archived boards out of
-        the default archive view without restoring them.
+        Captures and decision history stay saved when a board is archived, but they no longer appear in the
+        unfiltered Inbox or Review. Use <strong>View captures</strong> or <strong>View decisions</strong> to inspect that
+        board's history. <strong>Hide</strong> only removes a board from this default Archive view.
       </p>
 
       <div v-if="loadingBoards" class="paper-archive__state">Loading archived boards...</div>
@@ -234,6 +245,20 @@ onMounted(() => {
             </span>
           </div>
           <div class="paper-archive__actions">
+            <PaperHLBtn
+              class="paper-archive__view-captures"
+              :aria-label="`View captures for ${board.name}`"
+              @click="viewBoardCaptures(board.id)"
+            >
+              View captures
+            </PaperHLBtn>
+            <PaperHLBtn
+              class="paper-archive__view-decisions"
+              :aria-label="`View decisions for ${board.name}`"
+              @click="viewBoardDecisions(board.id)"
+            >
+              View decisions
+            </PaperHLBtn>
             <PaperHLBtn
               variant="ember"
               class="paper-archive__restore-board"

@@ -5,12 +5,13 @@ import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rows: ProvenanceRow[]
   metadata?: ProvenanceMetadata | null
   evidenceLinks?: EvidenceLink[]
   proposalId: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   report: [proposalId: string]
@@ -92,6 +93,7 @@ function tone(weight: ProvenanceWeight): string {
       :metadata="metadata ?? null"
       :evidence-links="evidenceLinks ?? []"
       :proposal-id="proposalId"
+      :read-only="props.readOnly"
       @close="drawerOpen = false"
       @report="emit('report', $event)"
     />
