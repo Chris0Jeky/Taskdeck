@@ -93,6 +93,7 @@ describe('CalendarView', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     vi.useRealTimers()
   })
 
@@ -101,6 +102,19 @@ describe('CalendarView', () => {
     await waitForUi()
 
     expect(mockGetCalendar).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the caller local month when UTC has already crossed the boundary', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    vi.setSystemTime(new Date('2026-05-01T00:30:00.000Z')) // Apr 30 locally
+
+    mount(CalendarView)
+    await waitForUi()
+
+    expect(mockGetCalendar).toHaveBeenCalledWith(
+      '2026-04-01T00:00:00.000Z',
+      '2026-05-01T00:00:00.000Z',
+    )
   })
 
   it('renders the page title and hero description', async () => {
@@ -273,6 +287,19 @@ describe('CalendarView', () => {
     expect(wrapper.text()).toContain('Blocked task')
     expect(wrapper.text()).toContain('Overdue')
     expect(wrapper.text()).toContain('Blocked')
+  })
+
+  it('renders a midnight-UTC due key unchanged west of UTC', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    const wrapper = mount(CalendarView)
+    await waitForUi()
+
+    const timelineBtn = wrapper.findAll('.paper-calendar__hero-actions button')
+      .find(button => button.text() === 'Timeline')
+    await timelineBtn!.trigger('click')
+
+    expect(wrapper.text()).toContain('Due Apr 10')
+    expect(wrapper.text()).not.toContain('Due Apr 9')
   })
 
   it('shows block reason in timeline view for blocked cards', async () => {

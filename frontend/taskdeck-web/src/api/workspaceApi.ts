@@ -8,6 +8,7 @@ import type {
   WorkspaceOnboarding,
   WorkspacePreference,
 } from '../types/workspace'
+import { localCalendarDateKey } from '../utils/dueDates'
 
 export const workspaceApi = {
   async getHomeSummary(): Promise<HomeSummary> {
@@ -15,13 +16,18 @@ export const workspaceApi = {
     return data
   },
 
-  async getTodaySummary(): Promise<TodaySummary> {
-    const { data } = await http.get<TodaySummary>('/workspace/today')
+  async getTodaySummary(localDate: string = localCalendarDateKey()): Promise<TodaySummary> {
+    const params = new URLSearchParams({ localDate })
+    const { data } = await http.get<TodaySummary>(`/workspace/today?${params}`)
     return data
   },
 
-  async getCalendar(from: string, to: string): Promise<CalendarData> {
-    const params = new URLSearchParams({ from, to })
+  async getCalendar(
+    from: string,
+    to: string,
+    localDate: string = localCalendarDateKey(),
+  ): Promise<CalendarData> {
+    const params = new URLSearchParams({ from, to, localDate })
     const { data } = await http.get<CalendarData>(`/workspace/calendar?${params}`)
     return data
   },

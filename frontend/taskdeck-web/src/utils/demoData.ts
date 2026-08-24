@@ -5,6 +5,11 @@ import type {
   TodaySummary,
   WorkspaceOnboarding,
 } from '../types/workspace'
+import {
+  addCalendarDays,
+  calendarDateKeyToMidnightUtc,
+  localCalendarDateKey,
+} from './dueDates'
 import { DEMO_USER } from './demoMode'
 
 export const DEMO_ONBOARDING: WorkspaceOnboarding = {
@@ -26,8 +31,11 @@ const DEMO_BOARDS: Record<string, { name: string; description: string }> = {
   'demo-board-2': { name: 'Sprint 12', description: 'Current sprint work items.' },
 }
 
-function yesterday(): string {
-  return new Date(Date.now() - 86_400_000).toISOString()
+function demoDueDate(daysFromToday: number): string {
+  const dateKey = addCalendarDays(localCalendarDateKey(), daysFromToday)
+  const dueDate = dateKey ? calendarDateKeyToMidnightUtc(dateKey) : null
+  if (!dueDate) throw new Error('Unable to build demo due date')
+  return dueDate
 }
 
 function now(): string {
@@ -101,11 +109,11 @@ export function buildDemoTodaySummary(): TodaySummary {
     onboarding: DEMO_ONBOARDING,
     summary: { capturesNeedingTriage: 3, proposalsPendingReview: 1, overdueCards: 1, dueTodayCards: 2, blockedCards: 0 },
     overdueCards: [
-      { boardId: 'demo-board-1', boardName: 'Product Backlog', cardId: 'demo-card-1', title: 'Fix login redirect loop', dueDate: yesterday(), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-1', boardName: 'Product Backlog', cardId: 'demo-card-1', title: 'Fix login redirect loop', dueDate: demoDueDate(-1), blockReason: null, updatedAt: now() },
     ],
     dueTodayCards: [
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-2', title: 'Add dark-mode toggle', dueDate: now(), blockReason: null, updatedAt: now() },
-      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-3', title: 'Write onboarding copy', dueDate: now(), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-2', title: 'Add dark-mode toggle', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
+      { boardId: 'demo-board-2', boardName: 'Sprint 12', cardId: 'demo-card-3', title: 'Write onboarding copy', dueDate: demoDueDate(0), blockReason: null, updatedAt: now() },
     ],
     blockedCards: [],
     recommendedActions: [

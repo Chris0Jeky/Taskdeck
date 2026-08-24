@@ -5,6 +5,12 @@ import { workspaceApi } from '../api/workspaceApi'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import type { CalendarCard, CalendarData } from '../types/workspace'
+import {
+  calendarDateKeyToUtcDate,
+  formatCalendarDate,
+  localCalendarDateKey,
+  toCalendarDateKey,
+} from '../utils/dueDates'
 
 const router = useRouter()
 
@@ -13,7 +19,7 @@ const error = ref<string | null>(null)
 const calendarData = ref<CalendarData | null>(null)
 
 /** Current view month (first day of month in UTC). */
-const viewDate = ref(startOfMonth(new Date()))
+const viewDate = ref(startOfMonth(calendarDateKeyToUtcDate(localCalendarDateKey()) ?? new Date()))
 
 /** Active view mode: 'calendar' for monthly grid, 'timeline' for linear list. */
 const viewMode = ref<'calendar' | 'timeline'>('calendar')
@@ -38,7 +44,7 @@ function navigateMonth(delta: number) {
 }
 
 function goToToday() {
-  viewDate.value = startOfMonth(new Date())
+  viewDate.value = startOfMonth(calendarDateKeyToUtcDate(localCalendarDateKey()) ?? new Date())
 }
 
 async function fetchCalendar() {
@@ -64,7 +70,8 @@ const cardsByDate = computed<Record<string, CalendarCard[]>>(() => {
 
   const groups: Record<string, CalendarCard[]> = {}
   for (const card of calendarData.value.cards) {
-    const dateKey = card.dueDate.slice(0, 10) // YYYY-MM-DD
+    const dateKey = toCalendarDateKey(card.dueDate)
+    if (!dateKey) continue
     if (!groups[dateKey]) {
       groups[dateKey] = []
     }
@@ -85,8 +92,7 @@ const calendarWeeks = computed(() => {
   const gridStart = new Date(Date.UTC(year, month, 1 - startDow))
 
   const weeks: { date: Date; dateKey: string; isCurrentMonth: boolean; isToday: boolean }[][] = []
-  const today = new Date()
-  const todayKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
+  const todayKey = localCalendarDateKey()
 
   let cursor = new Date(gridStart)
   while (cursor <= lastDay || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {
@@ -115,7 +121,7 @@ const calendarWeeks = computed(() => {
 const timelineCards = computed(() => {
   if (!calendarData.value) return []
   return [...calendarData.value.cards].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+    (a, b) => (toCalendarDateKey(a.dueDate) ?? '').localeCompare(toCalendarDateKey(b.dueDate) ?? ''),
   )
 })
 
@@ -125,17 +131,17 @@ const timelineGroups = computed(() => {
   let currentKey = ''
 
   for (const card of timelineCards.value) {
-    const dateKey = card.dueDate.slice(0, 10)
+    const dateKey = toCalendarDateKey(card.dueDate)
+    if (!dateKey) continue
     if (dateKey !== currentKey) {
       currentKey = dateKey
       groups.push({
         dateKey,
-        dateLabel: new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', {
+        dateLabel: formatCalendarDate(dateKey, {
           weekday: 'short',
           month: 'short',
           day: 'numeric',
-          timeZone: 'UTC',
-        }),
+        }, 'en-US'),
         cards: [],
       })
     }
@@ -146,11 +152,10 @@ const timelineGroups = computed(() => {
 })
 
 function formatDueDate(value: string): string {
-  return new Date(value).toLocaleDateString('en-US', {
+  return formatCalendarDate(value, {
     month: 'short',
     day: 'numeric',
-    timeZone: 'UTC',
-  })
+  }, 'en-US')
 }
 
 function openBoard(boardId: string) {

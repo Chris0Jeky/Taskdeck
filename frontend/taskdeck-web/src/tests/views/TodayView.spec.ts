@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import TodayView from '../../views/TodayView.vue'
@@ -68,6 +68,10 @@ async function waitForUi() {
 }
 
 describe('TodayView', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -161,6 +165,24 @@ describe('TodayView', () => {
     expect(wrapper.text()).toContain('2 captures ready for Inbox triage.')
     expect(wrapper.text()).toContain('Past due')
     expect(wrapper.text()).toContain('Review pending proposals')
+  })
+
+  it('renders the due calendar key unchanged west of UTC', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    mockWorkspaceStore.todaySummary = {
+      ...mockWorkspaceStore.todaySummary!,
+      overdueCards: [{
+        ...mockWorkspaceStore.todaySummary!.overdueCards[0]!,
+        dueDate: '2026-08-23T00:00:00.000Z',
+      }],
+    }
+
+    const wrapper = mount(TodayView)
+    await waitForUi()
+
+    const dueText = wrapper.find('.td-today-item .td-today-item__meta:last-child').text()
+    expect(dueText).toMatch(/^(Aug 23, 2026|23 Aug 2026)$/)
+    expect(dueText).not.toContain('22')
   })
 
   it('routes from hero actions, onboarding steps, recommended actions, and agenda cards', async () => {
