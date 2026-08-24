@@ -47,6 +47,9 @@ export default {
   },
   triage: {
     boardPick: {
+      loading: 'Caricamento delle bacheche…',
+      loadFailed: 'Impossibile caricare le bacheche. Controlla la connessione e riprova.',
+      retry: 'Riprova a caricare le bacheche',
       blocked: {
         noBoards: 'Ancora nessuna bacheca. Creane una e poi questa cattura potrà andarci.',
         noBoard: 'Scegli prima una bacheca. Accept on board resta disattivato finché non ne selezioni una.',
