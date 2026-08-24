@@ -140,7 +140,7 @@ public class CaptureTriageServiceTests
 
         CreateProposalRevisionDto? savedRevision = null;
         _proposalRevisionServiceMock
-            .Setup(service => service.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
+            .Setup(service => service.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
             .Callback<CreateProposalRevisionDto, CancellationToken>((dto, _) =>
             {
                 savedRevision = dto;
@@ -167,7 +167,7 @@ public class CaptureTriageServiceTests
         second.Value.ProposalId.Should().Be(proposal.Id);
         savedRevision.Should().NotBeNull();
         _proposalRevisionServiceMock.Verify(
-            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
             Times.Once);
 
         using var revisionDocument = JsonDocument.Parse(savedRevision!.RevisedPayload);
@@ -198,7 +198,7 @@ public class CaptureTriageServiceTests
 
         CreateProposalRevisionDto? savedRevision = null;
         _proposalRevisionServiceMock
-            .Setup(service => service.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
+            .Setup(service => service.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
             .Callback<CreateProposalRevisionDto, CancellationToken>((dto, _) => savedRevision = dto)
             .ReturnsAsync(Result.Success(new ProposalRevisionDto(
                 Guid.NewGuid(), proposal.Id, 1, userId, "{}", DateTimeOffset.UtcNow, "metadata", DateTimeOffset.UtcNow)));
@@ -209,7 +209,7 @@ public class CaptureTriageServiceTests
             new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing"));
         untouched.IsSuccess.Should().BeTrue();
         _proposalRevisionServiceMock.Verify(
-            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var unchangedExplicitReplacement = await service.CreateProposalFromCaptureAsync(
@@ -222,7 +222,7 @@ public class CaptureTriageServiceTests
                 Labels: ["inferred"]));
         unchangedExplicitReplacement.IsSuccess.Should().BeTrue();
         _proposalRevisionServiceMock.Verify(
-            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
             Times.Never);
 
         var cleared = await service.CreateProposalFromCaptureAsync(
@@ -259,7 +259,79 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
         _proposalRevisionServiceMock.Verify(
-            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData(ErrorCodes.Forbidden)]
+    [InlineData(ErrorCodes.NotFound)]
+    public async Task CreateProposalFromCaptureAsync_ShouldRequireCurrentValidationBeforeSavingRecoveryRevision(string errorCode)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateExistingCaptureProposal(userId, boardId, captureId,
+            "{\"title\":\"existing\",\"labels\":[\"old\"]}");
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _policyEngineMock
+            .Setup(policy => policy.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.Is<IEnumerable<ProposalOperationDto>>(operations => operations.Single().Parameters.Contains("new")),
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(errorCode, "Current recovery validation failed"));
+
+        var result = await BuildServiceWithRevisionService().CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing", Labels: ["new"]));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(errorCode);
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(
+                It.IsAny<CreateProposalRevisionDto>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldTreatMissingAndEmptyLabelsAsEqualForDecidedProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateExistingCaptureProposal(userId, boardId, captureId, "{\"title\":\"existing\"}");
+        proposal.Approve(userId);
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var result = await BuildServiceWithRevisionService().CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing", Labels: []));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().Be(proposal.Id);
+        _policyEngineMock.Verify(
+            policy => policy.ValidatePermissionsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                It.IsAny<BoardAccessBar>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionWithPendingCommitGuardAsync(
+                It.IsAny<CreateProposalRevisionDto>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

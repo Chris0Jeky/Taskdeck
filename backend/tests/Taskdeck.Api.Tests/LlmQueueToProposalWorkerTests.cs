@@ -502,6 +502,42 @@ public class LlmQueueToProposalWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_CaptureTriageConflict_RecordsRetryInFreshScope()
+    {
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    ErrorCodes.Conflict,
+                    "Proposal was decided concurrently");
+            }
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            triageService: triageService,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, capture processing, and fresh failure scopes are expected");
+        var processingUnitOfWork = createdUnitOfWorks[^2];
+        var failureUnitOfWork = createdUnitOfWorks[^1];
+        processingUnitOfWork.SaveChangesTokens.Should().BeEmpty();
+        processingUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse();
+        failureUnitOfWork.SaveChangesTokens.Should().HaveCount(2, "the fresh scope commits Failed and then the capture retry transition");
+        item.Status.Should().Be(RequestStatus.Processing);
+        item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task ProcessBatch_CaptureLaneCallerCancellation_PropagatesAndLeavesItemProcessing()
     {
         var item = CreateCaptureTriageItem();

@@ -486,7 +486,20 @@ public class CaptureTriageService : ICaptureTriageService
                 "Capture proposal revision service is unavailable");
         }
 
-        var revisionResult = await _proposalRevisionService.CreateRevisionAsync(
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(
+            editorUserId,
+            proposal.BoardId,
+            patchedOperations,
+            BoardAccessBar.Write,
+            cancellationToken);
+        if (!permissionResult.IsSuccess)
+        {
+            return Result.Failure<int>(
+                permissionResult.ErrorCode,
+                permissionResult.ErrorMessage);
+        }
+
+        var revisionResult = await _proposalRevisionService.CreateRevisionWithPendingCommitGuardAsync(
             new CreateProposalRevisionDto(
                 proposal.Id,
                 editorUserId,
@@ -581,9 +594,15 @@ public class CaptureTriageService : ICaptureTriageService
               existingDueDate.ValueKind == JsonValueKind.String &&
               existingDueDate.TryGetDateTimeOffset(out var parsedDueDate) &&
               parsedDueDate == new DateTimeOffset(dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-        if (!dueDateMatches ||
-            !parameters.TryGetProperty("labels", out var existingLabels) ||
-            existingLabels.ValueKind != JsonValueKind.Array ||
+        if (!dueDateMatches)
+        {
+            return false;
+        }
+
+        if (!parameters.TryGetProperty("labels", out var existingLabels))
+            return labels.Count == 0;
+
+        if (existingLabels.ValueKind != JsonValueKind.Array ||
             existingLabels.GetArrayLength() != labels.Count)
         {
             return false;
