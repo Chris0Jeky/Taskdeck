@@ -399,7 +399,9 @@ async function runLiveOpenAiJourney(
     page,
     () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(),
   )
-  await expect(proposalCard).not.toBeVisible()
+  // #1967: after Apply the card either leaves the queue or persists as a
+  // read-only decision record - in both renderings the Apply control is gone.
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   const afterApply = await waitForBoardCardCount(request, auth, boardId, http, 1)
   const proposalAfterApply = await fetchProposal(request, auth, proposalId, http)

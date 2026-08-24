@@ -114,6 +114,33 @@ export default {
     empty: 'Nothing applied yet today.',
     noSummary: '(applied)',
     age: '{age} ago',
+    openLabel: 'Open applied proposal: {title}',
+  },
+
+  appliedRecord: {
+    ariaLabel: 'Applied proposal decision record',
+    tagstamp: 'APPLIED \u00b7 READ-ONLY',
+    eyebrow: 'Historical record',
+    heading: 'Applied decision record',
+    lede:
+      'This proposal has already changed the board. Its recorded decision and effective operations are read-only.',
+    filingSummary: 'Historical record \u00b7 filing only',
+    historicalNotice: 'Historical applied record. No further review action is available.',
+    field: {
+      outcome: 'Outcome',
+      decision: 'Decision',
+      decisionActor: 'Decision actor',
+      decisionTime: 'Decision time',
+      appliedTime: 'Applied time',
+    },
+    value: {
+      applied: 'Applied',
+      approved: 'Approved',
+      notRecorded: 'Not recorded',
+    },
+    operations: {
+      heading: 'Operations applied',
+    },
   },
 
   // ── Centre column: header, decision rail, sections ────────────────────────

@@ -310,6 +310,11 @@ const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
   return receipt.kind
 })
 
+const activeAppliedProposal = computed<ApiProposal | null>(() => {
+  const proposal = activeProposal.value
+  return proposal && normalizeProposalStatus(proposal.status) === 'Applied' ? proposal : null
+})
+
 function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
   decisionReceipt.value = { proposalId, kind }
   explicitActiveId.value = proposalId
@@ -1482,10 +1487,15 @@ useReviewKeymap(
       !isArchivedHistory.value &&
       !busy.value &&
       activeProposal.value !== null &&
+      (activeAppliedProposal.value === null || activeDismissable.value) &&
       executeConfirmProposal.value === null &&
       rejectPromptProposal.value === null &&
       (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
     isActionEnabled: (action) => {
+      // An applied record is read-only: the only live key is ⌫, whose #1161
+      // dual-purpose branch files the record away — the affordance the filing
+      // rail still advertises for the reviewer's own applied proposal.
+      if (activeAppliedProposal.value !== null) return action === 'onReject'
       const receipt = activeDecisionReceipt.value
       return receipt === null || (receipt === 'approved' && action === 'onApply')
     },
@@ -1607,6 +1617,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :edit-lock="editLock"
         :read-only="isArchivedHistory"
         :decision-receipt="activeDecisionReceipt"
+        :applied-proposal="activeAppliedProposal"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1807,6 +1818,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
       :receipt-active="activeDecisionReceipt !== null"
+      :applied-record="activeAppliedProposal !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 
