@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest'
  * an `<a>` tag whose href is the bare `#` placeholder and an enabled-looking
  * native `<button>` with no detectable action binding or native form semantics,
  * plus interactive `aria-label` semantics that are not native or keyboard
- * reachable.
+ * reachable. Labelled custom buttons must expose both Enter and Space
+ * activation rather than merely listening for an arbitrary key.
  * The GH-1941 defect was the BOUND anchor form, `:href="tuneHref ?? '#'"`, so
  * both static and bound placeholder hrefs are detected.
  *
@@ -79,6 +80,10 @@ const CLICK_BINDING =
 /** Keyboard activation bindings that make a custom labelled control operable. */
 const KEYBOARD_ACTION_BINDING =
   /(?:@|v-on:)(?:keydown|keyup)(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** Keyboard bindings with their Vue modifier tokens captured for button-key checks. */
+const MODIFIED_KEYBOARD_ACTION_BINDING =
+  /(?:@|v-on:)(?:keydown|keyup)((?:\.[\w-]+)*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
 
 /** Any explicit keyboard/pointer action binding on a custom labelled control. */
 const INTERACTIVE_ACTION_BINDING =
@@ -304,12 +309,37 @@ function isNativeInteractiveTag(tag: string): boolean {
   return new Set(['button', 'select', 'textarea', 'summary']).has(name)
 }
 
-/** A custom control must prove both keyboard reachability and keyboard activation. */
+/** A custom button must explicitly handle both platform activation keys. */
+function hasButtonKeyboardActivation(tag: string): boolean {
+  let handlesEnter = false
+  let handlesSpace = false
+
+  for (const match of tag.matchAll(MODIFIED_KEYBOARD_ACTION_BINDING)) {
+    const expression = (match[2] ?? match[3] ?? match[4] ?? '').trim()
+    if (expression.length === 0) continue
+
+    const modifiers = (match[1] ?? '')
+      .toLowerCase()
+      .split('.')
+      .filter((modifier) => modifier.length > 0)
+    handlesEnter ||= modifiers.includes('enter')
+    handlesSpace ||= modifiers.includes('space')
+  }
+
+  return handlesEnter && handlesSpace
+}
+
+/** A custom control must prove both keyboard reachability and role-appropriate keyboard activation. */
 function isFocusableAndKeyboardActionable(tag: string): boolean {
   const tabindex = TABINDEX_ATTR.exec(tag)
   if (!tabindex || tabindex[1].startsWith(':') || tabindex[1].startsWith('v-bind:')) return false
   const value = (tabindex[2] ?? tabindex[3] ?? tabindex[4] ?? '').trim()
   if (!/^(?:0|[1-9]\d*)$/.test(value)) return false
+
+  // ARIA button parity is specific: both Enter and Space activate a custom
+  // button. Other explicit roles have different keyboard contracts, so this
+  // bounded hardening slice preserves their existing handler-evidence rule.
+  if (ariaRole(tag) === 'button') return hasButtonKeyboardActivation(tag)
   return hasNonEmptyBinding(tag, KEYBOARD_ACTION_BINDING)
 }
 
@@ -458,12 +488,23 @@ describe('dead affordances', () => {
     expect(findAriaLabelViolations(DEAD_ARIA_LABEL_FIXTURE)).toEqual([
       '<div class="paper-topbar__avatar" aria-label="Profile: D">',
     ])
-    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @click="open" @keydown.enter="open">Open</div></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @click="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="region" aria-label="Settings panel" @click.self="close">Panel</div></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><button aria-label="Settings" @click="open">Open</button></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><a href="/settings" aria-label="Settings">Settings</a></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><a aria-label="Settings">Settings</a></template>')).toHaveLength(1)
+  })
+
+  it('requires explicit Enter and Space activation for labelled custom buttons', () => {
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.space="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.escape="close">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.space.prevent="open">Open</div></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" v-on:keyup.enter="open" v-on:keydown.space="open">Open</div></template>')).toEqual([])
+
+    // A switch has a different ARIA keyboard contract; this slice must not
+    // manufacture an Enter requirement for every role in the shared set.
+    expect(findAriaLabelViolations('<template><div role="switch" tabindex="0" aria-label="Notifications" @keydown.space="toggle">Toggle</div></template>')).toEqual([])
   })
 
   it('never ships an anchor with a placeholder href and no click binding', () => {
