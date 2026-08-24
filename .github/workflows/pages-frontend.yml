@@ -13,6 +13,7 @@ on:
       - frontend/taskdeck-web/tailwind.config.js
       - frontend/taskdeck-web/vite.config.ts
       - frontend/taskdeck-web/tsconfig*.json
+      - LICENSES/Apache-2.0-material-symbols-font-400.txt
   workflow_dispatch:
 
 permissions:
@@ -51,6 +52,19 @@ jobs:
 
       - name: SPA fallback for client-side routing
         run: cp frontend/taskdeck-web/dist/index.html frontend/taskdeck-web/dist/404.html
+
+      - name: Include Material Symbols licence
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="LICENSES/Apache-2.0-material-symbols-font-400.txt"
+          destination="frontend/taskdeck-web/dist/LICENSES/Apache-2.0-material-symbols-font-400.txt"
+          mkdir -p "frontend/taskdeck-web/dist/LICENSES"
+          cp "$source" "$destination"
+          if ! cmp -s "$source" "$destination"; then
+            echo "::error::Material Symbols licence does not match the reviewed source copy"
+            exit 1
+          fi
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
