@@ -46,13 +46,18 @@ export default defineConfig({
         // four prefixes (deploy/nginx/reverse-proxy.conf, checked by
         // scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1), so the two layers agree on where
         // the machine surface starts and ends: the bare prefix and its descendants are machine
-        // paths, `/apidocs` and `/mcpx` are not. Behaviour is pinned by
+        // paths, `/apidocs` and `/mcpx` are not. The `%2[fF]` branch keeps the layers agreeing on
+        // a percent-encoded descendant such as `/mcp%2Fmessages`: Workbox tests the still-encoded
+        // pathname while nginx location-matches the decoded URI (`/mcp/messages` — machine
+        // surface), so without it the service worker would hand the app shell to a path the proxy
+        // routes to the API. A double-encoded `%252F` stays SPA-side in both layers (nginx decodes
+        // once, leaving literal `%2F` text). Behaviour is pinned by
         // src/tests/config/PwaMachinePathDenylist.spec.ts (#1992).
         navigateFallbackDenylist: [
-          /^\/api(?:[/?]|$)/,
-          /^\/health(?:[/?]|$)/,
-          /^\/hubs(?:[/?]|$)/,
-          /^\/mcp(?:[/?]|$)/,
+          /^\/api(?:[/?]|%2[fF]|$)/,
+          /^\/health(?:[/?]|%2[fF]|$)/,
+          /^\/hubs(?:[/?]|%2[fF]|$)/,
+          /^\/mcp(?:[/?]|%2[fF]|$)/,
         ],
         // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
         // retain cached responses. Fresh data is always preferred when online.

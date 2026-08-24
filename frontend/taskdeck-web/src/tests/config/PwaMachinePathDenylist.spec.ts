@@ -70,6 +70,13 @@ describe('PWA navigation fallback denylist', () => {
     // boundary has to accept `?` as well as `/`.
     '/api?probe=1',
     '/health?full=true',
+    // Percent-encoded descendants: workbox sees the still-encoded pathname, nginx location-matches
+    // the decoded URI and routes these to the API — the two layers must agree (#1992).
+    '/mcp%2Fmessages',
+    '/mcp%2fmessages',
+    '/api%2Fboards',
+    '/hubs%2fboards',
+    '/health%2Fready',
   ])('keeps %s off the SPA fallback', (path) => {
     expect(isDenied(path)).toBe(true)
   })
@@ -86,6 +93,9 @@ describe('PWA navigation fallback denylist', () => {
     '/hubsy',
     '/healthy',
     '/mcpx',
+    // Double-encoded: nginx decodes once, leaving literal `%2F` text after the prefix, so the
+    // proxy does not treat it as machine surface either — the layers agree it is SPA-side.
+    '/mcp%252Fmessages',
   ])('still serves the SPA fallback for %s', (path) => {
     expect(isDenied(path)).toBe(false)
   })
