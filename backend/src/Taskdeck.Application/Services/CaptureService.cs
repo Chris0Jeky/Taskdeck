@@ -577,8 +577,18 @@ public class CaptureService : ICaptureService
             dto.TitleHint ?? currentPayload.TitleHint,
             currentPayload.ExternalRef,
             currentPayload.Provenance,
-            DueDate: currentPayload.DueDate,
-            Labels: currentPayload.Labels);
+            DueDate: dto.Metadata == null ? currentPayload.DueDate : dto.Metadata.DueDate,
+            Labels: dto.Metadata == null
+                ? currentPayload.Labels
+                : dto.Metadata.Labels ?? Array.Empty<string>());
+
+        var payloadValidation = CaptureRequestContract.ValidatePayload(updatedPayload);
+        if (!payloadValidation.IsSuccess)
+        {
+            return Result.Failure<CaptureItemDto>(
+                payloadValidation.ErrorCode,
+                payloadValidation.ErrorMessage);
+        }
 
         item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -666,7 +676,10 @@ public class CaptureService : ICaptureService
             item.RetryCount,
             item.ErrorMessage,
             payload.Provenance,
-            CanEditSuggestion(item, status));
+            CanEditSuggestion(item, status),
+            new CaptureSuggestionMetadataDto(
+                payload.DueDate,
+                payload.Labels ?? Array.Empty<string>()));
     }
 
     private static bool CanEditSuggestion(LlmRequest item, CaptureStatus status) =>

@@ -591,6 +591,38 @@ public class ProposalOperationContractValidatorTests
         result.ErrorMessage.Should().Contain("proposal board");
     }
 
+    [Fact]
+    public async Task ValidateAsync_ShouldRejectCreateCardWithAmbiguousCaseInsensitiveLabelName()
+    {
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Now", 0);
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var columns = new Mock<IColumnRepository>();
+        var labels = new Mock<ILabelRepository>();
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        unitOfWork.Setup(instance => instance.Labels).Returns(labels.Object);
+        columns.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        labels.Setup(repository => repository.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new Label(boardId, "urgent", "#FF0000"),
+                new Label(boardId, "URGENT", "#00FF00")
+            });
+        var operation = CreateOperation(
+            0,
+            "create",
+            null,
+            new { boardId, columnId = column.Id, title = "Review brief", labels = new[] { "urgent" } });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, new[] { operation });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("ambiguous");
+    }
+
     [Theory]
     [InlineData("update")]
     [InlineData("add-label")]

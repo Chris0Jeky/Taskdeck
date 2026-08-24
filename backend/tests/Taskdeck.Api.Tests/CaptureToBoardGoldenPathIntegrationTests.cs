@@ -155,6 +155,114 @@ public class CaptureToBoardGoldenPathIntegrationTests : IClassFixture<TestWebApp
     }
 
     [Fact]
+    public async Task FailedTriage_InvalidLabels_ShouldAllowMetadataCorrectionRemovalAndSuccessfulRetry()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "golden-label-recovery");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "golden-label-recovery-board");
+
+        var columnResponse = await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Backlog", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        (await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "urgent", "#FF0000"))).StatusCode
+            .Should().Be(HttpStatusCode.Created);
+        (await client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/labels",
+            new CreateLabelDto(board.Id, "URGENT", "#00FF00"))).StatusCode
+            .Should().Be(HttpStatusCode.Created);
+
+        var captureResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(
+                board.Id,
+                "- [ ] Buy milk",
+                DueDate: new DateOnly(2026, 8, 23),
+                Labels: ["shoping"]));
+        captureResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var capture = await captureResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        capture.Should().NotBeNull();
+        capture!.Metadata.Should().NotBeNull();
+        capture.Metadata!.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        capture.Metadata!.Labels.Should().Equal("shoping");
+
+        var firstTriageResponse = await client.PostAsync($"/api/capture/items/{capture.Id}/triage", null);
+        firstTriageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var failed = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Failed);
+        failed.ErrorMessage.Should().Contain("shoping");
+        failed.CanEditSuggestion.Should().BeTrue();
+        failed.Metadata.Should().NotBeNull();
+        failed.Metadata!.Labels.Should().Equal("shoping");
+
+        var cardsBeforeCorrection = await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards");
+        cardsBeforeCorrection.Should().BeEmpty("failed triage must not mutate the board");
+
+        var ambiguousCorrectionResponse = await client.PutAsJsonAsync(
+            $"/api/capture/items/{capture.Id}/suggestion",
+            new UpdateCaptureSuggestionDto(
+                failed.RawText,
+                Metadata: new CaptureSuggestionMetadataDto(
+                    new DateOnly(2026, 8, 23),
+                    ["urgent"])));
+        ambiguousCorrectionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ambiguouslyCorrected = await ambiguousCorrectionResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        ambiguouslyCorrected.Should().NotBeNull();
+        ambiguouslyCorrected!.Status.Should().Be(CaptureStatus.Failed);
+        ambiguouslyCorrected.Metadata.Should().NotBeNull();
+        ambiguouslyCorrected.Metadata!.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        ambiguouslyCorrected.Metadata.Labels.Should().Equal("urgent");
+
+        var ambiguousRetryResponse = await client.PostAsync($"/api/capture/items/{capture.Id}/triage", null);
+        ambiguousRetryResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var ambiguousFailure = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.Failed);
+        ambiguousFailure.ErrorMessage.Should().Contain("ambiguous");
+        ambiguousFailure.Metadata.Should().NotBeNull();
+        ambiguousFailure.Metadata!.Labels.Should().Equal("urgent");
+
+        var cardsBeforeRemoval = await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards");
+        cardsBeforeRemoval.Should().BeEmpty("ambiguous labels must not mutate the board");
+
+        var removalResponse = await client.PutAsJsonAsync(
+            $"/api/capture/items/{capture.Id}/suggestion",
+            new UpdateCaptureSuggestionDto(
+                ambiguousFailure.RawText,
+                Metadata: new CaptureSuggestionMetadataDto()));
+        removalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cleared = await removalResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        cleared.Should().NotBeNull();
+        cleared!.Status.Should().Be(CaptureStatus.Failed);
+        cleared.Metadata.Should().NotBeNull();
+        cleared.Metadata!.DueDate.Should().BeNull();
+        cleared.Metadata.Labels.Should().BeEmpty();
+
+        var clearedRetryResponse = await client.PostAsync($"/api/capture/items/{capture.Id}/triage", null);
+        clearedRetryResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var triaged = await WaitForCaptureStatusAsync(client, capture.Id, CaptureStatus.ProposalCreated);
+        var proposalId = triaged.Provenance!.ProposalId!.Value;
+
+        var cardsBeforeApproval = await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards");
+        cardsBeforeApproval.Should().BeEmpty("successful retry still requires review and explicit apply");
+
+        var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposalId}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var executeRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposalId}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var cards = await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards");
+        cards.Should().ContainSingle();
+        cards![0].Title.Should().Be("Buy milk");
+        cards[0].DueDate.Should().BeNull();
+        cards[0].Labels.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task MultiOperation_CaptureWithMultipleTasks_ShouldCreateMultipleCards()
     {
         using var client = _factory.CreateClient();

@@ -24,7 +24,16 @@ public record CaptureItemDto(
     int RetryCount,
     string? ErrorMessage = null,
     CaptureProvenanceV1? Provenance = null,
-    bool CanEditSuggestion = false);
+    bool CanEditSuggestion = false,
+    CaptureSuggestionMetadataDto? Metadata = null);
+
+/// <summary>
+/// User-authored capture metadata that remains inert until proposal approval and execution.
+/// Label names are resolved against the proposal board during triage; this contract never creates labels.
+/// </summary>
+public record CaptureSuggestionMetadataDto(
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null);
 
 public record CaptureItemSummaryDto(
     Guid Id,
@@ -103,8 +112,11 @@ public record BatchTriageResultDto(
     IReadOnlyList<BatchTriageItemResultDto> Results);
 
 /// <summary>
-/// Request payload for editing the suggestion text of a capture item before triage.
+/// Request payload for editing a capture suggestion before triage. Older clients omit
+/// <see cref="Metadata"/> and preserve the stored due date and labels. When supplied, the
+/// metadata object is a complete replacement: a null due date and empty/null labels clear them.
 /// </summary>
 public record UpdateCaptureSuggestionDto(
     string Text,
-    string? TitleHint = null);
+    string? TitleHint = null,
+    CaptureSuggestionMetadataDto? Metadata = null);

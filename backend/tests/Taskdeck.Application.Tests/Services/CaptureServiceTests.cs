@@ -112,6 +112,9 @@ public class CaptureServiceTests
         payloadJson.RootElement.GetProperty("provenance").TryGetProperty("labels", out _).Should().BeFalse();
         result.Value.RawText.Should().Be("quick capture text");
         result.Value.CanEditSuggestion.Should().BeTrue();
+        result.Value.Metadata.Should().NotBeNull();
+        result.Value.Metadata!.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        result.Value.Metadata.Labels.Should().Equal("shopping");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -1395,6 +1398,102 @@ public class CaptureServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.RawText.Should().Be("edited text");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldPreserveMetadata_WhenLegacyClientOmitsMetadata()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+                1,
+                CaptureSource.Typed,
+                "original text",
+                DueDate: new DateOnly(2026, 8, 23),
+                Labels: ["shoping"])));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto("legacy text edit"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Metadata.Should().NotBeNull();
+        result.Value.Metadata!.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        result.Value.Metadata.Labels.Should().Equal("shoping");
+        var persistedPayload = CaptureRequestContract.ParseStoredPayload(item.Payload);
+        persistedPayload.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        persistedPayload.Labels.Should().Equal("shoping");
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldReplaceMetadata_WhenMetadataIsPresent()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+                1,
+                CaptureSource.Typed,
+                "original text",
+                DueDate: new DateOnly(2026, 8, 23),
+                Labels: ["shoping"])));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto(
+                "corrected capture",
+                Metadata: new CaptureSuggestionMetadataDto(
+                    new DateOnly(2026, 8, 24),
+                    ["shopping"])));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Metadata.Should().NotBeNull();
+        result.Value.Metadata!.DueDate.Should().Be(new DateOnly(2026, 8, 24));
+        result.Value.Metadata.Labels.Should().Equal("shopping");
+        var persistedPayload = CaptureRequestContract.ParseStoredPayload(item.Payload);
+        persistedPayload.DueDate.Should().Be(new DateOnly(2026, 8, 24));
+        persistedPayload.Labels.Should().Equal("shopping");
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldClearMetadata_WhenPresentReplacementIsEmpty()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+                1,
+                CaptureSource.Typed,
+                "original text",
+                DueDate: new DateOnly(2026, 8, 23),
+                Labels: ["ambiguous"])));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto(
+                "capture without metadata",
+                Metadata: new CaptureSuggestionMetadataDto()));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Metadata.Should().NotBeNull();
+        result.Value.Metadata!.DueDate.Should().BeNull();
+        result.Value.Metadata.Labels.Should().BeEmpty();
+        var persistedPayload = CaptureRequestContract.ParseStoredPayload(item.Payload);
+        persistedPayload.DueDate.Should().BeNull();
+        persistedPayload.Labels.Should().BeEmpty();
     }
 
     [Fact]
