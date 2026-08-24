@@ -253,7 +253,31 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         var response = await client.PutAsync("/api/boards", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "HEAD", "POST"]);
+        // Exactly what /api/boards declares. Not "GET, HEAD, POST": routing's own header said that,
+        // built from the union of every method at the node, and both extra entries were wrong — HEAD
+        // is not served here at all (see HeadOnGetDeclaringApiRoute_Returns405WithoutAdvertisingHead)
+        // and GET/HEAD were the catch-all's methods, not the route's.
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+    }
+
+    [Fact]
+    public async Task HeadOnGetDeclaringApiRoute_Returns405WithoutAdvertisingHead()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_head_allow");
+
+        // Measured on .NET 8, not assumed: routing does NOT serve HEAD from a GET endpoint. A HEAD
+        // request against /api/boards (which declares GET and POST, and no [HttpHead] exists anywhere
+        // in Taskdeck) is not matched by the controller action — it falls through to the GET/HEAD
+        // machine fallback. So HEAD is genuinely not served here, and Allow must not name it: a 405
+        // whose Allow lists the method it just rejected sends a client that honours the header into a
+        // retry loop on the same 405 (RFC 9110 requires Allow to list methods the resource supports).
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/api/boards");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().NotContain("HEAD");
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
     }
 
     [Theory]

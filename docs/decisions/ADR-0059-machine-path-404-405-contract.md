@@ -39,9 +39,30 @@ request never sees the `POST` endpoint that shares its path.
 
 Paths under `PipelineConfiguration.NonSpaPathPrefixes` answer on one rule, for every verb:
 
-1. **A route exists at this path under some other verb → `405`**, with an `Allow` header listing the
-   methods that route declares (plus `HEAD` where it declares `GET`, which routing serves
-   implicitly). The body is empty, matching how the framework already answers `PUT /api/boards`.
+1. **A route exists at this path under some other verb → `405`**, with an `Allow` header listing
+   exactly the methods that route declares. The body is empty, matching how the framework already
+   answers `PUT /api/boards`.
+
+   **No `HEAD` is inferred from `GET`.** An earlier draft of this ADR asserted that routing "serves
+   `HEAD` implicitly" from a `GET` endpoint and added it to `Allow`. That was recorded as measured
+   fact and was never measured; it is false here. Measured on this app, .NET 8:
+
+   | Request | Result | What it establishes |
+   | --- | --- | --- |
+   | `GET /api/boards` (authenticated) | `200` | The `GET` action exists and serves. |
+   | `HEAD /api/boards` (authenticated) | `405`, `Allow: GET, POST` | Routing does not serve `HEAD` from that `GET` action. |
+   | `HEAD /api/boards` (anonymous) | `405` | The `AllowAnonymous` machine fallback matched `HEAD` — that is where it lands. |
+   | `PUT /api/boards` (anonymous) | `401` | Control: a verb the fallback does *not* accept reaches routing's 405 endpoint, which carries no `AllowAnonymous`, so the global `FallbackPolicy` answers first. The two paths are distinguishable, and `HEAD` takes the fallback. |
+
+   Taskdeck declares no `[HttpHead]` anywhere, so `HEAD` on a `GET`-declaring machine route is not
+   matched by that route at all. Inferring it produced `HEAD /api/boards` → `405` with
+   `Allow: GET, HEAD, POST`: a response advertising the very method it had just rejected, which sends
+   a client that honours `Allow` into a retry loop on the same 405. RFC 9110 requires `Allow` to name
+   the methods the resource supports. `HEAD` on such a route now answers `405` with
+   `Allow: GET, POST`, which is self-consistent.
+
+   Making `HEAD` actually work is deliberately out of scope here — that is new API surface, not a
+   correction to the 404/405 contract.
 2. **No route exists at this path under any verb → `404`** with the `ApiErrorResponse` contract
    (`errorCode`/`message`, `application/json`), and no `Allow` header.
 

@@ -103,14 +103,13 @@ internal sealed class MachineRouteMethodResolver
             return [];
         }
 
-        // Routing serves HEAD from a GET endpoint, so a route that declares GET also allows HEAD even
-        // when no endpoint spells it out. Advertising GET without HEAD would make the Allow header
-        // narrower than the surface actually is.
-        if (methods.Contains(HttpMethods.Get))
-        {
-            methods.Add(HttpMethods.Head);
-        }
-
+        // Reported exactly as declared: no HEAD is inferred from GET. Measured on .NET 8, and true of
+        // this app — routing does NOT serve HEAD from a GET endpoint, and Taskdeck declares no
+        // [HttpHead] anywhere, so a HEAD on a GET-declaring machine route is not matched by that route
+        // at all and falls through to the GET/HEAD machine fallback. Inferring HEAD here produced a 405
+        // whose Allow named HEAD — advertising the method the same response had just rejected, which
+        // sends a client that honours the header into a retry loop on the same 405. RFC 9110 requires
+        // Allow to list the methods the resource actually supports, and HEAD is not one of them.
         return [.. methods];
     }
 
