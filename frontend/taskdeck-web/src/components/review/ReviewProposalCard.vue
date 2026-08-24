@@ -251,6 +251,7 @@ async function copyTechnicalDetails() {
       :capture-href="captureHref"
       :proposal-href="proposalHref"
       :short-correlation-id="shortCorrelationId(proposal.correlationId)"
+      :read-only="props.readOnly"
       @open-board="$emit('open-board', $event)"
     />
 
