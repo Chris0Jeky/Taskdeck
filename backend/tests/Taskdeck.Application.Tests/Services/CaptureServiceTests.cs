@@ -21,6 +21,23 @@ public class CaptureServiceTests
     private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly CaptureService _service;
 
+    public static IEnumerable<object[]> InvalidCaptureLabels()
+    {
+        yield return [new[] { "" }, "empty values"];
+        yield return
+        [
+            new[] { new string('l', CaptureRequestContract.MaxLabelNameLength + 1) },
+            $"cannot exceed {CaptureRequestContract.MaxLabelNameLength}"
+        ];
+        yield return
+        [
+            Enumerable.Range(0, CaptureRequestContract.MaxLabelCount + 1)
+                .Select(index => $"label-{index}")
+                .ToArray(),
+            $"more than {CaptureRequestContract.MaxLabelCount}"
+        ];
+    }
+
     public CaptureServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
@@ -169,6 +186,29 @@ public class CaptureServiceTests
         result.ErrorMessage.Should().Be("Invalid capture source value");
         result.ErrorMessage.Should().NotContain(sensitiveSource);
         _llmQueueRepositoryMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaptureLabels))]
+    public async Task CreateAsync_ShouldRejectInvalidLabelsWithoutPersistence(
+        string[] labels,
+        string expectedMessage)
+    {
+        var userId = Guid.NewGuid();
+        var user = new User("capture-user", "capture-user@example.com", "hash");
+        var dto = new CreateCaptureItemDto(null, "quick capture text", Labels: labels);
+
+        _userRepositoryMock
+            .Setup(r => r.GetByIdAsync(userId, default))
+            .ReturnsAsync(user);
+
+        var result = await _service.CreateAsync(userId, dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(expectedMessage);
+        _llmQueueRepositoryMock.Verify(r => r.AddAsync(It.IsAny<LlmRequest>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]
@@ -1494,6 +1534,39 @@ public class CaptureServiceTests
         var persistedPayload = CaptureRequestContract.ParseStoredPayload(item.Payload);
         persistedPayload.DueDate.Should().BeNull();
         persistedPayload.Labels.Should().BeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaptureLabels))]
+    public async Task UpdateSuggestionAsync_ShouldRejectInvalidLabelsWithoutPersistence(
+        string[] labels,
+        string expectedMessage)
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+                1,
+                CaptureSource.Typed,
+                "original text",
+                Labels: ["original"])));
+        var originalPayload = item.Payload;
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto(
+                "attempted edit",
+                Metadata: new CaptureSuggestionMetadataDto(Labels: labels)));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(expectedMessage);
+        item.Payload.Should().Be(originalPayload);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
     [Fact]

@@ -53,6 +53,10 @@ public static class CaptureRequestContract
     public const int MaxTranscriptTextLength = 200_000;
     public const int MaxTitleHintLength = 240;
     public const int MaxExternalRefLength = 2_048;
+    // Keep capture metadata aligned with the Label domain invariant while bounding
+    // per-capture aggregation before triage fans labels out across task operations.
+    public const int MaxLabelNameLength = 30;
+    public const int MaxLabelCount = 100;
     public const int MaxPromptVersionLength = 64;
     public const int MaxProviderLength = 64;
     public const int MaxModelLength = 128;
@@ -240,11 +244,25 @@ public static class CaptureRequestContract
                 $"Capture external reference cannot exceed {MaxExternalRefLength} characters");
         }
 
+        if (payload.Labels?.Count > MaxLabelCount)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture labels cannot contain more than {MaxLabelCount} values");
+        }
+
         if (payload.Labels?.Any(string.IsNullOrWhiteSpace) == true)
         {
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
                 "Capture labels cannot contain empty values");
+        }
+
+        if (payload.Labels?.Any(label => label.Length > MaxLabelNameLength) == true)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture label names cannot exceed {MaxLabelNameLength} characters");
         }
 
         if (payload.Provenance?.PromptVersion?.Length > MaxPromptVersionLength)
