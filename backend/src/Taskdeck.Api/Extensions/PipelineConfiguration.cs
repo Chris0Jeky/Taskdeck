@@ -233,8 +233,9 @@ public static class PipelineConfiguration
         // before this change a typo'd, renamed, or removed API route answered 200 + index.html and
         // any caller that checks the status code saw a false success. These per-prefix fallbacks
         // carry a literal first segment, which outranks the SPA catch-all in route precedence, so
-        // an unmatched path under one of them terminates here with the API's JSON error contract
-        // (ApiErrorResponse, application/json) instead of the app shell.
+        // an unmatched path under one of them terminates here instead of at the app shell — with the
+        // API's JSON error contract (ApiErrorResponse, application/json) when no route exists there
+        // at all, or a 405 when one exists under another verb (#1992).
         //
         // Only *unmatched* paths reach a fallback: every real controller, hub, and MCP endpoint is
         // a non-fallback endpoint and still wins the match, so an unauthenticated request to an
@@ -260,12 +261,6 @@ public static class PipelineConfiguration
         // real endpoint exists at the path before choosing a status — routing cannot be asked, because
         // HttpMethodMatcherPolicy partitions the candidate set by verb inside the DFA, so the POST
         // endpoint is not visible from here.
-        //
-        // AllowAnonymous is deliberate: an unknown path has no resource to protect, and without it
-        // the global FallbackPolicy would answer anonymous callers with 401 — re-hiding the "this
-        // endpoint does not exist" signal behind an auth error for exactly the unauthenticated
-        // scripts and probes this issue is about. The cost is that route existence is discoverable
-        // (404 vs 401) without credentials, which the OpenAPI document already publishes.
         //
         // ExcludeFromDescription keeps them out of the OpenAPI document. Swashbuckle discovers
         // route-mapped endpoints, so without it these catch-alls are published as real GET operations
