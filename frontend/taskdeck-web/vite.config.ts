@@ -36,7 +36,24 @@ export default defineConfig({
         // SPA fallback: serve index.html for navigation requests to unmatched
         // routes (e.g. deep links like /workspace/boards/xyz when offline).
         navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/health(?:[/?]|$)/, /^\/hubs(?:[/?]|$)/, /^\/mcp/],
+        // Machine-facing prefixes never get the app shell. An installed PWA answers a
+        // NAVIGATION from its own cache before the request leaves the browser, so without
+        // these an offline (or merely slow-to-revalidate) client would see index.html for a
+        // path the backend owns — the browser-side twin of the SPA-fallback defect fixed in
+        // #1971. Workbox tests these against `pathname + search`, hence the `[/?]` branch.
+        //
+        // Kept in the same `^/<prefix>(?:/|$)` shape the reverse proxy uses for the identical
+        // four prefixes (deploy/nginx/reverse-proxy.conf, checked by
+        // scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1), so the two layers agree on where
+        // the machine surface starts and ends: the bare prefix and its descendants are machine
+        // paths, `/apidocs` and `/mcpx` are not. Behaviour is pinned by
+        // src/tests/config/PwaMachinePathDenylist.spec.ts (#1992).
+        navigateFallbackDenylist: [
+          /^\/api(?:[/?]|$)/,
+          /^\/health(?:[/?]|$)/,
+          /^\/hubs(?:[/?]|$)/,
+          /^\/mcp(?:[/?]|$)/,
+        ],
         // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
         // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
