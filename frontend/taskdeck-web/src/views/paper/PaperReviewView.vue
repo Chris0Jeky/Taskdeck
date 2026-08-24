@@ -63,6 +63,7 @@ import type {
 const {
   proposals,
   proposalsLoading,
+  unavailableProposalId,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -1376,6 +1377,11 @@ function selectProposal(id: string) {
   openProposal(id)
 }
 
+function returnToReview() {
+  if (!unavailableProposalId.value) return
+  void clearProposalDeepLink(unavailableProposalId.value)
+}
+
 function onQueueFilterChange(filter: QueueFilter) {
   const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
   queueFilter.value = filter
@@ -1595,7 +1601,22 @@ function onQueueFilterChange(filter: QueueFilter) {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="activeBoardFilter">
+      <template v-if="unavailableProposalId">
+        <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
+        <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
+        <p class="tk-lede">
+          {{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
+        </p>
+        <button
+          type="button"
+          class="paper-review-deep__clear-scope"
+          data-testid="paper-review-unavailable-return"
+          @click="returnToReview"
+        >
+          {{ $t('review.empty.unavailable.return') }}
+        </button>
+      </template>
+      <template v-else-if="activeBoardFilter">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.scoped.title', { scope: boardScopeLabel }) }}</h2>
         <p class="tk-lede">{{ $t('review.empty.scoped.body') }}</p>
