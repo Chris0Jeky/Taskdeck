@@ -366,8 +366,8 @@ jobs:
           cp LICENSE "${stage}/LICENSE"
           cp RELICENSING.md "${stage}/RELICENSING.md"
           cp LICENSES/MIT.txt "${stage}/LICENSES/MIT.txt"
-          cp LICENSES/Apache-2.0-material-symbols-font-400.txt \
-            "${stage}/LICENSES/Apache-2.0-material-symbols-font-400.txt"
+          cp LICENSES/Apache-2.0-material-symbols-font-200.txt \
+            "${stage}/LICENSES/Apache-2.0-material-symbols-font-200.txt"
 
           # Swagger can consume XML docs in source/developer builds, but release users do not
           # need build-host symbols, IIS scaffolding, or Development configuration.
@@ -392,7 +392,7 @@ jobs:
         run: |
           LICENCE="publish/${{ matrix.rid }}/LICENSE"
           MIT_NOTICE="publish/${{ matrix.rid }}/LICENSES/MIT.txt"
-          MATERIAL_SYMBOLS_LICENSE="publish/${{ matrix.rid }}/LICENSES/Apache-2.0-material-symbols-font-400.txt"
+          MATERIAL_SYMBOLS_LICENSE="publish/${{ matrix.rid }}/LICENSES/Apache-2.0-material-symbols-font-200.txt"
           if [ ! -f "$LICENCE" ] || ! grep -q "GNU GENERAL PUBLIC LICENSE" "$LICENCE"; then
             echo "::error::GPLv3 licence missing from the desktop distribution"
             exit 1
@@ -405,7 +405,7 @@ jobs:
             echo "::error::Material Symbols Apache-2.0 licence missing from the desktop distribution"
             exit 1
           fi
-          if ! cmp -s LICENSES/Apache-2.0-material-symbols-font-400.txt "$MATERIAL_SYMBOLS_LICENSE"; then
+          if ! cmp -s LICENSES/Apache-2.0-material-symbols-font-200.txt "$MATERIAL_SYMBOLS_LICENSE"; then
             echo "::error::Material Symbols licence does not match the reviewed source copy"
             exit 1
           fi
@@ -425,7 +425,7 @@ jobs:
             'LICENSE'
             'RELICENSING.md'
             'LICENSES/MIT.txt'
-            'LICENSES/Apache-2.0-material-symbols-font-400.txt'
+            'LICENSES/Apache-2.0-material-symbols-font-200.txt'
           )
           for relative_path in "${required[@]}"; do
             if [ ! -f "${stage}/${relative_path}" ]; then
