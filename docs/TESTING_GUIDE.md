@@ -70,8 +70,13 @@ Explorer/SmartScreen acceptance remain unverified.
 - A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
   `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
   font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
-- Issue `#2035` remains open only for Material Symbol size/weight parity and this documentation
-  reconciliation. The separate packaged `manifest.webmanifest` CSP refusal is tracked in `#2045`.
+- The visual-parity follow-up pins the local Material Symbols 200 face and removes the package's
+  unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
+  `text-base` close and topbar icons at 16px/200, and offline/update/queue icons at 18px/200; the
+  probed ligatures remained visible and the font request stayed same-origin.
+  `PaperBranding.spec.ts`, the production build, scoped lint, release/Pages licence contracts, docs
+  governance, and diff hygiene cover the static seam. The separate packaged
+  `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
 ## 2026-08-24 v0.1.2 Priority I partial verification map
 
