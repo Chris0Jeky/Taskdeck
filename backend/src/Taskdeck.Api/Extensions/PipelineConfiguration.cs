@@ -224,6 +224,26 @@ public static class PipelineConfiguration
                 return;
             }
 
+            // Only correct a 405 this pipeline itself manufactured: routing's synthetic
+            // method-mismatch endpoint (or its AllowAnonymous replacement above, which keeps the
+            // framework display name) and the GET/HEAD machine fallbacks below. A real endpoint
+            // that answers 405 on its own owns that answer. Measured (2026-08-25): the MCP
+            // transport's wrong-verb 405 survives even without this guard, because that response
+            // has started by the time this middleware resumes — but that immunity is incidental to
+            // how the SDK writes its response, so the scope is pinned here rather than borrowed
+            // from it, held by WrongVerbOnRealMcpEndpoint_KeepsItsOwn405_WithValidApiKey.
+            var respondingEndpoint = context.GetEndpoint();
+            var isSyntheticMethodMismatch =
+                respondingEndpoint is not null &&
+                respondingEndpoint is not RouteEndpoint &&
+                string.Equals(respondingEndpoint.DisplayName, Http405EndpointDisplayName, StringComparison.Ordinal);
+            var isMachineFallback =
+                respondingEndpoint?.Metadata.GetMetadata<MachinePathFallbackMetadata>() is not null;
+            if (!isSyntheticMethodMismatch && !isMachineFallback)
+            {
+                return;
+            }
+
             var declaredMethods = machineRouteMethods.GetDeclaredMethods(context);
             if (declaredMethods.Count == 0)
             {

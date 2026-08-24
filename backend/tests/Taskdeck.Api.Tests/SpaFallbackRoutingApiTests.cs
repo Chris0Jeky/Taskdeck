@@ -221,6 +221,37 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
             "an authenticated MCP client must never be handed the app shell for an unknown path (#1971)");
     }
 
+    [Fact]
+    public async Task WrongVerbOnRealMcpEndpoint_KeepsItsOwn405_WithValidApiKey()
+    {
+        // The MCP transport maps a method-unconstrained route and answers unsupported verbs with
+        // its own 405. The resolver deliberately reports no declared methods for such a route, so
+        // the correction middleware must not treat that legitimate 405 as a missing-route 404 — it
+        // only corrects the 405s this pipeline itself manufactured (the synthetic method-mismatch
+        // endpoint and the machine fallbacks).
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "spa_fallback_mcp_verb");
+
+        using var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("SPA fallback MCP verb key"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        using var mcpClient = _factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, "/mcp");
+        var response = await mcpClient.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(
+            HttpStatusCode.NotFound,
+            "the real MCP endpoint exists — its wrong-verb answer must not be rewritten to the missing-route 404");
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
     [Theory]
     [InlineData("/api/definitely-not-a-real-endpoint-hzn")]
     [InlineData("/hubs/definitely-not-a-real-hub")]

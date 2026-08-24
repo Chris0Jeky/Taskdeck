@@ -53,7 +53,7 @@ Paths under `PipelineConfiguration.NonSpaPathPrefixes` answer on one rule, for e
    | `GET /api/boards` (authenticated) | `200` | The `GET` action exists and serves. |
    | `HEAD /api/boards` (authenticated) | `405`, `Allow: GET, POST` | Routing does not serve `HEAD` from that `GET` action. |
    | `HEAD /api/boards` (anonymous) | `405` | The `AllowAnonymous` machine fallback matched `HEAD` — that is where it lands. |
-   | `PUT /api/boards` (anonymous) | `401` | Control: a verb the fallback does *not* accept reaches routing's 405 endpoint, which carries no `AllowAnonymous`, so the global `FallbackPolicy` answers first. The two paths are distinguishable, and `HEAD` takes the fallback. |
+   | `PUT /api/boards` (anonymous) | `405`, `Allow: GET, POST` | A verb the fallback does *not* accept reaches routing's synthetic 405 endpoint; the shipped pipeline replaces that metadata-less endpoint with an `AllowAnonymous` equivalent on machine paths, so the wrong-verb answer is verb-independent for anonymous callers. (Before that replacement this measured `401` — the global `FallbackPolicy` answered first — which is what distinguished the two paths and proved `HEAD` takes the fallback.) |
 
    Taskdeck declares no `[HttpHead]` anywhere, so `HEAD` on a `GET`-declaring machine route is not
    matched by that route at all. Inferring it produced `HEAD /api/boards` → `405` with
