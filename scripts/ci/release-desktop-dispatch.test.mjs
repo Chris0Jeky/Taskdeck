@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035
 // =============================================================================
 //
 // Two classes of check:
@@ -28,12 +28,16 @@ const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
 const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
 const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
+const materialSymbolsLicensePath = fileURLToPath(
+  new URL('../../LICENSES/Apache-2.0-material-symbols-font-400.txt', import.meta.url),
+)
 // Normalised to LF: a Windows checkout with core.autocrlf=true would otherwise
 // break every structural assertion for a reason that has nothing to do with the
 // workflow's content.
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
 const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
 const archiveHarness = readFileSync(archiveHarnessPath, 'utf8').replace(/\r\n/g, '\n')
+const materialSymbolsLicense = readFileSync(materialSymbolsLicensePath, 'utf8').replace(/\r\n/g, '\n')
 
 const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
 
@@ -342,6 +346,16 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
     /cmp -s docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
     'the archive copy must be byte-identical to the reviewed source guide',
   )
+  assert.match(
+    job,
+    /cp LICENSES\/Apache-2\.0-material-symbols-font-400\.txt[\s\\]+"\$\{stage\}\/LICENSES\/Apache-2\.0-material-symbols-font-400\.txt"/,
+  )
+  assert.match(
+    job,
+    /cmp -s LICENSES\/Apache-2\.0-material-symbols-font-400\.txt "\$MATERIAL_SYMBOLS_LICENSE"/,
+    'the archived third-party licence must be byte-identical to the reviewed source copy',
+  )
+  assert.match(materialSymbolsLicense, /Apache License\s+Version 2\.0, January 2004/)
 
   for (const required of [
     'Taskdeck.Api.exe',
@@ -351,6 +365,7 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
     'LICENSE',
     'RELICENSING.md',
     'LICENSES/MIT.txt',
+    'LICENSES/Apache-2.0-material-symbols-font-400.txt',
   ]) {
     assert.ok(job.includes(`'${required}'`), `workflow does not require ${required}`)
   }

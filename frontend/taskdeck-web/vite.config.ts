@@ -69,23 +69,6 @@ export default defineConfig({
             },
           },
           {
-            // Compatibility cache for the sole remaining Google Fonts stylesheet.
-            // Packaged API CSP blocks this origin; permissive development contexts
-            // use it for existing Material Symbols ligatures until they are local.
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\//i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'google-fonts-stylesheets',
-              expiration: {
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
-                maxEntries: 10,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
             // CacheFirst for static assets (fonts, images, icons)
             urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i,
             handler: 'CacheFirst',
