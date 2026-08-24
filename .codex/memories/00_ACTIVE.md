@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-08-01
+Last updated: 2026-08-24
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -8,7 +8,8 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 - Tier and push/merge authority: `.agent-harness/tier.json` (re-read live; do not infer authority from this summary)
 - Current shipped state: `docs/STATUS.md`
-- Roadmap and sequencing: `docs/IMPLEMENTATION_MASTERPLAN.md`
+- Active release/wave sequencing: `docs/REVIVAL_PLAN.md`
+- Broader delivery/planning record: `docs/IMPLEMENTATION_MASTERPLAN.md`
 - Stable invariants: `docs/GOLDEN_PRINCIPLES.md`
 - Dependency-aware issue execution: `docs/ISSUE_EXECUTION_GUIDE.md`
 - Testing operations: `docs/TESTING_GUIDE.md`
@@ -19,9 +20,24 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 ## Current Focus Snapshot
 
-**Direction (2026-07-10 revival pivot, ADR-0044; extended by ADR-0046 and ADR-0051):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md`: the ratified REVIVAL/GEN waves remain the product spine, while ADR-0051 permits a bounded autonomous queue of acceptance-ready tracked backlog (maximum four `Now`, eight `Next`) without another owner decision. The v0.1 ship gate retains top product priority, the 2026-06-13 archive pivot remains only the traction-checkpoint fallback, and new product surface still requires plan or Accepted-ADR authority. Merge authority is read live from `.agent-harness/tier.json`; CODEOWNERS is advisory routing rather than a blanket human gate. The project thesis remains unchanged:
+**Direction (2026-08-24 checkpoint; ADR-0044 extended by ADR-0046 and ADR-0051):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md`: the ratified REVIVAL/GEN waves remain the product spine, while ADR-0051 permits a bounded autonomous queue of acceptance-ready tracked backlog (maximum four `Now`, eight `Next`) without another owner decision. The v0.1.2 Honest Windows Beta correction is the immediate ship gate; the 2026-06-13 archive pivot remains only the traction-checkpoint fallback, and new product surface still requires plan or Accepted-ADR authority. Merge authority is read live from `.agent-harness/tier.json`; CODEOWNERS is advisory routing rather than a blanket human gate. The project thesis remains unchanged:
 
-**Delivery checkpoint (2026-08-01):** PR `#1556` shipped the durable Transcript persistence/export/deletion foundation but intentionally left `#1305` open for linkage, spans, provenance API, and Paper deep links. PRs `#1558` and `#1559` closed `#1354` (MCP create-card column canonicalization) and `#1520` (fail-closed hosted PostgreSQL evidence). Read `docs/STATUS.md` and `docs/REVIVAL_PLAN.md` for the current boundary before selecting the next slice.
+**Delivery checkpoint (2026-08-24):** exact main is `55dbf6e140a0af9df8ef99acdc613fb4b1e5e03a`. The latest bounded wave merged PRs `#2058`, `#2063`, `#2065`, `#2066`, `#2067`, `#2068`, `#2069`, and `#2070`: capture metadata now survives review/recovery; the proxy contract runs in required container CI; Legacy diff identity and mismatched deep links cannot silently expose another proposal; toast remounts do not replay announcer content; modified key handlers cannot satisfy the button guard; and Review retains truthful board-scoped decision receipts. No v0.1.2 tag or release exists.
+
+**Saved next-session heads (not shipped):**
+
+- `origin/issue-1949/directive-attribute-tokenization` → `d89bd7cc383a79b4384134fa520b96629c0d3038`
+- `origin/issue-1967/applied-read-only-detail` → `010021a7455d54395105e6e388c79a1b765a29ff`
+
+Both are one clean commit over `55dbf6e14`, have no open PR, and need a refreshed exact-head review/hosted gate. The applied-detail slice additionally needs full frontend or Playwright/manual browser evidence.
+
+**Exact continuation order:**
+
+1. Refresh Git, GitHub, ProjectV2, CI, review threads, and worktrees; live state outranks this checkpoint.
+2. Publish/review the saved `#1949` tokenizer head, then disposition the remaining runtime/a11y/dead-keystroke guard scope.
+3. Independently review and publish the saved `#1967` applied-detail head; run its exact keyboard/read-only browser seam.
+4. Run one final synthetic desktop capture → approved receipt → explicit Apply → exactly-one-card journey on the resulting main.
+5. Reconcile open milestone issues `#1242`, `#1938`, `#1940`, `#1947`, `#1949`, `#1967`, `#1973`, `#1992`, and `#2004`. Never infer the human/owner gates: `#1242` acceptance, `#1973` archive contract, `#1992` 404-vs-405 contract, `#2004` chat contract, ≥10 dogfooding days (not before 2026-09-01), or maintainer release-deck acceptance.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved

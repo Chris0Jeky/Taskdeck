@@ -78,7 +78,7 @@ Explorer/SmartScreen acceptance remain unverified.
   governance, and diff hygiene cover the static seam. The separate packaged
   `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
-## 2026-08-24 v0.1.2 Priority I partial verification map
+## 2026-08-24 v0.1.2 Priority I partial verification map (through main `55dbf6e14`)
 
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
@@ -91,28 +91,51 @@ Explorer/SmartScreen acceptance remain unverified.
   alongside typecheck, production build, scoped lint, exact-base hosted CI, dynamic E2E, and a
   fresh adversarial review. The retained-editor DOM/draft path is covered; the page-count and
   same-scope refresh-error residuals remain tracked by `#2022` and `#2044`.
-- `#1938`/PRs `#2023` and `#2033`: the capture-recovery slice's pre-final full frontend run passed
+- `#1938`/PRs `#2023`, `#2033`, and `#2067`: the capture-recovery slice's pre-final full frontend run passed
   4,725 tests and its final seam passed 50 targeted tests; the shared receipt slice passed 63 focused
   tests and the full 4,737-test frontend suite, then 17 Paper-dismiss and 76 refreshed-base focused
   tests. Both passed typecheck, build, lint, exact-head hosted CI, and bounded review; `#2033` also
-  passed dynamic Playwright after its base refresh. No pinned-build/manual reproduction of the
-  original intermittent failure is claimed.
-- `#1949`/PRs `#2027`, `#2032`, `#2038`, and `#2055`: the native-button slice passed 10
+  passed dynamic Playwright after its base refresh. The remount-announcement successor passed 30
+  focused Legacy/Paper toast tests, typecheck, scoped lint, diff hygiene, hosted CI, and two bounded
+  review rounds. On exact main, a manually injected persistent toast survived a Paper-to-Legacy
+  remount while the announcer remained empty. Actual screen-reader speech and a pinned-build
+  reproduction of the original intermittent failure were not verified.
+- `#1949`/PRs `#2027`, `#2032`, `#2038`, `#2055`, and `#2068`: the native-button slice passed 10
   dead-affordance guard cases; the labelled-control slice passed 12 focused cases and the full
   4,734-test frontend suite. The two keyboard-parser slices each passed 13 focused guard cases,
-  typecheck, scoped lint, and diff hygiene; the final exact head also passed hosted CI and fresh
-  review. This remains source-level proof, not runtime walking of every control or keystroke;
-  dynamic/compiler-expanded binding and parser-hardening residuals remain on the open parent issue.
-- `#1992`/PRs `#2029` and `#2030`: the PWA denylist regression and full hosted gate passed; the
+  typecheck, scoped lint, and diff hygiene; the final merged head also passed hosted CI and fresh
+  review. The latest slice rejects Ctrl/Alt/Shift/Meta-modified Enter/Space while accepting canonical
+  lowercase handlers with benign modifiers. This remains source-level proof, not runtime walking of
+  every control or keystroke; dynamic/compiler-expanded bindings remain on the open parent issue.
+- `#1992`/PRs `#2029`, `#2030`, and `#2065`: the PWA denylist regression and full hosted gate passed; the
   proxy slice passed static/rendered-template parity, real nginx 1.27 configuration validation,
   Terraform dev/staging/prod baselines, exact-head hosted CI, dynamic Playwright smoke, and a fresh
-  integration review. A live split-container request and MCP SSE stream were not exercised.
-- `#1967`/PRs `#2034` and `#2056`: the canonical-identity slice passed 263 focused proposal/review
+  integration review. Required container CI now executes the same reverse-proxy contract before
+  image work. A live split-container request and MCP SSE stream were not exercised.
+- `#1967`/PRs `#2034`, `#2056`, `#2066`, and `#2070`: the canonical-identity slice passed 263 focused proposal/review
   tests, typecheck, build, lint/diff hygiene, exact-head hosted CI including dynamic Playwright,
   automatic review, an independent full-diff review, and a clean P1 fix-diff review. The missing
   Paper deep-link slice then passed 187 focused tests, typecheck, build, quiet lint, diff hygiene,
-  hosted CI, and bounded review. The broader applied-proposal detail journey and the recorded
-  remaining stale/terminal-hash and diff-pane residuals remain unverified on open `#1967`.
+  hosted CI, and bounded review. Legacy diff casing added 14 focused passing cases. The mismatched-
+  response slice passed 192 focused tests, typecheck, scoped lint, production build, diff hygiene,
+  and fresh exact-head review; its hosted head completed 21 successful check runs, including E2E
+  Smoke, with 11 intentional skips and no failure or pending check. Applied-proposal read-only detail
+  and the remaining stale/terminal lifecycle cases stay open on `#1967`.
+- `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
+  race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
+  Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
+  including full E2E, completed successfully. The browser checks prove the explicit receipt -> Apply
+  transition; they do not close the progressive-disclosure, All/Mine, focus, or lifecycle residuals.
+- **Prepared but unshipped checkpoints:** `origin/issue-1949/directive-attribute-tokenization`
+  (`d89bd7cc3`) passed 13 guard tests, typecheck, scoped lint, and diff hygiene after rebasing onto
+  `55dbf6e14`. `origin/issue-1967/applied-read-only-detail` (`010021a745`) passed 186 focused tests,
+  16 locale-catalog tests, typecheck, scoped lint, production build, and diff hygiene on the same
+  base. Neither has an open PR or hosted exact-head gate. The applied-detail slice has not run the
+  full frontend suite, Playwright/native-button keyboard journey, live backend, or packaged desktop.
+- **Final-main manual release seam still owed:** after the prepared slices are dispositioned, run one
+  synthetic desktop capture -> approved receipt -> explicit Apply -> exactly-one-card board journey
+  on the resulting exact main. No post-`55dbf6e14` no-publish Windows candidate or packaged manual
+  journey is claimed here.
 - `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
   hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
   exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
