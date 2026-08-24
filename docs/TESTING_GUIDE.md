@@ -37,8 +37,32 @@ Implementation checkpoint: PR `#2016` merged as `909e33f9`. Application 56/56, A
 archive Python 35/35, architecture 26 passed + 1 intentional skip, release contract 61/61,
 an actual marked-package diagnostic, and the full backend solution (8,094 passed + 5 intentional
 skips) passed locally. Exact-head hosted Required CI, dynamic Playwright smoke, and bounded review
-also passed. No-publish rehearsal, v0.1.2 tag, unchanged public-artifact proof, and manual ordinary-
-profile Explorer/SmartScreen acceptance remain unverified.
+also passed. Exact-main no-publish and isolated synthetic Mock core-loop evidence is recorded below;
+the v0.1.2 tag, unchanged public-artifact proof, inherited-profile migration, and ordinary-profile
+Explorer/SmartScreen acceptance remain unverified.
+
+## 2026-08-24 exact-main Windows candidate rehearsal
+
+- Blank-tag Release Desktop run [`32679854224`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32679854224)
+  resolved exact main `789cad4d0b78e4592cc3725a84cfb7845a5a47b3`, built and tested the untouched
+  Windows x64 ZIP, uploaded `release-win-x64`, and skipped `Create GitHub Release` as intended.
+- The downloaded `taskdeck-v0.0.0-dryrun+789cad4-win-x64.zip` matched its sidecar at SHA-256
+  `334707099073a8b656aa496e47afe520179c0578cadc78097a2d22de4b5103f2` before and after the
+  manual journey.
+- The packaged EXE launched from an unrelated working directory with isolated synthetic
+  `%LOCALAPPDATA%` and no inherited provider/API-key/configuration overrides. It emitted the data,
+  bootstrap, and ready markers at `http://127.0.0.1:5000`; a fresh local account then registered,
+  created a Personal Kanban board, captured and triaged a board-linked task, reviewed it, and
+  approved it. A separate board tab still showed one card after approval. Only the explicit
+  `Apply to board` confirmation changed the board to two cards. Console control then produced both
+  documented safe-stop markers and the process exited.
+- This proves the isolated deterministic-Mock package/core-loop boundary. It does **not** prove an
+  Explorer extraction/double-click path, SmartScreen behavior, inherited user-profile retired-
+  provider migration, a live OpenAI call, a signed/public v0.1.2 artifact, or another machine.
+- Chrome reported a non-blocking visual regression: the production CSP omits `font-src`, so bundled
+  Paper WOFF2 resources fall back to `default-src 'none'`; stale Google Font stylesheet links are
+  also blocked by `style-src 'self'`. Issue `#2035` is the Priority II successor and does not expand
+  the Priority I-defined v0.1.2 tranche.
 
 ## 2026-08-24 v0.1.2 Priority I partial verification map
 
