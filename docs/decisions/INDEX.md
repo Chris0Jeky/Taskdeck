@@ -58,7 +58,7 @@
 | [0054](ADR-0054-i18n-vue-i18n-surface-by-surface.md) | Internationalization — `vue-i18n` in Composition Mode, Per-Surface Catalogs, Surface-by-Surface Rollout | Accepted | 2026-08-19 |
 | [0055](ADR-0055-openai-only-live-provider-surface.md) | Collapse Supported Live LLM Configuration to OpenAI | Accepted | 2026-08-20 |
 | [0056](ADR-0056-direct-human-board-editing-first-class.md) | Direct Human Board Editing Is First-Class; the Proposal Loop Governs Non-Human Actors | Accepted | 2026-08-22 |
-| [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Proposed (awaiting maintainer ratification; review-first remains operative) | 2026-08-23 |
+| [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Accepted (maintainer ruling 2026-08-24 with an openness caveat; review-first operative until separately gated implementation) | 2026-08-23 |
 | [0058](ADR-0058-due-dates-are-calendar-days.md) | Due Dates Are Calendar Days | Accepted | 2026-08-24 |
 | [0059](ADR-0059-machine-path-404-405-contract.md) | Machine-Facing Paths Answer 405 for a Wrong Verb and 404 Only for a Missing Route | Accepted (maintainer ruling 2026-08-24, recorded on `#1992`) | 2026-08-24 |
 

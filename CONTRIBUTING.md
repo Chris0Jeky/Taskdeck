@@ -1,5 +1,13 @@
 # Contributing to Taskdeck
 
+> **External code contributions are paused (maintainer decision, 2026-08-24).** The maintainer is
+> evaluating the project's long-term licensing, including the possibility that future versions —
+> or a product derived from this codebase — are offered under a commercial/proprietary license.
+> Until that is settled and stated here, unsolicited pull requests will be closed without review.
+> **Issues and bug reports remain welcome.** Existing releases keep their stated licenses (see
+> [LICENSING.md](LICENSING.md)); the decision record and the supporting contribution audit live on
+> [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012).
+
 Thanks for your interest in Taskdeck. This file is a friendly onramp for new
 contributors: how to get the code running locally, how to run tests, how we
 write commits, and how PRs flow through review.

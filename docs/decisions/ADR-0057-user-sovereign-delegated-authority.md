@@ -1,10 +1,13 @@
 # ADR-0057: User-Sovereign Delegated Authority for Automation
 
-- **Status**: Proposed (NOT in force — GP-06, ADR-0003, ADR-0017, and ADR-0056 remain fully
-  operative until the maintainer accepts this ADR; no auto-approval surface may be built before
-  acceptance)
-- **Date**: 2026-08-23
-- **Deciders**: pending maintainer ratification. Drafted from the maintainer's 2026-08
+- **Status**: Accepted (ratified by the maintainer in-session on 2026-08-24 — guided-walkthrough
+  reply q-7 A, recorded on `#2011` — **with an explicit openness caveat**: the thesis remains open
+  to adjustment as the product's workflow and its perceived trust factor evolve, and amending or
+  superseding this ADR on real dogfooding/beta evidence is the intended path, not an exception.
+  GP-06, ADR-0003, ADR-0017, and ADR-0056 remain fully operative until any implementation is
+  separately gated; no auto-approval surface may be built without that separate gate.)
+- **Date**: 2026-08-23 (accepted 2026-08-24)
+- **Deciders**: Chris0Jeky (maintainer). Drafted from the maintainer's 2026-08
   decision-studio export (Q12 "user-selectable full autonomy", Q13 "auto-apply meaning is
   user-defined per project/board", Q32 "full agent runtime as the foundation, access stripped by
   the user", Q34 "granular scoped keys behind presets") via the 2026-08-23 realignment brief.
