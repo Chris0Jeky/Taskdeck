@@ -114,6 +114,69 @@ describe('useWorkspaceCollaboration', () => {
     expect(collaboration.isSoloWorkspace.value).toBe(false)
   })
 
+  it('rejects a self-contradicting payload that claims two members but no collaborators', async () => {
+    // Trusting the boolean here would hide All/Mine on a workspace the same
+    // payload says has two members.
+    mocks.getCollaboration.mockResolvedValueOnce({ memberCount: 2, hasCollaborators: false })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+    expect(collaboration.isSoloWorkspace.value).toBe(false)
+  })
+
+  it('rejects a self-contradicting payload that claims one member and collaborators', async () => {
+    mocks.getCollaboration.mockResolvedValueOnce({ memberCount: 1, hasCollaborators: true })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+    expect(collaboration.isMembershipKnown.value).toBe(false)
+  })
+
+  it('rejects a member count below the documented minimum of one', async () => {
+    mocks.getCollaboration.mockResolvedValueOnce({ memberCount: 0, hasCollaborators: false })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+    expect(collaboration.isSoloWorkspace.value).toBe(false)
+  })
+
+  it('rejects a negative member count', async () => {
+    mocks.getCollaboration.mockResolvedValueOnce({ memberCount: -1, hasCollaborators: false })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+  })
+
+  it('rejects a non-integer member count', async () => {
+    mocks.getCollaboration.mockResolvedValueOnce({ memberCount: 1.5, hasCollaborators: true })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+    expect(collaboration.isSoloWorkspace.value).toBe(false)
+  })
+
+  it('rejects a non-finite member count', async () => {
+    mocks.getCollaboration.mockResolvedValueOnce({
+      memberCount: Number.POSITIVE_INFINITY,
+      hasCollaborators: true,
+    })
+
+    const collaboration = useWorkspaceCollaboration()
+    await collaboration.refresh()
+
+    expect(collaboration.state.value).toBe('unavailable')
+  })
+
   it('drops a previously known solo answer when a later refresh fails', async () => {
     mocks.getCollaboration.mockResolvedValueOnce({ memberCount: 1, hasCollaborators: false })
     mocks.getCollaboration.mockRejectedValueOnce(new Error('offline'))

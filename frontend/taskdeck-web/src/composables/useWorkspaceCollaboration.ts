@@ -19,14 +19,25 @@ export type CollaborationState = 'idle' | 'loading' | 'ready' | 'unavailable'
 /** Minimum gap between opportunistic refreshes, so a tab-switch storm cannot hammer the API. */
 export const COLLABORATION_REFRESH_THROTTLE_MS = 30_000
 
-function isWorkspaceCollaboration(value: unknown): value is WorkspaceCollaboration {
+/**
+ * Accepts a payload only when it is both well-typed AND internally consistent
+ * with the documented contract: `memberCount` is a whole number of at least 1
+ * (the caller always counts), and `hasCollaborators` is exactly
+ * `memberCount > 1`.
+ *
+ * A well-typed but self-contradicting answer such as
+ * `{ memberCount: 2, hasCollaborators: false }` must not be trusted: taking the
+ * boolean at face value would hide All/Mine on a workspace the same payload
+ * says has two members. Anything that fails here is reported as unknown, which
+ * fails open.
+ */
+function isConsistentCollaboration(value: unknown): value is WorkspaceCollaboration {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Partial<WorkspaceCollaboration>
-  return (
-    typeof candidate.hasCollaborators === 'boolean' &&
-    typeof candidate.memberCount === 'number' &&
-    Number.isFinite(candidate.memberCount)
-  )
+  if (typeof candidate.hasCollaborators !== 'boolean') return false
+  if (typeof candidate.memberCount !== 'number') return false
+  if (!Number.isInteger(candidate.memberCount) || candidate.memberCount < 1) return false
+  return candidate.hasCollaborators === (candidate.memberCount > 1)
 }
 
 /**
@@ -74,7 +85,7 @@ export function useWorkspaceCollaboration() {
     inFlight = (async () => {
       try {
         const payload = await workspaceApi.getCollaboration()
-        if (!isWorkspaceCollaboration(payload)) {
+        if (!isConsistentCollaboration(payload)) {
           markUnknown()
           return
         }

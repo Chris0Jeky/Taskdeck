@@ -201,15 +201,46 @@ const filteredVisibleProposals = computed(() => {
 })
 
 /**
+ * Whether the rendered queue still holds a record authored by somebody other
+ * than this reviewer — that is, something "Mine" can actually isolate.
+ *
+ * This is a PRESERVE-visibility guard, never the membership source, so it does
+ * not breach the recorded #1940 assumption against deriving filter visibility
+ * from proposal authors. The server contract stays the sole prerequisite for
+ * ever WITHDRAWING the pair; authorship may only keep on screen a control that
+ * membership alone would have removed, which is the fail-open direction.
+ *
+ * It is needed because revoking a collaborator's board access deletes the
+ * access row but leaves their proposals on the board, so the workspace can
+ * legitimately report solo while a departed author's records are still
+ * rendered and "Mine" still means something.
+ *
+ * Deliberately reads the pre-filter `visibleProposals`: keying it on the
+ * filtered queue would make selecting "Mine" remove the foreign rows, withdraw
+ * the pair, fall back to "All", and oscillate.
+ */
+const queueHasForeignAuthoredProposal = computed(
+  () =>
+    !!session.userId &&
+    visibleProposals.value.some(
+      (proposal) =>
+        !!proposal.requestedByUserId && proposal.requestedByUserId !== session.userId,
+    ),
+)
+
+/**
  * Whether the queue rail may offer the author partition ("All" vs "Mine").
  *
- * Sourced only from the server-computed collaboration-membership contract, per
- * the recorded #1940 prerequisite: proposal authorship, board ACL rows on their
- * own, and online presence are all wrong proxies for workspace membership. The
- * pair is withdrawn only when membership is known AND single-member; loading,
- * unknown, and failed lookups leave every control exactly as it is today.
+ * The prerequisite signal is only the server-computed collaboration-membership
+ * contract, per the recorded #1940 prerequisite: proposal authorship, board ACL
+ * rows on their own, and online presence are all wrong proxies for workspace
+ * membership. The pair is withdrawn only when membership is known AND
+ * single-member AND nothing foreign-authored is on screen; loading, unknown,
+ * and failed lookups leave every control exactly as it is today.
  */
-const authorPartitionAvailable = computed(() => !collaboration.isSoloWorkspace.value)
+const authorPartitionAvailable = computed(
+  () => !collaboration.isSoloWorkspace.value || queueHasForeignAuthoredProposal.value,
+)
 
 const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
 const boardScopeLabel = computed(() =>

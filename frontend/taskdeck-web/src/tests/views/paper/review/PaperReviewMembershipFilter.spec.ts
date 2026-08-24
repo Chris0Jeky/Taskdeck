@@ -3,6 +3,9 @@ import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import ReviewQueueRail, {
+  type QueueFilter,
+} from '../../../../views/paper/review/ReviewQueueRail.vue'
 import { COLLABORATION_REFRESH_THROTTLE_MS } from '../../../../composables/useWorkspaceCollaboration'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
@@ -173,6 +176,12 @@ function pillLabels(wrapper: { findAll: (selector: string) => { text: () => stri
   return wrapper.findAll('.paper-review-rail__pill').map((pill) => pill.text())
 }
 
+/** Filter changes the rail actually announced to the view, in order. */
+function railFilterChanges(wrapper: ReturnType<typeof mount>): QueueFilter[] {
+  const rail = wrapper.findComponent(ReviewQueueRail)
+  return (rail.emitted('filter-change') ?? []).map((args) => (args as unknown[])[0] as QueueFilter)
+}
+
 describe('PaperReviewView — All/Mine membership contract', () => {
   beforeEach(() => {
     resetProposalDisplayNamesForTests()
@@ -274,19 +283,21 @@ describe('PaperReviewView — All/Mine membership contract', () => {
     const pending = deferred<{ memberCount: number; hasCollaborators: boolean }>()
     mocks.getCollaboration.mockReturnValue(pending.promise)
 
-    const mine = makeProposal({ id: 'proposal-mine', requestedByUserId: 'u-1' })
-    const theirs = makeProposal({ id: 'proposal-theirs', requestedByUserId: 'u-2' })
-    const wrapper = await mountView([mine, theirs])
+    const first = makeProposal({ id: 'proposal-one', requestedByUserId: 'u-1' })
+    const second = makeProposal({ id: 'proposal-two', requestedByUserId: 'u-1' })
+    const wrapper = await mountView([first, second])
 
     await wrapper.findAll('.paper-review-rail__pill')[1].trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('.paper-review-q').length).toBe(1)
+    expect(railFilterChanges(wrapper)).toEqual(['mine'])
 
     pending.resolve({ memberCount: 1, hasCollaborators: false })
     await flushPromises()
 
     expect(pillLabels(wrapper)).toEqual(['Stale'])
-    // The fallback reached the view, not just the rail: both rows are back.
+    // The fallback was announced to the view, not merely applied inside the
+    // rail, so the view's own queue filter is back to the whole queue.
+    expect(railFilterChanges(wrapper)).toEqual(['mine', 'all'])
     expect(wrapper.findAll('.paper-review-q').length).toBe(2)
     expect(wrapper.find('[data-testid="paper-review-view"]').exists()).toBe(true)
   })
@@ -295,11 +306,15 @@ describe('PaperReviewView — All/Mine membership contract', () => {
     const pending = deferred<{ memberCount: number; hasCollaborators: boolean }>()
     mocks.getCollaboration.mockReturnValue(pending.promise)
 
-    const mine = makeProposal({ id: 'proposal-mine', requestedByUserId: 'u-1' })
-    const theirs = makeProposal({ id: 'proposal-theirs', requestedByUserId: 'u-2' })
+    const linked = makeProposal({
+      id: 'proposal-linked',
+      requestedByUserId: 'u-1',
+      summary: 'The deep-linked proposal',
+    })
+    const other = makeProposal({ id: 'proposal-other', requestedByUserId: 'u-1' })
     const wrapper = await mountView(
-      [mine, theirs],
-      '/workspace/review#proposal-proposal-mine',
+      [linked, other],
+      '/workspace/review#proposal-proposal-linked',
     )
 
     await wrapper.findAll('.paper-review-rail__pill')[1].trigger('click')
@@ -310,46 +325,95 @@ describe('PaperReviewView — All/Mine membership contract', () => {
 
     // The exact deep-link target is still the active row, and the hash was not
     // rewritten to a fallback proposal.
+    expect(railFilterChanges(wrapper)).toEqual(['mine', 'all'])
     expect(wrapper.findAll('.paper-review-q--active').length).toBe(1)
-    expect(wrapper.find('.paper-review-q--active').text()).toContain(mine.summary)
+    expect(wrapper.find('.paper-review-q--active').text()).toContain(linked.summary)
   })
 
-  it('does not surrender a deep link to a proposal outside the collapsed filter', async () => {
+  it('keeps a deep-linked proposal addressable once the partition collapses', async () => {
     const pending = deferred<{ memberCount: number; hasCollaborators: boolean }>()
     mocks.getCollaboration.mockReturnValue(pending.promise)
 
-    const theirs = makeProposal({
-      id: 'proposal-theirs',
-      requestedByUserId: 'u-2',
-      summary: 'Someone else proposed this',
+    const linked = makeProposal({
+      id: 'proposal-linked',
+      requestedByUserId: 'u-1',
+      summary: 'Reached by link',
     })
     const wrapper = await mountView(
-      [theirs],
-      '/workspace/review#proposal-proposal-theirs',
+      [linked],
+      '/workspace/review#proposal-proposal-linked',
     )
 
     pending.resolve({ memberCount: 1, hasCollaborators: false })
     await flushPromises()
 
     expect(pillLabels(wrapper)).toEqual(['Stale'])
-    expect(wrapper.find('.paper-review-q--active').text()).toContain(theirs.summary)
+    expect(wrapper.find('.paper-review-q--active').text()).toContain(linked.summary)
   })
 
-  it('does not consult the proposal list or its authors to decide visibility', async () => {
-    // The recorded #1940 assumption: author cardinality is not membership. Two
-    // distinct authors must not keep the partition alive against a solo answer.
+  it('keeps All and Mine on a solo workspace while a foreign-authored proposal is still rendered', async () => {
+    // Revoking a collaborator's board access deletes the access row but leaves
+    // their proposals on the board, so membership can honestly report solo
+    // while "Mine" still isolates something. Authorship never grants
+    // membership here; it only preserves a control membership would remove.
+    mocks.getCollaboration.mockResolvedValue({ memberCount: 1, hasCollaborators: false })
+
+    const wrapper = await mountView([
+      makeProposal({ id: 'proposal-own', requestedByUserId: 'u-1' }),
+      makeProposal({
+        id: 'proposal-departed',
+        requestedByUserId: 'u-2',
+        summary: 'Left behind by a revoked collaborator',
+      }),
+    ])
+
+    expect(mocks.getCollaboration).toHaveBeenCalledTimes(1)
+    expect(pillLabels(wrapper)).toEqual(['All', 'Mine', 'Stale'])
+  })
+
+  it('still isolates the caller when Mine is used against a left-behind foreign record', async () => {
+    mocks.getCollaboration.mockResolvedValue({ memberCount: 1, hasCollaborators: false })
+
+    const wrapper = await mountView([
+      makeProposal({ id: 'proposal-own', requestedByUserId: 'u-1' }),
+      makeProposal({ id: 'proposal-departed', requestedByUserId: 'u-2' }),
+    ])
+
+    await wrapper.findAll('.paper-review-rail__pill')[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('.paper-review-q').length).toBe(1)
+    expect(pillLabels(wrapper)).toEqual(['All', 'Mine', 'Stale'])
+  })
+
+  it('does not treat proposal authorship as a source of membership', async () => {
+    // The recorded #1940 assumption: author cardinality is not membership. A
+    // queue made entirely of the caller's own records cannot manufacture a
+    // partition, however many rows it holds.
     mocks.getCollaboration.mockResolvedValue({ memberCount: 1, hasCollaborators: false })
 
     const wrapper = await mountView([
       makeProposal({ id: 'a', requestedByUserId: 'u-1' }),
-      makeProposal({ id: 'b', requestedByUserId: 'u-2' }),
+      makeProposal({ id: 'b', requestedByUserId: 'u-1' }),
       makeProposal({
         id: 'c',
-        requestedByUserId: 'u-3',
+        requestedByUserId: 'u-1',
         createdAt: new Date(Date.now() - STALE_AGE_MS).toISOString(),
       }),
     ])
 
     expect(pillLabels(wrapper)).toEqual(['Stale'])
+  })
+
+  it('does not let a foreign-authored proposal substitute for the membership contract', async () => {
+    // The guard only PRESERVES the pair. With membership unknown it changes
+    // nothing, because the pair is already visible and stays visible.
+    mocks.getCollaboration.mockRejectedValue(new Error('offline'))
+
+    const wrapper = await mountView([
+      makeProposal({ id: 'proposal-departed', requestedByUserId: 'u-2' }),
+    ])
+
+    expect(pillLabels(wrapper)).toEqual(['All', 'Mine', 'Stale'])
   })
 })
