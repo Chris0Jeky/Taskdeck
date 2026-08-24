@@ -28,6 +28,15 @@ export default {
       warning: 'Warning',
       failed: 'Failed',
     },
+    receipt: {
+      showDetails: 'Show details',
+      hideDetails: 'Hide details',
+      copyDetails: 'Copy details',
+      copied: 'Copied',
+      copyFailed: 'Copy failed',
+      dismissNotification: 'Dismiss notification',
+      errorDetails: 'Error details for {message}',
+    },
   },
   topbar: {
     notifications: 'Notifications',
