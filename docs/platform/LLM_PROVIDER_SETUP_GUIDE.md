@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-08-20
+Last Updated: 2026-08-24
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -44,8 +44,9 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - to use live providers (`OpenAI`, `OpenAICompatible`, or `Ollama`), live providers must be enabled (`EnableLiveProviders=true`)
 - to use live providers in `Development`, `Test`, or `Testing`, explicit live mode is required (`AllowLiveProvidersInDevelopment=true`)
 - provider mode may be explicitly set to `Mock`, `OpenAI`, `OpenAICompatible`, or `Ollama`; this guide's config example intentionally uses `Mock` as the safe default
+- relative checked-in `appsettings.json` and `appsettings.{Environment}.json` selectors are defaults, not explicit migration choices; a supported selector from a higher-precedence environment-variable, command-line, in-memory, absolute `appsettings.local.json`, or custom JSON source is explicit
 - unknown provider values also fall back deterministically to `Mock`
-- the retired `Gemini` selector or any remaining `Llm:Gemini` settings section is a fatal startup error with migration guidance; it never silently falls back to `Mock`
+- the retired `Gemini` selector is always a fatal startup error with migration guidance; a remaining `Llm:Gemini` settings section is fatal unless a higher-precedence operator source explicitly selects a supported provider, including `Mock`
 - the retired Compose wrapper `TASKDECK_LLM_GEMINI_API_KEY` is reduced by the shipped Compose file to a boolean presence marker; a non-empty legacy value fails startup with fixed migration guidance, and its value is never forwarded into Taskdeck configuration or diagnostics
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
@@ -53,7 +54,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 
 These provider transports are direct-only. Taskdeck has no proxy-aware outbound LLM mode, so a deployment that can reach providers only through a corporate proxy fails closed. OpenAI and Ollama retain their dedicated connect-callback boundary without `EgressEnvelopeHandler`; OpenAICompatible additionally passes through a fixed-origin `EgressEnvelopeHandler` immediately inside the protected telemetry handler and rejects every observed 3xx response rather than following an allowlisted redirect. Registered protected clients mask their configured URI immediately before send, then the protected inner handler restores it for validation and transport; this keeps path/query data out of outer .NET HTTP EventSource payloads. Public caller-owned provider clients do not opt into masking. Protected registrations remove default `IHttpClientFactory` request loggers, disable distributed-trace header propagation, and use a private metric scope that Taskdeck's configured OpenTelemetry pipeline drops alongside marked HTTP activities. Enabled Sentry removes its outbound handler from these protected client pipelines only, so it cannot add separate `sentry-trace`/baggage headers or capture protected URLs and 5xx responses; unrelated clients retain instrumentation and server-side Sentry tracking remains active. Independently installed process-global `ActivityListener`/`MeterListener` and transport-stage host/IP observation remain outside the guarantee.
 
-If a supported live-provider condition fails, runtime degrades safely to `Mock`. Retired Gemini configuration instead fails startup so an operator cannot mistake Mock fallback for the selected live path.
+If a supported live-provider condition fails, runtime degrades safely to `Mock`. A retired Gemini selector or a retired child section without an explicit higher-precedence supported selector instead fails startup so an operator cannot mistake a checked-in Mock default for a completed migration.
 
 ### Development-mode localhost bypass (Ollama / LM Studio)
 
@@ -236,7 +237,7 @@ For full Playwright-backed demos (`npm run demo:director` or `TASKDECK_RUN_DEMO=
 - use `TASKDECK_DEMO_LLM_PROVIDER=Mock` to keep the demo on mock explicitly even when live keys are present
 - use `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force demo runs back to mock even when keys are present
 - use `TASKDECK_DEMO_SKIP_LLM=1` when the scenario/recorder should skip LLM-required steps and keep the backend on mock
-- an ambient `GEMINI_API_KEY` is ignored because it may belong to Gemini CLI tooling; an explicit retired Taskdeck Gemini selector or provider-specific setting fails before skip/no-key fallbacks
+- an ambient `GEMINI_API_KEY` is ignored because it may belong to Gemini CLI tooling; an explicit retired Taskdeck Gemini selector always fails before skip/no-key fallbacks, while retired provider-specific settings require an explicit higher-precedence supported selector
 - deterministic smoke runs still remain mock-backed because `demo:director:smoke` sets `--skip-llm`
 - when the demo runtime injects live-provider overrides, Playwright also disables existing-server reuse by default so a stale mock backend is not silently reused; set `TASKDECK_E2E_REUSE_EXISTING_SERVER=1` only if you intentionally want reuse anyway
 
@@ -280,7 +281,7 @@ This is intentionally separate from the broader demo tooling so an operator can 
 ## Behavior Guarantees
 
 - LLM-consuming application services remain provider-agnostic (`ChatService` and `LlmCaptureTriageExtractor` depend on `ILlmProvider`, not a concrete adapter).
-- invalid/missing supported live-provider configuration does not crash requests; retired Gemini configuration fails startup with migration guidance
+- invalid/missing supported live-provider configuration does not crash requests; a retired Gemini selector, or a retired child section without an explicit higher-precedence supported selector, fails startup with migration guidance
 - provider adapters return deterministic fallback responses when upstream calls fail
 - capture triage provenance persists `promptVersion`, `provider`, and `model`
 - managed-key attribution metadata is server-derived and spoof-resistant:
