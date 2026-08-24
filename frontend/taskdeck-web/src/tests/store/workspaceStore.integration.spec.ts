@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { localCalendarDateKey } from '../../utils/dueDates'
 import { WORKSPACE_MODE_STORAGE_KEY } from '../../utils/storageKeys'
 import type { HomeSummary, TodaySummary, WorkspaceOnboarding } from '../../types/workspace'
 
@@ -219,9 +220,10 @@ describe('workspaceStore — integration (real workspaceApi, mocked HTTP)', () =
   // ── fetchTodaySummary ─────────────────────────────────────────────────────
 
   describe('fetchTodaySummary', () => {
-    it('calls GET /workspace/today and populates todaySummary', async () => {
+    it('calls GET /workspace/today with the browser local date and populates todaySummary', async () => {
       const summary = makeTodaySummary()
       vi.mocked(http.get).mockResolvedValue({ data: summary })
+      const expectedLocalDate = localCalendarDateKey()
 
       const store = useWorkspaceStore()
       await store.fetchTodaySummary()
@@ -230,7 +232,7 @@ describe('workspaceStore — integration (real workspaceApi, mocked HTTP)', () =
       expect(store.todaySummary?.summary.dueTodayCards).toBe(3)
       expect(store.todayLoading).toBe(false)
       expect(store.todayError).toBeNull()
-      expect(http.get).toHaveBeenCalledWith('/workspace/today')
+      expect(http.get).toHaveBeenCalledWith(`/workspace/today?localDate=${expectedLocalDate}`)
     })
 
     it('sets todayError when GET /workspace/today fails', async () => {
