@@ -276,4 +276,152 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         var futureCount = await repo.CountReadableUpdatedSinceAsync(user.Id, future, includeArchived: false);
         futureCount.Should().Be(0);
     }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldReturnZero_WhenUserHasNoBoards()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var user = new User("brd-collab-none", "brd-collab-none@example.com", "hash");
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var count = await repo.CountCollaborationMembersAsync(user.Id);
+
+        count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldCountOwner_WhenNoAccessRowsExist()
+    {
+        // Owners deliberately hold no BoardAccess row (AuthorizationService short-circuits on
+        // OwnerId), so a count built from access rows alone would report zero for a solo owner.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var owner = new User("brd-collab-solo", "brd-collab-solo@example.com", "hash");
+        db.Users.Add(owner);
+        db.Boards.Add(new Board("Solo owner board", ownerId: owner.Id));
+        await db.SaveChangesAsync();
+
+        var count = await repo.CountCollaborationMembersAsync(owner.Id);
+
+        count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldFlipToTwo_WhenASecondMemberIsGranted()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var owner = new User("brd-collab-owner", "brd-collab-owner@example.com", "hash");
+        var collaborator = new User("brd-collab-guest", "brd-collab-guest@example.com", "hash");
+        db.Users.AddRange(owner, collaborator);
+
+        var board = new Board("Shared collaboration board", ownerId: owner.Id);
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(owner.Id)).Should().Be(1);
+
+        db.BoardAccesses.Add(new BoardAccess(board.Id, collaborator.Id, UserRole.Editor, owner.Id));
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(owner.Id)).Should().Be(2);
+        (await repo.CountCollaborationMembersAsync(collaborator.Id)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldIgnoreBoardsTheUserCannotRead()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var isolated = new User("brd-collab-isolated", "brd-collab-isolated@example.com", "hash");
+        var stranger = new User("brd-collab-stranger", "brd-collab-stranger@example.com", "hash");
+        var strangerGuest = new User("brd-collab-strangerguest", "brd-collab-strangerguest@example.com", "hash");
+        db.Users.AddRange(isolated, stranger, strangerGuest);
+
+        db.Boards.Add(new Board("Isolated own board", ownerId: isolated.Id));
+        var strangerBoard = new Board("Stranger shared board", ownerId: stranger.Id);
+        db.Boards.Add(strangerBoard);
+        await db.SaveChangesAsync();
+
+        db.BoardAccesses.Add(new BoardAccess(strangerBoard.Id, strangerGuest.Id, UserRole.Editor, stranger.Id));
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(isolated.Id)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldNotDoubleCountAMemberSharedAcrossBoards()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var owner = new User("brd-collab-multi", "brd-collab-multi@example.com", "hash");
+        var collaborator = new User("brd-collab-multiguest", "brd-collab-multiguest@example.com", "hash");
+        db.Users.AddRange(owner, collaborator);
+
+        var first = new Board("Multi board one", ownerId: owner.Id);
+        var second = new Board("Multi board two", ownerId: owner.Id);
+        db.Boards.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        db.BoardAccesses.AddRange(
+            new BoardAccess(first.Id, collaborator.Id, UserRole.Editor, owner.Id),
+            new BoardAccess(second.Id, collaborator.Id, UserRole.Viewer, owner.Id));
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(owner.Id)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldIncludeArchivedBoardMembers()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var owner = new User("brd-collab-arch", "brd-collab-arch@example.com", "hash");
+        var collaborator = new User("brd-collab-archguest", "brd-collab-archguest@example.com", "hash");
+        db.Users.AddRange(owner, collaborator);
+
+        var board = new Board("Archived shared board", ownerId: owner.Id);
+        board.Archive();
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+
+        db.BoardAccesses.Add(new BoardAccess(board.Id, collaborator.Id, UserRole.Editor, owner.Id));
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(owner.Id)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CountCollaborationMembersAsync_ShouldCountGranteeOnly_ForAnOwnerlessBoard()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IBoardRepository>();
+
+        var grantee = new User("brd-collab-legacy", "brd-collab-legacy@example.com", "hash");
+        db.Users.Add(grantee);
+
+        var board = new Board("Legacy ownerless board");
+        db.Boards.Add(board);
+        await db.SaveChangesAsync();
+
+        db.BoardAccesses.Add(new BoardAccess(board.Id, grantee.Id, UserRole.Editor, grantee.Id));
+        await db.SaveChangesAsync();
+
+        (await repo.CountCollaborationMembersAsync(grantee.Id)).Should().Be(1);
+    }
 }
