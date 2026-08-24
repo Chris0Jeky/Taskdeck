@@ -69,8 +69,9 @@ export default defineConfig({
             },
           },
           {
-            // StaleWhileRevalidate for Google Fonts CSS — without this, offline users
-            // fall back to system fonts because the stylesheet is not served from cache.
+            // Compatibility cache for the sole remaining Google Fonts stylesheet.
+            // Packaged API CSP blocks this origin; permissive development contexts
+            // use it for existing Material Symbols ligatures until they are local.
             urlPattern: /^https:\/\/fonts\.googleapis\.com\//i,
             handler: 'StaleWhileRevalidate',
             options: {
