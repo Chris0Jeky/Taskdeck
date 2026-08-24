@@ -10,6 +10,7 @@ import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
+import { proposalIdsEqual } from '../../utils/proposalIdentity'
 
 const props = defineProps<{
   proposal: Proposal
@@ -48,7 +49,7 @@ watch(
 // than flashing a premature "no changes" (#1397).
 const diffPaneVisible = computed(
   () =>
-    props.selectedDiffProposalId === props.proposal.id &&
+    proposalIdsEqual(props.selectedDiffProposalId, props.proposal.id) &&
     (props.selectedDiffMode === 'stored' ||
       props.selectedDiffMode === 'invalid' ||
       !!props.selectedDiff),
