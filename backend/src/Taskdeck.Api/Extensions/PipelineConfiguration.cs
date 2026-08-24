@@ -4,9 +4,11 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Api.Routing;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
@@ -24,9 +26,10 @@ public static class PipelineConfiguration
     internal static readonly string[] NonSpaPathPrefixes = ["/api", "/hubs", "/health", "/mcp"];
 
     /// <summary>
-    /// The HTTP methods <c>MapFallbackToFile</c> stamps on the SPA catch-all. The per-prefix 404
-    /// fallbacks match the same set so that a wrong-verb request on a real route still resolves to
-    /// the framework's 405 endpoint rather than being captured as a 404 (#1971).
+    /// The HTTP methods <c>MapFallbackToFile</c> stamps on the SPA catch-all (measured: pattern
+    /// <c>{*path:nonfile}</c>, methods <c>[GET, HEAD]</c>). The per-prefix machine-path fallbacks
+    /// match the same set so that a wrong-verb request on a real route is still routed to the
+    /// framework's 405 endpoint for every verb outside it (#1971).
     /// </summary>
     private static readonly string[] SpaFallbackHttpMethods = ["GET", "HEAD"];
 
@@ -150,6 +153,51 @@ public static class PipelineConfiguration
         }
         app.UseAuthorization();
 
+        // Machine-path 404/405 contract (#1971, #1992). One resolver answers "is there a real endpoint
+        // at this path, and with which verbs?" for both halves of it: this middleware, which owns every
+        // verb routing itself rejects, and the per-prefix fallbacks below, which own GET/HEAD.
+        var machineRouteMethods = new MachineRouteMethodResolver(
+            ((IEndpointRouteBuilder)app).DataSources,
+            app.Services.GetRequiredService<ParameterPolicyFactory>(),
+            NonSpaPathPrefixes,
+            app.Logger);
+
+        // Registered before the endpoint middleware WebApplication appends, so awaiting next() here
+        // resumes after the endpoint ran. Routing's own 405 endpoint only sets a status code, so the
+        // response has not started and both the status and the body are still ours to correct.
+        //
+        // Two corrections, both caused by the GET/HEAD catch-alls below sharing a routing node with the
+        // real endpoints:
+        //   * Unknown machine path, non-GET verb -> routing answers a bodyless 405 with "Allow: GET,
+        //     HEAD" because the catch-all made the node method-constrained. Nothing is routed there at
+        //     all, so the honest answer is the same 404 error contract every other unknown machine path
+        //     gets. #1971 recorded this as an accepted trade; it is the same "false success shape,
+        //     different status" the issue is about, so it is corrected here rather than documented.
+        //   * Real machine route, wrong verb -> routing's Allow header is the union of every method at
+        //     the node, so it advertises the catch-all's GET/HEAD on routes that have neither. Replaced
+        //     with the methods the route actually declares.
+        app.Use(async (context, next) =>
+        {
+            await next(context);
+
+            if (context.Response.HasStarted ||
+                context.Response.StatusCode != StatusCodes.Status405MethodNotAllowed ||
+                !IsMachineFacingPath(context.Request.Path))
+            {
+                return;
+            }
+
+            var declaredMethods = machineRouteMethods.GetDeclaredMethods(context);
+            if (declaredMethods.Count == 0)
+            {
+                context.Response.Headers.Allow = StringValues.Empty;
+                await WriteUnknownEndpointAsync(context);
+                return;
+            }
+
+            context.Response.Headers.Allow = string.Join(", ", declaredMethods);
+        });
+
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
 
@@ -198,16 +246,26 @@ public static class PipelineConfiguration
         // scripts and probes this issue is about. The cost is that route existence is discoverable
         // (404 vs 401) without credentials, which the OpenAPI document already publishes.
         //
-        // GET/HEAD only, mirroring the method metadata MapFallbackToFile puts on the SPA catch-all
-        // (measured: pattern {*path:nonfile}, methods [GET, HEAD]). This is load-bearing, not
-        // decoration. A fallback that accepted every verb would be a VALID candidate for a
-        // wrong-verb request on a REAL route — PUT /api/boards, say — and routing only synthesizes
-        // its 405 endpoint when every candidate is method-mismatched, so an all-verb catch-all
-        // silently downgrades those 405s to 404. Scoped to GET/HEAD, a wrong-verb request on a real
-        // route mismatches every candidate and keeps its 405. The trade is that a non-GET request
-        // to an UNKNOWN path under these prefixes still resolves to that 405 endpoint (and, for an
-        // anonymous caller, to the 401 the global FallbackPolicy applies to it) rather than a 404 —
-        // unchanged from before this fix, and never the 200 + app shell this issue is about.
+        // GET/HEAD only, mirroring the method metadata MapFallbackToFile puts on the SPA catch-all.
+        // This is load-bearing, not decoration: routing only reaches its 405 endpoint when EVERY
+        // candidate is method-mismatched, so a fallback that accepted every verb would be a valid
+        // candidate for PUT /api/boards and would silently downgrade that 405 to a 404. Scoped to
+        // GET/HEAD, every verb outside the pair still reaches routing's 405 endpoint, where the
+        // middleware registered above corrects its Allow header (or converts it to the 404 contract
+        // when the path matches no route at all).
+        //
+        // Inside the pair the same scoping is what BREAKS 405: a GET on a POST-only route is not
+        // method-mismatched against this fallback, so it lands here instead of at routing's 405
+        // endpoint and used to answer 404 (#1992). The handler therefore asks the resolver whether a
+        // real endpoint exists at the path before choosing a status — routing cannot be asked, because
+        // HttpMethodMatcherPolicy partitions the candidate set by verb inside the DFA, so the POST
+        // endpoint is not visible from here.
+        //
+        // AllowAnonymous is deliberate: an unknown path has no resource to protect, and without it
+        // the global FallbackPolicy would answer anonymous callers with 401 — re-hiding the "this
+        // endpoint does not exist" signal behind an auth error for exactly the unauthenticated
+        // scripts and probes this issue is about. The cost is that route existence is discoverable
+        // (404 vs 401) without credentials, which the OpenAPI document already publishes.
         //
         // ExcludeFromDescription keeps them out of the OpenAPI document. Swashbuckle discovers
         // route-mapped endpoints, so without it these catch-alls are published as real GET operations
@@ -218,7 +276,10 @@ public static class PipelineConfiguration
         // "/mcp/{path}"; with it, 156 and no "{path}" template at all (#1971).
         foreach (var prefix in NonSpaPathPrefixes)
         {
-            app.MapFallback($"{prefix}/{{**path}}", UnknownEndpointNotFound)
+            app.MapFallback(
+                    $"{prefix}/{{**path}}",
+                    (HttpContext context) => MachinePathFallbackAsync(context, machineRouteMethods))
+                .WithMetadata(MachinePathFallbackMetadata.Instance)
                 .WithMetadata(new HttpMethodMetadata(SpaFallbackHttpMethods))
                 .ExcludeFromDescription()
                 .AllowAnonymous();
@@ -235,15 +296,54 @@ public static class PipelineConfiguration
     }
 
     /// <summary>
-    /// Terminal handler for unmatched paths under <see cref="NonSpaPathPrefixes"/>. Returns the same
+    /// True when the path sits under one of <see cref="NonSpaPathPrefixes"/>. Uses
+    /// <see cref="PathString.StartsWithSegments(PathString, StringComparison)"/> so the boundary is a
+    /// segment boundary — <c>/api/x</c> and the bare <c>/api</c> are machine paths, <c>/apidocs</c> is
+    /// not — matching the <c>^/api(?:/|$)</c> shape the reverse proxy uses for the same prefixes.
+    /// </summary>
+    private static bool IsMachineFacingPath(PathString path)
+    {
+        foreach (var prefix in NonSpaPathPrefixes)
+        {
+            if (path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// GET/HEAD terminal handler for paths under <see cref="NonSpaPathPrefixes"/> that matched no
+    /// endpoint for this verb. A path that a real endpoint declares under some OTHER verb exists — the
+    /// verb is what is wrong — so it answers 405 the way routing answers every other wrong-verb
+    /// request: status only, with the Allow header stamped by the middleware that owns it for all
+    /// verbs. A path no endpoint declares at all is genuinely missing and gets the 404 contract.
+    /// </summary>
+    private static Task MachinePathFallbackAsync(HttpContext context, MachineRouteMethodResolver resolver)
+    {
+        if (resolver.GetDeclaredMethods(context).Count > 0)
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return Task.CompletedTask;
+        }
+
+        return WriteUnknownEndpointAsync(context);
+    }
+
+    /// <summary>
+    /// Writes the 404 answer for a machine-facing path that matches no route. Uses the same
     /// <see cref="ApiErrorResponse"/> shape (<c>errorCode</c>/<c>message</c>, application/json) that
     /// <see cref="ResultExtensions.ToErrorActionResult"/> produces for a controller 404, so a client
     /// parses one error contract regardless of whether the route existed.
     /// </summary>
-    private static IResult UnknownEndpointNotFound() =>
-        Results.Json(
-            new ApiErrorResponse(ErrorCodes.NotFound, "The requested endpoint does not exist."),
-            statusCode: StatusCodes.Status404NotFound);
+    private static Task WriteUnknownEndpointAsync(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return context.Response.WriteAsJsonAsync(
+            new ApiErrorResponse(ErrorCodes.NotFound, "The requested endpoint does not exist."));
+    }
 
     internal static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
     {
