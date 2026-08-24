@@ -68,6 +68,51 @@ public class ChatServiceClarificationTests
     }
 
     [Fact]
+    public async Task SendMessage_ShouldTellUserNoBoardIsLinked_OnClarificationTurnWithoutBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Test session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var result = await _service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("create onboarding tasks for new hires"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        // The type stays "clarification" so the round still counts toward best-effort forcing
+        // and the composer still offers the skip action (#2004).
+        result.Value.MessageType.Should().Be("clarification");
+        result.Value.Content.Should().Contain("Could you tell me");
+        result.Value.Content.Should().Contain("nothing here was created or changed");
+        result.Value.Content.Should().Contain("board-scoped chat session");
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldNotAddNoBoardNotice_OnClarificationTurnWithBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Test session", Guid.NewGuid());
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var result = await _service.SendMessageAsync(
+            session.Id, userId,
+            new SendChatMessageDto("create onboarding tasks for new hires"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("clarification");
+        result.Value.Content.Should().Contain("Could you tell me");
+        result.Value.Content.Should().NotContain("nothing here was created or changed");
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldNotClarify_ForClearActionableRequest()
     {
         var userId = Guid.NewGuid();
