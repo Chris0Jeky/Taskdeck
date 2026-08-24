@@ -112,6 +112,19 @@ describe('useReviewKeymap', () => {
       expect(handlers.onApply).not.toHaveBeenCalled()
     })
 
+    it('does not fire or consume a disallowed action', () => {
+      const handlers: ReviewKeymapHandlers = { onApply: vi.fn(), onReject: vi.fn() }
+      const { handleKeyDown } = useReviewKeymap(handlers, {
+        isActionEnabled: (action) => action === 'onApply',
+      })
+      const event = makeKeyEvent('Backspace')
+
+      handleKeyDown(event)
+
+      expect(handlers.onReject).not.toHaveBeenCalled()
+      expect(event.preventDefault).not.toHaveBeenCalled()
+    })
+
     it('does not fire when isComposing is true', () => {
       const handlers: ReviewKeymapHandlers = { onApply: vi.fn() }
       const { handleKeyDown } = useReviewKeymap(handlers)

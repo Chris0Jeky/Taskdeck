@@ -165,6 +165,8 @@ const {
 
 const explicitActiveId = ref<string | null>(null)
 const queueFilter = ref<QueueFilter>('all')
+type DecisionReceipt = 'approved' | 'applied' | 'rejected' | 'deferred'
+const decisionReceipt = ref<{ proposalId: string; kind: DecisionReceipt } | null>(null)
 
 const hashProposalId = computed(() => {
   const hash = route.hash ?? ''
@@ -229,6 +231,15 @@ const activeProposal = computed<ApiProposal | null>(() => {
       ) ?? null
     )
   }
+  // Queue filters intentionally remove decided rows. Keep the exact item at
+  // the decision locus instead of falling through to an unrelated proposal.
+  if (decisionReceipt.value) {
+    const receipted = proposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, decisionReceipt.value?.proposalId) &&
+      matchesActiveBoardFilter(proposal.boardId),
+    )
+    if (receipted) return receipted
+  }
   if (explicitActiveId.value) {
     const found = filteredVisibleProposals.value.find((p) =>
       proposalIdsEqual(p.id, explicitActiveId.value),
@@ -243,6 +254,21 @@ const activeProposal = computed<ApiProposal | null>(() => {
     ) ?? null
   )
 })
+
+const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
+  const receipt = decisionReceipt.value
+  if (
+    !receipt ||
+    !proposalIdsEqual(activeProposal.value?.id, receipt.proposalId) ||
+    !matchesActiveBoardFilter(activeProposal.value?.boardId)
+  ) return null
+  return receipt.kind
+})
+
+function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
+  decisionReceipt.value = { proposalId, kind }
+  explicitActiveId.value = proposalId
+}
 
 watch(
   () => activeProposal.value?.id,
@@ -1016,6 +1042,21 @@ async function onApply() {
     return
   }
   await handleApproveProposal(p.id)
+  const recordedApproval = proposals.value.find((item) => proposalIdsEqual(item.id, p.id))
+  if (recordedApproval && normalizeProposalStatus(recordedApproval.status) === 'Approved') {
+    // The queue stays interactive while approval is in flight. Prefer the
+    // explicit selection over the route hash because router navigation can lag
+    // behind a queue click; a late response must never restore a proposal the
+    // reviewer has already left. The explicit id also survives the approved row
+    // leaving the visible queue, which keeps the intended receipt available when
+    // the reviewer did stay at this decision locus.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, p.id)) return
+    // Approval is its own decision. The remaining board write stays behind the
+    // visible, explicit Apply action rather than opening a handoff dialog.
+    recordDecisionReceipt(p.id, 'approved')
+    return
+  }
   // GH-1942: a successful approve hands STRAIGHT to the one deliberate execute
   // step. Before this, the user clicked the primary button, watched it relabel,
   // clicked it again, and only then got the dialog — three clicks for a
@@ -1113,7 +1154,32 @@ async function onDefer() {
   // it from the deferred filter). On FAILURE we must NOT clear the hash — an already-snoozed
   // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
   // still in effect) with no retry path, despite the error toast.
-  if (deferred) void clearProposalDeepLink(p.id)
+  if (deferred) {
+    recordDecisionReceipt(p.id, 'deferred')
+    void clearProposalDeepLink(p.id)
+  }
+}
+
+async function onConfirmExecute() {
+  const proposalId = executeConfirmProposal.value?.id
+  await confirmExecuteProposal()
+  const applied = proposalId
+    ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
+    : undefined
+  if (applied && normalizeProposalStatus(applied.status) === 'Applied') {
+    recordDecisionReceipt(applied.id, 'applied')
+  }
+}
+
+async function onConfirmReject(reason: string) {
+  const proposalId = rejectPromptProposal.value?.id
+  await confirmRejectProposal(reason)
+  const rejected = proposalId
+    ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
+    : undefined
+  if (rejected && normalizeProposalStatus(rejected.status) === 'Rejected') {
+    recordDecisionReceipt(rejected.id, 'rejected')
+  }
 }
 
 function onToggleProvenance() {
@@ -1356,7 +1422,12 @@ useReviewKeymap(
       !busy.value &&
       activeProposal.value !== null &&
       executeConfirmProposal.value === null &&
-      rejectPromptProposal.value === null,
+      rejectPromptProposal.value === null &&
+      (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
+    isActionEnabled: (action) => {
+      const receipt = activeDecisionReceipt.value
+      return receipt === null || (receipt === 'approved' && action === 'onApply')
+    },
   },
 )
 
@@ -1373,6 +1444,7 @@ onUnmounted(() => {
 })
 
 function selectProposal(id: string) {
+  decisionReceipt.value = null
   explicitActiveId.value = id
   openProposal(id)
 }
@@ -1383,6 +1455,13 @@ function returnToReview() {
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
+  // A receipt is authoritative until the reviewer explicitly selects another
+  // proposal. In particular, a filter must not rewrite a deep link to a
+  // fallback row after the linked proposal has just been decided. #1940
+  if (decisionReceipt.value) {
+    queueFilter.value = filter
+    return
+  }
   const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
   queueFilter.value = filter
   const retained = selectedId
@@ -1455,6 +1534,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"
+        :decision-receipt="activeDecisionReceipt"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1653,6 +1733,8 @@ function onQueueFilterChange(filter: QueueFilter) {
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
       :apply-phase="applyPhase"
+      :apply-only="activeDecisionReceipt === 'approved'"
+      :receipt-active="activeDecisionReceipt !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 
@@ -1663,7 +1745,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :proposal="executeConfirmProposal"
       :busy="busy"
       :revision-count="applyConfirmRevisionCount"
-      @confirm="confirmExecuteProposal"
+      @confirm="onConfirmExecute"
       @cancel="cancelExecuteProposal"
     />
 
@@ -1673,7 +1755,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :proposal="rejectPromptProposal"
       :busy="busy"
       :requires-reason="rejectRequiresReason"
-      @confirm="confirmRejectProposal"
+      @confirm="onConfirmReject"
       @cancel="cancelRejectProposal"
     />
   </div>

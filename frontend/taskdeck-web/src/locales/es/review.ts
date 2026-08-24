@@ -89,9 +89,27 @@ export default {
       title: 'Aprobada — todavía no aplicada al tablero.',
       body: 'Queda un paso: pulsa ⏎ (o “{action}”) para escribirla en el tablero. Hasta entonces no cambia nada.',
     },
+    decisionReceipt: {
+      approved: {
+        title: 'Aprobada — aún no se ha aplicado al tablero.',
+        body: 'La revisión permanece aquí. Elige {action} cuando quieras cambiar el tablero.',
+      },
+      applied: {
+        title: 'Aplicada al tablero.',
+        body: 'Esta propuesta sigue disponible para inspección aquí; encuéntrala de nuevo en Aplicadas recientemente.',
+      },
+      rejected: {
+        title: 'Rechazada.',
+        body: 'Esta propuesta no se aplicó y sigue disponible para inspección aquí.',
+      },
+      deferred: {
+        title: 'Pospuesta.',
+        body: 'Esta propuesta volverá a Revisión cuando termine su aplazamiento.',
+      },
+    },
     keyHint: {
       fileAway: 'PULSA ⌫ PARA ARCHIVAR',
-      confirmApply: 'PULSA ⏎ PARA APLICAR AL TABLERO · ⌫ PARA RECHAZAR',
+      confirmApply: 'PULSA ⏎ PARA APLICAR AL TABLERO',
       approve: 'PULSA ⏎ PARA APROBAR · ⌫ PARA RECHAZAR',
     },
     footer: 'REVISIÓN · {serial} · LOCAL-FIRST · REGISTRO',

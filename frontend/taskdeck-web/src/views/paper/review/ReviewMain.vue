@@ -70,8 +70,10 @@ const props = withDefaults(
      * can explain the greyed-out row and carry the exit (GH-1964).
      */
     editLock?: EditLock
+    /** The just-recorded outcome, retained at its original decision locus. */
+    decisionReceipt?: 'approved' | 'applied' | 'rejected' | 'deferred' | null
   }>(),
-  { applyPhase: 'approve', editLock: 'off' },
+  { applyPhase: 'approve', editLock: 'off', decisionReceipt: null },
 )
 
 const { t } = useI18n()
@@ -138,7 +140,7 @@ const dialSubline = computed(() =>
          user reasonably read "approved" as "applied". role="status" so the state
          change is announced, not just drawn. -->
     <p
-      v-if="!dismissable && applyPhase === 'execute'"
+      v-if="!dismissable && applyPhase === 'execute' && decisionReceipt !== 'approved'"
       class="paper-review-main__approved-banner"
       role="status"
       data-testid="paper-review-approved-banner"
@@ -151,12 +153,39 @@ const dialSubline = computed(() =>
       }}
     </p>
 
+    <p
+      v-if="decisionReceipt"
+      class="paper-review-main__decision-receipt"
+      role="status"
+      data-testid="paper-review-decision-receipt"
+      :data-decision="decisionReceipt"
+    >
+      <template v-if="decisionReceipt === 'approved'">
+        <strong>{{ $t('review.main.decisionReceipt.approved.title') }}</strong>
+        {{ $t('review.main.decisionReceipt.approved.body', { action: $t('review.decisionRail.apply.execute') }) }}
+      </template>
+      <template v-else-if="decisionReceipt === 'applied'">
+        <strong>{{ $t('review.main.decisionReceipt.applied.title') }}</strong>
+        {{ $t('review.main.decisionReceipt.applied.body') }}
+      </template>
+      <template v-else-if="decisionReceipt === 'rejected'">
+        <strong>{{ $t('review.main.decisionReceipt.rejected.title') }}</strong>
+        {{ $t('review.main.decisionReceipt.rejected.body') }}
+      </template>
+      <template v-else>
+        <strong>{{ $t('review.main.decisionReceipt.deferred.title') }}</strong>
+        {{ $t('review.main.decisionReceipt.deferred.body') }}
+      </template>
+    </p>
+
     <ReviewDecisionRail
+      v-if="!decisionReceipt || decisionReceipt === 'approved'"
       :summary="decisionSummary"
       :busy="busy"
       :dismissable="dismissable"
       :apply-phase="applyPhase"
       :edit-lock="editLock"
+      :apply-only="decisionReceipt === 'approved'"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
@@ -185,7 +214,11 @@ const dialSubline = computed(() =>
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
-      <span class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
+      <span
+        v-if="!decisionReceipt || decisionReceipt === 'approved'"
+        class="tk-serial"
+        data-testid="paper-review-key-hint"
+      >{{ keyHint }}</span>
     </footer>
   </div>
 </template>
@@ -226,6 +259,16 @@ const dialSubline = computed(() =>
   margin-top: 2px;
 }
 .paper-review-main__approved-banner {
+  margin: 18px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-left-width: 4px;
+  background: var(--ember-tint);
+  color: var(--ember-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.paper-review-main__decision-receipt {
   margin: 18px 0 0;
   padding: 10px 14px;
   border: 1px solid var(--ember);
