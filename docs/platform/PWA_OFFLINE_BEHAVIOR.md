@@ -15,8 +15,8 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 | Resource | Strategy | TTL | Notes |
 |----------|----------|-----|-------|
 | API responses (`/api/*`) | NetworkFirst | 24 hours | Fresh data preferred; falls back to cache when offline |
-| Google Fonts CSS | StaleWhileRevalidate | 1 year | Cached stylesheets served immediately; revalidated in background |
-| Static assets (images, fonts, icons) | CacheFirst | 30 days | Served from cache; only fetched on cache miss |
+| Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
+| Same-origin static assets (images, bundled fonts, icons) | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
 
 ### Navigation Fallback
 
@@ -77,11 +77,14 @@ Workbox handles cache versioning automatically via content hashing in precache m
 
 - Precached assets with changed hashes are fetched and updated.
 - Stale caches from previous versions are cleaned up (`cleanupOutdatedCaches: true`).
-- Runtime caches (API responses, fonts, static assets) have TTL-based expiration and entry count limits.
+- Runtime caches (API responses, lazy locale chunks, and static assets) have bounded expiration and entry counts.
 
 ## PWA Installability
 
-The app meets Chrome's PWA installability criteria:
+The generated frontend assets meet Chrome's PWA installability criteria when the deployment serves
+the same-origin manifest under its CSP. Exact packaged-desktop proof currently finds that the API
+CSP omits `manifest-src`, so Chrome blocks `manifest.webmanifest` on that surface; issue `#2045`
+tracks the directive and packaged reproof. The generated contract includes:
 
 - Valid `manifest.webmanifest` with `name`, `short_name`, `start_url`, `display: standalone`, and icons (192x192 and 512x512 PNG).
 - Service worker with fetch handler (provided by Workbox).

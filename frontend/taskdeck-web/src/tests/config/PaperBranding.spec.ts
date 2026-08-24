@@ -8,24 +8,23 @@ function normalizeLineEndings(content: string): string {
 const projectRoot = resolve(import.meta.dirname, '../../..')
 const repoRoot = resolve(projectRoot, '../..')
 const indexHtml = readFileSync(resolve(projectRoot, 'index.html'), 'utf8')
-const mainTs = readFileSync(resolve(projectRoot, 'src/main.ts'), 'utf8')
+const styleCss = readFileSync(resolve(projectRoot, 'src/style.css'), 'utf8')
 const paperFonts = readFileSync(resolve(projectRoot, 'src/paper-fonts.css'), 'utf8')
 const viteConfig = readFileSync(resolve(projectRoot, 'vite.config.ts'), 'utf8')
 const favicon = readFileSync(resolve(projectRoot, 'public/favicon.svg'), 'utf8')
 const pagesWorkflow = readFileSync(resolve(repoRoot, '.github/workflows/pages-frontend.yml'), 'utf8')
 const packageJson = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf8'))
 const packageLock = JSON.parse(readFileSync(resolve(projectRoot, 'package-lock.json'), 'utf8'))
-const materialSymbolsRoot = resolve(projectRoot, 'node_modules/@material-symbols/font-400')
+const materialSymbolsRoot = resolve(projectRoot, 'node_modules/@material-symbols/font-200')
 const materialSymbolsPackage = JSON.parse(
   readFileSync(resolve(materialSymbolsRoot, 'package.json'), 'utf8'),
 )
-const materialSymbolsCss = readFileSync(resolve(materialSymbolsRoot, 'outlined.css'), 'utf8')
 const packageMaterialSymbolsLicense = normalizeLineEndings(
   readFileSync(resolve(materialSymbolsRoot, 'LICENSE'), 'utf8'),
 )
 const repoMaterialSymbolsLicense = normalizeLineEndings(
   readFileSync(
-    resolve(repoRoot, 'LICENSES/Apache-2.0-material-symbols-font-400.txt'),
+    resolve(repoRoot, 'LICENSES/Apache-2.0-material-symbols-font-200.txt'),
     'utf8',
   ),
 )
@@ -76,15 +75,14 @@ describe('Paper branding assets', () => {
     expect(activeFrontendSources).not.toContain('family=Space+Grotesk')
   })
 
-  it('self-hosts the outlined Material Symbols face without font egress', () => {
-    const materialSymbolsImports = Array.from(
-      mainTs.matchAll(/import ['"]@material-symbols\/font-400\/([^'"]+)['"]/g),
-      ([, stylesheet]) => stylesheet,
-    )
+  it('self-hosts the light outlined Material Symbols face without font egress', () => {
     const materialSymbolsFaces = Array.from(
-      materialSymbolsCss.matchAll(/url\("([^"?]+\.woff2)"\)/g),
+      styleCss.matchAll(/url\('(@material-symbols\/[^'?]+\.woff2)'\)/g),
       ([, face]) => face,
     )
+    const materialSymbolsBaseline = styleCss.match(
+      /\/\* Material Symbols baseline \*\/[\s\S]*?\.material-symbols-outlined\s*\{([^}]+)\}/,
+    )?.[1]
     const ligatureCallSites = runtimeSourceFiles
       .filter((path) => path.endsWith('.vue'))
       .flatMap((path) =>
@@ -95,20 +93,30 @@ describe('Paper branding assets', () => {
         ),
       )
 
-    expect(packageJson.dependencies['@material-symbols/font-400']).toBe('0.46.0')
-    expect(packageLock.packages['node_modules/@material-symbols/font-400']).toMatchObject({
+    expect(packageJson.dependencies['@material-symbols/font-200']).toBe('0.46.0')
+    expect(packageJson.dependencies['@material-symbols/font-400']).toBeUndefined()
+    expect(packageLock.packages['node_modules/@material-symbols/font-200']).toMatchObject({
       version: '0.46.0',
       license: 'Apache-2.0',
     })
+    expect(packageLock.packages['node_modules/@material-symbols/font-400']).toBeUndefined()
     expect(materialSymbolsPackage).toMatchObject({
-      name: '@material-symbols/font-400',
+      name: '@material-symbols/font-200',
       version: '0.46.0',
       license: 'Apache-2.0',
     })
-    expect(materialSymbolsImports).toEqual(['outlined.css'])
-    expect(materialSymbolsCss.match(/@font-face/g)).toHaveLength(1)
-    expect(materialSymbolsFaces).toEqual(['./material-symbols-outlined.woff2'])
-    expect(existsSync(resolve(materialSymbolsRoot, materialSymbolsFaces[0]!))).toBe(true)
+    expect(activeFrontendSources).not.toMatch(/@material-symbols\/font-\d+\/.*\.css/)
+    expect(styleCss.match(/@font-face/g)).toHaveLength(1)
+    expect(materialSymbolsFaces).toEqual([
+      '@material-symbols/font-200/material-symbols-outlined.woff2',
+    ])
+    expect(existsSync(resolve(materialSymbolsRoot, 'material-symbols-outlined.woff2'))).toBe(true)
+    expect(styleCss).toContain('font-weight: 200;')
+    expect(materialSymbolsBaseline).toContain("font-family: 'Material Symbols Outlined';")
+    expect(materialSymbolsBaseline).toContain('font-weight: 200;')
+    expect(materialSymbolsBaseline).toContain('font-size: 20px;')
+    expect(materialSymbolsBaseline).toContain("font-feature-settings: 'liga';")
+    expect(materialSymbolsBaseline).not.toContain('font-variation-settings')
     expect(ligatureCallSites).toHaveLength(10)
     expect(repoMaterialSymbolsLicense).toBe(packageMaterialSymbolsLicense)
     expect(repoMaterialSymbolsLicense).toContain('Apache License')
@@ -119,7 +127,7 @@ describe('Paper branding assets', () => {
   })
 
   it('ships the Material Symbols licence with the GitHub Pages artifact', () => {
-    const licensePath = 'LICENSES/Apache-2.0-material-symbols-font-400.txt'
+    const licensePath = 'LICENSES/Apache-2.0-material-symbols-font-200.txt'
     const pagesLicensePath = `frontend/taskdeck-web/dist/${licensePath}`
     const pushTrigger = pagesWorkflow.slice(
       pagesWorkflow.indexOf('  push:'),

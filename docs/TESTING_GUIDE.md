@@ -59,16 +59,38 @@ Explorer/SmartScreen acceptance remain unverified.
 - This proves the isolated deterministic-Mock package/core-loop boundary. It does **not** prove an
   Explorer extraction/double-click path, SmartScreen behavior, inherited user-profile retired-
   provider migration, a live OpenAI call, a signed/public v0.1.2 artifact, or another machine.
-- Chrome reported a non-blocking visual regression: the production CSP omits `font-src`, so bundled
-  Paper WOFF2 resources fall back to `default-src 'none'`; stale Google Font stylesheet links are
-  also blocked by `style-src 'self'`. Issue `#2035` is the Priority II successor and does not expand
-  the Priority I-defined v0.1.2 tranche.
+- That candidate exposed a non-blocking typography/CSP regression. PRs `#2039` and `#2041`
+  subsequently added `font-src 'self'`, removed the Google font/style routes, self-hosted the active
+  Material Symbols face, and included its Apache-2.0 licence in Windows and Pages artifacts.
+- Exact-main no-publish run [`32692308935`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692308935)
+  resolved `3fa6071763404255d2bc25b5f2b936647139c35b`; its untouched product ZIP matched SHA-256
+  `9981177c734300d1f97fd51f3a1b77a882d57ea5d640276c2c7e1339c9d3cbd5`. Pages run
+  [`32692278478`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692278478) shipped the exact
+  reviewed Material Symbols licence in the deployed artifact.
+- A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
+  `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
+  font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
+- The visual-parity follow-up (PR `#2046`) pins the local Material Symbols 200 face and removes the
+  package's unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
+  `text-base` close and topbar icons at 16px/200, and offline/update/queue icons at 18px/200; the
+  probed ligatures remained visible and the font request stayed same-origin.
+  `PaperBranding.spec.ts`, the production build, scoped lint, release/Pages licence contracts, docs
+  governance, and diff hygiene cover the static seam. The separate packaged
+  `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
 ## 2026-08-24 v0.1.2 Priority I partial verification map
 
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
   board-scope journeys were not manually browser-tested.
+- `#2021`/PR `#2042`: 76 focused API and 61 Application tests passed; the earlier full backend run
+  passed 8,112 tests with 5 intentional skips. Exact-base hosted CI, dynamic E2E, custom
+  relative/absolute JSON and environment-spoof regressions, and bounded review passed. This is
+  configuration-stack proof, not a new packaged inherited-profile migration journey.
+- `#2022`/PR `#2043`: four focused Inbox suites passed 172 tests after the final base refresh,
+  alongside typecheck, production build, scoped lint, exact-base hosted CI, dynamic E2E, and a
+  fresh adversarial review. The retained-editor DOM/draft path is covered; the page-count and
+  same-scope refresh-error residuals remain tracked by `#2022` and `#2044`.
 - `#1938`/PRs `#2023` and `#2033`: the capture-recovery slice's pre-final full frontend run passed
   4,725 tests and its final seam passed 50 targeted tests; the shared receipt slice passed 63 focused
   tests and the full 4,737-test frontend suite, then 17 Paper-dismiss and 76 refreshed-base focused
