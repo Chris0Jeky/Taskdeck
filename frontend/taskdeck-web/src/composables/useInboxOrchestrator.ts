@@ -21,6 +21,7 @@ export function useInboxOrchestrator(options: {
   const activeItemIndex = ref(0)
   const showCaptureModal = ref(false)
   let stopTriagePolling: (() => void) | null = null
+  let scopedBoardLoadGeneration = 0
 
   // Batch selection state
   const selectedIds = ref<Set<string>>(new Set())
@@ -44,25 +45,33 @@ export function useInboxOrchestrator(options: {
   })
   const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
   const activeColumnId = computed(() => normalizeBoardIdQueryParam(route.query.columnId))
-  const activeBoardName = computed(() => scopedBoard.value?.name ?? activeBoardId.value ?? '')
+  const activeBoardName = computed(() => {
+    const boardId = activeBoardId.value
+    return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
+  })
   const activeColumnName = computed(() => {
-    if (!activeColumnId.value) return ''
-    return scopedBoard.value?.columns.find((column) => column.id === activeColumnId.value)?.name ?? activeColumnId.value
+    const columnId = activeColumnId.value
+    if (!columnId) return ''
+    if (scopedBoard.value?.id !== activeBoardId.value) return columnId
+    return scopedBoard.value.columns.find((column) => column.id === columnId)?.name ?? columnId
   })
 
   async function loadScopedBoard() {
-    if (!activeBoardId.value) {
+    const requestGeneration = ++scopedBoardLoadGeneration
+    const boardId = activeBoardId.value
+    if (!boardId) {
       scopedBoard.value = null
       return
     }
     try {
-      const board = await boardsApi.getBoard(activeBoardId.value)
-      if (board.id === activeBoardId.value) {
-        scopedBoard.value = board
-      }
+      const board = await boardsApi.getBoard(boardId)
+      if (requestGeneration !== scopedBoardLoadGeneration || activeBoardId.value !== boardId) return
+      scopedBoard.value = board.id === boardId ? board : null
     } catch {
       // The scoped inbox remains usable when the board metadata is unavailable.
-      scopedBoard.value = null
+      if (requestGeneration === scopedBoardLoadGeneration && activeBoardId.value === boardId) {
+        scopedBoard.value = null
+      }
     }
   }
 

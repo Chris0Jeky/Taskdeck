@@ -16,6 +16,7 @@ public static class LlmProviderRegistration
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
     private const string LlmProviderKey = "Llm:Provider";
     private const string BuiltInSettingsPath = "appsettings.json";
+    private const string LocalSettingsPath = "appsettings.local.json";
     private const string RetiredComposeWrapperPresenceKey =
         "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
     private const string RetiredComposeWrapperMessage =
@@ -39,7 +40,7 @@ public static class LlmProviderRegistration
         var llmSection = configuration.GetSection("Llm");
         var configuredProvider = llmSection["Provider"];
         var hasHigherPrecedenceProviderSelection =
-            HasHigherPrecedenceProviderSelection(configuration);
+            HasHigherPrecedenceProviderSelection(services, configuration);
         LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
         if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
                 configuredProvider,
@@ -241,12 +242,24 @@ public static class LlmProviderRegistration
         return services;
     }
 
-    private static bool HasHigherPrecedenceProviderSelection(IConfiguration configuration)
+    private static bool HasHigherPrecedenceProviderSelection(
+        IServiceCollection services,
+        IConfiguration configuration)
     {
         if (configuration is not IConfigurationRoot root)
         {
             return false;
         }
+
+        var builtInSettingsProvider = root.Providers
+            .OfType<JsonConfigurationProvider>()
+            .FirstOrDefault(provider =>
+                string.Equals(
+                    provider.Source.Path,
+                    BuiltInSettingsPath,
+                    StringComparison.OrdinalIgnoreCase));
+        var environmentSettingsPath = GetEnvironmentSettingsPath(
+            GetRegisteredWebHostEnvironment(services)?.EnvironmentName);
 
         foreach (var provider in root.Providers.Reverse())
         {
@@ -255,15 +268,69 @@ public static class LlmProviderRegistration
                 continue;
             }
 
-            // The checked-in Mock setting is a safe default, not evidence that an operator migrated.
+            // Checked-in Mock settings are safe defaults, not evidence that an operator migrated.
             return provider is not JsonConfigurationProvider jsonProvider
-                || !string.Equals(
-                    jsonProvider.Source.Path,
-                    BuiltInSettingsPath,
-                    StringComparison.OrdinalIgnoreCase);
+                || !IsCheckedInDefaultSettingsProvider(
+                    jsonProvider,
+                    builtInSettingsProvider,
+                    environmentSettingsPath);
         }
 
         return false;
+    }
+
+    private static bool IsCheckedInDefaultSettingsProvider(
+        JsonConfigurationProvider provider,
+        JsonConfigurationProvider? builtInSettingsProvider,
+        string? environmentSettingsPath)
+    {
+        // Relative checked-in JSON sources inherit one file-provider instance from the builder.
+        // Absolute operator paths are normalized to a file name by ResolveFileProvider but retain
+        // their own provider instance, so path matching alone cannot preserve this boundary.
+        return builtInSettingsProvider?.Source.FileProvider is { } builtInFileProvider
+            && ReferenceEquals(provider.Source.FileProvider, builtInFileProvider)
+            && IsCheckedInDefaultSettingsPath(provider.Source.Path, environmentSettingsPath);
+    }
+
+    private static bool IsCheckedInDefaultSettingsPath(
+        string? path,
+        string? environmentSettingsPath)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || !string.Equals(path, Path.GetFileName(path), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(path, BuiltInSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // The durable operator file is registered by absolute path. ResolveFileProvider can reduce
+        // that path to its file name, so keep the canonical local-config name explicit here.
+        if (string.Equals(path, LocalSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return environmentSettingsPath is not null
+            && string.Equals(path, environmentSettingsPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetEnvironmentSettingsPath(string? environmentName)
+    {
+        return string.IsNullOrWhiteSpace(environmentName)
+            ? null
+            : $"appsettings.{environmentName}.json";
+    }
+
+    private static IWebHostEnvironment? GetRegisteredWebHostEnvironment(
+        IServiceCollection services)
+    {
+        return services.FirstOrDefault(descriptor =>
+                descriptor.ServiceType == typeof(IWebHostEnvironment))
+            ?.ImplementationInstance as IWebHostEnvironment;
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
@@ -417,9 +484,7 @@ public static class LlmProviderRegistration
 
         // Check for a registered IWebHostEnvironment to determine if we're in development.
         // During startup the environment is already registered as a singleton.
-        var envDescriptor = services.FirstOrDefault(d =>
-            d.ServiceType == typeof(IWebHostEnvironment));
-        if (envDescriptor?.ImplementationInstance is IWebHostEnvironment env)
+        if (GetRegisteredWebHostEnvironment(services) is { } env)
         {
             var name = env.EnvironmentName;
             return name.Equals("Development", StringComparison.OrdinalIgnoreCase) ||

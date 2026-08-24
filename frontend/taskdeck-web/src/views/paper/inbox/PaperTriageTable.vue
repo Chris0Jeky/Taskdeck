@@ -391,26 +391,30 @@ function formatTime(iso: string): string {
 </script>
 
 <template>
-  <section class="paper-triage" aria-label="Captured items">
+  <section
+    class="paper-triage"
+    aria-label="Captured items"
+    :aria-busy="loadingList && !listError"
+  >
     <header class="paper-triage__header">
       <h2 class="tk-h3 paper-triage__title">Today's captures</h2>
-      <span class="tk-meta">
+      <span v-if="!loadingList && !listError" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
     </header>
 
-    <div v-if="loadingList && !hasItems" class="paper-triage__empty">
-      <span class="tk-meta">Loading…</span>
-    </div>
-
-    <div v-else-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
+    <div v-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
       <p class="tk-body">{{ listError }}</p>
       <button type="button" class="paper-triage__retry" @click="emit('retry')">
         Retry
       </button>
     </div>
 
-    <div v-if="!loadingList && !listError && !hasItems" class="paper-triage__empty">
+    <div v-else-if="loadingList" class="paper-triage__empty" role="status">
+      <span class="tk-meta">Loading…</span>
+    </div>
+
+    <div v-else-if="!hasItems" class="paper-triage__empty">
       <template v-if="scopeLabel">
         <p class="tk-body">{{ t('inbox.empty.scoped', { scope: scopeLabel }) }}</p>
         <button type="button" class="paper-triage__retry" data-testid="paper-triage-clear-scope" @click="emit('clear-scope')">
@@ -420,7 +424,18 @@ function formatTime(iso: string): string {
       <p v-else class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
     </div>
 
-    <ul v-if="hasItems" class="paper-triage__list">
+    <!--
+      Keep retained rows mounted while a replacement load hides them. The row
+      editor owns its unsaved draft locally, so unmounting this list during a
+      same-scope refresh would silently replace that draft with server text on
+      remount. Conditional display preserves the subtree without exposing
+      stale rows from a route-scope replacement.
+    -->
+    <ul
+      v-if="hasItems"
+      class="paper-triage__list"
+      :style="loadingList || listError ? { display: 'none' } : undefined"
+    >
       <li
         v-for="item in items"
         :key="item.id"
