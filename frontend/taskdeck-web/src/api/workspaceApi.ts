@@ -5,6 +5,7 @@ import type {
   TodaySummary,
   UpdateWorkspaceOnboardingDto,
   UpdateWorkspacePreferenceDto,
+  WorkspaceCollaboration,
   WorkspaceOnboarding,
   WorkspacePreference,
 } from '../types/workspace'
@@ -29,6 +30,11 @@ export const workspaceApi = {
   ): Promise<CalendarData> {
     const params = new URLSearchParams({ from, to, localDate })
     const { data } = await http.get<CalendarData>(`/workspace/calendar?${params}`)
+    return data
+  },
+
+  async getCollaboration(): Promise<WorkspaceCollaboration> {
+    const { data } = await http.get<WorkspaceCollaboration>('/workspace/collaboration')
     return data
   },
 

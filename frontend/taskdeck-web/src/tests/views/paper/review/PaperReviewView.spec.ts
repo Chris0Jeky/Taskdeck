@@ -56,6 +56,16 @@ vi.mock('../../../../api/columnsApi', () => ({
   columnsApi: { getColumns: mocks.getColumns },
 }))
 
+// The view reads the collaboration-membership contract on mount (#1940). These
+// specs are not about that contract, so it resolves to a collaborative
+// workspace, which is the shape that leaves every queue filter on screen.
+// PaperReviewMembershipFilter.spec.ts owns the membership behaviour itself.
+vi.mock('../../../../api/workspaceApi', () => ({
+  workspaceApi: {
+    getCollaboration: vi.fn().mockResolvedValue({ memberCount: 2, hasCollaborators: true }),
+  },
+}))
+
 vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   proposalDeepReviewApi: {
     getProvenance: mocks.getProvenance,

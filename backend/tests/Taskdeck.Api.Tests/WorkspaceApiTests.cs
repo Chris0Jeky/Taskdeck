@@ -35,6 +35,7 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
 
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/home"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/today"));
+        await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/collaboration"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/preferences"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
             "/api/workspace/preferences",
@@ -42,6 +43,95 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
         await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
             "/api/workspace/onboarding",
             new UpdateWorkspaceOnboardingDto(WorkspaceOnboardingActionContract.Dismiss)));
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldReportSoloWorkspace_ForAUserWithNoSharedBoards()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-collab-solo");
+
+        // No boards at all: the caller is still one member of their own workspace.
+        var emptyResponse = await client.GetAsync("/api/workspace/collaboration");
+        emptyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var empty = await emptyResponse.Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        empty.Should().NotBeNull();
+        empty!.MemberCount.Should().Be(1);
+        empty.HasCollaborators.Should().BeFalse();
+
+        // An owned board grants no BoardAccess row, so the owner must still be counted.
+        _ = await ApiTestHarness.CreateBoardAsync(client, "workspace-collab-solo-board");
+
+        var ownedResponse = await client.GetAsync("/api/workspace/collaboration");
+        ownedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var owned = await ownedResponse.Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        owned.Should().NotBeNull();
+        owned!.MemberCount.Should().Be(1);
+        owned.HasCollaborators.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldFlip_WhenASecondMemberIsGrantedBoardAccess()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var guestClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "workspace-collab-owner");
+        var guest = await ApiTestHarness.AuthenticateAsync(guestClient, "workspace-collab-guest");
+
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "workspace-collab-shared");
+
+        var beforeShare = await (await ownerClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        beforeShare.Should().NotBeNull();
+        beforeShare!.HasCollaborators.Should().BeFalse();
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, guest.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterShare = await (await ownerClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        afterShare.Should().NotBeNull();
+        afterShare!.MemberCount.Should().Be(2);
+        afterShare.HasCollaborators.Should().BeTrue();
+
+        // The grantee sees the same shared workspace from their own side.
+        var guestView = await (await guestClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        guestView.Should().NotBeNull();
+        guestView!.MemberCount.Should().Be(2);
+        guestView.HasCollaborators.Should().BeTrue();
+
+        owner.UserId.Should().NotBe(guest.UserId);
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldNotLeakMembershipFromBoardsTheCallerCannotRead()
+    {
+        using var strangerClient = _factory.CreateClient();
+        using var strangerGuestClient = _factory.CreateClient();
+        using var isolatedClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(strangerClient, "workspace-collab-stranger");
+        var strangerGuest = await ApiTestHarness.AuthenticateAsync(strangerGuestClient, "workspace-collab-strangerguest");
+        await ApiTestHarness.AuthenticateAsync(isolatedClient, "workspace-collab-isolated");
+
+        var strangerBoard = await ApiTestHarness.CreateBoardAsync(strangerClient, "workspace-collab-stranger-board");
+        var grantResponse = await strangerClient.PostAsJsonAsync(
+            $"/api/boards/{strangerBoard.Id}/access",
+            new GrantAccessDto(strangerBoard.Id, strangerGuest.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _ = await ApiTestHarness.CreateBoardAsync(isolatedClient, "workspace-collab-isolated-board");
+
+        var isolated = await (await isolatedClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        isolated.Should().NotBeNull();
+        isolated!.MemberCount.Should().Be(1);
+        isolated.HasCollaborators.Should().BeFalse();
     }
 
     [Fact]

@@ -204,6 +204,34 @@ public class BoardRepository : Repository<Board>, IBoardRepository
         return query;
     }
 
+    public async Task<int> CountCollaborationMembersAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            return 0;
+        }
+
+        // Archived boards are deliberately included: a collaborator you still share an archived
+        // board with is still a collaborator, and over-reporting membership is the safe direction
+        // for a value whose only consumer decides whether to KEEP a filter visible.
+        var readableBoards = BuildReadableQuery(userId, includeArchived: true);
+
+        var ownerIds = readableBoards
+            .Where(board => board.OwnerId != null)
+            .Select(board => board.OwnerId!.Value);
+
+        var granteeIds = readableBoards
+            .SelectMany(board => board.BoardAccesses)
+            .Select(access => access.UserId);
+
+        return await ownerIds
+            .Concat(granteeIds)
+            .Distinct()
+            .CountAsync(cancellationToken);
+    }
+
     private IQueryable<Board> BuildReadableQuery(Guid userId, bool includeArchived)
     {
         var query = _dbSet

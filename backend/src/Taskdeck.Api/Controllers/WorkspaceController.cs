@@ -53,6 +53,24 @@ public class WorkspaceController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    /// <summary>
+    /// Get the authoritative collaboration-membership signal for the current user.
+    /// Returns a count and a boolean only; no other user's identity is disclosed.
+    /// </summary>
+    /// <response code="200">Returns the caller's collaboration membership summary.</response>
+    /// <response code="401">Authentication required.</response>
+    [HttpGet("collaboration")]
+    [ProducesResponseType(typeof(WorkspaceCollaborationDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetCollaboration(CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _workspaceService.GetCollaborationAsync(userId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     [HttpGet("preferences")]
     public async Task<IActionResult> GetPreferences(CancellationToken cancellationToken = default)
     {

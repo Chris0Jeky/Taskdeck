@@ -34,6 +34,20 @@ export interface WorkspacePreference {
   updatedAt: string
 }
 
+/**
+ * Server-computed collaboration membership for the authenticated user.
+ *
+ * `memberCount` is the number of distinct people who can reach at least one
+ * board this user can reach, the user included, so it is never below 1.
+ * It is the only authoritative input for deciding whether author-partitioned
+ * UI ("All" vs "Mine") can mean anything — proposal authorship, board ACL rows
+ * on their own, and online presence are all wrong proxies for it (#1940).
+ */
+export interface WorkspaceCollaboration {
+  memberCount: number
+  hasCollaborators: boolean
+}
+
 export interface UpdateWorkspacePreferenceDto {
   workspaceMode: WorkspaceMode
 }

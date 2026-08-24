@@ -178,6 +178,21 @@ public class WorkspaceService : IWorkspaceService
                         recentBoard.UpdatedAt))));
     }
 
+    public async Task<Result<WorkspaceCollaborationDto>> GetCollaborationAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<WorkspaceCollaborationDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var distinctMembers = await _unitOfWork.Boards.CountCollaborationMembersAsync(userId, cancellationToken);
+
+        // A user with no boards still counts as one member of their own workspace, so the
+        // contract never reports fewer than one member and "solo" always means exactly one.
+        var memberCount = Math.Max(1, distinctMembers);
+        return Result.Success(new WorkspaceCollaborationDto(memberCount, memberCount > 1));
+    }
+
     public async Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
