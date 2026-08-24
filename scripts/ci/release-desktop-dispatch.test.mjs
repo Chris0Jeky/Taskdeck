@@ -29,7 +29,7 @@ const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desk
 const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
 const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
 const materialSymbolsLicensePath = fileURLToPath(
-  new URL('../../LICENSES/Apache-2.0-material-symbols-font-400.txt', import.meta.url),
+  new URL('../../LICENSES/Apache-2.0-material-symbols-font-200.txt', import.meta.url),
 )
 // Normalised to LF: a Windows checkout with core.autocrlf=true would otherwise
 // break every structural assertion for a reason that has nothing to do with the
@@ -348,11 +348,11 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
   )
   assert.match(
     job,
-    /cp LICENSES\/Apache-2\.0-material-symbols-font-400\.txt[\s\\]+"\$\{stage\}\/LICENSES\/Apache-2\.0-material-symbols-font-400\.txt"/,
+    /cp LICENSES\/Apache-2\.0-material-symbols-font-200\.txt[\s\\]+"\$\{stage\}\/LICENSES\/Apache-2\.0-material-symbols-font-200\.txt"/,
   )
   assert.match(
     job,
-    /cmp -s LICENSES\/Apache-2\.0-material-symbols-font-400\.txt "\$MATERIAL_SYMBOLS_LICENSE"/,
+    /cmp -s LICENSES\/Apache-2\.0-material-symbols-font-200\.txt "\$MATERIAL_SYMBOLS_LICENSE"/,
     'the archived third-party licence must be byte-identical to the reviewed source copy',
   )
   assert.match(materialSymbolsLicense, /Apache License\s+Version 2\.0, January 2004/)
@@ -365,7 +365,7 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
     'LICENSE',
     'RELICENSING.md',
     'LICENSES/MIT.txt',
-    'LICENSES/Apache-2.0-material-symbols-font-400.txt',
+    'LICENSES/Apache-2.0-material-symbols-font-200.txt',
   ]) {
     assert.ok(job.includes(`'${required}'`), `workflow does not require ${required}`)
   }
