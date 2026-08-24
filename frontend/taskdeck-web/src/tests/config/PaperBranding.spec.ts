@@ -5,6 +5,9 @@ const indexHtml = readFileSync(resolve(import.meta.dirname, '../../../index.html
 const paperFonts = readFileSync(resolve(import.meta.dirname, '../../paper-fonts.css'), 'utf8')
 const viteConfig = readFileSync(resolve(import.meta.dirname, '../../../vite.config.ts'), 'utf8')
 const favicon = readFileSync(resolve(import.meta.dirname, '../../../public/favicon.svg'), 'utf8')
+const activeFontConfiguration = [indexHtml, paperFonts, viteConfig].join('\n')
+const materialSymbolsStylesheet =
+  'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap'
 
 describe('Paper branding assets', () => {
   it('bundles only the required Latin WOFF2 Paper font faces', () => {
@@ -28,7 +31,18 @@ describe('Paper branding assets', () => {
       'jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2',
     ])
     expect(paperFonts).not.toMatch(/\.woff(?:['")])/)
-    expect(paperFonts).not.toContain('fonts.googleapis.com')
+    expect(activeFontConfiguration).not.toContain('family=Manrope')
+    expect(activeFontConfiguration).not.toContain('family=Space+Grotesk')
+    expect(activeFontConfiguration).not.toContain('fonts.gstatic.com')
+
+    const googleFontStylesheets = Array.from(
+      indexHtml.matchAll(/<link href="(https:\/\/fonts\.googleapis\.com\/[^"]+)" rel="stylesheet" \/>/g),
+      ([, href]) => href,
+    )
+
+    expect(googleFontStylesheets).toEqual([materialSymbolsStylesheet])
+    expect(viteConfig).toContain('urlPattern: /^https:\\/\\/fonts\\.googleapis\\.com\\//i')
+    expect(viteConfig).toContain("cacheName: 'google-fonts-stylesheets'")
   })
 
   it('uses Paper branding for favicon and install metadata', () => {
@@ -37,9 +51,6 @@ describe('Paper branding assets', () => {
     expect(indexHtml).toContain('href="/favicon.svg"')
     expect(indexHtml).not.toContain('/vite.svg')
     expect(indexHtml).toContain('<meta name="theme-color" content="#f3eee5" />')
-    expect(indexHtml).toContain('family=Manrope')
-    expect(indexHtml).toContain('family=Space+Grotesk')
-    expect(indexHtml).toContain('family=Material+Symbols+Outlined')
 
     expect(viteConfig).toContain("theme_color: '#f3eee5'")
     expect(viteConfig).toContain("background_color: '#f3eee5'")
