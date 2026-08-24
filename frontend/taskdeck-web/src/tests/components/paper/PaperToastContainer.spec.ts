@@ -179,17 +179,27 @@ describe('PaperToastContainer', () => {
     expect(wrapper.find(`[data-toast-id="${id}"]`).exists()).toBe(false)
   })
 
-  it('announces a non-error toast as a polite status', async () => {
+  it('primes an empty polite region before announcing a newly added non-error toast', async () => {
     const store = useToastStore()
-    const id = store.success('Saved', 0)
 
     wrapper = mount(PaperToastContainer)
     await nextTick()
 
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+    expect(announcer.attributes('role')).toBe('status')
+    expect(announcer.text()).toBe('')
+
+    const id = store.success('Capture saved to inbox', 0)
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
     const card = wrapper.get(`[data-toast-id="${id}"]`)
-    expect(card.attributes('role')).toBe('status')
-    expect(card.attributes('aria-live')).toBe('polite')
-    expect(card.attributes('aria-atomic')).toBe('true')
+    expect(card.text()).toContain('Capture saved to inbox')
+    expect(card.attributes('role')).toBeUndefined()
+    expect(card.attributes('aria-live')).toBeUndefined()
+    expect(card.attributes('aria-atomic')).toBeUndefined()
+    expect(announcer.text()).toBe('Capture saved to inbox')
   })
 
   it('lets a persistent actionless error receipt be dismissed', async () => {

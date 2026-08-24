@@ -1,5 +1,12 @@
 <template>
   <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-toast-polite-announcer
+    >{{ politeAnnouncement }}</div>
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
@@ -12,9 +19,9 @@
           'transition-all duration-300',
           toastClass(toast.type),
         ]"
-        :role="toast.type === 'error' ? 'alert' : 'status'"
-        :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"
-        aria-atomic="true"
+        :role="toast.type === 'error' ? 'alert' : undefined"
+        :aria-live="toast.type === 'error' ? 'assertive' : undefined"
+        :aria-atomic="toast.type === 'error' ? 'true' : undefined"
       >
         <!-- Icon -->
         <div class="flex-shrink-0" aria-hidden="true">
@@ -120,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
 
@@ -128,6 +135,25 @@ const toastStore = useToastStore()
 const { t } = useI18n()
 const expanded = reactive<Record<string, boolean>>({})
 const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+const politeAnnouncement = ref('')
+
+watch(
+  () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
+  async (current, previous) => {
+    const previousIds = new Set((previous ?? []).map(({ id }) => id))
+    const added = current.filter(({ id, type }) => type !== 'error' && !previousIds.has(id))
+
+    if (added.length === 0) {
+      if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''
+      return
+    }
+
+    politeAnnouncement.value = ''
+    await nextTick()
+    politeAnnouncement.value = added.map(({ message }) => message).join(' ')
+  },
+  { flush: 'post', immediate: true },
+)
 
 function detailsId(id: string): string {
   return `toast-details-${id}`

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import ToastContainer from '../../components/common/ToastContainer.vue'
 import type { Toast } from '../../store/toastStore'
@@ -39,7 +39,7 @@ describe('ToastContainer', () => {
     expect(wrapper.text()).toContain('Network error')
   })
 
-  it('announces errors assertively and non-errors as polite statuses', () => {
+  it('keeps error cards assertive while visible non-error cards stay out of live regions', () => {
     mockToastStore.toasts = [
       { id: 't1', message: 'Failed', type: 'error', duration: 5000 },
       { id: 't2', message: 'Saved', type: 'success', duration: 3000 },
@@ -51,10 +51,28 @@ describe('ToastContainer', () => {
     expect(errorToast.attributes('aria-live')).toBe('assertive')
     expect(errorToast.attributes('aria-atomic')).toBe('true')
 
-    const statusToast = wrapper.find('[role="status"]')
-    expect(statusToast.text()).toContain('Saved')
-    expect(statusToast.attributes('aria-live')).toBe('polite')
-    expect(statusToast.attributes('aria-atomic')).toBe('true')
+    const visibleStatusToast = wrapper.get('.bg-green-50')
+    expect(visibleStatusToast.attributes('role')).toBeUndefined()
+    expect(visibleStatusToast.attributes('aria-live')).toBeUndefined()
+    expect(visibleStatusToast.attributes('aria-atomic')).toBeUndefined()
+  })
+
+  it('primes an empty polite region before announcing a newly added non-error toast', async () => {
+    const wrapper = mount(ToastContainer)
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+
+    expect(announcer.attributes('role')).toBe('status')
+    expect(announcer.text()).toBe('')
+
+    mockToastStore.toasts = [
+      { id: 't1', message: 'Capture saved to inbox', type: 'success', duration: 3000 },
+    ]
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.get('.bg-green-50').text()).toContain('Capture saved to inbox')
+    expect(announcer.text()).toBe('Capture saved to inbox')
   })
 
   it('calls remove when close button is clicked', async () => {
