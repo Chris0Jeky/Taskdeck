@@ -13,7 +13,7 @@ import {
 } from '../../../components/inbox/inboxUtils'
 import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
 import type { Board } from '../../../types/board'
-import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
 /**
  * PaperTriageTable — captured items list rendered in the paper-card ledger
@@ -39,8 +39,16 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  * same rule drives the per-row decision line: once accepted or rejected, the
  * row says what happened and where the work went, so a decided row can never
  * render identically to one still waiting on a decision.
+ *
+ * `readOnly` is archived-board capture history (#1973). It strips every write
+ * affordance, which would otherwise leave the row with nothing but a truncated
+ * `textExcerpt` and a dead open button — the retained capture would be
+ * "reachable" in name only. So read-only mode trades the triage controls for an
+ * INSPECTION surface: the open button expands the row into the full retained
+ * text and its triage provenance, supplied by the parent through `detail*`.
+ * Loading and errors are the parent's too; this table only renders them.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: CaptureItemSummary[]
   loadingList?: boolean
   listError?: string | null
@@ -48,7 +56,25 @@ const props = defineProps<{
   triagePollingItemId?: string | null
   scopeLabel?: string
   scopeClearLabel?: string
-}>()
+  readOnly?: boolean
+  /** Row whose read-only detail is expanded; `null` collapses every row. */
+  detailItemId?: string | null
+  detail?: CaptureItem | null
+  detailLoading?: boolean
+  detailError?: string | null
+  /**
+   * Path to the expanded capture's decision record, when one was recorded.
+   * A plain path string, matching `proposalHref` on the Review side.
+   */
+  detailProposalRoute?: string | null
+}>(), {
+  readOnly: false,
+  detailItemId: null,
+  detail: null,
+  detailLoading: false,
+  detailError: null,
+  detailProposalRoute: null,
+})
 
 const emit = defineEmits<{
   (event: 'accept', itemId: string, boardId?: string | null): void
@@ -112,6 +138,16 @@ watch(
     if (editItemId.value !== null && !rows.some((row) => row.id === editItemId.value)) {
       editItemId.value = null
     }
+  },
+)
+
+watch(
+  () => props.readOnly,
+  (readOnly) => {
+    if (!readOnly) return
+    editItemId.value = null
+    boardPickItemId.value = null
+    pickedBoardId.value = null
   },
 )
 
@@ -227,7 +263,8 @@ function editorOpenReasonId(item: CaptureItemSummary): string {
  * surface either replaces the draft's row or moves the editor off it.
  */
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return hasMutationInFlight.value ||
+  return props.readOnly ||
+    hasMutationInFlight.value ||
     props.triagePollingItemId === item.id ||
     !canMutate(item) ||
     isEditing(item) ||
@@ -374,7 +411,8 @@ function failureReason(item: CaptureItemSummary): string | null {
 
 onMounted(() => {
   // Prime boards so the picker is ready if the user accepts a board-less capture.
-  if (boardStore.boards.length === 0) {
+  // Archived history has no Accept path, so it must not prime the picker.
+  if (!props.readOnly && boardStore.boards.length === 0) {
     void loadBoardsForPicker()
   }
 })
@@ -388,6 +426,45 @@ function formatTime(iso: string): string {
     return ''
   }
 }
+
+// ---- Read-only capture inspection (#1973) ----
+
+/** Whether this row's retained-capture detail is currently expanded. */
+function isDetailOpen(item: CaptureItemSummary): boolean {
+  return props.readOnly && props.detailItemId === item.id
+}
+
+function detailPanelId(item: CaptureItemSummary): string {
+  return `paper-capture-detail-${item.id}`
+}
+
+/**
+ * The loaded detail, but only while it still belongs to the expanded row.
+ * The parent loads asynchronously, so between "row B opened" and "row B's
+ * detail arrived" the stale row-A payload must not render under row B.
+ */
+const activeDetail = computed<CaptureItem | null>(() => {
+  const detail = props.detail
+  if (!detail || !props.detailItemId) return null
+  return detail.id === props.detailItemId ? detail : null
+})
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleString()
+  } catch {
+    return ''
+  }
+}
+
+/** A recorded value, or the explicit "not recorded" placeholder — never blank. */
+function recordedOr(value: string | null | undefined): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || t('inbox.history.detail.none')
+}
 </script>
 
 <template>
@@ -397,7 +474,7 @@ function formatTime(iso: string): string {
     :aria-busy="loadingList && !listError"
   >
     <header class="paper-triage__header">
-      <h2 class="tk-h3 paper-triage__title">Today's captures</h2>
+      <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
       <span v-if="!loadingList && !listError" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
@@ -421,7 +498,9 @@ function formatTime(iso: string): string {
           {{ scopeClearLabel }}
         </button>
       </template>
-      <p v-else class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
+      <p v-else class="tk-body">
+        {{ readOnly ? t('inbox.history.empty') : 'A pen and a phrase. Drop a thought above to start.' }}
+      </p>
     </div>
 
     <!--
@@ -446,7 +525,12 @@ function formatTime(iso: string): string {
         <button
           type="button"
           class="paper-triage__open"
-          :aria-label="`Open capture ${item.id}`"
+          :aria-label="readOnly
+            ? (isDetailOpen(item) ? t('inbox.history.detail.close') : t('inbox.history.detail.open'))
+            : `Open capture ${item.id}`"
+          :aria-expanded="readOnly ? isDetailOpen(item) : undefined"
+          :aria-controls="readOnly ? detailPanelId(item) : undefined"
+          :data-testid="readOnly ? 'capture-history-open' : undefined"
           @click="emit('open', item.id)"
         >
           <span class="tk-serial paper-triage__time">{{ formatTime(item.createdAt) }}</span>
@@ -476,8 +560,71 @@ function formatTime(iso: string): string {
           >{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
+        <!--
+          Read-only capture inspection (#1973). Archived history has no triage
+          controls, so this expanded panel is the ONLY way to see the retained
+          capture in full — the row above shows a truncated excerpt. It renders
+          text and provenance and links to the decision record; it has no
+          control that writes.
+        -->
         <div
-          v-if="isPickingBoard(item)"
+          v-if="isDetailOpen(item)"
+          :id="detailPanelId(item)"
+          class="paper-triage__history-detail"
+          data-testid="capture-history-detail"
+        >
+          <p v-if="detailLoading && !activeDetail" class="tk-body" role="status">
+            {{ t('inbox.history.detail.loading') }}
+          </p>
+          <p
+            v-else-if="detailError"
+            class="tk-body paper-triage__history-error"
+            role="alert"
+            data-testid="capture-history-detail-error"
+          >
+            {{ detailError }}
+          </p>
+          <template v-else-if="activeDetail">
+            <h3 class="tk-eyebrow">{{ t('inbox.history.detail.title') }}</h3>
+            <p class="tk-body paper-triage__history-text" data-testid="capture-history-text">{{ activeDetail.rawText }}</p>
+            <dl class="paper-triage__history-meta">
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.captured') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(formatDateTime(activeDetail.createdAt)) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.processed') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(formatDateTime(activeDetail.processedAt)) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.board') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.boardId) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.triageRun') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.provenance?.triageRunId) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.promptVersion') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.provenance?.promptVersion) }}</dd>
+              </div>
+            </dl>
+            <RouterLink
+              v-if="detailProposalRoute"
+              class="paper-triage__history-link"
+              :to="detailProposalRoute"
+              data-testid="capture-history-proposal-link"
+            >
+              {{ t('inbox.history.detail.proposalLink') }}
+            </RouterLink>
+            <p v-else class="tk-meta" data-testid="capture-history-no-proposal">
+              {{ t('inbox.history.detail.noProposal') }}
+            </p>
+          </template>
+        </div>
+
+        <div
+          v-if="!readOnly && isPickingBoard(item)"
           class="paper-triage__board-pick"
           data-testid="capture-board-pick"
           :aria-busy="boardPickBlock === 'loading'"
@@ -544,7 +691,7 @@ function formatTime(iso: string): string {
           </div>
         </div>
 
-        <div v-else class="paper-triage__actions">
+        <div v-else-if="!readOnly" class="paper-triage__actions">
           <PaperHLBtn
             label="Accept"
             variant="ember"
@@ -572,7 +719,7 @@ function formatTime(iso: string): string {
         </div>
 
         <p
-          v-if="isEditingElsewhere(item)"
+          v-if="!readOnly && isEditingElsewhere(item)"
           :id="editorOpenReasonId(item)"
           class="paper-triage__edit-block paper-triage__edit-block--row"
           role="status"
@@ -581,7 +728,7 @@ function formatTime(iso: string): string {
           {{ t('inbox.triage.edit.blocked.editorOpen') }}
         </p>
 
-        <div v-if="isEditing(item)" class="paper-triage__edit">
+        <div v-if="!readOnly && isEditing(item)" class="paper-triage__edit">
           <p
             class="paper-triage__edit-block"
             role="status"
@@ -813,5 +960,47 @@ function formatTime(iso: string): string {
  */
 .paper-triage__tag--source {
   border-style: dashed;
+}
+
+/*
+ * Read-only capture inspection (#1973). Sits where the triage actions would be,
+ * so the archived row still has a substantive lower half. `grid-column: 1 / -1`
+ * lets the retained text run the full row width instead of the excerpt column.
+ */
+.paper-triage__history-detail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper-2, transparent);
+}
+.paper-triage__history-text {
+  /* The retained capture is the point of the panel — keep its own line breaks
+     and let long single-token pastes wrap instead of forcing a scrollbar. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.paper-triage__history-error {
+  color: var(--overdue);
+}
+.paper-triage__history-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+.paper-triage__history-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.paper-triage__history-link {
+  align-self: flex-start;
+  color: var(--ink-1);
+  text-decoration: underline;
 }
 </style>

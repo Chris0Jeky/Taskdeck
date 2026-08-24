@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
+import type { CaptureItem } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
 import PaperTriageTable from './inbox/PaperTriageTable.vue'
@@ -47,6 +48,7 @@ const {
   items,
   activeBoardId,
   activeColumnId,
+  isArchivedHistory,
   activeBoardName,
   activeColumnName,
   loadInbox,
@@ -67,13 +69,36 @@ const scopeLabel = computed(() => {
     : t('inbox.scope.board', { board: activeBoardName.value })
 })
 
+// Read-only inspection of one retained capture in archived history (#1973).
+const historyDetailItemId = ref<string | null>(null)
+const historyDetail = ref<CaptureItem | null>(null)
+const historyDetailLoading = ref(false)
+const historyDetailError = ref<string | null>(null)
+
+/**
+ * Deep link from a retained capture to the decision record it produced, kept in
+ * archived history mode so the destination is the read-only Review queue rather
+ * than the live one. Null when triage never recorded a proposal for it.
+ */
+const historyProposalHref = computed<string | null>(() => {
+  const proposalId = historyDetail.value?.provenance?.proposalId
+  if (!proposalId) return null
+  const params = new URLSearchParams()
+  const boardId = historyDetail.value?.boardId ?? activeBoardId.value
+  if (boardId) params.set('boardId', boardId)
+  params.set('history', 'archived')
+  return `/workspace/review?${params.toString()}#proposal-${encodeURIComponent(proposalId)}`
+})
+
 let stopTriagePolling: (() => void) | null = null
 
 function toggleVariant() {
+  if (isArchivedHistory.value) return
   setVariant(variant.value === 'nib' ? 'composer' : 'nib')
 }
 
 function setVariant(next: Variant) {
+  if (isArchivedHistory.value) return
   variant.value = next
   void nextTick(() => {
     if (next === 'nib') {
@@ -86,7 +111,7 @@ function setVariant(next: Variant) {
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // ⌘;  or Ctrl+;  toggles between the two capture variants.
-  if ((event.metaKey || event.ctrlKey) && event.key === ';') {
+  if (!isArchivedHistory.value && (event.metaKey || event.ctrlKey) && event.key === ';') {
     event.preventDefault()
     toggleVariant()
   }
@@ -96,6 +121,9 @@ async function dispatchCapture(
   text: string,
   opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
 ): Promise<boolean> {
+  if (isArchivedHistory.value) {
+    return false
+  }
   if (captureSubmitting.value) {
     return false
   }
@@ -178,6 +206,7 @@ async function onComposerSubmit(payload: {
 }
 
 async function onTriageAccept(itemId: string, boardId?: string | null) {
+  if (isArchivedHistory.value) return
   if (stopTriagePolling) {
     stopTriagePolling()
     stopTriagePolling = null
@@ -198,6 +227,7 @@ async function onTriageAccept(itemId: string, boardId?: string | null) {
 }
 
 async function onTriageReject(itemId: string) {
+  if (isArchivedHistory.value) return
   try {
     await captureStore.ignoreItem(itemId)
   } catch {
@@ -205,10 +235,59 @@ async function onTriageReject(itemId: string) {
   }
 }
 
-function onTriageOpen(_itemId: string) {
-  // Paper Inbox has no detail panel. Avoid mutating selectedItemId here because
-  // the legacy selection watcher owns triage polling lifecycle cleanup.
+/**
+ * In live capture mode this stays a no-op: Paper Inbox has no detail panel, and
+ * mutating `selectedItemId` here would fight the legacy selection watcher that
+ * owns triage-polling lifecycle cleanup.
+ *
+ * In archived history (#1973) there is no triage path at all, so the row's only
+ * content would be a truncated `textExcerpt` and a dead button — "reachable"
+ * with nothing to reach. Opening a row therefore expands a read-only inspection
+ * panel with the full retained capture and its provenance. `peekDetail` is used
+ * deliberately over `fetchDetail`: it returns the item WITHOUT caching it into
+ * `detailById` or syncing the list summary, so inspecting archived history
+ * cannot disturb live capture state.
+ */
+async function onTriageOpen(itemId: string) {
+  if (!isArchivedHistory.value) return
+
+  if (historyDetailItemId.value === itemId) {
+    closeHistoryDetail()
+    return
+  }
+
+  historyDetailItemId.value = itemId
+  historyDetail.value = null
+  historyDetailError.value = null
+  historyDetailLoading.value = true
+  try {
+    const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
+    // The user may have collapsed this row or opened another while the request
+    // was in flight; a late payload must not reopen or mislabel the panel.
+    if (historyDetailItemId.value !== itemId) return
+    historyDetail.value = detail
+  } catch (e: unknown) {
+    if (historyDetailItemId.value !== itemId) return
+    historyDetailError.value = getErrorDisplay(e, t('inbox.history.detail.error')).message
+  } finally {
+    if (historyDetailItemId.value === itemId) {
+      historyDetailLoading.value = false
+    }
+  }
 }
+
+function closeHistoryDetail() {
+  historyDetailItemId.value = null
+  historyDetail.value = null
+  historyDetailError.value = null
+  historyDetailLoading.value = false
+}
+
+// Leaving archived history (or re-scoping to another board) must not leave a
+// previous board's retained capture expanded underneath the new list.
+watch([isArchivedHistory, activeBoardId], () => {
+  closeHistoryDetail()
+})
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
@@ -230,7 +309,11 @@ defineExpose({ variant, toggleVariant, setVariant })
 </script>
 
 <template>
-  <div class="paper-inbox" :data-variant="variant">
+  <div
+    class="paper-inbox"
+    :data-variant="variant"
+    :data-history-mode="isArchivedHistory ? 'archived' : undefined"
+  >
     <header class="paper-inbox__header">
       <div>
         <!-- The third argument is the plural CHOICE: it/es agree the participle
@@ -238,18 +321,23 @@ defineExpose({ variant, toggleVariant, setVariant })
              reach the catalog as a choice and not only as an interpolation. -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
           {{
-            $t(
-              'inbox.eyebrow',
-              { pending: pendingTriageCount, total: capturedCount },
-              capturedCount,
-            )
+            isArchivedHistory
+              ? $t('inbox.history.eyebrow')
+              : $t(
+                  'inbox.eyebrow',
+                  { pending: pendingTriageCount, total: capturedCount },
+                  capturedCount,
+                )
           }}
         </div>
-        <h1 class="tk-h1 paper-inbox__title">
+        <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">
+          {{ $t('inbox.history.title') }}
+        </h1>
+        <h1 v-else class="tk-h1 paper-inbox__title">
           {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>
         </h1>
         <p class="tk-lede paper-inbox__lede">
-          {{ $t('inbox.lede') }}
+          {{ isArchivedHistory ? $t('inbox.history.lede') : $t('inbox.lede') }}
         </p>
         <PaperScopeDisclosure
           v-if="scopeLabel"
@@ -260,6 +348,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       </div>
 
       <div
+        v-if="!isArchivedHistory"
         class="paper-inbox__variant-toggle"
         role="tablist"
         :aria-label="$t('inbox.variantToggle.label')"
@@ -282,7 +371,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       </div>
     </header>
 
-    <section class="paper-inbox__capture" data-testid="paper-inbox-capture">
+    <section v-if="!isArchivedHistory" class="paper-inbox__capture" data-testid="paper-inbox-capture">
       <PaperCaptureNib
         v-show="variant === 'nib'"
         ref="nibRef"
@@ -325,6 +414,12 @@ defineExpose({ variant, toggleVariant, setVariant })
       :triage-polling-item-id="captureStore.triagePollingItemId"
       :scope-label="scopeLabel"
       :scope-clear-label="$t('inbox.scope.clear')"
+      :read-only="isArchivedHistory"
+      :detail-item-id="historyDetailItemId"
+      :detail="historyDetail"
+      :detail-loading="historyDetailLoading"
+      :detail-error="historyDetailError"
+      :detail-proposal-route="historyProposalHref"
       @accept="onTriageAccept"
       @reject="onTriageReject"
       @open="onTriageOpen"

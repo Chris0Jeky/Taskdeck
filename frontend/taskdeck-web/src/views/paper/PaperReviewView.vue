@@ -70,6 +70,7 @@ const {
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
+  isArchivedHistory,
   matchesActiveBoardFilter,
   isProposalExpired,
   isApplyActionable,
@@ -469,6 +470,13 @@ const {
   saveRevision,
   loadRevisionState,
 } = useProposalRevisions(activeProposal)
+
+watch(isArchivedHistory, (readOnly) => {
+  if (!readOnly) return
+  cancelExecuteProposal()
+  cancelRejectProposal()
+  cancelRevisionEditing()
+})
 
 const revisionBadge = computed(() =>
   t('review.revisionEditor.badge', { count: revisionCount.value }, revisionCount.value),
@@ -984,6 +992,7 @@ function restoreApplyFocus(captured: HTMLElement | null) {
 }
 
 async function onFileAway() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -1003,6 +1012,7 @@ async function onFileAway() {
 }
 
 async function onFileAwayBulk() {
+  if (isArchivedHistory.value) return
   if (busy.value) {
     toast.info(t('review.toast.bulkBusy'))
     return
@@ -1018,6 +1028,7 @@ async function onFileAwayBulk() {
 }
 
 async function onApply() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (applyGuardBusy.value) return
@@ -1138,6 +1149,7 @@ async function onApply() {
 }
 
 function onReject() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   // ⌫ is dual-purpose: on a settled proposal the rail shows "File away", so
@@ -1168,6 +1180,7 @@ function onReject() {
 }
 
 function onRequestEdit() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionSaving.value) return
@@ -1179,6 +1192,7 @@ function onRequestEdit() {
 }
 
 async function onDefer() {
+  if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
   if (revisionBusy.value) {
@@ -1418,6 +1432,7 @@ async function onPreviewDiff() {
 }
 
 async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
+  if (isArchivedHistory.value) return
   await saveRevision(payload)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
@@ -1429,6 +1444,7 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
 }
 
 async function onReportBadSuggestion(proposalId: string) {
+  if (isArchivedHistory.value) return
   if (!proposalId) {
     toast.error(t('review.toast.noProposalToReport'))
     return
@@ -1463,6 +1479,7 @@ useReviewKeymap(
     // proposal the user is being asked to confirm. GH-1969 gives the reject
     // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
+      !isArchivedHistory.value &&
       !busy.value &&
       activeProposal.value !== null &&
       executeConfirmProposal.value === null &&
@@ -1536,7 +1553,11 @@ function onQueueFilterChange(filter: QueueFilter) {
 </script>
 
 <template>
-  <div class="paper paper-review-deep" data-testid="paper-review-view">
+  <div
+    class="paper paper-review-deep"
+    data-testid="paper-review-view"
+    :data-history-mode="isArchivedHistory ? 'archived' : undefined"
+  >
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
@@ -1584,6 +1605,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"
+        :read-only="isArchivedHistory"
         :decision-receipt="activeDecisionReceipt"
         @apply="onApply"
         @reject="onReject"
@@ -1723,7 +1745,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         </div>
       </section>
       <ReviewRevisionEditor
-        v-if="revisionEditing"
+        v-if="revisionEditing && !isArchivedHistory"
         :operations-payload="editablePayload"
         :saving="revisionSaving"
         @save="onSaveRevision"

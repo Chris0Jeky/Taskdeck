@@ -45,6 +45,9 @@ export function useInboxOrchestrator(options: {
   })
   const activeBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
   const activeColumnId = computed(() => normalizeBoardIdQueryParam(route.query.columnId))
+  const isArchivedHistory = computed(
+    () => route.query.history === 'archived' && activeBoardId.value !== null,
+  )
   const activeBoardName = computed(() => {
     const boardId = activeBoardId.value
     return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
@@ -78,6 +81,7 @@ export function useInboxOrchestrator(options: {
   // ---- Batch selection ----
 
   function toggleItemSelection(itemId: string) {
+    if (isArchivedHistory.value) return
     const next = new Set(selectedIds.value)
     if (next.has(itemId)) {
       next.delete(itemId)
@@ -88,6 +92,7 @@ export function useInboxOrchestrator(options: {
   }
 
   function toggleSelectAll() {
+    if (isArchivedHistory.value) return
     if (items.value.length > 0 && selectedIds.value.size === items.value.length) {
       selectedIds.value = new Set()
     } else {
@@ -100,6 +105,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
+    if (isArchivedHistory.value) return
     if (selectedIds.value.size === 0) return
     const ids = Array.from(selectedIds.value)
     try {
@@ -113,6 +119,7 @@ export function useInboxOrchestrator(options: {
   // ---- Suggestion editing ----
 
   function startEditSuggestion() {
+    if (isArchivedHistory.value) return
     if (!selectedItem.value) return
     editedText.value = selectedItem.value.rawText
     editedTitleHint.value = ''
@@ -126,6 +133,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function saveEditedSuggestion() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value || !editedText.value.trim()) return
     try {
       await captureStore.updateSuggestion(selectedItemId.value, {
@@ -143,6 +151,7 @@ export function useInboxOrchestrator(options: {
   // ---- Capture modal ----
 
   function openCaptureModal() {
+    if (isArchivedHistory.value) return
     showCaptureModal.value = true
   }
 
@@ -151,6 +160,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function handleCaptureCreated() {
+    if (isArchivedHistory.value) return
     closeCaptureModal()
     await loadInbox()
   }
@@ -221,14 +231,28 @@ export function useInboxOrchestrator(options: {
 
   async function selectItemById(itemId: string, opts: SelectItemOptions = {}): Promise<boolean> {
     const { preferredIndex, preloadedDetail, cacheSummary = true } = opts
+    // Archived history (#1973) inspects records the LIVE queues deliberately
+    // omit, so a detail load there must never write back into the list.
+    // `fetchDetail`'s success path calls `cacheDetail(detail, syncSummary)`, and
+    // `upsertSummary` UNSHIFTS an absent summary to the top of
+    // `captureStore.items` with no scope or request-generation guard
+    // (`latestListLoadRequestId` covers only `fetchItems`). A detail GET started
+    // in archived history that resolves AFTER the mode-exit watcher's unscoped
+    // `loadInbox` would therefore seat the archived board's capture at the top
+    // of the live Inbox, with Triage / Ignore / Cancel enabled against an
+    // archived board — the exact boundary this surface exists to hold. The
+    // detail still caches into `detailById`, so the read-only panel renders;
+    // only the list write is suppressed. Paper loads through `peekDetail` and is
+    // unaffected either way.
+    const syncSummary = cacheSummary && !isArchivedHistory.value
     primeSelection(itemId, preferredIndex)
     hashLoadFailedItemId.value = null
     try {
       if (preloadedDetail) {
-        captureStore.cacheDetail(preloadedDetail, cacheSummary)
+        captureStore.cacheDetail(preloadedDetail, syncSummary)
         return true
       }
-      await captureStore.fetchDetail(itemId)
+      await captureStore.fetchDetail(itemId, { syncSummary })
       return true
     } catch {
       if (selectedItemId.value === itemId) {
@@ -355,6 +379,7 @@ export function useInboxOrchestrator(options: {
   // ---- Detail actions ----
 
   async function ignoreSelected() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value) return
     try {
       await captureStore.ignoreItem(selectedItemId.value)
@@ -364,6 +389,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function cancelSelected() {
+    if (isArchivedHistory.value) return
     if (!selectedItemId.value) return
     try {
       await captureStore.cancelItem(selectedItemId.value)
@@ -373,6 +399,7 @@ export function useInboxOrchestrator(options: {
   }
 
   async function triageSelected() {
+    if (isArchivedHistory.value) return
     const itemId = selectedItemId.value
     if (!itemId) return
 
@@ -400,7 +427,15 @@ export function useInboxOrchestrator(options: {
   async function refreshSelectedDetail() {
     if (!selectedItemId.value) return
     try {
-      await captureStore.fetchDetail(selectedItemId.value, { forceRefresh: true })
+      await captureStore.fetchDetail(selectedItemId.value, {
+        forceRefresh: true,
+        // Same list-write boundary as `selectItemById`. Refresh Detail is a READ
+        // affordance and stays available in archived history — unlike the
+        // Triage / Ignore / Cancel siblings, it writes nothing server-side — but
+        // it must not seed the live list either, and `forceRefresh` means it
+        // always takes the caching path rather than the cached early return.
+        syncSummary: !isArchivedHistory.value,
+      })
     } catch {
       // Store handles toast + error state.
     }
@@ -410,9 +445,11 @@ export function useInboxOrchestrator(options: {
 
   function reviewRoute(proposalId?: string, boardId?: string | null) {
     const effectiveBoardId = boardId ?? activeBoardId.value
+    const query: Record<string, string> = effectiveBoardId ? { boardId: effectiveBoardId } : {}
+    if (isArchivedHistory.value) query.history = 'archived'
     return {
       name: 'workspace-review',
-      query: effectiveBoardId ? { boardId: effectiveBoardId } : undefined,
+      query: Object.keys(query).length > 0 ? query : undefined,
       hash: proposalId ? `#proposal-${encodeURIComponent(proposalId)}` : undefined,
     }
   }
@@ -433,6 +470,7 @@ export function useInboxOrchestrator(options: {
     const query = { ...route.query }
     delete query.boardId
     delete query.columnId
+    delete query.history
     await router.replace({ name: 'workspace-inbox', query })
   }
 
@@ -460,9 +498,27 @@ export function useInboxOrchestrator(options: {
     scrollActiveItemIntoView()
   })
 
-  watch(activeBoardId, () => {
+  function resetScopedState() {
     selectedItemId.value = null
+    selectedIds.value = new Set()
+    showCaptureModal.value = false
     activeItemIndex.value = 0
+  }
+
+  watch(activeBoardId, () => {
+    resetScopedState()
+    void loadScopedBoard()
+    void loadInbox()
+  })
+
+  // Entering or leaving archived history (#1973) is a scope change of its own:
+  // the two modes list different records, and a selection, batch set, or open
+  // capture modal carried across the boundary would act on the wrong one. Kept
+  // as a SEPARATE watcher rather than folded into the `activeBoardId` source
+  // above, because the board watcher's identity is the contract the scoped
+  // board-metadata race tests drive it through.
+  watch(isArchivedHistory, () => {
+    resetScopedState()
     void loadScopedBoard()
     void loadInbox()
   })
@@ -516,6 +572,7 @@ export function useInboxOrchestrator(options: {
     selectedItem,
     activeBoardId,
     activeColumnId,
+    isArchivedHistory,
     activeBoardName,
     activeColumnName,
     showCaptureModal,

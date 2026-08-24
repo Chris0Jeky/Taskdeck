@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import type { Proposal } from '../../../types/automation'
 import type { ReviewDiffMode } from '../../../composables/useReviewActions'
 import ReviewProposalCard from '../../../components/review/ReviewProposalCard.vue'
@@ -57,6 +57,7 @@ function mountCard(props: {
   selectedDiffMode?: ReviewDiffMode | null
   selectedDiffInvalidReason?: string | null
   selectedDiffRevised?: boolean | null
+  readOnly?: boolean
 }) {
   const proposal = props.proposal ?? makeProposal()
   return mount(ReviewProposalCard, {
@@ -71,7 +72,9 @@ function mountCard(props: {
       selectedDiffRevised: props.selectedDiffRevised ?? null,
       captureHref: '/workspace/inbox',
       proposalHref: '/workspace/review#proposal-p-1',
+      readOnly: props.readOnly ?? false,
     },
+    global: { stubs: { RouterLink: RouterLinkStub } },
   })
 }
 
@@ -81,6 +84,70 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     resetProposalDisplayNamesForTests()
     mocks.getBoards.mockResolvedValue([])
     mocks.getColumns.mockResolvedValue([])
+  })
+
+  // Regression for the third boundary escape found on #1973's read-only surface.
+  // `readOnly` reached the action footer but not the details panel, whose links
+  // dropdown carries Open Board. `BoardView` / `PaperBoardView` do not gate on
+  // `isArchived` and no service rejects a write to an archived board, so that
+  // control handed the user a fully editable board — two clicks from an Archive
+  // row, off a page whose own copy says to restore the board first.
+  // The Links dropdown lives inside the collapsed "Technical details" section,
+  // which itself only renders when the proposal has provenance context.
+  async function clickButtonContaining(
+    wrapper: ReturnType<typeof mountCard>,
+    label: string,
+  ) {
+    const trigger = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes(label))
+    expect(trigger, `expected a button containing "${label}"`).toBeDefined()
+    await trigger!.trigger('click')
+    await flushPromises()
+  }
+
+  async function openLinksDropdown(wrapper: ReturnType<typeof mountCard>) {
+    await clickButtonContaining(wrapper, 'Technical details')
+    await clickButtonContaining(wrapper, 'Links')
+  }
+
+  function archivedHistoryProposal(boardId: string) {
+    return makeProposal({
+      status: 'Applied',
+      boardId,
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+      correlationId: 'corr-archived',
+    })
+  }
+
+  it('withholds Open Board in archived decision history', async () => {
+    const wrapper = mountCard({
+      proposal: archivedHistoryProposal('archived-board'),
+      readOnly: true,
+    })
+    await flushPromises()
+    await openLinksDropdown(wrapper)
+
+    const dropdown = wrapper.find('.td-review-card__links-dropdown')
+    expect(dropdown.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-open-board"]').exists()).toBe(false)
+    expect(dropdown.text()).not.toContain('Open Board')
+    // The capture and review links are reads and must survive — only the
+    // editable destination goes.
+    expect(dropdown.text()).toContain('Open Capture')
+    expect(dropdown.text()).toContain('Review Link')
+  })
+
+  it('keeps Open Board on the live review queue', async () => {
+    const wrapper = mountCard({
+      proposal: archivedHistoryProposal('live-board'),
+      readOnly: false,
+    })
+    await flushPromises()
+    await openLinksDropdown(wrapper)
+
+    expect(wrapper.find('[data-testid="review-open-board"]').exists()).toBe(true)
   })
 
   it('shows a read-only banner and the stored preview for an expired proposal', () => {
