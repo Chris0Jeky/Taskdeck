@@ -83,6 +83,14 @@ Explorer/SmartScreen acceptance remain unverified.
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
   board-scope journeys were not manually browser-tested.
+- `#2021`/PR `#2042`: 76 focused API and 61 Application tests passed; the earlier full backend run
+  passed 8,112 tests with 5 intentional skips. Exact-base hosted CI, dynamic E2E, custom
+  relative/absolute JSON and environment-spoof regressions, and bounded review passed. This is
+  configuration-stack proof, not a new packaged inherited-profile migration journey.
+- `#2022`/PR `#2043`: four focused Inbox suites passed 172 tests after the final base refresh,
+  alongside typecheck, production build, scoped lint, exact-base hosted CI, dynamic E2E, and a
+  fresh adversarial review. The retained-editor DOM/draft path is covered; the page-count and
+  same-scope refresh-error residuals remain tracked by `#2022` and `#2044`.
 - `#1938`/PRs `#2023` and `#2033`: the capture-recovery slice's pre-final full frontend run passed
   4,725 tests and its final seam passed 50 targeted tests; the shared receipt slice passed 63 focused
   tests and the full 4,737-test frontend suite, then 17 Paper-dismiss and 76 refreshed-base focused
