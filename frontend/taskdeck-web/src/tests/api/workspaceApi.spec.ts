@@ -30,6 +30,15 @@ describe('workspaceApi', () => {
     expect(http.get).toHaveBeenCalledWith('/workspace/today?localDate=2026-08-23')
   })
 
+  it('loads the collaboration membership contract', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { memberCount: 1, hasCollaborators: false } })
+
+    const result = await workspaceApi.getCollaboration()
+
+    expect(http.get).toHaveBeenCalledWith('/workspace/collaboration')
+    expect(result).toEqual({ memberCount: 1, hasCollaborators: false })
+  })
+
   it('loads preferences', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { workspaceMode: 'guided' } })
 

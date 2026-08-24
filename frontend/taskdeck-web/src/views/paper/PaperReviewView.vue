@@ -18,6 +18,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
+import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollaboration'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
@@ -88,6 +89,7 @@ const {
 const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
+const collaboration = useWorkspaceCollaboration()
 const { t, locale } = useI18n()
 const displayVersion = ref(0)
 const technicalDetailsCopied = ref(false)
@@ -197,6 +199,17 @@ const filteredVisibleProposals = computed(() => {
   }
   return sortProposalsByRisk(filtered)
 })
+
+/**
+ * Whether the queue rail may offer the author partition ("All" vs "Mine").
+ *
+ * Sourced only from the server-computed collaboration-membership contract, per
+ * the recorded #1940 prerequisite: proposal authorship, board ACL rows on their
+ * own, and online presence are all wrong proxies for workspace membership. The
+ * pair is withdrawn only when membership is known AND single-member; loading,
+ * unknown, and failed lookups leave every control exactly as it is today.
+ */
+const authorPartitionAvailable = computed(() => !collaboration.isSoloWorkspace.value)
 
 const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
 const boardScopeLabel = computed(() =>
@@ -1437,10 +1450,15 @@ onMounted(() => {
   startClock()
   void loadBoardOptions()
   void loadProposals()
+  // Membership has no realtime event to subscribe to (the only hub is
+  // per-board and silent on access grants), so the composable reads it once
+  // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
+  void collaboration.start()
 })
 
 onUnmounted(() => {
   stopClock()
+  collaboration.stop()
 })
 
 function selectProposal(id: string) {
@@ -1499,6 +1517,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
+      :author-partition-available="authorPartitionAvailable"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
