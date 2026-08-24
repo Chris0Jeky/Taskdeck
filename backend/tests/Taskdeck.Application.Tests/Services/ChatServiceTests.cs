@@ -269,12 +269,239 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("status");
         result.Value.Content.Should().Contain("board-scoped chat session");
+        // The notice must also say plainly that nothing happened, so the prose above it cannot
+        // read as an applied change (#2004).
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
                 It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
                 It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithNoBoardNotice_WhenProposalRequestedButNoBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        // The provider answers in prose and never flags its own reply actionable, so the
+        // proposal path is not entered — the user still opted in and must be told why nothing
+        // happened (#2004).
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is a tidier write-up.", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Here is a tidier write-up.");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
+        result.Value.Content.Should().Contain("board-scoped chat session");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithNoBoardNotice_WhenSkipRequestForcesBestEffortWithoutBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+        session.AddMessage(new ChatMessage(
+            session.Id, ChatMessageRole.Assistant, "Which column should these go in?", "clarification"));
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Task Title: Board Management Optimization\nDeadline: Today", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("just do your best"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldLeavePlainChatUntouched_WhenNoBoardAndTurnAsksForNoAction()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("Hello, what can you do?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("text");
+        result.Value.Content.Should().Be("Assistant response");
+    }
+
+    [Fact]
+    // Scope note: this covers a degraded reply the provider did NOT flag actionable. A degraded
+    // fallback that IS flagged actionable takes the pre-existing status branch and is relabelled
+    // "status" — that flip predates this change and is not asserted here.
+    public async Task SendMessageAsync_ShouldKeepDegradedClassification_WhenUnboundNonActionableTurnRequestsAction()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "This is a degraded fallback response.",
+                10,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request failed."));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be("Live provider request failed.");
+        result.Value.Content.Should().Be("This is a degraded fallback response.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundActionTurnHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(string.Empty, 5, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        // No prose exists to be misread as completed work, so the textless outcome keeps its own
+        // placeholder and "degraded" classification rather than being relabelled "status".
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundClarificationHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                string.Empty, 5, false, null, IsClarificationRequest: true));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create onboarding tasks", RequestProposal: true),
+            default);
+
+        // A clarification with no question text has nothing for the user to answer, so it keeps
+        // the deliberate "degraded" reclassification instead of carrying the no-board notice.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldNotAddNoBoardNotice_WhenSessionIsBoardScoped()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Board scoped session", boardId);
+        var proposalId = Guid.NewGuid();
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I can create that card.", 12, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "create card",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Test\"", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+        result.Value.Content.Should().Contain("Proposal created for review");
+        result.Value.Content.Should().NotContain("nothing was created or changed on any board");
     }
 
     [Fact]
