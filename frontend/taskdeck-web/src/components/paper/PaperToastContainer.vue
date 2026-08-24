@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperTagstamp from './PaperTagstamp.vue'
 import type { PaperTagstampTone } from './PaperTagstamp.vue'
@@ -32,6 +32,34 @@ const toastStore = useToastStore()
 const { t } = useI18n()
 const expanded = reactive<Record<string, boolean>>({})
 const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+const politeAnnouncement = ref('')
+let initialToastIds: Set<string> | null = null
+
+watch(
+  () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
+  async (current, previous) => {
+    if (initialToastIds === null) {
+      initialToastIds = new Set(current.map(({ id }) => id))
+      return
+    }
+
+    const previousIds = new Set((previous ?? []).map(({ id }) => id))
+    const added = current.filter(
+      ({ id, type }) =>
+        type !== 'error' && !previousIds.has(id) && !initialToastIds!.has(id),
+    )
+
+    if (added.length === 0) {
+      if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''
+      return
+    }
+
+    politeAnnouncement.value = ''
+    await nextTick()
+    politeAnnouncement.value = added.map(({ message }) => message).join(' ')
+  },
+  { flush: 'post', immediate: true },
+)
 
 type Tone = 'applied' | 'proposed' | 'captured' | 'overdue' | 'undo'
 
@@ -264,11 +292,15 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
 <template>
   <div
     class="paper-toast-stack"
-    aria-live="polite"
-    aria-atomic="false"
-    role="status"
     data-paper-toast-stack
   >
+    <div
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-toast-polite-announcer
+    >{{ politeAnnouncement }}</div>
     <TransitionGroup name="paper-toast">
       <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- hover/focus pause is a UX affordance; the toast itself is purely informational and the action (when present) is on a real <button> -->
       <article
@@ -284,6 +316,8 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
           { 'paper-toast--expanded': expanded[toast.id] },
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
+        :aria-live="toast.type === 'error' ? 'assertive' : undefined"
+        :aria-atomic="toast.type === 'error' ? 'true' : undefined"
         @mouseenter="setHover(toast.id, true)"
         @mouseleave="setHover(toast.id, false)"
         @focusin="setFocusWithin(toast.id, $event, true)"
