@@ -372,6 +372,47 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         responseBody.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
     }
 
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task NonGetVerbOnUnknownApiPath_Returns404WithTheErrorContract_WhenAnonymous(string method)
+    {
+        using var client = _factory.CreateClient();
+
+        // The framework's synthetic 405 endpoint carries no metadata, so before the pipeline
+        // replaced it on machine paths the global FallbackPolicy answered this 401 — an anonymous
+        // GET typo said 404 while the same PUT typo said 401. The 404 contract is verb-independent
+        // and needs no credentials, exactly like the anonymous GET case above.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/definitely-not-a-real-endpoint-hzn")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        var response = await client.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        response.Content.Headers.Allow.Should().BeEmpty();
+        responseBody.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task WrongVerbOnRealApiRoute_Returns405WithExactAllow_WhenAnonymous(string method)
+    {
+        using var client = _factory.CreateClient();
+
+        // Anonymous-disclosure symmetry for a real route: GET on this POST-only route already
+        // answers 405 anonymously through the AllowAnonymous catch-all, so a verb outside the
+        // GET/HEAD pair must not re-hide the same answer behind a 401.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/import/notes/markdown");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo("POST");
+    }
+
     [Fact]
     public void NonSpaPathPrefixes_CoverEveryMachineFacingSurface()
     {

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,14 @@ public static class PipelineConfiguration
     /// framework's 405 endpoint for every verb outside it (#1971).
     /// </summary>
     private static readonly string[] SpaFallbackHttpMethods = ["GET", "HEAD"];
+
+    /// <summary>
+    /// The display name ASP.NET Core's <c>HttpMethodMatcherPolicy</c> gives the metadata-less
+    /// endpoint it synthesizes when every routing candidate is method-mismatched (pinned on .NET 8;
+    /// the anonymous wrong-verb cases in <c>SpaFallbackRoutingApiTests</c> fail loudly if a
+    /// framework update renames it, because the requests fall back to answering 401).
+    /// </summary>
+    private const string Http405EndpointDisplayName = "405 HTTP Method Not Supported";
 
     public static WebApplication ConfigureTaskdeckPipeline(
         this WebApplication app,
@@ -151,6 +160,34 @@ public static class PipelineConfiguration
         {
             app.UseRateLimiter();
         }
+
+        // Routing (auto-inserted at the head of the pipeline) resolves a wrong-verb request whose
+        // every candidate is method-mismatched to a synthetic 405 endpoint that carries NO metadata,
+        // so the global FallbackPolicy would answer it 401 for anonymous callers before the
+        // correction middleware below ever saw the 405 — an anonymous GET typo said 404 (the
+        // machine-path catch-alls are AllowAnonymous) while the same PUT typo said 401. On machine
+        // paths the endpoint is replaced with an equivalent one that opts out of the fallback
+        // policy, so the 404/405 contract is verb-independent for exactly the unauthenticated
+        // scripts and probes it exists for. The conjunction below can never match a real endpoint
+        // (those are RouteEndpoints and carry metadata), and route existence is already disclosed
+        // anonymously — see the fallback comment further down; this discloses nothing further.
+        app.Use(async (context, next) =>
+        {
+            var endpoint = context.GetEndpoint();
+            if (endpoint is { RequestDelegate: not null } and not RouteEndpoint &&
+                endpoint.Metadata.Count == 0 &&
+                string.Equals(endpoint.DisplayName, Http405EndpointDisplayName, StringComparison.Ordinal) &&
+                IsMachineFacingPath(context.Request.Path))
+            {
+                context.SetEndpoint(new Endpoint(
+                    endpoint.RequestDelegate,
+                    new EndpointMetadataCollection(new AllowAnonymousAttribute()),
+                    endpoint.DisplayName));
+            }
+
+            await next(context);
+        });
+
         app.UseAuthorization();
 
         // Machine-path 404/405 contract (#1971, #1992). One resolver answers "is there a real endpoint
