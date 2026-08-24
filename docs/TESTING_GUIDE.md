@@ -110,6 +110,19 @@ Explorer/SmartScreen acceptance remain unverified.
   exact-head hosted CI including dynamic Playwright, automatic review, an independent full-diff
   review, and a clean P1 fix-diff review passed. The broader applied-proposal detail journey and
   the recorded stale/terminal-hash and diff-pane residuals remain unverified on open `#1967`.
+- `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
+  hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
+  exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
+  August 23 while Today/Calendar requests and due/overdue classification followed each local day.
+  Maximum-range `localDate` validation and unchanged legacy-value audit noise remain on `#2049`
+  and `#2050`.
+- `#2005`/PR `#2047` (parked, not shipped): final-base focused Application and API runs passed
+  208 and 46 tests; the combined capture/due-date frontend run passed 217 tests across 10 files,
+  followed by typecheck, production build, and diff hygiene. An isolated exact-head desktop journey
+  proved unknown-label failure before Review, lossless correction to `Sales, EMEA`, retry, approval,
+  explicit Apply, and exactly one card retaining the expected due day and label. A delayed-save
+  remeasure then confirmed silent in-flight edit loss, and final review found stale stranded-proposal
+  reuse; `#2051` and `#2052` are the fresh successor blockers. No merge or shipped behavior is claimed.
 - PR `#2020`: docs and GitHub-operations governance, five touched-skill validators, the focused
   worktree-helper contract, stale-policy scan, diff hygiene, and hosted Workflow Lint passed. No
   runtime product test applies to the DCO enforcement pause.
