@@ -83,6 +83,7 @@ describe('useTodayDossier', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
@@ -312,6 +313,7 @@ describe('useTodayDossier', () => {
   })
 
   it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
     workspaceMock.todaySummary = {
       workspaceMode: 'guided',
       onboarding: {
@@ -334,7 +336,7 @@ describe('useTodayDossier', () => {
         boardName: 'Client onboarding',
         cardId: 'card-123456789',
         title: 'Confirm engagement letter',
-        dueDate: '2026-01-14T09:00:00Z',
+        dueDate: '2026-01-14T00:00:00Z',
         blockReason: null,
         updatedAt: '2026-01-15T09:00:00Z',
       }],

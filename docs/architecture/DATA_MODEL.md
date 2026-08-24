@@ -224,7 +224,7 @@ A task card within a board column.
 | ColumnId | `Guid` | Yes | FK to Column | Current column |
 | Title | `string` | Yes | 1-200 chars | Card title |
 | Description | `string` | Yes | Max 4000 chars (DB); domain enforces 2000 | Defaults to empty string |
-| DueDate | `DateTimeOffset?` | No | | Optional deadline |
+| DueDate | `DateTimeOffset?` | No | Canonical UTC `YYYY-MM-DD` key; date-input writes use midnight UTC | Optional calendar-day deadline (ADR-0058) |
 | IsBlocked | `bool` | Yes | | Blocked status flag |
 | BlockReason | `string?` | No | Non-empty when IsBlocked; 500 is a model width only (SQLite `TEXT`, runtime input unbounded) | Reason for blocking |
 | Position | `int` | Yes | >= 0 | Display order within column |

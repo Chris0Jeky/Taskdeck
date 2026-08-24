@@ -5,6 +5,12 @@ import type { Card, CardCaptureProvenance, Label } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
+import {
+  calendarDateKeyToMidnightUtc,
+  formatCalendarDate,
+  isCalendarDateOverdue,
+  toCalendarDateKey,
+} from '../utils/dueDates'
 
 export interface UseCardModalOptions {
   getCard: () => Card
@@ -59,18 +65,21 @@ export function useCardModal(options: UseCardModalOptions) {
 
   const formattedDueDate = computed(() => {
     if (!card.value.dueDate) return 'No due date'
-    const date = new Date(card.value.dueDate)
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    return formatCalendarDate(
+      card.value.dueDate,
+      { year: 'numeric', month: 'long', day: 'numeric' },
+      'en-US',
+    ) || 'No due date'
   })
 
   const isOverdue = computed(() => {
-    if (!card.value.dueDate) return false
-    return new Date(card.value.dueDate) < new Date()
+    return isCalendarDateOverdue(card.value.dueDate)
   })
 
   const isFormValid = computed(() => {
     if (title.value.trim().length === 0) return false
     if (isBlocked.value && blockReason.value.trim().length === 0) return false
+    if (dueDate.value && !calendarDateKeyToMidnightUtc(dueDate.value)) return false
     return true
   })
 
@@ -79,9 +88,7 @@ export function useCardModal(options: UseCardModalOptions) {
     if (newCard) {
       title.value = newCard.title
       description.value = newCard.description || ''
-      dueDate.value = newCard.dueDate
-        ? new Date(newCard.dueDate).toISOString().split('T')[0] ?? ''
-        : ''
+      dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
       isBlocked.value = newCard.isBlocked
       blockReason.value = newCard.blockReason || ''
       selectedLabelIds.value = newCard.labels.map(l => l.id)
@@ -153,7 +160,7 @@ export function useCardModal(options: UseCardModalOptions) {
       await boardStore.updateCard(card.value.boardId, card.value.id, {
         title: title.value !== card.value.title ? title.value : null,
         description: description.value !== card.value.description ? description.value : null,
-        dueDate: dueDate.value ? new Date(dueDate.value).toISOString() : null,
+        dueDate: dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null,
         clearDueDate: Boolean(card.value.dueDate) && !dueDate.value,
         isBlocked: isBlocked.value !== card.value.isBlocked ? isBlocked.value : null,
         blockReason: isBlocked.value ? blockReason.value : null,
