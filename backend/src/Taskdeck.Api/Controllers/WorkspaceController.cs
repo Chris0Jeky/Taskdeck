@@ -1,9 +1,12 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -32,12 +35,21 @@ public class WorkspaceController : AuthenticatedControllerBase
     }
 
     [HttpGet("today")]
-    public async Task<IActionResult> GetToday(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetToday(
+        [FromQuery] string? localDate,
+        CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _workspaceService.GetTodayAsync(userId, cancellationToken);
+        if (!TryParseLocalDate(localDate, out var parsedLocalDate))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "The 'localDate' value must use YYYY-MM-DD format."));
+        }
+
+        var result = await _workspaceService.GetTodayAsync(userId, parsedLocalDate, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -81,6 +93,7 @@ public class WorkspaceController : AuthenticatedControllerBase
     /// </summary>
     /// <param name="from">Start of the date range (inclusive). Defaults to start of current month.</param>
     /// <param name="to">End of the date range (exclusive). Defaults to end of current month.</param>
+    /// <param name="localDate">Caller's local calendar date in YYYY-MM-DD form. Defaults to the server's UTC date.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <response code="200">Returns calendar cards for the date range.</response>
     /// <response code="400">Invalid date range (from >= to or span > 90 days).</response>
@@ -92,16 +105,60 @@ public class WorkspaceController : AuthenticatedControllerBase
     public async Task<IActionResult> GetCalendar(
         [FromQuery] DateTimeOffset? from,
         [FromQuery] DateTimeOffset? to,
+        [FromQuery] string? localDate,
         CancellationToken cancellationToken = default)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var now = DateTimeOffset.UtcNow;
-        var effectiveFrom = from ?? new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        if (!TryParseLocalDate(localDate, out var parsedLocalDate))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "The 'localDate' value must use YYYY-MM-DD format."));
+        }
+
+        var utcToday = DateOnly.FromDateTime(DateTime.UtcNow);
+        var referenceDate = parsedLocalDate ?? utcToday;
+        var effectiveFrom = from ?? new DateTimeOffset(
+            referenceDate.Year,
+            referenceDate.Month,
+            1,
+            0,
+            0,
+            0,
+            TimeSpan.Zero);
         var effectiveTo = to ?? effectiveFrom.AddMonths(1);
 
-        var result = await _workspaceService.GetCalendarAsync(userId, effectiveFrom, effectiveTo, cancellationToken);
+        var result = await _workspaceService.GetCalendarAsync(
+            userId,
+            effectiveFrom,
+            effectiveTo,
+            parsedLocalDate,
+            cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    private static bool TryParseLocalDate(string? value, out DateOnly? localDate)
+    {
+        if (value is null)
+        {
+            localDate = null;
+            return true;
+        }
+
+        if (DateOnly.TryParseExact(
+                value,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed))
+        {
+            localDate = parsed;
+            return true;
+        }
+
+        localDate = null;
+        return false;
     }
 }

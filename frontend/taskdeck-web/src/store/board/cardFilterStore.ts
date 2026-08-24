@@ -3,6 +3,7 @@
  */
 import { computed } from 'vue'
 import type { Card } from '../../types/board'
+import { addCalendarDays, localCalendarDateKey, toCalendarDateKey } from '../../utils/dueDates'
 import type { BoardState, CardFilters } from './boardState'
 
 export function createCardFilterActions(state: BoardState) {
@@ -25,30 +26,20 @@ export function createCardFilterActions(state: BoardState) {
 
     // Due date filter
     if (state.filters.value.dueDateFilter !== 'all') {
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const weekFromNow = new Date(today)
-      weekFromNow.setDate(weekFromNow.getDate() + 7)
+      const todayKey = localCalendarDateKey()
+      const weekFromNowKey = addCalendarDays(todayKey, 7)
+      const dueDateKey = toCalendarDateKey(card.dueDate)
 
       switch (state.filters.value.dueDateFilter) {
         case 'overdue':
-          if (!card.dueDate || new Date(card.dueDate) >= today) return false
+          if (!dueDateKey || dueDateKey >= todayKey) return false
           break
         case 'due-today':
-        {
-          if (!card.dueDate) return false
-          const dueDate = new Date(card.dueDate)
-          const dueDateDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-          if (dueDateDay.getTime() !== today.getTime()) return false
+          if (dueDateKey !== todayKey) return false
           break
-        }
         case 'due-week':
-        {
-          if (!card.dueDate) return false
-          const due = new Date(card.dueDate)
-          if (due < today || due > weekFromNow) return false
+          if (!dueDateKey || !weekFromNowKey || dueDateKey < todayKey || dueDateKey > weekFromNowKey) return false
           break
-        }
         case 'no-date':
           if (card.dueDate) return false
           break
