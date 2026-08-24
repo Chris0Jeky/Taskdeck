@@ -2674,6 +2674,7 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).not.toContain('Reject')
+    expect(wrapper.findAll('.paper-review-keys__row')).toHaveLength(1)
 
     await wrapper.findAll('button').find((button) => button.text() === 'Stale')?.trigger('click')
     await flushPromises()
@@ -2714,18 +2715,84 @@ describe('PaperReviewView', () => {
     expect(deferred.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
   })
 
-  // --- GH-1942: superseded by the #1940 receipt flow -------------------------
+  it('does not dispatch the global review keymap after a deferred receipt', async () => {
+    const deferredUntil = new Date(Date.now() + 60 * 60_000).toISOString()
+    mocks.deferProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'keymap-deferred', deferredUntil }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'keymap-deferred' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('deferred')
+    expect(wrapper.find('[data-testid="paper-review-key-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).not.toContain('Apply to board')
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    window.dispatchEvent(enter)
+    await flushPromises()
+
+    expect(enter.defaultPrevented).toBe(false)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('does not render or execute a board-A receipt during a board-B reload', async () => {
+    const boardA = makeProposal({ id: 'board-a-receipt', boardId: 'board-a', summary: 'Board A receipt' })
+    const boardB = makeProposal({ id: 'board-b-pending', boardId: 'board-b', summary: 'Board B pending' })
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ ...boardA, status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [boardA],
+      '/workspace/review?boardId=board-a',
+      [
+        { id: 'board-a', name: 'Board A' },
+        { id: 'board-b', name: 'Board B' },
+      ],
+    )
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('approved')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Board A receipt')
+
+    let resolveBoardB!: (value: Proposal[]) => void
+    mocks.getProposals.mockImplementationOnce(
+      () => new Promise<Proposal[]>((resolve) => { resolveBoardB = resolve }),
+    )
+    mocks.approveProposal.mockClear()
+    const router = wrapper.vm.$router
+    await router.push({ name: 'workspace-review', query: { boardId: 'board-b' } })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    window.dispatchEvent(enter)
+    await flushPromises()
+    expect(enter.defaultPrevented).toBe(false)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    resolveBoardB([boardB])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Board B pending')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Board A receipt')
+  })
+
+  // --- #1940 receipt flow: explicit Approve then Apply -----------------------
   //
   // #1818 made the two phases visible; what was left was a third click that did
-  // nothing but open the dialog the second click had already promised. Approve
-  // now hands straight to that dialog. These tests fix the ACTION COUNT so a
-  // later change cannot quietly reinstate the middle step.
-  describe.skip('apply-flow step count (GH-1942)', () => {
+  // nothing but open the dialog. The receipt now makes approval legible in
+  // place; Apply deliberately opens the confirmation only when chosen.
+  describe('apply-flow receipt and confirmation (GH-1942)', () => {
     function railPhase(wrapper: ReturnType<typeof mount>): string | undefined {
       return wrapper.find('[data-testid="paper-review-decision-rail"]').attributes('data-apply-phase')
     }
 
-    it('takes exactly two user actions from pending to applied, and the board is untouched until the second', async () => {
+    it('takes three explicit user actions from pending to applied, and the board is untouched until confirmation', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'flow-1', status: 'Approved' }),
       )
@@ -2748,15 +2815,21 @@ describe('PaperReviewView', () => {
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(railPhase(wrapper)).toBe('execute')
       expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Apply to board')
-      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+      expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').text()).toContain('not yet applied')
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
       // ── Action 2: accept that dialog. `confirmApplyDialog` hard-asserts the
       // accept button is present, so re-adding a middle step fails here rather
       // than silently passing.
       userActions += 1
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      userActions += 1
       await confirmApplyDialog()
 
-      expect(userActions).toBe(2)
+      expect(userActions).toBe(3)
       expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
@@ -2786,7 +2859,10 @@ describe('PaperReviewView', () => {
       // Approve has returned; the board is still untouched and stays that way
       // for as long as the human does not accept.
       expect(calls).toEqual(['approve:adr-3'])
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
       await confirmApplyDialog()
 
       expect(calls).toEqual(['approve:adr-3', 'execute:adr-3'])
@@ -2816,12 +2892,16 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
-    it('backing out of the auto-opened dialog leaves it approved, and the rail reopens it', async () => {
+    it('backing out of the explicit Apply dialog leaves its approved receipt in place', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'back-out', status: 'Approved' }),
       )
       const wrapper = await mountView([makeProposal({ id: 'back-out' })])
 
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
       await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
 
@@ -2835,7 +2915,7 @@ describe('PaperReviewView', () => {
 
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(railPhase(wrapper)).toBe('execute')
-      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(true)
 
       // The rail's primary button is the way back to the same single step —
       // and it must not re-approve.
@@ -2851,7 +2931,7 @@ describe('PaperReviewView', () => {
     // things that used to be impossible now are: focus is elsewhere when the
     // dialog mounts, and the reviewer can move the queue underneath it.
 
-    it('returns focus to the rail when the auto-opened dialog is dismissed', async () => {
+    it('returns focus to the rail when the explicitly requested Apply dialog is dismissed', async () => {
       // NOTE ON FIDELITY. jsdom does NOT implement the HTML rule that a focused
       // element losing focusability (here: `disabled` flipping on while the
       // approve call is in flight) moves focus to the body — it leaves
@@ -2892,6 +2972,9 @@ describe('PaperReviewView', () => {
       // Only NOW does the dialog open, so the only return target TdDialog can
       // capture for itself is <body> — a restore it makes into a no-op.
       resolveApprove(makeProposal({ id: 'focus-1', status: 'Approved' }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
@@ -3008,12 +3091,10 @@ describe('PaperReviewView', () => {
   /**
    * GH-1983 — the keyboard path through the two-phase apply.
    *
-   * ⏎ approves; the confirmation opens by itself (GH-1942) with focus on the
-   * dialog container; a SECOND, deliberate ⏎ applies. The two calls stay
-   * separate and explicit (ADR-0003) — this only makes the second one reachable
-   * without a Tab on the one dialog the reviewer did not open by hand.
+   * ⏎ approves; a second deliberate ⏎ opens the explicit Apply confirmation.
+   * The dialog still owns the final confirmation and preserves the two calls.
    */
-  describe.skip('keyboard path through the apply confirmation (GH-1983)', () => {
+  describe('keyboard path through the apply confirmation (GH-1983)', () => {
     function pressEnterInDialog(options: KeyboardEventInit = {}) {
       const dialog = document.body.querySelector('.td-dialog') as HTMLElement | null
       expect(dialog, 'expected the apply confirmation to be open').not.toBeNull()
@@ -3022,7 +3103,7 @@ describe('PaperReviewView', () => {
       )
     }
 
-    it('approves on ⏎ and applies on a second deliberate ⏎', async () => {
+    it('approves on ⏎, opens Apply on a second deliberate ⏎, and confirms in the dialog', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'proposal-001', status: 'Approved' }),
       )
@@ -3036,6 +3117,10 @@ describe('PaperReviewView', () => {
 
       expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       pressEnterInDialog()
@@ -3061,6 +3146,11 @@ describe('PaperReviewView', () => {
 
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
       await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, cancelable: true }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       pressEnterInDialog({ repeat: true })
       pressEnterInDialog({ repeat: true })

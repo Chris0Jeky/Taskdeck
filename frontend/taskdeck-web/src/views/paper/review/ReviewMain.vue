@@ -214,7 +214,11 @@ const dialSubline = computed(() =>
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
-      <span class="tk-serial" data-testid="paper-review-key-hint">{{ keyHint }}</span>
+      <span
+        v-if="!decisionReceipt || decisionReceipt === 'approved'"
+        class="tk-serial"
+        data-testid="paper-review-key-hint"
+      >{{ keyHint }}</span>
     </footer>
   </div>
 </template>

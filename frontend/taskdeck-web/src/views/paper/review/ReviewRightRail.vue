@@ -28,8 +28,10 @@ withDefaults(
     applyPhase?: ApplyPhase
     /** An approved receipt has no remaining reject/edit/defer choices. */
     applyOnly?: boolean
+    /** A terminal/deferred receipt has no keyboard decision affordances. */
+    receiptActive?: boolean
   }>(),
-  { applyPhase: 'approve', applyOnly: false },
+  { applyPhase: 'approve', applyOnly: false, receiptActive: false },
 )
 </script>
 
@@ -45,7 +47,11 @@ withDefaults(
     />
     <ReviewWhyNow :body="whyNowBody" />
     <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
-    <ReviewKeysCard :apply-phase="applyPhase" :apply-only="applyOnly" />
+    <ReviewKeysCard
+      v-if="!receiptActive || applyOnly"
+      :apply-phase="applyPhase"
+      :apply-only="applyOnly"
+    />
   </aside>
 </template>
 

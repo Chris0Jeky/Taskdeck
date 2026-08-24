@@ -21,24 +21,27 @@ const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase; applyOnly?: bo
 const { t } = useI18n()
 
 // The key glyphs are physical keys and never translate; only `space` is a word.
-const rows = computed<Array<{ key: string; label: string }>>(() => [
-  {
+const rows = computed<Array<{ key: string; label: string }>>(() => {
+  const applyRow = {
     key: '⏎',
     label:
       props.applyPhase === 'execute'
         ? t('review.keys.enter.execute')
         : t('review.keys.enter.approve'),
-  },
-  ...(props.applyOnly
-    ? []
-    : [
-        { key: 'E', label: t('review.keys.edit') },
-        { key: '⌫', label: t('review.keys.reject') },
-        { key: 'D', label: t('review.keys.defer') },
-      ]),
-  { key: 'P', label: t('review.keys.provenance') },
-  { key: t('review.keys.spaceKey'), label: t('review.keys.preview') },
-])
+  }
+  // An approved receipt has exactly one truthful keyboard path: explicit
+  // Apply. Do not advertise preview/provenance shortcuts that the receipt's
+  // keymap intentionally disables.
+  if (props.applyOnly) return [applyRow]
+  return [
+    applyRow,
+    { key: 'E', label: t('review.keys.edit') },
+    { key: '⌫', label: t('review.keys.reject') },
+    { key: 'D', label: t('review.keys.defer') },
+    { key: 'P', label: t('review.keys.provenance') },
+    { key: t('review.keys.spaceKey'), label: t('review.keys.preview') },
+  ]
+})
 </script>
 
 <template>

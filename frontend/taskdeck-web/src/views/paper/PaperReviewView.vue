@@ -235,7 +235,8 @@ const activeProposal = computed<ApiProposal | null>(() => {
   // the decision locus instead of falling through to an unrelated proposal.
   if (decisionReceipt.value) {
     const receipted = proposals.value.find((proposal) =>
-      proposalIdsEqual(proposal.id, decisionReceipt.value?.proposalId),
+      proposalIdsEqual(proposal.id, decisionReceipt.value?.proposalId) &&
+      matchesActiveBoardFilter(proposal.boardId),
     )
     if (receipted) return receipted
   }
@@ -256,7 +257,11 @@ const activeProposal = computed<ApiProposal | null>(() => {
 
 const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
   const receipt = decisionReceipt.value
-  if (!receipt || !proposalIdsEqual(activeProposal.value?.id, receipt.proposalId)) return null
+  if (
+    !receipt ||
+    !proposalIdsEqual(activeProposal.value?.id, receipt.proposalId) ||
+    !matchesActiveBoardFilter(activeProposal.value?.boardId)
+  ) return null
   return receipt.kind
 })
 
@@ -1409,7 +1414,12 @@ useReviewKeymap(
       !busy.value &&
       activeProposal.value !== null &&
       executeConfirmProposal.value === null &&
-      rejectPromptProposal.value === null,
+      rejectPromptProposal.value === null &&
+      (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
+    isActionEnabled: (action) => {
+      const receipt = activeDecisionReceipt.value
+      return receipt === null || (receipt === 'approved' && action === 'onApply')
+    },
   },
 )
 
@@ -1716,6 +1726,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
+      :receipt-active="activeDecisionReceipt !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 
