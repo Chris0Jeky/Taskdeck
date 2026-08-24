@@ -319,7 +319,6 @@ function hasButtonKeyboardActivation(tag: string): boolean {
     if (expression.length === 0) continue
 
     const modifiers = (match[1] ?? '')
-      .toLowerCase()
       .split('.')
       .filter((modifier) => modifier.length > 0)
     handlesEnter ||= modifiers.includes('enter')
@@ -499,6 +498,7 @@ describe('dead affordances', () => {
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.space="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.escape="close">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.Enter="open" @keydown.SPACE.prevent="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.space.prevent="open">Open</div></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" v-on:keyup.enter="open" v-on:keydown.space="open">Open</div></template>')).toEqual([])
 
