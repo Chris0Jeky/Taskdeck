@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import ToastContainer from '../../components/common/ToastContainer.vue'
 import type { Toast } from '../../store/toastStore'
+import { i18n, type SupportedLocale } from '../../i18n'
 
 const mockToastStore = reactive({
   toasts: [] as Toast[],
@@ -38,22 +39,22 @@ describe('ToastContainer', () => {
     expect(wrapper.text()).toContain('Network error')
   })
 
-  it('applies error role="alert" for error toasts', () => {
+  it('announces errors assertively and non-errors as polite statuses', () => {
     mockToastStore.toasts = [
       { id: 't1', message: 'Failed', type: 'error', duration: 5000 },
+      { id: 't2', message: 'Saved', type: 'success', duration: 3000 },
     ]
     const wrapper = mount(ToastContainer)
     const errorToast = wrapper.find('[role="alert"]')
     expect(errorToast.exists()).toBe(true)
     expect(errorToast.text()).toContain('Failed')
-  })
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
 
-  it('does not apply role="alert" for non-error toasts', () => {
-    mockToastStore.toasts = [
-      { id: 't1', message: 'Saved', type: 'success', duration: 3000 },
-    ]
-    const wrapper = mount(ToastContainer)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const statusToast = wrapper.find('[role="status"]')
+    expect(statusToast.text()).toContain('Saved')
+    expect(statusToast.attributes('aria-live')).toBe('polite')
+    expect(statusToast.attributes('aria-atomic')).toBe('true')
   })
 
   it('calls remove when close button is clicked', async () => {
@@ -61,7 +62,7 @@ describe('ToastContainer', () => {
       { id: 't1', message: 'Dismiss me', type: 'info', duration: 3000 },
     ]
     const wrapper = mount(ToastContainer)
-    const closeBtn = wrapper.find('button[aria-label="Close"]')
+    const closeBtn = wrapper.find('button[aria-label="Dismiss notification"]')
     expect(closeBtn.exists()).toBe(true)
     await closeBtn.trigger('click')
     expect(mockToastStore.remove).toHaveBeenCalledWith('t1')
@@ -86,12 +87,7 @@ describe('ToastContainer', () => {
     expect(toastEl.exists()).toBe(true)
   })
 
-  it('has aria-live="polite" on the container', () => {
-    const wrapper = mount(ToastContainer)
-    expect(wrapper.find('[aria-live="polite"]').exists()).toBe(true)
-  })
-
-  it('expands and copies an error receipt with accessible controls', async () => {
+  it('associates an error disclosure only while its details are mounted', async () => {
     mockToastStore.toasts = [
       {
         id: 't1',
@@ -103,15 +99,66 @@ describe('ToastContainer', () => {
     ]
     const wrapper = mount(ToastContainer)
 
-    const detailsButton = wrapper.get('button[aria-controls="toast-details-t1"]')
+    const detailsButton = wrapper.get('button[aria-expanded="false"]')
     expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
     await detailsButton.trigger('click')
     expect(detailsButton.attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('#toast-details-t1').text()).toContain('status: 503')
+    expect(detailsButton.attributes('aria-controls')).toBe('toast-details-t1')
+    const details = wrapper.get('#toast-details-t1')
+    expect(details.text()).toContain('status: 503')
+    expect(details.attributes('aria-label')).toBe('Error details for Network error')
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
+    expect(wrapper.find('#toast-details-t1').exists()).toBe(false)
 
     const copyButton = wrapper.findAll('button').find((button) => button.text() === 'Copy details')
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
     expect(copyToastReceipt).toHaveBeenCalledWith(mockToastStore.toasts[0])
+
+    mockToastStore.toasts = []
+    await nextTick()
+    expect(wrapper.find('button[aria-expanded]').exists()).toBe(false)
   })
+
+  it.each([
+    ['en', 'Show details', 'Hide details', 'Copy details', 'Copied', 'Copy failed', 'Dismiss notification'],
+    ['it', 'Mostra dettagli', 'Nascondi dettagli', 'Copia dettagli', 'Copiato', 'Copia non riuscita', 'Chiudi la notifica'],
+    ['es', 'Mostrar detalles', 'Ocultar detalles', 'Copiar detalles', 'Copiado', 'No se pudo copiar', 'Cerrar la notificación'],
+  ] as Array<[SupportedLocale, string, string, string, string, string, string]>)(
+    'localizes persistent error receipt controls in %s',
+    async (locale, show, hide, copy, copied, copyFailed, dismiss) => {
+      i18n.global.locale.value = locale
+      mockToastStore.toasts = [
+        {
+          id: `toast-${locale}`,
+          message: 'Network error',
+          details: 'status: 503',
+          type: 'error',
+          duration: 0,
+        },
+      ]
+      const wrapper = mount(ToastContainer)
+
+      const detailsButton = wrapper.get('button[aria-expanded="false"]')
+      expect(detailsButton.text()).toBe(show)
+      const copyButton = wrapper.findAll('button').find((button) => button.text() === copy)
+      expect(copyButton).toBeDefined()
+      expect(wrapper.get(`button[aria-label="${dismiss}"]`).attributes('aria-label')).toBe(dismiss)
+
+      await detailsButton.trigger('click')
+      expect(detailsButton.text()).toBe(hide)
+
+      copyToastReceipt.mockResolvedValueOnce(true)
+      await copyButton!.trigger('click')
+      expect(copyButton!.text()).toBe(copied)
+
+      copyToastReceipt.mockResolvedValueOnce(false)
+      await copyButton!.trigger('click')
+      expect(copyButton!.text()).toBe(copyFailed)
+    },
+  )
 })

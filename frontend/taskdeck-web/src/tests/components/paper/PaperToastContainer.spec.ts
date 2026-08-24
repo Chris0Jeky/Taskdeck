@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import PaperToastContainer from '../../../components/paper/PaperToastContainer.vue'
 import { useToastStore, type Toast, type ToastLabel } from '../../../store/toastStore'
-import { i18n } from '../../../i18n'
+import { i18n, type SupportedLocale } from '../../../i18n'
 
 describe('PaperToastContainer', () => {
   let wrapper: VueWrapper | null = null
@@ -18,6 +18,8 @@ describe('PaperToastContainer', () => {
     vi.useRealTimers()
     wrapper?.unmount()
     wrapper = null
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Reflect.deleteProperty(document, 'execCommand')
   })
 
   it('renders multiple toasts from the store', async () => {
@@ -140,7 +142,7 @@ describe('PaperToastContainer', () => {
     expect(store.toasts.find((t) => t.id === id)).toBeUndefined()
   })
 
-  it('expands error details with an accessible control and keeps the receipt persistent', async () => {
+  it('associates persistent error details only while mounted and announces by variant', async () => {
     const store = useToastStore()
     const id = store.error('Network error', undefined, { details: 'status: 503' })
 
@@ -148,16 +150,46 @@ describe('PaperToastContainer', () => {
     await nextTick()
 
     const card = wrapper.get(`[data-toast-id="${id}"]`)
-    const detailsButton = card.get(`button[aria-controls="paper-toast-details-${id}"]`)
+    expect(card.attributes('role')).toBe('alert')
+    expect(card.attributes('aria-live')).toBe('assertive')
+    expect(card.attributes('aria-atomic')).toBe('true')
+
+    const detailsButton = card.get('button[aria-expanded="false"]')
     expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
 
     await detailsButton.trigger('click')
     expect(detailsButton.attributes('aria-expanded')).toBe('true')
-    expect(card.get('pre.paper-toast__details').text()).toContain('status: 503')
+    expect(detailsButton.attributes('aria-controls')).toBe(`paper-toast-details-${id}`)
+    const details = card.get('pre.paper-toast__details')
+    expect(details.text()).toContain('status: 503')
+    expect(details.attributes('aria-label')).toBe('Error details for Network error')
     expect(card.find('.paper-toast__countdown').exists()).toBe(false)
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
+    expect(card.find('pre.paper-toast__details').exists()).toBe(false)
 
     vi.advanceTimersByTime(60_000)
     expect(store.toasts).toHaveLength(1)
+
+    store.remove(id)
+    await nextTick()
+    expect(wrapper.find(`[data-toast-id="${id}"]`).exists()).toBe(false)
+  })
+
+  it('announces a non-error toast as a polite status', async () => {
+    const store = useToastStore()
+    const id = store.success('Saved', 0)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.attributes('role')).toBe('status')
+    expect(card.attributes('aria-live')).toBe('polite')
+    expect(card.attributes('aria-atomic')).toBe('true')
   })
 
   it('lets a persistent actionless error receipt be dismissed', async () => {
@@ -175,6 +207,54 @@ describe('PaperToastContainer', () => {
 
     expect(store.toasts).toHaveLength(0)
   })
+
+  it.each([
+    ['en', 'Show details', 'Hide details', 'Copy details', 'Copied', 'Copy failed', 'Dismiss notification', 'Error details for Network error'],
+    ['it', 'Mostra dettagli', 'Nascondi dettagli', 'Copia dettagli', 'Copiato', 'Copia non riuscita', 'Chiudi la notifica', 'Dettagli dell’errore: Network error'],
+    ['es', 'Mostrar detalles', 'Ocultar detalles', 'Copiar detalles', 'Copiado', 'No se pudo copiar', 'Cerrar la notificación', 'Detalles del error: Network error'],
+  ] as Array<[SupportedLocale, string, string, string, string, string, string, string]>)(
+    'localizes persistent error receipt controls in %s',
+    async (locale, show, hide, copy, copied, copyFailed, dismiss, errorDetails) => {
+      i18n.global.locale.value = locale
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+      })
+      const store = useToastStore()
+      const id = store.error('Network error', undefined, { details: 'status: 503' })
+
+      wrapper = mount(PaperToastContainer)
+      await nextTick()
+
+      const card = wrapper.get(`[data-toast-id="${id}"]`)
+      const detailsButton = card.get('button[aria-expanded="false"]')
+      const copyButton = card.findAll('button').find((button) => button.text() === copy)
+      expect(detailsButton.text()).toBe(show)
+      expect(copyButton).toBeDefined()
+      expect(card.get(`button[aria-label="${dismiss}"]`).attributes('aria-label')).toBe(dismiss)
+
+      await detailsButton.trigger('click')
+      expect(detailsButton.text()).toBe(hide)
+      expect(card.get('pre.paper-toast__details').attributes('aria-label')).toBe(errorDetails)
+
+      await copyButton!.trigger('click')
+      await flushPromises()
+      expect(copyButton!.text()).toBe(copied)
+
+      writeText.mockRejectedValueOnce(new Error('clipboard denied'))
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: vi.fn().mockReturnValue(false),
+      })
+      await copyButton!.trigger('click')
+      await flushPromises()
+      expect(copyButton!.text()).toBe(copyFailed)
+
+      vi.advanceTimersByTime(60_000)
+      expect(store.toasts).toHaveLength(1)
+    },
+  )
 })
 
 /**

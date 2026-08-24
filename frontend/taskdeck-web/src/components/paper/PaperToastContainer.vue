@@ -264,9 +264,6 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
 <template>
   <div
     class="paper-toast-stack"
-    aria-live="polite"
-    aria-atomic="false"
-    role="status"
     data-paper-toast-stack
   >
     <TransitionGroup name="paper-toast">
@@ -283,7 +280,9 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
           `paper-toast--${describe(toast).tone}`,
           { 'paper-toast--expanded': expanded[toast.id] },
         ]"
-        :role="toast.type === 'error' ? 'alert' : undefined"
+        :role="toast.type === 'error' ? 'alert' : 'status'"
+        :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"
+        aria-atomic="true"
         @mouseenter="setHover(toast.id, true)"
         @mouseleave="setHover(toast.id, false)"
         @focusin="setFocusWithin(toast.id, $event, true)"
@@ -306,17 +305,17 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
               type="button"
               class="paper-toast__receipt-button"
               :aria-expanded="expanded[toast.id] ?? false"
-              :aria-controls="detailsId(toast.id)"
+              :aria-controls="expanded[toast.id] ? detailsId(toast.id) : undefined"
               @click="toggleDetails(toast.id)"
             >
-              {{ expanded[toast.id] ? 'Hide details' : 'Show details' }}
+              {{ expanded[toast.id] ? t('shell.toast.receipt.hideDetails') : t('shell.toast.receipt.showDetails') }}
             </button>
             <button
               type="button"
               class="paper-toast__receipt-button"
               @click="copyReceipt(toast)"
             >
-              {{ copyState[toast.id] === 'copied' ? 'Copied' : copyState[toast.id] === 'failed' ? 'Copy failed' : 'Copy details' }}
+              {{ copyState[toast.id] === 'copied' ? t('shell.toast.receipt.copied') : copyState[toast.id] === 'failed' ? t('shell.toast.receipt.copyFailed') : t('shell.toast.receipt.copyDetails') }}
             </button>
           </div>
           <pre
@@ -325,7 +324,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             class="paper-toast__details"
             tabindex="0"
             role="region"
-            :aria-label="`Error details for ${toast.message}`"
+            :aria-label="t('shell.toast.receipt.errorDetails', { message: toast.message })"
           >{{ toast.details }}</pre>
         </div>
         <div class="paper-toast__action">
@@ -350,7 +349,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
           <button
             type="button"
             class="paper-toast__dismiss"
-            aria-label="Dismiss notification"
+            :aria-label="t('shell.toast.receipt.dismissNotification')"
             @click="dismissToast(toast.id)"
           >
             <span aria-hidden="true">×</span>
