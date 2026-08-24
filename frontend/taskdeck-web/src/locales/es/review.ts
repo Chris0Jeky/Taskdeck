@@ -388,6 +388,12 @@ export default {
       title: 'Sin resultados en {filter}.',
       body: 'Cambia de filtro para revisar propuestas que siguen en espera en otra parte de la cola.',
     },
+    unavailable: {
+      eyebrow: 'Propuesta solicitada',
+      title: 'Esta propuesta no esta disponible.',
+      body: 'La propuesta {id} ya no esta disponible para revisar. Puede haberse aplicado, archivado o eliminado.',
+      return: 'Volver a Revision',
+    },
   },
 
   summary: {

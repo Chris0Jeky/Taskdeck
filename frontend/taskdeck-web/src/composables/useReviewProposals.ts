@@ -109,6 +109,10 @@ export function useReviewProposals() {
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
+  // A deep link is an explicit request, not a selection preference. Preserve a
+  // confirmed 404 separately so Paper can say what happened instead of
+  // presenting the ordinary empty queue or a different actionable proposal.
+  const unavailableProposalId = ref<string | null>(null)
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
@@ -370,13 +374,23 @@ export function useReviewProposals() {
   async function openProposalFromHash() {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
-    if (!proposalId) return
+    if (!proposalId) {
+      unavailableProposalId.value = null
+      return
+    }
+
+    // A different hash starts a fresh lookup. Keep the current unavailable
+    // state only while it still describes the route the user asked for.
+    if (!proposalIdsEqual(unavailableProposalId.value, proposalId)) {
+      unavailableProposalId.value = null
+    }
 
     const currentProposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
     if (currentProposal) {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
         return
       }
+      unavailableProposalId.value = null
       await scrollToProposalFromHash()
       return
     }
@@ -392,11 +406,13 @@ export function useReviewProposals() {
         return
       }
       upsertProposal(fetchedProposal)
+      unavailableProposalId.value = null
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       if (isHttpNotFound(e)) {
+        unavailableProposalId.value = proposalId
         return
       }
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
@@ -535,6 +551,7 @@ export function useReviewProposals() {
   return {
     proposals,
     proposalsLoading,
+    unavailableProposalId,
     availableBoards,
     loadingBoards,
     boardFilterInput,

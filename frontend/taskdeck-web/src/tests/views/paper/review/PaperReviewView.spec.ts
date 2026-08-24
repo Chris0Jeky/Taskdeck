@@ -767,7 +767,7 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
   })
 
-  it('keeps a genuine missing Paper hash unavailable instead of selecting another proposal', async () => {
+  it('renders a requested Paper proposal 404 without decision controls or fallback selection', async () => {
     mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
     const wrapper = await mountView(
       [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
@@ -777,10 +777,18 @@ describe('PaperReviewView', () => {
     expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-MISSING')
     expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('This proposal is unavailable.')
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('PROPOSAL-MISSING')
     expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
     expect(
       (wrapper.vm as unknown as { $route: { fullPath: string } }).$route.fullPath,
     ).toBe('/workspace/review#proposal-PROPOSAL-MISSING')
+
+    await wrapper.find('[data-testid="paper-review-unavailable-return"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
   })
 
   it('updates the hash when manual queue selection replaces a deep-link target', async () => {
