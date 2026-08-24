@@ -231,14 +231,28 @@ export function useInboxOrchestrator(options: {
 
   async function selectItemById(itemId: string, opts: SelectItemOptions = {}): Promise<boolean> {
     const { preferredIndex, preloadedDetail, cacheSummary = true } = opts
+    // Archived history (#1973) inspects records the LIVE queues deliberately
+    // omit, so a detail load there must never write back into the list.
+    // `fetchDetail`'s success path calls `cacheDetail(detail, syncSummary)`, and
+    // `upsertSummary` UNSHIFTS an absent summary to the top of
+    // `captureStore.items` with no scope or request-generation guard
+    // (`latestListLoadRequestId` covers only `fetchItems`). A detail GET started
+    // in archived history that resolves AFTER the mode-exit watcher's unscoped
+    // `loadInbox` would therefore seat the archived board's capture at the top
+    // of the live Inbox, with Triage / Ignore / Cancel enabled against an
+    // archived board — the exact boundary this surface exists to hold. The
+    // detail still caches into `detailById`, so the read-only panel renders;
+    // only the list write is suppressed. Paper loads through `peekDetail` and is
+    // unaffected either way.
+    const syncSummary = cacheSummary && !isArchivedHistory.value
     primeSelection(itemId, preferredIndex)
     hashLoadFailedItemId.value = null
     try {
       if (preloadedDetail) {
-        captureStore.cacheDetail(preloadedDetail, cacheSummary)
+        captureStore.cacheDetail(preloadedDetail, syncSummary)
         return true
       }
-      await captureStore.fetchDetail(itemId)
+      await captureStore.fetchDetail(itemId, { syncSummary })
       return true
     } catch {
       if (selectedItemId.value === itemId) {
@@ -413,7 +427,15 @@ export function useInboxOrchestrator(options: {
   async function refreshSelectedDetail() {
     if (!selectedItemId.value) return
     try {
-      await captureStore.fetchDetail(selectedItemId.value, { forceRefresh: true })
+      await captureStore.fetchDetail(selectedItemId.value, {
+        forceRefresh: true,
+        // Same list-write boundary as `selectItemById`. Refresh Detail is a READ
+        // affordance and stays available in archived history — unlike the
+        // Triage / Ignore / Cancel siblings, it writes nothing server-side — but
+        // it must not seed the live list either, and `forceRefresh` means it
+        // always takes the caching path rather than the cached early return.
+        syncSummary: !isArchivedHistory.value,
+      })
     } catch {
       // Store handles toast + error state.
     }
