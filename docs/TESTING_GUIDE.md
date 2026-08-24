@@ -59,10 +59,19 @@ Explorer/SmartScreen acceptance remain unverified.
 - This proves the isolated deterministic-Mock package/core-loop boundary. It does **not** prove an
   Explorer extraction/double-click path, SmartScreen behavior, inherited user-profile retired-
   provider migration, a live OpenAI call, a signed/public v0.1.2 artifact, or another machine.
-- Chrome reported a non-blocking visual regression: the production CSP omits `font-src`, so bundled
-  Paper WOFF2 resources fall back to `default-src 'none'`; stale Google Font stylesheet links are
-  also blocked by `style-src 'self'`. Issue `#2035` is the Priority II successor and does not expand
-  the Priority I-defined v0.1.2 tranche.
+- That candidate exposed a non-blocking typography/CSP regression. PRs `#2039` and `#2041`
+  subsequently added `font-src 'self'`, removed the Google font/style routes, self-hosted the active
+  Material Symbols face, and included its Apache-2.0 licence in Windows and Pages artifacts.
+- Exact-main no-publish run [`32692308935`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692308935)
+  resolved `3fa6071763404255d2bc25b5f2b936647139c35b`; its untouched product ZIP matched SHA-256
+  `9981177c734300d1f97fd51f3a1b77a882d57ea5d640276c2c7e1339c9d3cbd5`. Pages run
+  [`32692278478`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692278478) shipped the exact
+  reviewed Material Symbols licence in the deployed artifact.
+- A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
+  `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
+  font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
+- Issue `#2035` remains open only for Material Symbol size/weight parity and this documentation
+  reconciliation. The separate packaged `manifest.webmanifest` CSP refusal is tracked in `#2045`.
 
 ## 2026-08-24 v0.1.2 Priority I partial verification map
 
