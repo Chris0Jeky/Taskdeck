@@ -249,6 +249,44 @@ describe('useReviewProposals', () => {
       })
     })
 
+    // Regression for the archived-history escape hatch (#1973). Clearing scope
+    // used to carry `route.hash` through untouched, which handed an archived
+    // board's proposal to the UNSCOPED, mutation-enabled queue: the hash watcher
+    // refetches it by id, no board filter is left to reject it, and Apply/Reject
+    // reappear against an archived board. The exit must drop the deep link.
+    it('drops a retained proposal deep link when leaving archived history', async () => {
+      mockRoute.query = { boardId: 'board-A', history: 'archived' }
+      mockRoute.hash = '#proposal-archived-approved'
+      const rp = useReviewProposals()
+      expect(rp.isArchivedHistory.value).toBe(true)
+
+      await rp.clearBoardFilter()
+
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: {},
+        hash: '',
+      })
+    })
+
+    // The counterpart: an ORDINARY board clear is not a trust boundary, so its
+    // deep link still survives. Without this arm the fix above could be
+    // over-applied to every clear and silently break live deep links.
+    it('keeps a proposal deep link when clearing an ordinary board filter', async () => {
+      mockRoute.query = { boardId: 'board-A' }
+      mockRoute.hash = '#proposal-live-1'
+      const rp = useReviewProposals()
+      expect(rp.isArchivedHistory.value).toBe(false)
+
+      await rp.clearBoardFilter()
+
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: {},
+        hash: '#proposal-live-1',
+      })
+    })
+
     it('hides a snoozed PendingReview proposal and resurfaces it after the clock passes deferredUntil', () => {
       const rp = useReviewProposals()
       const base = new Date('2026-06-13T12:00:00.000Z').getTime()

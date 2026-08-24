@@ -511,10 +511,22 @@ export function useReviewProposals() {
 
   async function clearBoardFilter() {
     boardFilterInput.value = ''
+    // Read the mode BEFORE the query is rewritten -- `isArchivedHistory` is
+    // derived from the route, so it flips as soon as the replace lands.
+    const leavingArchivedHistory = isArchivedHistory.value
     const query = { ...route.query }
     delete query.boardId
     delete query.history
-    await safeReplace({ name: 'workspace-review', query, hash: route.hash })
+    // Leaving archived history takes any `#proposal-<id>` deep link with it.
+    // Keeping the hash would hand an archived board's proposal to the UNSCOPED
+    // queue: `openProposalFromHash` refetches it by id, `matchesActiveBoardFilter`
+    // waves it through now that no board filter is set, and `upsertProposal`
+    // reinserts it into a mutation-enabled Review where Apply/Reject act on an
+    // archived board. Read-only is the whole point of the mode, so the exit
+    // drops the target rather than smuggling it across the boundary.
+    // Ordinary (non-archived) board clears keep their deep link as before.
+    const hash = leavingArchivedHistory ? '' : route.hash
+    await safeReplace({ name: 'workspace-review', query, hash })
   }
 
   // --- Watchers ---

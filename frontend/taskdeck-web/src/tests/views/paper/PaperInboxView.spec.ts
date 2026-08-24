@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
 import { i18n } from '../../../i18n'
-import type { CaptureItemSummary } from '../../../types/capture'
+import type { CaptureItem, CaptureItemSummary } from '../../../types/capture'
 
 const mockCaptureStore = reactive({
   loadingList: false,
@@ -14,6 +14,11 @@ const mockCaptureStore = reactive({
   triageItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   ignoreItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   pollTriageCompletion: vi.fn<(...args: unknown[]) => () => void>(),
+  // `peekDetail` is the read-only detail load (#1973): it returns the item
+  // WITHOUT caching it into `detailById` or syncing the list summary, which is
+  // what keeps archived inspection from disturbing live capture state.
+  peekDetail: vi.fn<(...args: unknown[]) => Promise<CaptureItem>>(),
+  fetchDetail: vi.fn<(...args: unknown[]) => Promise<CaptureItem>>(),
   detailById: {} as Record<string, { status: string } | undefined>,
 })
 
@@ -72,6 +77,8 @@ describe('PaperInboxView', () => {
     mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.pollTriageCompletion.mockReturnValue(() => undefined)
+    mockCaptureStore.peekDetail.mockReset()
+    mockCaptureStore.fetchDetail.mockReset()
     mockCaptureStore.detailById = {}
     mockCaptureStore.listError = null
     mockCaptureStore.actionBusyItemId = null
@@ -121,6 +128,120 @@ describe('PaperInboxView', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ';', metaKey: true }))
     await wrapper.vm.$nextTick()
     expect(wrapper.attributes('data-variant')).toBe('composer')
+    wrapper.unmount()
+  })
+
+  // Regression for the second half of #1973's read-only boundary. Stripping the
+  // triage controls left an archived row with nothing but a truncated
+  // `textExcerpt` and an open button that did nothing — the retained capture was
+  // "reachable" in name only, which is the disclosure defect the issue is about.
+  it('expands a read-only detail surface for a retained archived capture', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.activeBoardName.value = 'Archived board'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+    mockCaptureStore.peekDetail.mockResolvedValue({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The full retained capture text the excerpt truncated.',
+      retryCount: 0,
+      provenance: {
+        captureItemId: 'history-capture',
+        triageRunId: 'run-9',
+        proposalId: 'proposal-9',
+        promptVersion: 'prompt-v3',
+      },
+    } as CaptureItem)
+
+    const wrapper = mount(PaperInboxView, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="capture-history-open"]').trigger('click')
+    await flushPromises()
+
+    const detail = wrapper.find('[data-testid="capture-history-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.find('[data-testid="capture-history-text"]').text()).toBe(
+      'The full retained capture text the excerpt truncated.',
+    )
+    expect(detail.text()).toContain('run-9')
+    expect(detail.text()).toContain('prompt-v3')
+
+    // The decision record stays inside archived history, not the live queue.
+    const link = wrapper.findComponent(RouterLinkStub)
+    expect(link.props('to')).toBe(
+      '/workspace/review?boardId=board-archived&history=archived#proposal-proposal-9',
+    )
+
+    // Inspection reads and nothing else: the non-caching peek, never the
+    // summary-syncing fetch, and no triage/ignore call.
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledWith('history-capture', {
+      recordError: false,
+      showToast: false,
+    })
+    expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.ignoreItem).not.toHaveBeenCalled()
+
+    // Toggling closed collapses it again.
+    await wrapper.find('[data-testid="capture-history-open"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('states that no decision record exists when triage recorded no proposal', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'Ignored')]
+    mockCaptureStore.peekDetail.mockResolvedValue({
+      ...captureRow('history-capture', 'Ignored'),
+      boardId: 'board-archived',
+      rawText: 'An ignored capture that never became a proposal.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+
+    const wrapper = mount(PaperInboxView, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await wrapper.find('[data-testid="capture-history-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-proposal-link"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="capture-history-no-proposal"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('surfaces a retained-capture load failure instead of an empty panel', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+    mockCaptureStore.peekDetail.mockRejectedValue(new Error('boom'))
+
+    const wrapper = mount(PaperInboxView, {
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await wrapper.find('[data-testid="capture-history-open"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('leaves the open affordance inert outside archived history', async () => {
+    orchestratorState.items.value = [captureRow('live-capture', 'New')]
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.find('[data-testid="capture-history-open"]').exists()).toBe(false)
+
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    table.vm.$emit('open', 'live-capture')
+    await flushPromises()
+
+    expect(mockCaptureStore.peekDetail).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
