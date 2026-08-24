@@ -1388,7 +1388,16 @@ function onQueueFilterChange(filter: QueueFilter) {
   }
   const fallbackId = preferredActiveProposalId(filteredVisibleProposals.value)
   explicitActiveId.value = fallbackId
-  if (hashProposalId.value && fallbackId) openProposal(fallbackId)
+  if (hashProposalId.value) {
+    if (fallbackId) {
+      openProposal(fallbackId)
+    } else {
+      // An empty filtered queue must not leave the old deep link active. The
+      // hash carve-out is authoritative only while its target remains in the
+      // selected queue; otherwise the filtered-empty state must render.
+      void clearProposalDeepLink(hashProposalId.value)
+    }
+  }
 }
 </script>
 

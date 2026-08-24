@@ -683,6 +683,30 @@ describe('PaperReviewView', () => {
     expect(emptyText).not.toContain('Nothing waiting')
   })
 
+  it('clears a manual hash selection when a filter has no matching proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'theirs-001',
+        requestedByUserId: 'u-2',
+        summary: 'Theirs proposal',
+      }),
+    ])
+
+    await wrapper.find('.paper-review-q').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-theirs-001',
+    )
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Mine')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('No matches in Mine.')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('')
+  })
+
   it('shows apply-risk guidance without promising an undo action', async () => {
     const wrapper = await mountView([makeProposal()])
 
