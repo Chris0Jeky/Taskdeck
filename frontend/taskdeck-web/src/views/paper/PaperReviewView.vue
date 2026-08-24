@@ -265,6 +265,11 @@ const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
   return receipt.kind
 })
 
+const activeAppliedProposal = computed<ApiProposal | null>(() => {
+  const proposal = activeProposal.value
+  return proposal && normalizeProposalStatus(proposal.status) === 'Applied' ? proposal : null
+})
+
 function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
   decisionReceipt.value = { proposalId, kind }
   explicitActiveId.value = proposalId
@@ -1421,6 +1426,7 @@ useReviewKeymap(
     enabled: () =>
       !busy.value &&
       activeProposal.value !== null &&
+      activeAppliedProposal.value === null &&
       executeConfirmProposal.value === null &&
       rejectPromptProposal.value === null &&
       (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
@@ -1535,6 +1541,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :apply-phase="applyPhase"
         :edit-lock="editLock"
         :decision-receipt="activeDecisionReceipt"
+        :applied-proposal="activeAppliedProposal"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1735,6 +1742,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
       :receipt-active="activeDecisionReceipt !== null"
+      :applied-record="activeAppliedProposal !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 

@@ -337,6 +337,46 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Applied to board')
   })
 
+  it('renders an exact deep-linked Applied proposal as a read-only Legacy record', async () => {
+    const appliedProposal = buildProposal({
+      id: 'proposal-applied-record',
+      status: 'Applied',
+      summary: 'Exact historical proposal',
+      decidedAt: '2026-08-24T09:00:00.000Z',
+      decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      appliedAt: '2026-08-24T09:30:00.000Z',
+      presentation: {
+        plainSummary: 'Exact historical proposal',
+        impactSummary: 'One effective operation was applied.',
+        riskCue: 'Low risk.',
+        sourceCue: 'Created from Inbox capture triage.',
+        operationHeadlines: ['Create card "Legacy exact record".'],
+        affectedEntities: [],
+      },
+    })
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockResolvedValue(appliedProposal)
+
+    const { wrapper, router } = await mountAt(
+      '/workspace/review#proposal-proposal-applied-record',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-proposal-applied-record')
+    const card = wrapper.get('#proposal-proposal-applied-record')
+    expect(card.get('[data-testid="review-applied-decision-record"]').text()).toContain(
+      'Create card "Legacy exact record".',
+    )
+    expect(card.text()).toContain('Historical applied record')
+    expect(card.text()).not.toContain('Approve for board')
+    expect(card.text()).not.toContain('Reject')
+    expect(card.text()).not.toContain('Apply to board')
+    expect(card.findAll('button').some((button) => button.text() === 'View stored preview')).toBe(
+      true,
+    )
+  })
+
   it('renders capture provenance and canonical review links', async () => {
     const fullCorrelationId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     mocks.getProposals.mockResolvedValue([

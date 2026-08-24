@@ -84,9 +84,20 @@ const hashProposalId = computed(() => {
 const renderedProposals = computed(() => {
   const proposalId = hashProposalId.value
   if (!proposalId) return visibleProposals.value
-  const target = visibleProposals.value.find((proposal) =>
+  // The exact hash is also the inspection path for a completed Applied record.
+  // Completed proposals are intentionally absent from visibleProposals while
+  // "Show completed" is off, so resolve the target from the hydrated canonical
+  // collection and apply the board scope explicitly.
+  const target = proposals.value.find((proposal) =>
     proposalIdsEqual(proposal.id, proposalId),
   )
+  if (
+    target &&
+    activeBoardFilter.value &&
+    (!target.boardId || !proposalIdsEqual(target.boardId, activeBoardFilter.value))
+  ) {
+    return []
+  }
   return target ? [target] : []
 })
 

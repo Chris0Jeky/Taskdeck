@@ -160,7 +160,11 @@ function setFilter(next: QueueFilter) {
       @select="emit('select', item.id)"
     />
 
-    <ReviewRecentApplied :rows="recentlyApplied" />
+    <ReviewRecentApplied
+      :rows="recentlyApplied"
+      :active-id="activeId"
+      @select="emit('select', $event)"
+    />
 
     <div class="paper-review-rail__cadence">
       <div class="tk-eyebrow paper-review-rail__cadence-heading">

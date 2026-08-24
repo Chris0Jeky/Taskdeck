@@ -30,8 +30,10 @@ withDefaults(
     applyOnly?: boolean
     /** A terminal/deferred receipt has no keyboard decision affordances. */
     receiptActive?: boolean
+    /** Historical Applied records never expose live decision key hints. */
+    appliedRecord?: boolean
   }>(),
-  { applyPhase: 'approve', applyOnly: false, receiptActive: false },
+  { applyPhase: 'approve', applyOnly: false, receiptActive: false, appliedRecord: false },
 )
 </script>
 
@@ -48,7 +50,7 @@ withDefaults(
     <ReviewWhyNow :body="whyNowBody" />
     <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
     <ReviewKeysCard
-      v-if="!receiptActive || applyOnly"
+      v-if="!appliedRecord && (!receiptActive || applyOnly)"
       :apply-phase="applyPhase"
       :apply-only="applyOnly"
     />

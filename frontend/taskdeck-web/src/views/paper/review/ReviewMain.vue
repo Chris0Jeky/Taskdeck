@@ -13,6 +13,9 @@ import ReviewProvenance from './ReviewProvenance.vue'
 import ReviewSideEffects from './ReviewSideEffects.vue'
 import ReviewConflicts from './ReviewConflicts.vue'
 import ReviewHistory from './ReviewHistory.vue'
+import ReviewAppliedDecisionRecord from '../../../components/review/ReviewAppliedDecisionRecord.vue'
+import type { Proposal } from '../../../types/automation'
+import { normalizeProposalStatus } from '../../../utils/automation'
 import type {
   ConfidenceBreakdown,
   ConflictRow,
@@ -72,11 +75,19 @@ const props = withDefaults(
     editLock?: EditLock
     /** The just-recorded outcome, retained at its original decision locus. */
     decisionReceipt?: 'approved' | 'applied' | 'rejected' | 'deferred' | null
+    /** The exact Applied proposal when this surface is a historical, read-only record. */
+    appliedProposal?: Proposal | null
   }>(),
-  { applyPhase: 'approve', editLock: 'off', decisionReceipt: null },
+  { applyPhase: 'approve', editLock: 'off', decisionReceipt: null, appliedProposal: null },
 )
 
 const { t } = useI18n()
+
+const isAppliedRecord = computed(
+  () =>
+    !!props.appliedProposal &&
+    normalizeProposalStatus(props.appliedProposal.status) === 'Applied',
+)
 
 /**
  * The keyboard hint must name the phase the key will actually run (#1818 AC2):
@@ -111,7 +122,9 @@ const dialSubline = computed(() =>
     <header class="paper-review-main__header">
       <div class="paper-review-main__header-text">
         <div class="paper-review-main__tagrow">
-          <PaperTagstamp tone="ember">{{ $t('review.main.tagstamp') }}</PaperTagstamp>
+          <PaperTagstamp :tone="isAppliedRecord ? 'mute' : 'ember'">{{
+            isAppliedRecord ? $t('review.appliedRecord.tagstamp') : $t('review.main.tagstamp')
+          }}</PaperTagstamp>
           <span class="tk-meta">{{ serial }} · {{ meta }}</span>
         </div>
         <h1 class="tk-h1 paper-review-main__title">
@@ -120,9 +133,11 @@ const dialSubline = computed(() =>
             <template v-else>{{ part.text }}</template>
           </template>
         </h1>
-        <p class="tk-lede paper-review-main__lede">{{ lede }}</p>
+        <p class="tk-lede paper-review-main__lede">
+          {{ isAppliedRecord ? $t('review.appliedRecord.lede') : lede }}
+        </p>
       </div>
-      <div class="paper-review-main__dial card">
+      <div v-if="!isAppliedRecord" class="paper-review-main__dial card">
         <PaperConfidenceDial
           :value="confidence.overall"
           :caption="$t('review.main.dial.caption')"
@@ -140,7 +155,7 @@ const dialSubline = computed(() =>
          user reasonably read "approved" as "applied". role="status" so the state
          change is announced, not just drawn. -->
     <p
-      v-if="!dismissable && applyPhase === 'execute' && decisionReceipt !== 'approved'"
+      v-if="!isAppliedRecord && !dismissable && applyPhase === 'execute' && decisionReceipt !== 'approved'"
       class="paper-review-main__approved-banner"
       role="status"
       data-testid="paper-review-approved-banner"
@@ -178,9 +193,18 @@ const dialSubline = computed(() =>
       </template>
     </p>
 
+    <ReviewAppliedDecisionRecord
+      v-if="isAppliedRecord && appliedProposal"
+      :proposal="appliedProposal"
+    />
+
     <ReviewDecisionRail
-      v-if="!decisionReceipt || decisionReceipt === 'approved'"
-      :summary="decisionSummary"
+      v-if="
+        isAppliedRecord
+          ? dismissable && !decisionReceipt
+          : !decisionReceipt || decisionReceipt === 'approved'
+      "
+      :summary="isAppliedRecord ? $t('review.appliedRecord.filingSummary') : decisionSummary"
       :busy="busy"
       :dismissable="dismissable"
       :apply-phase="applyPhase"
@@ -215,7 +239,7 @@ const dialSubline = computed(() =>
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
       <span
-        v-if="!decisionReceipt || decisionReceipt === 'approved'"
+        v-if="!isAppliedRecord && (!decisionReceipt || decisionReceipt === 'approved')"
         class="tk-serial"
         data-testid="paper-review-key-hint"
       >{{ keyHint }}</span>

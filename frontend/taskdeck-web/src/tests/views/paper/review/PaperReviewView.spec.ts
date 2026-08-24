@@ -883,7 +883,17 @@ describe('PaperReviewView', () => {
         id: 'applied-new',
         status: 'Applied',
         summary: 'Newer applied work',
+        decidedAt: new Date(Date.now() - 35 * 60_000).toISOString(),
+        decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
         appliedAt: newerAppliedAt,
+        presentation: {
+          plainSummary: 'Newer applied work',
+          impactSummary: 'One effective operation was applied.',
+          riskCue: 'Low risk.',
+          sourceCue: 'Created from Inbox capture triage.',
+          operationHeadlines: ['Create card "Exact applied work".'],
+          affectedEntities: [],
+        },
       }),
     ])
 
@@ -892,6 +902,29 @@ describe('PaperReviewView', () => {
     expect(railText).toContain('Older applied work')
     expect(railText).toContain('Newer applied work')
     expect(railText.indexOf('Newer applied work')).toBeLessThan(railText.indexOf('Older applied work'))
+
+    const recentButtons = wrapper.findAll('.paper-review-recent__row')
+    const newest = recentButtons.find((button) => button.text().includes('Newer applied work'))!
+    expect(newest.element.tagName).toBe('BUTTON')
+    await newest.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-applied-new',
+    )
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Newer applied work')
+    expect(wrapper.get('[data-testid="review-applied-decision-record"]').text()).toContain(
+      'Create card "Exact applied work".',
+    )
+    expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe(
+      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+    )
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-key-hint"]').exists()).toBe(false)
+    expect(wrapper.find('.paper-review-keys').exists()).toBe(false)
   })
 
   it('replaces decision buttons with "File away" for an expired proposal', async () => {

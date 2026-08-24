@@ -172,7 +172,7 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.find('[data-testid="queue-file-away-all"]').attributes('disabled')).toBeDefined()
   })
 
-  it('renders recently-applied rows when provided', () => {
+  it('renders recently-applied rows as native exact-id controls', async () => {
     const wrapper = mountRail({
       recentlyApplied: [
         { id: 'recent-1', serial: '#R01', title: 'Move done', age: '12m' },
@@ -183,6 +183,16 @@ describe('ReviewQueueRail', () => {
     expect(wrapper.text()).toContain('5h ago')
     expect(wrapper.text()).not.toContain('undo')
     expect(wrapper.text()).not.toContain('sealed')
+
+    const rows = wrapper.findAll('.paper-review-recent__row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].element.tagName).toBe('BUTTON')
+    expect(rows[0].attributes('type')).toBe('button')
+    expect(rows[0].attributes('aria-label')).toBe('Open applied proposal: Move done')
+    expect(rows[1].attributes('data-proposal-id')).toBe('recent-2')
+
+    await rows[1].trigger('click')
+    expect(wrapper.emitted('select')?.at(-1)).toEqual(['recent-2'])
   })
 
   describe('This week apply-rate stat', () => {
