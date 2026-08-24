@@ -416,6 +416,59 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundActionTurnHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(string.Empty, 5, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        // No prose exists to be misread as completed work, so the textless outcome keeps its own
+        // placeholder and "degraded" classification rather than being relabelled "status".
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundClarificationHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                string.Empty, 5, false, null, IsClarificationRequest: true));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create onboarding tasks", RequestProposal: true),
+            default);
+
+        // A clarification with no question text has nothing for the user to answer, so it keeps
+        // the deliberate "degraded" reclassification instead of carrying the no-board notice.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldNotAddNoBoardNotice_WhenSessionIsBoardScoped()
     {
         var userId = Guid.NewGuid();

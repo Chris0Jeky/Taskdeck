@@ -467,8 +467,10 @@ public class ChatService : IChatService
                         // act and structurally cannot. Say so on this turn instead of letting the
                         // loop end in prose with no signal (#2004). The type stays "clarification"
                         // so the round still counts toward best-effort forcing and the composer
-                        // still offers the skip action.
-                        if (!session.BoardId.HasValue)
+                        // still offers the skip action. A textless clarification is left alone so
+                        // it keeps falling through to the empty-content placeholder below, which
+                        // deliberately reclassifies it as "degraded".
+                        if (!session.BoardId.HasValue && !string.IsNullOrWhiteSpace(llmResult.Content))
                             assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                     }
                     else
@@ -547,6 +549,7 @@ public class ChatService : IChatService
                         }
                         else if (!session.BoardId.HasValue
                                  && messageType != "degraded"
+                                 && !string.IsNullOrWhiteSpace(llmResult.Content)
                                  && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort))
                         {
                             // The provider answered in prose without flagging its own response
@@ -555,7 +558,9 @@ public class ChatService : IChatService
                             // user message the local classifier reads as a board action. With no
                             // bound board none of it could have become a proposal, so the turn says
                             // so rather than ending in Markdown that reads as completed work
-                            // (#2004). A degraded turn keeps its own classification and reason.
+                            // (#2004). A degraded turn keeps its own classification and reason, and
+                            // a textless turn keeps falling through to the empty-content
+                            // placeholder below — there is no prose there to be misread.
                             assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                             messageType = "status";
                         }
