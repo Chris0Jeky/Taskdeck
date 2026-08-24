@@ -58,6 +58,27 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task SecurityHeaders_CspFontSrc_ShouldAllowOnlySameOriginFonts()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Security-Policy", out var cspValues).Should().BeTrue();
+        var csp = cspValues.Should().ContainSingle().Subject;
+        var fontSrcDirective = csp
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Should()
+            .ContainSingle(directive => directive.StartsWith("font-src ", StringComparison.Ordinal))
+            .Which;
+
+        fontSrcDirective.Should().Be("font-src 'self'");
+        fontSrcDirective.Should().NotContain("fonts.googleapis.com");
+        fontSrcDirective.Should().NotContain("fonts.gstatic.com");
+    }
+
+    [Fact]
     public async Task SecurityHeaders_ShouldBePresent_OnUnauthorizedResponses()
     {
         using var client = _factory.CreateClient();

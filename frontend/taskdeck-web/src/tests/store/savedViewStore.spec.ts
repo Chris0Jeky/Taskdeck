@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSavedViewStore, cardMatchesSavedViewFilter } from '../../store/savedViewStore'
 import type { SavedViewFilter } from '../../store/savedViewStore'
@@ -33,6 +33,11 @@ function createBaseFilter(overrides: Partial<SavedViewFilter> = {}): SavedViewFi
 }
 
 describe('savedViewStore', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
@@ -535,6 +540,18 @@ describe('cardMatchesSavedViewFilter', () => {
       const card = createMockCard({ dueDate: todayMidnightUTC.toISOString() })
       const filter = createBaseFilter({ dueDateFilter: 'due-today' })
       expect(cardMatchesSavedViewFilter(card, filter)).toBe(true)
+    })
+
+    it('should use the browser local day without projecting the due key', () => {
+      vi.stubEnv('TZ', 'Pacific/Kiritimati')
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-23T12:30:00.000Z')) // Aug 24 locally
+      const localToday = createMockCard({ dueDate: '2026-08-24T00:00:00.000Z' })
+      const utcToday = createMockCard({ dueDate: '2026-08-23T00:00:00.000Z' })
+      const filter = createBaseFilter({ dueDateFilter: 'due-today' })
+
+      expect(cardMatchesSavedViewFilter(localToday, filter)).toBe(true)
+      expect(cardMatchesSavedViewFilter(utcToday, filter)).toBe(false)
     })
   })
 

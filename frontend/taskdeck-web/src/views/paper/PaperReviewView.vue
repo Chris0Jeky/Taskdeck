@@ -27,6 +27,7 @@ import {
   normalizeProposalStatus,
   sortProposalsByRisk,
 } from '../../utils/automation'
+import { proposalIdsEqual } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
@@ -62,6 +63,7 @@ import type {
 const {
   proposals,
   proposalsLoading,
+  unavailableProposalId,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -82,6 +84,7 @@ const {
   startClock,
   stopClock,
   clearBoardFilter,
+  openProposal,
 } = useReviewProposals()
 const session = useSessionStore()
 const toast = useToastStore()
@@ -136,7 +139,7 @@ function isOwnProposal(proposal: ApiProposal): boolean {
 }
 const ownedDismissableIds = computed(() =>
   dismissableProposalIds.value.filter((id) => {
-    const proposal = proposals.value.find((p) => p.id === id)
+    const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, id))
     return !!proposal && isOwnProposal(proposal)
   }),
 )
@@ -163,6 +166,8 @@ const {
 
 const explicitActiveId = ref<string | null>(null)
 const queueFilter = ref<QueueFilter>('all')
+type DecisionReceipt = 'approved' | 'applied' | 'rejected' | 'deferred'
+const decisionReceipt = ref<{ proposalId: string; kind: DecisionReceipt } | null>(null)
 
 const hashProposalId = computed(() => {
   const hash = route.hash ?? ''
@@ -215,18 +220,56 @@ function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | 
 }
 
 const activeProposal = computed<ApiProposal | null>(() => {
-  if (explicitActiveId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === explicitActiveId.value)
-    if (found) return found
-  }
+  // A valid deep link names one exact proposal; it is never a hint to fall back
+  // to the first actionable row. Match case-insensitively, but return the
+  // canonical API object so actions and rendered ids retain its original case.
   if (hashProposalId.value) {
-    const found = filteredVisibleProposals.value.find((p) => p.id === hashProposalId.value)
+    return (
+      proposals.value.find(
+        (proposal) =>
+          proposalIdsEqual(proposal.id, hashProposalId.value) &&
+          matchesActiveBoardFilter(proposal.boardId),
+      ) ?? null
+    )
+  }
+  // Queue filters intentionally remove decided rows. Keep the exact item at
+  // the decision locus instead of falling through to an unrelated proposal.
+  if (decisionReceipt.value) {
+    const receipted = proposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, decisionReceipt.value?.proposalId) &&
+      matchesActiveBoardFilter(proposal.boardId),
+    )
+    if (receipted) return receipted
+  }
+  if (explicitActiveId.value) {
+    const found = filteredVisibleProposals.value.find((p) =>
+      proposalIdsEqual(p.id, explicitActiveId.value),
+    )
     if (found) return found
   }
   // Default to the first pending-review item in the queue.
   const preferredId = preferredActiveProposalId(filteredVisibleProposals.value)
-  return filteredVisibleProposals.value.find((proposal) => proposal.id === preferredId) ?? null
+  return (
+    filteredVisibleProposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, preferredId),
+    ) ?? null
+  )
 })
+
+const activeDecisionReceipt = computed<DecisionReceipt | null>(() => {
+  const receipt = decisionReceipt.value
+  if (
+    !receipt ||
+    !proposalIdsEqual(activeProposal.value?.id, receipt.proposalId) ||
+    !matchesActiveBoardFilter(activeProposal.value?.boardId)
+  ) return null
+  return receipt.kind
+})
+
+function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
+  decisionReceipt.value = { proposalId, kind }
+  explicitActiveId.value = proposalId
+}
 
 watch(
   () => activeProposal.value?.id,
@@ -242,9 +285,11 @@ watch(
   hashProposalId,
   (id) => {
     if (!id) return
-    if (filteredVisibleProposals.value.some((proposal) => proposal.id === id)) {
-      explicitActiveId.value = id
-    }
+    const target = proposals.value.find(
+      (proposal) =>
+        proposalIdsEqual(proposal.id, id) && matchesActiveBoardFilter(proposal.boardId),
+    )
+    if (target) explicitActiveId.value = target.id
   },
   { immediate: true },
 )
@@ -327,7 +372,7 @@ function scrollDiffIntoView() {
 watch(
   () => activeProposal.value?.id ?? null,
   (id) => {
-    if (previewDiffProposalId.value && previewDiffProposalId.value !== id) {
+    if (previewDiffProposalId.value && !proposalIdsEqual(previewDiffProposalId.value, id)) {
       latestDiffRequestId += 1
       clearPreviewDiff()
     }
@@ -342,7 +387,7 @@ watch(
 watch(
   () => {
     const p = activeProposal.value
-    if (!p || previewDiffProposalId.value !== p.id) return false
+    if (!p || !proposalIdsEqual(previewDiffProposalId.value, p.id)) return false
     return isProposalReadOnly(p, isProposalExpired(p))
   },
   (readOnly) => {
@@ -354,7 +399,7 @@ watch(
     // not depend on that: only an already-stored presentation is skippable.
     if (previewDiffMode.value === 'stored') return
     const p = activeProposal.value
-    if (!p || previewDiffProposalId.value !== p.id) return
+    if (!p || !proposalIdsEqual(previewDiffProposalId.value, p.id)) return
     // Cancel any in-flight live fetch so a late response can't overwrite the
     // read-only presentation.
     const requestId = ++latestDiffRequestId
@@ -814,7 +859,7 @@ const applyPhase = computed<ApplyPhase>(() => {
 const applyConfirmRevisionCount = computed<number | null>(() => {
   const pending = executeConfirmProposal.value
   if (!pending) return null
-  if (activeProposal.value?.id !== pending.id) return null
+  if (!proposalIdsEqual(activeProposal.value?.id, pending.id)) return null
   if (!revisionsLoaded.value) return null
   return revisionCount.value
 })
@@ -902,7 +947,7 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
-function onFileAway() {
+async function onFileAway() {
   if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
@@ -916,16 +961,26 @@ function onFileAway() {
     toast.info(t('review.toast.notDismissableYet'))
     return
   }
-  void handleDismissProposal(p.id)
+  await handleDismissProposal(p.id)
+  if (!proposals.value.some((proposal) => proposalIdsEqual(proposal.id, p.id))) {
+    await clearProposalDeepLink(p.id)
+  }
 }
 
-function onFileAwayBulk() {
+async function onFileAwayBulk() {
   if (isArchivedHistory.value) return
   if (busy.value) {
     toast.info(t('review.toast.bulkBusy'))
     return
   }
-  void handleDismissApplied()
+  const deepLinkedId = hashProposalId.value
+  await handleDismissApplied()
+  if (
+    deepLinkedId &&
+    !proposals.value.some((proposal) => proposalIdsEqual(proposal.id, deepLinkedId))
+  ) {
+    await clearProposalDeepLink(deepLinkedId)
+  }
 }
 
 async function onApply() {
@@ -963,7 +1018,7 @@ async function onApply() {
         applyGuardBusy.value = false
       }
       // The active proposal can change during the await; only keep deciding on it.
-      if (activeProposal.value?.id !== p.id) return
+      if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
       // #1414 round 4 P2-A: identity is not enough — the proposal's STATE can
       // change under the await from another surface or session (deferred,
       // dismissed, status change) even while the shared busy lock holds this
@@ -998,6 +1053,21 @@ async function onApply() {
     return
   }
   await handleApproveProposal(p.id)
+  const recordedApproval = proposals.value.find((item) => proposalIdsEqual(item.id, p.id))
+  if (recordedApproval && normalizeProposalStatus(recordedApproval.status) === 'Approved') {
+    // The queue stays interactive while approval is in flight. Prefer the
+    // explicit selection over the route hash because router navigation can lag
+    // behind a queue click; a late response must never restore a proposal the
+    // reviewer has already left. The explicit id also survives the approved row
+    // leaving the visible queue, which keeps the intended receipt available when
+    // the reviewer did stay at this decision locus.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, p.id)) return
+    // Approval is its own decision. The remaining board write stays behind the
+    // visible, explicit Apply action rather than opening a handoff dialog.
+    recordDecisionReceipt(p.id, 'approved')
+    return
+  }
   // GH-1942: a successful approve hands STRAIGHT to the one deliberate execute
   // step. Before this, the user clicked the primary button, watched it relabel,
   // clicked it again, and only then got the dialog — three clicks for a
@@ -1024,8 +1094,8 @@ async function onApply() {
   // the recovery affordances above on screen — the row is simply gone until the
   // filter changes. Matches pre-collapse behaviour; the durable fix is keeping
   // a just-decided row visible, which is GH-1940's progressive-disclosure work.
-  if (activeProposal.value?.id !== p.id) return
-  const approved = proposals.value.find((item) => item.id === p.id)
+  if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
+  const approved = proposals.value.find((item) => proposalIdsEqual(item.id, p.id))
   if (!approved) return
   // Approve failed (the composable toasts and leaves the row untouched), or the
   // row came back as something else entirely — either way there is no approved
@@ -1042,7 +1112,7 @@ function onReject() {
   // the same key files it away instead of rejecting (single-key consistency
   // for "remove this from my queue"). #1161
   if (activeDismissable.value) {
-    onFileAway()
+    void onFileAway()
     return
   }
   if (revisionBusy.value) {
@@ -1098,7 +1168,32 @@ async function onDefer() {
   // it from the deferred filter). On FAILURE we must NOT clear the hash — an already-snoozed
   // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
   // still in effect) with no retry path, despite the error toast.
-  if (deferred) void clearProposalDeepLink(p.id)
+  if (deferred) {
+    recordDecisionReceipt(p.id, 'deferred')
+    void clearProposalDeepLink(p.id)
+  }
+}
+
+async function onConfirmExecute() {
+  const proposalId = executeConfirmProposal.value?.id
+  await confirmExecuteProposal()
+  const applied = proposalId
+    ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
+    : undefined
+  if (applied && normalizeProposalStatus(applied.status) === 'Applied') {
+    recordDecisionReceipt(applied.id, 'applied')
+  }
+}
+
+async function onConfirmReject(reason: string) {
+  const proposalId = rejectPromptProposal.value?.id
+  await confirmRejectProposal(reason)
+  const rejected = proposalId
+    ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
+    : undefined
+  if (rejected && normalizeProposalStatus(rejected.status) === 'Rejected') {
+    recordDecisionReceipt(rejected.id, 'rejected')
+  }
 }
 
 function onToggleProvenance() {
@@ -1120,7 +1215,10 @@ async function verifyStoredPreviewAccess(proposalId: string, requestId: number) 
     await automationApi.getProposal(proposalId)
   } catch (e: unknown) {
     if (!isAccessDeniedError(e)) return
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== proposalId) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, proposalId)
+    ) return
     clearPreviewDiff()
     toast.error(t('review.toast.noLongerAvailable'))
   }
@@ -1146,7 +1244,7 @@ async function onPreviewDiff() {
   if (!p) return
 
   // Already showing this proposal's diff → toggle it off.
-  if (previewDiffProposalId.value === p.id) {
+  if (proposalIdsEqual(previewDiffProposalId.value, p.id)) {
     latestDiffRequestId += 1
     clearPreviewDiff()
     return
@@ -1193,7 +1291,7 @@ async function onPreviewDiff() {
   // can't short-circuit a revised proposal to the invalid surface.
   if (!revisionsLoaded.value) {
     await loadRevisionState(p.id)
-    if (activeProposal.value?.id !== p.id) return
+    if (!proposalIdsEqual(activeProposal.value?.id, p.id)) return
     // #1414 final round: identity is not enough. The proposal can transition to
     // read-only DURING the revision-load await — expire on the 60s clock, be
     // refreshed to a terminal status, or be executed from another session — all
@@ -1249,12 +1347,18 @@ async function onPreviewDiff() {
   try {
     const diff = await automationApi.getProposalDiff(p.id)
     // Ignore stale responses and ones whose target proposal has changed.
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, p.id)
+    ) return
     previewDiff.value = diff
     previewDiffMode.value = 'live'
     scrollDiffIntoView()
   } catch (e: unknown) {
-    if (requestId !== latestDiffRequestId || previewDiffProposalId.value !== p.id) return
+    if (
+      requestId !== latestDiffRequestId ||
+      !proposalIdsEqual(previewDiffProposalId.value, p.id)
+    ) return
     // A 400 ValidationError means the backend ran Apply's gates at diff time
     // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
     // contain at least one operation" or "Proposal has expired" (the expiry
@@ -1302,7 +1406,7 @@ async function onReportBadSuggestion(proposalId: string) {
     return
   }
   // Don't double-submit while a report for this proposal is already in flight.
-  if (reportingProposalId.value === proposalId) return
+  if (proposalIdsEqual(reportingProposalId.value, proposalId)) return
 
   reportingProposalId.value = proposalId
   try {
@@ -1335,7 +1439,12 @@ useReviewKeymap(
       !busy.value &&
       activeProposal.value !== null &&
       executeConfirmProposal.value === null &&
-      rejectPromptProposal.value === null,
+      rejectPromptProposal.value === null &&
+      (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
+    isActionEnabled: (action) => {
+      const receipt = activeDecisionReceipt.value
+      return receipt === null || (receipt === 'approved' && action === 'onApply')
+    },
   },
 )
 
@@ -1352,17 +1461,45 @@ onUnmounted(() => {
 })
 
 function selectProposal(id: string) {
+  decisionReceipt.value = null
   explicitActiveId.value = id
+  openProposal(id)
+}
+
+function returnToReview() {
+  if (!unavailableProposalId.value) return
+  void clearProposalDeepLink(unavailableProposalId.value)
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
-  const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
-  queueFilter.value = filter
-  if (selectedId && filteredVisibleProposals.value.some((proposal) => proposal.id === selectedId)) {
-    explicitActiveId.value = selectedId
+  // A receipt is authoritative until the reviewer explicitly selects another
+  // proposal. In particular, a filter must not rewrite a deep link to a
+  // fallback row after the linked proposal has just been decided. #1940
+  if (decisionReceipt.value) {
+    queueFilter.value = filter
     return
   }
-  explicitActiveId.value = preferredActiveProposalId(filteredVisibleProposals.value)
+  const selectedId = activeProposal.value?.id ?? explicitActiveId.value ?? hashProposalId.value
+  queueFilter.value = filter
+  const retained = selectedId
+    ? filteredVisibleProposals.value.find((proposal) => proposalIdsEqual(proposal.id, selectedId))
+    : undefined
+  if (retained) {
+    explicitActiveId.value = retained.id
+    return
+  }
+  const fallbackId = preferredActiveProposalId(filteredVisibleProposals.value)
+  explicitActiveId.value = fallbackId
+  if (hashProposalId.value) {
+    if (fallbackId) {
+      openProposal(fallbackId)
+    } else {
+      // An empty filtered queue must not leave the old deep link active. The
+      // hash carve-out is authoritative only while its target remains in the
+      // selected queue; otherwise the filtered-empty state must render.
+      void clearProposalDeepLink(hashProposalId.value)
+    }
+  }
 }
 </script>
 
@@ -1419,6 +1556,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         :apply-phase="applyPhase"
         :edit-lock="editLock"
         :read-only="isArchivedHistory"
+        :decision-receipt="activeDecisionReceipt"
         @apply="onApply"
         @reject="onReject"
         @request-edit="onRequestEdit"
@@ -1443,7 +1581,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         <pre :aria-label="$t('review.technical.ariaLabel')">{{ technicalDetails }}</pre>
       </details>
       <section
-        v-if="previewDiffProposalId === activeProposal.id"
+        v-if="proposalIdsEqual(previewDiffProposalId, activeProposal.id)"
         ref="previewDiffSection"
         class="paper-review-deep__diff"
         data-testid="paper-review-diff"
@@ -1565,7 +1703,22 @@ function onQueueFilterChange(filter: QueueFilter) {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="activeBoardFilter">
+      <template v-if="unavailableProposalId">
+        <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
+        <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
+        <p class="tk-lede">
+          {{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
+        </p>
+        <button
+          type="button"
+          class="paper-review-deep__clear-scope"
+          data-testid="paper-review-unavailable-return"
+          @click="returnToReview"
+        >
+          {{ $t('review.empty.unavailable.return') }}
+        </button>
+      </template>
+      <template v-else-if="activeBoardFilter">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: awaitingCount }) }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.scoped.title', { scope: boardScopeLabel }) }}</h2>
         <p class="tk-lede">{{ $t('review.empty.scoped.body') }}</p>
@@ -1602,6 +1755,8 @@ function onQueueFilterChange(filter: QueueFilter) {
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
       :apply-phase="applyPhase"
+      :apply-only="activeDecisionReceipt === 'approved'"
+      :receipt-active="activeDecisionReceipt !== null"
     />
     <aside v-else class="paper-review-deep__rail-empty"></aside>
 
@@ -1612,7 +1767,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :proposal="executeConfirmProposal"
       :busy="busy"
       :revision-count="applyConfirmRevisionCount"
-      @confirm="confirmExecuteProposal"
+      @confirm="onConfirmExecute"
       @cancel="cancelExecuteProposal"
     />
 
@@ -1622,7 +1777,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :proposal="rejectPromptProposal"
       :busy="busy"
       :requires-reason="rejectRequiresReason"
-      @confirm="confirmRejectProposal"
+      @confirm="onConfirmReject"
       @cancel="cancelRejectProposal"
     />
   </div>

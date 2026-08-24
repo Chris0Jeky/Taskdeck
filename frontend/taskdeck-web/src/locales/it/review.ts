@@ -94,9 +94,27 @@ export default {
       title: 'Approvata — non ancora applicata alla bacheca.',
       body: 'Manca un passo: premi ⏎ (o “{action}”) per scriverla sulla bacheca. Finché non lo fai non cambia niente.',
     },
+    decisionReceipt: {
+      approved: {
+        title: 'Approvata — non ancora applicata alla bacheca.',
+        body: 'La revisione resta qui. Scegli {action} quando vuoi modificare la bacheca.',
+      },
+      applied: {
+        title: 'Applicata alla bacheca.',
+        body: 'Questa proposta resta ispezionabile qui; ritrovala in Applicate di recente.',
+      },
+      rejected: {
+        title: 'Rifiutata.',
+        body: 'Questa proposta non è stata applicata e resta ispezionabile qui.',
+      },
+      deferred: {
+        title: 'Rinviata.',
+        body: 'Questa proposta tornerà in Revisione al termine del rinvio.',
+      },
+    },
     keyHint: {
       fileAway: 'PREMI ⌫ PER ARCHIVIARE',
-      confirmApply: 'PREMI ⏎ PER APPLICARE ALLA BACHECA · ⌫ PER RIFIUTARE',
+      confirmApply: 'PREMI ⏎ PER APPLICARE ALLA BACHECA',
       approve: 'PREMI ⏎ PER APPROVARE · ⌫ PER RIFIUTARE',
     },
     footer: 'REVISIONE · {serial} · LOCAL-FIRST · REGISTRO',
@@ -393,6 +411,12 @@ export default {
     filtered: {
       title: 'Nessun risultato in {filter}.',
       body: 'Cambia filtro per rivedere le proposte ancora in attesa altrove nella coda.',
+    },
+    unavailable: {
+      eyebrow: 'Proposta richiesta',
+      title: 'Questa proposta non e disponibile.',
+      body: 'La proposta {id} non e piu disponibile per la revisione. Potrebbe essere stata applicata, archiviata o rimossa.',
+      return: 'Torna alla revisione',
     },
   },
 

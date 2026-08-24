@@ -90,6 +90,10 @@ const { t } = useI18n()
 // Item currently awaiting a board choice before its triage can be accepted.
 const boardPickItemId = ref<string | null>(null)
 const pickedBoardId = ref<string | null>(null)
+type BoardListLoadState = 'idle' | 'loading' | 'loaded' | 'failed'
+const boardListLoadState = ref<BoardListLoadState>(
+  boardStore.boards.length > 0 ? 'loaded' : 'idle',
+)
 
 // Row whose text is open for pre-triage correction (GH-1951). One at a time:
 // the editor holds an unsaved draft, and a second open row would give the user
@@ -183,21 +187,30 @@ const pickedBoardIsWritable = computed(() => {
  * `disabled` binding, the guard inside the handler, AND the visible reason:
  * they cannot drift apart into "off for a reason nobody stated".
  *
- * Order matters: "nothing picked" is reported before "not writable", because
+ * Empty-list truth comes first: a request in flight or a failed request is not
+ * evidence that the account has no boards. Once a successful load establishes
+ * the list, "nothing picked" is reported before "not writable", because
  * `pickedBoardIsWritable` is also false when nothing is picked.
  */
-type BoardPickBlock = 'noBoards' | 'noBoard' | 'viewOnly'
+type BoardPickBlock = 'loading' | 'loadFailed' | 'noBoards' | 'noBoard' | 'viewOnly'
 
 const boardPickBlock = computed<BoardPickBlock | null>(() => {
-  if (boardStore.boards.length === 0) return 'noBoards'
+  if (boardStore.boards.length === 0) {
+    if (boardListLoadState.value === 'failed') return 'loadFailed'
+    if (boardListLoadState.value !== 'loaded') return 'loading'
+    return 'noBoards'
+  }
   if (!pickedBoardId.value) return 'noBoard'
   if (!pickedBoardIsWritable.value) return 'viewOnly'
   return null
 })
 
-const boardPickBlockMessage = computed(() =>
-  boardPickBlock.value ? t(`inbox.triage.boardPick.blocked.${boardPickBlock.value}`) : '',
-)
+const boardPickBlockMessage = computed(() => {
+  if (boardPickBlock.value === 'loading' || boardPickBlock.value === 'loadFailed') {
+    return t(`inbox.triage.boardPick.${boardPickBlock.value}`)
+  }
+  return boardPickBlock.value ? t(`inbox.triage.boardPick.blocked.${boardPickBlock.value}`) : ''
+})
 
 function boardPickReasonId(item: CaptureItemSummary): string {
   return `board-pick-reason-${item.id}`
@@ -279,7 +292,27 @@ function isPickingBoard(item: CaptureItemSummary): boolean {
   return boardPickItemId.value === item.id
 }
 
-async function onAccept(item: CaptureItemSummary) {
+async function loadBoardsForPicker() {
+  if (boardListLoadState.value === 'loading') return
+  if (boardStore.boards.length > 0) {
+    boardListLoadState.value = 'loaded'
+    return
+  }
+
+  boardListLoadState.value = 'loading'
+  try {
+    await boardStore.fetchBoards()
+    boardListLoadState.value = 'loaded'
+  } catch {
+    boardListLoadState.value = 'failed'
+  }
+}
+
+function retryBoardLoad() {
+  void loadBoardsForPicker()
+}
+
+function onAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
   if (hasBoard(item)) {
     pendingAction.value = { itemId: item.id, kind: 'accept' }
@@ -289,12 +322,8 @@ async function onAccept(item: CaptureItemSummary) {
   // No board yet — require the user to choose one before we queue triage.
   pickedBoardId.value = null
   boardPickItemId.value = item.id
-  if (boardStore.boards.length === 0) {
-    try {
-      await boardStore.fetchBoards()
-    } catch {
-      // store surfaces its own toast; the picker still renders with whatever loaded.
-    }
+  if (boardStore.boards.length === 0 && boardListLoadState.value === 'idle') {
+    void loadBoardsForPicker()
   }
 }
 
@@ -382,9 +411,9 @@ function failureReason(item: CaptureItemSummary): string | null {
 
 onMounted(() => {
   // Prime boards so the picker is ready if the user accepts a board-less capture.
-  // Best-effort — the store owns its own error/toast surface.
+  // Archived history has no Accept path, so it must not prime the picker.
   if (!props.readOnly && boardStore.boards.length === 0) {
-    void boardStore.fetchBoards().catch(() => undefined)
+    void loadBoardsForPicker()
   }
 })
 
@@ -439,26 +468,30 @@ function recordedOr(value: string | null | undefined): string {
 </script>
 
 <template>
-  <section class="paper-triage" aria-label="Captured items">
+  <section
+    class="paper-triage"
+    aria-label="Captured items"
+    :aria-busy="loadingList && !listError"
+  >
     <header class="paper-triage__header">
       <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
-      <span class="tk-meta">
+      <span v-if="!loadingList && !listError" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
     </header>
 
-    <div v-if="loadingList && !hasItems" class="paper-triage__empty">
-      <span class="tk-meta">Loading…</span>
-    </div>
-
-    <div v-else-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
+    <div v-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
       <p class="tk-body">{{ listError }}</p>
       <button type="button" class="paper-triage__retry" @click="emit('retry')">
         Retry
       </button>
     </div>
 
-    <div v-if="!loadingList && !listError && !hasItems" class="paper-triage__empty">
+    <div v-else-if="loadingList" class="paper-triage__empty" role="status">
+      <span class="tk-meta">Loading…</span>
+    </div>
+
+    <div v-else-if="!hasItems" class="paper-triage__empty">
       <template v-if="scopeLabel">
         <p class="tk-body">{{ t('inbox.empty.scoped', { scope: scopeLabel }) }}</p>
         <button type="button" class="paper-triage__retry" data-testid="paper-triage-clear-scope" @click="emit('clear-scope')">
@@ -470,7 +503,18 @@ function recordedOr(value: string | null | undefined): string {
       </p>
     </div>
 
-    <ul v-if="hasItems" class="paper-triage__list">
+    <!--
+      Keep retained rows mounted while a replacement load hides them. The row
+      editor owns its unsaved draft locally, so unmounting this list during a
+      same-scope refresh would silently replace that draft with server text on
+      remount. Conditional display preserves the subtree without exposing
+      stale rows from a route-scope replacement.
+    -->
+    <ul
+      v-if="hasItems"
+      class="paper-triage__list"
+      :style="loadingList || listError ? { display: 'none' } : undefined"
+    >
       <li
         v-for="item in items"
         :key="item.id"
@@ -579,13 +623,20 @@ function recordedOr(value: string | null | undefined): string {
           </template>
         </div>
 
-        <div v-if="!readOnly && isPickingBoard(item)" class="paper-triage__board-pick" data-testid="capture-board-pick">
+        <div
+          v-if="!readOnly && isPickingBoard(item)"
+          class="paper-triage__board-pick"
+          data-testid="capture-board-pick"
+          :aria-busy="boardPickBlock === 'loading'"
+        >
           <label class="paper-triage__board-label">
             <span class="tk-eyebrow">Board</span>
             <select
               v-model="pickedBoardId"
               class="paper-triage__board-select"
               aria-label="Choose a board for this capture"
+              :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
+              :disabled="boardStore.boards.length === 0"
             >
               <option :value="null" disabled>Select a board…</option>
               <option
@@ -606,12 +657,22 @@ function recordedOr(value: string | null | undefined): string {
             v-if="boardPickBlock"
             :id="boardPickReasonId(item)"
             class="paper-triage__board-reason"
-            role="status"
+            :role="boardPickBlock === 'loadFailed' ? 'alert' : 'status'"
             data-testid="board-pick-reason"
             :data-reason="boardPickBlock"
           >
             {{ boardPickBlockMessage }}
           </p>
+          <button
+            v-if="boardPickBlock === 'loadFailed'"
+            type="button"
+            class="paper-triage__retry"
+            data-action="retry-board-load"
+            :aria-describedby="boardPickReasonId(item)"
+            @click="retryBoardLoad"
+          >
+            {{ t('inbox.triage.boardPick.retry') }}
+          </button>
           <div class="paper-triage__actions">
             <PaperHLBtn
               label="Accept on board"

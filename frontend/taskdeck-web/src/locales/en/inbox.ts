@@ -58,6 +58,8 @@ export default {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
     errorFallback: 'Please try again when the connection is available.',
+    metadataCompatibilityLead: 'Capture saved without its due date or labels.',
+    metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
   },
   scope: {
     board: 'Board: {board}',
@@ -87,6 +89,9 @@ export default {
   // untouched one. `tag.*` separates a capture's SOURCE from its STATE.
   triage: {
     boardPick: {
+      loading: 'Loading boards…',
+      loadFailed: 'Boards could not be loaded. Check your connection, then try again.',
+      retry: 'Retry board load',
       blocked: {
         noBoards: 'No boards yet. Create a board first, then this capture can go onto it.',
         noBoard: 'Choose a board first. Accept on board stays off until one is selected.',
@@ -118,24 +123,34 @@ export default {
     // `unknownReason` fills the slot when it gave none — so the sentence never
     // trails off into a colon with nothing after it.
     edit: {
-      action: 'Edit text',
+      action: 'Edit capture',
       label: 'Capture text',
       placeholder: 'Correct the captured text…',
       hint: 'Fix the wording before Accept turns this into a proposal. Saving changes the capture only — nothing reaches a board from here.',
       loading: 'Loading the full capture text…',
-      save: 'Save text',
+      save: 'Save changes',
       saving: 'Saving…',
       cancel: 'Cancel',
       close: 'Close',
       retry: 'Retry',
       unknownReason: 'the server gave no reason',
       loadFailed: 'The full capture text did not load: {reason}',
-      saveFailed: 'The text was not saved: {reason}',
+      saveFailed: 'The capture changes were not saved: {reason}',
       decisionBlocked: 'Finish or cancel this edit before you Accept or Reject.',
+      metadata: {
+        legend: 'Due date and labels',
+        dueDate: 'Due date (optional)',
+        labels: 'Labels (optional)',
+        labelsPlaceholder: 'Type one existing label name',
+        addLabel: 'Add label',
+        removeLabel: 'Remove {label}',
+        hint: 'Add one existing label name at a time with Enter. Remove a chip to clear it, then Save and Accept again to retry triage. Commas stay part of a label name; labels are never created here.',
+        unavailable: 'This API did not return editable metadata. A text-only save will preserve any stored due date and labels.',
+      },
       blocked: {
         notEditable: "This capture's text can't be edited. Accept or Reject it as it stands.",
         empty: "Text can't be empty. Type something, or cancel to leave the capture as it was.",
-        unchanged: 'Nothing has changed yet. Edit the text, or cancel to leave the capture as it was.',
+        unchanged: 'Nothing has changed yet. Edit the text or metadata, or cancel to leave the capture as it was.',
         editorOpen: 'Another capture is open for editing. Save or cancel that edit first — switching now would drop the text typed there.',
         busyElsewhere: 'Another capture action is still finishing. Save comes back the moment it lands.',
       },

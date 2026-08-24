@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest'
  *
  * WHAT THIS MECHANIZES: two source shapes that look interactive and do nothing:
  * an `<a>` tag whose href is the bare `#` placeholder and an enabled-looking
- * native `<button>` with no detectable action binding or native form semantics.
+ * native `<button>` with no detectable action binding or native form semantics,
+ * plus interactive `aria-label` semantics that are not native or keyboard
+ * reachable. Labelled custom buttons must expose both Enter and Space
+ * activation rather than merely listening for an arbitrary key.
  * The GH-1941 defect was the BOUND anchor form, `:href="tuneHref ?? '#'"`, so
  * both static and bound placeholder hrefs are detected.
  *
@@ -20,6 +23,9 @@ import { describe, expect, it } from 'vitest'
  *    synthetic canaries to make the boundary explicit.
  *  - A static `draggable="true"` is treated as native drag activation; the
  *    guard cannot prove which ancestor receives the drag event.
+ *  - Component tags (for example `<PaperHLBtn>`) are not compiler-expanded;
+ *    this guard only checks their explicit role/action source shape. Their
+ *    rendered root still needs component tests for the final DOM contract.
  *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are not read as
  *    click bindings, so a tag using one of those AND a bare `#` href would be
  *    reported. No such tag exists today; if one appears, teach CLICK_BINDING
@@ -70,6 +76,74 @@ const BARE_HASH_LITERAL = /(['"`])#\1/
 /** Any click binding with a non-empty handler expression. Dynamic events are not matched. */
 const CLICK_BINDING =
   /(?:@|v-on:)click(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** Keyboard activation bindings that make a custom labelled control operable. */
+const KEYBOARD_ACTION_BINDING =
+  /(?:@|v-on:)(?:keydown|keyup)(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** Keyboard bindings with their Vue modifier tokens captured for button-key checks. */
+const MODIFIED_KEYBOARD_ACTION_BINDING =
+  /(?:@|v-on:)(?:keydown|keyup)((?:\.[\w-]+)*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** System modifiers mean the binding is not ordinary unmodified activation. */
+const SYSTEM_KEY_MODIFIERS = new Set(['ctrl', 'alt', 'shift', 'meta'])
+
+/** Any explicit keyboard/pointer action binding on a custom labelled control. */
+const INTERACTIVE_ACTION_BINDING =
+  /(?:@|v-on:)(?:click|mousedown|mouseup|pointerdown|pointerup|keydown|keyup|touchstart|touchend|dblclick|contextmenu)(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+
+/** Opening tags that carry an aria label. Bound labels are intentionally opaque. */
+const ARIA_LABEL_ATTR =
+  /\s(?::|v-bind:)?aria-label\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** Explicit ARIA roles whose label describes a control rather than a landmark. */
+const INTERACTIVE_ARIA_ROLES = new Set([
+  'button',
+  'checkbox',
+  'combobox',
+  'link',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'radio',
+  'scrollbar',
+  'searchbox',
+  'slider',
+  'spinbutton',
+  'switch',
+  'tab',
+  'textbox',
+  'treeitem',
+])
+
+/** Roles that explicitly identify a non-interactive labelled container. */
+const ROLE_ATTR = /\s(?::|v-bind:)?role\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** Static tabindex is required because a dynamic value cannot prove keyboard reachability. */
+const TABINDEX_ATTR = /\s((?::|v-bind:)?tabindex)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** ARIA state/property hints identify custom controls even when the role is omitted. */
+const INTERACTIVE_ARIA_STATE =
+  /\s(?:aria-(?:expanded|haspopup|pressed|selected|controls|activedescendant)|:(?:aria-expanded|aria-haspopup|aria-pressed|aria-selected|aria-controls|aria-activedescendant)|v-bind:(?:aria-expanded|aria-haspopup|aria-pressed|aria-selected|aria-controls|aria-activedescendant))\s*=/i
+
+/** Class/label hints retain the specific bare-avatar regression without scanning landmarks. */
+const INTERACTIVE_LABEL_HINT =
+  /\b(?:profile|settings?|notifications?|avatar|switch\s+workspace|open\b|close\b|back\b|delete\b|remove\b|edit\b|toggle\b|menu\b|button\b|control\b|filter\b|copy\b|clear\b|add\b)\b/i
+const INTERACTIVE_CLASS_HINT =
+  /\b(?:avatar|icon-btn|button|btn|control|action|trigger|toggle|menu-item|menuitem)\b/i
+
+/** Components whose single root is a native control and which preserve fallthrough attrs. */
+const NATIVE_INTERACTIVE_COMPONENTS = new Set([
+  'inputassistfield',
+  'paperhlbtn',
+  'router-link',
+  'routerlink',
+  'tdbutton',
+  'tdiconbutton',
+])
+
+/** Opening tags for native or custom elements. Quoted values are consumed whole. */
+const OPENING_TAG = /<([A-Za-z][\w.-]*)(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
 
 /** Opening/closing form and native-button tags, with quoted values consumed whole. */
 const FORM_OR_BUTTON_TAG = /<\/?(?:form|button)(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/gi
@@ -215,6 +289,88 @@ function findDeadButtons(source: string): string[] {
   return dead
 }
 
+/** Extract the opening tag name without depending on Vue compiler expansion. */
+function openingTagName(tag: string): string {
+  return /^<([A-Za-z][\w.-]*)/.exec(tag)?.[1]?.toLowerCase() ?? ''
+}
+
+/** Return the literal role when source text makes it knowable. */
+function ariaRole(tag: string): string {
+  const match = ROLE_ATTR.exec(tag)
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').trim().toLowerCase()
+}
+
+/** A native control is keyboard/focusable by its platform semantics. */
+function isNativeInteractiveTag(tag: string): boolean {
+  const name = openingTagName(tag)
+  if (NATIVE_INTERACTIVE_COMPONENTS.has(name)) return true
+  if (name === 'a') return /\s(?::|v-bind:)?href\s*=/.test(tag)
+  if (name === 'input') {
+    const type = BUTTON_TYPE_ATTR.exec(tag)
+    return (type?.[1] ?? type?.[2] ?? type?.[3] ?? '').trim().toLowerCase() !== 'hidden'
+  }
+  return new Set(['button', 'select', 'textarea', 'summary']).has(name)
+}
+
+/** A custom button must explicitly handle both platform activation keys. */
+function hasButtonKeyboardActivation(tag: string): boolean {
+  let handlesEnter = false
+  let handlesSpace = false
+
+  for (const match of tag.matchAll(MODIFIED_KEYBOARD_ACTION_BINDING)) {
+    const expression = (match[2] ?? match[3] ?? match[4] ?? '').trim()
+    if (expression.length === 0) continue
+
+    const modifiers = (match[1] ?? '')
+      .split('.')
+      .filter((modifier) => modifier.length > 0)
+    if (modifiers.some((modifier) => SYSTEM_KEY_MODIFIERS.has(modifier.toLowerCase()))) continue
+    handlesEnter ||= modifiers.includes('enter')
+    handlesSpace ||= modifiers.includes('space')
+  }
+
+  return handlesEnter && handlesSpace
+}
+
+/** A custom control must prove both keyboard reachability and role-appropriate keyboard activation. */
+function isFocusableAndKeyboardActionable(tag: string): boolean {
+  const tabindex = TABINDEX_ATTR.exec(tag)
+  if (!tabindex || tabindex[1].startsWith(':') || tabindex[1].startsWith('v-bind:')) return false
+  const value = (tabindex[2] ?? tabindex[3] ?? tabindex[4] ?? '').trim()
+  if (!/^(?:0|[1-9]\d*)$/.test(value)) return false
+
+  // ARIA button parity is specific: both Enter and Space activate a custom
+  // button. Other explicit roles have different keyboard contracts, so this
+  // bounded hardening slice preserves their existing handler-evidence rule.
+  if (ariaRole(tag) === 'button') return hasButtonKeyboardActivation(tag)
+  return hasNonEmptyBinding(tag, KEYBOARD_ACTION_BINDING)
+}
+
+/** Whether a labelled element is intended to be a control rather than a landmark or description. */
+function hasInteractiveAriaSemantics(tag: string): boolean {
+  const role = ariaRole(tag)
+  if (role.length > 0) return INTERACTIVE_ARIA_ROLES.has(role)
+  if (isNativeInteractiveTag(tag)) return true
+  if (hasNonEmptyBinding(tag, INTERACTIVE_ACTION_BINDING)) return true
+  if (INTERACTIVE_ARIA_STATE.test(tag)) return true
+
+  const label = ARIA_LABEL_ATTR.exec(tag)
+  const labelValue = (label?.[1] ?? label?.[2] ?? label?.[3] ?? '').trim()
+  return INTERACTIVE_LABEL_HINT.test(labelValue) || INTERACTIVE_CLASS_HINT.test(tag)
+}
+
+/** Opening labelled controls that are not native or demonstrably keyboard actionable. */
+function findAriaLabelViolations(source: string): string[] {
+  const violations: string[] = []
+  for (const [tag] of markupOnly(source).matchAll(OPENING_TAG)) {
+    if (!ARIA_LABEL_ATTR.test(tag) || !hasInteractiveAriaSemantics(tag)) continue
+    if (isNativeInteractiveTag(tag)) continue
+    if (isFocusableAndKeyboardActionable(tag)) continue
+    violations.push(tag.replace(/\s+/g, ' '))
+  }
+  return violations
+}
+
 /**
  * The GH-1941 defect, verbatim in shape: a bound href falling back to a bare
  * `#` with nothing listening for the click.
@@ -225,6 +381,9 @@ function findDeadButtons(source: string): string[] {
  * guard that has nothing to say about it.
  */
 const DEAD_ANCHOR_FIXTURE = `<template><a :href="tuneHref ?? '#'" class="tune">Tune heuristics</a></template>`
+
+/** The GH-1932 avatar shape: a labelled generic element with no focus or action semantics. */
+const DEAD_ARIA_LABEL_FIXTURE = `<template><div class="paper-topbar__avatar" aria-label="Profile: D">D</div></template>`
 
 describe('dead affordances', () => {
   const vueFiles = Object.keys(VUE_SOURCES)
@@ -328,6 +487,44 @@ describe('dead affordances', () => {
     expect(findDeadButtons('<template><button :type="buttonType">Dynamic type</button></template>')).toHaveLength(1)
   })
 
+  it('detects interactive aria labels that are not native or keyboard actionable', () => {
+    expect(findAriaLabelViolations(DEAD_ARIA_LABEL_FIXTURE)).toEqual([
+      '<div class="paper-topbar__avatar" aria-label="Profile: D">',
+    ])
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @click="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="region" aria-label="Settings panel" @click.self="close">Panel</div></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><button aria-label="Settings" @click="open">Open</button></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><a href="/settings" aria-label="Settings">Settings</a></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><a aria-label="Settings">Settings</a></template>')).toHaveLength(1)
+  })
+
+  it('requires explicit Enter and Space activation for labelled custom buttons', () => {
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.space="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.escape="close">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.Enter="open" @keydown.SPACE.prevent="open">Open</div></template>')).toHaveLength(1)
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.space.prevent="open">Open</div></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter.stop="open" @keydown.space.self="open">Open</div></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" v-on:keyup.enter="open" v-on:keydown.space="open">Open</div></template>')).toEqual([])
+
+    for (const modifier of ['ctrl', 'alt', 'shift', 'meta']) {
+      expect(
+        findAriaLabelViolations(
+          `<template><div role="button" tabindex="0" aria-label="Settings" @keydown.${modifier}.enter="open" @keydown.space="open">Open</div></template>`,
+        ),
+      ).toHaveLength(1)
+      expect(
+        findAriaLabelViolations(
+          `<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.${modifier}.space="open">Open</div></template>`,
+        ),
+      ).toHaveLength(1)
+    }
+
+    // A switch has a different ARIA keyboard contract; this slice must not
+    // manufacture an Enter requirement for every role in the shared set.
+    expect(findAriaLabelViolations('<template><div role="switch" tabindex="0" aria-label="Notifications" @keydown.space="toggle">Toggle</div></template>')).toEqual([])
+  })
+
   it('never ships an anchor with a placeholder href and no click binding', () => {
     const offenders: string[] = []
 
@@ -345,6 +542,18 @@ describe('dead affordances', () => {
 
     for (const [file, source] of Object.entries(VUE_SOURCES)) {
       for (const tag of findDeadButtons(source)) {
+        offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('never ships an interactive aria label without native or keyboard semantics', () => {
+    const offenders: string[] = []
+
+    for (const [file, source] of Object.entries(VUE_SOURCES)) {
+      for (const tag of findAriaLabelViolations(source)) {
         offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
       }
     }

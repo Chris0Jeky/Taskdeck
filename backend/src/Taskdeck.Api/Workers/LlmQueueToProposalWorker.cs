@@ -576,9 +576,8 @@ public class LlmQueueToProposalWorker : BackgroundService
                 return;
             }
 
-            var retryScheduled = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var retryScheduled = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 triageResult.ErrorCode,
                 triageResult.ErrorMessage ?? "Capture triage failed",
                 ct,
@@ -605,9 +604,8 @@ public class LlmQueueToProposalWorker : BackgroundService
                 "Unhandled exception triaging capture queue item {ItemId}. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
-            var scheduledForRetry = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var scheduledForRetry = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 ErrorCodes.UnexpectedError,
                 ex.Message,
                 ct,
@@ -751,6 +749,39 @@ public class LlmQueueToProposalWorker : BackgroundService
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    /// <summary>
+    /// Records capture-triage failures in a fresh scope. A failed proposal/revision save can leave
+    /// stale Modified/Added entries in the processing DbContext; reusing it would retry those writes
+    /// and prevent the queue item's failure/retry transition from committing.
+    /// </summary>
+    private async Task<bool> HandleFailureWithRetryInFreshScopeAsync(
+        Guid itemId,
+        string? errorCode,
+        string errorMessage,
+        CancellationToken ct,
+        bool retryAsProcessing)
+    {
+        using var failureScope = _scopeFactory.CreateScope();
+        var failureUnitOfWork = failureScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var failureItem = await failureUnitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (failureItem == null || failureItem.Status != RequestStatus.Processing)
+        {
+            _logger.LogWarning(
+                "Capture queue item {ItemId} could not record triage failure because its current status is {Status}",
+                itemId,
+                failureItem?.Status.ToString() ?? "missing");
+            return false;
+        }
+
+        return await HandleFailureWithRetryAsync(
+            failureUnitOfWork,
+            failureItem,
+            errorCode,
+            errorMessage,
+            ct,
+            retryAsProcessing);
     }
 
     private async Task CompleteRetryTransitionOnShutdownAsync(Guid itemId, bool retryAsProcessing)

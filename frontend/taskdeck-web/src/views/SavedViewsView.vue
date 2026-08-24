@@ -8,6 +8,7 @@ import { useBoardStore } from '../store/boardStore'
 import { useSavedViewStore, cardMatchesSavedViewFilter } from '../store/savedViewStore'
 import type { SavedView, SavedViewFilter } from '../store/savedViewStore'
 import type { Board, Card } from '../types/board'
+import { formatCalendarDate } from '../utils/dueDates'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,7 +101,7 @@ function navigateToCard(card: Card) {
 
 function formatDueDate(value: string | null): string {
   if (!value) return 'No due date'
-  return new Date(value).toLocaleDateString()
+  return formatCalendarDate(value) || 'No due date'
 }
 
 function resetCreateForm() {

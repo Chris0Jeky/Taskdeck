@@ -267,7 +267,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       const store = useCaptureStore()
       await expect(store.updateSuggestion('c-9', { text: 'new' })).rejects.toBeInstanceOf(Error)
 
-      expect(store.actionError).toBe('Failed to update capture text')
+      expect(store.actionError).toBe('Failed to update capture')
     })
   })
 

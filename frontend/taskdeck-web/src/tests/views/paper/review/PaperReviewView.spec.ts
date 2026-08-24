@@ -393,6 +393,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
     expect(wrapper.findAll('.paper-review-q').map((row) => row.find('.paper-review-q__title').text())).toEqual([
       'Mine low',
       'Mine high',
@@ -435,6 +436,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Pending mine')
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Expired mine')
@@ -530,6 +532,7 @@ describe('PaperReviewView', () => {
 
     const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
     await mineButton?.trigger('click')
+    await flushPromises()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
     await flushPromises()
@@ -722,6 +725,30 @@ describe('PaperReviewView', () => {
     expect(emptyText).not.toContain('Nothing waiting')
   })
 
+  it('clears a manual hash selection when a filter has no matching proposals', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'theirs-001',
+        requestedByUserId: 'u-2',
+        summary: 'Theirs proposal',
+      }),
+    ])
+
+    await wrapper.find('.paper-review-q').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-theirs-001',
+    )
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Mine')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('No matches in Mine.')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('')
+  })
+
   it('shows apply-risk guidance without promising an undo action', async () => {
     const wrapper = await mountView([makeProposal()])
 
@@ -758,17 +785,23 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('mine-001')
   })
 
-  it('uses the hash-targeted proposal as the active decision target', async () => {
-    mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-target' }))
+  it('hydrates a mixed-case hash and actions the canonical Paper proposal id', async () => {
+    const canonicalTarget = makeProposal({
+      id: 'proposal-target',
+      summary: 'Target proposal',
+    })
+    mocks.getProposal.mockResolvedValueOnce(canonicalTarget)
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'proposal-target', status: 'Approved' }),
+    )
     const wrapper = await mountView(
-      [
-        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
-        makeProposal({ id: 'proposal-target', summary: 'Target proposal' }),
-      ],
-      '/workspace/review#proposal-proposal-target',
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-TARGET',
     )
 
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-TARGET')
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Target proposal')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('First proposal')
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
@@ -776,7 +809,52 @@ describe('PaperReviewView', () => {
     expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-target')
   })
 
-  it('lets manual queue selection override a hash-targeted proposal', async () => {
+  it('renders a requested Paper proposal 404 without decision controls or fallback selection', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+    )
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-MISSING')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('This proposal is unavailable.')
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('PROPOSAL-MISSING')
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(
+      (wrapper.vm as unknown as { $route: { fullPath: string } }).$route.fullPath,
+    ).toBe('/workspace/review#proposal-PROPOSAL-MISSING')
+
+    await wrapper.find('[data-testid="paper-review-unavailable-return"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+  })
+
+  it('renders a mismatched Paper proposal response as unavailable without fallback selection', async () => {
+    mocks.getProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-different', summary: 'Wrong proposal' }))
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+    )
+
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-MISSING')
+    expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('This proposal is unavailable.')
+    expect(wrapper.find('[data-testid="paper-review-empty"]').text()).toContain('PROPOSAL-MISSING')
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('#proposal-PROPOSAL-MISSING')
+
+    await wrapper.find('[data-testid="paper-review-unavailable-return"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe('')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+  })
+
+  it('updates the hash when manual queue selection replaces a deep-link target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(
       [
@@ -787,8 +865,12 @@ describe('PaperReviewView', () => {
     )
 
     await wrapper.findAll('.paper-review-q')[0].trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+    expect(
+      (wrapper.vm as unknown as { $route: { fullPath: string } }).$route.fullPath,
+    ).toBe('/workspace/review#proposal-proposal-first')
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
     await flushPromises()
@@ -2508,13 +2590,13 @@ describe('PaperReviewView', () => {
       // Phase 1 must NOT touch the board.
       expect(mocks.executeProposal).not.toHaveBeenCalled()
 
-      const banner = wrapper.get('[data-testid="paper-review-approved-banner"]')
+      const banner = wrapper.get('[data-testid="paper-review-decision-receipt"]')
       expect(banner.text()).toContain('Approved — not yet applied to the board.')
       expect(banner.text()).toContain('Apply to board')
       expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Apply to board')
       expect(railPhase(wrapper)).toBe('execute')
       expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
-        'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
+        'PRESS ⏎ TO APPLY TO BOARD',
       )
       expect(wrapper.get('[data-testid="paper-review-right-rail"]').text()).toContain(
         'Apply to board · step 2 of 2',
@@ -2629,18 +2711,151 @@ describe('PaperReviewView', () => {
     })
   })
 
-  // --- GH-1942: the flow must cost TWO user actions, not three ---------------
+  it('keeps the exact approved proposal visible through a stale filter without auto-applying', async () => {
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'receipt-approved', status: 'Approved', summary: 'Receipt target' }),
+    )
+    const staleAt = new Date(Date.now() - 25 * 60 * 60_000).toISOString()
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'receipt-approved', summary: 'Receipt target', createdAt: staleAt }),
+        makeProposal({ id: 'other-stale', summary: 'Other stale proposal', createdAt: staleAt }),
+      ],
+      '/workspace/review#proposal-receipt-approved',
+    )
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    const receipt = wrapper.get('[data-testid="paper-review-decision-receipt"]')
+    expect(receipt.attributes('role')).toBe('status')
+    expect(receipt.attributes('data-decision')).toBe('approved')
+    expect(receipt.text()).toContain('not yet applied')
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+    expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-defer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).not.toContain('Reject')
+    expect(wrapper.findAll('.paper-review-keys__row')).toHaveLength(1)
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Stale')?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Receipt target')
+  })
+
+  it('retains apply, reject, and defer outcomes as nonactionable receipts', async () => {
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'receipt-applied', status: 'Applied', summary: 'Applied receipt', appliedAt: new Date().toISOString() }),
+    )
+    const applied = await mountView([makeProposal({ id: 'receipt-applied', status: 'Approved', summary: 'Applied receipt' })])
+    await applied.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+    expect(applied.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('applied')
+    expect(applied.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
+    expect(applied.find('[data-testid="paper-review-queue-rail"]').text()).toContain('Applied receipt')
+    applied.unmount()
+
+    mocks.rejectProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'receipt-rejected', status: 'Rejected', summary: 'Rejected receipt' }),
+    )
+    const rejected = await mountView([makeProposal({ id: 'receipt-rejected', summary: 'Rejected receipt' })])
+    await rejected.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog('not needed')
+    expect(rejected.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('rejected')
+    expect(rejected.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
+    rejected.unmount()
+
+    const deferredUntil = new Date(Date.now() + 60 * 60_000).toISOString()
+    mocks.deferProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'receipt-deferred', summary: 'Deferred receipt', deferredUntil }),
+    )
+    const deferred = await mountView([makeProposal({ id: 'receipt-deferred', summary: 'Deferred receipt' })])
+    await deferred.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+    expect(deferred.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('deferred')
+    expect(deferred.find('[data-testid="paper-review-decision-rail"]').exists()).toBe(false)
+  })
+
+  it('does not dispatch the global review keymap after a deferred receipt', async () => {
+    const deferredUntil = new Date(Date.now() + 60 * 60_000).toISOString()
+    mocks.deferProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'keymap-deferred', deferredUntil }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'keymap-deferred' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('deferred')
+    expect(wrapper.find('[data-testid="paper-review-key-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).not.toContain('Apply to board')
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    window.dispatchEvent(enter)
+    await flushPromises()
+
+    expect(enter.defaultPrevented).toBe(false)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('does not render or execute a board-A receipt during a board-B reload', async () => {
+    const boardA = makeProposal({ id: 'board-a-receipt', boardId: 'board-a', summary: 'Board A receipt' })
+    const boardB = makeProposal({ id: 'board-b-pending', boardId: 'board-b', summary: 'Board B pending' })
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ ...boardA, status: 'Approved' }),
+    )
+    const wrapper = await mountView(
+      [boardA],
+      '/workspace/review?boardId=board-a',
+      [
+        { id: 'board-a', name: 'Board A' },
+        { id: 'board-b', name: 'Board B' },
+      ],
+    )
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision')).toBe('approved')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Board A receipt')
+
+    let resolveBoardB!: (value: Proposal[]) => void
+    mocks.getProposals.mockImplementationOnce(
+      () => new Promise<Proposal[]>((resolve) => { resolveBoardB = resolve }),
+    )
+    mocks.approveProposal.mockClear()
+    const router = wrapper.vm.$router
+    await router.push({ name: 'workspace-review', query: { boardId: 'board-b' } })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true })
+    window.dispatchEvent(enter)
+    await flushPromises()
+    expect(enter.defaultPrevented).toBe(false)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    resolveBoardB([boardB])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('Board B pending')
+    expect(wrapper.find('[data-testid="paper-review-main"]').text()).not.toContain('Board A receipt')
+  })
+
+  // --- #1940 receipt flow: explicit Approve then Apply -----------------------
   //
   // #1818 made the two phases visible; what was left was a third click that did
-  // nothing but open the dialog the second click had already promised. Approve
-  // now hands straight to that dialog. These tests fix the ACTION COUNT so a
-  // later change cannot quietly reinstate the middle step.
-  describe('apply-flow step count (GH-1942)', () => {
+  // nothing but open the dialog. The receipt now makes approval legible in
+  // place; Apply deliberately opens the confirmation only when chosen.
+  describe('apply-flow receipt and confirmation (GH-1942)', () => {
     function railPhase(wrapper: ReturnType<typeof mount>): string | undefined {
       return wrapper.find('[data-testid="paper-review-decision-rail"]').attributes('data-apply-phase')
     }
 
-    it('takes exactly two user actions from pending to applied, and the board is untouched until the second', async () => {
+    it('takes three explicit user actions from pending to applied, and the board is untouched until confirmation', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'flow-1', status: 'Approved' }),
       )
@@ -2663,15 +2878,21 @@ describe('PaperReviewView', () => {
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(railPhase(wrapper)).toBe('execute')
       expect(wrapper.get('[data-testid="decision-apply-label"]').text()).toBe('Apply to board')
-      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+      expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').text()).toContain('not yet applied')
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
       // ── Action 2: accept that dialog. `confirmApplyDialog` hard-asserts the
       // accept button is present, so re-adding a middle step fails here rather
       // than silently passing.
       userActions += 1
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
+
+      userActions += 1
       await confirmApplyDialog()
 
-      expect(userActions).toBe(2)
+      expect(userActions).toBe(3)
       expect(mocks.executeProposal).toHaveBeenCalledTimes(1)
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
@@ -2701,7 +2922,10 @@ describe('PaperReviewView', () => {
       // Approve has returned; the board is still untouched and stays that way
       // for as long as the human does not accept.
       expect(calls).toEqual(['approve:adr-3'])
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
 
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
       await confirmApplyDialog()
 
       expect(calls).toEqual(['approve:adr-3', 'execute:adr-3'])
@@ -2731,12 +2955,16 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
-    it('backing out of the auto-opened dialog leaves it approved, and the rail reopens it', async () => {
+    it('backing out of the explicit Apply dialog leaves its approved receipt in place', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'back-out', status: 'Approved' }),
       )
       const wrapper = await mountView([makeProposal({ id: 'back-out' })])
 
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
       await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
 
@@ -2750,7 +2978,7 @@ describe('PaperReviewView', () => {
 
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(railPhase(wrapper)).toBe('execute')
-      expect(wrapper.find('[data-testid="paper-review-approved-banner"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(true)
 
       // The rail's primary button is the way back to the same single step —
       // and it must not re-approve.
@@ -2766,7 +2994,7 @@ describe('PaperReviewView', () => {
     // things that used to be impossible now are: focus is elsewhere when the
     // dialog mounts, and the reviewer can move the queue underneath it.
 
-    it('returns focus to the rail when the auto-opened dialog is dismissed', async () => {
+    it('returns focus to the rail when the explicitly requested Apply dialog is dismissed', async () => {
       // NOTE ON FIDELITY. jsdom does NOT implement the HTML rule that a focused
       // element losing focusability (here: `disabled` flipping on while the
       // approve call is in flight) moves focus to the body — it leaves
@@ -2807,6 +3035,9 @@ describe('PaperReviewView', () => {
       // Only NOW does the dialog open, so the only return target TdDialog can
       // capture for itself is <body> — a restore it makes into a no-op.
       resolveApprove(makeProposal({ id: 'focus-1', status: 'Approved' }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
@@ -2915,6 +3146,9 @@ describe('PaperReviewView', () => {
       expect(mocks.approveProposal).toHaveBeenCalledWith('aaa-1')
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).not.toContain('First proposal')
 
       wrapper.unmount()
     })
@@ -2923,10 +3157,8 @@ describe('PaperReviewView', () => {
   /**
    * GH-1983 — the keyboard path through the two-phase apply.
    *
-   * ⏎ approves; the confirmation opens by itself (GH-1942) with focus on the
-   * dialog container; a SECOND, deliberate ⏎ applies. The two calls stay
-   * separate and explicit (ADR-0003) — this only makes the second one reachable
-   * without a Tab on the one dialog the reviewer did not open by hand.
+   * ⏎ approves; a second deliberate ⏎ opens the explicit Apply confirmation.
+   * The dialog still owns the final confirmation and preserves the two calls.
    */
   describe('keyboard path through the apply confirmation (GH-1983)', () => {
     function pressEnterInDialog(options: KeyboardEventInit = {}) {
@@ -2937,7 +3169,7 @@ describe('PaperReviewView', () => {
       )
     }
 
-    it('approves on ⏎ and applies on a second deliberate ⏎', async () => {
+    it('approves on ⏎, opens Apply on a second deliberate ⏎, and confirms in the dialog', async () => {
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'proposal-001', status: 'Approved' }),
       )
@@ -2951,6 +3183,10 @@ describe('PaperReviewView', () => {
 
       expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-001')
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await flushPromises()
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       pressEnterInDialog()
@@ -2976,6 +3212,11 @@ describe('PaperReviewView', () => {
 
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
       await flushPromises()
+
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, cancelable: true }))
+      await flushPromises()
+      expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).not.toBeNull()
 
       pressEnterInDialog({ repeat: true })
       pressEnterInDialog({ repeat: true })

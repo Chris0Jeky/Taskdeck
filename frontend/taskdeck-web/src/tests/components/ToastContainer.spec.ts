@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import ToastContainer from '../../components/common/ToastContainer.vue'
 import type { Toast } from '../../store/toastStore'
 
@@ -8,9 +8,11 @@ const mockToastStore = reactive({
   toasts: [] as Toast[],
   remove: vi.fn(),
 })
+const copyToastReceipt = vi.hoisted(() => vi.fn().mockResolvedValue(true))
 
 vi.mock('../../store/toastStore', () => ({
   useToastStore: () => mockToastStore,
+  copyToastReceipt,
 }))
 
 describe('ToastContainer', () => {
@@ -34,6 +36,44 @@ describe('ToastContainer', () => {
     const wrapper = mount(ToastContainer)
     expect(wrapper.text()).toContain('Board created')
     expect(wrapper.text()).toContain('Network error')
+    expect(wrapper.get('[data-toast-id="t1"]').text()).toContain('Board created')
+    expect(wrapper.get('[data-toast-id="t2"]').text()).toContain('Network error')
+  })
+
+  it('keeps toasts present at mount and remount out of the polite announcement', async () => {
+    mockToastStore.toasts = [
+      { id: 'existing', message: 'Already visible', type: 'success', duration: 0 },
+    ]
+
+    const firstWrapper = mount(ToastContainer)
+    await nextTick()
+    expect(firstWrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+
+    firstWrapper.unmount()
+    const remountedWrapper = mount(ToastContainer)
+    await nextTick()
+    expect(remountedWrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+    remountedWrapper.unmount()
+  })
+
+  it('announces only a non-error toast added after mount', async () => {
+    const wrapper = mount(ToastContainer)
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+
+    mockToastStore.toasts = [
+      { id: 'new-success', message: 'Capture saved to inbox', type: 'success', duration: 0 },
+      { id: 'new-error', message: 'Network error', type: 'error', duration: 0 },
+    ]
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(announcer.text()).toBe('Capture saved to inbox')
+    const errorToast = wrapper.get('[role="alert"]')
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
+    expect(wrapper.get('.bg-green-50').attributes('role')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('applies error role="alert" for error toasts', () => {
@@ -87,5 +127,29 @@ describe('ToastContainer', () => {
   it('has aria-live="polite" on the container', () => {
     const wrapper = mount(ToastContainer)
     expect(wrapper.find('[aria-live="polite"]').exists()).toBe(true)
+  })
+
+  it('expands and copies an error receipt with accessible controls', async () => {
+    mockToastStore.toasts = [
+      {
+        id: 't1',
+        message: 'Network error',
+        details: 'status: 503',
+        type: 'error',
+        duration: 0,
+      },
+    ]
+    const wrapper = mount(ToastContainer)
+
+    const detailsButton = wrapper.get('button[aria-controls="toast-details-t1"]')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('#toast-details-t1').text()).toContain('status: 503')
+
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === 'Copy details')
+    expect(copyButton).toBeDefined()
+    await copyButton!.trigger('click')
+    expect(copyToastReceipt).toHaveBeenCalledWith(mockToastStore.toasts[0])
   })
 })

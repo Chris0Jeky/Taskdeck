@@ -99,6 +99,22 @@ public class AutomationProposal : Entity
     }
 
     /// <summary>
+    /// Advances the proposal concurrency token before a recovery-only revision is committed.
+    /// Saving the proposal and revision in one unit of work ensures that either this revision or
+    /// a concurrent approve/reject decision wins, never both.
+    /// </summary>
+    public void GuardPendingRevisionCommit()
+    {
+        if (Status != ProposalStatus.PendingReview)
+            throw new DomainException(ErrorCodes.InvalidOperation, $"Cannot guard a revision commit for proposal in status {Status}");
+
+        var previousUpdatedAt = UpdatedAt;
+        Touch();
+        if (UpdatedAt <= previousUpdatedAt)
+            UpdatedAt = previousUpdatedAt.AddTicks(1);
+    }
+
+    /// <summary>
     /// Transitions a pending proposal to Approved, pinning <paramref name="approvedRevisionId"/>
     /// as the exact revision Apply must materialize (#1428). Pass the id of the latest saved
     /// revision validated at approve time, or <c>null</c> when approving the original operations.

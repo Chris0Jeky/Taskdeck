@@ -2,6 +2,19 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/*
+ * Import only the fixed light face. The package stylesheet also owns an
+ * unlayered 24px class rule, which outranks our Tailwind layers and erases
+ * both the 20px baseline and smaller per-call-site sizes.
+ */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 200;
+  font-display: block;
+  src: url('@material-symbols/font-200/material-symbols-outlined.woff2') format('woff2');
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -47,8 +60,21 @@
 
   /* Material Symbols baseline */
   .material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+    font-family: 'Material Symbols Outlined';
+    font-weight: 200;
+    font-style: normal;
     font-size: 20px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'liga';
   }
 }
 

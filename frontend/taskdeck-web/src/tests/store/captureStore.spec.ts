@@ -92,6 +92,42 @@ describe('captureStore', () => {
     expect(store.items.map((item) => item.id)).toEqual(['all-capture'])
   })
 
+  it('keeps retained scoped rows and the latest error after an unfiltered replacement fails', async () => {
+    const store = useCaptureStore()
+    store.items = [{
+      id: 'retained-scoped', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'retained until replacement commits', createdAt: new Date().toISOString(), processedAt: null,
+    }]
+    let resolveScoped!: (value: any[]) => void
+    let rejectUnfiltered!: (reason?: unknown) => void
+    const scopedResponse = new Promise<any[]>((resolve) => { resolveScoped = resolve })
+    const unfilteredResponse = new Promise<any[]>((_resolve, reject) => { rejectUnfiltered = reject })
+    vi.mocked(captureApi.listItems)
+      .mockReturnValueOnce(scopedResponse as never)
+      .mockReturnValueOnce(unfilteredResponse as never)
+
+    const scopedLoad = store.fetchItems({ boardId: 'board-7', limit: 200 })
+    const unfilteredLoad = store.fetchItems({ limit: 200 })
+    expect(store.loadingList).toBe(true)
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+
+    const unfilteredFailure = expect(unfilteredLoad).rejects.toBeInstanceOf(Error)
+    rejectUnfiltered(new Error('unfiltered failed'))
+    await unfilteredFailure
+    expect(store.loadingList).toBe(false)
+    expect(store.listError).toBe('Failed to load inbox items')
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+
+    resolveScoped([{
+      id: 'late-scoped', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'obsolete scoped response', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await scopedLoad
+    expect(store.loadingList).toBe(false)
+    expect(store.listError).toBe('Failed to load inbox items')
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+  })
+
   it('loads and caches capture details', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.getItem).mockResolvedValue({
@@ -1073,7 +1109,7 @@ describe('captureStore', () => {
     // Stamped SAVED, never APPLIED: a text correction touches no board, and the
     // Paper toast renders that word (GH-1951).
     expect(toastMocks.success).toHaveBeenCalledWith(
-      'Capture text updated',
+      'Capture updated',
       undefined,
       { label: 'saved' },
     )
@@ -1085,8 +1121,8 @@ describe('captureStore', () => {
 
     await expect(store.updateSuggestion('c11', { text: 'new text' })).rejects.toBeInstanceOf(Error)
 
-    expect(store.actionError).toBe('Failed to update capture text')
-    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture text')
+    expect(store.actionError).toBe('Failed to update capture')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture')
   })
 
   it('tracks actionBusyItemId during suggestion update', async () => {

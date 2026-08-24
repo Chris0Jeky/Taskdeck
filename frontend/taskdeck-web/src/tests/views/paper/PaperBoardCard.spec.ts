@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperBoardCard from '../../../views/paper/PaperBoardCard.vue'
 import type { Card } from '../../../types/board'
@@ -31,6 +31,11 @@ function makeCard(partial: Partial<Card> = {}): Card {
 }
 
 describe('PaperBoardCard', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
   it('renders the index variant by default with serial, title, and description', () => {
     const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
     expect(wrapper.attributes('data-variant')).toBe('index')
@@ -80,6 +85,26 @@ describe('PaperBoardCard', () => {
     expect(stamp.exists()).toBe(true)
     expect(stamp.text()).toBe('OVERDUE')
     expect(stamp.attributes('data-tone')).toBe('overdue')
+  })
+
+  it('renders a UTC due calendar day unchanged west of UTC and marks it overdue', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T19:00:00.000Z'))
+
+    const wrapper = mount(PaperBoardCard, {
+      props: {
+        card: makeCard({ dueDate: '2026-08-23T00:00:00+00:00' }),
+      },
+    })
+
+    const dueDate = wrapper.get('.paper-board-card__due-date')
+    expect(dueDate.text()).toBe('Due 8/23/2026')
+    expect(dueDate.text()).not.toContain('8/22/2026')
+    expect(dueDate.classes()).toContain('paper-board-card__due-date--overdue')
+    expect(wrapper.get('.paper-board-card__tagstamp').text()).toBe('OVERDUE')
+    expect(wrapper.get('[data-action="open-card"]').attributes('aria-label'))
+      .toBe('Card Set up CI pipeline, due 8/23/2026, overdue')
   })
 
   it('emits click with the card payload when activated', async () => {

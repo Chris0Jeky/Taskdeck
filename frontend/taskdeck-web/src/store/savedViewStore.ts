@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { SAVED_VIEWS_STORAGE_KEY } from '../utils/storageKeys'
+import { addCalendarDays, localCalendarDateKey, toCalendarDateKey } from '../utils/dueDates'
 import type { Card } from '../types/board'
 
 // ── Types ──
@@ -29,18 +30,6 @@ export interface SavedView {
 }
 
 // ── Helpers ──
-
-/** Strip time component and return UTC-midnight for date-only comparisons.
- *  Using UTC throughout avoids local-timezone midnight-boundary mismatches
- *  when card.dueDate arrives as an ISO/UTC string. */
-function toUTCDateOnly(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-}
-
-/** Today as UTC midnight */
-function todayUTC(): Date {
-  return toUTCDateOnly(new Date())
-}
 
 /** Stable timestamp for built-in default views (avoids changing on every reload) */
 const DEFAULT_VIEW_CREATED_AT = '2024-01-01T00:00:00.000Z'
@@ -131,12 +120,12 @@ export function cardMatchesSavedViewFilter(card: Card, filter: SavedViewFilter):
     if (!hasMatchingLabel) return false
   }
 
-  // Due date filter — all comparisons use UTC date-only to avoid
-  // timezone mismatches between local new Date() and ISO/UTC dueDate strings.
+  // Due date filter — compare the persisted UTC calendar key with the
+  // browser's local-day key, without projecting the due date as an instant.
   if (filter.dueDateFilter !== 'all') {
-    const today = todayUTC()
-    const weekFromNow = new Date(today)
-    weekFromNow.setUTCDate(weekFromNow.getUTCDate() + 7)
+    const todayKey = localCalendarDateKey()
+    const weekFromNowKey = addCalendarDays(todayKey, 7)
+    const dueDateKey = toCalendarDateKey(card.dueDate)
 
     switch (filter.dueDateFilter) {
       case 'overdue': {
@@ -145,21 +134,15 @@ export function cardMatchesSavedViewFilter(card: Card, filter: SavedViewFilter):
         // in board columns and "done" is a column-level concept.  Callers that
         // need to exclude completed cards should pre-filter by column before
         // invoking this function.
-        if (!card.dueDate) return false
-        const dueDay = toUTCDateOnly(new Date(card.dueDate))
-        if (dueDay >= today) return false
+        if (!dueDateKey || dueDateKey >= todayKey) return false
         break
       }
       case 'due-today': {
-        if (!card.dueDate) return false
-        const dueDay = toUTCDateOnly(new Date(card.dueDate))
-        if (dueDay.getTime() !== today.getTime()) return false
+        if (dueDateKey !== todayKey) return false
         break
       }
       case 'due-week': {
-        if (!card.dueDate) return false
-        const dueDay = toUTCDateOnly(new Date(card.dueDate))
-        if (dueDay < today || dueDay > weekFromNow) return false
+        if (!dueDateKey || !weekFromNowKey || dueDateKey < todayKey || dueDateKey > weekFromNowKey) return false
         break
       }
       case 'no-date':

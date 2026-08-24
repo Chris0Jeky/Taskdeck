@@ -232,7 +232,13 @@ export function createProposalDisplayNameResolver() {
 
   function summarizeOperation(proposal: Proposal, operation: ProposalOperation): string {
     const parameters = parseParameters(operation)
-    const entries = Object.entries(parameters).slice(0, 4)
+    // Structural board/column ids must not crowd user-visible due dates and labels out of the
+    // compact review rail. The detailed payload remains available separately.
+    const userVisibleNames = new Set(['title', 'description', 'dueDate', 'labels', 'labelIds'])
+    const entries = [
+      ...Object.entries(parameters).filter(([name]) => userVisibleNames.has(name)),
+      ...Object.entries(parameters).filter(([name]) => !userVisibleNames.has(name)),
+    ].slice(0, 4)
     const target = operationTargetLabel(proposal, operation)
     const parts = target ? [`target: ${target}`] : []
     parts.push(...entries.map(([name, value]) => `${name}: ${formatParameterValue(displayParameterValue(proposal, operation, name, value))}`))

@@ -1,18 +1,28 @@
 <template>
-  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="false" role="status">
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-toast-polite-announcer
+    >{{ politeAnnouncement }}</div>
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
+        :data-toast-id="toast.id"
         :class="[
           'pointer-events-auto',
           'min-w-80 max-w-md',
           'px-4 py-3 rounded-lg shadow-lg',
-          'flex items-center gap-3',
+          'flex items-start gap-3',
           'transition-all duration-300',
           toastClass(toast.type),
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
+        :aria-live="toast.type === 'error' ? 'assertive' : undefined"
+        :aria-atomic="toast.type === 'error' ? 'true' : undefined"
       >
         <!-- Icon -->
         <div class="flex-shrink-0" aria-hidden="true">
@@ -67,8 +77,35 @@
         </div>
 
         <!-- Message -->
-        <div class="flex-1 text-sm font-medium">
-          {{ toast.message }}
+        <div class="flex-1 text-sm font-medium min-w-0">
+          <div>{{ toast.message }}</div>
+          <div v-if="toast.type === 'error'" class="mt-2 flex flex-wrap gap-2 text-xs font-normal">
+            <button
+              v-if="toast.details"
+              type="button"
+              class="underline underline-offset-2 hover:opacity-70"
+              :aria-expanded="expanded[toast.id] ?? false"
+              :aria-controls="detailsId(toast.id)"
+              @click="toggleDetails(toast.id)"
+            >
+              {{ expanded[toast.id] ? 'Hide details' : 'Show details' }}
+            </button>
+            <button
+              type="button"
+              class="underline underline-offset-2 hover:opacity-70"
+              @click="copyReceipt(toast)"
+            >
+              {{ copyState[toast.id] === 'copied' ? 'Copied' : copyState[toast.id] === 'failed' ? 'Copy failed' : 'Copy details' }}
+            </button>
+          </div>
+          <pre
+            v-if="toast.type === 'error' && toast.details && expanded[toast.id]"
+            :id="detailsId(toast.id)"
+            class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/5 p-2 text-xs font-normal"
+            tabindex="0"
+            role="region"
+            :aria-label="`Error details for ${toast.message}`"
+          >{{ toast.details }}</pre>
         </div>
 
         <!-- Close button -->
@@ -91,9 +128,52 @@
 </template>
 
 <script setup lang="ts">
-import { useToastStore } from '../../store/toastStore'
+import { nextTick, reactive, ref, watch } from 'vue'
+import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
 
 const toastStore = useToastStore()
+const expanded = reactive<Record<string, boolean>>({})
+const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+const politeAnnouncement = ref('')
+let initialToastIds: Set<string> | null = null
+
+watch(
+  () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
+  async (current, previous) => {
+    if (initialToastIds === null) {
+      initialToastIds = new Set(current.map(({ id }) => id))
+      return
+    }
+
+    const previousIds = new Set((previous ?? []).map(({ id }) => id))
+    const added = current.filter(
+      ({ id, type }) =>
+        type !== 'error' && !previousIds.has(id) && !initialToastIds!.has(id),
+    )
+
+    if (added.length === 0) {
+      if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''
+      return
+    }
+
+    politeAnnouncement.value = ''
+    await nextTick()
+    politeAnnouncement.value = added.map(({ message }) => message).join(' ')
+  },
+  { flush: 'post', immediate: true },
+)
+
+function detailsId(id: string): string {
+  return `toast-details-${id}`
+}
+
+function toggleDetails(id: string) {
+  expanded[id] = !expanded[id]
+}
+
+async function copyReceipt(toast: Toast) {
+  copyState[toast.id] = (await copyToastReceipt(toast)) ? 'copied' : 'failed'
+}
 
 function toastClass(type: string): string {
   switch (type) {

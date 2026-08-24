@@ -21,6 +21,7 @@ export function useInboxOrchestrator(options: {
   const activeItemIndex = ref(0)
   const showCaptureModal = ref(false)
   let stopTriagePolling: (() => void) | null = null
+  let scopedBoardLoadGeneration = 0
 
   // Batch selection state
   const selectedIds = ref<Set<string>>(new Set())
@@ -47,25 +48,33 @@ export function useInboxOrchestrator(options: {
   const isArchivedHistory = computed(
     () => route.query.history === 'archived' && activeBoardId.value !== null,
   )
-  const activeBoardName = computed(() => scopedBoard.value?.name ?? activeBoardId.value ?? '')
+  const activeBoardName = computed(() => {
+    const boardId = activeBoardId.value
+    return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
+  })
   const activeColumnName = computed(() => {
-    if (!activeColumnId.value) return ''
-    return scopedBoard.value?.columns.find((column) => column.id === activeColumnId.value)?.name ?? activeColumnId.value
+    const columnId = activeColumnId.value
+    if (!columnId) return ''
+    if (scopedBoard.value?.id !== activeBoardId.value) return columnId
+    return scopedBoard.value.columns.find((column) => column.id === columnId)?.name ?? columnId
   })
 
   async function loadScopedBoard() {
-    if (!activeBoardId.value) {
+    const requestGeneration = ++scopedBoardLoadGeneration
+    const boardId = activeBoardId.value
+    if (!boardId) {
       scopedBoard.value = null
       return
     }
     try {
-      const board = await boardsApi.getBoard(activeBoardId.value)
-      if (board.id === activeBoardId.value) {
-        scopedBoard.value = board
-      }
+      const board = await boardsApi.getBoard(boardId)
+      if (requestGeneration !== scopedBoardLoadGeneration || activeBoardId.value !== boardId) return
+      scopedBoard.value = board.id === boardId ? board : null
     } catch {
       // The scoped inbox remains usable when the board metadata is unavailable.
-      scopedBoard.value = null
+      if (requestGeneration === scopedBoardLoadGeneration && activeBoardId.value === boardId) {
+        scopedBoard.value = null
+      }
     }
   }
 
@@ -467,11 +476,27 @@ export function useInboxOrchestrator(options: {
     scrollActiveItemIntoView()
   })
 
-  watch([activeBoardId, isArchivedHistory], () => {
+  function resetScopedState() {
     selectedItemId.value = null
     selectedIds.value = new Set()
     showCaptureModal.value = false
     activeItemIndex.value = 0
+  }
+
+  watch(activeBoardId, () => {
+    resetScopedState()
+    void loadScopedBoard()
+    void loadInbox()
+  })
+
+  // Entering or leaving archived history (#1973) is a scope change of its own:
+  // the two modes list different records, and a selection, batch set, or open
+  // capture modal carried across the boundary would act on the wrong one. Kept
+  // as a SEPARATE watcher rather than folded into the `activeBoardId` source
+  // above, because the board watcher's identity is the contract the scoped
+  // board-metadata race tests drive it through.
+  watch(isArchivedHistory, () => {
+    resetScopedState()
     void loadScopedBoard()
     void loadInbox()
   })

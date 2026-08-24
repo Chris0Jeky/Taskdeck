@@ -25,6 +25,25 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
+    public static IEnumerable<object[]> InvalidCaptureLabels()
+    {
+        yield return ["empty", new[] { "" }, "empty values"];
+        yield return
+        [
+            "oversized",
+            new[] { new string('l', CaptureRequestContract.MaxLabelNameLength + 1) },
+            $"cannot exceed {CaptureRequestContract.MaxLabelNameLength}"
+        ];
+        yield return
+        [
+            "too-many",
+            Enumerable.Range(0, CaptureRequestContract.MaxLabelCount + 1)
+                .Select(index => $"label-{index}")
+                .ToArray(),
+            $"more than {CaptureRequestContract.MaxLabelCount}"
+        ];
+    }
+
     public CaptureApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
@@ -109,6 +128,25 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         dto.Should().NotBeNull();
         dto!.UserId.Should().Be(authenticatedUser.UserId);
         dto.UserId.Should().NotBe(spoofedUserId);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaptureLabels))]
+    public async Task Create_ShouldRejectInvalidLabelsWithoutPersistence(
+        string caseName,
+        string[] labels,
+        string expectedMessage)
+    {
+        await AuthenticateAsAsync($"capture-create-label-{caseName}");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "capture with invalid labels", Labels: labels));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedMessage);
+        var captures = await _client.GetFromJsonAsync<List<CaptureItemSummaryDto>>("/api/capture/items");
+        captures.Should().BeEmpty();
     }
 
     [Fact]
@@ -858,6 +896,37 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         var updated = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
         updated.Should().NotBeNull();
         updated!.RawText.Should().HaveLength(CaptureRequestContract.MaxTranscriptTextLength);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaptureLabels))]
+    public async Task UpdateSuggestion_ShouldRejectInvalidLabelsWithoutChangingCapture(
+        string caseName,
+        string[] labels,
+        string expectedMessage)
+    {
+        await AuthenticateAsAsync($"capture-update-label-{caseName}");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "original capture", Labels: ["original"]));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto(
+                "attempted edit",
+                Metadata: new CaptureSuggestionMetadataDto(Labels: labels)));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedMessage);
+        var persisted = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        persisted.Should().NotBeNull();
+        persisted!.RawText.Should().Be("original capture");
+        persisted.Metadata.Should().NotBeNull();
+        persisted.Metadata!.Labels.Should().Equal("original");
     }
 
     [Fact]

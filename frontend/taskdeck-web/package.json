@@ -40,6 +40,7 @@
     "@fontsource/fraunces": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@material-symbols/font-200": "0.46.0",
     "@microsoft/signalr": "^10.0.11",
     "@tanstack/vue-virtual": "^3.13.35",
     "@vue/devtools-api": "^8.1.5",

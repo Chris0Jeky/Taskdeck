@@ -272,12 +272,16 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
     && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
   await page.getByTestId('decision-apply').click()
   await assertOk(await approveResponse, `approve proposal ${proposalId}`)
+  await expect(page.getByTestId('paper-review-decision-receipt')).toHaveAttribute(
+    'data-decision',
+    'approved',
+  )
 
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-  // GH-1942: approve hands straight to the confirmation, so it is already open.
-  await expectApplyConfirmDialog(page)
+  // The approved receipt keeps board execution behind a second explicit action.
+  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
   await assertOk(await executeResponse, `execute proposal ${proposalId}`)
   await expect(queueItem).toHaveCount(0)
 

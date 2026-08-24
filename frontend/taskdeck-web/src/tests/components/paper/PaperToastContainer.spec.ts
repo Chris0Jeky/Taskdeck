@@ -36,6 +36,39 @@ describe('PaperToastContainer', () => {
     expect(messages).toContain('Second message')
   })
 
+  it('keeps toasts present at mount and remount out of the polite announcement', async () => {
+    const store = useToastStore()
+    store.success('Already visible', 0)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+
+    wrapper.unmount()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+  })
+
+  it('announces only a non-error toast added after mount', async () => {
+    const store = useToastStore()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+    store.success('Capture saved to inbox', 0)
+    store.error('Network error')
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(announcer.text()).toBe('Capture saved to inbox')
+    const errorToast = wrapper.get('[role="alert"]')
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
+    expect(wrapper.get('.paper-toast--applied').attributes('role')).toBeUndefined()
+  })
+
   it('pauses the countdown on hover and resumes on leave', async () => {
     const store = useToastStore()
     // duration > 0 wires the auto-remove setTimeout; we use fake timers.
@@ -138,6 +171,44 @@ describe('PaperToastContainer', () => {
     expect(wrapper.emitted('action')?.[0]).toEqual([id])
     // Toast is removed from the store after action.
     expect(store.toasts.find((t) => t.id === id)).toBeUndefined()
+  })
+
+  it('expands error details with an accessible control and keeps the receipt persistent', async () => {
+    const store = useToastStore()
+    const id = store.error('Network error', undefined, { details: 'status: 503' })
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.attributes('aria-live')).toBe('assertive')
+    expect(card.attributes('aria-atomic')).toBe('true')
+    const detailsButton = card.get(`button[aria-controls="paper-toast-details-${id}"]`)
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('true')
+    expect(card.get('pre.paper-toast__details').text()).toContain('status: 503')
+    expect(card.find('.paper-toast__countdown').exists()).toBe(false)
+
+    vi.advanceTimersByTime(60_000)
+    expect(store.toasts).toHaveLength(1)
+  })
+
+  it('lets a persistent actionless error receipt be dismissed', async () => {
+    const store = useToastStore()
+    const id = store.error('Persistent network error')
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.find('.paper-toast__undo').exists()).toBe(false)
+
+    const dismissButton = card.get('button[aria-label="Dismiss notification"]')
+    await dismissButton.trigger('click')
+
+    expect(store.toasts).toHaveLength(0)
   })
 })
 

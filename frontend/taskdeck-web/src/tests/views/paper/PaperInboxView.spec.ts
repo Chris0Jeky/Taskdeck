@@ -73,7 +73,7 @@ describe('PaperInboxView', () => {
     orchestratorState.selectedItemId.value = null
     orchestratorState.loadInbox.mockResolvedValue(undefined)
     orchestratorState.clearScope.mockResolvedValue(undefined)
-    mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1' })
+    mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1', metadata: null })
     mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.pollTriageCompletion.mockReturnValue(() => undefined)
@@ -373,6 +373,50 @@ describe('PaperInboxView', () => {
       source: 'Typed',
     })
     expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('sends composer due date and labels through the capture request', async () => {
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('textarea[aria-label="Capture body"]').setValue('Buy milk and gas')
+    await wrapper.find('input[aria-label="Add label"]').setValue('shopping')
+    await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.find('input[aria-label="Due date"]').setValue('2026-08-23')
+    await wrapper.find('textarea[aria-label="Capture body"]').trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Buy milk and gas',
+      source: 'Typed',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+  })
+
+  it('acknowledges metadata omitted by an older API without inviting a duplicate retry', async () => {
+    mockCaptureStore.createItem.mockResolvedValueOnce({ id: 'created-by-older-api' })
+    const wrapper = mount(PaperInboxView)
+    const composer = (wrapper.vm as unknown as {
+      composerRef: { resetDraft: () => void }
+    }).composerRef
+    const resetDraft = vi.spyOn(composer, 'resetDraft')
+    const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+
+    await textarea.setValue('Prepare regional report')
+    await wrapper.find('input[aria-label="Add label"]').setValue('Sales')
+    await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.find('input[aria-label="Due date"]').setValue('2026-08-30')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    expect(resetDraft).toHaveBeenCalledTimes(1)
+    expect(textarea.element.value).toBe('')
+    const warning = wrapper.get('[data-testid="paper-inbox-capture-metadata-compatibility-warning"]')
+    expect(warning.attributes('role')).toBe('status')
+    expect(warning.text()).toContain('Capture saved without its due date or labels.')
+    expect(warning.text()).toContain('Do not retry—the capture is already in Inbox.')
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
   })
 
   it('defaults composer captures to the active board', async () => {

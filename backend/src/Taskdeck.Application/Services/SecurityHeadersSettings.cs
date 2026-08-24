@@ -28,7 +28,7 @@ public sealed class SecurityHeadersSettings
     // removing 'unsafe-inline' does not break Vue reactivity.
     [Required(AllowEmptyStrings = false)]
     public string ContentSecurityPolicy { get; set; } =
-        "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'";
+        "default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'";
 
     [Required(AllowEmptyStrings = false)]
     public string XFrameOptions { get; set; } = "DENY";

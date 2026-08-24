@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-24
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -17,8 +17,8 @@ but they are not a complete ordinary-Desktop upgrade proof. The archive harness 
 inherited `Llm__*` names for credential containment. On the maintainer's ordinary profile, an
 inherited user-scoped `Llm__Provider=Gemini` plus `Llm__Gemini__*` names caused startup to fail
 before listening, and the packaged catch hid the fixed migration reason behind generic port/data
-guidance. See [`V0_1_1_WINDOWS_STARTUP_INCIDENT.md`](platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
-and reopened `#1876`.
+guidance. See [`V0_1_1_WINDOWS_STARTUP_INCIDENT.md`](platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md).
+The correction later shipped on main through `#1876`/PR `#2016`; the public v0.1.1 artifact remains unchanged.
 
 A corrective release must prove both paths separately:
 
@@ -29,13 +29,133 @@ A corrective release must prove both paths separately:
    `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`, static migration guidance, no
    ready marker/listener, and zero synthetic-value/raw-exception/stack/URL leakage.
 3. Launch with an explicit supported selector plus inert stale Gemini child names and require
-   readiness. This behavior is drafted, not shipped in v0.1.1.
+   readiness. This behavior is shipped on current main through PR `#2016`, but not in the public v0.1.1 artifact.
 4. After publication, test the unchanged downloaded ZIP from the ordinary Desktop path with the
    explicit user provider migration in place and without deleting credential-bearing variables.
 
-Draft checkpoint: Application 56/56, API 89/89, archive Python 34/34, retirement architecture 4/4,
-release contract 61/61, and an actual marked-package diagnostic passed. The full backend solution,
-PR/CI/review, no-publish rehearsal, v0.1.2 tag, and public artifact remain unverified.
+Implementation checkpoint: PR `#2016` merged as `909e33f9`. Application 56/56, API 89/89,
+archive Python 35/35, architecture 26 passed + 1 intentional skip, release contract 61/61,
+an actual marked-package diagnostic, and the full backend solution (8,094 passed + 5 intentional
+skips) passed locally. Exact-head hosted Required CI, dynamic Playwright smoke, and bounded review
+also passed. Exact-main no-publish and isolated synthetic Mock core-loop evidence is recorded below;
+the v0.1.2 tag, unchanged public-artifact proof, inherited-profile migration, and ordinary-profile
+Explorer/SmartScreen acceptance remain unverified.
+
+## 2026-08-24 exact-main Windows candidate rehearsal
+
+- Blank-tag Release Desktop run [`32679854224`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32679854224)
+  resolved exact main `789cad4d0b78e4592cc3725a84cfb7845a5a47b3`, built and tested the untouched
+  Windows x64 ZIP, uploaded `release-win-x64`, and skipped `Create GitHub Release` as intended.
+- The downloaded `taskdeck-v0.0.0-dryrun+789cad4-win-x64.zip` matched its sidecar at SHA-256
+  `334707099073a8b656aa496e47afe520179c0578cadc78097a2d22de4b5103f2` before and after the
+  manual journey.
+- The packaged EXE launched from an unrelated working directory with isolated synthetic
+  `%LOCALAPPDATA%` and no inherited provider/API-key/configuration overrides. It emitted the data,
+  bootstrap, and ready markers at `http://127.0.0.1:5000`; a fresh local account then registered,
+  created a Personal Kanban board, captured and triaged a board-linked task, reviewed it, and
+  approved it. A separate board tab still showed one card after approval. Only the explicit
+  `Apply to board` confirmation changed the board to two cards. Console control then produced both
+  documented safe-stop markers and the process exited.
+- This proves the isolated deterministic-Mock package/core-loop boundary. It does **not** prove an
+  Explorer extraction/double-click path, SmartScreen behavior, inherited user-profile retired-
+  provider migration, a live OpenAI call, a signed/public v0.1.2 artifact, or another machine.
+- That candidate exposed a non-blocking typography/CSP regression. PRs `#2039` and `#2041`
+  subsequently added `font-src 'self'`, removed the Google font/style routes, self-hosted the active
+  Material Symbols face, and included its Apache-2.0 licence in Windows and Pages artifacts.
+- Exact-main no-publish run [`32692308935`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692308935)
+  resolved `3fa6071763404255d2bc25b5f2b936647139c35b`; its untouched product ZIP matched SHA-256
+  `9981177c734300d1f97fd51f3a1b77a882d57ea5d640276c2c7e1339c9d3cbd5`. Pages run
+  [`32692278478`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692278478) shipped the exact
+  reviewed Material Symbols licence in the deployed artifact.
+- A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
+  `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
+  font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
+- The visual-parity follow-up (PR `#2046`) pins the local Material Symbols 200 face and removes the
+  package's unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
+  `text-base` close and topbar icons at 16px/200, and offline/update/queue icons at 18px/200; the
+  probed ligatures remained visible and the font request stayed same-origin.
+  `PaperBranding.spec.ts`, the production build, scoped lint, release/Pages licence contracts, docs
+  governance, and diff hygiene cover the static seam. The separate packaged
+  `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
+
+## 2026-08-24 v0.1.2 Priority I partial verification map (through main `55dbf6e14`)
+
+- `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
+  exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
+  board-scope journeys were not manually browser-tested.
+- `#2021`/PR `#2042`: 76 focused API and 61 Application tests passed; the earlier full backend run
+  passed 8,112 tests with 5 intentional skips. Exact-base hosted CI, dynamic E2E, custom
+  relative/absolute JSON and environment-spoof regressions, and bounded review passed. This is
+  configuration-stack proof, not a new packaged inherited-profile migration journey.
+- `#2022`/PR `#2043`: four focused Inbox suites passed 172 tests after the final base refresh,
+  alongside typecheck, production build, scoped lint, exact-base hosted CI, dynamic E2E, and a
+  fresh adversarial review. The retained-editor DOM/draft path is covered; the page-count and
+  same-scope refresh-error residuals remain tracked by `#2022` and `#2044`.
+- `#1938`/PRs `#2023`, `#2033`, and `#2067`: the capture-recovery slice's pre-final full frontend run passed
+  4,725 tests and its final seam passed 50 targeted tests; the shared receipt slice passed 63 focused
+  tests and the full 4,737-test frontend suite, then 17 Paper-dismiss and 76 refreshed-base focused
+  tests. Both passed typecheck, build, lint, exact-head hosted CI, and bounded review; `#2033` also
+  passed dynamic Playwright after its base refresh. The remount-announcement successor passed 30
+  focused Legacy/Paper toast tests, typecheck, scoped lint, diff hygiene, hosted CI, and two bounded
+  review rounds. On exact main, a manually injected persistent toast survived a Paper-to-Legacy
+  remount while the announcer remained empty. Actual screen-reader speech and a pinned-build
+  reproduction of the original intermittent failure were not verified.
+- `#1949`/PRs `#2027`, `#2032`, `#2038`, `#2055`, and `#2068`: the native-button slice passed 10
+  dead-affordance guard cases; the labelled-control slice passed 12 focused cases and the full
+  4,734-test frontend suite. The two keyboard-parser slices each passed 13 focused guard cases,
+  typecheck, scoped lint, and diff hygiene; the final merged head also passed hosted CI and fresh
+  review. The latest slice rejects Ctrl/Alt/Shift/Meta-modified Enter/Space while accepting canonical
+  lowercase handlers with benign modifiers. This remains source-level proof, not runtime walking of
+  every control or keystroke; dynamic/compiler-expanded bindings remain on the open parent issue.
+- `#1992`/PRs `#2029`, `#2030`, and `#2065`: the PWA denylist regression and full hosted gate passed; the
+  proxy slice passed static/rendered-template parity, real nginx 1.27 configuration validation,
+  Terraform dev/staging/prod baselines, exact-head hosted CI, dynamic Playwright smoke, and a fresh
+  integration review. Required container CI now executes the same reverse-proxy contract before
+  image work. A live split-container request and MCP SSE stream were not exercised.
+- `#1967`/PRs `#2034`, `#2056`, `#2066`, and `#2070`: the canonical-identity slice passed 263 focused proposal/review
+  tests, typecheck, build, lint/diff hygiene, exact-head hosted CI including dynamic Playwright,
+  automatic review, an independent full-diff review, and a clean P1 fix-diff review. The missing
+  Paper deep-link slice then passed 187 focused tests, typecheck, build, quiet lint, diff hygiene,
+  hosted CI, and bounded review. Legacy diff casing added 14 focused passing cases. The mismatched-
+  response slice passed 192 focused tests, typecheck, scoped lint, production build, diff hygiene,
+  and fresh exact-head review; its hosted head completed 21 successful check runs, including E2E
+  Smoke, with 11 intentional skips and no failure or pending check. Applied-proposal read-only detail
+  and the remaining stale/terminal lifecycle cases stay open on `#1967`.
+- `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
+  race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
+  Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
+  including full E2E, completed successfully. The browser checks prove the explicit receipt -> Apply
+  transition; they do not close the progressive-disclosure, All/Mine, focus, or lifecycle residuals.
+- **Prepared but unshipped checkpoints:** `origin/issue-1949/directive-attribute-tokenization`
+  (`d89bd7cc3`) passed 13 guard tests, typecheck, scoped lint, and diff hygiene after rebasing onto
+  `55dbf6e14`. `origin/issue-1967/applied-read-only-detail` (`010021a745`) passed 186 focused tests,
+  16 locale-catalog tests, typecheck, scoped lint, production build, and diff hygiene on the same
+  base. Neither has an open PR or hosted exact-head gate. The applied-detail slice has not run the
+  full frontend suite, Playwright/native-button keyboard journey, live backend, or packaged desktop.
+- **Final-main release seam still owed:** after the prepared slices are dispositioned, run one
+  synthetic desktop capture -> approved receipt -> explicit Apply -> exactly-one-card board journey,
+  then dispatch a blank-tag no-publish Windows candidate from that same exact main and verify the
+  untouched inner ZIP plus skipped release creation. Use the downloaded candidate for the packaged
+  manual journey. No post-`55dbf6e14` candidate or packaged journey is claimed here.
+- `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
+  hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
+  exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
+  August 23 while Today/Calendar requests and due/overdue classification followed each local day.
+  Maximum-range `localDate` validation and unchanged legacy-value audit noise remain on `#2049`
+  and `#2050`.
+- `#2005`/PR `#2058` (merged as `6cc7544a`): the final head passed 48 focused Application tests and
+  120 focused API tests. Independent backend review added 75 API worker/concurrency and 87
+  Application capture/revision/operation passes; independent UI review added 136 focused frontend
+  passes. Diff hygiene and exact-head hosted CI, including dynamic Playwright smoke, passed with no
+  CRITICAL/HIGH review finding. An isolated synthetic browser journey on UI-equivalent pre-hardening
+  head `fb065547` proved unknown-label failure, lossless correction to `Sales, EMEA`, retry, approval
+  without board mutation, and exactly one explicit Apply retaining the expected due day and label.
+  Final-head recovery-revision and fresh-worker-scope changes are automated concurrency/worker proof,
+  not a second browser run. Closed PRs `#2026` and `#2047` remain historical lineage; comma-containing
+  composer labels and post-success uncommitted-label reset remain open on `#2053` and `#2057`.
+- PR `#2020`: docs and GitHub-operations governance, five touched-skill validators, the focused
+  worktree-helper contract, stale-policy scan, diff hygiene, and hosted Workflow Lint passed. No
+  runtime product test applies to the DCO enforcement pause.
 
 ## 2026-08-21 public Windows v0.1.1 release proof
 
@@ -312,9 +432,10 @@ dotnet test backend/Taskdeck.sln -c Release -m:1
 Result: **7,660 passed, 5 intentional skips, 0 failed** (Domain 1,636;
 Application 3,678; API 2,189 + 4 skips; CLI 100; Architecture 22 + 1 skip;
 Integration 35). Docs governance, golden-principles governance, GitHub-operations
-governance, and `git diff --check` also passed. The streamed-refusal repair has
-a clean independent review; exact merged-head hosted CI and final integration review remain pending. DCO was
-an active evidence item at that checkpoint but enforcement was paused on 2026-08-23. A
+governance, and `git diff --check` also passed. PR `#1537` later carried the streamed-refusal repair
+through clean bounded reviews, exact-head hosted CI, CI Extended, and CodeQL before merging as
+`0b0c9c70`. DCO was an active evidence item at that historical checkpoint but enforcement was
+paused on 2026-08-23. A
 maintainer-supplied compatible-provider key and a visibly incremental stream in
 the real UI are separate human gates; loopback transport tests do not prove
 either.
@@ -2096,6 +2217,8 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 - `container-images`
+  - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
+    static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
   - Validates compose rendering
   - Builds backend/frontend container images
   - Exports compressed image artifacts plus SHA256 checksums

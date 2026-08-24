@@ -323,7 +323,7 @@ describe('useReviewProposals', () => {
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['live'])
 
       // Deep link to the snoozed proposal → it renders; the OTHER snoozed proposal stays hidden.
-      mockRoute.hash = '#proposal-snoozed'
+      mockRoute.hash = '#proposal-SNOOZED'
       expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['snoozed', 'live'])
     })
 
@@ -701,46 +701,76 @@ describe('useReviewProposals', () => {
   })
 
   describe('openProposalFromHash', () => {
-    it('scrolls to existing proposal that matches board filter', async () => {
-      mockRoute.hash = '#proposal-p-exist'
+    it('finds an existing proposal case-insensitively without replacing its canonical id', async () => {
+      mockRoute.hash = '#proposal-P-EXIST'
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-exist' })])
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(mockRouter.replace).not.toHaveBeenCalled()
       expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+      expect(rp.proposals.value[0]?.id).toBe('p-exist')
     })
 
-    it('clears hash when existing proposal does not match board filter', async () => {
+    it('retains the exact hash when an existing proposal does not match board scope', async () => {
       mockRoute.query = { boardId: 'board-A' }
       mockRoute.hash = '#proposal-p-other'
       const mismatchedProposal = makeProposal({ id: 'p-other', boardId: 'board-B' })
       mockAutomationApi.getProposals.mockResolvedValueOnce([mismatchedProposal])
       const rp = useReviewProposals()
       await rp.loadProposals()
-      expect(mockRouter.replace).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'workspace-review' }),
-      )
+      expect(mockRouter.replace).not.toHaveBeenCalled()
     })
 
-    it('fetches unknown proposal from API and upserts it', async () => {
-      mockRoute.hash = '#proposal-p-remote'
+    it('hydrates a mixed-case hash with the canonical API proposal id', async () => {
+      mockRoute.hash = '#proposal-P-REMOTE'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
       mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-remote' }))
       const rp = useReviewProposals()
       await rp.loadProposals()
-      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-remote')
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('P-REMOTE')
       expect(rp.proposals.value.find((p: any) => p.id === 'p-remote')).toBeDefined()
     })
 
-    it('clears hash on 404 from API', async () => {
+    it('does not hydrate a response whose proposal id differs from the hash', async () => {
+      mockRoute.hash = '#proposal-p-requested'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-different' }))
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.proposals.value).toEqual([])
+      expect(rp.unavailableProposalId.value).toBe('p-requested')
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+    })
+
+    it('retains a genuine missing hash as unavailable on 404', async () => {
       mockRoute.hash = '#proposal-p-missing'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
       mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
       const rp = useReviewProposals()
       await rp.loadProposals()
-      expect(mockRouter.replace).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'workspace-review' }),
-      )
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+      expect(rp.proposals.value).toEqual([])
+      expect(rp.unavailableProposalId.value).toBe('p-missing')
+    })
+
+    it('clears an unavailable deep link when the hash changes and after a successful lookup', async () => {
+      mockRoute.hash = '#proposal-p-missing'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.unavailableProposalId.value).toBe('p-missing')
+
+      mockRoute.hash = ''
+      await watcherForCurrentSourceValue('')[1]()
+      expect(rp.unavailableProposalId.value).toBeNull()
+
+      mockRoute.hash = '#proposal-p-recovered'
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-recovered' }))
+      await watcherForCurrentSourceValue('#proposal-p-recovered')[1]()
+
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.proposals.value.map((proposal: { id: string }) => proposal.id)).toEqual(['p-recovered'])
     })
 
     it('shows toast on non-404 error', async () => {
@@ -773,6 +803,17 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       rp.openRoute('/settings')
       expect(mockRouter.push).toHaveBeenCalledWith('/settings')
+    })
+
+    it('openProposal preserves query context and emits the supplied canonical id', () => {
+      mockRoute.query = { boardId: 'board-x' }
+      const rp = useReviewProposals()
+      rp.openProposal('proposal-canonical')
+      expect(mockRouter.push).toHaveBeenCalledWith({
+        name: 'workspace-review',
+        query: { boardId: 'board-x' },
+        hash: '#proposal-proposal-canonical',
+      })
     })
 
     it('applyBoardFilter navigates with boardId query', () => {

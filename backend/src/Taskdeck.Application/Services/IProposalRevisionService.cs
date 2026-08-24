@@ -12,6 +12,14 @@ public interface IProposalRevisionService
     Task<Result<ProposalRevisionDto>> CreateRevisionAsync(CreateProposalRevisionDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Creates a recovery-only revision while advancing the proposal concurrency token in the
+    /// same unit of work. A concurrent proposal decision causes one commit to fail with Conflict.
+    /// </summary>
+    Task<Result<ProposalRevisionDto>> CreateRevisionWithPendingCommitGuardAsync(
+        CreateProposalRevisionDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets all revisions for a proposal, ordered by revision number ascending.
     /// </summary>
     Task<Result<IReadOnlyList<ProposalRevisionDto>>> GetRevisionsForProposalAsync(Guid proposalId, CancellationToken cancellationToken = default);
