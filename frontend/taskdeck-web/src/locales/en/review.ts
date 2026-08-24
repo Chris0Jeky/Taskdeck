@@ -476,6 +476,12 @@ export default {
       title: 'No matches in {filter}.',
       body: 'Switch filters to review proposals that are still waiting elsewhere in the queue.',
     },
+    unavailable: {
+      eyebrow: 'Requested proposal',
+      title: 'This proposal is unavailable.',
+      body: 'Proposal {id} is no longer available to review. It may have been applied, archived, or removed.',
+      return: 'Back to Review',
+    },
   },
 
   // ── Legacy-shell summary cards (data built in `useReviewProposals`) ───────
