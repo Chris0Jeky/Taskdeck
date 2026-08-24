@@ -40,6 +40,8 @@ export type ToastLabel =
 export interface ToastOptions {
   /** Optional title, used by paper-mode rendering for the strong line. */
   title?: string
+  /** Optional diagnostic detail shown only when an error receipt is expanded. */
+  details?: string
   /** Optional inline action (e.g. an "open" shortcut). */
   action?: ToastAction
   /** Outcome word for the paper-mode stamp; falls back to a severity word. */
@@ -51,6 +53,56 @@ export interface Toast extends ToastOptions {
   message: string
   type: 'success' | 'error' | 'info' | 'warning'
   duration: number
+}
+
+/**
+ * Return exactly the user-visible receipt that the toast copy action exposes.
+ * Keeping this in the shared contract prevents the legacy and Paper surfaces
+ * from copying different representations of the same failure.
+ */
+export function toastReceiptText(toast: Pick<Toast, 'message' | 'details'>): string {
+  return toast.details ? `${toast.message}\n\n${toast.details}` : toast.message
+}
+
+/**
+ * Copy a toast receipt without making clipboard support a prerequisite for the
+ * app. Browsers that deny the async Clipboard API get a textarea fallback;
+ * both paths fail closed and never throw into the toast interaction.
+ */
+export async function copyToastReceipt(toast: Pick<Toast, 'message' | 'details'>): Promise<boolean> {
+  const text = toastReceiptText(toast)
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to the legacy DOM path (common in insecure/local contexts).
+    }
+  }
+
+  if (
+    typeof document === 'undefined' ||
+    !document.body ||
+    typeof document.execCommand !== 'function'
+  ) {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    textarea.remove()
+  }
 }
 
 type ToastTimer = {
@@ -108,7 +160,8 @@ export const useToastStore = defineStore('toast', () => {
     return show(message, 'success', duration, options)
   }
 
-  function error(message: string, duration = 5000, options: ToastOptions = {}) {
+  /** Errors remain available as receipts until the user dismisses them. */
+  function error(message: string, duration = 0, options: ToastOptions = {}) {
     return show(message, 'error', duration, options)
   }
 

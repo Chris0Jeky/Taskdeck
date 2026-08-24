@@ -8,7 +8,7 @@
           'pointer-events-auto',
           'min-w-80 max-w-md',
           'px-4 py-3 rounded-lg shadow-lg',
-          'flex items-center gap-3',
+          'flex items-start gap-3',
           'transition-all duration-300',
           toastClass(toast.type),
         ]"
@@ -67,8 +67,35 @@
         </div>
 
         <!-- Message -->
-        <div class="flex-1 text-sm font-medium">
-          {{ toast.message }}
+        <div class="flex-1 text-sm font-medium min-w-0">
+          <div>{{ toast.message }}</div>
+          <div v-if="toast.type === 'error'" class="mt-2 flex flex-wrap gap-2 text-xs font-normal">
+            <button
+              v-if="toast.details"
+              type="button"
+              class="underline underline-offset-2 hover:opacity-70"
+              :aria-expanded="expanded[toast.id] ?? false"
+              :aria-controls="detailsId(toast.id)"
+              @click="toggleDetails(toast.id)"
+            >
+              {{ expanded[toast.id] ? 'Hide details' : 'Show details' }}
+            </button>
+            <button
+              type="button"
+              class="underline underline-offset-2 hover:opacity-70"
+              @click="copyReceipt(toast)"
+            >
+              {{ copyState[toast.id] === 'copied' ? 'Copied' : copyState[toast.id] === 'failed' ? 'Copy failed' : 'Copy details' }}
+            </button>
+          </div>
+          <pre
+            v-if="toast.type === 'error' && toast.details && expanded[toast.id]"
+            :id="detailsId(toast.id)"
+            class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/5 p-2 text-xs font-normal"
+            tabindex="0"
+            role="region"
+            :aria-label="`Error details for ${toast.message}`"
+          >{{ toast.details }}</pre>
         </div>
 
         <!-- Close button -->
@@ -91,9 +118,24 @@
 </template>
 
 <script setup lang="ts">
-import { useToastStore } from '../../store/toastStore'
+import { reactive } from 'vue'
+import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
 
 const toastStore = useToastStore()
+const expanded = reactive<Record<string, boolean>>({})
+const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+
+function detailsId(id: string): string {
+  return `toast-details-${id}`
+}
+
+function toggleDetails(id: string) {
+  expanded[id] = !expanded[id]
+}
+
+async function copyReceipt(toast: Toast) {
+  copyState[toast.id] = (await copyToastReceipt(toast)) ? 'copied' : 'failed'
+}
 
 function toastClass(type: string): string {
   switch (type) {
