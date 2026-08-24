@@ -927,6 +927,71 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('.paper-review-keys').exists()).toBe(false)
   })
 
+  it("files away the reviewer's own applied record with the ⌫ key", async () => {
+    // The filing rail still shows "File away ⌫" for an own applied record, so
+    // the keymap must honor exactly that key while every decision key stays
+    // dead — the visible affordance and the keyboard contract may not diverge.
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-own',
+        status: 'Applied',
+        summary: 'Own applied work',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Own applied work'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="decision-file-away"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['applied-own'])
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('keeps decision keys dead on an applied record while ⌫ stays live', async () => {
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-keys',
+        status: 'Applied',
+        summary: 'Applied keys probe',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Applied keys probe'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    // ⏎ (apply), E (edit), D (defer) must all be inert on an applied record.
+    // The keymap only calls preventDefault() when it dispatches a handler, so
+    // an un-prevented event proves the per-action gate held (#1830 round 2).
+    for (const key of ['Enter', 'e', 'd']) {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      await flushPromises()
+      expect(event.defaultPrevented).toBe(false)
+    }
+
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.dismissProposals).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
   it('replaces decision buttons with "File away" for an expired proposal', async () => {
     const wrapper = await mountView([
       makeProposal({
