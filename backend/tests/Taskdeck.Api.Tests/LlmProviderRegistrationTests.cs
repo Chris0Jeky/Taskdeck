@@ -15,6 +15,8 @@ namespace Taskdeck.Api.Tests;
 
 public class LlmProviderRegistrationTests
 {
+    private const string SyntheticRetiredGeminiValue = "synthetic-retired-gemini-value-2021";
+
     [Theory]
     [InlineData("Gemini")]
     [InlineData("gemini")]
@@ -76,14 +78,84 @@ public class LlmProviderRegistrationTests
     }
 
     [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenDevelopmentMockIsTheOnlySelector()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration(environmentName: "Development");
+
+        configuration["Logging:LogLevel:Default"].Should().Be("Debug");
+        configuration["Llm:Provider"].Should().Be("Mock");
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().NotContain(SyntheticRetiredGeminiValue);
+    }
+
+    [Fact]
     public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenEnvironmentExplicitlySelectsMock()
     {
         var services = new ServiceCollection();
-        var configuration = BuildRealProviderConfiguration("Mock");
+        var configuration = BuildRealProviderConfiguration(
+            providerOverride: "Mock",
+            environmentName: "Development");
 
         var act = () => services.AddLlmProviders(configuration);
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenCommandLineExplicitlySelectsMock()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration(
+            environmentName: "Development",
+            commandLineArguments: ["--Llm:Provider=Mock"]);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("appsettings.local.json")]
+    [InlineData("appsettings.FutureEnvironment.json")]
+    [InlineData("operator-provider.json")]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenAbsoluteJsonExplicitlySelectsMock(
+        string fileName)
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildSyntheticJsonProviderConfiguration(fileName, useAbsolutePath: true);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("appsettings.FutureEnvironment.json", true)]
+    [InlineData("appsettings..json", false)]
+    [InlineData("appsettings.FutureEnvironment.json.backup", false)]
+    [InlineData("operator-provider.json", false)]
+    public void AddLlmProviders_ShouldRecognizeOnlyStandardRelativeEnvironmentSettingsAsDefaults(
+        string fileName,
+        bool shouldTreatAsDefault)
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildSyntheticJsonProviderConfiguration(fileName, useAbsolutePath: false);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        if (!shouldTreatAsDefault)
+        {
+            act.Should().NotThrow();
+            return;
+        }
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().NotContain(SyntheticRetiredGeminiValue);
     }
 
     [Fact]
@@ -632,7 +704,10 @@ public class LlmProviderRegistrationTests
         result.AllowOllamaLocalhost.Should().Be(expected);
     }
 
-    private static IConfigurationRoot BuildRealProviderConfiguration(string? providerOverride = null)
+    private static IConfigurationRoot BuildRealProviderConfiguration(
+        string? providerOverride = null,
+        string? environmentName = null,
+        string[]? commandLineArguments = null)
     {
         var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
         var providerVariable = $"{prefix}Llm__Provider";
@@ -644,17 +719,73 @@ public class LlmProviderRegistrationTests
                 Environment.SetEnvironmentVariable(providerVariable, providerOverride);
             }
 
-            Environment.SetEnvironmentVariable(retiredChildVariable, "stale-test-key");
-            return new ConfigurationBuilder()
+            Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
+            var builder = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false)
-                .AddEnvironmentVariables(prefix)
-                .Build();
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+            if (environmentName is not null)
+            {
+                builder.AddJsonFile(
+                    $"appsettings.{environmentName}.json",
+                    optional: false,
+                    reloadOnChange: false);
+            }
+
+            builder.AddEnvironmentVariables(prefix);
+            if (commandLineArguments is not null)
+            {
+                builder.AddCommandLine(commandLineArguments);
+            }
+
+            return builder.Build();
         }
         finally
         {
             Environment.SetEnvironmentVariable(providerVariable, null);
             Environment.SetEnvironmentVariable(retiredChildVariable, null);
+        }
+    }
+
+    private static IConfigurationRoot BuildSyntheticJsonProviderConfiguration(
+        string fileName,
+        bool useAbsolutePath)
+    {
+        var tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-llm-provider-registration-{Guid.NewGuid():N}");
+        var path = Path.Combine(tempDirectory, fileName);
+        var builtInPath = Path.Combine(tempDirectory, "appsettings.json");
+        var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
+        var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
+        Directory.CreateDirectory(tempDirectory);
+        File.WriteAllText(builtInPath, "{}");
+        File.WriteAllText(
+            path,
+            """
+            {
+              "Llm": {
+                "Provider": "Mock"
+              }
+            }
+            """);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
+            return new ConfigurationBuilder()
+                .SetBasePath(tempDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .AddJsonFile(
+                    useAbsolutePath ? path : fileName,
+                    optional: false,
+                    reloadOnChange: false)
+                .AddEnvironmentVariables(prefix)
+                .Build();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(retiredChildVariable, null);
+            Directory.Delete(tempDirectory, recursive: true);
         }
     }
 

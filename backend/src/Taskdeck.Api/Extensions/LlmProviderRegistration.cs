@@ -16,6 +16,9 @@ public static class LlmProviderRegistration
     internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
     private const string LlmProviderKey = "Llm:Provider";
     private const string BuiltInSettingsPath = "appsettings.json";
+    private const string EnvironmentSettingsPathPrefix = "appsettings.";
+    private const string SettingsPathSuffix = ".json";
+    private const string LocalSettingsPath = "appsettings.local.json";
     private const string RetiredComposeWrapperPresenceKey =
         "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
     private const string RetiredComposeWrapperMessage =
@@ -248,6 +251,14 @@ public static class LlmProviderRegistration
             return false;
         }
 
+        var builtInSettingsProvider = root.Providers
+            .OfType<JsonConfigurationProvider>()
+            .FirstOrDefault(provider =>
+                string.Equals(
+                    provider.Source.Path,
+                    BuiltInSettingsPath,
+                    StringComparison.OrdinalIgnoreCase));
+
         foreach (var provider in root.Providers.Reverse())
         {
             if (!provider.TryGet(LlmProviderKey, out _))
@@ -255,15 +266,49 @@ public static class LlmProviderRegistration
                 continue;
             }
 
-            // The checked-in Mock setting is a safe default, not evidence that an operator migrated.
+            // Checked-in Mock settings are safe defaults, not evidence that an operator migrated.
             return provider is not JsonConfigurationProvider jsonProvider
-                || !string.Equals(
-                    jsonProvider.Source.Path,
-                    BuiltInSettingsPath,
-                    StringComparison.OrdinalIgnoreCase);
+                || !IsCheckedInDefaultSettingsProvider(jsonProvider, builtInSettingsProvider);
         }
 
         return false;
+    }
+
+    private static bool IsCheckedInDefaultSettingsProvider(
+        JsonConfigurationProvider provider,
+        JsonConfigurationProvider? builtInSettingsProvider)
+    {
+        // Relative checked-in JSON sources inherit one file-provider instance from the builder.
+        // Absolute operator paths are normalized to a file name by ResolveFileProvider but retain
+        // their own provider instance, so path matching alone cannot preserve this boundary.
+        return builtInSettingsProvider?.Source.FileProvider is { } builtInFileProvider
+            && ReferenceEquals(provider.Source.FileProvider, builtInFileProvider)
+            && IsCheckedInDefaultSettingsPath(provider.Source.Path);
+    }
+
+    private static bool IsCheckedInDefaultSettingsPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || !string.Equals(path, Path.GetFileName(path), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(path, BuiltInSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // The durable operator file is registered by absolute path. ResolveFileProvider can reduce
+        // that path to its file name, so keep the canonical local-config name explicit here.
+        if (string.Equals(path, LocalSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return path.StartsWith(EnvironmentSettingsPathPrefix, StringComparison.OrdinalIgnoreCase)
+            && path.EndsWith(SettingsPathSuffix, StringComparison.OrdinalIgnoreCase)
+            && path.Length > EnvironmentSettingsPathPrefix.Length + SettingsPathSuffix.Length;
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
