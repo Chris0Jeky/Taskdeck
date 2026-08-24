@@ -49,6 +49,9 @@ export default {
   },
   triage: {
     boardPick: {
+      loading: 'Cargando tableros…',
+      loadFailed: 'No se pudieron cargar los tableros. Comprueba la conexión y vuelve a intentarlo.',
+      retry: 'Volver a cargar los tableros',
       blocked: {
         noBoards: 'Todavía no hay tableros. Crea uno y esta captura podrá ir ahí.',
         noBoard: 'Elige primero un tablero. Accept on board sigue desactivado hasta que selecciones uno.',
