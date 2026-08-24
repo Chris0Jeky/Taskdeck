@@ -40,7 +40,7 @@ public static class LlmProviderRegistration
         var llmSection = configuration.GetSection("Llm");
         var configuredProvider = llmSection["Provider"];
         var hasHigherPrecedenceProviderSelection =
-            HasHigherPrecedenceProviderSelection(configuration);
+            HasHigherPrecedenceProviderSelection(services, configuration);
         LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
         if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
                 configuredProvider,
@@ -242,7 +242,9 @@ public static class LlmProviderRegistration
         return services;
     }
 
-    private static bool HasHigherPrecedenceProviderSelection(IConfiguration configuration)
+    private static bool HasHigherPrecedenceProviderSelection(
+        IServiceCollection services,
+        IConfiguration configuration)
     {
         if (configuration is not IConfigurationRoot root)
         {
@@ -257,7 +259,7 @@ public static class LlmProviderRegistration
                     BuiltInSettingsPath,
                     StringComparison.OrdinalIgnoreCase));
         var environmentSettingsPath = GetEnvironmentSettingsPath(
-            configuration[WebHostDefaults.EnvironmentKey]);
+            GetRegisteredWebHostEnvironment(services)?.EnvironmentName);
 
         foreach (var provider in root.Providers.Reverse())
         {
@@ -321,6 +323,14 @@ public static class LlmProviderRegistration
         return string.IsNullOrWhiteSpace(environmentName)
             ? null
             : $"appsettings.{environmentName}.json";
+    }
+
+    private static IWebHostEnvironment? GetRegisteredWebHostEnvironment(
+        IServiceCollection services)
+    {
+        return services.FirstOrDefault(descriptor =>
+                descriptor.ServiceType == typeof(IWebHostEnvironment))
+            ?.ImplementationInstance as IWebHostEnvironment;
     }
 
     private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
@@ -474,9 +484,7 @@ public static class LlmProviderRegistration
 
         // Check for a registered IWebHostEnvironment to determine if we're in development.
         // During startup the environment is already registered as a singleton.
-        var envDescriptor = services.FirstOrDefault(d =>
-            d.ServiceType == typeof(IWebHostEnvironment));
-        if (envDescriptor?.ImplementationInstance is IWebHostEnvironment env)
+        if (GetRegisteredWebHostEnvironment(services) is { } env)
         {
             var name = env.EnvironmentName;
             return name.Equals("Development", StringComparison.OrdinalIgnoreCase) ||

@@ -81,6 +81,7 @@ public class LlmProviderRegistrationTests
     public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenDevelopmentMockIsTheOnlySelector()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
         var configuration = BuildRealProviderConfiguration(environmentName: "Development");
 
         configuration["Logging:LogLevel:Default"].Should().Be("Debug");
@@ -96,6 +97,7 @@ public class LlmProviderRegistrationTests
     public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenEnvironmentExplicitlySelectsMock()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
         var configuration = BuildRealProviderConfiguration(
             providerOverride: "Mock",
             environmentName: "Development");
@@ -109,6 +111,7 @@ public class LlmProviderRegistrationTests
     public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenCommandLineExplicitlySelectsMock()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
         var configuration = BuildRealProviderConfiguration(
             environmentName: "Development",
             commandLineArguments: ["--Llm:Provider=Mock"]);
@@ -127,6 +130,7 @@ public class LlmProviderRegistrationTests
         string environmentName)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment(environmentName));
         var configuration = BuildSyntheticJsonProviderConfiguration(
             fileName,
             useAbsolutePath: true,
@@ -150,6 +154,7 @@ public class LlmProviderRegistrationTests
         bool shouldTreatAsDefault)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment(environmentName));
         var configuration = BuildSyntheticJsonProviderConfiguration(
             fileName,
             useAbsolutePath: false,
@@ -166,6 +171,22 @@ public class LlmProviderRegistrationTests
         var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
         exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
         exception.Message.Should().NotContain(SyntheticRetiredGeminiValue);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenRelativeCustomJsonSpoofsEnvironmentName()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("FutureEnvironment"));
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            "appsettings.operator.json",
+            useAbsolutePath: false,
+            environmentName: "operator");
+
+        configuration[WebHostDefaults.EnvironmentKey].Should().Be("operator");
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -732,14 +753,6 @@ public class LlmProviderRegistrationTests
             Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
             var builder = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory);
-            if (environmentName is not null)
-            {
-                builder.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    [WebHostDefaults.EnvironmentKey] = environmentName
-                });
-            }
-
             builder.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
             if (environmentName is not null)
             {
@@ -778,25 +791,27 @@ public class LlmProviderRegistrationTests
         var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
         Directory.CreateDirectory(tempDirectory);
         File.WriteAllText(builtInPath, "{}");
+        var settings = new Dictionary<string, object?>
+        {
+            ["Llm"] = new Dictionary<string, string?>
+            {
+                ["Provider"] = "Mock"
+            }
+        };
+        if (!string.IsNullOrWhiteSpace(environmentName))
+        {
+            settings[WebHostDefaults.EnvironmentKey] = environmentName;
+        }
+
         File.WriteAllText(
             path,
-            """
-            {
-              "Llm": {
-                "Provider": "Mock"
-              }
-            }
-            """);
+            JsonSerializer.Serialize(settings));
 
         try
         {
             Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
             return new ConfigurationBuilder()
                 .SetBasePath(tempDirectory)
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    [WebHostDefaults.EnvironmentKey] = environmentName
-                })
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
                 .AddJsonFile(
                     useAbsolutePath ? path : fileName,
