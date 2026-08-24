@@ -257,7 +257,7 @@ describe('PaperTriageRowEdit', () => {
     expect(wrapper.get('[data-testid="capture-edit-label-input"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('button[data-action="remove-label"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('button[data-action="add-label"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="capture-edit-save-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capture-edit-save-error"]').exists()).toBe(true)
   })
 
   // ── the not-editable path ──────────────────────────────────────────────────
