@@ -11,6 +11,7 @@
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
+        :data-toast-id="toast.id"
         :class="[
           'pointer-events-auto',
           'min-w-80 max-w-md',

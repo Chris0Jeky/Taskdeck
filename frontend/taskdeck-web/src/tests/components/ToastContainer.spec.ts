@@ -36,6 +36,8 @@ describe('ToastContainer', () => {
     const wrapper = mount(ToastContainer)
     expect(wrapper.text()).toContain('Board created')
     expect(wrapper.text()).toContain('Network error')
+    expect(wrapper.get('[data-toast-id="t1"]').text()).toContain('Board created')
+    expect(wrapper.get('[data-toast-id="t2"]').text()).toContain('Network error')
   })
 
   it('keeps toasts present at mount and remount out of the polite announcement', async () => {
