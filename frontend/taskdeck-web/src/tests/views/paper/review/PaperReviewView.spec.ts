@@ -3083,6 +3083,9 @@ describe('PaperReviewView', () => {
       expect(mocks.approveProposal).toHaveBeenCalledWith('aaa-1')
       expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).not.toContain('First proposal')
 
       wrapper.unmount()
     })

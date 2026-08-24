@@ -1044,6 +1044,14 @@ async function onApply() {
   await handleApproveProposal(p.id)
   const recordedApproval = proposals.value.find((item) => proposalIdsEqual(item.id, p.id))
   if (recordedApproval && normalizeProposalStatus(recordedApproval.status) === 'Approved') {
+    // The queue stays interactive while approval is in flight. Prefer the
+    // explicit selection over the route hash because router navigation can lag
+    // behind a queue click; a late response must never restore a proposal the
+    // reviewer has already left. The explicit id also survives the approved row
+    // leaving the visible queue, which keeps the intended receipt available when
+    // the reviewer did stay at this decision locus.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, p.id)) return
     // Approval is its own decision. The remaining board write stays behind the
     // visible, explicit Apply action rather than opening a handoff dialog.
     recordDecisionReceipt(p.id, 'approved')
