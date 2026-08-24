@@ -1,9 +1,17 @@
 <template>
-  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" aria-live="polite" aria-atomic="false" role="status">
+  <div class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+    <div
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-toast-polite-announcer
+    >{{ politeAnnouncement }}</div>
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
+        :data-toast-id="toast.id"
         :class="[
           'pointer-events-auto',
           'min-w-80 max-w-md',
@@ -13,6 +21,8 @@
           toastClass(toast.type),
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
+        :aria-live="toast.type === 'error' ? 'assertive' : undefined"
+        :aria-atomic="toast.type === 'error' ? 'true' : undefined"
       >
         <!-- Icon -->
         <div class="flex-shrink-0" aria-hidden="true">
@@ -118,12 +128,40 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { nextTick, reactive, ref, watch } from 'vue'
 import { copyToastReceipt, useToastStore, type Toast } from '../../store/toastStore'
 
 const toastStore = useToastStore()
 const expanded = reactive<Record<string, boolean>>({})
 const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+const politeAnnouncement = ref('')
+let initialToastIds: Set<string> | null = null
+
+watch(
+  () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
+  async (current, previous) => {
+    if (initialToastIds === null) {
+      initialToastIds = new Set(current.map(({ id }) => id))
+      return
+    }
+
+    const previousIds = new Set((previous ?? []).map(({ id }) => id))
+    const added = current.filter(
+      ({ id, type }) =>
+        type !== 'error' && !previousIds.has(id) && !initialToastIds!.has(id),
+    )
+
+    if (added.length === 0) {
+      if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''
+      return
+    }
+
+    politeAnnouncement.value = ''
+    await nextTick()
+    politeAnnouncement.value = added.map(({ message }) => message).join(' ')
+  },
+  { flush: 'post', immediate: true },
+)
 
 function detailsId(id: string): string {
   return `toast-details-${id}`

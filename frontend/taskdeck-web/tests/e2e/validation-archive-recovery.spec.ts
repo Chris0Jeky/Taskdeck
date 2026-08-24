@@ -181,7 +181,7 @@ test.describe('TST11-SC-012: Restore archived board', () => {
     })
 
     // Verify success toast
-    await expect(page.getByText('Restored board')).toBeVisible()
+    await expect(page.locator('[data-toast-id]:visible').getByText('Restored board')).toBeVisible()
 
     // Board should reappear in boards list
     const boards = await listBoards(request)

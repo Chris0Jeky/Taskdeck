@@ -52,6 +52,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
 function mountCard(props: {
   proposal?: Proposal
   isExpired?: boolean
+  selectedDiffProposalId?: string | null
   selectedDiff?: string | null
   selectedDiffMode?: ReviewDiffMode | null
   selectedDiffInvalidReason?: string | null
@@ -63,7 +64,7 @@ function mountCard(props: {
       proposal,
       isExpired: props.isExpired ?? false,
       isBusy: false,
-      selectedDiffProposalId: proposal.id,
+      selectedDiffProposalId: props.selectedDiffProposalId ?? proposal.id,
       selectedDiff: props.selectedDiff ?? null,
       selectedDiffMode: props.selectedDiffMode ?? null,
       selectedDiffInvalidReason: props.selectedDiffInvalidReason ?? null,
@@ -298,6 +299,38 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(pre.text()).toContain('Fix login')
     expect(wrapper.find('.td-review-card__diff-label').text()).toBe('Operation details')
     expect(wrapper.find('[data-testid="review-diff-banner"]').exists()).toBe(false)
+  })
+
+  it('renders the live diff pane when only the proposal ID casing differs', () => {
+    const proposal = makeProposal({ id: 'a1b2c3d4-e5f6-47a8-9abc-def012345678' })
+    const wrapper = mountCard({
+      proposal,
+      selectedDiffProposalId: 'A1B2C3D4-E5F6-47A8-9ABC-DEF012345678',
+      selectedDiffMode: 'live',
+      selectedDiff: '0. Create card "Case test"',
+    })
+
+    const wrapperWrapper = wrapper.find('[data-testid="review-diff-wrapper"]')
+    expect(wrapperWrapper.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-diff-pre"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-diff-pre"]').text()).toContain('Case test')
+    expect(wrapper.find('[data-testid="review-diff-invalid"]').exists()).toBe(false)
+  })
+
+  it('does not render any diff pane for unrelated proposal IDs', () => {
+    const proposal = makeProposal({ id: 'a1b2c3d4-e5f6-47a8-9abc-def012345678' })
+    const wrapper = mountCard({
+      proposal,
+      selectedDiffProposalId: '11111111-2222-3333-4444-555555555555',
+      selectedDiffMode: 'live',
+      selectedDiff: '0. Create card "Different"',
+    })
+
+    expect(wrapper.find('[data-testid="review-diff-wrapper"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="review-diff-pre"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="review-diff-invalid"]').exists()).toBe(false)
+    // Preserve proposal.id and DOM/API identifiers as-is; no normalization.
+    expect(wrapper.find('article[id^="proposal-"]').attributes('id')).toBe('proposal-a1b2c3d4-e5f6-47a8-9abc-def012345678')
   })
 
   it('hides the pane entirely while a live diff is still loading (no premature empty state)', () => {
