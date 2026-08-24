@@ -221,6 +221,37 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
             "an authenticated MCP client must never be handed the app shell for an unknown path (#1971)");
     }
 
+    [Fact]
+    public async Task WrongVerbOnRealMcpEndpoint_KeepsItsOwn405_WithValidApiKey()
+    {
+        // The MCP transport maps a method-unconstrained route and answers unsupported verbs with
+        // its own 405. The resolver deliberately reports no declared methods for such a route, so
+        // the correction middleware must not treat that legitimate 405 as a missing-route 404 — it
+        // only corrects the 405s this pipeline itself manufactured (the synthetic method-mismatch
+        // endpoint and the machine fallbacks).
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "spa_fallback_mcp_verb");
+
+        using var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("SPA fallback MCP verb key"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
+        created.Should().NotBeNull();
+
+        using var mcpClient = _factory.CreateClient();
+        mcpClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", created!.Key);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, "/mcp");
+        var response = await mcpClient.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(
+            HttpStatusCode.NotFound,
+            "the real MCP endpoint exists — its wrong-verb answer must not be rewritten to the missing-route 404");
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
     [Theory]
     [InlineData("/api/definitely-not-a-real-endpoint-hzn")]
     [InlineData("/hubs/definitely-not-a-real-hub")]
@@ -253,25 +284,164 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         var response = await client.PutAsync("/api/boards", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        // Exactly what /api/boards declares. Not "GET, HEAD, POST": routing's own header said that,
+        // built from the union of every method at the node, and both extra entries were wrong — HEAD
+        // is not served here at all (see HeadOnGetDeclaringApiRoute_Returns405WithoutAdvertisingHead)
+        // and GET/HEAD were the catch-all's methods, not the route's.
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
     }
 
     [Fact]
-    public async Task NonGetVerbOnUnknownApiPath_NeverReturnsTheSpaShell()
+    public async Task HeadOnGetDeclaringApiRoute_Returns405WithoutAdvertisingHead()
     {
         using var client = _factory.CreateClient();
-        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_post");
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_head_allow");
 
-        // Documented boundary of the fix: a non-GET verb on an unknown path resolves to the
-        // framework's 405 endpoint rather than the 404 contract, because the per-prefix fallbacks
-        // are deliberately GET/HEAD-scoped (see WrongVerbOnExistingApiRoute_StillReturns405). That
-        // is unchanged from before #1971 — what must never happen is the 200 + app shell.
+        // Measured on .NET 8, not assumed: routing does NOT serve HEAD from a GET endpoint. A HEAD
+        // request against /api/boards (which declares GET and POST, and no [HttpHead] exists anywhere
+        // in Taskdeck) is not matched by the controller action — it falls through to the GET/HEAD
+        // machine fallback. So HEAD is genuinely not served here, and Allow must not name it: a 405
+        // whose Allow lists the method it just rejected sends a client that honours the header into a
+        // retry loop on the same 405 (RFC 9110 requires Allow to list methods the resource supports).
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/api/boards");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().NotContain("HEAD");
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("HEAD")]
+    public async Task WrongVerbInsideTheFallbacksOwnMethodsOnExistingApiRoute_Returns405(string method)
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, $"spa_fallback_postonly_{method}");
+
+        // The residual #1971 left behind (#1992). /api/import/notes/markdown declares POST only, so
+        // GET and HEAD are as wrong here as PUT is on /api/boards — but they are the two verbs the
+        // per-prefix fallbacks accept, so routing hands them to the fallback instead of to its 405
+        // endpoint and the answer used to be 404. Routing cannot be asked to fix this: the DFA has
+        // already partitioned the candidate set by verb, so the POST endpoint is invisible from the
+        // fallback. The fallback resolves the path against the endpoint graph itself instead.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/import/notes/markdown");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+    }
+
+    [Fact]
+    public async Task WrongVerbOnPostOnlyApiRoute_AdvertisesOnlyTheRoutesOwnMethods()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_allow");
+
+        // Routing builds its Allow header from the union of every method at the matched node, and the
+        // per-prefix catch-all contributes GET/HEAD to every one of them. Before #1992 this response
+        // therefore advertised "GET, HEAD, POST" on a POST-only route — a header that told a client
+        // to retry with a verb that answers 405. The header now comes from the route's own metadata.
         using var body = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
-        var response = await client.PostAsync("/api/definitely-not-a-real-endpoint-hzn", body);
+        var response = await client.PutAsync("/api/import/notes/markdown", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["POST"]);
+    }
+
+    [Fact]
+    public async Task WrongVerbOnPathWithUnsatisfiedRouteConstraint_Returns404()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "spa_fallback_constraint");
+
+        // /api/abuse/actors/{actorUserId:guid}/evaluate is POST-only, so the path shape alone would
+        // make this a 405. The guid constraint is not satisfied, so no endpoint is reachable here
+        // under any verb and the honest answer stays 404. Pins that route constraints are evaluated
+        // when the fallback decides 404-vs-405 rather than matched on the template alone.
+        var response = await client.GetAsync("/api/abuse/actors/not-a-guid/evaluate");
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Fact]
+    public async Task WrongVerbOnExistingApiRoute_Returns405ForAnAnonymousCaller()
+    {
+        using var client = _factory.CreateClient();
+
+        // The fallbacks are AllowAnonymous so an unknown path is not re-hidden behind a 401, and the
+        // 405 answer inherits that. It must not become a 401: the global FallbackPolicy applies to
+        // real endpoints, and this request never reaches one.
+        var response = await client.GetAsync("/api/import/notes/markdown");
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task NonGetVerbOnUnknownApiPath_Returns404WithTheErrorContract(string method)
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, $"spa_fallback_unknown_{method}");
+
+        // #1971 accepted a trade here: because the per-prefix fallbacks are GET/HEAD-scoped, a verb
+        // outside that pair on an UNKNOWN path made the routing node method-constrained and answered
+        // a bodyless 405 with "Allow: GET, HEAD" — advertising verbs for a path that does not exist.
+        // Nothing is routed there under any verb, so it now answers the same 404 contract every other
+        // unknown machine path gets (#1992).
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/definitely-not-a-real-endpoint-hzn")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        var response = await client.SendAsync(request);
         var responseBody = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        response.Content.Headers.Allow.Should().BeEmpty();
         responseBody.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task NonGetVerbOnUnknownApiPath_Returns404WithTheErrorContract_WhenAnonymous(string method)
+    {
+        using var client = _factory.CreateClient();
+
+        // The framework's synthetic 405 endpoint carries no metadata, so before the pipeline
+        // replaced it on machine paths the global FallbackPolicy answered this 401 — an anonymous
+        // GET typo said 404 while the same PUT typo said 401. The 404 contract is verb-independent
+        // and needs no credentials, exactly like the anonymous GET case above.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/definitely-not-a-real-endpoint-hzn")
+        {
+            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json")
+        };
+        var response = await client.SendAsync(request);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        response.Content.Headers.Allow.Should().BeEmpty();
+        responseBody.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task WrongVerbOnRealApiRoute_Returns405WithExactAllow_WhenAnonymous(string method)
+    {
+        using var client = _factory.CreateClient();
+
+        // Anonymous-disclosure symmetry for a real route: GET on this POST-only route already
+        // answers 405 anonymously through the AllowAnonymous catch-all, so a verb outside the
+        // GET/HEAD pair must not re-hide the same answer behind a 401.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/api/import/notes/markdown");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo("POST");
     }
 
     [Fact]
