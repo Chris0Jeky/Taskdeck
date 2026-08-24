@@ -139,7 +139,10 @@ test('capture triage should create proposal and apply card with provenance links
   expect(cardsAfterApprove.length).toBe(0)
 
   await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
-  await expect(proposalCard).not.toBeVisible()
+  // #1967: at its exact hash the applied proposal stays inspectable as a
+  // read-only decision record instead of vanishing from the view.
+  await expect(proposalCard.getByTestId('review-applied-decision-record')).toBeVisible()
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)
 
