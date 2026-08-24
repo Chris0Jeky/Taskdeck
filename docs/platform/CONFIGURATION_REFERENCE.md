@@ -286,7 +286,7 @@ default and the only one that ships enabled. See
 | --- | --- | --- | --- | --- |
 | `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Ollama) only run when this is true. | No |
 | `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in `Development`, `Test`, or `Testing` unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, or `Ollama`. The retired `Gemini` value fails startup with migration guidance instead of falling back to Mock. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, or `Ollama`. The retired `Gemini` value fails startup with migration guidance instead of falling back to Mock. The checked-in relative `appsettings.json` and `appsettings.{Environment}.json` values are defaults, not explicit operator selections; higher-precedence environment-variable, command-line, in-memory, absolute `appsettings.local.json`, and custom JSON sources are explicit. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
 | `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Use `OpenAiCompatible` for third-party compatible gateways. | No |
 | `Llm:OpenAi:Model` | `string` | `gpt-5.6-luna` | Model identifier sent in chat requests. Reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`, excluding `-chat` variants) are detected by `OpenAiLlmProvider.IsReasoningModel`; for them the outbound payload omits `temperature`, which those models reject, and adds a fixed 4096-token headroom to `max_completion_tokens` because that cap covers reasoning and visible output together. Every model receives `max_completion_tokens` (not the legacy `max_tokens`). | No |
@@ -304,8 +304,11 @@ default and the only one that ships enabled. See
 | `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
 | `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
 
-Any remaining `Llm:Gemini:*` section is also a fatal startup error, even when
-`Llm:Provider=Mock`, so obsolete secrets/configuration cannot be ignored silently.
+The retired `Gemini` selector is always a fatal startup error. A remaining
+`Llm:Gemini:*` section is also fatal unless a higher-precedence operator source
+explicitly selects a supported provider, including `Mock`. The checked-in relative
+`appsettings.json` and `appsettings.{Environment}.json` defaults do not count as that
+explicit migration choice, so obsolete secrets/configuration cannot be ignored silently.
 
 **Outbound transport boundary:** the OpenAI, OpenAICompatible, and
 Ollama primary clients set `UseProxy = false`. They ignore ambient/system proxy
