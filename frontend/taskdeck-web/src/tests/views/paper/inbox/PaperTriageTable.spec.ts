@@ -98,13 +98,30 @@ describe('PaperTriageTable', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 
-  it('surfaces list errors above stale rows when refresh fails after prior data', () => {
+  it('hides retained rows and their count while a replacement list is loading', () => {
     const wrapper = mount(PaperTriageTable, {
-      props: { items: makeItems(), listError: 'Refresh failed' },
+      props: { items: makeItems(), loadingList: true },
+    })
+
+    expect(wrapper.get('.paper-triage').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('[role="status"]').text()).toContain('Loading')
+    expect(wrapper.find('.paper-triage__list').exists()).toBe(false)
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('2 items')
+    expect(wrapper.text()).not.toContain('First excerpt')
+  })
+
+  it('prioritizes an error and hides retained rows and their count after replacement fails', () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems(), loadingList: true, listError: 'Refresh failed' },
     })
 
     expect(wrapper.find('[role="alert"]').text()).toContain('Refresh failed')
-    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.paper-triage__list').exists()).toBe(false)
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('2 items')
+    expect(wrapper.text()).not.toContain('First excerpt')
     expect(wrapper.text()).not.toContain('A pen and a phrase')
   })
 
