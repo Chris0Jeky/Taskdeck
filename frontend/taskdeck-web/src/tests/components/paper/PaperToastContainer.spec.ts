@@ -159,6 +159,22 @@ describe('PaperToastContainer', () => {
     vi.advanceTimersByTime(60_000)
     expect(store.toasts).toHaveLength(1)
   })
+
+  it('lets a persistent actionless error receipt be dismissed', async () => {
+    const store = useToastStore()
+    const id = store.error('Persistent network error')
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.find('.paper-toast__undo').exists()).toBe(false)
+
+    const dismissButton = card.get('button[aria-label="Dismiss notification"]')
+    await dismissButton.trigger('click')
+
+    expect(store.toasts).toHaveLength(0)
+  })
 })
 
 /**

@@ -225,6 +225,10 @@ function handleAction(toast: Toast) {
   toastStore.remove(toast.id)
 }
 
+function dismissToast(id: string) {
+  toastStore.remove(id)
+}
+
 function detailsId(id: string): string {
   return `paper-toast-details-${id}`
 }
@@ -343,6 +347,14 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             aria-hidden="true"
             :style="{ '--p': progress(toast) }"
           />
+          <button
+            type="button"
+            class="paper-toast__dismiss"
+            aria-label="Dismiss notification"
+            @click="dismissToast(toast.id)"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </div>
       </article>
     </TransitionGroup>
@@ -476,6 +488,26 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   border-left: 1px solid var(--line-soft);
   padding: 0 14px;
   position: relative;
+  gap: 10px;
+}
+
+.paper-toast__dismiss {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mute);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paper-toast__dismiss:hover,
+.paper-toast__dismiss:focus-visible {
+  color: var(--ink-deep);
 }
 
 .paper-toast__undo {
