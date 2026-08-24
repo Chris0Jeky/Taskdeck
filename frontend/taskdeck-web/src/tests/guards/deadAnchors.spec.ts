@@ -172,6 +172,10 @@ const NATIVE_DRAGGABLE = /\sdraggable\s*=\s*(?:"true"|'true'|true)(?=\s|\/?>)/i
 const BUTTON_SPECIMEN_MARKER =
   /\sdata-dead-affordance-exempt\s*=\s*(?:"visual-specimen"|'visual-specimen')(?=\s|\/?>)/i
 
+/** Opening-tag attributes, with quoted values consumed before the next name is read. */
+const OPENING_ATTRIBUTE =
+  /([@A-Za-z_][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
+
 /**
  * Only markup is scanned. `<script>` and `<style>` blocks and HTML comments are
  * dropped first so that PROSE about a dead anchor — the doc comment in
@@ -202,6 +206,21 @@ function hasPlaceholderHref(tag: string): boolean {
   return false
 }
 
+/** Keep only actual Vue event attributes; inert quoted text is not executable markup. */
+function directiveOnlyMarkup(tag: string): string {
+  const body = tag.replace(/^<[A-Za-z][\w.-]*/, '').replace(/\/?>(?:\s*)$/, '')
+  const directives: string[] = []
+
+  for (const match of body.matchAll(OPENING_ATTRIBUTE)) {
+    const name = match[1]
+    if (!name.startsWith('@') && !/^v-on:/i.test(name)) continue
+
+    directives.push(match[0])
+  }
+
+  return directives.join(' ')
+}
+
 /** Opening anchor tags in `source` whose href is the bare `#` and which bind no click. */
 function findDeadAnchors(source: string): string[] {
   const dead: string[] = []
@@ -215,7 +234,7 @@ function findDeadAnchors(source: string): string[] {
 
 /** Return true when a binding regex finds a non-whitespace handler expression. */
 function hasNonEmptyBinding(tag: string, binding: RegExp): boolean {
-  for (const match of tag.matchAll(binding)) {
+  for (const match of directiveOnlyMarkup(tag).matchAll(binding)) {
     const expression = (match[1] ?? match[2] ?? match[3] ?? '').trim()
     if (expression.length > 0) return true
   }
@@ -317,7 +336,7 @@ function hasButtonKeyboardActivation(tag: string): boolean {
   let handlesEnter = false
   let handlesSpace = false
 
-  for (const match of tag.matchAll(MODIFIED_KEYBOARD_ACTION_BINDING)) {
+  for (const match of directiveOnlyMarkup(tag).matchAll(MODIFIED_KEYBOARD_ACTION_BINDING)) {
     const expression = (match[2] ?? match[3] ?? match[4] ?? '').trim()
     if (expression.length === 0) continue
 
@@ -441,6 +460,7 @@ describe('dead affordances', () => {
     ])
     expect(findDeadButtons('<template><button>Do nothing</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button class="x">\n  Do nothing\n</button></template>')).toHaveLength(1)
+    expect(findDeadButtons(`<template><button data-note='@click="run"'>Inert note</button></template>`)).toHaveLength(1)
     expect(findDeadButtons('<template><button @click.stop>Only propagation</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button @click.stop="">Empty handler</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button @submit="save">Submit event is not activation</button></template>')).toHaveLength(1)
@@ -499,6 +519,11 @@ describe('dead affordances', () => {
   })
 
   it('requires explicit Enter and Space activation for labelled custom buttons', () => {
+    expect(
+      findAriaLabelViolations(
+        `<template><div role="button" tabindex="0" aria-label="Settings" data-note='@keydown.enter="open" @keydown.space="open"'>Inert note</div></template>`,
+      ),
+    ).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.space="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.escape="close">Open</div></template>')).toHaveLength(1)
