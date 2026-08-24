@@ -312,6 +312,7 @@ onMounted(() => {
         class="paper-triage-edit__textarea"
         rows="5"
         data-testid="capture-edit-textarea"
+        :disabled="saving"
         :placeholder="t('inbox.triage.edit.placeholder')"
       />
       <p class="paper-triage-edit__hint tk-meta">{{ t('inbox.triage.edit.hint') }}</p>
@@ -329,6 +330,7 @@ onMounted(() => {
             class="paper-triage-edit__input"
             type="date"
             data-testid="capture-edit-due-date"
+            :disabled="saving"
           />
         </label>
         <div class="paper-triage-edit__field">
@@ -348,6 +350,7 @@ onMounted(() => {
                 class="paper-triage-edit__label-remove"
                 data-action="remove-label"
                 :aria-label="t('inbox.triage.edit.metadata.removeLabel', { label })"
+                :disabled="saving"
                 @click="removeLabel(index)"
               >
                 ×
@@ -363,13 +366,14 @@ onMounted(() => {
               data-testid="capture-edit-label-input"
               :placeholder="t('inbox.triage.edit.metadata.labelsPlaceholder')"
               :aria-describedby="labelsHintId"
+              :disabled="saving"
               @keydown="onLabelKeydown"
             />
             <button
               type="button"
               class="paper-triage-edit__label-add"
               data-action="add-label"
-              :disabled="!canAddLabel"
+              :disabled="saving || !canAddLabel"
               @click="addLabel"
             >
               {{ t('inbox.triage.edit.metadata.addLabel') }}

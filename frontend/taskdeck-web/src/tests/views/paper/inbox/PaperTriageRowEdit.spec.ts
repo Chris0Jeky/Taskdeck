@@ -178,7 +178,7 @@ describe('PaperTriageRowEdit', () => {
     })
   })
 
-  it('shows the saving state and holds Cancel shut while the write is in flight', async () => {
+  it('freezes every draft control during a deferred save, so a post-snapshot edit cannot be accepted', async () => {
     // Definite-assignment rather than a `| null` union: the resolver is always
     // set by the executor below, and the union narrows to `never` at the call.
     let resolveSave!: (value: CaptureItem) => void
@@ -187,6 +187,9 @@ describe('PaperTriageRowEdit', () => {
         resolveSave = resolve
       }),
     )
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      metadata: { dueDate: '2026-08-28', labels: ['Sales, EMEA'] },
+    }))
     const wrapper = await mountEditor()
     await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
@@ -196,6 +199,11 @@ describe('PaperTriageRowEdit', () => {
     // Closing mid-write would leave the user without the outcome of a write
     // that is still going to land.
     expect(wrapper.get('button[data-action="edit-cancel"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-textarea"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-due-date"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-label-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[data-action="remove-label"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[data-action="add-label"]').attributes('disabled')).toBeDefined()
 
     resolveSave(makeDetail({ rawText: 'corrected text' }))
     await flushPromises()
@@ -219,6 +227,37 @@ describe('PaperTriageRowEdit', () => {
     expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
       .toBe('corrected text')
     expect(wrapper.get('[data-testid="capture-edit-save-error"]').text()).toContain('capture changes were not saved')
+  })
+
+  it('re-enables the full draft after a deferred save fails and preserves metadata for retry', async () => {
+    let rejectSave!: (reason?: unknown) => void
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      metadata: { dueDate: '2026-08-28', labels: ['Sales, EMEA'] },
+    }))
+    mockCaptureStore.updateSuggestion.mockImplementation(
+      () => new Promise<CaptureItem>((_resolve, reject) => {
+        rejectSave = reject
+      }),
+    )
+    const wrapper = await mountEditor()
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('corrected text')
+    await wrapper.get('[data-testid="capture-edit-due-date"]').setValue('2026-08-29')
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    rejectSave(new Error('network'))
+    await flushPromises()
+
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe('corrected text')
+    expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-due-date"]').element.value)
+      .toBe('2026-08-29')
+    expect(wrapper.get('[data-testid="capture-edit-textarea"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="capture-edit-due-date"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="capture-edit-label-input"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[data-action="remove-label"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[data-action="add-label"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-save-error"]').exists()).toBe(true)
   })
 
   // ── the not-editable path ──────────────────────────────────────────────────
