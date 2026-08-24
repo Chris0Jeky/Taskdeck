@@ -27,6 +27,8 @@ export default {
     errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
     errorDetail: 'Detalles: {reason}',
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
+    metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',
+    metadataCompatibilityDetail: 'Esta versión del servidor ignoró esos metadatos. No lo intentes de nuevo: la captura ya está en el Inbox.',
   },
   scope: {
     board: 'Tablero: {board}',
@@ -96,8 +98,10 @@ export default {
         legend: 'Fecha límite y etiquetas',
         dueDate: 'Fecha límite (opcional)',
         labels: 'Etiquetas (opcionales)',
-        labelsPlaceholder: 'compras, recados',
-        hint: 'Usa nombres de etiquetas existentes separados por comas. Vacía un campo para quitarlo; después guarda y pulsa Accept otra vez para reintentar la clasificación. Aquí no se crean etiquetas.',
+        labelsPlaceholder: 'Escribe un nombre de etiqueta existente',
+        addLabel: 'Añadir etiqueta',
+        removeLabel: 'Quitar {label}',
+        hint: 'Añade un nombre de etiqueta existente cada vez pulsando Enter. Quita una ficha para eliminarla; después guarda y pulsa Accept otra vez para reintentar la clasificación. Las comas siguen formando parte del nombre; aquí no se crean etiquetas.',
         unavailable: 'Esta API no devolvió metadatos editables. Guardar solo el texto conservará la fecha límite y las etiquetas almacenadas.',
       },
       blocked: {

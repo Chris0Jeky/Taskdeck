@@ -25,6 +25,8 @@ export default {
     errorLead: 'Appunto non salvato. La bozza è ancora qui.',
     errorDetail: 'Dettagli: {reason}',
     errorFallback: 'Riprova quando la connessione è disponibile.',
+    metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',
+    metadataCompatibilityDetail: 'Questa versione del server ha ignorato quei metadati. Non riprovare: la cattura è già nell’Inbox.',
   },
   scope: {
     board: 'Bacheca: {board}',
@@ -94,8 +96,10 @@ export default {
         legend: 'Scadenza ed etichette',
         dueDate: 'Data di scadenza (facoltativa)',
         labels: 'Etichette (facoltative)',
-        labelsPlaceholder: 'spesa, commissioni',
-        hint: 'Usa nomi di etichette esistenti separati da virgole. Svuota un campo per rimuoverlo, poi salva e premi di nuovo Accept per riprovare il triage. Qui non vengono create etichette.',
+        labelsPlaceholder: 'Scrivi il nome di un’etichetta esistente',
+        addLabel: 'Aggiungi etichetta',
+        removeLabel: 'Rimuovi {label}',
+        hint: 'Aggiungi un nome di etichetta esistente alla volta con Enter. Rimuovi una voce per cancellarla, poi salva e premi di nuovo Accept per riprovare il triage. Le virgole restano parte del nome; qui non vengono create etichette.',
         unavailable: 'Questa API non ha restituito metadati modificabili. Salvare solo il testo manterrà la scadenza e le etichette già memorizzate.',
       },
       blocked: {

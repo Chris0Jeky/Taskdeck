@@ -764,7 +764,10 @@ describe('PaperTriageTable', () => {
 
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('shopping')
+    await wrapper.get('button[data-action="remove-label"]').trigger('click')
+    const labelInput = wrapper.get('[data-testid="capture-edit-label-input"]')
+    await labelInput.setValue('shopping')
+    await labelInput.trigger('keydown', { key: 'Enter' })
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
     await flushPromises()
 

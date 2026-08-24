@@ -36,6 +36,8 @@ export default {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
     errorFallback: 'Please try again when the connection is available.',
+    metadataCompatibilityLead: 'Capture saved without its due date or labels.',
+    metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
   },
   scope: {
     board: 'Board: {board}',
@@ -117,8 +119,10 @@ export default {
         legend: 'Due date and labels',
         dueDate: 'Due date (optional)',
         labels: 'Labels (optional)',
-        labelsPlaceholder: 'shopping, errands',
-        hint: 'Use existing label names separated by commas. Clear either field to remove it, then Save and Accept again to retry triage. Labels are never created here.',
+        labelsPlaceholder: 'Type one existing label name',
+        addLabel: 'Add label',
+        removeLabel: 'Remove {label}',
+        hint: 'Add one existing label name at a time with Enter. Remove a chip to clear it, then Save and Accept again to retry triage. Commas stay part of a label name; labels are never created here.',
         unavailable: 'This API did not return editable metadata. A text-only save will preserve any stored due date and labels.',
       },
       blocked: {

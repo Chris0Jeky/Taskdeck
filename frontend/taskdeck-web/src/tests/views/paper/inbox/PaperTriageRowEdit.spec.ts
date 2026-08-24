@@ -99,6 +99,29 @@ describe('PaperTriageRowEdit', () => {
       .toContain('text-only save will preserve')
   })
 
+  it('keeps comma-containing labels lossless and omits unchanged metadata on a text-only edit', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: ['Sales, EMEA'],
+      },
+    }))
+    const wrapper = await mountEditor()
+
+    const chips = wrapper.findAll('[data-testid="capture-edit-label-chip"]')
+    expect(chips).toHaveLength(1)
+    expect(chips[0].text()).toContain('Sales, EMEA')
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('Text-only correction')
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Text-only correction',
+    })
+  })
+
   it('loads persisted metadata and corrects a misspelled label without changing text', async () => {
     mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
       status: 'Failed',
@@ -111,10 +134,12 @@ describe('PaperTriageRowEdit', () => {
 
     expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-due-date"]').element.value)
       .toBe('2026-08-23')
-    expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-labels"]').element.value)
-      .toBe('shoping')
+    expect(wrapper.get('[data-testid="capture-edit-label-chip"]').text()).toContain('shoping')
 
-    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('shopping')
+    await wrapper.get('button[data-action="remove-label"]').trigger('click')
+    const input = wrapper.get('[data-testid="capture-edit-label-input"]')
+    await input.setValue('shopping')
+    await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
     await flushPromises()
@@ -139,7 +164,8 @@ describe('PaperTriageRowEdit', () => {
     const wrapper = await mountEditor()
 
     await wrapper.get('[data-testid="capture-edit-due-date"]').setValue('')
-    await wrapper.get('[data-testid="capture-edit-labels"]').setValue('')
+    await wrapper.findAll('button[data-action="remove-label"]')[0].trigger('click')
+    await wrapper.findAll('button[data-action="remove-label"]')[0].trigger('click')
     await wrapper.get('button[data-action="edit-save"]').trigger('click')
     await flushPromises()
 

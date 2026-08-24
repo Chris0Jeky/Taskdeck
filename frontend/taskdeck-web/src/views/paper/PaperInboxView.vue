@@ -39,6 +39,7 @@ const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
 const captureSubmitting = ref(false)
 const captureError = ref<string | null>(null)
+const captureMetadataCompatibilityWarning = ref(false)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
@@ -100,16 +101,24 @@ async function dispatchCapture(
   }
 
   captureError.value = null
+  captureMetadataCompatibilityWarning.value = false
   captureSubmitting.value = true
   try {
-    await captureStore.createItem({
+    const metadataRequested = Object.hasOwn(opts, 'dueDate') || Object.hasOwn(opts, 'labels')
+    const created = await captureStore.createItem({
       boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
       source: 'Typed',
-      ...(Object.hasOwn(opts, 'dueDate') || Object.hasOwn(opts, 'labels')
+      ...(metadataRequested
         ? { dueDate: opts.dueDate ?? null, labels: opts.labels ?? [] }
         : {}),
     })
+    if (metadataRequested && !Object.hasOwn(created, 'metadata')) {
+      // Split web/API deployments can briefly pair this SPA with an older API.
+      // The text is already saved, so acknowledge it and warn against a retry
+      // that would create a duplicate capture.
+      captureMetadataCompatibilityWarning.value = true
+    }
     await loadInbox().catch(() => {
       // The capture already exists. The orchestrator/store owns listError and
       // its toast; treating this refresh failure as a rejected create would
@@ -297,6 +306,15 @@ defineExpose({ variant, toggleVariant, setVariant })
         <strong>{{ $t('inbox.capture.errorLead') }}</strong>
         <span>{{ $t('inbox.capture.errorDetail', { reason: captureError }) }}</span>
       </p>
+      <p
+        v-if="captureMetadataCompatibilityWarning"
+        class="paper-inbox__capture-compatibility-warning"
+        role="status"
+        data-testid="paper-inbox-capture-metadata-compatibility-warning"
+      >
+        <strong>{{ $t('inbox.capture.metadataCompatibilityLead') }}</strong>
+        <span>{{ $t('inbox.capture.metadataCompatibilityDetail') }}</span>
+      </p>
     </section>
 
     <PaperTriageTable
@@ -366,6 +384,20 @@ defineExpose({ variant, toggleVariant, setVariant })
   border-radius: var(--r-1);
   background: var(--ember-tint);
   color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.paper-inbox__capture-compatibility-warning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--ink-2);
+  border-radius: var(--r-1);
+  background: var(--paper-2);
+  color: var(--ink-2);
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
