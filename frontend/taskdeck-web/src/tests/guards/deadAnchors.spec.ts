@@ -85,6 +85,9 @@ const KEYBOARD_ACTION_BINDING =
 const MODIFIED_KEYBOARD_ACTION_BINDING =
   /(?:@|v-on:)(?:keydown|keyup)((?:\.[\w-]+)*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
 
+/** System modifiers mean the binding is not ordinary unmodified activation. */
+const SYSTEM_KEY_MODIFIERS = new Set(['ctrl', 'alt', 'shift', 'meta'])
+
 /** Any explicit keyboard/pointer action binding on a custom labelled control. */
 const INTERACTIVE_ACTION_BINDING =
   /(?:@|v-on:)(?:click|mousedown|mouseup|pointerdown|pointerup|keydown|keyup|touchstart|touchend|dblclick|contextmenu)(?:\.[\w-]+)*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
@@ -321,6 +324,7 @@ function hasButtonKeyboardActivation(tag: string): boolean {
     const modifiers = (match[1] ?? '')
       .split('.')
       .filter((modifier) => modifier.length > 0)
+    if (modifiers.some((modifier) => SYSTEM_KEY_MODIFIERS.has(modifier.toLowerCase()))) continue
     handlesEnter ||= modifiers.includes('enter')
     handlesSpace ||= modifiers.includes('space')
   }
@@ -500,7 +504,21 @@ describe('dead affordances', () => {
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.escape="close">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.Enter="open" @keydown.SPACE.prevent="open">Open</div></template>')).toHaveLength(1)
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.space.prevent="open">Open</div></template>')).toEqual([])
+    expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter.stop="open" @keydown.space.self="open">Open</div></template>')).toEqual([])
     expect(findAriaLabelViolations('<template><div role="button" tabindex="0" aria-label="Settings" v-on:keyup.enter="open" v-on:keydown.space="open">Open</div></template>')).toEqual([])
+
+    for (const modifier of ['ctrl', 'alt', 'shift', 'meta']) {
+      expect(
+        findAriaLabelViolations(
+          `<template><div role="button" tabindex="0" aria-label="Settings" @keydown.${modifier}.enter="open" @keydown.space="open">Open</div></template>`,
+        ),
+      ).toHaveLength(1)
+      expect(
+        findAriaLabelViolations(
+          `<template><div role="button" tabindex="0" aria-label="Settings" @keydown.enter="open" @keydown.${modifier}.space="open">Open</div></template>`,
+        ),
+      ).toHaveLength(1)
+    }
 
     // A switch has a different ARIA keyboard contract; this slice must not
     // manufacture an Enter requirement for every role in the shared set.
