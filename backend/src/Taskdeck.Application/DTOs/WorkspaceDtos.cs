@@ -30,6 +30,16 @@ public record WorkspaceTodayDto(
     IReadOnlyList<WorkspaceTodayCardDto> BlockedCards,
     IReadOnlyList<WorkspaceNextActionDto> RecommendedActions);
 
+/// <summary>
+/// Authoritative collaboration-membership signal for the current user's workspace.
+/// <paramref name="MemberCount"/> is the number of distinct people who can reach at least one
+/// board this user can reach, the user included, and is therefore always at least 1.
+/// It is a count only — no other user's identity is disclosed.
+/// </summary>
+public record WorkspaceCollaborationDto(
+    int MemberCount,
+    bool HasCollaborators);
+
 public record WorkspaceHomeWorkloadDto(
     int CapturesNeedingTriage,
     int CapturesInProgress,

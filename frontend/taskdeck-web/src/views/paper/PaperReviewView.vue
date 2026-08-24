@@ -18,6 +18,7 @@ import { useReviewActions } from '../../composables/useReviewActions'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
+import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollaboration'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
@@ -88,6 +89,7 @@ const {
 const session = useSessionStore()
 const toast = useToastStore()
 const route = useRoute()
+const collaboration = useWorkspaceCollaboration()
 const { t, locale } = useI18n()
 const displayVersion = ref(0)
 const technicalDetailsCopied = ref(false)
@@ -197,6 +199,48 @@ const filteredVisibleProposals = computed(() => {
   }
   return sortProposalsByRisk(filtered)
 })
+
+/**
+ * Whether the rendered queue still holds a record authored by somebody other
+ * than this reviewer — that is, something "Mine" can actually isolate.
+ *
+ * This is a PRESERVE-visibility guard, never the membership source, so it does
+ * not breach the recorded #1940 assumption against deriving filter visibility
+ * from proposal authors. The server contract stays the sole prerequisite for
+ * ever WITHDRAWING the pair; authorship may only keep on screen a control that
+ * membership alone would have removed, which is the fail-open direction.
+ *
+ * It is needed because revoking a collaborator's board access deletes the
+ * access row but leaves their proposals on the board, so the workspace can
+ * legitimately report solo while a departed author's records are still
+ * rendered and "Mine" still means something.
+ *
+ * Deliberately reads the pre-filter `visibleProposals`: keying it on the
+ * filtered queue would make selecting "Mine" remove the foreign rows, withdraw
+ * the pair, fall back to "All", and oscillate.
+ */
+const queueHasForeignAuthoredProposal = computed(
+  () =>
+    !!session.userId &&
+    visibleProposals.value.some(
+      (proposal) =>
+        !!proposal.requestedByUserId && proposal.requestedByUserId !== session.userId,
+    ),
+)
+
+/**
+ * Whether the queue rail may offer the author partition ("All" vs "Mine").
+ *
+ * The prerequisite signal is only the server-computed collaboration-membership
+ * contract, per the recorded #1940 prerequisite: proposal authorship, board ACL
+ * rows on their own, and online presence are all wrong proxies for workspace
+ * membership. The pair is withdrawn only when membership is known AND
+ * single-member AND nothing foreign-authored is on screen; loading, unknown,
+ * and failed lookups leave every control exactly as it is today.
+ */
+const authorPartitionAvailable = computed(
+  () => !collaboration.isSoloWorkspace.value || queueHasForeignAuthoredProposal.value,
+)
 
 const activeFilterLabel = computed(() => t(`review.queueRail.filter.${queueFilter.value}`))
 const boardScopeLabel = computed(() =>
@@ -1437,10 +1481,15 @@ onMounted(() => {
   startClock()
   void loadBoardOptions()
   void loadProposals()
+  // Membership has no realtime event to subscribe to (the only hub is
+  // per-board and silent on access grants), so the composable reads it once
+  // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
+  void collaboration.start()
 })
 
 onUnmounted(() => {
   stopClock()
+  collaboration.stop()
 })
 
 function selectProposal(id: string) {
@@ -1499,6 +1548,7 @@ function onQueueFilterChange(filter: QueueFilter) {
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
+      :author-partition-available="authorPartitionAvailable"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @file-away-all="onFileAwayBulk"
