@@ -63,19 +63,22 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly ILlmCaptureTriageExtractor? _llmExtractor;
     private readonly ILogger<CaptureTriageService>? _logger;
+    private readonly IProposalRevisionService? _proposalRevisionService;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
         IAutomationPolicyEngine policyEngine,
         ILlmCaptureTriageExtractor? llmExtractor = null,
-        ILogger<CaptureTriageService>? logger = null)
+        ILogger<CaptureTriageService>? logger = null,
+        IProposalRevisionService? proposalRevisionService = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _llmExtractor = llmExtractor;
         _logger = logger;
+        _proposalRevisionService = proposalRevisionService;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -158,6 +161,18 @@ public class CaptureTriageService : ICaptureTriageService
             cancellationToken);
         if (existingProposal != null)
         {
+            var reconciliation = await ReconcileExistingCaptureProposalAsync(
+                existingProposal,
+                userId,
+                payload,
+                cancellationToken);
+            if (!reconciliation.IsSuccess)
+            {
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    reconciliation.ErrorCode,
+                    reconciliation.ErrorMessage);
+            }
+
             var (reuseProvider, reuseModel, reusePromptVersion) = ResolveReuseProvenance(
                 payload,
                 llmIsCandidate,
@@ -168,7 +183,7 @@ public class CaptureTriageService : ICaptureTriageService
                 captureItemId,
                 ResolveTriageRunId(existingProposal.CorrelationId, Guid.NewGuid()),
                 existingProposal.Id,
-                existingProposal.Operations.Count,
+                reconciliation.Value,
                 reusePromptVersion,
                 reuseProvider,
                 reuseModel));
@@ -398,6 +413,202 @@ public class CaptureTriageService : ICaptureTriageService
             triageProvider,
             triageModel));
     }
+
+    /// <summary>
+    /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window. A
+    /// metadata edit is represented by a non-null Labels collection: UpdateSuggestion normalizes
+    /// an explicit replacement to an array (including an empty one), while an untouched payload
+    /// keeps Labels null. That distinction prevents a retry from erasing extractor metadata merely
+    /// because the capture was never edited.
+    /// </summary>
+    private async Task<Result<int>> ReconcileExistingCaptureProposalAsync(
+        AutomationProposal proposal,
+        Guid editorUserId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken)
+    {
+        if (payload.Labels is null)
+        {
+            return Result.Success(proposal.Operations.Count);
+        }
+
+        ProposalRevision? latestRevision = null;
+        IReadOnlyList<ProposalOperationDto> effectiveOperations;
+        if (proposal.Status == ProposalStatus.PendingReview)
+        {
+            latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
+                proposal.Id,
+                cancellationToken);
+            if (latestRevision is null)
+            {
+                effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
+            }
+            else
+            {
+                var parsedRevision = ParseRevisionOperations(proposal.Id, latestRevision.RevisedPayload);
+                if (!parsedRevision.IsSuccess)
+                {
+                    return Result.Failure<int>(parsedRevision.ErrorCode, parsedRevision.ErrorMessage);
+                }
+
+                effectiveOperations = parsedRevision.Value;
+            }
+        }
+        else
+        {
+            // A decided proposal is frozen at its original operations (the same shape Apply is
+            // entitled to execute). Never use a later revision to rewrite a decision.
+            effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
+        }
+
+        var patchedOperations = effectiveOperations
+            .Select(operation => PatchCaptureCardMetadata(operation, payload.DueDate, payload.Labels!))
+            .ToList();
+
+        var changed = effectiveOperations.Zip(patchedOperations, (before, after) => before.Parameters != after.Parameters)
+            .Any(parameterChanged => parameterChanged);
+        if (!changed)
+        {
+            return Result.Success(effectiveOperations.Count);
+        }
+
+        if (proposal.Status != ProposalStatus.PendingReview)
+        {
+            return Result.Failure<int>(
+                ErrorCodes.InvalidOperation,
+                $"Cannot reconcile corrected capture metadata for proposal in status {proposal.Status}");
+        }
+
+        if (_proposalRevisionService is null)
+        {
+            return Result.Failure<int>(
+                ErrorCodes.UnexpectedError,
+                "Capture proposal revision service is unavailable");
+        }
+
+        var revisionResult = await _proposalRevisionService.CreateRevisionAsync(
+            new CreateProposalRevisionDto(
+                proposal.Id,
+                editorUserId,
+                SerializeRevisionPayload(patchedOperations),
+                "Reconcile corrected capture metadata after interrupted triage"),
+            cancellationToken);
+        if (!revisionResult.IsSuccess)
+        {
+            return Result.Failure<int>(revisionResult.ErrorCode, revisionResult.ErrorMessage);
+        }
+
+        return Result.Success(patchedOperations.Count);
+    }
+
+    private static ProposalOperationDto MapOperation(AutomationProposalOperation operation) => new(
+        operation.Id,
+        operation.ProposalId,
+        operation.Sequence,
+        operation.ActionType,
+        operation.TargetType,
+        operation.TargetId,
+        operation.Parameters,
+        operation.IdempotencyKey,
+        operation.ExpectedVersion);
+
+    private static Result<IReadOnlyList<ProposalOperationDto>> ParseRevisionOperations(Guid proposalId, string payload)
+    {
+        if (!ProposalRevisionPayload.TryParseOperations(proposalId, payload, out var operations, out var errorMessage))
+        {
+            return Result.Failure<IReadOnlyList<ProposalOperationDto>>(
+                ErrorCodes.InvalidOperation,
+                $"Cannot reconcile an invalid proposal revision: {errorMessage}");
+        }
+
+        return Result.Success<IReadOnlyList<ProposalOperationDto>>(
+            operations.OrderBy(operation => operation.Sequence).ToList());
+    }
+
+    private static ProposalOperationDto PatchCaptureCardMetadata(
+        ProposalOperationDto operation,
+        DateOnly? dueDate,
+        IReadOnlyList<string> labels)
+    {
+        if (!string.Equals(operation.ActionType, "create", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase))
+        {
+            return operation;
+        }
+
+        using var document = JsonDocument.Parse(operation.Parameters);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot reconcile capture metadata for an operation with non-object parameters");
+        }
+
+        if (CaptureMetadataMatches(document.RootElement, dueDate, labels))
+        {
+            return operation;
+        }
+
+        var parameters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, "dueDate", StringComparison.Ordinal) &&
+                !string.Equals(property.Name, "labels", StringComparison.Ordinal))
+            {
+                parameters[property.Name] = property.Value.Clone();
+            }
+        }
+
+        if (dueDate.HasValue)
+        {
+            parameters["dueDate"] = JsonSerializer.SerializeToElement(new DateTimeOffset(
+                dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        }
+
+        // Labels is deliberately written even when empty. It is the explicit replacement marker
+        // that makes a user clear reviewable instead of silently retaining old labels.
+        parameters["labels"] = JsonSerializer.SerializeToElement(labels);
+
+        return operation with { Parameters = JsonSerializer.Serialize(parameters) };
+    }
+
+    private static bool CaptureMetadataMatches(
+        JsonElement parameters,
+        DateOnly? dueDate,
+        IReadOnlyList<string> labels)
+    {
+        var dueDateMatches = !parameters.TryGetProperty("dueDate", out var existingDueDate)
+            ? !dueDate.HasValue
+            : dueDate.HasValue &&
+              existingDueDate.ValueKind == JsonValueKind.String &&
+              existingDueDate.TryGetDateTimeOffset(out var parsedDueDate) &&
+              parsedDueDate == new DateTimeOffset(dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        if (!dueDateMatches ||
+            !parameters.TryGetProperty("labels", out var existingLabels) ||
+            existingLabels.ValueKind != JsonValueKind.Array ||
+            existingLabels.GetArrayLength() != labels.Count)
+        {
+            return false;
+        }
+
+        return existingLabels.EnumerateArray()
+            .Select(label => label.ValueKind == JsonValueKind.String ? label.GetString() : null)
+            .SequenceEqual(labels);
+    }
+
+    private static string SerializeRevisionPayload(IReadOnlyList<ProposalOperationDto> operations) =>
+        JsonSerializer.Serialize(new
+        {
+            operations = operations.Select(operation => new
+            {
+                id = operation.Id,
+                sequence = operation.Sequence,
+                actionType = operation.ActionType,
+                targetType = operation.TargetType,
+                targetId = operation.TargetId,
+                parameters = operation.Parameters,
+                idempotencyKey = operation.IdempotencyKey,
+                expectedVersion = operation.ExpectedVersion
+            })
+        });
 
     /// <summary>
     /// Runs the LLM extraction leg, converting unexpected exceptions into a fallback-triggering

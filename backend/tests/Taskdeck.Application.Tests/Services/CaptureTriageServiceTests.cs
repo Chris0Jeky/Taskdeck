@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -19,6 +20,8 @@ public class CaptureTriageServiceTests
     private readonly Mock<IAutomationProposalRepository> _automationProposalsMock;
     private readonly Mock<IAutomationProposalService> _proposalServiceMock;
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock;
+    private readonly Mock<IProposalRevisionRepository> _proposalRevisionsMock;
+    private readonly Mock<IProposalRevisionService> _proposalRevisionServiceMock;
     private readonly CaptureTriageService _service;
 
     public CaptureTriageServiceTests()
@@ -29,10 +32,16 @@ public class CaptureTriageServiceTests
         _automationProposalsMock = new Mock<IAutomationProposalRepository>();
         _proposalServiceMock = new Mock<IAutomationProposalService>();
         _policyEngineMock = new Mock<IAutomationPolicyEngine>();
+        _proposalRevisionsMock = new Mock<IProposalRevisionRepository>();
+        _proposalRevisionServiceMock = new Mock<IProposalRevisionService>();
 
         _unitOfWorkMock.SetupGet(u => u.Boards).Returns(_boardsMock.Object);
         _unitOfWorkMock.SetupGet(u => u.Columns).Returns(_columnsMock.Object);
         _unitOfWorkMock.SetupGet(u => u.AutomationProposals).Returns(_automationProposalsMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.ProposalRevisions).Returns(_proposalRevisionsMock.Object);
+        _proposalRevisionsMock
+            .Setup(r => r.GetLatestByProposalIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision?)null);
         _automationProposalsMock
             .Setup(r => r.GetBySourceReferenceAsync(
                 It.IsAny<ProposalSourceType>(),
@@ -111,6 +120,147 @@ public class CaptureTriageServiceTests
         result.Value.TriageRunId.Should().Be(existingTriageRunId);
         result.Value.OperationCount.Should().Be(1);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldReconcileInterruptedCaptureMetadataIntoOneRevision()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateExistingCaptureProposal(userId, boardId, captureId,
+            "{\"title\":\"existing\",\"description\":\"keep me\",\"columnId\":\"column-1\",\"dueDate\":\"2026-08-28T00:00:00+00:00\",\"labels\":[\"old\"]}");
+        ProposalRevision? latestRevision = null;
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _proposalRevisionsMock
+            .Setup(r => r.GetLatestByProposalIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => latestRevision);
+
+        CreateProposalRevisionDto? savedRevision = null;
+        _proposalRevisionServiceMock
+            .Setup(service => service.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalRevisionDto, CancellationToken>((dto, _) =>
+            {
+                savedRevision = dto;
+                latestRevision = new ProposalRevision(proposal.Id, 1, userId, dto.RevisedPayload, dto.Reason);
+            })
+            .ReturnsAsync(() => Result.Success(new ProposalRevisionDto(
+                Guid.NewGuid(), proposal.Id, 1, userId, latestRevision!.RevisedPayload,
+                DateTimeOffset.UtcNow, latestRevision.Reason, DateTimeOffset.UtcNow)));
+
+        var service = BuildServiceWithRevisionService();
+        var correctedPayload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "- [ ] existing",
+            DueDate: new DateOnly(2026, 8, 29),
+            Labels: ["Sales, EMEA"]);
+
+        var first = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, correctedPayload);
+        var second = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, correctedPayload);
+
+        first.IsSuccess.Should().BeTrue();
+        second.IsSuccess.Should().BeTrue();
+        first.Value.ProposalId.Should().Be(proposal.Id);
+        second.Value.ProposalId.Should().Be(proposal.Id);
+        savedRevision.Should().NotBeNull();
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        using var revisionDocument = JsonDocument.Parse(savedRevision!.RevisedPayload);
+        var operation = revisionDocument.RootElement.GetProperty("operations").EnumerateArray().Single();
+        operation.GetProperty("id").GetGuid().Should().Be(proposal.Operations.Single().Id);
+        operation.GetProperty("idempotencyKey").GetString().Should().Be("existing-op-1");
+        using var parametersDocument = JsonDocument.Parse(operation.GetProperty("parameters").GetString()!);
+        parametersDocument.RootElement.GetProperty("title").GetString().Should().Be("existing");
+        parametersDocument.RootElement.GetProperty("description").GetString().Should().Be("keep me");
+        parametersDocument.RootElement.GetProperty("columnId").GetString().Should().Be("column-1");
+        parametersDocument.RootElement.GetProperty("dueDate").GetDateTimeOffset().Should().Be(
+            new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero));
+        parametersDocument.RootElement.GetProperty("labels").EnumerateArray().Select(label => label.GetString())
+            .Should().Equal("Sales, EMEA");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldClearDueDateAndLabelsOnlyWhenMetadataWasExplicitlyReplaced()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateExistingCaptureProposal(userId, boardId, captureId,
+            "{\"title\":\"existing\",\"dueDate\":\"2026-08-28T00:00:00+00:00\",\"labels\":[\"inferred\"]}");
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        CreateProposalRevisionDto? savedRevision = null;
+        _proposalRevisionServiceMock
+            .Setup(service => service.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateProposalRevisionDto, CancellationToken>((dto, _) => savedRevision = dto)
+            .ReturnsAsync(Result.Success(new ProposalRevisionDto(
+                Guid.NewGuid(), proposal.Id, 1, userId, "{}", DateTimeOffset.UtcNow, "metadata", DateTimeOffset.UtcNow)));
+
+        var service = BuildServiceWithRevisionService();
+        var untouched = await service.CreateProposalFromCaptureAsync(
+            captureId, userId, boardId,
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing"));
+        untouched.IsSuccess.Should().BeTrue();
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var unchangedExplicitReplacement = await service.CreateProposalFromCaptureAsync(
+            captureId, userId, boardId,
+            new CapturePayloadV1(
+                CaptureRequestContract.CurrentSchemaVersion,
+                CaptureSource.Typed,
+                "- [ ] existing",
+                DueDate: new DateOnly(2026, 8, 28),
+                Labels: ["inferred"]));
+        unchangedExplicitReplacement.IsSuccess.Should().BeTrue();
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var cleared = await service.CreateProposalFromCaptureAsync(
+            captureId, userId, boardId,
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing", Labels: []));
+        cleared.IsSuccess.Should().BeTrue();
+        savedRevision.Should().NotBeNull();
+        using var revisionDocument = JsonDocument.Parse(savedRevision!.RevisedPayload);
+        using var parametersDocument = JsonDocument.Parse(
+            revisionDocument.RootElement.GetProperty("operations")[0].GetProperty("parameters").GetString()!);
+        parametersDocument.RootElement.TryGetProperty("dueDate", out _).Should().BeFalse();
+        parametersDocument.RootElement.GetProperty("labels").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldFailClosedWhenCorrectingDecidedProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateExistingCaptureProposal(userId, boardId, captureId,
+            "{\"title\":\"existing\",\"labels\":[\"old\"]}");
+        proposal.Approve(userId);
+        _automationProposalsMock
+            .Setup(r => r.GetBySourceReferenceAsync(ProposalSourceType.Queue, captureId.ToString(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+
+        var result = await BuildServiceWithRevisionService().CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "- [ ] existing", Labels: ["new"]));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        _proposalRevisionServiceMock.Verify(
+            revisionService => revisionService.CreateRevisionAsync(It.IsAny<CreateProposalRevisionDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -792,6 +942,37 @@ public class CaptureTriageServiceTests
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
             extractorMock.Object);
+    }
+
+    private CaptureTriageService BuildServiceWithRevisionService() => new(
+        _unitOfWorkMock.Object,
+        _proposalServiceMock.Object,
+        _policyEngineMock.Object,
+        proposalRevisionService: _proposalRevisionServiceMock.Object);
+
+    private static AutomationProposal CreateExistingCaptureProposal(
+        Guid userId,
+        Guid boardId,
+        Guid captureId,
+        string parameters)
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Capture triage",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            captureId.ToString());
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            sequence: 0,
+            actionType: "create",
+            targetType: "card",
+            parameters,
+            idempotencyKey: "existing-op-1",
+            targetId: Guid.NewGuid().ToString()));
+        return proposal;
     }
 
     private void SetupBoardAndProposalCreation(

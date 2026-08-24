@@ -412,6 +412,50 @@ public class LlmQueueToProposalWorkerTests
         triageService.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessBatch_CaptureRetryAfterProposalCrash_ReplaysTheSamePayloadToTheSameProposal()
+    {
+        // The proposal may have committed before the capture provenance/status save crashes. The
+        // worker owns re-claiming the capture; CaptureTriageService owns reconciling that replay to
+        // the one existing proposal. This pins the handoff: no new capture payload is invented and
+        // a second worker pass can complete against the recovered proposal identity.
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var existingProposalId = Guid.NewGuid();
+        var triageRunId = Guid.NewGuid();
+        var attempt = 0;
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) =>
+            {
+                attempt++;
+                if (attempt == 1)
+                    throw new InvalidOperationException("proposal persisted before provenance stamp");
+
+                return Result.Success(new CaptureTriageProposalResultDto(
+                    captureItemId,
+                    triageRunId,
+                    existingProposalId,
+                    1,
+                    "triage.v1",
+                    "deterministic-extractor",
+                    "capture-triage-v1"));
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+        item.Status.Should().Be(RequestStatus.Processing, "the interrupted capture is retried in its capture lane");
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        triageService.CallCount.Should().Be(2);
+        triageService.ReceivedPayloads.Should().HaveCount(2);
+        triageService.ReceivedPayloads[1].Should().Be(triageService.ReceivedPayloads[0]);
+    }
+
     #endregion
 
     #region Capture triage: already linked
@@ -1446,6 +1490,7 @@ public class LlmQueueToProposalWorkerTests
     private sealed class FakeCaptureTriageService : ICaptureTriageService
     {
         public int CallCount { get; private set; }
+        public List<CapturePayloadV1> ReceivedPayloads { get; } = [];
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -1457,6 +1502,7 @@ public class LlmQueueToProposalWorkerTests
             CancellationToken cancellationToken = default)
         {
             CallCount++;
+            ReceivedPayloads.Add(payload);
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));
