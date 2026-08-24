@@ -424,7 +424,18 @@ function formatTime(iso: string): string {
       <p v-else class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
     </div>
 
-    <ul v-else class="paper-triage__list">
+    <!--
+      Keep retained rows mounted while a replacement load hides them. The row
+      editor owns its unsaved draft locally, so unmounting this list during a
+      same-scope refresh would silently replace that draft with server text on
+      remount. Conditional display preserves the subtree without exposing
+      stale rows from a route-scope replacement.
+    -->
+    <ul
+      v-if="hasItems"
+      class="paper-triage__list"
+      :style="loadingList || listError ? { display: 'none' } : undefined"
+    >
       <li
         v-for="item in items"
         :key="item.id"

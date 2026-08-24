@@ -104,11 +104,10 @@ describe('PaperTriageTable', () => {
     })
 
     expect(wrapper.get('.paper-triage').attributes('aria-busy')).toBe('true')
-    expect(wrapper.get('[role="status"]').text()).toContain('Loading')
-    expect(wrapper.find('.paper-triage__list').exists()).toBe(false)
-    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(0)
+    expect(wrapper.get('.paper-triage__empty[role="status"]').text()).toContain('Loading')
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toContain('display: none')
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('2 items')
-    expect(wrapper.text()).not.toContain('First excerpt')
   })
 
   it('prioritizes an error and hides retained rows and their count after replacement fails', () => {
@@ -117,11 +116,10 @@ describe('PaperTriageTable', () => {
     })
 
     expect(wrapper.find('[role="alert"]').text()).toContain('Refresh failed')
-    expect(wrapper.find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.find('.paper-triage__list').exists()).toBe(false)
-    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(0)
+    expect(wrapper.find('.paper-triage__empty[role="status"]').exists()).toBe(false)
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toContain('display: none')
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('2 items')
-    expect(wrapper.text()).not.toContain('First excerpt')
     expect(wrapper.text()).not.toContain('A pen and a phrase')
   })
 
@@ -707,6 +705,33 @@ describe('PaperTriageTable', () => {
       'capture-1',
       expect.objectContaining({ forceRefresh: true }),
     )
+  })
+
+  it('preserves an unsaved edit while retained rows are hidden during a refresh', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    const editorBeforeRefresh = wrapper.get('[data-testid="capture-edit"]').element
+    const typed = 'a correction that has not been saved yet'
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue(typed)
+
+    await wrapper.setProps({ loadingList: true })
+    await flushPromises()
+
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toContain('display: none')
+    expect(wrapper.get('[data-testid="capture-edit"]').element).toBe(editorBeforeRefresh)
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ loadingList: false })
+    await flushPromises()
+
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toBeUndefined()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(1)
   })
 
   it('offers the editor on a failed row, which is still pre-triage', async () => {
