@@ -97,32 +97,38 @@ Explorer/SmartScreen acceptance remain unverified.
   tests. Both passed typecheck, build, lint, exact-head hosted CI, and bounded review; `#2033` also
   passed dynamic Playwright after its base refresh. No pinned-build/manual reproduction of the
   original intermittent failure is claimed.
-- `#1949`/PRs `#2027` and `#2032`: the native-button slice passed 10 dead-affordance guard cases;
-  the labelled-control slice passed 12 focused cases and the full 4,734-test frontend suite. Both
-  passed typecheck, build, lint/diff hygiene, exact-head hosted CI, dynamic Playwright smoke, and
-  bounded review. This remains source-level proof, not runtime walking of every control or keystroke;
-  parser-hardening residuals are recorded on the open parent issue.
+- `#1949`/PRs `#2027`, `#2032`, `#2038`, and `#2055`: the native-button slice passed 10
+  dead-affordance guard cases; the labelled-control slice passed 12 focused cases and the full
+  4,734-test frontend suite. The two keyboard-parser slices each passed 13 focused guard cases,
+  typecheck, scoped lint, and diff hygiene; the final exact head also passed hosted CI and fresh
+  review. This remains source-level proof, not runtime walking of every control or keystroke;
+  dynamic/compiler-expanded binding and parser-hardening residuals remain on the open parent issue.
 - `#1992`/PRs `#2029` and `#2030`: the PWA denylist regression and full hosted gate passed; the
   proxy slice passed static/rendered-template parity, real nginx 1.27 configuration validation,
   Terraform dev/staging/prod baselines, exact-head hosted CI, dynamic Playwright smoke, and a fresh
   integration review. A live split-container request and MCP SSE stream were not exercised.
-- `#1967`/PR `#2034`: 263 focused proposal/review tests, typecheck, build, lint/diff hygiene,
-  exact-head hosted CI including dynamic Playwright, automatic review, an independent full-diff
-  review, and a clean P1 fix-diff review passed. The broader applied-proposal detail journey and
-  the recorded stale/terminal-hash and diff-pane residuals remain unverified on open `#1967`.
+- `#1967`/PRs `#2034` and `#2056`: the canonical-identity slice passed 263 focused proposal/review
+  tests, typecheck, build, lint/diff hygiene, exact-head hosted CI including dynamic Playwright,
+  automatic review, an independent full-diff review, and a clean P1 fix-diff review. The missing
+  Paper deep-link slice then passed 187 focused tests, typecheck, build, quiet lint, diff hygiene,
+  hosted CI, and bounded review. The broader applied-proposal detail journey and the recorded
+  remaining stale/terminal-hash and diff-pane residuals remain unverified on open `#1967`.
 - `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
   hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
   exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
   August 23 while Today/Calendar requests and due/overdue classification followed each local day.
   Maximum-range `localDate` validation and unchanged legacy-value audit noise remain on `#2049`
   and `#2050`.
-- `#2005`/PR `#2047` (parked, not shipped): final-base focused Application and API runs passed
-  208 and 46 tests; the combined capture/due-date frontend run passed 217 tests across 10 files,
-  followed by typecheck, production build, and diff hygiene. An isolated exact-head desktop journey
-  proved unknown-label failure before Review, lossless correction to `Sales, EMEA`, retry, approval,
-  explicit Apply, and exactly one card retaining the expected due day and label. A delayed-save
-  remeasure then confirmed silent in-flight edit loss, and final review found stale stranded-proposal
-  reuse; `#2051` and `#2052` are the fresh successor blockers. No merge or shipped behavior is claimed.
+- `#2005`/PR `#2058` (merged as `6cc7544a`): the final head passed 48 focused Application tests and
+  120 focused API tests. Independent backend review added 75 API worker/concurrency and 87
+  Application capture/revision/operation passes; independent UI review added 136 focused frontend
+  passes. Diff hygiene and exact-head hosted CI, including dynamic Playwright smoke, passed with no
+  CRITICAL/HIGH review finding. An isolated synthetic browser journey on UI-equivalent pre-hardening
+  head `fb065547` proved unknown-label failure, lossless correction to `Sales, EMEA`, retry, approval
+  without board mutation, and exactly one explicit Apply retaining the expected due day and label.
+  Final-head recovery-revision and fresh-worker-scope changes are automated concurrency/worker proof,
+  not a second browser run. Closed PRs `#2026` and `#2047` remain historical lineage; comma-containing
+  composer labels and post-success uncommitted-label reset remain open on `#2053` and `#2057`.
 - PR `#2020`: docs and GitHub-operations governance, five touched-skill validators, the focused
   worktree-helper contract, stale-policy scan, diff hygiene, and hosted Workflow Lint passed. No
   runtime product test applies to the DCO enforcement pause.
