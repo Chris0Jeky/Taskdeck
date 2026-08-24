@@ -401,7 +401,10 @@ export function useReviewProposals() {
       // A route lookup may canonicalize GUID hex casing, but it may not return a
       // different record. Retain the hash as unavailable instead of upserting a
       // response whose identity does not match the requested proposal.
-      if (!proposalIdsEqual(fetchedProposal.id, proposalId)) return
+      if (!proposalIdsEqual(fetchedProposal.id, proposalId)) {
+        unavailableProposalId.value = proposalId
+        return
+      }
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
         return
       }
