@@ -432,13 +432,109 @@ describe('PaperTriageTable', () => {
     expect(wrapper.find('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
   })
 
-  it('states the reason when the account has no boards at all', async () => {
-    const wrapper = await openBoardPicker([])
+  it('states that boards are loading without claiming the account is empty', async () => {
+    mockBoardStore.boards = []
+    let resolveFetch!: () => void
+    mockBoardStore.fetchBoards.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { resolveFetch = resolve }),
+    )
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
 
-    const reason = wrapper.find('[data-testid="board-pick-reason"]')
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+
+    const picker = wrapper.get('[data-testid="capture-board-pick"]')
+    const reason = wrapper.get('[data-testid="board-pick-reason"]')
+    expect(picker.attributes('aria-busy')).toBe('true')
+    expect(reason.attributes('data-reason')).toBe('loading')
+    expect(reason.attributes('role')).toBe('status')
+    expect(reason.text()).toBe('Loading boards…')
+    expect(wrapper.text()).not.toContain('No boards yet')
+    expect(picker.get('select').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[data-action="retry-board-load"]').exists()).toBe(false)
+
+    resolveFetch()
+    await flushPromises()
+  })
+
+  it('states a board-load failure and offers an accessible retry', async () => {
+    mockBoardStore.boards = []
+    mockBoardStore.fetchBoards.mockRejectedValueOnce(new Error('Network unavailable'))
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await flushPromises()
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+
+    const reason = wrapper.get('[data-testid="board-pick-reason"]')
+    const retry = wrapper.get('button[data-action="retry-board-load"]')
+    expect(reason.attributes('data-reason')).toBe('loadFailed')
+    expect(reason.attributes('role')).toBe('alert')
+    expect(reason.text()).toContain('Boards could not be loaded')
+    expect(wrapper.text()).not.toContain('No boards yet')
+    expect(retry.text()).toBe('Retry board load')
+    expect(retry.attributes('type')).toBe('button')
+    expect(retry.attributes('aria-describedby')).toBe(reason.attributes('id'))
+    expect(wrapper.get('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+    expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the create-a-board state only after a successful empty response', async () => {
+    mockBoardStore.boards = []
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await flushPromises()
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+
+    const picker = wrapper.get('[data-testid="capture-board-pick"]')
+    const reason = wrapper.get('[data-testid="board-pick-reason"]')
+    expect(picker.attributes('aria-busy')).toBe('false')
     expect(reason.attributes('data-reason')).toBe('noBoards')
     expect(reason.text()).toContain('No boards yet')
-    expect(wrapper.find('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[data-action="accept-on-board"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[data-action="retry-board-load"]').exists()).toBe(false)
+    expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(1)
+  })
+
+  it('moves deterministically from failure through retry to loaded boards', async () => {
+    mockBoardStore.boards = []
+    let resolveRetry!: () => void
+    mockBoardStore.fetchBoards
+      .mockRejectedValueOnce(new Error('Network unavailable'))
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => {
+          resolveRetry = () => {
+            mockBoardStore.boards = [{ id: 'board-recovered', name: 'Recovered' }]
+            resolve()
+          }
+        }),
+      )
+    const items = makeItems()
+    items[0] = { ...items[0], boardId: null }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await flushPromises()
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    expect(wrapper.get('[data-testid="board-pick-reason"]').attributes('data-reason')).toBe('loadFailed')
+
+    await wrapper.get('button[data-action="retry-board-load"]').trigger('click')
+    expect(wrapper.get('[data-testid="board-pick-reason"]').attributes('data-reason')).toBe('loading')
+
+    resolveRetry()
+    await flushPromises()
+
+    const picker = wrapper.get('[data-testid="capture-board-pick"]')
+    expect(picker.attributes('aria-busy')).toBe('false')
+    expect(wrapper.find('button[data-action="retry-board-load"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="board-pick-reason"]').attributes('data-reason')).toBe('noBoard')
+    expect(picker.get('select').attributes('disabled')).toBeUndefined()
+    expect(picker.get('select').text()).toContain('Recovered')
+    expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(2)
   })
 
   // --- a decided row never looks like an undecided one (#1944) --------------

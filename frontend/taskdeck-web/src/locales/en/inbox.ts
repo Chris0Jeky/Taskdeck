@@ -65,6 +65,9 @@ export default {
   // untouched one. `tag.*` separates a capture's SOURCE from its STATE.
   triage: {
     boardPick: {
+      loading: 'Loading boards…',
+      loadFailed: 'Boards could not be loaded. Check your connection, then try again.',
+      retry: 'Retry board load',
       blocked: {
         noBoards: 'No boards yet. Create a board first, then this capture can go onto it.',
         noBoard: 'Choose a board first. Accept on board stays off until one is selected.',
