@@ -184,8 +184,14 @@ test('rejecting a proposal should remove it from the review queue', async ({ pag
   // the box is non-blank, which would leave the proposal in the queue).
   await expectRejectDialog(page, () => rejectButton.click())
 
-  // Proposal card must disappear from the review queue
-  await expect(proposalCard).toHaveCount(0, { timeout: 10_000 })
+  // #1967: the exact #proposal hash keeps the rejected record inspectable
+  // read-only (decision buttons render disabled via the shared actionability
+  // gates), so the queue claim is asserted hash-free below.
+  await expect(proposalCard.getByRole('button', { name: /approve/i })).toBeDisabled({
+    timeout: 10_000,
+  })
+  await page.goto(`/workspace/review?boardId=${boardId}`)
+  await expect(page.locator(`#proposal-${proposalId}`)).toHaveCount(0, { timeout: 10_000 })
 })
 
 test('proposal approve should reflect on board immediately without manual refresh', async ({ page, request }) => {
@@ -220,7 +226,10 @@ test('proposal approve should reflect on board immediately without manual refres
   await expectApplyConfirmDialog(page, () =>
     proposalCard.getByRole('button', { name: 'Apply to board' }).click(),
   )
-  await expect(proposalCard).not.toBeVisible()
+  // #1967: the applied proposal stays inspectable at its hash as a read-only
+  // decision record; the board reflection below is the real success signal.
+  await expect(proposalCard.getByTestId('review-applied-decision-record')).toBeVisible()
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   // Navigate to board and check card appears without manual refresh
   await page.goto(`/workspace/boards/${boardId}`)

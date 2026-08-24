@@ -112,7 +112,9 @@ test('V-02: register to create board to capture to triage to approve to board st
 
   // Step 9: Apply the approved proposal (S1 board mutation)
   await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
-  await expect(proposalCard).not.toBeVisible()
+  // #1967: after Apply the card either leaves the queue or persists as a
+  // read-only decision record - in both renderings the Apply control is gone.
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   // Step 10: Verify card appeared on the board (S1 board state)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)

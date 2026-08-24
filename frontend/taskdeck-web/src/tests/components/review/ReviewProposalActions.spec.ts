@@ -133,13 +133,28 @@ describe('ReviewProposalActions gating', () => {
     expect(isDisabled(wrapper, 'Apply to board')).toBe(true)
   })
 
-  it('disables apply/reject/execute for terminal statuses', () => {
-    for (const status of ['Applied', 'Rejected', 'Failed'] as const) {
+  it('disables apply/reject/execute for rejected and failed statuses', () => {
+    for (const status of ['Rejected', 'Failed'] as const) {
       const wrapper = mountActions({ proposal: makeProposal({ status }) })
       expect(isDisabled(wrapper, 'Approve for board')).toBe(true)
       expect(isDisabled(wrapper, 'Reject')).toBe(true)
       expect(isDisabled(wrapper, 'Apply to board')).toBe(true)
     }
+  })
+
+  it('renders Applied as historical inspection without live decision controls', () => {
+    const wrapper = mountActions({ proposal: makeProposal({ status: 'Applied' }) })
+    expect(wrapper.text()).toContain('Historical applied record')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'View stored preview')).toBe(
+      true,
+    )
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(
+      false,
+    )
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(
+      false,
+    )
   })
 
   it('disables Approve for a zero-operation pending proposal (#1397 LOW-3)', () => {

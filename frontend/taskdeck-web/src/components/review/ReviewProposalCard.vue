@@ -9,6 +9,7 @@ import {
 import type { ReviewDiffMode } from '../../composables/useReviewActions'
 import ReviewProposalActions from './ReviewProposalActions.vue'
 import ReviewProposalDetails from './ReviewProposalDetails.vue'
+import ReviewAppliedDecisionRecord from './ReviewAppliedDecisionRecord.vue'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { proposalIdsEqual } from '../../utils/proposalIdentity'
 
@@ -54,6 +55,10 @@ const diffPaneVisible = computed(
     (props.selectedDiffMode === 'stored' ||
       props.selectedDiffMode === 'invalid' ||
       !!props.selectedDiff),
+)
+
+const isAppliedRecord = computed(
+  () => normalizeProposalStatus(props.proposal.status) === 'Applied',
 )
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -227,6 +232,8 @@ async function copyTechnicalDetails() {
     <div class="td-review-card__presentation">
       <span class="td-review-cue">{{ impactSummary(proposal) }}</span>
     </div>
+
+    <ReviewAppliedDecisionRecord v-if="isAppliedRecord" :proposal="proposal" />
 
     <!-- Action footer -->
     <ReviewProposalActions

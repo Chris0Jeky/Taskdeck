@@ -13,6 +13,11 @@ export interface RecentlyAppliedRow {
 
 defineProps<{
   rows: RecentlyAppliedRow[]
+  activeId?: string | null
+}>()
+
+const emit = defineEmits<{
+  (event: 'select', id: string): void
 }>()
 </script>
 
@@ -22,10 +27,16 @@ defineProps<{
     <div v-if="rows.length === 0" class="tk-meta paper-review-recent__empty">
       {{ $t('review.recent.empty') }}
     </div>
-    <div
+    <button
       v-for="row in rows"
       :key="row.id"
+      type="button"
       class="paper-review-recent__row"
+      :class="{ 'paper-review-recent__row--active': row.id === activeId }"
+      :aria-label="$t('review.recent.openLabel', { title: row.title })"
+      :aria-pressed="row.id === activeId"
+      :data-proposal-id="row.id"
+      @click="emit('select', row.id)"
     >
       <div class="paper-review-recent__head">
         <span class="tk-serial">{{ row.serial }}</span>
@@ -34,7 +45,7 @@ defineProps<{
         }}</span>
       </div>
       <div class="paper-review-recent__title">{{ row.title }}</div>
-    </div>
+    </button>
   </div>
 </template>
 
@@ -51,10 +62,26 @@ defineProps<{
   font-size: 10.5px;
 }
 .paper-review-recent__row {
+  display: block;
+  width: 100%;
   padding: 8px 0;
+  background: transparent;
+  border: 0;
   border-bottom: 1px solid var(--line-soft);
+  font-family: inherit;
   font-size: 11.5px;
   color: var(--ink-2, var(--ink));
+  cursor: pointer;
+  text-align: left;
+}
+.paper-review-recent__row:hover,
+.paper-review-recent__row--active {
+  color: var(--ink);
+  background: var(--paper-card);
+}
+.paper-review-recent__row:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
 }
 .paper-review-recent__head {
   display: flex;
