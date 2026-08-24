@@ -487,18 +487,16 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
-    public async Task GetTodayAsync_ShouldBucketDueDatesUsingCardOffsetCalendarDay()
+    public async Task GetTodayAsync_ShouldBucketOffsetValueByUtcDueDateKeyUsingCallerLocalDate()
     {
         var userId = Guid.NewGuid();
         var board = new Board("Alpha", "Alpha board", userId);
         var column = new Column(board.Id, "Backlog", 0);
-        var offset = TimeSpan.FromHours(14);
-        var localToday = DateTimeOffset.UtcNow.ToOffset(offset).Date;
-        var dueTodayWithPositiveOffset = new Card(
+        var dueToday = new Card(
             board.Id,
             column.Id,
-            "Offset due today",
-            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
+            "Offset calendar-key due today",
+            dueDate: new DateTimeOffset(2026, 8, 22, 23, 30, 0, TimeSpan.FromHours(-7)));
 
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
@@ -511,13 +509,13 @@ public class WorkspaceServiceTests
             .ReturnsAsync((0, 0, 0, 0, 0));
         _cardRepositoryMock
             .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync([dueTodayWithPositiveOffset]);
+            .ReturnsAsync([dueToday]);
 
-        var result = await _service.GetTodayAsync(userId);
+        var result = await _service.GetTodayAsync(userId, new DateOnly(2026, 8, 23));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Summary.DueTodayCards.Should().Be(1);
-        result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset due today");
+        result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset calendar-key due today");
         result.Value.Summary.OverdueCards.Should().Be(0);
     }
 
@@ -668,6 +666,48 @@ public class WorkspaceServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Cards[0].IsOverdue.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCalendarAsync_ShouldUseCallerLocalDateForOverdueStatus()
+    {
+        var userId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var from = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(
+            board.Id,
+            columnId,
+            "Calendar-day card",
+            dueDate: new DateTimeOffset(2026, 8, 23, 0, 0, 0, TimeSpan.Zero));
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(new List<Board> { board });
+        _cardRepositoryMock
+            .Setup(r => r.GetByDueDateRangeAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                from,
+                to,
+                default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var dueToday = await _service.GetCalendarAsync(
+            userId,
+            from,
+            to,
+            new DateOnly(2026, 8, 23));
+        var overdue = await _service.GetCalendarAsync(
+            userId,
+            from,
+            to,
+            new DateOnly(2026, 8, 24));
+
+        dueToday.IsSuccess.Should().BeTrue();
+        dueToday.Value.Cards.Should().ContainSingle(resultCard => !resultCard.IsOverdue);
+        overdue.IsSuccess.Should().BeTrue();
+        overdue.Value.Cards.Should().ContainSingle(resultCard => resultCard.IsOverdue);
     }
 
     [Fact]
