@@ -26,8 +26,10 @@ withDefaults(
     similarPastApplyRate: { applied: number; total: number; ratio: number }
     /** Passed through so the ⏎ row names the phase it will actually run (#1818). */
     applyPhase?: ApplyPhase
+    /** An approved receipt has no remaining reject/edit/defer choices. */
+    applyOnly?: boolean
   }>(),
-  { applyPhase: 'approve' },
+  { applyPhase: 'approve', applyOnly: false },
 )
 </script>
 
@@ -43,7 +45,7 @@ withDefaults(
     />
     <ReviewWhyNow :body="whyNowBody" />
     <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
-    <ReviewKeysCard :apply-phase="applyPhase" />
+    <ReviewKeysCard :apply-phase="applyPhase" :apply-only="applyOnly" />
   </aside>
 </template>
 

@@ -13,8 +13,9 @@ import type { ApplyPhase } from './ReviewDecisionRail.vue'
  * ADR-0003 two-phase apply the active proposal is in, so its description
  * follows the phase (#1818 AC2).
  */
-const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase }>(), {
+const props = withDefaults(defineProps<{ applyPhase?: ApplyPhase; applyOnly?: boolean }>(), {
   applyPhase: 'approve',
+  applyOnly: false,
 })
 
 const { t } = useI18n()
@@ -28,9 +29,13 @@ const rows = computed<Array<{ key: string; label: string }>>(() => [
         ? t('review.keys.enter.execute')
         : t('review.keys.enter.approve'),
   },
-  { key: 'E', label: t('review.keys.edit') },
-  { key: '⌫', label: t('review.keys.reject') },
-  { key: 'D', label: t('review.keys.defer') },
+  ...(props.applyOnly
+    ? []
+    : [
+        { key: 'E', label: t('review.keys.edit') },
+        { key: '⌫', label: t('review.keys.reject') },
+        { key: 'D', label: t('review.keys.defer') },
+      ]),
   { key: 'P', label: t('review.keys.provenance') },
   { key: t('review.keys.spaceKey'), label: t('review.keys.preview') },
 ])

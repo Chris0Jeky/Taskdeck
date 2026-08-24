@@ -134,9 +134,27 @@ export default {
       // and the copy names it instead of warning about another one.
       body: 'One step left: press ⏎ (or “{action}”) to write it to the board. Nothing changes until you do.',
     },
+    decisionReceipt: {
+      approved: {
+        title: 'Approved — not yet applied to the board.',
+        body: 'Review stays here. Choose {action} when you are ready to make the board change.',
+      },
+      applied: {
+        title: 'Applied to the board.',
+        body: 'This proposal remains inspectable here; find it again under Recently Applied.',
+      },
+      rejected: {
+        title: 'Rejected.',
+        body: 'This proposal was not applied and remains inspectable here.',
+      },
+      deferred: {
+        title: 'Deferred.',
+        body: 'This proposal will return to Review when its snooze ends.',
+      },
+    },
     keyHint: {
       fileAway: 'PRESS ⌫ TO FILE AWAY',
-      confirmApply: 'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
+      confirmApply: 'PRESS ⏎ TO APPLY TO BOARD',
       approve: 'PRESS ⏎ TO APPROVE · ⌫ TO REJECT',
     },
     footer: 'REVIEW · {serial} · LOCAL-FIRST · LEDGER',

@@ -58,8 +58,10 @@ const props = withDefaults(
     dismissable?: boolean
     applyPhase?: ApplyPhase
     editLock?: EditLock
+    /** An approved receipt leaves Apply as the only remaining decision. */
+    applyOnly?: boolean
   }>(),
-  { applyPhase: 'approve', editLock: 'off' },
+  { applyPhase: 'approve', editLock: 'off', applyOnly: false },
 )
 
 const { t } = useI18n()
@@ -181,13 +183,14 @@ const emit = defineEmits<{
              the save instead, which is the one window where there is nothing
              left to cancel. -->
         <PaperHLBtn
-          v-if="showEditLock"
+          v-if="showEditLock && !applyOnly"
           :label="$t('review.decisionRail.editLock.cancel')"
           :disabled="editLock === 'saving'"
           data-testid="decision-cancel-edit"
           @click="emit('cancel-edit')"
         />
         <PaperHLBtn
+          v-if="!applyOnly"
           :label="$t('review.decisionRail.reject')"
           kbd="⌫"
           :disabled="busy"
@@ -196,6 +199,7 @@ const emit = defineEmits<{
           @click="emit('reject')"
         />
         <PaperHLBtn
+          v-if="!applyOnly"
           :label="$t('review.decisionRail.requestEdit')"
           kbd="E"
           :disabled="busy"
@@ -204,6 +208,7 @@ const emit = defineEmits<{
           @click="emit('request-edit')"
         />
         <PaperHLBtn
+          v-if="!applyOnly"
           :label="$t('review.decisionRail.defer')"
           kbd="D"
           :disabled="busy"

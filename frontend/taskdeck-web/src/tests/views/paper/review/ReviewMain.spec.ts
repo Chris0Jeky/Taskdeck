@@ -167,7 +167,7 @@ describe('ReviewMain', () => {
     it('makes the keyboard hint name the phase ⏎ will actually run', () => {
       const wrapper = mountMain({}, { applyPhase: 'execute' })
       expect(wrapper.get('[data-testid="paper-review-key-hint"]').text()).toBe(
-        'PRESS ⏎ TO APPLY TO BOARD · ⌫ TO REJECT',
+        'PRESS ⏎ TO APPLY TO BOARD',
       )
     })
 
