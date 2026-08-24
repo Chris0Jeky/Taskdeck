@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { createCardFilterActions } from '../../../store/board/cardFilterStore'
 import type { Card } from '../../../types/board'
@@ -30,6 +30,11 @@ function createMockState(cards: Card[] = []) {
     }),
   }
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+})
 
 describe('cardFilterStore', () => {
   describe('cardMatchesFilters — search text', () => {
@@ -129,6 +134,21 @@ describe('cardFilterStore', () => {
       const { filteredCardCount } = createCardFilterActions(state as any)
       state.filters.value.dueDateFilter = 'due-today'
       expect(filteredCardCount.value).toBe(0)
+    })
+
+    it('due-today: compares UTC due keys with the browser local day', () => {
+      vi.stubEnv('TZ', 'America/Los_Angeles')
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-23T06:30:00.000Z')) // Aug 22 locally
+      const cards = [
+        makeCard({ id: 'local-today', dueDate: '2026-08-22T00:00:00.000Z' }),
+        makeCard({ id: 'utc-today', dueDate: '2026-08-23T00:00:00.000Z' }),
+      ]
+      const state = createMockState(cards)
+      const { cardsByColumn } = createCardFilterActions(state as any)
+      state.filters.value.dueDateFilter = 'due-today'
+
+      expect(cardsByColumn.value.get('col-1')?.map(card => card.id)).toEqual(['local-today'])
     })
 
     it('due-week: includes cards due within 7 days', () => {

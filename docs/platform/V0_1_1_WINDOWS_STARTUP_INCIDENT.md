@@ -1,9 +1,11 @@
 # v0.1.1 Windows Startup Incident And Recovery Checkpoint
 
-- Status: open release blocker (`#1876`)
+- Status: implementation resolved (`#1876`, PR `#2016`, merge `909e33f9`); v0.1.2 remains unreleased
 - Recorded: 2026-08-22
+- Resolved on main: 2026-08-23
 - Public release: [`v0.1.1`](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.1.1)
 - Incident evidence: [`#1876` comment](https://github.com/Chris0Jeky/Taskdeck/issues/1876#issuecomment-5380396057)
+- Current release checkpoint: [`.codex/memories/00_ACTIVE.md`](../../.codex/memories/00_ACTIVE.md)
 
 ## Executive summary
 
@@ -16,14 +18,16 @@ existing fixed migration guidance and showed only a generic port/data-folder err
 The earlier public-artifact acceptance used an intentionally hermetic child environment that
 removed all inherited `Llm__*` names. That remains valid evidence for clean install, persistence,
 review-first OpenAI behavior, and archive integrity, but it did not test the ordinary inherited
-upgrade environment and must not be generalized to that path. Issue `#1876` is reopened.
+upgrade environment and must not be generalized to that path. Issue `#1876` was reopened for the
+correction and is now closed as completed by PR `#2016`.
 
-A temporary compatibility launch of the unchanged public executable is working. The persistent
-non-secret user provider selector has been changed explicitly from Gemini to OpenAI; all
-credential-bearing Gemini and OpenAI variables remain present and were not read, copied, printed,
-or deleted. A v0.1.2 correction is drafted and strongly focused-tested, but it is uncommitted,
-unpublished, and not yet through the full backend, PR, CI, review, no-publish, or public-release
-gates.
+At incident time, a temporary compatibility launch of the unchanged public executable worked after
+the persistent non-secret user provider selector was changed explicitly from Gemini to OpenAI; all
+credential-bearing Gemini and OpenAI variables remained present and were not read, copied, printed,
+or deleted. The permanent correction is now merged on main at `909e33f9`, after full backend tests,
+review, and exact-head hosted CI. It is not a public v0.1.2 artifact: no v0.1.2 tag or release exists,
+and the live milestone, final exact-main candidate evidence, and maintainer release-deck acceptance
+still gate any tag.
 
 ## What the user saw
 
@@ -79,16 +83,19 @@ The compatibility instance was last verified as PID `10596`, executable path exa
 Desktop extraction, listening only on `127.0.0.1:5000`, with `/health/ready` and `/` returning 200.
 PID and listener state are transient and must be rechecked rather than trusted as a later fact.
 
-## Current user-level configuration boundary
+## Incident-time user-level configuration boundary
 
-- User-scoped `Llm__Provider` is now `OpenAI`.
-- Four user-scoped `Llm__OpenAi__*` names remain present.
-- Four user-scoped `Llm__Gemini__*` names remain present.
+- User-scoped `Llm__Provider` was changed to `OpenAI` during the incident response.
+- Four user-scoped `Llm__OpenAi__*` names were present.
+- Four user-scoped `Llm__Gemini__*` names were present.
 - No value was printed or retained in evidence.
 - v0.1.1 still rejects the remaining retired Gemini section even after a supported provider is
-  selected. The drafted v0.1.2 behavior would treat those keys as inert only after an explicit
+  selected. The merged correction treats those keys as inert only after an explicit
   supported selector; it would still fail closed for `Provider=Gemini` and the retired Compose
   presence marker.
+
+These are dated observations, not a current machine-state assertion. Recheck names and process state
+without reading values before relying on them.
 
 ### Safe v0.1.1 compatibility launch
 
@@ -106,19 +113,19 @@ $taskdeckV011 = Join-Path $env:USERPROFILE 'Desktop\taskdeck-v0.1.1-win-x64\Task
 This does not change or reveal persistent user values. Close that PowerShell window to discard the
 temporary environment. Do not delete persistent credential-bearing variables as a workaround.
 
-## Draft permanent correction (not shipped)
+## Delivered permanent correction
 
 Preserved worktree:
 
 `<Taskdeck repo>\.worktrees\codex-1876-desktop-retired-provider-diagnostics`
 
-Branch and base:
+Branch and delivered head:
 
-- branch `issue-1876/desktop-retired-provider-diagnostics`
-- base/HEAD `0f38c692c1a08f62451012cc17281348b9bf6d46`
-- no commit, push, or PR
+- branch `issue-1876/desktop-retired-provider-diagnostics-v2`
+- exact PR head `71f30964a517dfe4da1459e09823d0e786b40376`
+- merged by PR `#2016` as `909e33f99fb191d33d18854ef3b5195b7afd653a`
 
-The draft adds:
+The delivered correction adds:
 
 - a typed retired-provider configuration exception/reason;
 - stable packaged fatal marker
@@ -131,7 +138,7 @@ The draft adds:
 - a synthetic contaminated-package regression beside the existing hermetic acceptance path;
 - archive-local troubleshooting guidance.
 
-Tracked draft files:
+Delivered files include:
 
 - `backend/src/Taskdeck.Application/Services/RetiredLlmProviderConfigurationException.cs` (new)
 - provider selection/registration, packaged runtime, and `Program.cs`
@@ -139,33 +146,31 @@ Tracked draft files:
 - archive harness and Python contract tests
 - `docs/releases/WINDOWS_QUICK_START.md`
 
-## Draft verification already completed
+## Delivered verification
 
-- Application focused tests: 56/56 passed.
-- API focused tests: 89/89 passed.
-- Archive Python tests: 34/34 passed.
-- Gemini-retirement architecture tests: 4/4 passed.
-- Release structure/contract checks: 61/61 passed under Git Bash.
-- Docs governance passed.
-- Python compile passed.
-- Scoped formatting and `git diff --check` passed.
-- Actual self-contained marked-package diagnostic passed: exit 1, exact retired-provider code and
-  static guidance, no synthetic secret, raw exception, stack, URL, ready marker, or listener.
+- Exact PR head `71f30964a5` passed the full backend solution: 8,094 tests passed with five
+  intentional skips.
+- Hosted exact-head CI completed with 22 successful checks and 11 intentional skips, including the
+  dynamically scheduled E2E path.
+- Independent review found no HIGH or CRITICAL blocker after the bounded fix round.
+- The exact PR head started the seeded stack with `Llm__Provider=Mock` plus a synthetic inert
+  `Llm__Gemini__ApiKey`; the API reached readiness and demo seeding completed without printing the
+  synthetic value.
+- The focused Application/API, archive, architecture, release-contract, docs-governance, Python
+  compile, formatting, and marked-package diagnostic checks also passed before publication.
 
 Not verified:
 
-- full `backend/Taskdeck.sln` test run (interrupted when implementation was paused);
-- independent review;
-- PR exact-head CI;
-- no-publish release rehearsal;
+- a final no-publish candidate from the current post-`55dbf6e14` main;
 - v0.1.2 tag workflows or public artifacts;
 - ordinary public v0.1.2 Desktop launch.
 
 ## Preserved evidence and cleanup status
 
-- The draft worktree contains ignored packaged proof under
+- The merged worktree remains tracked-clean at `71f30964a5` and contains ignored packaged proof under
   `artifacts/issue-1876-package-diagnostic/`. It may contain generated isolated identity state;
-  do not commit or inspect it casually. Inventory ignored output before any worktree removal.
+  do not commit or inspect it casually. Inventory and preserve required proof before any plain
+  worktree removal; never force removal.
 - Three exact synthetic diagnostic roots from the coordinator run remain under `%TEMP%` because the
   command safety floor rejected recursive removal even after read-only absolute-path and
   non-reparse verification. No process uses them:
@@ -174,33 +179,26 @@ Not verified:
   - `taskdeck-v011-no-retired-gemini-4c7674a45f3e4122880da6dcae5b8823`
 - The older release-proof worktree and its ignored evidence remain preserved separately.
 
-## Exact resume point
+## Current continuation
 
-In the preserved draft worktree, first re-run its guard, then:
+Do not resume the implementation branch or reopen `#1876`; the correction is already on main. Use
+the live v0.1.2 checkpoint instead:
 
-```powershell
-$env:Llm__Provider='Mock'
-$env:TaskdeckMigration__RetiredLlmProviderConfigurationPresent='false'
-dotnet test backend/Taskdeck.sln -c Release -m:1
-```
-
-If green:
-
-1. Review the complete diff and inspect `git status --porcelain --ignored` without deleting proof.
-2. Amend ADR-0055 and active configuration/upgrade docs to distinguish explicit retired selection
-   from inert stale child keys after an explicit supported selector.
-3. Commit, push, and open a ready PR closing `#1876`.
-4. Run the bounded independent review, exact-head CI, and three-minute head-age gate.
-5. Merge only if green, then run a blank-tag no-publish desktop rehearsal.
-6. Tag and publish v0.1.2 only after the candidate works with both hermetic clean state and a
-   synthetic contaminated inherited environment.
-7. Download the unchanged public v0.1.2 ZIP and prove the ordinary Desktop path with the persisted
-   explicit OpenAI selector and untouched inert Gemini variable names.
+1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestone membership, and worktrees.
+2. Finish and merge the remaining Priority I milestone slices through their own exact-head gates.
+3. From the resulting exact main, run the synthetic desktop receipt -> explicit Apply ->
+   exactly-one-card journey and a blank-tag no-publish Windows candidate.
+4. Assemble the release deck, including inherited-profile migration and ordinary
+   Explorer/SmartScreen evidence or explicit unverified boundaries.
+5. Do not create or push a v0.1.2 tag until the maintainer explicitly accepts that deck. The
+   >=10-day dogfooding floor is the separate q-8 traction/archive checkpoint, not a v0.1.2 tag gate.
 
 ## User-facing status
 
-- Usable now: yes, through the currently running compatibility instance.
+- Usable at incident close: yes, through the compatibility launch; current process state must be
+  rechecked rather than inferred.
 - Safe to describe v0.1.1 as universally double-click-to-use: no.
 - Public v0.1.2 available: no.
 - Data or credentials deleted: no.
-- Issue state: `#1876` reopened, Priority I, project Pending at the last successful read.
+- Issue state: `#1876` closed as completed by PR `#2016`; implementation is on main, but no public
+  v0.1.2 artifact exists.

@@ -657,6 +657,7 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(rp.proposals.value).toEqual([])
+      expect(rp.unavailableProposalId.value).toBe('p-requested')
       expect(mockRouter.replace).not.toHaveBeenCalled()
     })
 
@@ -668,6 +669,27 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(mockRouter.replace).not.toHaveBeenCalled()
       expect(rp.proposals.value).toEqual([])
+      expect(rp.unavailableProposalId.value).toBe('p-missing')
+    })
+
+    it('clears an unavailable deep link when the hash changes and after a successful lookup', async () => {
+      mockRoute.hash = '#proposal-p-missing'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.unavailableProposalId.value).toBe('p-missing')
+
+      mockRoute.hash = ''
+      await watcherForCurrentSourceValue('')[1]()
+      expect(rp.unavailableProposalId.value).toBeNull()
+
+      mockRoute.hash = '#proposal-p-recovered'
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-recovered' }))
+      await watcherForCurrentSourceValue('#proposal-p-recovered')[1]()
+
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.proposals.value.map((proposal: { id: string }) => proposal.id)).toEqual(['p-recovered'])
     })
 
     it('shows toast on non-404 error', async () => {

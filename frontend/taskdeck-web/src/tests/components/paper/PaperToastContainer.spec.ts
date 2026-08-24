@@ -38,6 +38,39 @@ describe('PaperToastContainer', () => {
     expect(messages).toContain('Second message')
   })
 
+  it('keeps toasts present at mount and remount out of the polite announcement', async () => {
+    const store = useToastStore()
+    store.success('Already visible', 0)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+
+    wrapper.unmount()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+  })
+
+  it('announces only a non-error toast added after mount', async () => {
+    const store = useToastStore()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+    store.success('Capture saved to inbox', 0)
+    store.error('Network error')
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(announcer.text()).toBe('Capture saved to inbox')
+    const errorToast = wrapper.get('[role="alert"]')
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
+    expect(wrapper.get('.paper-toast--applied').attributes('role')).toBeUndefined()
+  })
+
   it('pauses the countdown on hover and resumes on leave', async () => {
     const store = useToastStore()
     // duration > 0 wires the auto-remove setTimeout; we use fake timers.
@@ -154,6 +187,8 @@ describe('PaperToastContainer', () => {
     expect(card.attributes('aria-live')).toBe('assertive')
     expect(card.attributes('aria-atomic')).toBe('true')
 
+    // `aria-controls` is absent while collapsed because the details element is
+    // only rendered when expanded, so select the control by its expanded state.
     const detailsButton = card.get('button[aria-expanded="false"]')
     expect(detailsButton.attributes('aria-expanded')).toBe('false')
     expect(detailsButton.attributes('aria-controls')).toBeUndefined()

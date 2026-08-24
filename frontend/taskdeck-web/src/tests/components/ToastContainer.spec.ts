@@ -37,6 +37,44 @@ describe('ToastContainer', () => {
     const wrapper = mount(ToastContainer)
     expect(wrapper.text()).toContain('Board created')
     expect(wrapper.text()).toContain('Network error')
+    expect(wrapper.get('[data-toast-id="t1"]').text()).toContain('Board created')
+    expect(wrapper.get('[data-toast-id="t2"]').text()).toContain('Network error')
+  })
+
+  it('keeps toasts present at mount and remount out of the polite announcement', async () => {
+    mockToastStore.toasts = [
+      { id: 'existing', message: 'Already visible', type: 'success', duration: 0 },
+    ]
+
+    const firstWrapper = mount(ToastContainer)
+    await nextTick()
+    expect(firstWrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+
+    firstWrapper.unmount()
+    const remountedWrapper = mount(ToastContainer)
+    await nextTick()
+    expect(remountedWrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+    remountedWrapper.unmount()
+  })
+
+  it('announces only a non-error toast added after mount', async () => {
+    const wrapper = mount(ToastContainer)
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+
+    mockToastStore.toasts = [
+      { id: 'new-success', message: 'Capture saved to inbox', type: 'success', duration: 0 },
+      { id: 'new-error', message: 'Network error', type: 'error', duration: 0 },
+    ]
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(announcer.text()).toBe('Capture saved to inbox')
+    const errorToast = wrapper.get('[role="alert"]')
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
+    expect(wrapper.get('.bg-green-50').attributes('role')).toBeUndefined()
+    wrapper.unmount()
   })
 
   it('keeps error cards assertive while visible non-error cards stay out of live regions', () => {

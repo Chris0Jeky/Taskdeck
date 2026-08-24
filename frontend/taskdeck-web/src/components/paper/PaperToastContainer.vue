@@ -33,12 +33,21 @@ const { t } = useI18n()
 const expanded = reactive<Record<string, boolean>>({})
 const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
 const politeAnnouncement = ref('')
+let initialToastIds: Set<string> | null = null
 
 watch(
   () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
   async (current, previous) => {
+    if (initialToastIds === null) {
+      initialToastIds = new Set(current.map(({ id }) => id))
+      return
+    }
+
     const previousIds = new Set((previous ?? []).map(({ id }) => id))
-    const added = current.filter(({ id, type }) => type !== 'error' && !previousIds.has(id))
+    const added = current.filter(
+      ({ id, type }) =>
+        type !== 'error' && !previousIds.has(id) && !initialToastIds!.has(id),
+    )
 
     if (added.length === 0) {
       if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''

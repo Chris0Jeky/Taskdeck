@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { BoardDetail } from '../../types/board'
 
 let mountedCallback: (() => void) | null = null
 let unmountedCallback: (() => void) | null = null
@@ -21,6 +22,14 @@ const mockRoute = { hash: '', query: {} }
 vi.mock('vue-router', () => ({
   useRoute: () => mockRoute,
   useRouter: () => mockRouter,
+}))
+
+const mockBoardsApi = vi.hoisted(() => ({
+  getBoard: vi.fn<(id: string) => Promise<BoardDetail>>(),
+}))
+
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: mockBoardsApi,
 }))
 
 const mockCaptureStore = {
@@ -75,6 +84,43 @@ function watcherForSource(source: unknown) {
   return watcher!
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function makeBoard(id: string, name: string, columnId: string, columnName: string): BoardDetail {
+  const timestamp = '2026-08-24T00:00:00Z'
+  return {
+    id,
+    name,
+    description: null,
+    isArchived: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    columns: [{
+      id: columnId,
+      boardId: id,
+      name: columnName,
+      position: 0,
+      wipLimit: null,
+      cardCount: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }],
+  }
+}
+
+async function flushAsyncWork() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe('useInboxOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -85,6 +131,7 @@ describe('useInboxOrchestrator', () => {
     mockRoute.query = {}
     mockRouter.push.mockReset()
     mockRouter.replace.mockReset()
+    mockBoardsApi.getBoard.mockReset()
   })
 
   describe('batch selection', () => {
@@ -148,6 +195,74 @@ describe('useInboxOrchestrator', () => {
         name: 'workspace-inbox',
         query: { source: 'capture' },
       })
+    })
+
+    it('keeps B names after an obsolete A metadata success resolves last', async () => {
+      const boardA = deferred<BoardDetail>()
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(boardA.promise)
+        .mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+
+      boardA.resolve(makeBoard('board-a', 'Stale Board A', 'column-a', 'Stale Column A'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+    })
+
+    it('keeps B names after an obsolete A metadata failure resolves last', async () => {
+      const boardA = deferred<BoardDetail>()
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(boardA.promise)
+        .mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+
+      boardA.reject(new Error('obsolete A failed'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+    })
+
+    it('falls back to B ids while loaded A metadata is being replaced', async () => {
+      mockBoardsApi.getBoard.mockResolvedValueOnce(
+        makeBoard('board-a', 'Board A', 'column-a', 'Column A'),
+      )
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board A')
+      expect(orch.activeColumnName.value).toBe('Column A')
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      expect(orch.activeBoardName.value).toBe('board-b')
+      expect(orch.activeColumnName.value).toBe('column-b')
+
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
     })
   })
 

@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import { todayApi, type CadenceApiResponse, type StreakApiResponse } from '../api/todayApi'
 import { logError } from '../utils/errorReporting'
 import type { TodaySummary } from '../types/workspace'
+import { formatCalendarDate } from '../utils/dueDates'
 
 export type DossierLedgerWho = 'you' | 'system'
 export type DossierLedgerTone = 'ember' | 'applied' | 'active' | 'passive' | 'mute'
@@ -115,13 +116,12 @@ function formatUtcTime(iso: string | null): string {
 }
 
 function formatCarryOverDueDate(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return 'overdue'
-  return `due ${new Intl.DateTimeFormat('en-GB', {
+  const formatted = formatCalendarDate(iso, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-  }).format(date)}`
+  }, 'en-GB')
+  return formatted ? `due ${formatted}` : 'overdue'
 }
 
 function mapCadenceResponse(response: CadenceApiResponse): DossierCadence {

@@ -291,9 +291,8 @@ public class TranscriptTriageWorker : BackgroundService
                 return;
             }
 
-            var retryScheduled = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var retryScheduled = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 triageResult.ErrorCode,
                 triageResult.ErrorMessage ?? "Transcript triage failed",
                 ct);
@@ -308,9 +307,8 @@ public class TranscriptTriageWorker : BackgroundService
                 "Unhandled exception triaging transcript queue item {ItemId}. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
-            var scheduledForRetry = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var scheduledForRetry = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 ErrorCodes.UnexpectedError,
                 ex.Message,
                 ct);
@@ -369,6 +367,36 @@ public class TranscriptTriageWorker : BackgroundService
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    /// <summary>
+    /// Records post-triage failures in a fresh scope so a failed proposal/revision save cannot
+    /// leak stale tracked entries into the queue item's failure and retry commits.
+    /// </summary>
+    private async Task<bool> HandleFailureWithRetryInFreshScopeAsync(
+        Guid itemId,
+        string? errorCode,
+        string errorMessage,
+        CancellationToken ct)
+    {
+        using var failureScope = _scopeFactory.CreateScope();
+        var failureUnitOfWork = failureScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var failureItem = await failureUnitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (failureItem == null || failureItem.Status != RequestStatus.Processing)
+        {
+            _logger.LogWarning(
+                "Transcript queue item {ItemId} could not record triage failure because its current status is {Status}",
+                itemId,
+                failureItem?.Status.ToString() ?? "missing");
+            return false;
+        }
+
+        return await HandleFailureWithRetryAsync(
+            failureUnitOfWork,
+            failureItem,
+            errorCode,
+            errorMessage,
+            ct);
     }
 
     private bool IsTransientFailure(string? errorCode)

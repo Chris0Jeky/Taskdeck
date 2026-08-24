@@ -103,6 +103,7 @@ public class ProposalRevisionServiceTests
     public async Task CreateRevisionAsync_Succeeds_WhenOperationsAreStructurallyValid()
     {
         var proposal = CreatePendingProposal();
+        var originalUpdatedAt = proposal.UpdatedAt;
         _proposals
             .Setup(repo => repo.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
@@ -125,7 +126,60 @@ public class ProposalRevisionServiceTests
         var result = await _service.CreateRevisionAsync(dto);
 
         result.IsSuccess.Should().BeTrue();
+        proposal.UpdatedAt.Should().Be(originalUpdatedAt, "ordinary reviewer revisions keep their existing commit semantics");
         _revisions.Verify(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRevisionWithPendingCommitGuardAsync_AdvancesProposalConcurrencyToken()
+    {
+        var proposal = CreatePendingProposal();
+        var originalUpdatedAt = proposal.UpdatedAt;
+        SetupSuccessfulSave(proposal);
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload((sequence: 0, parameters: "{}")),
+            "Recover interrupted capture metadata");
+
+        var result = await _service.CreateRevisionWithPendingCommitGuardAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.UpdatedAt.Should().BeAfter(originalUpdatedAt);
+        _unitOfWork.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRevisionWithPendingCommitGuardAsync_ReturnsConflict_WhenProposalWasDecidedConcurrently()
+    {
+        var proposal = CreatePendingProposal();
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload((sequence: 0, parameters: "{}")),
+            "Recover interrupted capture metadata");
+        _proposals
+            .Setup(repo => repo.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _revisions
+            .Setup(repo => repo.GetNextRevisionNumberAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _revisions
+            .Setup(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision revision, CancellationToken _) => revision);
+        _unitOfWork
+            .Setup(unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DomainException(
+                ErrorCodes.Conflict,
+                "Record was updated by another session. Refresh and retry your action."));
+
+        var result = await _service.CreateRevisionWithPendingCommitGuardAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("another session");
     }
 
     [Fact]

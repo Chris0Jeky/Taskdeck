@@ -412,6 +412,50 @@ public class LlmQueueToProposalWorkerTests
         triageService.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessBatch_CaptureRetryAfterProposalCrash_ReplaysTheSamePayloadToTheSameProposal()
+    {
+        // The proposal may have committed before the capture provenance/status save crashes. The
+        // worker owns re-claiming the capture; CaptureTriageService owns reconciling that replay to
+        // the one existing proposal. This pins the handoff: no new capture payload is invented and
+        // a second worker pass can complete against the recovered proposal identity.
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var existingProposalId = Guid.NewGuid();
+        var triageRunId = Guid.NewGuid();
+        var attempt = 0;
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) =>
+            {
+                attempt++;
+                if (attempt == 1)
+                    throw new InvalidOperationException("proposal persisted before provenance stamp");
+
+                return Result.Success(new CaptureTriageProposalResultDto(
+                    captureItemId,
+                    triageRunId,
+                    existingProposalId,
+                    1,
+                    "triage.v1",
+                    "deterministic-extractor",
+                    "capture-triage-v1"));
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+        item.Status.Should().Be(RequestStatus.Processing, "the interrupted capture is retried in its capture lane");
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        triageService.CallCount.Should().Be(2);
+        triageService.ReceivedPayloads.Should().HaveCount(2);
+        triageService.ReceivedPayloads[1].Should().Be(triageService.ReceivedPayloads[0]);
+    }
+
     #endregion
 
     #region Capture triage: already linked
@@ -453,6 +497,42 @@ public class LlmQueueToProposalWorkerTests
         await InvokeProcessBatchAsync(worker, CancellationToken.None);
 
         // retryAsProcessing: true means item is reset to Processing, not Pending
+        item.Status.Should().Be(RequestStatus.Processing);
+        item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureTriageConflict_RecordsRetryInFreshScope()
+    {
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    ErrorCodes.Conflict,
+                    "Proposal was decided concurrently");
+            }
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            triageService: triageService,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, capture processing, and fresh failure scopes are expected");
+        var processingUnitOfWork = createdUnitOfWorks[^2];
+        var failureUnitOfWork = createdUnitOfWorks[^1];
+        processingUnitOfWork.SaveChangesTokens.Should().BeEmpty();
+        processingUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse();
+        failureUnitOfWork.SaveChangesTokens.Should().HaveCount(2, "the fresh scope commits Failed and then the capture retry transition");
         item.Status.Should().Be(RequestStatus.Processing);
         item.RetryCount.Should().Be(1);
     }
@@ -1446,6 +1526,7 @@ public class LlmQueueToProposalWorkerTests
     private sealed class FakeCaptureTriageService : ICaptureTriageService
     {
         public int CallCount { get; private set; }
+        public List<CapturePayloadV1> ReceivedPayloads { get; } = [];
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -1457,6 +1538,7 @@ public class LlmQueueToProposalWorkerTests
             CancellationToken cancellationToken = default)
         {
             CallCount++;
+            ReceivedPayloads.Add(payload);
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));

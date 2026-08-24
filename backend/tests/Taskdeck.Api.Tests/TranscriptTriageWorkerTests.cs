@@ -91,11 +91,16 @@ public class TranscriptTriageWorkerTests
     private static ServiceProvider BuildServiceProvider(
         FakeLlmQueueRepository queueRepo,
         FakeCaptureTriageService? triageService = null,
-        ITranscriptRepository? transcriptRepository = null)
+        ITranscriptRepository? transcriptRepository = null,
+        List<FakeUnitOfWork>? createdUnitOfWorks = null)
     {
         var services = new ServiceCollection();
-        var unitOfWork = new FakeUnitOfWork(queueRepo);
-        services.AddSingleton<IUnitOfWork>(unitOfWork);
+        services.AddScoped<IUnitOfWork>(_ =>
+        {
+            var unitOfWork = new FakeUnitOfWork(queueRepo);
+            createdUnitOfWorks?.Add(unitOfWork);
+            return unitOfWork;
+        });
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
         services.AddSingleton<ITranscriptRepository>(transcriptRepository ?? CreateTranscriptRepositoryMock().Object);
         return services.BuildServiceProvider();
@@ -485,6 +490,41 @@ public class TranscriptTriageWorkerTests
 
         // Transcript retries are ALWAYS re-queued as Processing (never Pending): the transcript
         // lane only ever reads Processing rows, so a Pending retry would strand forever.
+        item.Status.Should().Be(RequestStatus.Processing);
+        item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_TriageConflict_RecordsRetryOutsidePoisonedProcessingScope()
+    {
+        var item = CreateTranscriptTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                createdUnitOfWorks[^1].Poisoned = true;
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    ErrorCodes.Conflict,
+                    "Proposal was decided concurrently");
+            }
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            triageService,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        var processingUnitOfWork = createdUnitOfWorks.Should().ContainSingle(unitOfWork => unitOfWork.Poisoned).Which;
+        var failureUnitOfWork = createdUnitOfWorks[^1];
+        failureUnitOfWork.Should().NotBeSameAs(processingUnitOfWork);
+        processingUnitOfWork.SuccessfulSaveCount.Should().Be(1, "only the pre-triage transcript/link save belongs to the processing scope");
+        failureUnitOfWork.SuccessfulSaveCount.Should().Be(2, "the fresh scope commits Failed and then the transcript retry transition");
         item.Status.Should().Be(RequestStatus.Processing);
         item.RetryCount.Should().Be(1);
     }
@@ -948,8 +988,17 @@ public class TranscriptTriageWorkerTests
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;
 
+        public bool Poisoned { get; set; }
+        public int SuccessfulSaveCount { get; private set; }
+
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(0);
+        {
+            if (Poisoned)
+                throw new DomainException(ErrorCodes.Conflict, "The processing context is tainted by a concurrency failure");
+
+            SuccessfulSaveCount++;
+            return Task.FromResult(0);
+        }
 
         public Task CheckpointWalAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 

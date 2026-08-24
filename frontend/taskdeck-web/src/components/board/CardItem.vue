@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { Card, Column } from '../../types/board'
+import { formatCalendarDate, isCalendarDateOverdue } from '../../utils/dueDates'
 
 const props = defineProps<{
   card: Card
@@ -74,14 +75,11 @@ function handleDragHandleMouseDown() {
 }
 
 function formatDate(dateString: string | null): string {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  return date.toLocaleDateString()
+  return formatCalendarDate(dateString)
 }
 
 function isOverdue(dateString: string | null): boolean {
-  if (!dateString) return false
-  return new Date(dateString) < new Date()
+  return isCalendarDateOverdue(dateString)
 }
 </script>
 

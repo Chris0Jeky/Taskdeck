@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEMO_ONBOARDING,
   buildDemoBoardList,
@@ -7,8 +7,14 @@ import {
   buildDemoTodaySummary,
   buildDemoCaptureItems,
 } from '../../utils/demoData'
+import { toCalendarDateKey } from '../../utils/dueDates'
 
 describe('demoData', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
   describe('DEMO_ONBOARDING', () => {
     it('has active visibility and the four capture-to-board loop steps', () => {
       expect(DEMO_ONBOARDING.visibility).toBe('active')
@@ -69,6 +75,24 @@ describe('demoData', () => {
     it('includes due-today cards', () => {
       const summary = buildDemoTodaySummary()
       expect(summary.dueTodayCards.length).toBeGreaterThan(0)
+    })
+
+    it.each([
+      ['America/Los_Angeles', '2026-08-24T00:30:00.000Z', '2026-08-23', '2026-08-22'],
+      ['UTC', '2026-08-24T00:30:00.000Z', '2026-08-24', '2026-08-23'],
+      ['Pacific/Kiritimati', '2026-08-24T12:30:00.000Z', '2026-08-25', '2026-08-24'],
+    ])('uses the local calendar day for Today demo buckets in %s', (timeZone, instant, todayKey, yesterdayKey) => {
+      vi.stubEnv('TZ', timeZone)
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(instant))
+
+      const summary = buildDemoTodaySummary()
+
+      expect(summary.dueTodayCards.length).toBeGreaterThan(0)
+      expect(summary.dueTodayCards.every(card => toCalendarDateKey(card.dueDate) === todayKey)).toBe(true)
+      expect(summary.dueTodayCards.every(card => card.dueDate === `${todayKey}T00:00:00.000Z`)).toBe(true)
+      expect(summary.overdueCards).toHaveLength(1)
+      expect(toCalendarDateKey(summary.overdueCards[0].dueDate)).toBe(yesterdayKey)
     })
   })
 
