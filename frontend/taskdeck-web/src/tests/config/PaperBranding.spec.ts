@@ -12,6 +12,7 @@ const mainTs = readFileSync(resolve(projectRoot, 'src/main.ts'), 'utf8')
 const paperFonts = readFileSync(resolve(projectRoot, 'src/paper-fonts.css'), 'utf8')
 const viteConfig = readFileSync(resolve(projectRoot, 'vite.config.ts'), 'utf8')
 const favicon = readFileSync(resolve(projectRoot, 'public/favicon.svg'), 'utf8')
+const pagesWorkflow = readFileSync(resolve(repoRoot, '.github/workflows/pages-frontend.yml'), 'utf8')
 const packageJson = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf8'))
 const packageLock = JSON.parse(readFileSync(resolve(projectRoot, 'package-lock.json'), 'utf8'))
 const materialSymbolsRoot = resolve(projectRoot, 'node_modules/@material-symbols/font-400')
@@ -115,6 +116,32 @@ describe('Paper branding assets', () => {
       /https?:\/\/fonts\.(?:googleapis|gstatic)\.com/i,
     )
     expect(viteConfig).not.toContain('google-fonts-stylesheets')
+  })
+
+  it('ships the Material Symbols licence with the GitHub Pages artifact', () => {
+    const licensePath = 'LICENSES/Apache-2.0-material-symbols-font-400.txt'
+    const pagesLicensePath = `frontend/taskdeck-web/dist/${licensePath}`
+    const pushTrigger = pagesWorkflow.slice(
+      pagesWorkflow.indexOf('  push:'),
+      pagesWorkflow.indexOf('  workflow_dispatch:'),
+    )
+    const licenseStepAt = pagesWorkflow.indexOf('- name: Include Material Symbols licence')
+    const copyAt = pagesWorkflow.indexOf('cp "$source" "$destination"')
+    const compareAt = pagesWorkflow.indexOf('cmp -s "$source" "$destination"')
+    const configureAt = pagesWorkflow.indexOf('- name: Configure GitHub Pages')
+    const uploadAt = pagesWorkflow.indexOf('- name: Upload Pages artifact')
+
+    expect(pushTrigger).toContain(`      - ${licensePath}`)
+    expect(pagesWorkflow).toContain(`source="${licensePath}"`)
+    expect(pagesWorkflow).toContain(`destination="${pagesLicensePath}"`)
+    expect(pagesWorkflow).toContain('mkdir -p "frontend/taskdeck-web/dist/LICENSES"')
+    expect(pagesWorkflow).toContain('cp "$source" "$destination"')
+    expect(pagesWorkflow).toContain('cmp -s "$source" "$destination"')
+    expect(licenseStepAt).toBeGreaterThan(-1)
+    expect(copyAt).toBeGreaterThan(licenseStepAt)
+    expect(compareAt).toBeGreaterThan(copyAt)
+    expect(configureAt).toBeGreaterThan(compareAt)
+    expect(uploadAt).toBeGreaterThan(configureAt)
   })
 
   it('uses Paper branding for favicon and install metadata', () => {
