@@ -52,8 +52,8 @@ not issue closure or feature count.
 - The MCP server exposes **no approve or apply tool**; agents cannot approve their own work.
 
 **Future direction (recorded in [ADR-0057](../decisions/ADR-0057-user-sovereign-delegated-authority.md),
-Status: Proposed — not in force):** the trust invariant generalises from "every automation write
-needs manual review" to:
+Status: Accepted 2026-08-24 as direction with an explicit openness caveat — no implementation is in
+force):** the trust invariant generalises from "every automation write needs manual review" to:
 
 > **Automation may act only within explicit, user-created delegated authority. Every action remains
 > attributable, inspectable, bounded, and recoverable where practical. Manual review is the default
@@ -63,9 +63,11 @@ Separation of duties is preserved even under full autonomy: an agent submits an 
 Taskdeck **policy engine** — not the proposing agent — evaluates it against a user-created grant and
 records the approval decision; the execution service applies exactly the authorised bundle; the
 audit trail records proposing principal, policy version, approving authority, operations, result,
-and receipt. Agents never self-approve; the user-authorised policy does. Until ADR-0057 is
-Accepted, GP-06, ADR-0003, ADR-0056, and the current MCP tool boundary remain fully operative, and
-no auto-approval surface may be built.
+and receipt. Agents never self-approve; the user-authorised policy does. ADR-0057's acceptance
+ratified this direction only: GP-06, ADR-0003, ADR-0056, and the current MCP tool boundary remain
+fully operative, and no auto-approval surface may be built until an implementation slice is
+separately gated behind its own issues (earliest v0.3), with the ADR's provisions expected to be
+re-derived from real dogfooding/beta evidence first.
 
 ## 4. Product principles (proposed for ratification)
 
