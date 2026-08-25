@@ -42,9 +42,11 @@ framing (adaptive work OS destination · context-to-action engine · transcripts
 release-theme ladder (v0.1.x Honest Windows Beta → v0.2 Coherent Context-to-Action Loop → v0.3 Open Beta +
 Accountable Agents → v0.4 Every Artefact) — are owned by **`docs/strategy/PRODUCT_DIRECTION.md`**, which is now
 the canonical strategy spine. ADR-0044 and `docs/REVIVAL_PLAN.md` remain the execution authority described
-above; `docs/STATUS.md` remains shipped reality. **ADR-0057 (user-sovereign delegated authority) is `Proposed`
-and NOT in force** — the shipped trust model is unchanged and remains review-first (ADR-0003 / GP-06 /
-ADR-0056). Do not plan, implement, or describe delegated agent authority as current behaviour.
+above; `docs/STATUS.md` remains shipped reality. **ADR-0057 (user-sovereign delegated authority) is `Accepted`
+as direction (2026-08-24, with an explicit openness caveat) and NOT in force as implementation** — the shipped
+trust model is unchanged and remains review-first (ADR-0003 / GP-06 / ADR-0056), and no auto-approval surface
+may be built until separately gated. Do not plan, implement, or describe delegated agent authority as current
+behaviour.
 
 ## Direction (2026-06-13, superseded 2026-07-10): finish-for-personal-use → archive
 

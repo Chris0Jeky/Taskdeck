@@ -15,7 +15,8 @@ work OS destination, context-to-action engine, transcripts/notes/captures wedge)
 autonomous-admission lane for acceptance-ready tracked backlog while keeping new product surfaces
 inside the plan/ADR boundary. The 2026-06-13 archive pivot is superseded (archive remains only the
 checkpoint fallback). Shipped trust model stays review-first (ADR-0003/GP-06/ADR-0056); the
-delegated-autonomy future is ADR-0057, **Proposed only**.
+delegated-autonomy future is ADR-0057, **Accepted as direction only (2026-08-24, openness
+caveat) — no implementation is in force or buildable without its own separate gate**.
 
 ## Orient (do NOT bulk-read the big docs)
 
