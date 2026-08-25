@@ -3,7 +3,10 @@
 > **External code contributions are paused (maintainer decision, 2026-08-24).** The maintainer is
 > evaluating the project's long-term licensing, including the possibility that future versions —
 > or a product derived from this codebase — are offered under a commercial/proprietary license.
-> Until that is settled and stated here, unsolicited pull requests will be closed without review.
+> Until that is settled and stated here, **all external code pull requests — solicited or not,
+> issue-backed or not — will be closed without review**; no exception is implied by any
+> contribution-process text below, which is retained for the maintainer's own workflow and for a
+> possible future reopening.
 > **Issues and bug reports remain welcome.** Existing releases keep their stated licenses (see
 > [LICENSING.md](LICENSING.md)); the decision record and the supporting contribution audit live on
 > [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012).
@@ -307,6 +310,9 @@ through the internal canonical review pipeline.
 ---
 
 ## Good First Issues
+
+> **Note:** while the contributions pause at the top of this file is in effect, these labels are
+> for the maintainer's own prioritization — an external PR against them will still be closed.
 
 New to the repo? Start here:
 

@@ -1,6 +1,6 @@
 # Taskdeck Product Direction
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-25
 
 **Status: ACTIVE — the canonical current strategy document.**
 **Authority:** this file owns the product identity, direction, and release-theme ladder. The active
@@ -98,7 +98,7 @@ an Accepted ADR today, the ADR wins.
 
 | Horizon | Theme | Content | Label |
 |---|---|---|---|
-| **v0.1.x** | **Honest Windows Beta** | v0.1.0 and v0.1.1 are shipped facts. v0.1.2 (open milestone) = the `#1876` double-click/startup correction plus the open Priority I tranche, PR-only, maintainer deck acceptance before any tag (walkthrough q-3, 2026-08-23). Windows stays the only supported desktop claim through v0.1.x; macOS is the next platform proof. | COMMITTED |
+| **v0.1.x** | **Honest Windows Beta** | v0.1.0, v0.1.1, and v0.1.2 are shipped facts (v0.1.2 tagged 2026-08-25 at `9766edbb5` under the maintainer's accepted release deck; milestone closed, residuals re-milestoned to v0.2). Windows stays the only supported desktop claim through v0.1.x; macOS is the next platform proof. | COMMITTED |
 | **v0.2** | **Coherent Context-to-Action Loop** | The former "Transcript Engine" scope (largely shipped: LLM transcript triage, durable transcripts, evidence spans) widened to one coherent loop: capture integrity (no silently dropped fields), grounded chat that always yields a proposal or an explicit inability, evidence/inference inspection and correction, review legibility, guided daily journey, and a victory/progress export candidate. | LEANING |
 | **v0.3** | **Open Beta + Accountable Agents** | The REVIVAL Phase-3 launch (slimmed surface, packaged MCP, feedback channel) plus the first accountable-agent proof: scoped credentials, attribution, stdio + one local HTTP path release-quality. Small-team collaboration proof (trusted shared instance, macOS golden path) begins here and completes post-launch. | LEANING |
 | **v0.4** | **Every Artefact, Everyone** | ADR-0046 generalist expansion, unchanged (tracker `#1327`). | POLICY |
@@ -110,9 +110,12 @@ to make documentation agree.
 ## 6. Direction guardrails (what this document does NOT change)
 
 - **Licence:** the core is GPL-3.0-only (ADR-0050, `LICENSING.md`). The maintainer's exploratory
-  interest in a proprietary future is an **open commercial decision**, not policy; it requires a
-  copyright/contribution audit and a deliberate decision record before anything changes. Tracked as
-  a decision issue; nothing in this file alters licence terms or the free boundary.
+  interest in a proprietary future is an **open commercial decision**, not policy. The
+  copyright/contribution audit half was delivered 2026-08-25 (posted on `#2012`: single-human-author
+  history, zero external PRs ever), and **external code contributions are paused** until the
+  possible proprietary future is stated publicly (notice in `CONTRIBUTING.md`); the deliberate
+  business-model choice remains open on `#2012`. Nothing in this file alters licence terms or the
+  free boundary.
 - **Name:** kept (walkthrough q-6, 2026-08-23); remaining legal residuals live on `#1482` gated on
   commercial publicity.
 - **Telemetry:** outbound telemetry stays **off by default, opt-in, instance-UUID-only** (REVIVAL
@@ -129,14 +132,18 @@ to make documentation agree.
 Tracked as `decision`-labelled issues; none may be converted into implementation without an
 explicit maintainer ruling or Accepted ADR:
 
-1. Delegated-authority policy model — ADR-0057 ratification (presets, grants, hierarchy).
-2. Commercial/licensing model (proprietary vs open-core vs managed-service; contribution audit).
-3. Beta Observability Mode telemetry scope (inside `#1308`).
-4. Guided/Advanced/Agent mode disposition and the five-destination information architecture
-   (Today / Inbox / Work / Review / Connections & Settings).
-5. Victory/progress dossier product shape (relation to GEN-07 `#1321`).
-6. The remaining decision-studio advanced questions (38 recorded with provisional recommendations
+1. Commercial/licensing model (proprietary vs open-core vs managed-service). The contribution
+   audit is delivered on `#2012`; the model choice itself remains open.
+2. Beta Observability Mode telemetry scope (inside `#1308`).
+3. Victory/progress dossier product shape (relation to GEN-07 `#1321`).
+4. The remaining decision-studio advanced questions (38 recorded with provisional recommendations
    in the 2026-08-23 master brief); settle the architecture-controlling ones before wide seeding.
+
+Ruled on 2026-08-24 (in-session maintainer walkthrough, recorded on the issues) and therefore no
+longer open: **ADR-0057 ratification** (Accepted with an explicit openness caveat — `#2011`;
+review-first stays operative until separately gated implementation) and **the five-destination
+Guided IA + workspace-mode disposition** (IA adopted, agent mode kept for now — `#2013`;
+`#1936`/`#1940`-residual/`#1946` execute under it, `#1972` re-scoped).
 
 ## 8. Related documents
 

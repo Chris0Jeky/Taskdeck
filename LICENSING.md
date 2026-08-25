@@ -1,6 +1,6 @@
 # Taskdeck licensing policy
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-25
 
 Taskdeck's open-source core is distributed under the GNU General Public
 License version 3 only (`GPL-3.0-only`). The complete terms are in
@@ -23,7 +23,8 @@ whole under MIT as an alternative to GPL-3.0-only.
 
 Modified distributions of the GPL-covered Taskdeck core must remain under
 GPLv3 and provide corresponding source as the licence requires. **External
-code contributions are currently paused** (see the notice in
+code contributions are currently paused** (maintainer decision effective
+2026-08-24; see the notice in
 [CONTRIBUTING.md](CONTRIBUTING.md) and issue `#2012`); while they were
 accepted, contributions to the core came in under the same GPL-3.0-only terms
 (inbound equals outbound), and any future reopening will first state the
