@@ -151,7 +151,7 @@ Guided IA + workspace-mode disposition** (IA adopted, agent mode kept for now �
 
 - `docs/REVIVAL_PLAN.md` — active execution plan (waves, issue map, ship gates)
 - `docs/decisions/ADR-0044-revival-pivot-open-beta.md` — the open-beta pivot (Accepted)
-- `docs/decisions/ADR-0057-user-sovereign-delegated-authority.md` — future trust model (Proposed)
+- `docs/decisions/ADR-0057-user-sovereign-delegated-authority.md` — future trust model (Accepted as direction 2026-08-24, openness caveat; no implementation in force)
 - `docs/GOLDEN_PRINCIPLES.md` — repository invariants (GP-06 remains operative)
 - `docs/STATUS.md` — shipped reality; `docs/IMPLEMENTATION_MASTERPLAN.md` — roadmap detail
 - `docs/strategy/00_MASTER_STRATEGY.md` … `04_MOBILE_STRATEGY.md` — historical, superseded

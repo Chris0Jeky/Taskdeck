@@ -12,7 +12,7 @@ Stable reference material belongs in topical subfolders.
 - `IMPLEMENTATION_MASTERPLAN.md`
   - Delivery history, the revival direction (free open beta → commercial horizon, ADR-0044), and the priority-labeled backlog map. *(The forward "horizons" / "release framing" / priority tranches are historical pre-pivot framing; the active sequence is `REVIVAL_PLAN.md`.)*
 - `strategy/PRODUCT_DIRECTION.md`
-  - **The canonical current strategy document** (2026-08-23): three-layer product identity (adaptive work OS destination · context-to-action engine · transcripts/notes/captures wedge), trust-model reconciliation (shipped review-first vs the Proposed ADR-0057 delegated-authority direction), release-theme ladder, and the open decision surfaces.
+  - **The canonical current strategy document** (2026-08-23): three-layer product identity (adaptive work OS destination · context-to-action engine · transcripts/notes/captures wedge), trust-model reconciliation (shipped review-first vs the ADR-0057 delegated-authority direction — Accepted 2026-08-24 as direction only, no implementation in force), release-theme ladder, and the open decision surfaces.
 - `REVIVAL_PLAN.md`
   - The active execution plan (2026-07-10 revival pivot, ADR-0044; direction now owned by `strategy/PRODUCT_DIRECTION.md`): business posture, phased waves with completion conditions, the v0.1 ship gate, the issue map, and the traction checkpoint.
 - `PROJECT_TRAJECTORY.md`
