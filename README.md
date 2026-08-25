@@ -182,7 +182,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-PRs are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), pick or open an issue before a larger change, keep the scope focused, and include verification evidence. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
+External code contributions are currently paused while the project's long-term licensing — including a possible commercial/proprietary future — is evaluated; see the notice at the top of [CONTRIBUTING.md](CONTRIBUTING.md) and [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012). Issues and bug reports are welcome. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 

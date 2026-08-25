@@ -1,6 +1,6 @@
 # v0.1.1 Windows Startup Incident And Recovery Checkpoint
 
-- Status: implementation resolved (`#1876`, PR `#2016`, merge `909e33f9`); v0.1.2 remains unreleased
+- Status: fully resolved — implementation merged (`#1876`, PR `#2016`, merge `909e33f9`) and **shipped in the public v0.1.2 release (tagged 2026-08-25 at `9766edbb5` under the maintainer's accepted release deck)**
 - Recorded: 2026-08-22
 - Resolved on main: 2026-08-23
 - Public release: [`v0.1.1`](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.1.1)
@@ -25,9 +25,9 @@ At incident time, a temporary compatibility launch of the unchanged public execu
 the persistent non-secret user provider selector was changed explicitly from Gemini to OpenAI; all
 credential-bearing Gemini and OpenAI variables remained present and were not read, copied, printed,
 or deleted. The permanent correction is now merged on main at `909e33f9`, after full backend tests,
-review, and exact-head hosted CI. It is not a public v0.1.2 artifact: no v0.1.2 tag or release exists,
-and the live milestone, final exact-main candidate evidence, and maintainer release-deck acceptance
-still gate any tag.
+review, and exact-head hosted CI. *(Updated 2026-08-25: the correction is now in the public v0.1.2
+artifact — the maintainer accepted the release deck on 2026-08-24 and tag `v0.1.2` at `9766edbb5`
+shipped with all four tag workflows green; see `docs/STATUS.md`, "v0.1.2 SHIPPED".)*
 
 ## What the user saw
 
