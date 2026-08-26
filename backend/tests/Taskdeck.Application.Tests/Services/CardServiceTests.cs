@@ -51,6 +51,7 @@ public class CardServiceTests
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var dto = new CreateCardDto(board.Id, column.Id, "New Card", "Description", null, null);
+        var originalConcurrencyToken = board.ConcurrencyToken;
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
             .ReturnsAsync(board);
@@ -73,6 +74,7 @@ public class CardServiceTests
         result.Value.Title.Should().Be("New Card");
         result.Value.BoardId.Should().Be(board.Id);
         result.Value.ColumnId.Should().Be(column.Id);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -374,6 +376,7 @@ public class CardServiceTests
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Original Title");
         var newDueDate = DateTimeOffset.UtcNow.AddDays(7);
+        var originalConcurrencyToken = board.ConcurrencyToken;
 
         var dto = new UpdateCardDto(
             Title: "Updated Title",
@@ -386,6 +389,7 @@ public class CardServiceTests
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
 
         // Act
         var result = await _service.UpdateCardAsync(card.Id, dto);
@@ -395,6 +399,7 @@ public class CardServiceTests
         card.Title.Should().Be("Updated Title");
         card.Description.Should().Be("Updated Description");
         card.DueDate.Should().Be(newDueDate);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -687,11 +692,13 @@ public class CardServiceTests
         var targetColumn = TestDataBuilder.CreateColumn(board.Id, "In Progress", position: 1);
 
         var card = TestDataBuilder.CreateCard(board.Id, sourceColumn.Id, "Task", position: 0);
+        var originalConcurrencyToken = board.ConcurrencyToken;
 
         var dto = new MoveCardDto(targetColumn.Id, 0);
 
         _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default))
             .ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default))
             .ReturnsAsync(targetColumn);
         _cardRepoMock.Setup(r => r.GetByColumnIdAsync(targetColumn.Id, default))
@@ -704,6 +711,7 @@ public class CardServiceTests
         result.IsSuccess.Should().BeTrue();
         card.ColumnId.Should().Be(targetColumn.Id);
         card.Position.Should().Be(0);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -1030,15 +1038,18 @@ public class CardServiceTests
         var board = TestDataBuilder.CreateBoard();
         var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
         var card = TestDataBuilder.CreateCard(board.Id, column.Id, "Task");
+        var originalConcurrencyToken = board.ConcurrencyToken;
 
         _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id, default))
             .ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
 
         // Act
         var result = await _service.DeleteCardAsync(card.Id);
 
         // Assert
         result.IsSuccess.Should().BeTrue();
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _cardRepoMock.Verify(r => r.DeleteAsync(card, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }

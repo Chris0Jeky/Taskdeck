@@ -25,6 +25,10 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.IsArchived)
             .IsRequired();
 
+        builder.Property(b => b.ConcurrencyToken)
+            .IsRequired()
+            .IsConcurrencyToken();
+
         builder.Property(b => b.OwnerId);
 
         builder.Property(b => b.CreatedAt)

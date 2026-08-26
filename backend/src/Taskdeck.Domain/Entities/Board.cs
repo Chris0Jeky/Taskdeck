@@ -29,6 +29,7 @@ public class Board : Entity
     public string? Description { get; private set; }
     public bool IsArchived { get; private set; }
     public Guid? OwnerId { get; private set; }
+    public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
 
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
     public IReadOnlyCollection<Card> Cards => _cards.AsReadOnly();
@@ -56,7 +57,7 @@ public class Board : Entity
         if (description != null)
             SetDescription(description);
 
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     private void SetDescription(string? description)
@@ -70,13 +71,13 @@ public class Board : Entity
     public void Archive()
     {
         IsArchived = true;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void Unarchive()
     {
         IsArchived = false;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void TransferOwnership(Guid newOwnerId)
@@ -85,7 +86,22 @@ public class Board : Entity
             throw new DomainException(ErrorCodes.ValidationError, "New owner ID cannot be empty");
 
         OwnerId = newOwnerId;
+        TouchAndAdvanceConcurrencyToken();
+    }
+
+    /// <summary>
+    /// Records a card mutation as a board-level concurrent write. This makes an archive and a
+    /// card write mutually exclusive when either was based on a stale board state.
+    /// </summary>
+    public void RecordCardMutation()
+    {
+        TouchAndAdvanceConcurrencyToken();
+    }
+
+    private void TouchAndAdvanceConcurrencyToken()
+    {
         Touch();
+        ConcurrencyToken = Guid.NewGuid();
     }
 
     // Navigation properties management (called by infrastructure)
