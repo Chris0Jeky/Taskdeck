@@ -158,7 +158,13 @@ public class DataExportService : IDataExportService
                     c.CreatedAt,
                     c.BoardId,
                     payload.Provenance,
-                    payload.Disposition);
+                    payload.Disposition is null
+                        ? null
+                        : new UserDataExportCaptureDispositionDto(
+                            payload.Disposition.Kind.ToString(),
+                            payload.Disposition.At,
+                            payload.Disposition.ByUserId,
+                            payload.Disposition.BoardId));
             }).ToList();
 
             var exportProposals = proposals.Select(p => new UserDataExportProposalDto(

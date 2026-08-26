@@ -340,7 +340,7 @@ public class DataExportServiceTests
         exported.BoardId.Should().Be(boardId);
         exported.Provenance.Should().NotBeNull();
         exported.Disposition.Should().NotBeNull();
-        exported.Disposition!.Kind.Should().Be(CaptureDisposition.Kept);
+        exported.Disposition!.Kind.Should().Be(nameof(CaptureDisposition.Kept));
         exported.Disposition.ByUserId.Should().Be(_userId);
     }
 

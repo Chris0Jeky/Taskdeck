@@ -73,7 +73,13 @@ public record UserDataExportCaptureDto(
     DateTimeOffset CreatedAt,
     Guid? BoardId = null,
     CaptureProvenanceV1? Provenance = null,
-    CaptureDispositionV1? Disposition = null);
+    UserDataExportCaptureDispositionDto? Disposition = null);
+
+public record UserDataExportCaptureDispositionDto(
+    string Kind,
+    DateTimeOffset At,
+    Guid ByUserId,
+    Guid? BoardId = null);
 
 public record UserDataExportProposalDto(
     Guid Id,
