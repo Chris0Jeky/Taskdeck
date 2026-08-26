@@ -296,7 +296,7 @@ describe('PaperReviewView', () => {
       'After · applied',
     )
     expect(appliedChange.get('.paper-review-change__before-body').text()).toContain(
-      'Recorded 1 proposal operations.',
+      'Recorded 1 proposal operation.',
     )
     expect(appliedChange.text()).not.toContain('before applying')
     appliedWrapper.unmount()
@@ -334,7 +334,7 @@ describe('PaperReviewView', () => {
     )
 
     expect(appliedWrapper.get('.paper-review-change__before-body').text()).toBe(
-      'Recorded 1 proposal operations.',
+      'Recorded 1 proposal operation.',
     )
     // Prospective leads must not survive anywhere on a settled record's surface: a record filed
     // under "Before · recorded" that still says "ready for approval" is the defect itself.

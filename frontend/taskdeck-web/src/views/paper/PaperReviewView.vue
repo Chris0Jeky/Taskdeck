@@ -691,7 +691,7 @@ const before = computed<ChangeBeforeCard>(() => {
   // (#2117 — the residual left by #2101, whose applied copy was unreachable on API-shaped
   // payloads). Pending records are unchanged and still prefer the backend's impact summary.
   const body = activeAppliedProposal.value
-    ? t('review.change.before.bodyApplied', { count: operationCount })
+    ? t('review.change.before.bodyApplied', { count: operationCount }, operationCount)
     : (activeProposal.value?.presentation?.impactSummary ??
       t('review.change.before.bodyFallback', { count: operationCount }))
 

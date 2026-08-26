@@ -201,7 +201,7 @@ export default {
     before: {
       titleFallback: 'Nessuna proposta selezionata',
       bodyFallback: 'Rivedi {count} operazioni della proposta prima di applicare.',
-      bodyApplied: 'Sono state registrate {count} operazioni della proposta.',
+      bodyApplied: 'È stata registrata {count} operazione della proposta. | Sono state registrate {count} operazioni della proposta.',
       meta: '{board} · {source}',
       sourceFallback: 'proposta',
     },

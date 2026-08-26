@@ -253,7 +253,7 @@ export default {
       bodyFallback: 'Review {count} proposal operations before applying.',
       // Primary copy for a settled Applied record, NOT a fallback: it deliberately wins over
       // the backend's prospective `presentation.impactSummary` (#2117).
-      bodyApplied: 'Recorded {count} proposal operations.',
+      bodyApplied: 'Recorded {count} proposal operation. | Recorded {count} proposal operations.',
       meta: '{board} · {source}',
       sourceFallback: 'proposal',
     },
