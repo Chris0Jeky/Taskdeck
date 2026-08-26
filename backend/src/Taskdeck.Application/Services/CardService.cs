@@ -10,6 +10,7 @@ namespace Taskdeck.Application.Services;
 
 public class CardService
 {
+    private const string ArchivedBoardWriteMessage = "Cannot modify cards on an archived board. Restore the board before editing.";
     private readonly IUnitOfWork _unitOfWork;
     private readonly IBoardRealtimeNotifier _realtimeNotifier;
     private readonly IHistoryService? _historyService;
@@ -61,6 +62,8 @@ public class CardService
             var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId, cancellationToken);
             if (board == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
+            if (board.IsArchived)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(dto.ColumnId, cancellationToken);
             if (column == null)
@@ -124,6 +127,11 @@ public class CardService
             var card = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             if (card == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found");
+
+            var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+
             if (dto.ExpectedUpdatedAt.HasValue && dto.ExpectedUpdatedAt.Value != card.UpdatedAt)
             {
                 await LogUpdateConflictAsync(card, dto.ExpectedUpdatedAt.Value, actorUserId, cancellationToken);
@@ -264,6 +272,10 @@ public class CardService
             if (card == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Card with ID {id} not found");
 
+            var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+
             var targetColumn = await _unitOfWork.Columns.GetByIdWithCardsAsync(dto.TargetColumnId, cancellationToken);
             if (targetColumn == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.TargetColumnId} not found");
@@ -385,6 +397,10 @@ public class CardService
         var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
         if (card == null)
             return Result.Failure(ErrorCodes.NotFound, $"Card with ID {id} not found");
+
+        var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
+        if (board?.IsArchived == true)
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
         await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
