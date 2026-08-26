@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-08-19
+Last Updated: 2026-08-26
 
 ## Canonical Status Model
 
@@ -32,9 +32,8 @@ duplicate it. `bug` stays present because the `bug_report` template uses it.
 Priority label rules:
 - Every issue must have exactly one priority label, mirrored in the Project `Priority` field.
 - Current `Priority I`-`V` semantics live in `docs/ops/GITHUB_LABEL_TAXONOMY.md` (urgency within the
-  active direction; the pre-revival tranche meanings are retired). Per the 2026-08-23 walkthrough
-  ruling q-3, the open `Priority I` tranche together with `#1876` defines the `v0.1.2` milestone
-  scope.
+  active direction; release membership is expressed by a milestone, not inferred from every issue at
+  the same priority). The v0.1.2-specific Priority I tranche rule retired when that release shipped.
 
 ## Project Views
 
@@ -203,6 +202,8 @@ Promotion and override rules:
   review, CI, or human-only external-action boundaries.
 
 Evidence of execution:
+
+- 2026-08-26: the dogfooding reconciliation found 46 issue records without a Priority label. Forty-three were closed historical records and received `Priority V`; open `#2075` and `#2078` received `Priority III`; open `#2080` received `Priority II`. A complete 2,053-item apply then synchronized 213 issue/PR Project Priority values and post-apply verification reported zero remaining drift.
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 - 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.

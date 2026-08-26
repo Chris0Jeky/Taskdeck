@@ -1,6 +1,6 @@
 # GitHub Label Taxonomy
 
-Last Updated: 2026-08-23
+Last Updated: 2026-08-26
 
 This file is the canonical description source for repository issue labels. Keep GitHub label
 metadata aligned with this file (`gh label edit <name> --description ... --color ...` works; the
@@ -66,7 +66,7 @@ match it. Priority expresses urgency within the active direction
 (`docs/strategy/PRODUCT_DIRECTION.md`); the ProjectV2 `Status` field (`Pending`/`Now`/`Next`/
 `Blocked`/`Review`/`Done`) expresses scheduling, and milestones express the delivery horizon.
 
-- `Priority I` — Release-blocking or trust-breaking now: active-milestone blockers, data-loss, security, or product-truth defects on the primary path. (Walkthrough q-3, 2026-08-23: the open Priority I tranche defines the v0.1.2 scope together with `#1876`.)
+- `Priority I` — Release-blocking or trust-breaking now: active-milestone blockers, data-loss, security, or product-truth defects on the primary path. Release scope still requires explicit milestone membership.
 - `Priority II` — The active direction's next tranche: wedge capabilities, significant defects, and hardening with near-term user impact.
 - `Priority III` — Valuable but unscheduled: residuals, tech-debt, performance, and depth work admitted when capacity allows.
 - `Priority IV` — Later maturity/deepening; revisited at horizon planning, not during normal admission.

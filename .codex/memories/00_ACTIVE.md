@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-08-24
+Last updated: 2026-08-26
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -20,9 +20,9 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 ## Current Focus Snapshot
 
-**Direction (2026-08-24 checkpoint; ADR-0044 extended by ADR-0046 and ADR-0051):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md`: the ratified REVIVAL/GEN waves remain the product spine, while ADR-0051 permits a bounded autonomous queue of acceptance-ready tracked backlog (maximum four `Now`, eight `Next`) without another owner decision. The v0.1.2 Honest Windows Beta correction is the immediate ship gate; the 2026-06-13 archive pivot remains only the traction-checkpoint fallback, and new product surface still requires plan or Accepted-ADR authority. Merge authority is read live from `.agent-harness/tier.json`; CODEOWNERS is advisory routing rather than a blanket human gate. The project thesis remains unchanged:
+**Direction (2026-08-26 checkpoint; ADR-0044 extended by ADR-0046 and ADR-0051):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md`: the ratified REVIVAL/GEN waves remain the product spine, while ADR-0051 permits a bounded autonomous queue of acceptance-ready tracked backlog (maximum four `Now`, eight `Next`) without another owner decision. v0.1.2 shipped on 2026-08-25; its bounded follow-up is tracked through `#1947` and proposed ADR-0060 through ADR-0062. The 2026-06-13 archive pivot remains only the traction-checkpoint fallback, and new product surface still requires plan or Accepted-ADR authority. Merge authority is read live from `.agent-harness/tier.json`; CODEOWNERS is advisory routing rather than a blanket human gate. The project thesis remains unchanged:
 
-**Delivery checkpoint (2026-08-24, later pass):** exact main is `f45a1fbb021d5bc2cbf8a94c42b52c3818fe15a0`. A six-PR wave merged after the earlier `55dbf6e14` checkpoint:
+**Historical delivery checkpoint (2026-08-24):** exact main was `f45a1fbb021d5bc2cbf8a94c42b52c3818fe15a0`. A six-PR wave merged after the earlier `55dbf6e14` checkpoint:
 
 - `#2072` (`#1949`) — the dead-affordance guard tokenizes opening-tag attributes, so only real Vue event directives count as handler evidence.
 - `#2037` (`#1938`) — persistent receipt controls localized in en/it/es; error toasts assertive, non-error toasts polite, in both skins.
@@ -31,9 +31,9 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 - `#2076` (`#1973`) — archived-board capture and decision history disclosed and reachable read-only. **Closed `#1973`.**
 - `#2073` (`#1967`) — applied proposals render as read-only decision records, reachable from RECENTLY APPLIED and by hash deep link.
 
-Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-tokenization` (`d89bd7cc3`) became `#2072`, and `origin/issue-1967/applied-read-only-detail` (`010021a745`) became `#2073`. Do not publish either again. No v0.1.2 tag or release exists.
+Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-tokenization` (`d89bd7cc3`) became `#2072`, and `origin/issue-1967/applied-read-only-detail` (`010021a745`) became `#2073`. Do not publish either again. v0.1.2 subsequently shipped; refresh live state before using this historical list.
 
-**Open PRs:** `#2079` (`#1992` wrong-verb 405/404 contract) is **maintainer-gated** — its ADR-0059 is `Proposed`, merging is the ruling and closing is the other; never infer it. `#2081` is the canonical-docs reconciliation for this wave.
+**Current continuation:** exact `origin/main` at the 2026-08-26 intake was `ceeb27a6cc11e263d7b13be30579f845468ec8b1`. v0.1.2 is public, ADR-0059 is Accepted, and the dogfooding follow-up is documented in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`. Refresh open PRs and ProjectV2 before acting.
 
 **Exact continuation order:**
 

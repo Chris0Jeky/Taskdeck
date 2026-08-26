@@ -44,7 +44,7 @@ only supported 0.1.x desktop platform.** Download the Windows ZIP and checksum f
 registration, shutdown, backup, and optional OpenAI setup. **Known v0.1.1 limitation:** on a machine
 that previously configured the retired Gemini provider through user-scoped environment variables, the
 app can exit before listening with a misleading port/data-folder error — the workaround is in
-[UPGRADING.md](UPGRADING.md#version-notes) and the fix ships in v0.1.2. The non-Windows archives
+[UPGRADING.md](UPGRADING.md#version-notes); the fix shipped in v0.1.2. The non-Windows archives
 attached to v0.1.0 remain available as historical artifacts; they are not a continuing support promise.
 
 ### 2. Docker
@@ -140,8 +140,7 @@ Shipped now:
 
 Shipped releases and the active roadmap:
 
-- **v0.1.0 "First Light" (2026-08-19) and v0.1.1 (2026-08-21):** shipped — honest public defaults, Paper onboarding, exercised release paths, licensing posture, Windows desktop ZIP;
-- **v0.1.2 (in progress):** the Windows startup correction plus the open Priority I fixes — the Honest Windows Beta;
+- **v0.1.0 "First Light" (2026-08-19), v0.1.1 (2026-08-21), and v0.1.2 (2026-08-25):** shipped; the latest release is the Honest Windows Beta with the Windows startup correction and its bounded trust-fix tranche;
 - **v0.2 Coherent Context-to-Action Loop:** capture integrity, grounded chat outcomes, evidence/inference inspection, review legibility;
 - **v0.3 Open Beta + Accountable Agents:** a slimmer public surface, packaged MCP with scoped keys, the feedback channel, launch.
 
