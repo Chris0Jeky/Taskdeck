@@ -252,6 +252,7 @@ const dialSubline = computed(() =>
       :after="after"
       :fields="fields"
       :sub-title="changeSubTitle"
+      :applied="isAppliedRecord"
     />
 
     <ReviewProvenance

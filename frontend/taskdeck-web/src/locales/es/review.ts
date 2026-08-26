@@ -189,7 +189,9 @@ export default {
     title: 'El cambio',
     subTitle: '{count} operación · {board} | {count} operaciones · {board}',
     beforeEyebrow: 'Antes · hoy',
+    beforeEyebrowApplied: 'Antes · registrado',
     afterEyebrow: 'Después · al aplicar',
+    afterEyebrowApplied: 'Después · aplicado',
     fieldsHeading: 'Cambios por campo',
     tag: {
       new: '· nuevo',
@@ -198,6 +200,7 @@ export default {
     before: {
       titleFallback: 'Ninguna propuesta seleccionada',
       bodyFallback: 'Revisa {count} operaciones de la propuesta antes de aplicar.',
+      bodyAppliedFallback: 'Se registraron {count} operaciones de la propuesta.',
       meta: '{board} · {source}',
       sourceFallback: 'propuesta',
     },

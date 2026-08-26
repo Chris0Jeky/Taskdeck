@@ -686,7 +686,9 @@ const before = computed<ChangeBeforeCard>(() => {
     title: activeProposal.value?.summary ?? t('review.change.before.titleFallback'),
     body:
       activeProposal.value?.presentation?.impactSummary ??
-      t('review.change.before.bodyFallback', {
+      t(activeAppliedProposal.value
+        ? 'review.change.before.bodyAppliedFallback'
+        : 'review.change.before.bodyFallback', {
         count: activeProposal.value?.operations?.length ?? 0,
       }),
     // `source` is the backend's own sourceType wire value when present, so it is

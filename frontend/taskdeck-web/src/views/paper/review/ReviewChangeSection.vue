@@ -33,6 +33,7 @@ defineProps<{
   after: ChangeAfterCard[]
   fields: FieldDiff[]
   subTitle: string
+  applied?: boolean
 }>()
 </script>
 
@@ -47,7 +48,7 @@ defineProps<{
       <div class="paper-review-change__grid">
         <div class="paper-review-change__col paper-review-change__col--before">
           <div class="tk-eyebrow paper-review-change__eyebrow">
-            {{ $t('review.change.beforeEyebrow') }}
+            {{ $t(applied ? 'review.change.beforeEyebrowApplied' : 'review.change.beforeEyebrow') }}
           </div>
           <article class="card paper-review-change__before">
             <div class="tk-serial">{{ before.serial }}</div>
@@ -58,7 +59,7 @@ defineProps<{
         </div>
         <div class="paper-review-change__col paper-review-change__col--after">
           <div class="tk-eyebrow paper-review-change__eyebrow paper-review-change__eyebrow--after">
-            {{ $t('review.change.afterEyebrow') }}
+            {{ $t(applied ? 'review.change.afterEyebrowApplied' : 'review.change.afterEyebrow') }}
           </div>
           <div class="paper-review-change__after-stack">
             <article
