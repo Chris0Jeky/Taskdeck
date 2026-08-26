@@ -9,6 +9,8 @@ import type { ViewportMode } from '../../../composables/useViewportMode'
 const routerMock = { push: vi.fn() }
 const routeMock = reactive({ params: { id: 'board-1' } })
 const mockViewportMode = ref<ViewportMode>('desktop')
+let routeLeaveGuard: (() => boolean | Promise<boolean>) | null = null
+let routeUpdateGuard: (() => boolean | Promise<boolean>) | null = null
 
 function makeColumn(partial: Partial<Column> = {}): Column {
   return {
@@ -95,6 +97,12 @@ const mockBoardStore = reactive({
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
+  onBeforeRouteLeave: (guard: () => boolean | Promise<boolean>) => {
+    routeLeaveGuard = guard
+  },
+  onBeforeRouteUpdate: (guard: () => boolean | Promise<boolean>) => {
+    routeUpdateGuard = guard
+  },
 }))
 
 vi.mock('../../../store/boardStore', () => ({
@@ -105,8 +113,10 @@ vi.mock('../../../composables/useViewportMode', () => ({
   useViewportMode: () => ({ mode: mockViewportMode }),
 }))
 
+const mountedViews: ReturnType<typeof mount>[] = []
+
 function mountView(props: Record<string, unknown> = {}) {
-  return mount(PaperBoardView, {
+  const wrapper = mount(PaperBoardView, {
     attachTo: document.body,
     props,
     global: {
@@ -125,7 +135,13 @@ function mountView(props: Record<string, unknown> = {}) {
       },
     },
   })
+  mountedViews.push(wrapper)
+  return wrapper
 }
+
+afterEach(() => {
+  for (const wrapper of mountedViews.splice(0)) wrapper.unmount()
+})
 
 function makeDragEvent(type: string): DragEvent {
   const event = new Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent
@@ -148,6 +164,9 @@ describe('PaperBoardView', () => {
     mockBoardStore.error = null
     mockBoardStore.loading = false
     mockViewportMode.value = 'desktop'
+    routeMock.params.id = 'board-1'
+    routeLeaveGuard = null
+    routeUpdateGuard = null
     window.localStorage.removeItem('td.paper.board-density.v1')
   })
 
@@ -260,6 +279,63 @@ describe('PaperBoardView', () => {
 
     expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('B')
     expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  it('guards dirty route navigation until discard or cancel is chosen', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const cancelledNavigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await expect(cancelledNavigation).resolves.toBe(false)
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+
+    const allowedNavigation = routeLeaveGuard!()
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await expect(allowedNavigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('guards reused board-route changes while the inspector is dirty', async () => {
+    const wrapper = mountView()
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit(
+      'card-click',
+      cardsByColumn.get('col-backlog')![0],
+    )
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const navigation = routeUpdateGuard!()
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('requests the browser unload confirmation only for a dirty inspector', async () => {
+    const wrapper = mountView()
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit(
+      'card-click',
+      cardsByColumn.get('col-backlog')![0],
+    )
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
   })
 
   it('uses a board-preserving inspector on desktop and keeps the modal fallback on tablet', async () => {

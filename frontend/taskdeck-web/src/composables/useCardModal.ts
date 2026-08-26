@@ -50,6 +50,7 @@ export function useCardModal(options: UseCardModalOptions) {
   const loadedCaptureProvenanceCardId = ref<string | null>(null)
   let loadingCaptureProvenanceCardId: string | null = null
   let provenanceLoadVersion = 0
+  let cardSessionVersion = 0
 
   // Delete state
   const showDeleteConfirm = ref(false)
@@ -105,6 +106,9 @@ export function useCardModal(options: UseCardModalOptions) {
   watch(() => options.getCard(), (newCard, previousCard) => {
     if (newCard) {
       const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
+      if (switchedCards) {
+        cardSessionVersion += 1
+      }
       title.value = newCard.title
       description.value = newCard.description || ''
       dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
@@ -208,22 +212,26 @@ export function useCardModal(options: UseCardModalOptions) {
   async function handleSave() {
     if (!isFormValid.value) return
 
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     try {
-      await boardStore.updateCard(card.value.boardId, card.value.id, {
-        title: title.value !== card.value.title ? title.value : null,
-        description: description.value !== card.value.description ? description.value : null,
+      await boardStore.updateCard(targetCard.boardId, targetCard.id, {
+        title: title.value !== targetCard.title ? title.value : null,
+        description: description.value !== targetCard.description ? description.value : null,
         dueDate: dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null,
-        clearDueDate: Boolean(card.value.dueDate) && !dueDate.value,
-        isBlocked: isBlocked.value !== card.value.isBlocked ? isBlocked.value : null,
+        clearDueDate: Boolean(targetCard.dueDate) && !dueDate.value,
+        isBlocked: isBlocked.value !== targetCard.isBlocked ? isBlocked.value : null,
         blockReason: isBlocked.value ? blockReason.value : null,
         labelIds: selectedLabelIds.value,
         expectedUpdatedAt: expectedUpdatedAt.value,
       })
 
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       options.onUpdated()
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to save card changes. Please try again.')
     }
   }
@@ -268,6 +276,8 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleAddComment(parentCommentId?: string) {
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     const content = parentCommentId
       ? (replyDraftByParent.value[parentCommentId] ?? '').trim()
       : newCommentContent.value.trim()
@@ -277,18 +287,22 @@ export function useCardModal(options: UseCardModalOptions) {
     }
 
     try {
-      await boardStore.createCardComment(card.value.boardId, card.value.id, {
+      await boardStore.createCardComment(targetCard.boardId, targetCard.id, {
         content,
         parentCommentId: parentCommentId ?? null,
       })
 
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       if (parentCommentId) {
-        replyDraftByParent.value[parentCommentId] = ''
-      } else {
+        if ((replyDraftByParent.value[parentCommentId] ?? '').trim() === content) {
+          replyDraftByParent.value[parentCommentId] = ''
+        }
+      } else if (newCommentContent.value.trim() === content) {
         newCommentContent.value = ''
       }
     } catch (error) {
       logError('Failed to add comment:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to add comment. Please try again.')
     }
   }
@@ -308,18 +322,31 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleSaveEditComment(commentId: string) {
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     const content = editingCommentContent.value.trim()
     if (!content) {
       return
     }
 
     try {
-      await boardStore.updateCardComment(card.value.boardId, card.value.id, commentId, { content })
-      handleCancelEditComment()
+      await boardStore.updateCardComment(targetCard.boardId, targetCard.id, commentId, { content })
+      if (
+        isCurrentCardSession(targetCard.id, targetSessionVersion) &&
+        editingCommentId.value === commentId &&
+        editingCommentContent.value.trim() === content
+      ) {
+        handleCancelEditComment()
+      }
     } catch (error) {
       logError('Failed to update comment:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to update comment. Please try again.')
     }
+  }
+
+  function isCurrentCardSession(cardId: string, sessionVersion: number): boolean {
+    return cardSessionVersion === sessionVersion && card.value.id === cardId
   }
 
   function handleDeleteComment(comment: CardComment) {
@@ -388,6 +415,7 @@ export function useCardModal(options: UseCardModalOptions) {
     loadedCaptureProvenanceCardId.value = null
     loadingCaptureProvenanceCardId = null
     provenanceLoadVersion += 1
+    cardSessionVersion += 1
   })
 
   return {
