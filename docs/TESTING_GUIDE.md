@@ -78,7 +78,7 @@ Explorer/SmartScreen acceptance remain unverified.
   governance, and diff hygiene cover the static seam. The separate packaged
   `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
-## 2026-08-24 to 2026-08-26 v0.1.2 Priority I and v0.2 residual verification map (through main `d75d0783a`)
+## 2026-08-24 to 2026-08-26 v0.1.2 Priority I and v0.2 residual verification map (through main `006ab8303`)
 
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
@@ -124,12 +124,53 @@ Explorer/SmartScreen acceptance remain unverified.
 - `#1967`/PR `#2101`: historical applied-record copy passed 122 focused Review tests, 16 locale-catalog
   tests, typecheck, build, scoped lint, diff hygiene, exact-head hosted CI, and bounded review. The
   added test omitted `presentation`, so only the fallback path was proven historical; the API-shaped
-  residual is `#2117`, addressed by PR `#2120` with a populated-presentation regression test. The
+  residual is `#2117`, closed by PR `#2120` with a populated-presentation regression test. The
   broader proposal-lifecycle residuals remain open on `#1967`.
 - `#2080`/`#2106`/`#2109`/PR `#2110`: 37 CardService tests, 64 final CardService/BoardService tests,
   22 focused API archive/migration/resilience tests, provider-native SQL Server script generation,
   SQLite migration bootstrap, pending-model validation, exact-head Required CI, E2E Smoke, and both
   the full-diff and fix-diff reviews passed. A live SQL Server application run was not performed.
+- `#2117`+`#2132`/PR `#2120`: the status-aware historical-copy fix carries a regression test on an
+  **API-shaped payload with `presentation` populated** — the exact shape PR `#2101`'s test omitted —
+  plus pluralized `bodyApplied` catalog coverage in `en`, `es`, and `it`. Exact-head Required CI and
+  the review gate passed. The Legacy `ReviewProposalCard` path is **not** covered and stays open on
+  `#2121`; `it`/`es` strings remain machine-translated.
+- `#2114`/PR `#2134`: six deterministic race/independence tests cover external import, starter-pack
+  apply, and archive-item restore including the restore path's column half, each mutation-checked
+  against its reverted fix. Exact-head Required CI and the review gate passed. This is
+  unit/integration proof of the conditional-update predicate, not a live concurrent-load run.
+- `#2123`+`#2115`/PR `#2137`: the `CardMutationMarker` replacement for `Touch()` makes the archive
+  guard deterministic rather than clock-dependent, so the same-tick no-op case is now provable
+  instead of timing-dependent; migration `20260826201256` and the board-list cache-coherence
+  behavior are covered at the same head, with exact-head Required CI and the review gate passing.
+  Whether recency should be activity- or metadata-based is a product question on `#2138`, not a
+  verification gap.
+- `#2105`/PR `#2107`: swagger contract tests assert the archived-card 409 on Create/Move/Delete and
+  the reworded Update declaration resolve to the `ApiErrorResponse` schema reference, and the
+  assertions were mutation-checked. This is contract/metadata proof only — no runtime 409 journey
+  was added by this PR, and none of the contract tests were changed when it was rescued from the
+  dead `#2080` stack base. The old API Integration redness on that abandoned base was traced to
+  `#2080`'s token-advance defect, not to this change.
+- `#2085`/PR `#2098`: two independent reviews returned clean. Its required CI was blocked by a
+  GitHub **runner-assignment outage**, not by the change; a close/reopen retriggered assignment and
+  the exact head then completed green. Treat the outage as an infrastructure event, not evidence.
+- `#2111`/PR `#2112`: the Windows launcher TERM/KILL regression is now evidence-based — teardown
+  waits until the fixture root is actually removable against a deadline and **names surviving native
+  pids** when it gives up, so a failure reports what held the tree instead of a bare EBUSY. Five
+  review P2s were deferred to `#2136` and a Linux/macOS stub-server shutdown gap to `#2135`; both
+  are open, so this hardens the evidence path without closing the whole teardown class.
+- `#1938`/PR `#2102`: per-stage regressions cover the toast clipboard path — the async Clipboard API
+  fast path and the legacy-DOM `document.execCommand` fallback, the latter contained as explicitly
+  best-effort rather than reported as a success it cannot prove. No real-browser legacy-DOM
+  clipboard run was performed.
+- Dependabot PR `#2064`: the NuGet minor/patch group (FsCheck 3.4.0, PdfPig 0.1.16, OpenTelemetry
+  1.18.0 and others) plus the PdfPig sentinel move 0.1.15 → 0.1.16 were proven on a **refreshed
+  base**, so FsCheck 3.4.0 ran against the new capture contracts rather than a stale tree. PdfPig
+  evidence-version drift is noted on `#1429`; the Stryker 9.6.1 → 10 bump is deferred to `#2139`.
+- **Wave-level CI bound.** All eleven 2026-08-26 merges had exact-head Required CI green. Post-merge
+  `main` CI was SUCCESS at `44aceede6`; the run at the final tip `006ab8303` (`33015017508`) was
+  still in progress when this map was written and is **not** claimed green. Several intermediate
+  post-merge runs concluded `cancelled` because the next merge landed mid-run.
 - `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
   race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
   Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
