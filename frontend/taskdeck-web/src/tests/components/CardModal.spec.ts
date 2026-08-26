@@ -219,6 +219,45 @@ describe('CardModal', () => {
     wrapper.unmount()
   })
 
+  it('renders the desktop inspector as non-modal without trapping board focus', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.attributes('aria-modal')).toBeUndefined()
+    expect(wrapper.get('[data-testid="card-modal-scroll-region"]').attributes('data-presentation')).toBe('inspector')
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    dialog.element.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('requires explicit confirmation before closing an unsaved card draft', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+
+    ;(document.body.querySelector('[data-testid="card-discard-confirm"]') as HTMLButtonElement).click()
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('should not render when isOpen is false', () => {
     const wrapper = mount(CardModal, {
       props: {

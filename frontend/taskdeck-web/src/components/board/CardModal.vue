@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
@@ -15,11 +15,14 @@ import {
 } from './card-modal'
 import type { Card, Label } from '../../types/board'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   card: Card
   isOpen: boolean
   labels: Label[]
-}>()
+  presentation?: 'modal' | 'inspector'
+}>(), {
+  presentation: 'modal',
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -29,7 +32,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const dialogRef = ref<HTMLElement | null>(null)
+const showDiscardConfirm = ref(false)
 let previouslyFocusedElement: HTMLElement | null = null
+const isInspector = computed(() => props.presentation === 'inspector')
 
 // `'layout'` fallback: `.card-modal-viewport` has no other height declaration,
 // so without a VisualViewport API it must still receive the layout viewport.
@@ -56,7 +61,7 @@ function focusInitialControl() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Tab' || !dialogRef.value) return
+  if (isInspector.value || event.key !== 'Tab' || !dialogRef.value) return
 
   const focusableElements = Array.from(
     dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector),
@@ -101,7 +106,8 @@ onUnmounted(() => {
   }
 })
 
-function handleClose() {
+function closeWithoutPrompt() {
+  showDiscardConfirm.value = false
   emit('close')
 }
 
@@ -114,6 +120,7 @@ const {
   blockReason,
   selectedLabelIds,
   isFormValid,
+  hasUnsavedChanges,
 
   // Due date
   formattedDueDate,
@@ -164,7 +171,22 @@ const {
   onClose: () => emit('close'),
 })
 
-useEscapeToClose(() => props.isOpen, handleClose)
+function handleClose() {
+  if (hasUnsavedChanges.value) {
+    showDiscardConfirm.value = true
+    return
+  }
+  closeWithoutPrompt()
+}
+
+useEscapeToClose(
+  () =>
+    props.isOpen &&
+    !showDiscardConfirm.value &&
+    !showDeleteConfirm.value &&
+    !showCommentDeleteConfirm.value,
+  handleClose,
+)
 </script>
 
 <template>
@@ -172,21 +194,30 @@ useEscapeToClose(() => props.isOpen, handleClose)
   <div
     v-if="isOpen"
     ref="dialogRef"
-    class="card-modal-viewport fixed inset-x-0 z-50 flex overflow-hidden"
-    :style="visualViewportStyle"
+    :class="[
+      'card-modal-viewport flex overflow-hidden',
+      isInspector ? 'card-modal-viewport--inspector' : 'card-modal-viewport--modal fixed inset-x-0 z-50',
+    ]"
+    :style="isInspector ? undefined : visualViewportStyle"
     role="dialog"
     aria-label="Edit Card"
-    aria-modal="true"
+    :aria-modal="isInspector ? undefined : 'true'"
     tabindex="-1"
     @click.self="handleClose"
     @keydown.escape="handleClose"
     @keydown="handleKeydown"
   >
     <!-- Backdrop -->
-    <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
+    <div v-if="!isInspector" class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
 
     <!-- Modal -->
-    <div class="card-modal-scroll-region relative max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-lg border border-outline-variant/30 bg-surface-container p-6 shadow-xl" data-testid="card-modal-scroll-region" @click.stop>
+    <div
+      class="card-modal-scroll-region relative w-full overflow-y-auto overscroll-contain rounded-lg border border-outline-variant/30 bg-surface-container p-6 shadow-xl"
+      :class="isInspector ? 'card-modal-scroll-region--inspector' : 'max-h-[calc(100vh-2rem)] max-w-2xl'"
+      data-testid="card-modal-scroll-region"
+      :data-presentation="presentation"
+      @click.stop
+    >
         <CardModalHeader @close="handleClose" />
 
         <div class="space-y-4">
@@ -246,6 +277,32 @@ useEscapeToClose(() => props.isOpen, handleClose)
   </div>
 
   <!-- Delete Confirmation Dialog -->
+  <TdDialog
+    :open="showDiscardConfirm"
+    title="Discard card changes?"
+    description="This card has unsaved changes. Discard them and close the editor?"
+    @close="showDiscardConfirm = false"
+  >
+    <template #footer>
+      <button
+        type="button"
+        class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
+        data-testid="card-discard-cancel"
+        @click="showDiscardConfirm = false"
+      >
+        Keep editing
+      </button>
+      <button
+        type="button"
+        class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all"
+        data-testid="card-discard-confirm"
+        @click="closeWithoutPrompt"
+      >
+        Discard changes
+      </button>
+    </template>
+  </TdDialog>
+
   <TdDialog
     :open="showDeleteConfirm"
     title="Delete Card"
@@ -313,6 +370,19 @@ useEscapeToClose(() => props.isOpen, handleClose)
     max(1rem, env(safe-area-inset-right))
     max(1rem, env(safe-area-inset-bottom))
     max(1rem, env(safe-area-inset-left));
+}
+
+.card-modal-viewport--inspector {
+  position: sticky;
+  top: 1rem;
+  flex: 0 0 min(420px, 36vw);
+  height: calc(100vh - 2rem);
+  min-width: 340px;
+  align-self: flex-start;
+}
+
+.card-modal-scroll-region--inspector {
+  max-height: 100%;
 }
 
 @media (max-width: 767px) {

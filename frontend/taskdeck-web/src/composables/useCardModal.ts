@@ -83,6 +83,22 @@ export function useCardModal(options: UseCardModalOptions) {
     return true
   })
 
+  const hasUnsavedChanges = computed(() => {
+    const currentCard = card.value
+    return (
+      title.value !== currentCard.title ||
+      description.value !== (currentCard.description || '') ||
+      dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
+      isBlocked.value !== currentCard.isBlocked ||
+      blockReason.value !== (currentCard.blockReason || '') ||
+      selectedLabelIds.value.length !== currentCard.labels.length ||
+      selectedLabelIds.value.some((id) => !currentCard.labels.some((label) => label.id === id)) ||
+      newCommentContent.value.trim().length > 0 ||
+      Object.values(replyDraftByParent.value).some((draft) => draft.trim().length > 0) ||
+      editingCommentId.value !== null
+    )
+  })
+
   // Watchers
   watch(() => options.getCard(), (newCard) => {
     if (newCard) {
@@ -345,6 +361,7 @@ export function useCardModal(options: UseCardModalOptions) {
     blockReason,
     selectedLabelIds,
     isFormValid,
+    hasUnsavedChanges,
 
     // Due date
     formattedDueDate,
