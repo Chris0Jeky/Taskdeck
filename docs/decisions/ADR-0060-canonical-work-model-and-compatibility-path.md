@@ -41,13 +41,21 @@ Hierarchy and relations remain separate:
 - recurrence generates independent instances from a rule;
 - ongoing lifecycle means durable work without a fixed end and does not imply recurrence.
 
-Identity and effort also remain separate:
+Identity, participation, presentation, assignment, and recorded work also remain separate:
 
-- Actor or Principal represents a human, invited collaborator, or agent/service identity;
-- an optional persona is display metadata, not authority;
-- Assignment links an actor to work and may later carry an explicit allocation;
-- estimate, remaining effort, actual work log, elapsed cycle time, lead time, relative size, and
-  capacity are different values and calculations.
+- `Principal` is the authenticated identity that can receive authority. It may represent a human
+  user, an agent, or a service identity. Audit records attribute the acting principal.
+- `Participant` is a context-scoped collaboration record for a workspace, project, or compatible
+  board boundary. It connects a principal, or a pending external invite, to membership state and
+  collaboration metadata. Participation does not itself grant authority outside the owning scope.
+- `Persona` is optional display metadata used for name, avatar, or agent presentation. It never
+  supplies authentication, authorization, assignment, or audit identity.
+- `Assignment` links a participant to a work item and may carry an explicit role or allocation.
+  It represents responsibility, not completed work or an automatic scheduling formula.
+- `WorkLog` is an immutable activity record attributed to both the participant and acting
+  principal. It is separate from assignment, estimate, current column, and elapsed time.
+- estimate, remaining effort, actual work logged, elapsed cycle time, lead time, relative size,
+  and capacity are different values and calculations.
 
 No agent or LLM receives a direct mutation path through this model. Automation-originated changes
 continue through proposal, review, approve, and execute.
@@ -58,8 +66,9 @@ continue through proposal, review, approve, and execute.
 2. **Card-compatible additions.** Add the smallest accepted item types and one optional parent to
    the existing Card path. Preserve card IDs, board and column ownership, proposal operations,
    audit history, exports, and current API clients.
-3. **Separate depth features.** Add typed relations, Actor/Assignment, and built-in estimates as
-   independent migrations only when their issues are admitted.
+3. **Separate depth features.** Add typed relations, Principal/Participant/Assignment foundations,
+   and built-in estimates as independent migrations only when their issues are admitted. WorkLog
+   remains a later event-model decision.
 4. **Lightweight Project boundary.** If ratified, introduce Project around existing boards without
    making boards arbitrary views or moving every card in the same migration.
 5. **Canonical work item and placements.** Consider separating stable work identity from board

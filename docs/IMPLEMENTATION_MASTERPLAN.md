@@ -67,12 +67,12 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
-## Planning update (2026-08-26, v0.1.2 dogfooding reconciliation)
+## Planning update (2026-08-26, v0.2/v0.3 release cut)
 
-- **Existing tracker `#1947` owns a capped follow-up wave.** Five self-contained issues were created: appearance interaction contrast `#2083`, proposed canonical work model `#2084`, capture dispositions `#2085`, board density/inspector `#2086`, and conditional item types/parent hierarchy `#2087`. The reconciliation and dedupe evidence are in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`.
-- **The release queue stays bounded.** `#2083` through `#2086` are v0.2 candidates, but only the appearance defect is Priority I. `#2087` remains Pending with no milestone and cannot start before ADR-0060 is accepted. No item was promoted to `Now` or `Next` by this intake pass.
-- **Collaboration reuses the existing path.** `#1772` now owns the trusted shared-instance proof and extends `#1325`, while `#1133`, `#1446`, `#1521`, `#1736`, and `#1879` supply performance, concurrency, recovery, and provider-key dependencies. Proposed ADR-0061 distinguishes this from a dependable small-team alpha and managed public SaaS.
-- **Architecture remains proposed.** ADR-0060 covers the compatibility path from `Board -> Column -> Card`; ADR-0062 separates typed field values, derived aggregates, and threshold rules. Neither document claims a schema change. Typed relations, multiple assignees, estimates, templates, recurrence, full workspace/project migration, formulas, detailed time tracking, and multi-board canonical items remain deferred pending decisions and capacity.
+- **Release dates are explicit.** v0.2 final targets 2026-09-01. v0.3 RC targets 2026-09-04; final targets 2026-09-08 or 2026-09-09.
+- **v0.2 is split to M1 slices.** `#2085` owns keep/archive/board-target/proposal/provenance; `#2086` owns the side inspector and compact density. Their M2 scope is `#2089` and `#2090` in v0.3. `#2087` is v0.3, not a v0.2 stretch.
+- **Decision ownership is singular.** `#2084` owns ADR-0060, `#1772` owns ADR-0061, and `#2091` owns ADR-0062. All remain Proposed until ratified.
+- **The bounded queue is active.** Now is `#1271`, `#2083`, `#2085`, `#2086`. Next is `#1512`, `#1938`, `#1961`, `#1967`, `#2080`. The maintainer's intake-cap waiver seeded only typed links `#2092`, participant/assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
 
 ## Governance update (2026-08-23, DCO enforcement paused)
 
