@@ -81,27 +81,33 @@ export async function copyToastReceipt(toast: Pick<Toast, 'message' | 'details'>
     }
   }
 
-  if (
-    typeof document === 'undefined' ||
-    !document.body ||
-    typeof document.execCommand !== 'function'
-  ) {
+  if (typeof document === 'undefined') {
     return false
   }
 
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.select()
+  let textarea: HTMLTextAreaElement | null = null
   try {
+    const body = document.body
+    if (!body || typeof document.execCommand !== 'function') {
+      return false
+    }
+
+    textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    body.appendChild(textarea)
+    textarea.select()
     return document.execCommand('copy')
   } catch {
     return false
   } finally {
-    textarea.remove()
+    try {
+      textarea?.remove()
+    } catch {
+      // Cleanup is best effort; the copy contract still fails closed.
+    }
   }
 }
 
