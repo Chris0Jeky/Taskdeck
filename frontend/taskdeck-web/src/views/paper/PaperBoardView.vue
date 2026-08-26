@@ -740,9 +740,10 @@ async function addStarterColumns() {
         />
 
         <TdDialog
-          :open="Boolean(pendingCard)"
+          v-if="pendingCard"
+          :open="true"
           title="Discard card changes?"
-          :description="pendingCard ? `Switch to ${pendingCard.title} and discard the current unsaved changes?` : ''"
+          :description="`Switch to ${pendingCard.title} and discard the current unsaved changes?`"
           @close="cancelCardSwitch"
         >
           <template #footer>
