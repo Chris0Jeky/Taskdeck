@@ -681,16 +681,24 @@ function summarizeOperation(operation: ProposalOperation): string {
 
 const before = computed<ChangeBeforeCard>(() => {
   void displayVersion.value
+  const operationCount = activeProposal.value?.operations?.length ?? 0
+
+  // `presentation` is status-UNAWARE: `AutomationProposalService.MapToDto` materializes it on
+  // every response, and `BuildImpactSummary` composes it from the operation set alone, so it
+  // reads prospectively ("... ready for approval", "N changes planned") even for a proposal
+  // that was applied days ago. Historical copy therefore has to WIN for a settled record
+  // rather than sit behind a `??` that a populated `impactSummary` can never fall through to
+  // (#2117 — the residual left by #2101, whose applied copy was unreachable on API-shaped
+  // payloads). Pending records are unchanged and still prefer the backend's impact summary.
+  const body = activeAppliedProposal.value
+    ? t('review.change.before.bodyApplied', { count: operationCount })
+    : (activeProposal.value?.presentation?.impactSummary ??
+      t('review.change.before.bodyFallback', { count: operationCount }))
+
   return {
     serial: activeProposal.value ? `#${activeProposal.value.id.slice(0, 8)}` : '—',
     title: activeProposal.value?.summary ?? t('review.change.before.titleFallback'),
-    body:
-      activeProposal.value?.presentation?.impactSummary ??
-      t(activeAppliedProposal.value
-        ? 'review.change.before.bodyAppliedFallback'
-        : 'review.change.before.bodyFallback', {
-        count: activeProposal.value?.operations?.length ?? 0,
-      }),
+    body,
     // `source` is the backend's own sourceType wire value when present, so it is
     // interpolated rather than translated; only the fallback word is copy.
     meta: t('review.change.before.meta', {

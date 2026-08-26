@@ -302,6 +302,61 @@ describe('PaperReviewView', () => {
     appliedWrapper.unmount()
   })
 
+  // Regression for #2117 — the residual left by #2101. That PR's spec built its fixture WITHOUT
+  // `presentation`, so it only ever exercised the `??` fallback branch. `MapToDto` populates
+  // `Presentation` on every real response, so the fixture below is API-SHAPED: prospective copy is
+  // present and non-empty, which is exactly the payload that used to defeat the historical copy.
+  it('renders historical change copy for an applied record whose API payload carries prospective presentation', async () => {
+    // Verbatim shapes from AutomationProposalService.BuildPresentation for a single-operation
+    // Queue-sourced capture batch — including the "ready for approval" / "This would" leads.
+    const prospectivePresentation = {
+      plainSummary: 'Split "dark mode" into 3 cards This would create card "dark mode".',
+      impactSummary: '1 task card change ready for approval.',
+      riskCue: 'Low risk. Usually safe to review quickly.',
+      sourceCue: 'Created from Inbox capture triage.',
+      operationHeadlines: ['Create card "dark mode"'],
+      affectedEntities: [{ entityType: 'Card', entityId: null, label: 'dark mode', changeCount: 1 }],
+    }
+    const settledAt = new Date().toISOString()
+
+    const appliedWrapper = await mountView(
+      [
+        makeProposal({
+          id: 'applied-api-shaped',
+          sourceType: 'Queue',
+          status: 'Applied',
+          decidedAt: settledAt,
+          appliedAt: settledAt,
+          presentation: prospectivePresentation,
+        }),
+      ],
+      '/workspace/review?history=archived',
+    )
+
+    expect(appliedWrapper.get('.paper-review-change__before-body').text()).toBe(
+      'Recorded 1 proposal operations.',
+    )
+    // Prospective leads must not survive anywhere on a settled record's surface: a record filed
+    // under "Before · recorded" that still says "ready for approval" is the defect itself.
+    expect(appliedWrapper.text()).not.toContain('ready for approval')
+    expect(appliedWrapper.text()).not.toContain('This would')
+    appliedWrapper.unmount()
+
+    // Same payload, pending status: the backend's prospective impact summary still wins.
+    const pendingWrapper = await mountView([
+      makeProposal({
+        id: 'pending-api-shaped',
+        sourceType: 'Queue',
+        presentation: prospectivePresentation,
+      }),
+    ])
+
+    expect(pendingWrapper.get('.paper-review-change__before-body').text()).toBe(
+      '1 task card change ready for approval.',
+    )
+    pendingWrapper.unmount()
+  })
+
   it('loads every settled archived decision into a selectable inspection-only queue', async () => {
     const settled = [
       makeProposal({ id: 'applied-1', status: 'Applied', summary: 'Applied history one' }),
