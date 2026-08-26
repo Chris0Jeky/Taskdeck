@@ -290,6 +290,59 @@ function extractBashFunction(source, name) {
   return source.slice(start, end + 2)
 }
 
+// Git Bash launches native Windows Node in CI. A SIGTERM can terminate that process without
+// invoking a JavaScript SIGTERM listener, so this seam proves the Bash cleanup contract through
+// its identity probe instead of inferring signal handling from elapsed wall-clock time.
+async function assertBashTermKillEscalation(fixture) {
+  const source = normalise(await readFile(join(fixture.scriptsDir, 'dev-up.sh'), 'utf8'))
+  const harness = join(fixture.root, 'term-kill-seam.sh')
+  const signalLog = join(fixture.root, 'term-kill-seam.log')
+  const probeState = join(fixture.root, 'term-kill-seam.state')
+  const observedState = join(fixture.root, 'term-kill-seam.observed')
+  await writeFile(
+    harness,
+    `#!/usr/bin/env bash
+set -euo pipefail
+term_sent=0
+kill_sent=0
+warn() { :; }
+sleep() { :; }
+process_identity_status() {
+  if [[ "$term_sent" -eq 1 ]]; then printf '1\\n' > "$OBSERVED_STATE"; fi
+  if [[ "$kill_sent" -eq 1 ]]; then printf 'missing\\n'; else printf 'match\\n'; fi
+}
+kill() {
+  case "$1" in
+    -TERM) term_sent=1 ;;
+    -KILL) kill_sent=1 ;;
+  esac
+  printf '%s\\n' "$1" >> "$SIGNAL_LOG"
+  return 0
+}
+${extractBashFunction(source, 'wait_for_identity_exit')}
+${extractBashFunction(source, 'stop_exact_process')}
+stop_exact_process api 4242 node recorded-token
+printf '%s\\n' "$term_sent" "$kill_sent" > "$PROBE_STATE"
+`,
+  )
+  const result = spawnSync(bash, [toPosixPath(harness)], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      SIGNAL_LOG: toPosixPath(signalLog),
+      PROBE_STATE: toPosixPath(probeState),
+      OBSERVED_STATE: toPosixPath(observedState),
+    },
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.deepEqual((await readFile(probeState, 'utf8')).trim().split(/\r?\n/), ['1', '1'])
+  assert.equal((await readFile(observedState, 'utf8')).trim(), '1')
+  assert.deepEqual((await readFile(signalLog, 'utf8')).trim().split(/\r?\n/), ['-TERM', '-KILL'])
+}
+
 function toPosixPath(path) {
   if (process.platform !== 'win32') return path
   return path
@@ -831,17 +884,13 @@ if (bash) {
     async () => {
       const platform = { name: 'Bash', launcher: 'dev-up.sh' }
       const fixture = await createFixture(platform)
-      const startedAt = Date.now()
       try {
         await assertResetSeedCycle(platform, fixture, {
           env: {
             FAKE_STOP_DESCENDANT: '1',
-            FAKE_STOP_DELAY_MS: '10250',
           },
         })
-        const elapsedMs = Date.now() - startedAt
-        assert.ok(elapsedMs >= 10_000, `slow teardown completed unexpectedly quickly in ${elapsedMs}ms`)
-        assert.ok(elapsedMs < RESET_CYCLE_TEARDOWN_TIMEOUT_MS)
+        await assertBashTermKillEscalation(fixture)
       } finally {
         await removeFixture(fixture)
       }
