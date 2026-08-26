@@ -9,7 +9,9 @@
 4. **Add new outstanding tasks here** when the maintainer asks you to remember something, or when substantial work is deferred. Keep entries short with a one-line "how" and a link to the GitHub issue/PR that holds the detail.
 5. Keep this file lean and scannable. Detail lives in the linked issues, not here.
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-08-26
+
+- [ ] **Ratify the v0.1.2 dogfooding decision batch (`#2084`, proposed ADR-0060 through ADR-0062).** Decide whether Project is first-class before v0.3; whether one work item can appear on several boards; whether hierarchy can cross projects; which item types ship first; whether generic custom fields belong in v0.3; whether actual time tracking fits the product thesis; whether the v0.3 hosted proof is maintainer-operated self-hosting or managed-service groundwork; and who pays for shared-instance LLM use. Also record whether the still-open commercial/licensing decision `#2012` blocks any public managed-service path. Until ratified, the current `Board -> Column -> Card` model and review-first automation contract remain authoritative.
 
 ---
 

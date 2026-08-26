@@ -1,8 +1,15 @@
 # Data Model Reference
 
-Last Verified: 2026-08-16 (full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
+Last Verified: 2026-08-26 (current model unchanged; full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
+
+> **Current versus proposed:** the shipped ownership model remains `Board -> Column -> Card`. Workspace,
+> Project, canonical WorkItem, hierarchy, typed work relations, Actor/Principal, Assignment, custom fields,
+> work logs, templates, and recurrence do not exist in the current schema. Proposed ADR-0060 defines a
+> compatibility-first work-model direction, and proposed ADR-0062 separates fields, aggregates, and rules.
+> Neither proposal changes the entity blocks or diagram below until accepted and implemented through a
+> reviewed EF Core migration.
 
 > **Coverage claim (self-checkable):** every `DbSet` on `TaskdeckDbContext` has a `###` block below,
 > and the only `###` blocks that are *not* a `DbSet` are the domain-only entities named under the

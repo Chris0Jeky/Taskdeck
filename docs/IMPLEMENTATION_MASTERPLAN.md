@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-25
+Last Updated: 2026-08-26
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -66,6 +66,13 @@ behaviour.
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
+
+## Planning update (2026-08-26, v0.1.2 dogfooding reconciliation)
+
+- **Existing tracker `#1947` owns a capped follow-up wave.** Five self-contained issues were created: appearance interaction contrast `#2083`, proposed canonical work model `#2084`, capture dispositions `#2085`, board density/inspector `#2086`, and conditional item types/parent hierarchy `#2087`. The reconciliation and dedupe evidence are in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`.
+- **The release queue stays bounded.** `#2083` through `#2086` are v0.2 candidates, but only the appearance defect is Priority I. `#2087` remains Pending with no milestone and cannot start before ADR-0060 is accepted. No item was promoted to `Now` or `Next` by this intake pass.
+- **Collaboration reuses the existing path.** `#1772` now owns the trusted shared-instance proof and extends `#1325`, while `#1133`, `#1446`, `#1521`, `#1736`, and `#1879` supply performance, concurrency, recovery, and provider-key dependencies. Proposed ADR-0061 distinguishes this from a dependable small-team alpha and managed public SaaS.
+- **Architecture remains proposed.** ADR-0060 covers the compatibility path from `Board -> Column -> Card`; ADR-0062 separates typed field values, derived aggregates, and threshold rules. Neither document claims a schema change. Typed relations, multiple assignees, estimates, templates, recurrence, full workspace/project migration, formulas, detailed time tracking, and multi-board canonical items remain deferred pending decisions and capacity.
 
 ## Governance update (2026-08-23, DCO enforcement paused)
 

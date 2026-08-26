@@ -1,11 +1,13 @@
 # Cloud Deployment Guide
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-26
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
 > **Private evaluation only unless registration is gated.** Do not expose a build to the public internet unless it includes the registration-gating work in [#1297](https://github.com/Chris0Jeky/Taskdeck/issues/1297) and the operator has explicitly chosen a safe registration mode. Otherwise, keep the service behind provider access controls, a private network, or another authentication layer.
 >
 > Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. This update follows the direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before it.
+>
+> Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. Use `InviteOnly` while collaborators are onboarding; `Closed` is safe only after every intended account already exists. This is not evidence of a managed public SaaS.
 
 ---
 
@@ -31,6 +33,7 @@ Related documents:
 - `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- exploratory AWS/ECS scale-out architecture; not a supported beta run path
 - `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` -- PostgreSQL migration path
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` -- strategic context
+- `docs/decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md` -- proposed trusted-instance, small-team-alpha, and managed-SaaS boundary
 
 ---
 
