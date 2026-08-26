@@ -827,18 +827,24 @@ describe('PaperTriageTable', () => {
     expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
   })
 
-  it('holds Accept and Reject shut while an unsaved edit is open, and says why', async () => {
+  it('holds current disposition controls shut while an unsaved edit is open, and says why', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
     await flushPromises()
 
     const row = wrapper.findAll('.paper-triage__row')[0]
-    // Accepting now would triage the text the user is halfway through replacing
-    // and drop the correction without a word.
+    // Asking AI, keeping, or archiving now would act on the text the user is
+    // halfway through replacing and drop the correction without a word.
+    const decisionBlock = row.find('[data-testid="capture-edit-decision-block"]')
+    expect(row.find('button[data-action="accept"]').text()).toBe('Ask AI')
+    expect(row.find('button[data-action="keep"]').text()).toBe('Keep')
+    expect(row.find('button[data-action="reject"]').text()).toBe('Archive')
     expect(row.find('button[data-action="accept"]').attributes('disabled')).toBeDefined()
+    expect(row.find('button[data-action="keep"]').attributes('disabled')).toBeDefined()
     expect(row.find('button[data-action="reject"]').attributes('disabled')).toBeDefined()
-    expect(row.find('[data-testid="capture-edit-decision-block"]').text())
-      .toContain('Finish or cancel this edit')
+    expect(decisionBlock.text()).toContain('Finish or cancel this edit')
+    expect(decisionBlock.text()).toContain('Ask AI, Keep, or Archive')
+    expect(decisionBlock.text()).not.toMatch(/\b(?:Accept|Reject)\b/)
 
     await row.find('button[data-action="accept"]').trigger('click')
     expect(wrapper.emitted('accept')).toBeUndefined()

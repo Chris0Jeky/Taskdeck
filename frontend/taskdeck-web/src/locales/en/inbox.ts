@@ -120,7 +120,8 @@ export default {
     // `blocked.notEditable` states the FACT and not a cause. The server refuses
     // a text edit for more than one reason (a linked transcript, a status that
     // has moved on), and an API older than the flag omits it entirely; naming
-    // one of those would be a guess presented as an explanation.
+    // one of those would be a guess presented as an explanation. The action
+    // names below mirror the current Ask AI, Keep, and Archive controls.
     //
     // `loadFailed` / `saveFailed` interpolate the server's own words, and
     // `unknownReason` fills the slot when it gave none — so the sentence never
@@ -129,7 +130,7 @@ export default {
       action: 'Edit capture',
       label: 'Capture text',
       placeholder: 'Correct the captured text…',
-      hint: 'Fix the wording before Accept turns this into a proposal. Saving changes the capture only — nothing reaches a board from here.',
+      hint: 'Fix the wording before Ask AI turns this into a proposal. Saving changes the capture only — nothing reaches a board from here.',
       loading: 'Loading the full capture text…',
       save: 'Save changes',
       saving: 'Saving…',
@@ -139,7 +140,7 @@ export default {
       unknownReason: 'the server gave no reason',
       loadFailed: 'The full capture text did not load: {reason}',
       saveFailed: 'The capture changes were not saved: {reason}',
-      decisionBlocked: 'Finish or cancel this edit before you Accept or Reject.',
+      decisionBlocked: 'Finish or cancel this edit before you Ask AI, Keep, or Archive.',
       metadata: {
         legend: 'Due date and labels',
         dueDate: 'Due date (optional)',
@@ -147,11 +148,11 @@ export default {
         labelsPlaceholder: 'Type one existing label name',
         addLabel: 'Add label',
         removeLabel: 'Remove {label}',
-        hint: 'Add one existing label name at a time with Enter. Remove a chip to clear it, then Save and Accept again to retry triage. Commas stay part of a label name; labels are never created here.',
+        hint: 'Add one existing label name at a time with Enter. Remove a chip to clear it, then Save and Ask AI again to retry triage. Commas stay part of a label name; labels are never created here.',
         unavailable: 'This API did not return editable metadata. A text-only save will preserve any stored due date and labels.',
       },
       blocked: {
-        notEditable: "This capture's text can't be edited. Accept or Reject it as it stands.",
+        notEditable: "This capture's text can't be edited. Ask AI, Keep, or Archive it as it stands.",
         empty: "Text can't be empty. Type something, or cancel to leave the capture as it was.",
         unchanged: 'Nothing has changed yet. Edit the text or metadata, or cancel to leave the capture as it was.',
         editorOpen: 'Another capture is open for editing. Save or cancel that edit first — switching now would drop the text typed there.',

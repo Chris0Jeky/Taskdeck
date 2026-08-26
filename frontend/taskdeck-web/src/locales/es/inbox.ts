@@ -102,13 +102,13 @@ export default {
     //
     // `blocked.notEditable` enuncia el HECHO, no la causa: el servidor rechaza
     // la edición por varios motivos y nombrar uno solo sería una suposición
-    // presentada como explicación. "Accept" y "Reject" se quedan en inglés
-    // porque son las etiquetas de los botones de esta superficie.
+    // presentada como explicación. "Ask AI", "Keep" y "Archive" se quedan
+    // en inglés porque son las etiquetas de los botones de esta superficie.
     edit: {
       action: 'Editar captura',
       label: 'Texto de la captura',
       placeholder: 'Corrige el texto capturado…',
-      hint: 'Ajusta la redacción antes de que Accept la convierta en una propuesta. Guardar solo cambia la captura — desde aquí no llega nada a un tablero.',
+      hint: 'Ajusta la redacción antes de que Ask AI la convierta en una propuesta. Guardar solo cambia la captura — desde aquí no llega nada a un tablero.',
       loading: 'Cargando el texto completo de la captura…',
       save: 'Guardar cambios',
       saving: 'Guardando…',
@@ -118,7 +118,7 @@ export default {
       unknownReason: 'el servidor no dio ningún motivo',
       loadFailed: 'El texto completo de la captura no se cargó: {reason}',
       saveFailed: 'Los cambios de la captura no se guardaron: {reason}',
-      decisionBlocked: 'Termina o cancela esta edición antes de pulsar Accept o Reject.',
+      decisionBlocked: 'Termina o cancela esta edición antes de pulsar Ask AI, Keep o Archive.',
       metadata: {
         legend: 'Fecha límite y etiquetas',
         dueDate: 'Fecha límite (opcional)',
@@ -126,11 +126,11 @@ export default {
         labelsPlaceholder: 'Escribe un nombre de etiqueta existente',
         addLabel: 'Añadir etiqueta',
         removeLabel: 'Quitar {label}',
-        hint: 'Añade un nombre de etiqueta existente cada vez pulsando Enter. Quita una ficha para eliminarla; después guarda y pulsa Accept otra vez para reintentar la clasificación. Las comas siguen formando parte del nombre; aquí no se crean etiquetas.',
+        hint: 'Añade un nombre de etiqueta existente cada vez pulsando Enter. Quita una ficha para eliminarla; después guarda y pulsa Ask AI otra vez para reintentar la clasificación. Las comas siguen formando parte del nombre; aquí no se crean etiquetas.',
         unavailable: 'Esta API no devolvió metadatos editables. Guardar solo el texto conservará la fecha límite y las etiquetas almacenadas.',
       },
       blocked: {
-        notEditable: 'El texto de esta captura no se puede editar. Pulsa Accept o Reject tal como está.',
+        notEditable: 'El texto de esta captura no se puede editar. Pulsa Ask AI, Keep o Archive tal como está.',
         empty: 'El texto no puede estar vacío. Escribe algo, o cancela para dejar la captura como estaba.',
         unchanged: 'Todavía no ha cambiado nada. Edita el texto o los metadatos, o cancela para dejar la captura como estaba.',
         editorOpen: 'Otra captura está abierta para editar. Guarda o cancela esa edición: cambiar ahora descartaría el texto escrito allí.',
