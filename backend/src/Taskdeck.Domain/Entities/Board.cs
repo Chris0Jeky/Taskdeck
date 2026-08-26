@@ -31,6 +31,15 @@ public class Board : Entity
     public Guid? OwnerId { get; private set; }
     public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
 
+    /// <summary>
+    /// Monotonic guard marker advanced by <see cref="RecordCardMutation"/>. It is deliberately
+    /// non-user-visible: no DTO, API contract, or query reads it. Its only job is to guarantee the
+    /// board row joins the card write's UPDATE statement so the concurrency-token predicate runs.
+    /// It is NOT a reliable mutation count — two writers that read the same value both persist
+    /// value + 1, which is harmless because nothing compares it against an expected value.
+    /// </summary>
+    public long CardMutationMarker { get; private set; }
+
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
     public IReadOnlyCollection<Card> Cards => _cards.AsReadOnly();
     public IReadOnlyCollection<Label> Labels => _labels.AsReadOnly();
@@ -90,14 +99,22 @@ public class Board : Entity
     }
 
     /// <summary>
-    /// Records a card mutation without advancing the board concurrency token. Touching the board
-    /// makes EF issue a conditional update using the current token, so a board mutation that
-    /// advanced the token after the archived-state check still rejects the card write. Independent
-    /// card writes keep the same token and retain their established success semantics.
+    /// Records a card mutation by advancing <see cref="CardMutationMarker"/> — without advancing the
+    /// board concurrency token and without re-stamping <see cref="Entity.UpdatedAt"/>. Changing the
+    /// marker makes EF issue a conditional update using the token the write read, so a board mutation
+    /// that advanced the token after the archived-state check still rejects the card write.
+    /// Independent card writes keep the same token and retain their established success semantics.
+    ///
+    /// The marker exists rather than a re-stamp of <c>UpdatedAt</c> for two reasons. It keeps the
+    /// board's user-visible timestamp meaning "board metadata last changed", so a card write cannot
+    /// make an already-cached board list disagree with the database (`#2115`). And it is
+    /// deterministic: re-stamping <c>UpdatedAt</c> with the current time is a no-op inside one clock
+    /// tick, which leaves the entity Unchanged, emits no board UPDATE, and silently drops the token
+    /// predicate (`#2123`). An incremented marker always differs from the value that was read.
     /// </summary>
     public void RecordCardMutation()
     {
-        Touch();
+        CardMutationMarker++;
     }
 
     private void TouchAndAdvanceConcurrencyToken()

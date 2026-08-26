@@ -133,14 +133,27 @@ change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
   **There is no table rebuild**, so the schema change itself is quick no matter how many boards you
   have. Existing boards take that all-zero default and are issued a fresh token the first time the
   board record itself changes (rename, description edit, archive, restore, or ownership transfer).
-- **No action required.** The migration is applied automatically on startup like every other one —
+- **New schema: a Board card-mutation marker.** The `AddBoardCardMutationMarker` migration adds a
+  second `Boards` column in this window — a required non-user-visible counter the archive guard
+  advances on every accepted card write:
+
+  ```sql
+  ALTER TABLE "Boards" ADD "CardMutationMarker" INTEGER NOT NULL DEFAULT 0;
+  ```
+
+  **BREAKING: none.** Again a single in-place statement with no table rebuild; existing boards take
+  the `0` default. Nothing reads the value — it exists so a card write always marks its board row
+  modified, which keeps the token check below deterministic instead of clock-dependent.
+- **No action required.** Both migrations are applied automatically on startup like every other one —
   steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
   [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
   snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
   what the upgrade spends its time on. Take the manual copy in step 3 as usual; the automatic
   snapshot is a safety net, not a substitute.
 - **Behavior change: a card write can now lose a race against a board change.** Every accepted card
-  create, update, move, and delete touches its board under this token. Previously, a card write that
+  create, update, move, and delete joins a conditional update on its board row keyed on this token
+  (via the card-mutation marker above — the user-visible board "Last updated" timestamp does not
+  move on card activity). Previously, a card write that
   had already read a board could still commit after another session archived that board — so the
   write landed in archived history. It now fails the token check, rolls back, and returns
   `409 Conflict` with *"Record was updated by another session. Refresh and retry your action."*

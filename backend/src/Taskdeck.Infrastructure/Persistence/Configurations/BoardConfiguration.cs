@@ -29,6 +29,11 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
             .IsRequired()
             .IsConcurrencyToken();
 
+        // Guard marker for card writes (see Board.RecordCardMutation). Mapped as an ordinary
+        // column, never a concurrency token: it must be SET by a card write, not tested by one.
+        builder.Property(b => b.CardMutationMarker)
+            .IsRequired();
+
         builder.Property(b => b.OwnerId);
 
         builder.Property(b => b.CreatedAt)

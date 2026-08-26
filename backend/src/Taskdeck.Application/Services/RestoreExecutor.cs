@@ -220,8 +220,9 @@ public class RestoreExecutor
 
             // Join the target board's concurrency-token predicate without advancing it. RestorePlanner
             // rejected an already-archived target, but that check ran before this card was built, so an
-            // archive committing in between would otherwise be accepted. Touching the board makes EF
-            // issue a conditional UPDATE against the token read during planning; a racing archive
+            // archive committing in between would otherwise be accepted. Recording the card mutation
+            // marks the board modified, so EF issues a conditional UPDATE against the token read
+            // during planning; a racing archive
             // advanced it, and the single SaveChanges in ArchiveRecoveryService.RestoreArchiveItemAsync
             // then fails as DomainException(Conflict). Because the card insert, this stale board update,
             // and ArchiveItem.MarkAsRestored share that one SaveChanges, a rejected restore also leaves
