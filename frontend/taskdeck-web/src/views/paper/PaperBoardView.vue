@@ -10,6 +10,7 @@ import PaperBoardSettingsDialog from './board/PaperBoardSettingsDialog.vue'
 import PaperColumnSettingsDialog from './board/PaperColumnSettingsDialog.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import CardModal from '../../components/board/CardModal.vue'
+import TdDialog from '../../components/ui/TdDialog.vue'
 import type { Card, Column } from '../../types/board'
 import type { PaperBoardCardVariant } from './PaperBoardCard.vue'
 import { logError } from '../../utils/errorReporting'
@@ -61,6 +62,8 @@ const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const selectedCard = ref<Card | null>(null)
+const pendingCard = ref<Card | null>(null)
+const cardEditorDirty = ref(false)
 type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
@@ -111,6 +114,8 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 
 watch(boardId, () => {
   selectedCard.value = null
+  pendingCard.value = null
+  cardEditorDirty.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
   resetBoardManagementState()
@@ -207,11 +212,33 @@ function onLaneDragStart(column: Column, event: DragEvent) {
 }
 
 function openCard(card: Card) {
+  if (selectedCard.value?.id === card.id) return
+  if (selectedCard.value && cardEditorDirty.value) {
+    pendingCard.value = card
+    return
+  }
   selectedCard.value = card
 }
 
 function closeCard() {
   selectedCard.value = null
+  pendingCard.value = null
+  cardEditorDirty.value = false
+}
+
+function handleCardEditorDirtyChange(dirty: boolean) {
+  cardEditorDirty.value = dirty
+}
+
+function cancelCardSwitch() {
+  pendingCard.value = null
+}
+
+function discardAndSwitchCard() {
+  if (!pendingCard.value) return
+  selectedCard.value = pendingCard.value
+  pendingCard.value = null
+  cardEditorDirty.value = false
 }
 
 function openCapture(_column: Column) {
@@ -709,7 +736,32 @@ async function addStarterColumns() {
           :presentation="cardPresentation"
           @close="closeCard"
           @updated="closeCard"
+          @dirty-change="handleCardEditorDirtyChange"
         />
+
+        <TdDialog
+          :open="Boolean(pendingCard)"
+          title="Discard card changes?"
+          :description="pendingCard ? `Switch to ${pendingCard.title} and discard the current unsaved changes?` : ''"
+          @close="cancelCardSwitch"
+        >
+          <template #footer>
+            <PaperHLBtn
+              type="button"
+              variant="ghost"
+              label="Keep editing"
+              data-testid="card-switch-cancel"
+              @click="cancelCardSwitch"
+            />
+            <PaperHLBtn
+              type="button"
+              variant="primary"
+              label="Discard and switch"
+              data-testid="card-switch-confirm"
+              @click="discardAndSwitchCard"
+            />
+          </template>
+        </TdDialog>
       </div>
 
       <PaperColumnSettingsDialog

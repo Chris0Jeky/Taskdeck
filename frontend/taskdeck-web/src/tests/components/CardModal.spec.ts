@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
@@ -67,7 +67,9 @@ describe('CardModal', () => {
       updateCardComment: vi.fn().mockResolvedValue(undefined),
       deleteCardComment: vi.fn().mockResolvedValue(undefined),
       editingCardId: null,
-      setEditingCard: vi.fn(),
+      setEditingCard: vi.fn((cardId: string | null) => {
+        mockStore.editingCardId = cardId
+      }),
     }
     mockSessionStore = { userId: 'user-1' }
 
@@ -89,6 +91,53 @@ describe('CardModal', () => {
 
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps provenance responses scoped to the card that requested them', async () => {
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    mockStore.fetchCardProvenance.mockImplementation((_boardId: string, cardId: string) => (
+      new Promise((resolve) => {
+        if (cardId === 'card-1') resolveFirst = resolve
+        else resolveSecond = resolve
+      })
+    ))
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Second Card',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+    }
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+
+    await nextTick()
+    await wrapper.setProps({ card: secondCard })
+    await nextTick()
+
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-2')
+
+    resolveFirst({
+      cardId: 'card-1',
+      captureItemId: 'capture-first',
+      proposalId: null,
+      proposalStatus: 'Applied',
+      triageRunId: null,
+    })
+    await flushPromises()
+    expect(wrapper.find('a[href*="capture-first"]').exists()).toBe(false)
+
+    resolveSecond({
+      cardId: 'card-2',
+      captureItemId: 'capture-second',
+      proposalId: null,
+      proposalStatus: 'Applied',
+      triageRunId: null,
+    })
+    await flushPromises()
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-second"]').exists()).toBe(true)
   })
 
   it('should render capture provenance marker and links when available', async () => {
@@ -366,6 +415,43 @@ describe('CardModal', () => {
         title: 'Updated Title',
         expectedUpdatedAt: card.updatedAt,
       })
+    )
+  })
+
+  it('resets drafts, concurrency state, and presence when the open card changes', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('#new-card-comment').setValue('Unsaved comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Unsaved reply')
+    expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
+
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Second Card',
+      description: 'Second description',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+    }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Second Card')
+    expect((wrapper.get('#new-card-comment').element as HTMLTextAreaElement).value).toBe('')
+    expect((wrapper.get('textarea[aria-label="Reply to comment"]').element as HTMLTextAreaElement).value).toBe('')
+    expect(mockStore.setEditingCard).toHaveBeenCalledWith(null)
+    expect(mockStore.setEditingCard).toHaveBeenCalledWith('card-2')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Save Changes'))
+    await saveButton?.trigger('click')
+    expect(mockStore.updateCard).toHaveBeenCalledWith(
+      'board-1',
+      'card-2',
+      expect.objectContaining({ expectedUpdatedAt: secondCard.updatedAt }),
     )
   })
 

@@ -112,8 +112,15 @@ function mountView(props: Record<string, unknown> = {}) {
     global: {
       stubs: {
         CardModal: {
+          name: 'CardModal',
           props: ['card', 'isOpen', 'labels', 'presentation'],
+          emits: ['dirty-change'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
+        },
+        TdDialog: {
+          props: ['open', 'title', 'description'],
+          emits: ['close'],
+          template: '<div v-if="open" role="dialog"><slot /><slot name="footer" /></div>',
         },
       },
     },
@@ -226,6 +233,33 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="paper-card-modal"]').text()).toContain('A')
+  })
+
+  it('requires explicit confirmation before switching away from a dirty inspector', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('B')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
   })
 
   it('uses a board-preserving inspector on desktop and keeps the modal fallback on tablet', async () => {

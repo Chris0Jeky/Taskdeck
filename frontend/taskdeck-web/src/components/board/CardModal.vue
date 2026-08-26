@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updated'): void
+  (e: 'dirty-change', dirty: boolean): void
 }>()
 
 const { t } = useI18n()
@@ -170,6 +171,10 @@ const {
   onUpdated: () => emit('updated'),
   onClose: () => emit('close'),
 })
+
+watch(hasUnsavedChanges, (dirty) => {
+  emit('dirty-change', dirty)
+}, { immediate: true })
 
 function handleClose() {
   if (hasUnsavedChanges.value) {
