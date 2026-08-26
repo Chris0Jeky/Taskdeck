@@ -76,8 +76,19 @@ public class CardsOpenApiContractTests : IClassFixture<TestWebApplicationFactory
                 .GetProperty(routeAndMethod[1])
                 .GetProperty("responses");
 
-            responses.TryGetProperty("409", out _).Should().BeTrue(
+            responses.TryGetProperty("409", out var conflict).Should().BeTrue(
                 $"{operation.Value} should advertise HTTP 409 in generated OpenAPI");
+
+            // Assert the payload schema, not just the status key. A `<response code="409">`
+            // XML doc comment alone makes Swashbuckle emit the 409 entry, so a status-only
+            // assertion still passes when the ProducesResponseType attribute is deleted.
+            conflict.GetProperty("content")
+                .GetProperty("application/json")
+                .GetProperty("schema")
+                .GetProperty("$ref")
+                .GetString()
+                .Should().Be("#/components/schemas/ApiErrorResponse",
+                    $"{operation.Value} should advertise the ApiErrorResponse payload for HTTP 409");
         }
     }
 }

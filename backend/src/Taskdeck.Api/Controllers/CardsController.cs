@@ -155,7 +155,7 @@ public class CardsController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
     /// <response code="404">Card not found.</response>
-    /// <response code="409">Conflict — the card was modified since ExpectedUpdatedAt.</response>
+    /// <response code="409">Conflict — the board is archived and cannot accept card writes, or the card was modified since ExpectedUpdatedAt.</response>
     [HttpPatch("{cardId}")]
     [ProducesResponseType(typeof(CardDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
