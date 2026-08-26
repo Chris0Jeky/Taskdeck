@@ -8,6 +8,16 @@ import { useSessionStore } from '../../store/sessionStore'
 import type { Card, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }))
@@ -474,6 +484,31 @@ describe('CardModal', () => {
     expect(wrapper.emitted('updated')).toBeTruthy()
   })
 
+  it('does not let a late save from the previous card close the current card session', async () => {
+    const save = createDeferred<Card>()
+    mockStore.updateCard.mockReturnValue(save.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await wrapper.get('#card-title').setValue('Save card A')
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Save Changes'))!
+    await saveButton.trigger('click')
+
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Card B',
+      updatedAt: '2026-08-26T14:00:00.000Z',
+    }
+    await wrapper.setProps({ card: secondCard })
+    save.resolve(card)
+    await flushPromises()
+
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Card B')
+  })
+
   it('should disable save button when title is empty', async () => {
     const wrapper = mount(CardModal, {
       props: {
@@ -628,6 +663,82 @@ describe('CardModal', () => {
       updatedAt: new Date().toISOString(),
     }
   }
+
+  it('does not let late comment or reply additions clear the current card drafts', async () => {
+    const firstComment = makeOwnComment()
+    const secondComment: CardComment = {
+      ...firstComment,
+      id: 'comment-2',
+      cardId: 'card-2',
+      content: 'Card B comment',
+    }
+    mockStore.getCardComments.mockImplementation((cardId: string) => (
+      cardId === 'card-1' ? [firstComment] : [secondComment]
+    ))
+    const addComment = createDeferred<void>()
+    const addReply = createDeferred<void>()
+    mockStore.createCardComment.mockImplementation(
+      (_boardId: string, _cardId: string, request: { parentCommentId: string | null }) => (
+        request.parentCommentId ? addReply.promise : addComment.promise
+      ),
+    )
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.get('#new-card-comment').setValue('Card A comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Card A reply')
+    await wrapper.get('#add-card-comment').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Reply')!.trigger('click')
+
+    const secondCard: Card = { ...card, id: 'card-2', title: 'Card B' }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+    await wrapper.get('#new-card-comment').setValue('Keep Card B comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Keep Card B reply')
+
+    addComment.resolve()
+    addReply.resolve()
+    await flushPromises()
+
+    expect((wrapper.get('#new-card-comment').element as HTMLTextAreaElement).value).toBe('Keep Card B comment')
+    expect((wrapper.get('textarea[aria-label="Reply to comment"]').element as HTMLTextAreaElement).value).toBe('Keep Card B reply')
+  })
+
+  it('does not let a late edit from the previous card clear the current edit session', async () => {
+    const firstComment = makeOwnComment()
+    const secondComment: CardComment = {
+      ...firstComment,
+      id: 'comment-2',
+      cardId: 'card-2',
+      content: 'Card B comment',
+    }
+    mockStore.getCardComments.mockImplementation((cardId: string) => (
+      cardId === 'card-1' ? [firstComment] : [secondComment]
+    ))
+    const edit = createDeferred<void>()
+    mockStore.updateCardComment.mockReturnValue(edit.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Edit')!.trigger('click')
+    await wrapper.get('textarea[aria-label="Edit comment"]').setValue('Save card A edit')
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Save')!.trigger('click')
+
+    const secondCard: Card = { ...card, id: 'card-2', title: 'Card B' }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Edit')!.trigger('click')
+    await wrapper.get('textarea[aria-label="Edit comment"]').setValue('Keep card B edit')
+
+    edit.resolve()
+    await flushPromises()
+
+    expect((wrapper.get('textarea[aria-label="Edit comment"]').element as HTMLTextAreaElement).value).toBe('Keep card B edit')
+  })
 
   async function openCommentDeleteDialog(wrapper: ReturnType<typeof mount>) {
     await nextTick()
