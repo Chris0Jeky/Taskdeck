@@ -44,19 +44,19 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 |---|---|---|
 | **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days, running since 2026-08-22, and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
 | **v0.1.2** | **SHIPPED 2026-08-25 (tag at `9766edbb5`).** Honest-Windows-Beta correction: the `#1876` double-click/startup fix plus the Priority I tranche | q-3 gate satisfied: maintainer accepted the release deck in-session 2026-08-24 (`#1947`); milestone groomed to zero open and closed, residuals re-milestoned to v0.2 |
-| **v0.2 "Coherent Context-to-Action Loop"** | Phase 2 complete (the transcript engine — triage, durable transcripts, evidence spans — is largely shipped) widened per `PRODUCT_DIRECTION.md` §5: capture integrity, grounded chat outcomes, evidence/inference inspection, review legibility, guided daily journey, victory/progress export candidate | a real 45-min transcript → reviewable, evidence-linked, typed action items on the maintainer's own board; capture fields never silently dropped |
-| **v0.3 "Open Beta + Accountable Agents"** | Phase 3 complete: slimmed surface, MCP packaged with scoped keys and attribution, feedback channel live, launched; small-team collaboration proof begins | launch executed; 48h response presence done |
+| **v0.2 "Coherent Context-to-Action Loop"** | Final target **2026-09-01**. Phase 2 is largely shipped; the release cut is limited to the open milestone ship list and closure evidence | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
+| **v0.3 "Open Beta + Accountable Agents"** | RC target **2026-09-04**; final target **2026-09-08 or 2026-09-09**. Phase 3 packages MCP, feedback, accountable-agent and trusted-collaboration proof | RC checks green; launch and 48h response plan ready for final |
 | **v0.4 "Every Artefact"** | Phase 4 complete (ADR-0046): artefact intake (screenshots/PDFs/files), project dossiers, generalist legibility, friends-family channel | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
 | **Checkpoint (floor 2026-09-01, walkthrough q-8)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control) | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment |
 
 ### v0.1.2 dogfooding follow-up allocation
 
-The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md` and coordinated through existing tracker `#1947`. It represents accepted direction without turning every idea into a release blocker.
+The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md` and coordinated through tracker `#1947`. It records maintainer intent and Proposed decisions without treating them as accepted or turning every idea into a release blocker.
 
-- **v0.2 candidates:** `#2083` appearance interaction contrast, proposed work-model ADR `#2084`, capture dispositions `#2085`, and board density/inspector `#2086`. The current context-to-action gate remains authoritative.
-- **Conditional only:** minimal item types and one parent relation (`#2087`) require accepted ADR-0060 and spare v0.2 capacity. They are not v0.2 requirements.
-- **v0.3 candidates:** trusted shared-instance proof through amended `#1772`, extending `#1325`, plus the existing collaboration, attribution, concurrency, and provider-key foundations. Typed relations, multiple assignees, estimates, and templates are represented in proposed ADR-0060 but were not seeded as extra issues in this capped wave.
-- **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, generic fields if they would displace collaboration, formulas, thresholds, time logs, capacity planning, recurrence, and managed multi-tenant SaaS.
+- **v0.2 M1:** `#2083` appearance contrast, `#2085` keep/archive/board-target/proposal/provenance, and `#2086` side inspector plus compact density. `#2080`, the remaining Priority I core-loop fixes, and release closure evidence stay on the bounded milestone ship list.
+- **v0.3 M2:** `#2089` capture links/ledger/lifecycle, `#2090` widths/collapse/titles-only, and `#2087` minimal types/parent. ADR-0060 is owned only by `#2084`; ADR-0061 decisions by `#1772`; ADR-0062 decisions by `#2091`.
+- **Waiver-seeded v0.3 candidates:** minimal typed links `#2092`, participant/multiple-assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
+- **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
 Proposed ADR-0060, ADR-0061, and ADR-0062 require maintainer ratification. Until then the shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged.
 
