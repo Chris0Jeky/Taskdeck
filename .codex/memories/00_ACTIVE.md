@@ -35,13 +35,13 @@ Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-to
 
 **Current continuation:** exact `origin/main` at the 2026-08-26 intake was `ceeb27a6cc11e263d7b13be30579f845468ec8b1`. v0.1.2 is public, ADR-0059 is Accepted, and the dogfooding follow-up is documented in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`. Refresh open PRs and ProjectV2 before acting.
 
-**Exact continuation order:**
+**Continuation order:**
 
-1. Refresh Git, GitHub, ProjectV2, CI, review threads, and worktrees; live state outranks this checkpoint.
-2. Land `#2081`, then disposition the wave residuals seeded with it: `#2075` (archived-history polish), `#2078` (`docs/api/CHAT.md` drift), `#2080` (no service-layer `IsArchived` write guard — archived boards still accept card writes).
-3. Continue the still-open parents on their recorded residuals only — `#1949` runtime/a11y/dead-keystroke scope, `#1938` receipt retention and cleanup, `#1967` lifecycle and actor-name contract, `#1940` progressive disclosure, `#2004` redesign half (owner-decided).
-4. Run one final synthetic desktop capture → approved receipt → explicit Apply → exactly-one-card journey plus a blank-tag no-publish Windows candidate on the resulting exact main.
-5. Reconcile open milestone issues `#1242`, `#1938`, `#1940`, `#1947`, `#1949`, `#1967`, `#1992`, and `#2004` — `#1973` is now closed. Never infer the human/owner gates: `#1242` record acceptance, `#1992` 404-vs-405 contract, `#2004` chat contract, or maintainer release-deck acceptance. The ≥10-day dogfooding floor (not before 2026-09-01) is the separate q-8 traction/archive checkpoint, not a v0.1.2 tag prerequisite.
+1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestones, releases, and worktrees; live state outranks this checkpoint.
+2. Use standing tracker `#1947` and `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md` for the bounded follow-up wave. Do not create a replacement tracker.
+3. Treat ADR-0060, ADR-0061, and ADR-0062 as Proposed. No dependent schema work, including `#2087`, starts until the relevant decision is accepted.
+4. The next independent implementation candidate is `#2083`, the segmented-control interaction-state contrast defect. Do not start it during a docs/intake pass.
+5. Keep the grouped maintainer decision in `OUTSTANDING_TASKS.md` open. The dogfooding/traction checkpoint remains separately governed by ADR-0044 and the live revival plan.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved
