@@ -282,9 +282,7 @@ const editingColumnCardCount = computed(() =>
  */
 const anyDialogOpen = computed(
   () =>
-    (Boolean(selectedCard.value) && cardPresentation.value === 'modal') ||
-    Boolean(editingColumnLive.value) ||
-    showBoardSettings.value,
+    Boolean(selectedCard.value) || Boolean(editingColumnLive.value) || showBoardSettings.value,
 )
 
 watch(anyDialogOpen, (open) => {
