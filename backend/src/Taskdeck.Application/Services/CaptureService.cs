@@ -246,6 +246,18 @@ public class CaptureService : ICaptureService
         return Result.Success(MapToDetailDto(item, effectivePayload, effectiveBoardId));
     }
 
+    public Task<Result<CaptureItemDto>> KeepAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => SetDispositionAsync(userId, itemId, CaptureDisposition.Kept, cancellationToken);
+
+    public Task<Result<CaptureItemDto>> ArchiveAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => SetDispositionAsync(userId, itemId, CaptureDisposition.Archived, cancellationToken);
+
     public Task<Result> IgnoreAsync(
         Guid userId,
         Guid itemId,
@@ -356,7 +368,6 @@ public class CaptureService : ICaptureService
                 return Result.Failure<CaptureTriageEnqueueResultDto>(ex.ErrorCode, ex.Message);
             }
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
             effectiveBoardId = targetBoardId;
         }
         else if (effectiveBoardId.HasValue)
@@ -380,6 +391,19 @@ public class CaptureService : ICaptureService
             if (item.Status == RequestStatus.Failed)
             {
                 item.ResetForRetry();
+            }
+
+            if (effectivePayload.Disposition?.Kind != CaptureDisposition.ProposalRequested)
+            {
+                effectivePayload = effectivePayload with
+                {
+                    Disposition = new CaptureDispositionV1(
+                        CaptureDisposition.ProposalRequested,
+                        DateTimeOffset.UtcNow,
+                        userId,
+                        effectiveBoardId)
+                };
+                item.UpdatePayload(CaptureRequestContract.SerializePayload(effectivePayload));
             }
 
             item.MarkAsProcessing();
@@ -580,7 +604,8 @@ public class CaptureService : ICaptureService
             DueDate: dto.Metadata == null ? currentPayload.DueDate : dto.Metadata.DueDate,
             Labels: dto.Metadata == null
                 ? currentPayload.Labels
-                : dto.Metadata.Labels ?? Array.Empty<string>());
+                : dto.Metadata.Labels ?? Array.Empty<string>(),
+            Disposition: currentPayload.Disposition);
 
         var payloadValidation = CaptureRequestContract.ValidatePayload(updatedPayload);
         if (!payloadValidation.IsSuccess)
@@ -626,6 +651,59 @@ public class CaptureService : ICaptureService
         }
     }
 
+    private async Task<Result<CaptureItemDto>> SetDispositionAsync(
+        Guid userId,
+        Guid itemId,
+        CaptureDisposition disposition,
+        CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureItemDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+
+        if (item.UserId != userId)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
+
+        var payload = ParsePayload(item);
+        if (payload.Disposition?.Kind == disposition)
+            return Result.Success(MapToDetailDto(item, payload));
+
+        var status = ResolveCaptureStatus(item, payload);
+        if (status is not CaptureStatus.New and not CaptureStatus.Failed)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                $"Capture item cannot be {disposition.ToString().ToLowerInvariant()} from {status}");
+        }
+
+        try
+        {
+            if (disposition == CaptureDisposition.Archived)
+            {
+                item.Cancel();
+            }
+
+            var updatedPayload = payload with
+            {
+                Disposition = new CaptureDispositionV1(
+                    disposition,
+                    DateTimeOffset.UtcNow,
+                    userId,
+                    item.BoardId)
+            };
+            item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            return Result.Success(MapToDetailDto(item, updatedPayload));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<CaptureItemDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
     private static Result<CaptureSource> ResolveSource(string? source)
     {
         if (string.IsNullOrWhiteSpace(source))
@@ -655,7 +733,8 @@ public class CaptureService : ICaptureService
             excerpt,
             item.CreatedAt,
             item.ProcessedAt,
-            item.ErrorMessage);
+            item.ErrorMessage,
+            payload.Disposition);
     }
 
     private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
@@ -679,7 +758,8 @@ public class CaptureService : ICaptureService
             CanEditSuggestion(item, status),
             new CaptureSuggestionMetadataDto(
                 payload.DueDate,
-                payload.Labels ?? Array.Empty<string>()));
+                payload.Labels ?? Array.Empty<string>()),
+            payload.Disposition);
     }
 
     private static bool CanEditSuggestion(LlmRequest item, CaptureStatus status) =>

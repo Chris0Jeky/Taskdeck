@@ -925,6 +925,72 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task KeepAsync_ShouldPersistAttributedReceiptWithoutQueueingWork()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.KeepAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.New);
+        result.Value.Disposition.Should().NotBeNull();
+        result.Value.Disposition!.Kind.Should().Be(CaptureDisposition.Kept);
+        result.Value.Disposition.ByUserId.Should().Be(userId);
+        item.Status.Should().Be(RequestStatus.Pending);
+        CaptureRequestContract.ParseStoredPayload(item.Payload).Text.Should().Be("capture payload");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _automationProposalRepositoryMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_ShouldPersistAttributedReceiptAndCreateNoProposal()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var first = await _service.ArchiveAsync(userId, item.Id);
+        var second = await _service.ArchiveAsync(userId, item.Id);
+
+        first.IsSuccess.Should().BeTrue();
+        first.Value.Status.Should().Be(CaptureStatus.Ignored);
+        first.Value.Disposition!.Kind.Should().Be(CaptureDisposition.Archived);
+        first.Value.Disposition.ByUserId.Should().Be(userId);
+        second.IsSuccess.Should().BeTrue();
+        second.Value.Disposition.Should().Be(first.Value.Disposition);
+        item.Status.Should().Be(RequestStatus.Cancelled);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _automationProposalRepositoryMock.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task KeepAsync_ShouldReturnForbiddenWithoutChangingDifferentUsersCapture()
+    {
+        var ownerId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var item = new LlmRequest(ownerId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.KeepAsync(callerId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        CaptureRequestContract.ParseStoredPayload(item.Payload).Disposition.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task EnqueueTriageAsync_ShouldTransitionNewCaptureToTriaging()
     {
         var userId = Guid.NewGuid();
@@ -944,6 +1010,11 @@ public class CaptureServiceTests
         result.Value.Status.Should().Be(CaptureStatus.Triaging);
         result.Value.AlreadyTriaging.Should().BeFalse();
         item.Status.Should().Be(RequestStatus.Processing);
+        var payload = CaptureRequestContract.ParseStoredPayload(item.Payload);
+        payload.Disposition.Should().NotBeNull();
+        payload.Disposition!.Kind.Should().Be(CaptureDisposition.ProposalRequested);
+        payload.Disposition.ByUserId.Should().Be(userId);
+        payload.Disposition.BoardId.Should().Be(boardId);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 

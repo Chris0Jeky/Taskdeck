@@ -148,11 +148,18 @@ public class DataExportService : IDataExportService
                 n.IsRead,
                 n.CreatedAt)).ToList();
 
-            var exportCaptures = captures.Select(c => new UserDataExportCaptureDto(
-                c.Id,
-                c.Status.ToString(),
-                c.RequestType,
-                c.CreatedAt)).ToList();
+            var exportCaptures = captures.Select(c =>
+            {
+                var payload = CaptureRequestContract.ParseStoredPayload(c.Payload);
+                return new UserDataExportCaptureDto(
+                    c.Id,
+                    c.Status.ToString(),
+                    c.RequestType,
+                    c.CreatedAt,
+                    c.BoardId,
+                    payload.Provenance,
+                    payload.Disposition);
+            }).ToList();
 
             var exportProposals = proposals.Select(p => new UserDataExportProposalDto(
                 p.Id,
@@ -372,11 +379,15 @@ public class DataExportService : IDataExportService
             foreach (var c in captures)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var payload = CaptureRequestContract.ParseStoredPayload(c.Payload);
                 writer.WriteStartObject();
                 writer.WriteString("id", c.Id.ToString());
                 writer.WriteString("status", c.Status.ToString());
                 writer.WriteString("requestType", c.RequestType);
                 writer.WriteString("createdAt", c.CreatedAt);
+                WriteNullableGuid(writer, "boardId", c.BoardId);
+                WriteCaptureProvenance(writer, payload.Provenance);
+                WriteCaptureDisposition(writer, payload.Disposition);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -548,6 +559,59 @@ public class DataExportService : IDataExportService
                 ErrorCodes.UnexpectedError,
                 "Failed to stream user data export due to an internal error");
         }
+    }
+
+    private static void WriteCaptureProvenance(Utf8JsonWriter writer, CaptureProvenanceV1? provenance)
+    {
+        writer.WritePropertyName("provenance");
+        if (provenance is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("captureItemId", provenance.CaptureItemId);
+        WriteNullableGuid(writer, "triageRunId", provenance.TriageRunId);
+        WriteNullableGuid(writer, "proposalId", provenance.ProposalId);
+        writer.WriteString("promptVersion", provenance.PromptVersion);
+        writer.WriteString("provider", provenance.Provider);
+        writer.WriteString("model", provenance.Model);
+        WriteNullableGuid(writer, "requestedByUserId", provenance.RequestedByUserId);
+        writer.WriteString("correlationId", provenance.CorrelationId);
+        writer.WriteString("sourceSurface", provenance.SourceSurface);
+        WriteNullableGuid(writer, "boardId", provenance.BoardId);
+        WriteNullableGuid(writer, "sessionId", provenance.SessionId);
+        if (provenance.ConvertedAt.HasValue)
+            writer.WriteString("convertedAt", provenance.ConvertedAt.Value);
+        else
+            writer.WriteNull("convertedAt");
+        writer.WriteEndObject();
+    }
+
+    private static void WriteCaptureDisposition(Utf8JsonWriter writer, CaptureDispositionV1? disposition)
+    {
+        writer.WritePropertyName("disposition");
+        if (disposition is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("kind", disposition.Kind.ToString());
+        writer.WriteString("at", disposition.At);
+        writer.WriteString("byUserId", disposition.ByUserId);
+        WriteNullableGuid(writer, "boardId", disposition.BoardId);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteNullableGuid(Utf8JsonWriter writer, string propertyName, Guid? value)
+    {
+        if (value.HasValue)
+            writer.WriteString(propertyName, value.Value);
+        else
+            writer.WriteNull(propertyName);
     }
 
     // -----------------------------------------------------------------------

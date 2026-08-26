@@ -125,6 +125,44 @@ public class CaptureController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Keep a capture in the Inbox for later without creating a proposal or work item.
+    /// </summary>
+    [HttpPost("{id:guid}/keep")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [ProducesResponseType(typeof(CaptureItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Keep(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.KeepAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Archive a capture without creating a proposal or work item.
+    /// </summary>
+    [HttpPost("{id:guid}/archive")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [ProducesResponseType(typeof(CaptureItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.ArchiveAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Mark a capture item as ignored (dismissed without triage).
     /// </summary>
     /// <param name="id">The capture item identifier.</param>

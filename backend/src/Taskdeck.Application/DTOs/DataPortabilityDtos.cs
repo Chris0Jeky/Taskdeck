@@ -70,7 +70,10 @@ public record UserDataExportCaptureDto(
     Guid Id,
     string Status,
     string? RequestType,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? BoardId = null,
+    CaptureProvenanceV1? Provenance = null,
+    CaptureDispositionV1? Disposition = null);
 
 public record UserDataExportProposalDto(
     Guid Id,

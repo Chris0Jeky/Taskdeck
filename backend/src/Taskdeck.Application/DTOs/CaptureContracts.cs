@@ -15,7 +15,14 @@ public record CapturePayloadV1(
     string? ExternalRef = null,
     CaptureProvenanceV1? Provenance = null,
     DateOnly? DueDate = null,
-    IReadOnlyList<string>? Labels = null);
+    IReadOnlyList<string>? Labels = null,
+    CaptureDispositionV1? Disposition = null);
+
+public record CaptureDispositionV1(
+    CaptureDisposition Kind,
+    DateTimeOffset At,
+    Guid ByUserId,
+    Guid? BoardId = null);
 
 public record CaptureProvenanceV1(
     Guid CaptureItemId,
@@ -190,7 +197,8 @@ public static class CaptureRequestContract
                 wire.ExternalRef,
                 wire.Provenance,
                 wire.DueDate,
-                wire.Labels);
+                wire.Labels,
+                wire.Disposition);
 
             return ValidatePayload(payloadModel);
         }
@@ -306,6 +314,20 @@ public static class CaptureRequestContract
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
                 $"Unsupported capture attribution source surface '{payload.Provenance.SourceSurface}'");
+        }
+
+        if (payload.Disposition is { ByUserId: var dispositionUserId } && dispositionUserId == Guid.Empty)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture disposition user ID cannot be empty");
+        }
+
+        if (payload.Disposition is { BoardId: { } dispositionBoardId } && dispositionBoardId == Guid.Empty)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture disposition board ID cannot be empty");
         }
 
         return Result.Success(payload);
@@ -459,6 +481,17 @@ public static class CaptureRequestContract
 
         if (!allowServerAttributionFields)
         {
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.Name.Equals("disposition", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind != JsonValueKind.Null)
+                {
+                    return Result.Failure(
+                        ErrorCodes.ValidationError,
+                        "Capture payload must not include server disposition fields");
+                }
+            }
+
             // Every server-authored provenance field is forbidden on the client path — not just
             // actor attribution. proposalId/triageRunId/provider/model/promptVersion are stamped by
             // the triage pipeline after it actually runs; accepting them from a client would let a
@@ -528,5 +561,6 @@ public static class CaptureRequestContract
         public CaptureProvenanceV1? Provenance { get; init; }
         public DateOnly? DueDate { get; init; }
         public List<string>? Labels { get; init; }
+        public CaptureDispositionV1? Disposition { get; init; }
     }
 }
