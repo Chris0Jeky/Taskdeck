@@ -15,7 +15,7 @@ CardService rejects card create, update, move, and delete operations when the ow
 
 This guard applies at the shared service boundary used by HTTP, CLI, and proposal/MCP execution callers. Reads remain available. Board restoration and a frontend restore-first affordance are separate work.
 
-The bulk card writers — external import, starter-pack apply, and archive-item restore — join the same conditional board update (`#2114`). They already rejected an archived board on read, but that check ran once before a whole batch was planned, so an archive committing in between was accepted silently. They now take the same non-advancing board touch, so a racing archive turns the batch into `ErrorCodes.Conflict` (`409`) and rolls it back. The token is deliberately still not advanced by any of them, so bulk writers do not invalidate each other or in-flight single-card writes on the same board.
+The bulk writers — external import, starter-pack apply, and archive-item restore (its column half included: `RestoreColumnAsync` writes no cards, but `RestorePlanner`'s archived-target check governs every non-board restore, so guarding only the card half would leave the identical window open on the same predicate) — join the same conditional board update (`#2114`). They already rejected an archived board on read, but that check ran once before a whole batch was planned, so an archive committing in between was accepted silently. They now take the same non-advancing board touch, so a racing archive turns the batch into `ErrorCodes.Conflict` (`409`) and rolls it back. The token is deliberately still not advanced by any of them, so bulk writers do not invalidate each other or in-flight single-card writes on the same board.
 
 ## Consequences
 
