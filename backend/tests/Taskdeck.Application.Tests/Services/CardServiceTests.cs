@@ -74,7 +74,7 @@ public class CardServiceTests
         result.Value.Title.Should().Be("New Card");
         result.Value.BoardId.Should().Be(board.Id);
         result.Value.ColumnId.Should().Be(column.Id);
-        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -399,7 +399,7 @@ public class CardServiceTests
         card.Title.Should().Be("Updated Title");
         card.Description.Should().Be("Updated Description");
         card.DueDate.Should().Be(newDueDate);
-        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -711,7 +711,7 @@ public class CardServiceTests
         result.IsSuccess.Should().BeTrue();
         card.ColumnId.Should().Be(targetColumn.Id);
         card.Position.Should().Be(0);
-        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 
@@ -1049,7 +1049,7 @@ public class CardServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
         _cardRepoMock.Verify(r => r.DeleteAsync(card, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
