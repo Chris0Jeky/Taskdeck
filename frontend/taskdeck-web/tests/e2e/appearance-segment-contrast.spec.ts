@@ -30,9 +30,15 @@ function luminance(rgb: [number, number, number]): number {
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
 }
 
-function contrast(foreground: string, background: string): number {
-  const foregroundLuminance = luminance(parseRgb(foreground))
-  const backgroundLuminance = luminance(parseRgb(background))
+function mix(foreground: [number, number, number], background: [number, number, number], opacity: number): [number, number, number] {
+  return foreground.map((channel, index) => (
+    channel * opacity + background[index] * (1 - opacity)
+  )) as [number, number, number]
+}
+
+function contrast(foreground: [number, number, number], background: [number, number, number]): number {
+  const foregroundLuminance = luminance(foreground)
+  const backgroundLuminance = luminance(background)
   const [lighter, darker] = foregroundLuminance >= backgroundLuminance
     ? [foregroundLuminance, backgroundLuminance]
     : [backgroundLuminance, foregroundLuminance]
@@ -42,6 +48,12 @@ function contrast(foreground: string, background: string): number {
 async function computedState(locator: Locator) {
   return await locator.evaluate((element) => {
     const style = getComputedStyle(element)
+    let substrate = element.parentElement
+    while (substrate) {
+      const background = getComputedStyle(substrate).backgroundColor
+      if (background !== 'transparent' && !/rgba\([^)]*,\s*0\s*\)$/.test(background)) break
+      substrate = substrate.parentElement
+    }
     return {
       background: style.backgroundColor,
       color: style.color,
@@ -49,19 +61,27 @@ async function computedState(locator: Locator) {
       cursor: style.cursor,
       opacity: Number(style.opacity),
       transform: style.transform,
+      transitionProperty: style.transitionProperty,
+      underlay: substrate ? getComputedStyle(substrate).backgroundColor : 'rgb(255, 255, 255)',
     }
   })
 }
 
 async function expectContrast(locator: Locator, context: string) {
   const style = await computedState(locator)
-  expect(contrast(style.color, style.background), context).toBeGreaterThanOrEqual(4.5)
+  const underlay = parseRgb(style.underlay)
+  const renderedForeground = mix(parseRgb(style.color), underlay, style.opacity)
+  const renderedBackground = mix(parseRgb(style.background), underlay, style.opacity)
+  expect(contrast(renderedForeground, renderedBackground), context).toBeGreaterThanOrEqual(4.5)
   return style
 }
 
 async function exerciseStates(page: Page, locator: Locator, context: string, selected: boolean) {
   await page.locator('.paper-appearance__title').hover()
   const rest = await expectContrast(locator, `${context}: rest contrast`)
+  const transitionedProperties = rest.transitionProperty.split(',').map((property) => property.trim())
+  expect(transitionedProperties, `${context}: atomic colour transition`).not.toContain('color')
+  expect(transitionedProperties, `${context}: atomic background transition`).not.toContain('background-color')
 
   await locator.hover()
   const hover = await expectContrast(locator, `${context}: hover contrast`)
@@ -94,12 +114,35 @@ async function exerciseStates(page: Page, locator: Locator, context: string, sel
   await locator.evaluate((element: HTMLButtonElement) => { element.disabled = true })
   const disabledRest = await expectContrast(locator, `${context}: disabled contrast`)
   expect(disabledRest.cursor, `${context}: disabled cursor`).toBe('default')
-  expect(disabledRest.opacity, `${context}: disabled opacity`).toBeLessThan(1)
+  expect(disabledRest.opacity, `${context}: disabled opacity`).toBe(1)
   await locator.hover({ force: true })
   const disabledHover = await computedState(locator)
   expect(disabledHover.background, `${context}: disabled hover background`).toBe(disabledRest.background)
   expect(disabledHover.color, `${context}: disabled hover foreground`).toBe(disabledRest.color)
   await locator.evaluate((element: HTMLButtonElement) => { element.disabled = false })
+}
+
+async function sampleSelectionTransition(
+  page: Page,
+  locator: Locator,
+  context: string,
+  keyboard: boolean,
+) {
+  await expect(locator).toHaveAttribute('aria-pressed', 'false')
+  if (keyboard) {
+    await locator.focus()
+    await page.keyboard.press('Space')
+  } else {
+    await locator.click()
+  }
+  await expect(locator).toHaveAttribute('aria-pressed', 'true')
+
+  let previousSample = 0
+  for (const elapsed of [0, 35, 70, 105, 140, 175]) {
+    await page.waitForTimeout(elapsed - previousSample)
+    await expectContrast(locator, `${context}: ${elapsed}ms transition contrast`)
+    previousSample = elapsed
+  }
 }
 
 test('Appearance segments keep legible composed states across themes', async ({ page, request }) => {
@@ -114,7 +157,6 @@ test('Appearance segments keep legible composed states across themes', async ({ 
     }, theme.mode)
     await page.reload()
     await expect(page.locator('.paper-appearance')).toBeVisible()
-    await page.addStyleTag({ content: '.paper-appearance__segment { transition: none !important; }' })
 
     if (theme.bodyClass) {
       await expect(page.locator('body')).toHaveClass(new RegExp(`(^|\\s)${theme.bodyClass}(\\s|$)`))
@@ -135,14 +177,18 @@ test('Appearance segments keep legible composed states across themes', async ({ 
     await exerciseStates(page, selectedLanguage, `${theme.name} Language selected`, true)
     await exerciseStates(page, unselectedLanguage, `${theme.name} Language unselected`, false)
 
-    if (theme.mode === 'paper') {
-      await unselectedTheme.focus()
-      await page.keyboard.press('Space')
-      await expect(unselectedTheme).toHaveAttribute('aria-pressed', 'true')
-
-      await unselectedLanguage.focus()
-      await page.keyboard.press('Space')
-      await expect(unselectedLanguage).toHaveAttribute('aria-pressed', 'true')
-    }
+    const useKeyboard = theme.mode === 'paper'
+    await sampleSelectionTransition(
+      page,
+      unselectedLanguage,
+      `${theme.name} Language selection`,
+      useKeyboard,
+    )
+    await sampleSelectionTransition(
+      page,
+      unselectedTheme,
+      `${theme.name} Theme selection`,
+      useKeyboard,
+    )
   }
 })
