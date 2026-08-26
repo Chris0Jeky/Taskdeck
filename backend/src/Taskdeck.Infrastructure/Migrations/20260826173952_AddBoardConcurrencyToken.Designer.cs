@@ -597,8 +597,7 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("ConcurrencyToken")
-                        .IsConcurrencyToken()
-                        .HasColumnType("TEXT");
+                        .IsConcurrencyToken();
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");

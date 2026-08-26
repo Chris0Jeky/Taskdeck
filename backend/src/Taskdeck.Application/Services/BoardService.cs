@@ -353,22 +353,29 @@ public class BoardService
 
     private async Task<Result> DeleteBoardInternalAsync(Guid id, Guid? actorUserId, CancellationToken cancellationToken)
     {
-        var board = await _unitOfWork.Boards.GetByIdAsync(id, cancellationToken);
-        if (board == null)
-            return Result.Failure(ErrorCodes.NotFound, $"Board with ID {id} not found");
+        try
+        {
+            var board = await _unitOfWork.Boards.GetByIdAsync(id, cancellationToken);
+            if (board == null)
+                return Result.Failure(ErrorCodes.NotFound, $"Board with ID {id} not found");
 
-        board.Archive(); // Soft delete
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        await _realtimeNotifier.NotifyBoardMutationAsync(
-            new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
-            cancellationToken);
-        await SafeLogAsync("board", board.Id, AuditAction.Archived, actorUserId, $"name={board.Name}");
+            board.Archive(); // Soft delete
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(board.Id, "board", "archived", board.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
+            await SafeLogAsync("board", board.Id, AuditAction.Archived, actorUserId, $"name={board.Name}");
 
-        // Invalidate board list cache for the owner
-        if (board.OwnerId.HasValue)
-            await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
+            // Invalidate board list cache for the owner
+            if (board.OwnerId.HasValue)
+                await InvalidateBoardListCacheAsync(board.OwnerId.Value, cancellationToken);
 
-        return Result.Success();
+            return Result.Success();
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure(ex.ErrorCode, ex.Message);
+        }
     }
 
     private async Task<Result> EnsureBoardPermissionAsync(

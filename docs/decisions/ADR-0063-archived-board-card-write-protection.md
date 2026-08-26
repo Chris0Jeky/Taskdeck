@@ -11,7 +11,7 @@ Archived-board history is readable, but direct card create, update, move, and de
 
 ## Decision
 
-CardService rejects card create, update, move, and delete operations when the owning board is archived. It returns `ErrorCodes.InvalidOperation`, which the API maps to the stable `409 Conflict` error contract. A board must be restored before a card write can proceed. Each accepted card write also advances a board concurrency token; archive advances the same token. EF persists that token as a concurrency predicate, so an archive that commits after the service read makes the stale card write conflict and rolls back rather than mutating archived history.
+CardService rejects card create, update, move, and delete operations when the owning board is archived. It returns `ErrorCodes.InvalidOperation`, which the API maps to the stable `409 Conflict` error contract. A board must be restored before a card write can proceed. Every card write touches the board without advancing its concurrency token, so EF issues a conditional board update using the token it read. Board mutations, including archive and restore, advance that token. Therefore an archive that commits after the service read makes the stale card write conflict and roll back rather than mutating archived history, while independent card writes retain their established success semantics.
 
 This guard applies at the shared service boundary used by HTTP, CLI, and proposal/MCP execution callers. Reads remain available. Board restoration and a frontend restore-first affordance are separate work.
 

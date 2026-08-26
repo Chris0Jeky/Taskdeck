@@ -83,16 +83,12 @@ public class DatabaseResilienceTests : IClassFixture<TestWebApplicationFactory>
 
         var results = await Task.WhenAll(delete1, delete2);
 
-        // One should succeed (204/200), the other should get 404.
-        // Neither should be 500.
-        foreach (var result in results)
-        {
-            var statusCode = (int)result.StatusCode;
-            statusCode.Should().NotBe(500,
-                "concurrent operations should not cause unhandled 500 errors");
-        }
-
         var statusCodes = results.Select(r => (int)r.StatusCode).OrderBy(s => s).ToArray();
+        statusCodes.Should().OnlyContain(statusCode =>
+                (statusCode >= 200 && statusCode < 300) ||
+                statusCode == (int)HttpStatusCode.NotFound ||
+                statusCode == (int)HttpStatusCode.Conflict,
+            "the losing delete can observe an already archived board or lose the Board concurrency-token race");
         statusCodes.Should().Contain(s => s >= 200 && s < 300,
             "at least one delete should succeed");
     }

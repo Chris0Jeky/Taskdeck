@@ -240,7 +240,9 @@ export default {
     title: 'The change',
     subTitle: '{count} operation · {board} | {count} operations · {board}',
     beforeEyebrow: 'Before · today',
+    beforeEyebrowApplied: 'Before · recorded',
     afterEyebrow: 'After · on apply',
+    afterEyebrowApplied: 'After · applied',
     fieldsHeading: 'Per-field changes',
     tag: {
       new: '· new',
@@ -249,6 +251,7 @@ export default {
     before: {
       titleFallback: 'No proposal selected',
       bodyFallback: 'Review {count} proposal operations before applying.',
+      bodyAppliedFallback: 'Recorded {count} proposal operations.',
       meta: '{board} · {source}',
       sourceFallback: 'proposal',
     },

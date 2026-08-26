@@ -53,6 +53,23 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void AddBoardConcurrencyToken_uses_sql_server_native_guid_type_and_default()
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=taskdeck_migration_script;Trusted_Connection=True;")
+            .Options;
+
+        using var sqlServerContext = new TaskdeckDbContext(options);
+        var script = sqlServerContext.GetService<IMigrator>().GenerateScript(
+            fromMigration: "20260816163822_AddTypedTranscriptEvidenceLink",
+            toMigration: "20260826173952_AddBoardConcurrencyToken");
+
+        script.Should().MatchRegex(
+            @"ALTER TABLE \[Boards\] ADD \[ConcurrencyToken\] uniqueidentifier NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
+        script.Should().NotContain("[ConcurrencyToken] TEXT");
+    }
+
+    [Fact]
     public void Migrations_produce_all_expected_tables()
     {
         // Arrange — apply all migrations

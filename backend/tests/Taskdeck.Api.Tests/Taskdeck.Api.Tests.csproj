@@ -26,6 +26,7 @@
     <PackageReference Include="FsCheck" />
     <PackageReference Include="FsCheck.Xunit" />
     <PackageReference Include="Moq" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
   </ItemGroup>
 
   <ItemGroup>

@@ -90,12 +90,14 @@ public class Board : Entity
     }
 
     /// <summary>
-    /// Records a card mutation as a board-level concurrent write. This makes an archive and a
-    /// card write mutually exclusive when either was based on a stale board state.
+    /// Records a card mutation without advancing the board concurrency token. Touching the board
+    /// makes EF issue a conditional update using the current token, so a board mutation that
+    /// advanced the token after the archived-state check still rejects the card write. Independent
+    /// card writes keep the same token and retain their established success semantics.
     /// </summary>
     public void RecordCardMutation()
     {
-        TouchAndAdvanceConcurrencyToken();
+        Touch();
     }
 
     private void TouchAndAdvanceConcurrencyToken()

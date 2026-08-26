@@ -425,6 +425,26 @@ public class BoardServiceTests
     }
 
     [Fact]
+    public async Task DeleteBoardAsync_ShouldReturnConflict_WhenConcurrentArchiveWins()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default))
+            .ThrowsAsync(new DomainException(
+                ErrorCodes.Conflict,
+                "Record was updated by another session. Refresh and retry your action."));
+
+        // Act
+        var result = await _service.DeleteBoardAsync(board.Id);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+    }
+
+    [Fact]
     public async Task DeleteBoardAsync_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
         // Arrange
