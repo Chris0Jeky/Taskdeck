@@ -168,9 +168,11 @@ Explorer/SmartScreen acceptance remain unverified.
   base**, so FsCheck 3.4.0 ran against the new capture contracts rather than a stale tree. PdfPig
   evidence-version drift is noted on `#1429`; the Stryker 9.6.1 → 10 bump is deferred to `#2139`.
 - **Wave-level CI bound.** All eleven 2026-08-26 merges had exact-head Required CI green. Post-merge
-  `main` CI was SUCCESS at `44aceede6`; the run at the final tip `006ab8303` (`33015017508`) was
-  still in progress when this map was written and is **not** claimed green. Several intermediate
-  post-merge runs concluded `cancelled` because the next merge landed mid-run.
+  `main` CI was SUCCESS at `44aceede6`, but the run at the wave's final tip `006ab8303`
+  (`33015017508`) concluded **`cancelled`** — superseded by the next merge, frontend dependabot
+  `#2118` (`d37954730`), landing mid-run. Several intermediate post-merge runs concluded `cancelled`
+  for the same reason. **There is therefore no green post-merge `main` run at the wave tip**, and
+  confirming one on a settled `main` remains owed before any release deck.
 - `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
   race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
   Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
