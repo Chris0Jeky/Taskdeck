@@ -32,7 +32,7 @@ public sealed class PdfPigArtefactExtractionTests
         result.ExtractedText.Should().Contain("Taskdeck evidence survives local extraction.");
         result.Warnings.Should().BeEmpty();
         result.ExtractorName.Should().Be("PdfPig");
-        result.ExtractorVersion.Should().Be("0.1.15");
+        result.ExtractorVersion.Should().Be("0.1.16");
     }
 
     [Fact]

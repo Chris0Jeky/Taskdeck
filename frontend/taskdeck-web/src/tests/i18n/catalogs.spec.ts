@@ -153,6 +153,26 @@ describe('message catalogs', () => {
       expect(mismatched, `plural-form mismatches in "${locale}"`).toEqual([])
     },
   )
+
+  it.each(SUPPORTED_LOCALES.map((locale) => [locale]))(
+    '%s: Inbox edit guidance names the current disposition controls',
+    (locale) => {
+      const catalog = flattened.get(locale as SupportedLocale)!
+      const guidance = [...catalog.entries()].filter(([key]) =>
+        key.startsWith('inbox.triage.edit.'),
+      )
+      const stale = guidance
+        .filter(([, message]) => /\b(?:Accept|Reject)\b/.test(message))
+        .map(([key]) => key)
+
+      expect(stale, 'Inbox edit guidance still names retired controls').toEqual([])
+
+      const guidanceText = guidance.map(([, message]) => message).join(' ')
+      for (const action of ['Ask AI', 'Keep', 'Archive']) {
+        expect(guidanceText, `Inbox edit guidance is missing "${action}"`).toContain(action)
+      }
+    },
+  )
 })
 
 describe('catalog guard itself', () => {

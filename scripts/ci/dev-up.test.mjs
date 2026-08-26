@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from 'node:fs/promises'
@@ -71,6 +72,15 @@ const appendEvent = (event) => {
     pid: process.pid,
   }) + '\n')
 }
+
+// Every fake process this helper becomes is a native OS process, even when the launcher started it
+// through a Git Bash stub whose MSYS pid is a different process entirely. Recording the real pid
+// gives fixture teardown a way to name the processes that are still holding the fixture directory.
+const recordLivePid = () => {
+  if (!process.env.TASKDECK_LIVE_PIDS) return
+  fs.appendFileSync(process.env.TASKDECK_LIVE_PIDS, kind + ' ' + process.pid + '\n')
+}
+recordLivePid()
 
 const stopWithServer = (server) => {
   const stopDelayMs = Number(process.env.FAKE_STOP_DELAY_MS ?? 0)
@@ -290,6 +300,59 @@ function extractBashFunction(source, name) {
   return source.slice(start, end + 2)
 }
 
+// Git Bash launches native Windows Node in CI. A SIGTERM can terminate that process without
+// invoking a JavaScript SIGTERM listener, so this seam proves the Bash cleanup contract through
+// its identity probe instead of inferring signal handling from elapsed wall-clock time.
+async function assertBashTermKillEscalation(fixture) {
+  const source = normalise(await readFile(join(fixture.scriptsDir, 'dev-up.sh'), 'utf8'))
+  const harness = join(fixture.root, 'term-kill-seam.sh')
+  const signalLog = join(fixture.root, 'term-kill-seam.log')
+  const probeState = join(fixture.root, 'term-kill-seam.state')
+  const observedState = join(fixture.root, 'term-kill-seam.observed')
+  await writeFile(
+    harness,
+    `#!/usr/bin/env bash
+set -euo pipefail
+term_sent=0
+kill_sent=0
+warn() { :; }
+sleep() { :; }
+process_identity_status() {
+  if [[ "$term_sent" -eq 1 ]]; then printf '1\\n' > "$OBSERVED_STATE"; fi
+  if [[ "$kill_sent" -eq 1 ]]; then printf 'missing\\n'; else printf 'match\\n'; fi
+}
+kill() {
+  case "$1" in
+    -TERM) term_sent=1 ;;
+    -KILL) kill_sent=1 ;;
+  esac
+  printf '%s\\n' "$1" >> "$SIGNAL_LOG"
+  return 0
+}
+${extractBashFunction(source, 'wait_for_identity_exit')}
+${extractBashFunction(source, 'stop_exact_process')}
+stop_exact_process api 4242 node recorded-token
+printf '%s\\n' "$term_sent" "$kill_sent" > "$PROBE_STATE"
+`,
+  )
+  const result = spawnSync(bash, [toPosixPath(harness)], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      SIGNAL_LOG: toPosixPath(signalLog),
+      PROBE_STATE: toPosixPath(probeState),
+      OBSERVED_STATE: toPosixPath(observedState),
+    },
+  })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+  assert.deepEqual((await readFile(probeState, 'utf8')).trim().split(/\r?\n/), ['1', '1'])
+  assert.equal((await readFile(observedState, 'utf8')).trim(), '1')
+  assert.deepEqual((await readFile(signalLog, 'utf8')).trim().split(/\r?\n/), ['-TERM', '-KILL'])
+}
+
 function toPosixPath(path) {
   if (process.platform !== 'win32') return path
   return path
@@ -322,8 +385,85 @@ async function readOptional(path) {
   }
 }
 
+// Windows refuses to remove a directory while any live process still uses it as a working
+// directory, and reports that as EBUSY on the rmdir of that exact directory specifically; an open
+// file handle somewhere inside the tree does not produce that signature. The launcher runs its
+// node probes from its own working directory and starts the fake API after `cd "$REPO_ROOT"`, so
+// the fixture root is the working directory of several native processes during a run, and the
+// launcher's "stopped" report is not a synchronization point for their exit: under Git Bash it
+// signals an MSYS pid that stands in for a separate native Windows process. Teardown therefore
+// waits for the directory to actually become removable rather than assuming a fixed retry budget
+// is enough on a loaded runner, and fails loudly with the surviving pids if it never does.
+const FIXTURE_REMOVAL_TIMEOUT_MS = 30_000
+const FIXTURE_REMOVAL_MAX_DELAY_MS = 500
+// Codes Windows raises while something still holds the directory or one of its entries. Every
+// other code is a real defect and is rethrown untouched.
+const FIXTURE_REMOVAL_RETRY_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE'])
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false
+    if (error?.code === 'EPERM') return true
+    throw error
+  }
+}
+
+async function describeLiveFixtureProcesses(fixture) {
+  if (!fixture?.livePidFile) return 'not recorded'
+  const text = await readOptional(fixture.livePidFile)
+  if (!text) return 'none recorded'
+  const seen = new Set()
+  const alive = []
+  for (const line of text.split(/\r?\n/)) {
+    const [kind, rawPid] = line.trim().split(/\s+/)
+    const pid = Number(rawPid)
+    if (!Number.isSafeInteger(pid) || pid <= 0 || seen.has(pid)) continue
+    seen.add(pid)
+    if (isProcessAlive(pid)) alive.push(`${kind} pid ${pid}`)
+  }
+  return alive.length > 0 ? alive.join(', ') : 'none still alive'
+}
+
+async function describeRemainingEntries(root) {
+  try {
+    const entries = await readdir(root)
+    return entries.length > 0 ? entries.join(', ') : 'none (only the root itself is held)'
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 'none (root already gone)'
+    return `unreadable (${error?.code ?? error})`
+  }
+}
+
+async function removeDirectory(root, fixture = null) {
+  const deadline = Date.now() + FIXTURE_REMOVAL_TIMEOUT_MS
+  let delay = 50
+  for (;;) {
+    try {
+      await rm(root, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (!FIXTURE_REMOVAL_RETRY_CODES.has(error?.code)) throw error
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `${root} was still in use ${FIXTURE_REMOVAL_TIMEOUT_MS}ms after the test finished ` +
+            `(${error.code} on ${error.syscall} of '${error.path}'). ` +
+            `Fixture processes still alive: ${await describeLiveFixtureProcesses(fixture)}. ` +
+            `Remaining entries: ${await describeRemainingEntries(root)}. ` +
+            'Something is still using it as a working directory or holding one of its entries.',
+          { cause: error },
+        )
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay))
+      delay = Math.min(delay * 2, FIXTURE_REMOVAL_MAX_DELAY_MS)
+    }
+  }
+}
+
 async function removeFixture(fixture) {
-  await rm(fixture.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  await removeDirectory(fixture.root, fixture)
 }
 
 async function createFixture(platform) {
@@ -369,6 +509,7 @@ async function createFixture(platform) {
         : join(stateDir, 'dev-up.operation.lock'),
     npmLog: join(root, 'events.jsonl'),
     npmReleaseFile: join(root, '.release-npm-ci'),
+    livePidFile: join(root, 'live-pids.log'),
   }
 }
 
@@ -500,6 +641,7 @@ function fixtureEnvironment(platform, fixture, overrides = {}) {
     TASKDECK_NPM_LOG: fixture.npmLog,
     TASKDECK_TEST_STATE_FILE: fixture.stateFile,
     FAKE_NPM_RELEASE_FILE: fixture.npmReleaseFile,
+    TASKDECK_LIVE_PIDS: fixture.livePidFile,
     ...overrides,
   }
   if (platform.name === 'PowerShell') {
@@ -517,6 +659,7 @@ function fixtureEnvironment(platform, fixture, overrides = {}) {
     TASKDECK_HELPER: toPosixPath(fixture.helper),
     TASKDECK_NPM_LOG: toPosixPath(fixture.npmLog),
     FAKE_NPM_RELEASE_FILE: toPosixPath(fixture.npmReleaseFile),
+    TASKDECK_LIVE_PIDS: toPosixPath(fixture.livePidFile),
   }
 }
 
@@ -831,17 +974,13 @@ if (bash) {
     async () => {
       const platform = { name: 'Bash', launcher: 'dev-up.sh' }
       const fixture = await createFixture(platform)
-      const startedAt = Date.now()
       try {
         await assertResetSeedCycle(platform, fixture, {
           env: {
             FAKE_STOP_DESCENDANT: '1',
-            FAKE_STOP_DELAY_MS: '10250',
           },
         })
-        const elapsedMs = Date.now() - startedAt
-        assert.ok(elapsedMs >= 10_000, `slow teardown completed unexpectedly quickly in ${elapsedMs}ms`)
-        assert.ok(elapsedMs < RESET_CYCLE_TEARDOWN_TIMEOUT_MS)
+        await assertBashTermKillEscalation(fixture)
       } finally {
         await removeFixture(fixture)
       }
@@ -943,7 +1082,7 @@ stop_exact_process api 4242 node recorded-token
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
       assert.deepEqual((await readFile(killLog, 'utf8')).trim().split(/\r?\n/), ['-TERM 4242'])
     } finally {
-      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      await removeDirectory(fixtureRoot)
     }
   })
 
@@ -992,7 +1131,7 @@ if stop_recorded_process api 100 root root-token; then exit 90; fi
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
       assert.equal(await readOptional(signalLog), null)
     } finally {
-      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      await removeDirectory(fixtureRoot)
     }
   })
 
@@ -1067,7 +1206,7 @@ stop_exact_process api 42424242 bash "$expected"
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
       assert.equal(await readOptional(signalLog), null)
     } finally {
-      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      await removeDirectory(fixtureRoot)
     }
   })
 }

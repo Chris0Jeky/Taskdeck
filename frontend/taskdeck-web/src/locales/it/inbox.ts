@@ -100,13 +100,13 @@ export default {
     //
     // `blocked.notEditable` dichiara il FATTO, non la causa: il server rifiuta
     // la modifica per più motivi e indicarne uno solo sarebbe un'ipotesi
-    // presentata come spiegazione. "Accept" e "Reject" restano in inglese
-    // perché sono le etichette dei pulsanti su questa superficie.
+    // presentata come spiegazione. "Ask AI", "Keep" e "Archive" restano in
+    // inglese perché sono le etichette dei pulsanti su questa superficie.
     edit: {
       action: 'Modifica cattura',
       label: 'Testo della cattura',
       placeholder: 'Correggi il testo catturato…',
-      hint: 'Sistema le parole prima che Accept trasformi tutto in una proposta. Il salvataggio cambia solo la cattura — da qui non arriva nulla a una bacheca.',
+      hint: 'Sistema le parole prima che Ask AI trasformi tutto in una proposta. Il salvataggio cambia solo la cattura — da qui non arriva nulla a una bacheca.',
       loading: 'Caricamento del testo completo…',
       save: 'Salva modifiche',
       saving: 'Salvataggio…',
@@ -116,7 +116,7 @@ export default {
       unknownReason: 'il server non ha indicato un motivo',
       loadFailed: 'Il testo completo della cattura non è stato caricato: {reason}',
       saveFailed: 'Le modifiche alla cattura non sono state salvate: {reason}',
-      decisionBlocked: 'Concludi o annulla questa modifica prima di premere Accept o Reject.',
+      decisionBlocked: 'Concludi o annulla questa modifica prima di premere Ask AI, Keep o Archive.',
       metadata: {
         legend: 'Scadenza ed etichette',
         dueDate: 'Data di scadenza (facoltativa)',
@@ -124,11 +124,11 @@ export default {
         labelsPlaceholder: 'Scrivi il nome di un’etichetta esistente',
         addLabel: 'Aggiungi etichetta',
         removeLabel: 'Rimuovi {label}',
-        hint: 'Aggiungi un nome di etichetta esistente alla volta con Enter. Rimuovi una voce per cancellarla, poi salva e premi di nuovo Accept per riprovare il triage. Le virgole restano parte del nome; qui non vengono create etichette.',
+        hint: 'Aggiungi un nome di etichetta esistente alla volta con Enter. Rimuovi una voce per cancellarla, poi salva e premi di nuovo Ask AI per riprovare il triage. Le virgole restano parte del nome; qui non vengono create etichette.',
         unavailable: 'Questa API non ha restituito metadati modificabili. Salvare solo il testo manterrà la scadenza e le etichette già memorizzate.',
       },
       blocked: {
-        notEditable: 'Il testo di questa cattura non è modificabile. Premi Accept o Reject così com\'è.',
+        notEditable: 'Il testo di questa cattura non è modificabile. Premi Ask AI, Keep o Archive così com\'è.',
         empty: 'Il testo non può essere vuoto. Scrivi qualcosa, oppure annulla per lasciare la cattura com\'era.',
         unchanged: 'Non è ancora cambiato nulla. Modifica il testo o i metadati, oppure annulla per lasciare la cattura com\'era.',
         editorOpen: 'Un\'altra cattura è aperta in modifica. Salva o annulla quella modifica: passare ora scarterebbe il testo scritto lì.',
