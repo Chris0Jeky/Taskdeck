@@ -91,6 +91,23 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateCard_ShouldReturnConflictWithInvalidOperation_WhenBoardIsArchived()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "To Do", wipLimit: null);
+        var archiveResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{board.Id}",
+            new UpdateBoardDto(null, null, IsArchived: true));
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Blocked card", null, null, null));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "InvalidOperation");
+    }
+
+    [Fact]
     public async Task MoveCard_ShouldMoveCardAcrossColumns()
     {
         var board = await CreateBoardAsync();
