@@ -16,7 +16,7 @@ The untracked maintainer brief `taskdeck-v0.2-v0.3-product-engineering-brief.md`
 
 | Finding | Shipped capability | Gap recorded |
 |---|---|---|
-| Capture disposition | `CaptureItem`, `SourceArtefact`, `Transcript`, and `AutomationProposal` preserve parts of the capture-to-proposal path. Triage can create proposals or cancel/ignore. | No durable keep/archive/target/link/analyse routing contract. `#2085` extends the existing path instead of creating a Note subsystem. |
+| Capture disposition | Capture API DTOs are materialized from persisted `LlmRequest` payloads; `SourceArtefact`, `Transcript`, and `AutomationProposal` preserve other parts of the capture-to-proposal path. Triage can create proposals or cancel/ignore. There is no separate persisted `CaptureItem` entity. | No durable keep/archive/target/link/analyse routing contract. `#2085` extends the existing path instead of creating a Note subsystem. |
 | Work hierarchy and relations | Cards belong to one board and one column. | No work-item type, parent, typed relation, template, recurrence, or ongoing-lifecycle model. Proposed ADR-0060 and `#2087` define the first bounded seam. |
 | Workspace, project, and board | The current ownership model is `Board -> Column -> Card`, with board access controls. | Workspace/project/view semantics are not shipped. Proposed ADR-0060 preserves compatibility and requires staged migration decisions. |
 | Board editing context | The board uses fixed-width columns, horizontal overflow, and a full modal card editor. | No density, width, collapse, or board-preserving inspector controls. `#2086` excludes column wrapping from its first slice. |
@@ -39,20 +39,26 @@ The untracked maintainer brief `taskdeck-v0.2-v0.3-product-engineering-brief.md`
 | Decision | Issue | Release posture | Dependency or rationale |
 |---|---|---|---|
 | Create | `#2083` Appearance segmented-control interaction states | v0.2, Priority I | Isolated trust/accessibility defect; no existing exact issue. |
-| Create | `#2084` Canonical work model and migration path | v0.2, Priority II | Decision gate for hierarchy, actors, fields, projects, and views. |
-| Create | `#2085` Capture dispositions and routing | v0.2, Priority II | Extends capture/proposal provenance; coordinates with `#2004` and `#1305`. |
-| Create | `#2086` Board density and card inspector | v0.2, Priority II | Reuses board-management context from `#1940` and `#1967`; no duplicate implementation issue. |
-| Create | `#2087` Minimal item types and optional parent | Pending, Priority III | Conditional on accepted ADR-0060; not a v0.2 requirement. |
+| Create | `#2084` Canonical work model and migration path | v0.3 decision, Priority II | Owns ADR-0060 only. |
+| Create | `#2085` Capture dispositions and routing | v0.2 M1, Priority II | Keep, archive, board target, proposal, and provenance only. M2 is `#2089`. |
+| Create | `#2086` Board density and card inspector | v0.2 M1, Priority II | Side inspector and compact density only. M2 is `#2090`. |
+| Create | `#2087` Minimal item types and optional parent | v0.3, Priority III | Blocked on accepted ADR-0060; not a v0.2 stretch item. |
 | Reuse and amend | `#1772` Trusted shared-instance collaboration proof | v0.3 | Extended instead of duplicating `#1325`; links readiness work `#1133`, `#1446`, `#1521`, and `#1736`. |
 | Reuse | `#2004` Chat-to-proposal redesign | Existing milestone | Capture analysis must produce reviewable proposals, not a second mutation path. |
 | Reuse | `#1305` Transcript linkage and evidence | Existing milestone | Owns transcript/evidence continuity needed by capture routing. |
 | Reuse | `#1879` Shared-instance LLM key experience | Existing milestone | Owns BYO key setup and cost/egress disclosure. |
 | Reuse | `#1325` Friends-and-family channel | Existing milestone | Collaboration cohort and usability proof, subordinate to `#1772` boundary. |
 | Reuse | `#1133` Board query and realtime performance | Existing priority | Supplies paging/realtime readiness rather than a duplicate concurrency issue. |
+| Create under waiver | `#2091` ADR-0062 decision | v0.3, Priority II | Dedicated fields/aggregates/threshold decision owner. |
+| Create under waiver | `#2092` Minimal typed links | v0.3, Priority II | Relational typed edges only. |
+| Create under waiver | `#2093` Participants, assignments, estimates, roll-ups | v0.3, Priority II | No work logs, scheduling formula, or capacity forecast. |
+| Create under waiver | `#2094` Minimal custom fields | Conditional v0.3, Priority III | Blocked on `#2091`; formulas excluded. |
 
 ## Deferred or rejected scope
 
-- Typed relations, multiple assignees, estimates and workload roll-ups, templates, and a custom-field implementation remain represented by ADR-0060/ADR-0062 and the tracker, but no additional issues were created in this capped wave.
+- The release-cut correction uses the maintainer's explicit intake-cap waiver to seed only typed
+  links, participant/assignment/estimate roll-ups, and minimal custom fields. Templates remain
+  deferred.
 - Recurrence is deferred. `#2010` covers reminders and explicitly excludes recurrence; evidence does not justify making a recurrence engine release-critical.
 - Full Workspace/Project/WorkItem migration, one canonical item on several boards, formula fields, threshold automation, detailed time tracking, capacity forecasting, and broad CRDT/offline sync are post-v0.3 candidates pending decisions and evidence.
 - Column wrapping is rejected for the first board-layout slice because it would make drag/drop order, keyboard movement, and responsive behavior harder to understand. Density, widths, collapsed columns, filters, and an inspector are evaluated first.

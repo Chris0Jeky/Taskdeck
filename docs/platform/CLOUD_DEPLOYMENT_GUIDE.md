@@ -3,9 +3,9 @@
 Last Updated: 2026-08-26
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
-> **Private evaluation only unless registration is gated.** Do not expose a build to the public internet unless it includes the registration-gating work in [#1297](https://github.com/Chris0Jeky/Taskdeck/issues/1297) and the operator has explicitly chosen a safe registration mode. Otherwise, keep the service behind provider access controls, a private network, or another authentication layer.
+> **Private evaluation only.** Registration gating shipped in [#1297](https://github.com/Chris0Jeky/Taskdeck/issues/1297), but a public URL is not a managed-service safety boundary. Use `InviteOnly` while every intended account is created, then optionally use `Closed`; also keep provider access controls, a private network, or another authentication layer for evaluation deployments.
 >
-> Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. This update follows the direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before it.
+> Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) merged on 2026-07-13 and is historical context, not a landing prerequisite.
 >
 > Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. Use `InviteOnly` while collaborators are onboarding; `Closed` is safe only after every intended account already exists. This is not evidence of a managed public SaaS.
 
@@ -43,7 +43,7 @@ Related documents:
 - A Railway or Render account; verify the provider's current plans and limits before deploying
 - A strong JWT secret (generate with `openssl rand -base64 48`)
 - A connector encryption key (generate with `openssl rand -base64 32`)
-- Provider access controls or another private-network boundary; the current target branch is not safe for public registration
+- Provider access controls or another private-network boundary; registration mode is not a substitute for a private evaluation boundary
 
 ---
 
@@ -72,7 +72,7 @@ docker build -f deploy/Dockerfile.production -t taskdeck-prod .
 docker run -p 5000:5000 \
   -e Jwt__SecretKey=$(openssl rand -base64 48) \
   -e Connectors__EncryptionKey=$(openssl rand -base64 32) \
-  -e Auth__Registration__Mode=Closed \
+  -e Auth__Registration__Mode=InviteOnly \
   -e Cors__AllowedOrigins=http://localhost:5000 \
   -v taskdeck-data:/app/data \
   taskdeck-prod
@@ -109,7 +109,7 @@ In the Railway dashboard, go to **Variables** and add:
 |----------|-------|----------|
 | `Jwt__SecretKey` | Output of `openssl rand -base64 48` | Yes |
 | `Connectors__EncryptionKey` | Output of `openssl rand -base64 32`; preserve it with database backups | Yes |
-| `Auth__Registration__Mode` | `Closed` or `InviteOnly` | Yes |
+| `Auth__Registration__Mode` | `InviteOnly` while intended accounts are created; `Closed` only after onboarding | Yes |
 | `Cors__AllowedOrigins` | Your Railway URL (e.g., `https://taskdeck-production.up.railway.app`) | Yes |
 | `ConnectionStrings__DefaultConnection` | `Data Source=/app/data/taskdeck.db` | Yes |
 | `ASPNETCORE_ENVIRONMENT` | `Production` | Yes |
@@ -118,7 +118,9 @@ In the Railway dashboard, go to **Variables** and add:
 | `FirstRun__ResolveAppDataDbPath` | `false` | Yes |
 | `TASKDECK_HEADLESS` | `true` | Yes |
 
-See `deploy/.env.production.template` for the full variable reference including optional LLM provider and observability settings.
+See `deploy/.env.production.template` for the full variable reference including optional LLM
+provider and observability settings. That template retains the restrictive single-user default
+`Closed`; override it with `InviteOnly` for collaborator onboarding.
 
 ### Step 4: Deploy
 
@@ -174,7 +176,11 @@ If creating manually:
 
 ### Step 3: Set environment variables
 
-In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates restrictive defaults; you must set `Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins` manually, then configure a private access boundary before deploying.
+In the Render dashboard, go to **Environment** and add the same variables as Railway (see table
+above). The `render.yaml` blueprint pre-populates the restrictive registration default `Closed`.
+Set `Auth__Registration__Mode=InviteOnly` while creating the intended accounts, as well as setting
+`Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins`; then configure a private
+access boundary before deploying. Switch back to `Closed` only after onboarding is complete.
 
 ### Step 4: Deploy
 
@@ -217,7 +223,7 @@ See `deploy/.env.production.template` for the authoritative list with descriptio
 | `FirstRun__ResolveAppDataDbPath` | `false` | Use explicit DB path, not OS AppData |
 | `DevelopmentSandbox__Enabled` | `false` | Disable sandbox mode |
 | `TASKDECK_HEADLESS` | `true` | Prevent ephemeral JWT secret generation on restart |
-| `Auth__Registration__Mode` | `Closed` | Require an operator invite for the first owner, then deny later signup |
+| `Auth__Registration__Mode` | `InviteOnly` | Require a one-time invite for each intended account; switch to `Closed` only after onboarding is complete |
 
 ### Optional variables
 

@@ -31,10 +31,9 @@ While SQLite is used, the milestone requires:
 - WAL, short write transactions, and database-authoritative state after reconnect;
 - InviteOnly registration while collaborators are onboarding; Closed is permitted only after every intended account already exists;
 - verified HTTPS and SignalR/WebSocket proxy behavior;
-- optimistic concurrency for collaborative writes and explicit stale-write UX;
 - backup of both SQLite and the connector-encryption key;
 - one real restore drill;
-- two-user permission, reconnect, and destructive-action walkthroughs;
+- two-user permission, reconnect-and-reload, and destructive-action walkthroughs;
 - BYO or explicitly operator-funded LLM credentials with cost and egress disclosure.
 
 This remains local-first in ownership and self-hostability. Browser clients still depend on the
@@ -43,8 +42,10 @@ server; this milestone is not offline browser/cloud synchronization.
 ### 2. Dependable small-team alpha
 
 Harden the trusted deployment for regular use: invitation and member-management UX, human/agent
-attribution, conflict handling, realtime recovery, backups, monitoring, support diagnostics,
-concurrency testing, and representative board performance.
+attribution, general optimistic concurrency and stale-edit UX, fault-injected realtime recovery,
+backup operations, monitoring, support diagnostics, concurrency testing, and representative board
+performance. Stage 1 proves that reconnect reloads database-authoritative state; Stage 2 owns
+general conflict detection and recovery behavior.
 
 ### 3. Managed public SaaS
 

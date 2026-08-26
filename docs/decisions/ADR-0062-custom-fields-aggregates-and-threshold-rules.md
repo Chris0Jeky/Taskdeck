@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-08-26
 - Deciders: Maintainer ratification pending
-- Related: #2084, #2085, ADR-0060
+- Related: #2091, #2094, ADR-0060
 
 ## Context
 
@@ -25,7 +25,7 @@ The initial type vocabulary may include:
 - date;
 - boolean;
 - single-select and multi-select;
-- actor reference;
+- participant reference;
 - URL.
 
 Formula fields are excluded from the first implementation slice. Colour is presentation metadata for a definition or select option, not the stored meaning of every field.
@@ -66,7 +66,7 @@ Historical effort by actor or stage requires an immutable work-log or lifecycle-
 
 ## Sequencing
 
-1. Ratify ADR-0060 and decide whether generic fields belong in v0.3 or later.
+1. Record the ADR-0062 decisions in #2091 and decide whether generic fields belong in v0.3 or later.
 2. If needed, ship only narrowly defined built-in estimates before a generic field system.
 3. Specify definition scope, value typing, deletion behavior, and proposal operations.
 4. Add aggregate read models after authoritative values and lifecycle events exist.
