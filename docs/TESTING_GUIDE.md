@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-24
+Last Updated: 2026-08-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -78,7 +78,7 @@ Explorer/SmartScreen acceptance remain unverified.
   governance, and diff hygiene cover the static seam. The separate packaged
   `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
-## 2026-08-24 v0.1.2 Priority I partial verification map (through main `55dbf6e14`)
+## 2026-08-24 to 2026-08-26 v0.1.2 Priority I and v0.2 residual verification map (through main `d75d0783a`)
 
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
@@ -121,6 +121,15 @@ Explorer/SmartScreen acceptance remain unverified.
   and fresh exact-head review; its hosted head completed 21 successful check runs, including E2E
   Smoke, with 11 intentional skips and no failure or pending check. Applied-proposal read-only detail
   and the remaining stale/terminal lifecycle cases stay open on `#1967`.
+- `#1967`/PR `#2101`: historical applied-record copy passed 122 focused Review tests, 16 locale-catalog
+  tests, typecheck, build, scoped lint, diff hygiene, exact-head hosted CI, and bounded review. The
+  added test omitted `presentation`, so only the fallback path was proven historical; the API-shaped
+  residual is `#2117`, addressed by PR `#2120` with a populated-presentation regression test. The
+  broader proposal-lifecycle residuals remain open on `#1967`.
+- `#2080`/`#2106`/`#2109`/PR `#2110`: 37 CardService tests, 64 final CardService/BoardService tests,
+  22 focused API archive/migration/resilience tests, provider-native SQL Server script generation,
+  SQLite migration bootstrap, pending-model validation, exact-head Required CI, E2E Smoke, and both
+  the full-diff and fix-diff reviews passed. A live SQL Server application run was not performed.
 - `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
   race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
   Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,

@@ -67,12 +67,18 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Delivery update (2026-08-26, v0.2 residual wave)
+
+- **Two bounded product-safety slices merged.** `#1967`/PR `#2101` gives applied Review records historical labels and descriptions in English, Italian, and Spanish on the fallback path — an API-shaped payload with populated `presentation` copy still rendered the prospective change-section body, tracked as `#2117` and addressed by PR `#2120` — while leaving the parent open for its other lifecycle residuals. `#2080`/`#2106`/`#2109`/PR `#2110` closes the direct CardService archived-board write gap with provider-native concurrency-token migration metadata, archive-race invalidation, preserved independent card-write semantics, and HTTP 409 rather than 500 for concurrent board-delete conflicts. PRs `#2104` and `#2108` are closed as preserved superseded lineage; Priority I `#2114` carries the post-merge finding that bulk import/starter-pack/restore writers still need the same race predicate.
+- **The hosted gate found two real blockers and both have durable resume points.** PR `#2110` needed one bounded fix round after both API matrices exposed the concurrent-delete 500; the repaired head `0af890a3` passed exact-head Required CI and E2E before merge `d75d0783`. PR `#2102` remains reviewed and unchanged after its required run was cancelled in the Windows source-launcher regression; `#2111`/PR `#2112` owns that harness repair and is parked on its exact Windows CI failure. Resume `#2102` only after that repair lands, then update its base and run required CI once.
+- **Two stacked frontend/API lanes remain unmerged.** PR `#2103` is green but remains based on `#2098`; do not retarget or merge it until `#2098` receives its missing required CI and lands. PR `#2107` carries the card-mutation OpenAPI 409 declarations; retarget it from the preserved `#2104` branch to current main, confirm the content diff remains metadata/test-only, then re-prove CI and review against the new base.
+
 ## Planning update (2026-08-26, v0.2/v0.3 release cut)
 
 - **Release dates are explicit.** v0.2 final targets 2026-09-01. v0.3 RC targets 2026-09-04; final targets 2026-09-08 or 2026-09-09.
 - **v0.2 is split to M1 slices.** `#2085` owns keep/archive/board-target/proposal/provenance; `#2086` owns the side inspector and compact density. Their M2 scope is `#2089` and `#2090` in v0.3. `#2087` is v0.3, not a v0.2 stretch.
 - **Decision ownership is singular.** `#2084` owns ADR-0060, `#1772` owns ADR-0061, and `#2091` owns ADR-0062. All remain Proposed until ratified.
-- **The bounded queue is active.** Now is `#1271`, `#2083`, `#2085`, `#2086`. Next is `#1512`, `#1938`, `#1961`, `#1967`, `#2080`. The maintainer's intake-cap waiver seeded only typed links `#2092`, participant/assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
+- **The bounded queue is active.** Now is `#1271`, `#2083`, `#2085`, `#2086`. Next is `#1512`, `#1938`, `#1961`, `#1967`, `#2114`. The maintainer's intake-cap waiver seeded only typed links `#2092`, participant/assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
 
 ## Governance update (2026-08-23, DCO enforcement paused)
 
