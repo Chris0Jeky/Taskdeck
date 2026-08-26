@@ -76,18 +76,20 @@ async function exerciseStates(page: Page, locator: Locator, context: string, sel
   const focused = await expectContrast(locator, `${context}: focus contrast`)
   expect(focused.boxShadow, `${context}: focus ring`).not.toBe('none')
 
+  await locator.hover()
+  const box = await locator.boundingBox()
+  if (!box) throw new Error(`${context}: segment has no bounding box`)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  const pressed = await expectContrast(locator, `${context}: pressed contrast`)
+  expect(pressed.transform, `${context}: pressed feedback`).not.toBe('none')
   if (selected) {
-    await locator.hover()
-    const box = await locator.boundingBox()
-    if (!box) throw new Error(`${context}: selected segment has no bounding box`)
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    await page.mouse.down()
-    const pressed = await expectContrast(locator, `${context}: pressed contrast`)
     expect(pressed.background, `${context}: selected pressed background`).toBe(rest.background)
     expect(pressed.color, `${context}: selected pressed foreground`).toBe(rest.color)
-    expect(pressed.transform, `${context}: pressed feedback`).not.toBe('none')
-    await page.mouse.up()
   }
+  await page.locator('.paper-appearance__title').hover({ force: true })
+  await page.mouse.up()
+  await expect(locator).toHaveAttribute('aria-pressed', selected ? 'true' : 'false')
 
   await locator.evaluate((element: HTMLButtonElement) => { element.disabled = true })
   const disabledRest = await expectContrast(locator, `${context}: disabled contrast`)
