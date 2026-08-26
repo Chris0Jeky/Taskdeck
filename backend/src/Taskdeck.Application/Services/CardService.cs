@@ -98,6 +98,7 @@ public class CardService
                 }
             }
 
+            board.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
@@ -179,6 +180,7 @@ public class CardService
 
             var changeSummary = BuildCardChangeSummary(dto, oldTitle, oldDescription, oldDueDate, oldIsBlocked, oldBlockReason, oldLabelIds);
 
+            board?.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "updated", card.Id, DateTimeOffset.UtcNow),
@@ -302,6 +304,7 @@ public class CardService
                 orderedCards[i].SetPosition(i);
             }
 
+            board?.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "moved", card.Id, DateTimeOffset.UtcNow),
@@ -394,22 +397,30 @@ public class CardService
 
     public async Task<Result> DeleteCardAsync(Guid id, Guid? actorUserId = null, CancellationToken cancellationToken = default)
     {
-        var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
-        if (card == null)
-            return Result.Failure(ErrorCodes.NotFound, $"Card with ID {id} not found");
+        try
+        {
+            var card = await _unitOfWork.Cards.GetByIdAsync(id, cancellationToken);
+            if (card == null)
+                return Result.Failure(ErrorCodes.NotFound, $"Card with ID {id} not found");
 
-        var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
-        if (board?.IsArchived == true)
-            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+            var board = await _unitOfWork.Boards.GetByIdAsync(card.BoardId, cancellationToken);
+            if (board?.IsArchived == true)
+                return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
-        await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-        await _realtimeNotifier.NotifyBoardMutationAsync(
-            new BoardRealtimeEvent(card.BoardId, "card", "deleted", card.Id, DateTimeOffset.UtcNow),
-            cancellationToken);
-        await SafeLogAsync("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}");
+            await _unitOfWork.Cards.DeleteAsync(card, cancellationToken);
+            board?.RecordCardMutation();
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "deleted", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
+            await SafeLogAsync("card", card.Id, AuditAction.Deleted, actorUserId, $"title={card.Title}");
 
-        return Result.Success();
+            return Result.Success();
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure(ex.ErrorCode, ex.Message);
+        }
     }
 
     public Task<Result> DeleteCardAsync(Guid boardId, Guid id, CancellationToken cancellationToken)
