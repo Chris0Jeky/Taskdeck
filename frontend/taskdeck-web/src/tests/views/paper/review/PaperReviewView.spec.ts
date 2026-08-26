@@ -273,6 +273,35 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
   })
 
+  it('uses historical change copy for applied records without changing pending copy', async () => {
+    const pendingWrapper = await mountView([makeProposal()])
+    const pendingChange = pendingWrapper.get('.paper-review-change')
+    expect(pendingChange.get('.paper-review-change__col--after .paper-review-change__eyebrow').text()).toBe(
+      'After · on apply',
+    )
+    expect(pendingChange.get('.paper-review-change__before-body').text()).toContain(
+      'before applying',
+    )
+    pendingWrapper.unmount()
+
+    const appliedWrapper = await mountView(
+      [makeProposal({ id: 'applied-copy', status: 'Applied' })],
+      '/workspace/review?history=archived',
+    )
+    const appliedChange = appliedWrapper.get('.paper-review-change')
+    expect(appliedChange.get('.paper-review-change__col--before .paper-review-change__eyebrow').text()).toBe(
+      'Before · recorded',
+    )
+    expect(appliedChange.get('.paper-review-change__col--after .paper-review-change__eyebrow').text()).toBe(
+      'After · applied',
+    )
+    expect(appliedChange.get('.paper-review-change__before-body').text()).toContain(
+      'Recorded 1 proposal operations.',
+    )
+    expect(appliedChange.text()).not.toContain('before applying')
+    appliedWrapper.unmount()
+  })
+
   it('loads every settled archived decision into a selectable inspection-only queue', async () => {
     const settled = [
       makeProposal({ id: 'applied-1', status: 'Applied', summary: 'Applied history one' }),
