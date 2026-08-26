@@ -129,15 +129,24 @@ describe('AppearanceSettingsView segmented-control state composition', () => {
     expect(activePointerRule).toMatch(/color:\s*var\(--td-on-ember,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 
-  it('limits unselected hover to enabled controls and defines focus and disabled states', () => {
+  it('keeps colour pairs atomic and defines focus and opaque disabled states', () => {
     expect(appearanceSource).toContain(
       '.paper-appearance__segment:not(.paper-appearance__segment--active):not(:disabled):hover',
     )
+    const baseRule = appearanceSource.match(
+      /^\.paper-appearance__segment\s*\{([\s\S]*?)\}/m,
+    )?.[1]
+    expect(baseRule, 'base segment rule').toBeTruthy()
+    expect(baseRule).toMatch(/transition:\s*border-color\s+var\(--d-quick,/)
     expect(appearanceSource).toMatch(
       /\.paper-appearance__segment:focus-visible\s*\{[\s\S]*?box-shadow:/,
     )
-    expect(appearanceSource).toMatch(
-      /\.paper-appearance__segment:disabled\s*\{[\s\S]*?cursor:\s*default;/,
-    )
+    const disabledRule = appearanceSource.match(
+      /\.paper-appearance__segment:disabled\s*\{([\s\S]*?)\}/m,
+    )?.[1]
+    expect(disabledRule, 'disabled segment rule').toBeTruthy()
+    expect(disabledRule).toMatch(/background:\s*var\(--paper-2,/)
+    expect(disabledRule).toMatch(/color:\s*var\(--mute,/)
+    expect(disabledRule).not.toMatch(/opacity:/)
   })
 })
