@@ -11,7 +11,7 @@
 
 Last reviewed: 2026-08-26
 
-- [ ] **Ratify the v0.1.2 dogfooding decision batch (`#2084`, proposed ADR-0060 through ADR-0062).** Decide whether Project is first-class before v0.3; whether one work item can appear on several boards; whether hierarchy can cross projects; which item types ship first; whether generic custom fields belong in v0.3; whether actual time tracking fits the product thesis; whether the v0.3 hosted proof is maintainer-operated self-hosting or managed-service groundwork; and who pays for shared-instance LLM use. Also record whether the still-open commercial/licensing decision `#2012` blocks any public managed-service path. Until ratified, the current `Board -> Column -> Card` model and review-first automation contract remain authoritative.
+- [ ] **Ratify the v0.1.2 dogfooding decision batch.** ADR-0060 is owned by `#2084`, ADR-0061 by `#1772`, and ADR-0062 by `#2091`. Decide Project timing, multi-board identity, hierarchy boundaries, first item types, custom-field timing, actual-time-tracking fit, trusted-host operator posture, shared-instance LLM cost ownership, and whether `#2012` blocks a public managed-service path. The maintainer has fixed the release targets (v0.2 final 2026-09-01; v0.3 RC 2026-09-04; v0.3 final 2026-09-08 or 2026-09-09), waived the weekly intake cap only for `#2092`-`#2094`, and deferred general optimistic concurrency to the Stage 2 small-team alpha. Until the remaining choices are ratified, `Board -> Column -> Card` and review-first automation remain authoritative.
 
 ---
 
