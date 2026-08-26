@@ -117,3 +117,27 @@ describe('AppearanceSettingsView Legacy-mode substrate', () => {
     expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })
+
+describe('AppearanceSettingsView segmented-control state composition', () => {
+  it('keeps active hover and pressed states on the complete on-ember colour pair', () => {
+    const activePointerRule = appearanceSource.match(
+      /\.paper-appearance__segment--active:not\(:disabled\):hover,[\s\S]*?\{([\s\S]*?)\}/m,
+    )?.[1]
+
+    expect(activePointerRule, 'active hover/pressed rule').toBeTruthy()
+    expect(activePointerRule).toMatch(/background:\s*var\(--ember,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(activePointerRule).toMatch(/color:\s*var\(--td-on-ember,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+  })
+
+  it('limits unselected hover to enabled controls and defines focus and disabled states', () => {
+    expect(appearanceSource).toContain(
+      '.paper-appearance__segment:not(.paper-appearance__segment--active):not(:disabled):hover',
+    )
+    expect(appearanceSource).toMatch(
+      /\.paper-appearance__segment:focus-visible\s*\{[\s\S]*?box-shadow:/,
+    )
+    expect(appearanceSource).toMatch(
+      /\.paper-appearance__segment:disabled\s*\{[\s\S]*?cursor:\s*default;/,
+    )
+  })
+})

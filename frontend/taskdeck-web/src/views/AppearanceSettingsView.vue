@@ -268,7 +268,9 @@ function selectLocale(locale: SupportedLocale) {
   font-family: var(--sans, system-ui, sans-serif);
   font-size: var(--t-md, 13.5px);
   transition: background var(--d-quick, 140ms) var(--ease-paper, ease),
-    border-color var(--d-quick, 140ms) var(--ease-paper, ease);
+    border-color var(--d-quick, 140ms) var(--ease-paper, ease),
+    color var(--d-quick, 140ms) var(--ease-paper, ease),
+    transform var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
 .paper-appearance__segment-name {
@@ -292,15 +294,15 @@ function selectLocale(locale: SupportedLocale) {
   opacity: 0.9;
 }
 
-.paper-appearance__segment:hover {
+.paper-appearance__segment:not(.paper-appearance__segment--active):not(:disabled):hover {
   background: var(--paper-2, #ebe5d8);
   border-color: var(--ink-2, #3a352d);
 }
 
-.paper-appearance__segment:focus-visible {
-  outline: none;
+.paper-appearance__segment:not(.paper-appearance__segment--active):not(:disabled):active {
+  background: var(--paper-2, #ebe5d8);
   border-color: var(--ember, #a8421f);
-  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
+  transform: translateY(1px);
 }
 
 .paper-appearance__segment--active {
@@ -308,6 +310,32 @@ function selectLocale(locale: SupportedLocale) {
   border-color: var(--ember, #a8421f);
   color: var(--td-on-ember, #fefaf6);
   font-weight: 600;
+}
+
+/* Active is a complete foreground/background pair. Re-state the pair for
+   pointer states so a more-specific pseudo-class can never replace only one
+   side of it, which was the contrast defect tracked by #2083. */
+.paper-appearance__segment--active:not(:disabled):hover,
+.paper-appearance__segment--active:not(:disabled):active {
+  background: var(--ember, #a8421f);
+  border-color: var(--ember, #a8421f);
+  color: var(--td-on-ember, #fefaf6);
+}
+
+.paper-appearance__segment--active:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.paper-appearance__segment:focus-visible {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 3px var(--ember-bloom, #a8421f1a);
+}
+
+.paper-appearance__segment:disabled {
+  cursor: default;
+  opacity: 0.55;
+  transform: none;
 }
 
 .paper-appearance__hint {
