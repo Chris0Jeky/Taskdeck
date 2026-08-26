@@ -267,10 +267,7 @@ function selectLocale(locale: SupportedLocale) {
   cursor: pointer;
   font-family: var(--sans, system-ui, sans-serif);
   font-size: var(--t-md, 13.5px);
-  transition: background var(--d-quick, 140ms) var(--ease-paper, ease),
-    border-color var(--d-quick, 140ms) var(--ease-paper, ease),
-    color var(--d-quick, 140ms) var(--ease-paper, ease),
-    transform var(--d-quick, 140ms) var(--ease-paper, ease);
+  transition: border-color var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
 .paper-appearance__segment-name {
@@ -333,9 +330,16 @@ function selectLocale(locale: SupportedLocale) {
 }
 
 .paper-appearance__segment:disabled {
+  background: var(--paper-2, #ebe5d8);
+  border-color: var(--line, #d8d0bf);
+  color: var(--mute, #635c4e);
   cursor: default;
-  opacity: 0.55;
   transform: none;
+}
+
+.paper-appearance__segment:disabled .paper-appearance__segment-note {
+  color: inherit;
+  opacity: 1;
 }
 
 .paper-appearance__hint {
