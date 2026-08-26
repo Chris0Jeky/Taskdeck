@@ -288,8 +288,9 @@ public sealed class ExternalImportService : IExternalImportService
 
             // Join the board's concurrency-token predicate without advancing it. The archived-state
             // check above ran before these writes were planned, so an archive committing in between
-            // would otherwise be accepted silently. Touching the board makes EF issue a conditional
-            // UPDATE against the token read at the start of this import: an intervening archive (or
+            // would otherwise be accepted silently. Recording the card mutation marks the board
+            // modified, so EF issues a conditional UPDATE against the token read at the start of
+            // this import: an intervening archive (or
             // any other board mutation) advanced it, SaveChanges raises a concurrency failure that
             // UnitOfWork maps to DomainException(Conflict), and the transaction below is rolled back
             // so no imported card survives. Concurrent imports into different boards are unaffected,

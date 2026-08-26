@@ -68,7 +68,7 @@ public class BoardCardMutationMarkerTests
     }
 
     [Fact]
-    public void BoardMutations_ShouldStillAdvanceConcurrencyTokenAndUpdatedAt()
+    public void BoardMutations_ShouldStillAdvanceConcurrencyToken()
     {
         // The guard only works because board mutations DO advance the token the card write reads.
         var board = new Board("Personal");
