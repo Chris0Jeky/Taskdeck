@@ -35,11 +35,11 @@
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
 
     <!-- ── Observability ───────────────────────────────────────── -->
-    <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.Console" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
 
     <!-- ── Error tracking ──────────────────────────────────────── -->
     <PackageVersion Include="Sentry.AspNetCore" Version="6.9.0" />
@@ -48,7 +48,7 @@
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
 
     <!-- ── Data / Caching ──────────────────────────────────────── -->
-    <PackageVersion Include="PdfPig" Version="0.1.15" />
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
 
     <!-- ── Security / Crypto ───────────────────────────────────── -->
@@ -63,8 +63,8 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="FluentAssertions" Version="7.2.2" />
-    <PackageVersion Include="FsCheck" Version="3.3.4" />
-    <PackageVersion Include="FsCheck.Xunit" Version="3.3.4" />
+    <PackageVersion Include="FsCheck" Version="3.4.0" />
+    <PackageVersion Include="FsCheck.Xunit" Version="3.4.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.61" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
