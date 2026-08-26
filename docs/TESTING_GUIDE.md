@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-24
+Last Updated: 2026-08-26
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -123,6 +123,8 @@ Explorer/SmartScreen acceptance remain unverified.
   and the remaining stale/terminal lifecycle cases stay open on `#1967`.
 - `#1967`/PR `#2101`: historical applied-record copy passed 122 focused Review tests, 16 locale-catalog
   tests, typecheck, build, scoped lint, diff hygiene, exact-head hosted CI, and bounded review. The
+  added test omitted `presentation`, so only the fallback path was proven historical; the API-shaped
+  residual is `#2117`, addressed by PR `#2120` with a populated-presentation regression test. The
   broader proposal-lifecycle residuals remain open on `#1967`.
 - `#2080`/`#2106`/`#2109`/PR `#2110`: 37 CardService tests, 64 final CardService/BoardService tests,
   22 focused API archive/migration/resilience tests, provider-native SQL Server script generation,
