@@ -148,11 +148,24 @@ public class DataExportService : IDataExportService
                 n.IsRead,
                 n.CreatedAt)).ToList();
 
-            var exportCaptures = captures.Select(c => new UserDataExportCaptureDto(
-                c.Id,
-                c.Status.ToString(),
-                c.RequestType,
-                c.CreatedAt)).ToList();
+            var resolvedCaptures = await ResolveCaptureExportsAsync(captures, cancellationToken);
+            var exportCaptures = resolvedCaptures.Select(c =>
+            {
+                return new UserDataExportCaptureDto(
+                    c.Request.Id,
+                    c.Request.Status.ToString(),
+                    c.Request.RequestType,
+                    c.Request.CreatedAt,
+                    c.BoardId,
+                    c.Payload.Provenance,
+                    c.Payload.Disposition is null
+                        ? null
+                        : new UserDataExportCaptureDispositionDto(
+                            c.Payload.Disposition.Kind.ToString(),
+                            c.Payload.Disposition.At,
+                            c.Payload.Disposition.ByUserId,
+                            c.Payload.Disposition.BoardId));
+            }).ToList();
 
             var exportProposals = proposals.Select(p => new UserDataExportProposalDto(
                 p.Id,
@@ -368,15 +381,19 @@ public class DataExportService : IDataExportService
 
             // capture items (small)
             var captures = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
+            var resolvedCaptures = await ResolveCaptureExportsAsync(captures, cancellationToken);
             writer.WriteStartArray("captureItems");
-            foreach (var c in captures)
+            foreach (var c in resolvedCaptures)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 writer.WriteStartObject();
-                writer.WriteString("id", c.Id.ToString());
-                writer.WriteString("status", c.Status.ToString());
-                writer.WriteString("requestType", c.RequestType);
-                writer.WriteString("createdAt", c.CreatedAt);
+                writer.WriteString("id", c.Request.Id.ToString());
+                writer.WriteString("status", c.Request.Status.ToString());
+                writer.WriteString("requestType", c.Request.RequestType);
+                writer.WriteString("createdAt", c.Request.CreatedAt);
+                WriteNullableGuid(writer, "boardId", c.BoardId);
+                WriteCaptureProvenance(writer, c.Payload.Provenance);
+                WriteCaptureDisposition(writer, c.Payload.Disposition);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -548,6 +565,119 @@ public class DataExportService : IDataExportService
                 ErrorCodes.UnexpectedError,
                 "Failed to stream user data export due to an internal error");
         }
+    }
+
+    private async Task<IReadOnlyList<ResolvedCaptureExport>> ResolveCaptureExportsAsync(
+        IEnumerable<Domain.Entities.LlmRequest> captures,
+        CancellationToken cancellationToken)
+    {
+        var parsed = captures
+            .Select(request => new ResolvedCaptureExport(
+                request,
+                CaptureRequestContract.ParseStoredPayload(request.Payload),
+                request.BoardId))
+            .ToList();
+        var proposalIds = parsed
+            .Select(capture => capture.Payload.Provenance?.ProposalId)
+            .Where(id => id.HasValue && id.Value != Guid.Empty)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToArray();
+        var proposals = proposalIds.Length == 0
+            ? Array.Empty<Domain.Entities.AutomationProposal>()
+            : await _unitOfWork.AutomationProposals.GetByIdsAsync(proposalIds, cancellationToken)
+              ?? Array.Empty<Domain.Entities.AutomationProposal>();
+        var proposalLookup = proposals.ToDictionary(proposal => proposal.Id);
+
+        return parsed.Select(capture =>
+        {
+            var provenance = capture.Payload.Provenance;
+            if (provenance?.ProposalId is not { } proposalId ||
+                !proposalLookup.TryGetValue(proposalId, out var proposal) ||
+                !CaptureEffectiveBoardPolicy.IsValidatedAppliedProposal(
+                    capture.Request.Id,
+                    capture.Request.UserId,
+                    proposalId,
+                    provenance.ConvertedAt,
+                    proposal))
+            {
+                return capture;
+            }
+
+            var boardId = CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+                capture.Request.Id,
+                capture.Request.UserId,
+                capture.Request.BoardId,
+                provenance.BoardId,
+                proposalId,
+                provenance.ConvertedAt,
+                proposal);
+            var payload = CaptureRequestContract.WithProvenance(
+                capture.Payload,
+                capture.Request.Id,
+                proposalId: proposal.Id,
+                boardId: boardId,
+                convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt));
+            return new ResolvedCaptureExport(capture.Request, payload, boardId);
+        }).ToList();
+    }
+
+    private sealed record ResolvedCaptureExport(
+        Domain.Entities.LlmRequest Request,
+        CapturePayloadV1 Payload,
+        Guid? BoardId);
+
+    private static void WriteCaptureProvenance(Utf8JsonWriter writer, CaptureProvenanceV1? provenance)
+    {
+        writer.WritePropertyName("provenance");
+        if (provenance is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("captureItemId", provenance.CaptureItemId);
+        WriteNullableGuid(writer, "triageRunId", provenance.TriageRunId);
+        WriteNullableGuid(writer, "proposalId", provenance.ProposalId);
+        writer.WriteString("promptVersion", provenance.PromptVersion);
+        writer.WriteString("provider", provenance.Provider);
+        writer.WriteString("model", provenance.Model);
+        WriteNullableGuid(writer, "requestedByUserId", provenance.RequestedByUserId);
+        writer.WriteString("correlationId", provenance.CorrelationId);
+        writer.WriteString("sourceSurface", provenance.SourceSurface);
+        WriteNullableGuid(writer, "boardId", provenance.BoardId);
+        WriteNullableGuid(writer, "sessionId", provenance.SessionId);
+        if (provenance.ConvertedAt.HasValue)
+            writer.WriteString("convertedAt", provenance.ConvertedAt.Value);
+        else
+            writer.WriteNull("convertedAt");
+        writer.WriteEndObject();
+    }
+
+    private static void WriteCaptureDisposition(Utf8JsonWriter writer, CaptureDispositionV1? disposition)
+    {
+        writer.WritePropertyName("disposition");
+        if (disposition is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("kind", disposition.Kind.ToString());
+        writer.WriteString("at", disposition.At);
+        writer.WriteString("byUserId", disposition.ByUserId);
+        WriteNullableGuid(writer, "boardId", disposition.BoardId);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteNullableGuid(Utf8JsonWriter writer, string propertyName, Guid? value)
+    {
+        if (value.HasValue)
+            writer.WriteString(propertyName, value.Value);
+        else
+            writer.WriteNull(propertyName);
     }
 
     // -----------------------------------------------------------------------

@@ -851,6 +851,12 @@ public class TranscriptTriageWorkerTests
             CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public Task<bool> TryClaimProcessingAsync(
             Guid requestId,
             DateTimeOffset expectedUpdatedAt,
@@ -930,6 +936,12 @@ public class TranscriptTriageWorkerTests
                 "mock-model");
             return Task.FromResult(Result.Success(result));
         }
+
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
 
         public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
             Guid captureItemId,

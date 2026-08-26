@@ -17,6 +17,8 @@ vi.mock('../../api/captureApi', () => ({
     createItem: vi.fn(),
     listItems: vi.fn(),
     getItem: vi.fn(),
+    keepItem: vi.fn(),
+    archiveItem: vi.fn(),
     ignoreItem: vi.fn(),
     cancelItem: vi.fn(),
     enqueueTriage: vi.fn(),
@@ -485,6 +487,70 @@ describe('captureStore', () => {
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
+  it('caches server-stamped keep and archive receipts without creating work', async () => {
+    const store = useCaptureStore()
+    const kept = {
+      id: 'c-keep',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'kept',
+      rawText: 'kept',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      disposition: {
+        kind: 'Kept' as const,
+        at: new Date().toISOString(),
+        byUserId: 'u1',
+        boardId: null,
+      },
+    }
+    const archived = {
+      ...kept,
+      id: 'c-archive',
+      status: 'Ignored' as const,
+      disposition: { ...kept.disposition, kind: 'Archived' as const },
+    }
+    vi.mocked(captureApi.keepItem).mockResolvedValue(kept)
+    vi.mocked(captureApi.archiveItem).mockResolvedValue(archived)
+
+    await store.keepItem(kept.id)
+    await store.archiveItem(archived.id)
+
+    expect(store.detailById[kept.id]?.disposition?.kind).toBe('Kept')
+    expect(store.detailById[archived.id]?.disposition?.kind).toBe('Archived')
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not insert a late keep response into a newly loaded board scope', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+    store.items = [{
+      id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+      textExcerpt: 'board A', createdAt, processedAt: null,
+    }]
+    let resolveKeep!: (value: any) => void
+    vi.mocked(captureApi.keepItem).mockReturnValueOnce(new Promise((resolve) => { resolveKeep = resolve }) as never)
+    vi.mocked(captureApi.listItems).mockResolvedValueOnce([{
+      id: 'board-b-item', userId: 'u1', boardId: 'board-b', status: 'New', source: 'Typed',
+      textExcerpt: 'board B', createdAt, processedAt: null,
+    }])
+
+    const keep = store.keepItem('board-a-item')
+    await store.fetchItems({ boardId: 'board-b' })
+    resolveKeep({
+      id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+      textExcerpt: 'board A', rawText: 'board A', createdAt, processedAt: null, retryCount: 0,
+      disposition: { kind: 'Kept', at: createdAt, byUserId: 'u1', boardId: 'board-a' },
+    })
+    await keep
+
+    expect(store.items.map((item) => item.id)).toEqual(['board-b-item'])
+    expect(store.detailById['board-a-item']?.disposition?.kind).toBe('Kept')
+  })
+
   it('tells the badge a cancelled capture left the pending count', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.cancelItem).mockResolvedValue(undefined)
@@ -759,6 +825,12 @@ describe('captureStore', () => {
       processedAt: null,
       retryCount: 0,
       provenance: null,
+      disposition: {
+        kind: 'Kept',
+        at: createdAt,
+        byUserId: 'u1',
+        boardId: 'b1',
+      },
     }
 
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
@@ -768,12 +840,13 @@ describe('captureStore', () => {
     })
     vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
 
-    await expect(store.triageItem('c7-stale')).rejects.toBeInstanceOf(Error)
+    await expect(store.triageItem('c7-stale')).resolves.toMatchObject({ status: 'Triaging' })
 
     expect(store.detailById['c7-stale']).toMatchObject({
       status: 'Triaging',
       textExcerpt: 'stale detail excerpt',
       rawText: 'stale detail text',
+      disposition: null,
     })
     expect(store.items[0]).toMatchObject({
       id: 'c7-stale',
@@ -1056,7 +1129,7 @@ describe('captureStore', () => {
     })
   })
 
-  it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
+  it('keeps a successful triage enqueue successful when detail refresh fails', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
       id: 'c9',
@@ -1065,10 +1138,15 @@ describe('captureStore', () => {
     })
     vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
 
-    await expect(store.triageItem('c9')).rejects.toBeInstanceOf(Error)
+    await expect(store.triageItem('c9')).resolves.toMatchObject({ status: 'Triaging' })
 
-    expect(toastMocks.error).toHaveBeenCalledTimes(1)
-    expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
+    expect(toastMocks.error).not.toHaveBeenCalled()
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Capture item triage queued',
+      undefined,
+      { label: 'queued' },
+    )
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   // ── Batch triage tests ──

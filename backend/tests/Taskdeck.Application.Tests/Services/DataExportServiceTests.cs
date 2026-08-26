@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
@@ -305,6 +306,84 @@ public class DataExportServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Data.Notifications.Should().HaveCount(1);
         result.Value.Data.Notifications[0].Title.Should().Be("Test Title");
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_IncludesCaptureDispositionAndProvenance()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var capture = new LlmRequest(
+            _userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "portable capture",
+                    Provenance: new CaptureProvenanceV1(Guid.NewGuid(), RequestedByUserId: _userId),
+                    Disposition: new CaptureDispositionV1(
+                        CaptureDisposition.Kept,
+                        DateTimeOffset.UtcNow,
+                        _userId,
+                        boardId))),
+            boardId);
+        _llmQueueRepoMock
+            .Setup(r => r.GetByUserAsync(_userId, default))
+            .ReturnsAsync(new[] { capture });
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        var exported = result.Value.Data.CaptureItems.Should().ContainSingle().Subject;
+        exported.BoardId.Should().Be(boardId);
+        exported.Provenance.Should().NotBeNull();
+        exported.Disposition.Should().NotBeNull();
+        exported.Disposition!.Kind.Should().Be(nameof(CaptureDisposition.Kept));
+        exported.Disposition.ByUserId.Should().Be(_userId);
+    }
+
+    [Fact]
+    public async Task ExportUserDataAsync_ResolvesLegacyAppliedCaptureProvenanceWithoutPersisting()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var capture = new LlmRequest(
+            _userId,
+            CaptureRequestContract.RequestTypeV1,
+            "legacy capture");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            _userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            capture.Id.ToString());
+        proposal.Approve(_userId);
+        proposal.MarkAsApplied();
+        capture.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "legacy capture"),
+                capture.Id,
+                proposalId: proposal.Id)));
+        capture.MarkAsProcessing();
+        capture.MarkAsCompleted();
+        _llmQueueRepoMock.Setup(r => r.GetByUserAsync(_userId, default)).ReturnsAsync([capture]);
+        _proposalRepoMock
+            .Setup(r => r.GetByIdsAsync(It.Is<IEnumerable<Guid>>(ids => ids.Contains(proposal.Id)), default))
+            .ReturnsAsync([proposal]);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        var exported = result.Value.Data.CaptureItems.Should().ContainSingle().Subject;
+        exported.BoardId.Should().Be(boardId);
+        exported.Provenance!.ProposalId.Should().Be(proposal.Id);
+        exported.Provenance.ConvertedAt.Should().NotBeNull();
+        CaptureRequestContract.ParseStoredPayload(capture.Payload).Provenance!.ConvertedAt.Should().BeNull();
     }
 
     [Fact]

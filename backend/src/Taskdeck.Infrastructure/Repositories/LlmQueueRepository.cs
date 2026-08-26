@@ -85,6 +85,13 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         var archivedCaptures = await GetArchivedCaptureSummaryCandidatesAsync(
             captureQuery,
             cancellationToken);
+        var keptStatusCounts = await captureQuery
+            .Where(request =>
+                (request.Status == RequestStatus.Pending || request.Status == RequestStatus.Failed) &&
+                (request.Payload.Contains("\"kind\":\"kept\"") || request.Payload.Contains("\"kind\":0")))
+            .GroupBy(request => request.Status)
+            .Select(group => new { Status = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(group => group.Status, group => group.Count, cancellationToken);
         var archivedCountsByStatus = archivedCaptures
             .GroupBy(capture => capture.Status)
             .ToDictionary(group => group.Key, group => group.Count());
@@ -97,6 +104,12 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         archivedCountsByStatus.TryGetValue(RequestStatus.Pending, out var archivedPendingCount);
         archivedCountsByStatus.TryGetValue(RequestStatus.Failed, out var archivedFailedCount);
         archivedCountsByStatus.TryGetValue(RequestStatus.Processing, out var archivedProcessingCount);
+        keptStatusCounts.TryGetValue(RequestStatus.Pending, out var keptPendingCount);
+        keptStatusCounts.TryGetValue(RequestStatus.Failed, out var keptFailedCount);
+        var archivedKeptPendingCount = archivedCaptures.Count(capture =>
+            capture.Status == RequestStatus.Pending && capture.IsKept);
+        var archivedKeptFailedCount = archivedCaptures.Count(capture =>
+            capture.Status == RequestStatus.Failed && capture.IsKept);
         var archivedCompletedWithLinkedProposal = archivedCaptures.Count(capture =>
             capture.Status == RequestStatus.Completed && capture.HasLinkedProposal);
         var activeCompletedCount = Math.Max(0, completedCount - archivedCompletedCount);
@@ -106,8 +119,8 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
         return (
             TotalCaptures: countsByStatus.Values.Sum(),
-            NewCount: Math.Max(0, pendingCount - archivedPendingCount),
-            FailedCount: Math.Max(0, failedCount - archivedFailedCount),
+            NewCount: Math.Max(0, pendingCount - archivedPendingCount - (keptPendingCount - archivedKeptPendingCount)),
+            FailedCount: Math.Max(0, failedCount - archivedFailedCount - (keptFailedCount - archivedKeptFailedCount)),
             TriagingCount: Math.Max(0, processingCount - archivedProcessingCount),
             TriagedCount: Math.Max(0, activeCompletedCount - activeCompletedWithLinkedProposal));
     }
@@ -204,6 +217,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
                 return new ResolvedCaptureSummaryCandidate(
                     candidate.Candidate,
+                    candidate.Payload.Disposition?.Kind == CaptureDisposition.Kept,
                     CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
                         candidate.Candidate.Id,
                         candidate.Candidate.UserId,
@@ -236,6 +250,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
                 archivedBoardIds.Contains(candidate.EffectiveBoardId.Value))
             .Select(candidate => new ArchivedCaptureSummaryCandidate(
                 candidate.Candidate.Status,
+                candidate.IsKept,
                 candidate.Candidate.Payload.Contains(
                     ProvenanceProposalIdMarker,
                     StringComparison.Ordinal)))
@@ -255,10 +270,12 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
 
     private sealed record ResolvedCaptureSummaryCandidate(
         CaptureSummaryCandidate Candidate,
+        bool IsKept,
         Guid? EffectiveBoardId);
 
     private sealed record ArchivedCaptureSummaryCandidate(
         RequestStatus Status,
+        bool IsKept,
         bool HasLinkedProposal);
 
     public async Task<IEnumerable<LlmRequest>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -618,6 +635,64 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         }
 
         return true;
+    }
+
+    public async Task<bool> TrySetCaptureDispositionAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        RequestStatus targetStatus,
+        string payload,
+        CancellationToken cancellationToken = default)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET Status = {(int)targetStatus}, Payload = {payload}, UpdatedAt = {updatedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)expectedStatus}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType LIKE {CaptureRequestTypeLike}
+            """,
+            cancellationToken);
+
+        await ReloadTrackedRequestAsync(requestId, cancellationToken);
+        return rowsAffected > 0;
+    }
+
+    public async Task<bool> TryEnqueueCaptureTriageAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        string payload,
+        Guid boardId,
+        CancellationToken cancellationToken = default)
+    {
+        var updatedAt = DateTimeOffset.UtcNow;
+        var rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE LlmRequests
+            SET Status = {(int)RequestStatus.Processing}, Payload = {payload}, BoardId = {boardId},
+                ErrorMessage = NULL, ProcessedAt = NULL, UpdatedAt = {updatedAt}
+            WHERE Id = {requestId}
+              AND Status = {(int)expectedStatus}
+              AND UpdatedAt = {expectedUpdatedAt}
+              AND RequestType LIKE {CaptureRequestTypeLike}
+            """,
+            cancellationToken);
+
+        await ReloadTrackedRequestAsync(requestId, cancellationToken);
+        return rowsAffected > 0;
+    }
+
+    private async Task ReloadTrackedRequestAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        var tracked = _context.LlmRequests.Local.FirstOrDefault(request => request.Id == requestId);
+        if (tracked != null)
+        {
+            await _context.Entry(tracked).ReloadAsync(cancellationToken);
+        }
     }
 
     public async Task<bool> TryClaimProcessingTranscriptAsync(

@@ -78,6 +78,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (event: 'accept', itemId: string, boardId?: string | null): void
+  (event: 'keep', itemId: string): void
   (event: 'reject', itemId: string): void
   (event: 'open', itemId: string): void
   (event: 'retry'): void
@@ -114,7 +115,7 @@ const editItemId = ref<string | null>(null)
  * busy row is still the row it was recorded for, so it can never speak for a
  * mutation some other surface started.
  */
-type PendingAction = { itemId: string; kind: 'accept' | 'reject' }
+type PendingAction = { itemId: string; kind: 'accept' | 'keep' | 'reject' }
 const pendingAction = ref<PendingAction | null>(null)
 
 watch(
@@ -343,6 +344,12 @@ function cancelBoardPick() {
   pickedBoardId.value = null
 }
 
+function onKeep(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  pendingAction.value = { itemId: item.id, kind: 'keep' }
+  emit('keep', item.id)
+}
+
 function onReject(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
   pendingAction.value = { itemId: item.id, kind: 'reject' }
@@ -363,7 +370,7 @@ function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue'
  * capture status produces — a reject is only observable here, between the click
  * and the refresh that turns the row into `rejected`.
  */
-type TriageRowState = CaptureRowState | 'rejecting'
+type TriageRowState = CaptureRowState | 'keeping' | 'archiving' | 'kept' | 'archived'
 
 /**
  * The row's decision state (#1944). A mutation THIS table started for THIS row
@@ -379,8 +386,12 @@ type TriageRowState = CaptureRowState | 'rejecting'
 function rowState(item: CaptureItemSummary): TriageRowState {
   const pending = pendingAction.value
   if (props.actionBusyItemId === item.id && pending?.itemId === item.id) {
-    return pending.kind === 'reject' ? 'rejecting' : 'sending'
+    if (pending.kind === 'keep') return 'keeping'
+    if (pending.kind === 'reject') return 'archiving'
+    return 'sending'
   }
+  if (item.disposition?.kind === 'Kept' || item.disposition?.kind === 0) return 'kept'
+  if (item.disposition?.kind === 'Archived' || item.disposition?.kind === 1) return 'archived'
   return captureRowState(item.status)
 }
 
@@ -675,7 +686,7 @@ function recordedOr(value: string | null | undefined): string {
           </button>
           <div class="paper-triage__actions">
             <PaperHLBtn
-              label="Accept on board"
+              label="Ask AI for proposal"
               variant="ember"
               :disabled="isActionDisabled(item) || boardPickBlock !== null"
               :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
@@ -693,7 +704,7 @@ function recordedOr(value: string | null | undefined): string {
 
         <div v-else-if="!readOnly" class="paper-triage__actions">
           <PaperHLBtn
-            label="Accept"
+            label="Ask AI"
             variant="ember"
             :disabled="isActionDisabled(item)"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
@@ -701,7 +712,15 @@ function recordedOr(value: string | null | undefined): string {
             @click="onAccept(item)"
           />
           <PaperHLBtn
-            label="Reject"
+            label="Keep"
+            variant="ghost"
+            :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
+            data-action="keep"
+            @click="onKeep(item)"
+          />
+          <PaperHLBtn
+            label="Archive"
             variant="ghost"
             :disabled="isActionDisabled(item)"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
@@ -860,8 +879,10 @@ function recordedOr(value: string | null | undefined): string {
 }
 .paper-triage__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
+
 .paper-triage__reason {
   grid-column: 2;
   margin-top: 4px;
@@ -1002,5 +1023,21 @@ function recordedOr(value: string | null | undefined): string {
   align-self: flex-start;
   color: var(--ink-1);
   text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .paper-triage__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .paper-triage__tags,
+  .paper-triage__actions,
+  .paper-triage__reason {
+    grid-column: 1;
+  }
+
+  .paper-triage__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

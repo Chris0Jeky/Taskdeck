@@ -85,6 +85,21 @@ describe('useInboxCounts', () => {
     expect(capturedCount.value).toBe(3)
   })
 
+  it.each(['Kept', 0] as const)('does not count a kept capture with disposition %s as pending', (kind) => {
+    const kept = item('kept', 'New')
+    kept.disposition = {
+      kind,
+      at: new Date().toISOString(),
+      byUserId: 'u1',
+      boardId: null,
+    }
+
+    const { pendingTriageCount, capturedCount } = useInboxCounts(ref([kept]))
+
+    expect(pendingTriageCount.value).toBe(0)
+    expect(capturedCount.value).toBe(1)
+  })
+
   it('tracks later mutations of the source list', () => {
     const items = ref<CaptureItemSummary[]>([item('a', 'New')])
     const { pendingTriageCount, capturedCount } = useInboxCounts(items)

@@ -726,6 +726,42 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task TrySetCaptureDispositionAsync_ShouldLoseToConcurrentTriageTransition()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var setupDb = setupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var user = new User("capture-disposition-cas", "capture-disposition-cas@example.com", "hash");
+        var request = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"race\"}");
+        setupDb.Users.Add(user);
+        setupDb.LlmRequests.Add(request);
+        await setupDb.SaveChangesAsync();
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        using (var triageScope = _factory.Services.CreateScope())
+        {
+            var triageDb = triageScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var triageRequest = await triageDb.LlmRequests.SingleAsync(item => item.Id == request.Id);
+            triageRequest.MarkAsProcessing();
+            await triageDb.SaveChangesAsync();
+        }
+
+        using var dispositionScope = _factory.Services.CreateScope();
+        var repository = dispositionScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var updated = await repository.TrySetCaptureDispositionAsync(
+            request.Id,
+            RequestStatus.Pending,
+            expectedUpdatedAt,
+            RequestStatus.Pending,
+            "{\"text\":\"race\",\"disposition\":{\"kind\":\"kept\"}} ");
+
+        updated.Should().BeFalse();
+        var persisted = await dispositionScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>()
+            .LlmRequests.AsNoTracking().SingleAsync(item => item.Id == request.Id);
+        persisted.Status.Should().Be(RequestStatus.Processing);
+        persisted.Payload.Should().NotContain("kept");
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldRefreshTrackedUpdatedAtToPersistedValue()
     {
         await WithSqliteRepoAsync(async (db, repo) =>
@@ -894,6 +930,35 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
         summary.NewCount.Should().Be(1);       // pending
         summary.FailedCount.Should().Be(1);    // failed
         summary.TriagingCount.Should().Be(1);  // processing
+    }
+
+    [Fact]
+    public async Task GetCaptureSummaryByUserAsync_ShouldExcludeKeptCapturesFromAttentionCounts()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var user = new User("kept-summary-user", "kept-summary@example.com", "hash");
+        db.Users.Add(user);
+
+        var keptPayload = CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+            1,
+            CaptureSource.Typed,
+            "later",
+            Disposition: new CaptureDispositionV1(CaptureDisposition.Kept, DateTimeOffset.UtcNow, user.Id)));
+        var keptPending = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, keptPayload);
+        var keptFailed = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, keptPayload);
+        keptFailed.MarkAsProcessing();
+        keptFailed.MarkAsFailed("retry later");
+        var untouched = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"now\"}");
+        db.LlmRequests.AddRange(keptPending, keptFailed, untouched);
+        await db.SaveChangesAsync();
+
+        var summary = await repo.GetCaptureSummaryByUserAsync(user.Id);
+
+        summary.TotalCaptures.Should().Be(3);
+        summary.NewCount.Should().Be(1);
+        summary.FailedCount.Should().Be(0);
     }
 
     [Fact]

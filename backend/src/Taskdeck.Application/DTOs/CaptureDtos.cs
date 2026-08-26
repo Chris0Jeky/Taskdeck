@@ -25,7 +25,8 @@ public record CaptureItemDto(
     string? ErrorMessage = null,
     CaptureProvenanceV1? Provenance = null,
     bool CanEditSuggestion = false,
-    CaptureSuggestionMetadataDto? Metadata = null);
+    CaptureSuggestionMetadataDto? Metadata = null,
+    CaptureDispositionV1? Disposition = null);
 
 /// <summary>
 /// User-authored capture metadata that remains inert until proposal approval and execution.
@@ -44,7 +45,8 @@ public record CaptureItemSummaryDto(
     string TextExcerpt,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ProcessedAt,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    CaptureDispositionV1? Disposition = null);
 
 public record CaptureListFilterDto(
     CaptureStatus? Status = null,

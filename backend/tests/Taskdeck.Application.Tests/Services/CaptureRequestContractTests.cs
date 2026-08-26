@@ -183,6 +183,34 @@ public class CaptureRequestContractTests
     }
 
     [Fact]
+    public void ParsePayload_ShouldRejectClientSuppliedDispositionButReadStoredReceipt()
+    {
+        var userId = Guid.NewGuid();
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "disposition": {
+                            "kind": "kept",
+                            "at": "2026-08-26T12:00:00Z",
+                            "byUserId": "{{userId}}"
+                          }
+                        }
+                        """;
+
+        var untrusted = CaptureRequestContract.ParsePayload(payload);
+        var stored = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
+
+        untrusted.IsSuccess.Should().BeFalse();
+        untrusted.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        untrusted.ErrorMessage.Should().Contain("server disposition");
+        stored.IsSuccess.Should().BeTrue();
+        stored.Value.Disposition.Should().NotBeNull();
+        stored.Value.Disposition!.Kind.Should().Be(CaptureDisposition.Kept);
+        stored.Value.Disposition.ByUserId.Should().Be(userId);
+    }
+
+    [Fact]
     public void ParsePayload_ShouldFail_WhenProvenanceAttributionFieldIsSuppliedInUntrustedPayload()
     {
         var payload = $$"""

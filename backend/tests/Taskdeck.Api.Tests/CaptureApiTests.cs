@@ -65,6 +65,12 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             await _client.GetAsync($"/api/capture/items/{itemId}"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync($"/api/capture/items/{itemId}/keep", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.PostAsync($"/api/capture/items/{itemId}/archive", null));
+
+        await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/capture/items/{itemId}/ignore", null));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
@@ -234,6 +240,41 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.GetAsync($"/api/capture/items/{Guid.NewGuid()}");
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Fact]
+    public async Task KeepAndArchive_ShouldReturnInspectibleAttributedReceiptsWithoutProposals()
+    {
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "capture-dispositions");
+        var keepCreate = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "keep this for later"));
+        var archiveCreate = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "archive this"));
+        var keptSource = await keepCreate.Content.ReadFromJsonAsync<CaptureItemDto>();
+        var archivedSource = await archiveCreate.Content.ReadFromJsonAsync<CaptureItemDto>();
+
+        var keepResponse = await _client.PostAsync($"/api/capture/items/{keptSource!.Id}/keep", null);
+        var archiveResponse = await _client.PostAsync($"/api/capture/items/{archivedSource!.Id}/archive", null);
+        var keepRetry = await _client.PostAsync($"/api/capture/items/{keptSource.Id}/keep", null);
+
+        keepResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        keepRetry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var kept = await keepResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        var archived = await archiveResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        kept!.Status.Should().Be(CaptureStatus.New);
+        kept.Disposition!.Kind.Should().Be(CaptureDisposition.Kept);
+        kept.Disposition.ByUserId.Should().Be(user.UserId);
+        archived!.Status.Should().Be(CaptureStatus.Ignored);
+        archived.Disposition!.Kind.Should().Be(CaptureDisposition.Archived);
+        archived.Disposition.ByUserId.Should().Be(user.UserId);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.AutomationProposals.CountAsync(proposal => proposal.RequestedByUserId == user.UserId))
+            .Should().Be(0);
     }
 
     [Fact]

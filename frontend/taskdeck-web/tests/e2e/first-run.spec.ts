@@ -72,7 +72,7 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
-  await captureRow.getByRole('button', { name: 'Accept' }).click()
+  await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
   const triagedCapture = await waitForProposalCreated(request, auth, captureId)
   const proposalId = triagedCapture.provenance?.proposalId
   expect(proposalId).toBeTruthy()
