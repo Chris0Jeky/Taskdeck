@@ -33,15 +33,16 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-tokenization` (`d89bd7cc3`) became `#2072`, and `origin/issue-1967/applied-read-only-detail` (`010021a745`) became `#2073`. Do not publish either again. v0.1.2 subsequently shipped; refresh live state before using this historical list.
 
-**Current continuation:** exact `origin/main` at the 2026-08-26 intake was `ceeb27a6cc11e263d7b13be30579f845468ec8b1`. v0.1.2 is public, ADR-0059 is Accepted, and the dogfooding follow-up is documented in `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`. Refresh open PRs and ProjectV2 before acting.
+**Current continuation:** PR `#2088` merged as `70835b2b6c39504a530c4ff0c8aebc8916a0093b`. v0.2 final targets 2026-09-01; v0.3 RC targets 2026-09-04; v0.3 final targets 2026-09-08 or 2026-09-09. The release-cut correction is tracked on `#1947`. Refresh open PRs and ProjectV2 before acting.
 
 **Continuation order:**
 
 1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestones, releases, and worktrees; live state outranks this checkpoint.
-2. Use standing tracker `#1947` and `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md` for the bounded follow-up wave. Do not create a replacement tracker.
-3. Treat ADR-0060, ADR-0061, and ADR-0062 as Proposed. No dependent schema work, including `#2087`, starts until the relevant decision is accepted.
-4. The next independent implementation candidate is `#2083`, the segmented-control interaction-state contrast defect. Do not start it during a docs/intake pass.
-5. Keep the grouped maintainer decision in `OUTSTANDING_TASKS.md` open. The dogfooding/traction checkpoint remains separately governed by ADR-0044 and the live revival plan.
+2. Use standing tracker `#1947` and `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`; do not create a replacement strategy document.
+3. Treat ADR-0060 through ADR-0062 as Proposed. `#2084` owns ADR-0060, `#1772` owns ADR-0061, and `#2091` owns ADR-0062.
+4. Exact Now queue after correction: `#1271`, `#2083`, `#2085`, `#2086`. Exact Next queue: `#1512`, `#1938`, `#1961`, `#1967`, `#2080`.
+5. v0.2 M1 is narrow: `#2085` excludes links/ledger/MCP (`#2089`), and `#2086` excludes widths/collapse/titles-only (`#2090`). `#2087` is v0.3, not a v0.2 stretch.
+6. Keep the grouped maintainer decision in `OUTSTANDING_TASKS.md` open. The dogfooding/traction checkpoint remains separately governed by ADR-0044 and the live revival plan.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved
