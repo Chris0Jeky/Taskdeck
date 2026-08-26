@@ -61,6 +61,9 @@
 | [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Accepted (maintainer ruling 2026-08-24 with an openness caveat; review-first operative until separately gated implementation) | 2026-08-23 |
 | [0058](ADR-0058-due-dates-are-calendar-days.md) | Due Dates Are Calendar Days | Accepted | 2026-08-24 |
 | [0059](ADR-0059-machine-path-404-405-contract.md) | Machine-Facing Paths Answer 405 for a Wrong Verb and 404 Only for a Missing Route | Accepted (maintainer ruling 2026-08-24, recorded on `#1992`) | 2026-08-24 |
+| [0060](ADR-0060-canonical-work-model-and-compatibility-path.md) | Canonical Work Model and Compatibility Path | Proposed | 2026-08-26 |
+| [0061](ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) | Trusted Shared Instance and Managed SaaS Boundary | Proposed | 2026-08-26 |
+| [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Proposed | 2026-08-26 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
