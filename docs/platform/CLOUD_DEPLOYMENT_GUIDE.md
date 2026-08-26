@@ -7,7 +7,7 @@ Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 >
 > Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. This update follows the direction proposed in [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) and must not land before it.
 >
-> Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. It is not evidence of a managed public SaaS.
+> Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. Use `InviteOnly` while collaborators are onboarding; `Closed` is safe only after every intended account already exists. This is not evidence of a managed public SaaS.
 
 ---
 

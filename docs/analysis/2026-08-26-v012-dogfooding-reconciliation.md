@@ -16,7 +16,7 @@ The untracked maintainer brief `taskdeck-v0.2-v0.3-product-engineering-brief.md`
 
 | Finding | Shipped capability | Gap recorded |
 |---|---|---|
-| Capture disposition | `CaptureItem`, `SourceArtefact`, `Transcript`, and `AutomationProposal` preserve parts of the capture-to-proposal path. Triage can create work or cancel/ignore. | No durable keep/archive/target/link/analyse routing contract. `#2085` extends the existing path instead of creating a Note subsystem. |
+| Capture disposition | `CaptureItem`, `SourceArtefact`, `Transcript`, and `AutomationProposal` preserve parts of the capture-to-proposal path. Triage can create proposals or cancel/ignore. | No durable keep/archive/target/link/analyse routing contract. `#2085` extends the existing path instead of creating a Note subsystem. |
 | Work hierarchy and relations | Cards belong to one board and one column. | No work-item type, parent, typed relation, template, recurrence, or ongoing-lifecycle model. Proposed ADR-0060 and `#2087` define the first bounded seam. |
 | Workspace, project, and board | The current ownership model is `Board -> Column -> Card`, with board access controls. | Workspace/project/view semantics are not shipped. Proposed ADR-0060 preserves compatibility and requires staged migration decisions. |
 | Board editing context | The board uses fixed-width columns, horizontal overflow, and a full modal card editor. | No density, width, collapse, or board-preserving inspector controls. `#2086` excludes column wrapping from its first slice. |

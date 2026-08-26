@@ -29,7 +29,7 @@ While SQLite is used, the milestone requires:
 
 - exactly one application instance and one persistent volume;
 - WAL, short write transactions, and database-authoritative state after reconnect;
-- Closed or InviteOnly registration;
+- InviteOnly registration while collaborators are onboarding; Closed is permitted only after every intended account already exists;
 - verified HTTPS and SignalR/WebSocket proxy behavior;
 - optimistic concurrency for collaborative writes and explicit stale-write UX;
 - backup of both SQLite and the connector-encryption key;
@@ -85,4 +85,3 @@ backend or realtime collaboration path.
 - v0.3 can test real collaboration without committing to multi-tenancy or horizontal scaling.
 - SQLite operation gains explicit single-instance, backup, restore, and concurrency constraints.
 - Managed SaaS remains post-v0.3 and requires a separate accepted decision and operating plan.
-
