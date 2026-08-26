@@ -190,7 +190,9 @@ export default {
     title: 'La modifica',
     subTitle: '{count} operazione · {board} | {count} operazioni · {board}',
     beforeEyebrow: 'Prima · oggi',
+    beforeEyebrowApplied: 'Prima · registrata',
     afterEyebrow: 'Dopo · all’applicazione',
+    afterEyebrowApplied: 'Dopo · applicata',
     fieldsHeading: 'Modifiche per campo',
     tag: {
       new: '· nuovo',
@@ -199,6 +201,7 @@ export default {
     before: {
       titleFallback: 'Nessuna proposta selezionata',
       bodyFallback: 'Rivedi {count} operazioni della proposta prima di applicare.',
+      bodyAppliedFallback: 'Sono state registrate {count} operazioni della proposta.',
       meta: '{board} · {source}',
       sourceFallback: 'proposta',
     },
