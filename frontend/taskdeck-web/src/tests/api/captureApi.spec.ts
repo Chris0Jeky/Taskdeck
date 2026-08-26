@@ -63,6 +63,20 @@ describe('captureApi', () => {
     expect(http.get).toHaveBeenCalledWith('/capture/items/capture-42')
   })
 
+  it('posts keep and archive dispositions and returns their receipts', async () => {
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({ data: { id: 'capture-2', disposition: { kind: 'Kept' } } })
+      .mockResolvedValueOnce({ data: { id: 'capture-3', disposition: { kind: 'Archived' } } })
+
+    const kept = await captureApi.keepItem('capture-2')
+    const archived = await captureApi.archiveItem('capture-3')
+
+    expect(http.post).toHaveBeenNthCalledWith(1, '/capture/items/capture-2/keep')
+    expect(http.post).toHaveBeenNthCalledWith(2, '/capture/items/capture-3/archive')
+    expect(kept.disposition?.kind).toBe('Kept')
+    expect(archived.disposition?.kind).toBe('Archived')
+  })
+
   it('posts ignore action', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: {} })
 

@@ -42,6 +42,15 @@ export type CaptureSource =
 
 export type CaptureSourceValue = CaptureSource | number
 
+export type CaptureDisposition = 'Kept' | 'Archived' | 'ProposalRequested'
+
+export interface CaptureDispositionReceipt {
+  kind: CaptureDisposition | number
+  at: string
+  byUserId: string
+  boardId: string | null
+}
+
 export interface CaptureItemSummary {
   id: string
   userId: string
@@ -53,6 +62,8 @@ export interface CaptureItemSummary {
   processedAt: string | null
   /** Failure reason surfaced on a FAILED capture so the row can explain what went wrong (#1764). */
   errorMessage?: string | null
+  /** Latest server-stamped routing choice. Absent on records created before M1. */
+  disposition?: CaptureDispositionReceipt | null
 }
 
 export interface CaptureProvenance {

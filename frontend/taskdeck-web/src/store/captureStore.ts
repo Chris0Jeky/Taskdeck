@@ -20,6 +20,7 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
     createdAt: item.createdAt,
     processedAt: item.processedAt,
     errorMessage: item.errorMessage ?? null,
+    disposition: item.disposition ?? null,
   }
 }
 
@@ -248,6 +249,45 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  async function keepItem(itemId: string) {
+    guardDemoMutation()
+    try {
+      actionBusyItemId.value = itemId
+      actionError.value = null
+      const kept = await captureApi.keepItem(itemId)
+      cacheDetail(kept)
+      toast.success('Capture kept for later', undefined, { label: 'saved' })
+      return kept
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to keep capture item').message
+      actionError.value = message
+      toast.error(message)
+      throw e
+    } finally {
+      actionBusyItemId.value = null
+    }
+  }
+
+  async function archiveItem(itemId: string) {
+    guardDemoMutation()
+    try {
+      actionBusyItemId.value = itemId
+      actionError.value = null
+      const archived = await captureApi.archiveItem(itemId)
+      cacheDetail(archived)
+      toast.success('Capture archived', undefined, { label: 'saved' })
+      notifyTriageCountChanged()
+      return archived
+    } catch (e: unknown) {
+      const message = getErrorDisplay(e, 'Failed to archive capture item').message
+      actionError.value = message
+      toast.error(message)
+      throw e
+    } finally {
+      actionBusyItemId.value = null
+    }
+  }
+
   async function cancelItem(itemId: string) {
     guardDemoMutation()
     try {
@@ -457,6 +497,8 @@ export const useCaptureStore = defineStore('capture', () => {
     fetchDetail,
     peekDetail,
     createItem,
+    keepItem,
+    archiveItem,
     ignoreItem,
     cancelItem,
     triageItem,

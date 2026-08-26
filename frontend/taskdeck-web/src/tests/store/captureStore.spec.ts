@@ -17,6 +17,8 @@ vi.mock('../../api/captureApi', () => ({
     createItem: vi.fn(),
     listItems: vi.fn(),
     getItem: vi.fn(),
+    keepItem: vi.fn(),
+    archiveItem: vi.fn(),
     ignoreItem: vi.fn(),
     cancelItem: vi.fn(),
     enqueueTriage: vi.fn(),
@@ -482,6 +484,43 @@ describe('captureStore', () => {
     expect(captureApi.ignoreItem).toHaveBeenCalledWith('c4')
     expect(store.detailById.c4?.status).toBe('Ignored')
     // Ignoring takes a capture out of `New + Failed`, so the badge must move.
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('caches server-stamped keep and archive receipts without creating work', async () => {
+    const store = useCaptureStore()
+    const kept = {
+      id: 'c-keep',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'kept',
+      rawText: 'kept',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      disposition: {
+        kind: 'Kept' as const,
+        at: new Date().toISOString(),
+        byUserId: 'u1',
+        boardId: null,
+      },
+    }
+    const archived = {
+      ...kept,
+      id: 'c-archive',
+      status: 'Ignored' as const,
+      disposition: { ...kept.disposition, kind: 'Archived' as const },
+    }
+    vi.mocked(captureApi.keepItem).mockResolvedValue(kept)
+    vi.mocked(captureApi.archiveItem).mockResolvedValue(archived)
+
+    await store.keepItem(kept.id)
+    await store.archiveItem(archived.id)
+
+    expect(store.detailById[kept.id]?.disposition?.kind).toBe('Kept')
+    expect(store.detailById[archived.id]?.disposition?.kind).toBe('Archived')
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
