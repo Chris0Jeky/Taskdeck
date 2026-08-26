@@ -104,8 +104,32 @@ test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request })
 
   await page.goto(`/workspace/boards/${boardId}`)
   await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
-  await expect(page.locator('.paper-board-card').filter({ hasText: cardTitle })).toBeVisible()
+  const card = page.locator('.paper-board-card').filter({ hasText: cardTitle })
+  const opener = card.getByRole('button', { name: new RegExp(cardTitle) })
+  await expect(card).toBeVisible()
   await expectNoAxeViolations(page, 'PaperBoardView')
+
+  const densityToggle = page.getByTestId('paper-board-density-toggle')
+  await densityToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(densityToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('[data-surface="paper-board"]')).toHaveAttribute('data-density', 'compact')
+
+  await opener.focus()
+  await page.keyboard.press('Enter')
+  const editor = page.getByRole('dialog', { name: 'Edit Card' })
+  await expect(editor).not.toHaveAttribute('aria-modal', 'true')
+  await expect(page.getByTestId('card-modal-scroll-region')).toHaveAttribute('data-presentation', 'inspector')
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+
+  await editor.getByRole('button', { name: 'Close card editor' }).click()
+  await expect(editor).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await opener.click()
+  await expect(page.getByTestId('card-modal-scroll-region')).toHaveAttribute('data-presentation', 'modal')
+  await expect(editor).toHaveAttribute('aria-modal', 'true')
 })
 
 test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) => {

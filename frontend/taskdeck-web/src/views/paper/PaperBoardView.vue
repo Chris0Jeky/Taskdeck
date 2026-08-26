@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
@@ -10,6 +10,7 @@ import PaperBoardSettingsDialog from './board/PaperBoardSettingsDialog.vue'
 import PaperColumnSettingsDialog from './board/PaperColumnSettingsDialog.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import CardModal from '../../components/board/CardModal.vue'
+import TdDialog from '../../components/ui/TdDialog.vue'
 import type { Card, Column } from '../../types/board'
 import type { PaperBoardCardVariant } from './PaperBoardCard.vue'
 import { logError } from '../../utils/errorReporting'
@@ -61,6 +62,31 @@ const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const selectedCard = ref<Card | null>(null)
+const pendingCard = ref<Card | null>(null)
+const cardEditorDirty = ref(false)
+type BoardDensity = 'comfortable' | 'compact'
+const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
+const density = ref<BoardDensity>('comfortable')
+const cardPresentation = computed(() => viewportMode.value === 'desktop' ? 'inspector' : 'modal')
+
+onMounted(() => {
+  try {
+    density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
+      ? 'compact'
+      : 'comfortable'
+  } catch {
+    density.value = 'comfortable'
+  }
+})
+
+function toggleDensity() {
+  density.value = density.value === 'compact' ? 'comfortable' : 'compact'
+  try {
+    window.localStorage.setItem(BOARD_DENSITY_KEY, density.value)
+  } catch {
+    // Local fallback only. The preference remains active for this mounted board.
+  }
+}
 
 const sortedColumns = computed<Column[]>(() => {
   if (!boardStore.currentBoard) return []
@@ -88,6 +114,8 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 
 watch(boardId, () => {
   selectedCard.value = null
+  pendingCard.value = null
+  cardEditorDirty.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
   resetBoardManagementState()
@@ -184,11 +212,33 @@ function onLaneDragStart(column: Column, event: DragEvent) {
 }
 
 function openCard(card: Card) {
+  if (selectedCard.value?.id === card.id) return
+  if (selectedCard.value && cardEditorDirty.value) {
+    pendingCard.value = card
+    return
+  }
   selectedCard.value = card
 }
 
 function closeCard() {
   selectedCard.value = null
+  pendingCard.value = null
+  cardEditorDirty.value = false
+}
+
+function handleCardEditorDirtyChange(dirty: boolean) {
+  cardEditorDirty.value = dirty
+}
+
+function cancelCardSwitch() {
+  pendingCard.value = null
+}
+
+function discardAndSwitchCard() {
+  if (!pendingCard.value) return
+  selectedCard.value = pendingCard.value
+  pendingCard.value = null
+  cardEditorDirty.value = false
 }
 
 function openCapture(_column: Column) {
@@ -457,7 +507,7 @@ async function addStarterColumns() {
 </script>
 
 <template>
-  <div class="paper-board-view" data-surface="paper-board">
+  <div class="paper-board-view" data-surface="paper-board" :data-density="density">
     <div class="paper-board-view__inner">
       <header class="paper-board-view__head">
         <div class="paper-board-view__title-block">
@@ -470,6 +520,14 @@ async function addStarterColumns() {
           </p>
         </div>
         <div class="paper-board-view__actions">
+          <PaperHLBtn
+            label="Compact density"
+            :aria-pressed="density === 'compact'"
+            data-testid="paper-board-density-toggle"
+            @keydown.enter.stop
+            @keydown.space.stop
+            @click="toggleDensity"
+          />
           <PaperHLBtn
             v-if="boardStore.currentBoard"
             :label="t('boardDetail.actions.settings')"
@@ -562,10 +620,14 @@ async function addStarterColumns() {
       -->
       <div
         v-else-if="boardStore.currentBoard"
-        class="paper-board-view__lanes"
-        :class="{ 'paper-board-view__lanes--snap': viewportMode === 'tablet' }"
-        data-testid="paper-board-lanes"
+        class="paper-board-view__workspace"
+        data-testid="paper-board-workspace"
       >
+        <div
+          class="paper-board-view__lanes"
+          :class="{ 'paper-board-view__lanes--snap': viewportMode === 'tablet' }"
+          data-testid="paper-board-lanes"
+        >
         <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- column drag/drop wrapper; group role + drag events drive existing reorder semantics -->
         <div
           v-for="(column, idx) in sortedColumns"
@@ -608,7 +670,7 @@ async function addStarterColumns() {
           />
         </div>
 
-        <div class="paper-board-view__add-column" data-testid="paper-board-add-column-cell">
+          <div class="paper-board-view__add-column" data-testid="paper-board-add-column-cell">
           <PaperHLBtn
             v-if="!addColumnOpen"
             :label="t('boardDetail.column.add')"
@@ -663,17 +725,45 @@ async function addStarterColumns() {
               {{ addColumnError }}
             </p>
           </form>
+          </div>
         </div>
-      </div>
 
-      <CardModal
-        v-if="selectedCard"
-        :card="selectedCard"
-        :is-open="Boolean(selectedCard)"
-        :labels="boardStore.currentBoardLabels"
-        @close="closeCard"
-        @updated="closeCard"
-      />
+        <CardModal
+          v-if="selectedCard"
+          :card="selectedCard"
+          :is-open="Boolean(selectedCard)"
+          :labels="boardStore.currentBoardLabels"
+          :presentation="cardPresentation"
+          @close="closeCard"
+          @updated="closeCard"
+          @dirty-change="handleCardEditorDirtyChange"
+        />
+
+        <TdDialog
+          v-if="pendingCard"
+          :open="true"
+          title="Discard card changes?"
+          :description="`Switch to ${pendingCard.title} and discard the current unsaved changes?`"
+          @close="cancelCardSwitch"
+        >
+          <template #footer>
+            <PaperHLBtn
+              type="button"
+              variant="ghost"
+              label="Keep editing"
+              data-testid="card-switch-cancel"
+              @click="cancelCardSwitch"
+            />
+            <PaperHLBtn
+              type="button"
+              variant="primary"
+              label="Discard and switch"
+              data-testid="card-switch-confirm"
+              @click="discardAndSwitchCard"
+            />
+          </template>
+        </TdDialog>
+      </div>
 
       <PaperColumnSettingsDialog
         v-if="editingColumnLive"
@@ -819,12 +909,49 @@ async function addStarterColumns() {
 }
 
 .paper-board-view__lanes {
+  min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 16px;
   overflow-x: auto;
   padding-bottom: 8px;
+}
+
+.paper-board-view__workspace {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.paper-board-view[data-density="compact"] .paper-board-view__inner {
+  gap: 12px;
+  padding: 16px 20px 20px;
+}
+
+.paper-board-view[data-density="compact"] .paper-board-view__lanes {
+  gap: 10px;
+}
+
+.paper-board-view[data-density="compact"] :deep(.paper-board-column) {
+  gap: 6px;
+  padding: 8px;
+}
+
+.paper-board-view[data-density="compact"] :deep(.paper-board-column__cards),
+.paper-board-view[data-density="compact"] :deep(.paper-board-column__footer) {
+  gap: 5px;
+}
+
+.paper-board-view[data-density="compact"] :deep(.paper-board-card__body) {
+  padding: 8px 10px;
+}
+
+.paper-board-view[data-density="compact"] :deep(.paper-board-card__meta) {
+  margin-top: 4px;
+  padding-top: 4px;
 }
 
 .paper-board-view__lane {
@@ -911,6 +1038,12 @@ async function addStarterColumns() {
     overflow-x: visible;
   }
   .paper-board-view__lanes:not(.paper-board-view__lanes--snap) .paper-board-view__lane {
+    display: block;
+  }
+}
+
+@media (max-width: 1024px) {
+  .paper-board-view__workspace {
     display: block;
   }
 }

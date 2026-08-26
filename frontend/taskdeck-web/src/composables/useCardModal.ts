@@ -48,6 +48,8 @@ export function useCardModal(options: UseCardModalOptions) {
   const captureProvenanceError = ref<string | null>(null)
   const loadingCaptureProvenance = ref(false)
   const loadedCaptureProvenanceCardId = ref<string | null>(null)
+  let loadingCaptureProvenanceCardId: string | null = null
+  let provenanceLoadVersion = 0
 
   // Delete state
   const showDeleteConfirm = ref(false)
@@ -83,9 +85,26 @@ export function useCardModal(options: UseCardModalOptions) {
     return true
   })
 
+  const hasUnsavedChanges = computed(() => {
+    const currentCard = card.value
+    return (
+      title.value !== currentCard.title ||
+      description.value !== (currentCard.description || '') ||
+      dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
+      isBlocked.value !== currentCard.isBlocked ||
+      blockReason.value !== (currentCard.blockReason || '') ||
+      selectedLabelIds.value.length !== currentCard.labels.length ||
+      selectedLabelIds.value.some((id) => !currentCard.labels.some((label) => label.id === id)) ||
+      newCommentContent.value.trim().length > 0 ||
+      Object.values(replyDraftByParent.value).some((draft) => draft.trim().length > 0) ||
+      editingCommentId.value !== null
+    )
+  })
+
   // Watchers
-  watch(() => options.getCard(), (newCard) => {
+  watch(() => options.getCard(), (newCard, previousCard) => {
     if (newCard) {
+      const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
       title.value = newCard.title
       description.value = newCard.description || ''
       dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
@@ -96,8 +115,27 @@ export function useCardModal(options: UseCardModalOptions) {
       captureProvenanceError.value = null
       loadedCaptureProvenanceCardId.value = null
 
-      if (options.getIsOpen()) {
-        loadCaptureProvenance().catch(() => {})
+      if (switchedCards && options.getIsOpen()) {
+        provenanceLoadVersion += 1
+        loadingCaptureProvenanceCardId = null
+        loadingCaptureProvenance.value = false
+        expectedUpdatedAt.value = newCard.updatedAt
+        newCommentContent.value = ''
+        replyDraftByParent.value = {}
+        editingCommentId.value = null
+        editingCommentContent.value = ''
+        commentPendingDeletion.value = null
+        showCommentDeleteConfirm.value = false
+        isDeletingComment.value = false
+        showDeleteConfirm.value = false
+        isDeleting.value = false
+
+        if (previousCard && boardStore.editingCardId === previousCard.id) {
+          boardStore.setEditingCard(null)
+        }
+        boardStore.setEditingCard(newCard.id)
+        void boardStore.fetchCardComments(newCard.boardId, newCard.id)
+        void loadCaptureProvenance()
       }
     }
   }, { immediate: true })
@@ -124,6 +162,8 @@ export function useCardModal(options: UseCardModalOptions) {
       captureProvenanceError.value = null
       loadingCaptureProvenance.value = false
       loadedCaptureProvenanceCardId.value = null
+      loadingCaptureProvenanceCardId = null
+      provenanceLoadVersion += 1
 
       if (boardStore.editingCardId === card.value.id) {
         boardStore.setEditingCard(null)
@@ -134,21 +174,33 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Provenance
   async function loadCaptureProvenance() {
-    if (loadingCaptureProvenance.value || loadedCaptureProvenanceCardId.value === card.value.id) {
+    const targetCard = card.value
+    if (
+      loadingCaptureProvenanceCardId === targetCard.id ||
+      loadedCaptureProvenanceCardId.value === targetCard.id
+    ) {
       return
     }
 
+    const requestVersion = ++provenanceLoadVersion
+    loadingCaptureProvenanceCardId = targetCard.id
     loadingCaptureProvenance.value = true
     captureProvenanceError.value = null
     try {
-      captureProvenance.value = await boardStore.fetchCardProvenance(card.value.boardId, card.value.id)
-      loadedCaptureProvenanceCardId.value = card.value.id
+      const provenance = await boardStore.fetchCardProvenance(targetCard.boardId, targetCard.id)
+      if (requestVersion !== provenanceLoadVersion || card.value.id !== targetCard.id) return
+      captureProvenance.value = provenance
+      loadedCaptureProvenanceCardId.value = targetCard.id
     } catch {
+      if (requestVersion !== provenanceLoadVersion || card.value.id !== targetCard.id) return
       captureProvenance.value = null
       captureProvenanceError.value = 'Unable to load capture provenance.'
-      loadedCaptureProvenanceCardId.value = card.value.id
+      loadedCaptureProvenanceCardId.value = targetCard.id
     } finally {
-      loadingCaptureProvenance.value = false
+      if (requestVersion === provenanceLoadVersion) {
+        loadingCaptureProvenance.value = false
+        loadingCaptureProvenanceCardId = null
+      }
     }
   }
 
@@ -334,6 +386,8 @@ export function useCardModal(options: UseCardModalOptions) {
     captureProvenanceError.value = null
     loadingCaptureProvenance.value = false
     loadedCaptureProvenanceCardId.value = null
+    loadingCaptureProvenanceCardId = null
+    provenanceLoadVersion += 1
   })
 
   return {
@@ -345,6 +399,7 @@ export function useCardModal(options: UseCardModalOptions) {
     blockReason,
     selectedLabelIds,
     isFormValid,
+    hasUnsavedChanges,
 
     // Due date
     formattedDueDate,

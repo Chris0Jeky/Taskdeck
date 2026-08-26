@@ -112,8 +112,15 @@ function mountView(props: Record<string, unknown> = {}) {
     global: {
       stubs: {
         CardModal: {
-          props: ['card', 'isOpen', 'labels'],
-          template: '<div v-if="isOpen" data-testid="paper-card-modal">{{ card.title }}</div>',
+          name: 'CardModal',
+          props: ['card', 'isOpen', 'labels', 'presentation'],
+          emits: ['dirty-change'],
+          template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
+        },
+        TdDialog: {
+          props: ['open', 'title', 'description'],
+          emits: ['close'],
+          template: '<div v-if="open" role="dialog"><slot /><slot name="footer" /></div>',
         },
       },
     },
@@ -141,6 +148,7 @@ describe('PaperBoardView', () => {
     mockBoardStore.error = null
     mockBoardStore.loading = false
     mockViewportMode.value = 'desktop'
+    window.localStorage.removeItem('td.paper.board-density.v1')
   })
 
   afterEach(() => {
@@ -225,6 +233,70 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="paper-card-modal"]').text()).toContain('A')
+  })
+
+  it('requires explicit confirmation before switching away from a dirty inspector', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('B')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  it('uses a board-preserving inspector on desktop and keeps the modal fallback on tablet', async () => {
+    const wrapper = mountView()
+    wrapper.findAllComponents(PaperBoardColumn)[0]?.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').attributes('data-presentation')).toBe('inspector')
+    expect(wrapper.find('[data-testid="paper-board-lanes"]').exists()).toBe(true)
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').attributes('data-presentation')).toBe('modal')
+  })
+
+  it('toggles and persists compact board density through a keyboard-accessible button', async () => {
+    const wrapper = mountView()
+    const toggle = wrapper.get('[data-testid="paper-board-density-toggle"]')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('comfortable')
+
+    await toggle.trigger('keydown', { key: 'Enter' })
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+    expect(window.localStorage.getItem('td.paper.board-density.v1')).toBe('compact')
+  })
+
+  it('restores the persisted compact density when the board mounts', async () => {
+    window.localStorage.setItem('td.paper.board-density.v1', 'compact')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
   })
 
   it('blocks paper card drags that do not start from the card handle', async () => {
