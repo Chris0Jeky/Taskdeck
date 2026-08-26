@@ -1389,6 +1389,12 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult(TryClaimProcessingCaptureResult);
         }
 
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public bool TryClaimProcessingTranscriptResult { get; set; } = true;
 
         public Task<bool> TryClaimProcessingTranscriptAsync(

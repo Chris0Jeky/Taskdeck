@@ -93,7 +93,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
-  await captureRow.getByRole('button', { name: 'Accept' }).click()
+  await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
 
   const triaged = await waitForProposalCreated(request, auth, captureId!)
   proposalId = triaged.provenance?.proposalId

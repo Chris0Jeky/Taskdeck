@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -221,6 +222,55 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
         dataProp.TryGetProperty("notifications", out _).Should().BeTrue();
         dataProp.TryGetProperty("chatSessions", out _).Should().BeTrue();
         dataProp.TryGetProperty("auditTrail", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExportUserData_BufferedAndStreaming_ShouldKeepCaptureDispositionWireFormatInParity()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "export-capture-disposition-parity");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "export-capture-disposition-board");
+        var keptCreateResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, "keep this exported capture"));
+        keptCreateResponse.EnsureSuccessStatusCode();
+        var kept = await keptCreateResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        kept.Should().NotBeNull();
+        (await client.PostAsync($"/api/capture/items/{kept!.Id}/keep", null))
+            .EnsureSuccessStatusCode();
+
+        var compatibleCreateResponse = await client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "capture without a disposition receipt"));
+        compatibleCreateResponse.EnsureSuccessStatusCode();
+        var compatible = await compatibleCreateResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        compatible.Should().NotBeNull();
+
+        var bufferedResponse = await client.GetAsync("/api/account/export");
+        var streamingResponse = await client.GetAsync("/api/account/export/stream");
+        bufferedResponse.EnsureSuccessStatusCode();
+        streamingResponse.EnsureSuccessStatusCode();
+
+        var bufferedRoot = JsonNode.Parse(await bufferedResponse.Content.ReadAsStringAsync())!.AsObject();
+        var streamingRoot = JsonNode.Parse(await streamingResponse.Content.ReadAsStringAsync())!.AsObject();
+        bufferedRoot["version"]!.GetValue<string>().Should().Be("1.0");
+        streamingRoot["version"]!.GetValue<string>().Should().Be("1.0");
+
+        var bufferedCaptures = bufferedRoot["data"]!["captureItems"]!.AsArray();
+        var streamingCaptures = streamingRoot["data"]!["captureItems"]!.AsArray();
+        JsonNode.DeepEquals(bufferedCaptures, streamingCaptures).Should().BeTrue(
+            "IDataExportService promises one capture wire format for buffered and streaming exports");
+
+        var keptExport = bufferedCaptures.Single(node =>
+            node!["id"]!.GetValue<string>() == kept.Id.ToString());
+        keptExport!["boardId"]!.GetValue<string>().Should().Be(board.Id.ToString());
+        keptExport["disposition"]!["kind"]!.GetValue<string>().Should().Be("Kept");
+        keptExport["disposition"]!["byUserId"]!.GetValue<string>().Should().Be(user.UserId.ToString());
+
+        var compatibleExport = bufferedCaptures.Single(node =>
+            node!["id"]!.GetValue<string>() == compatible!.Id.ToString());
+        compatibleExport!["disposition"].Should().BeNull(
+            "records written before capture dispositions remain valid in export version 1.0");
     }
 
     [Fact]

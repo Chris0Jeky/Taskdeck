@@ -32,6 +32,18 @@ export const captureApi = {
     return data
   },
 
+  async keepItem(itemId: string): Promise<CaptureItem> {
+    const pathItemId = encodePathSegment(itemId)
+    const { data } = await http.post<CaptureItem>(`/capture/items/${pathItemId}/keep`)
+    return data
+  },
+
+  async archiveItem(itemId: string): Promise<CaptureItem> {
+    const pathItemId = encodePathSegment(itemId)
+    const { data } = await http.post<CaptureItem>(`/capture/items/${pathItemId}/archive`)
+    return data
+  },
+
   async ignoreItem(itemId: string): Promise<void> {
     const pathItemId = encodePathSegment(itemId)
     await http.post(`/capture/items/${pathItemId}/ignore`)

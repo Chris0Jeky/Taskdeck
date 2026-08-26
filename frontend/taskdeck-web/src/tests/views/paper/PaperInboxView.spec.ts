@@ -12,6 +12,8 @@ const mockCaptureStore = reactive({
   triagePollingItemId: null as string | null,
   createItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   triageItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  keepItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  archiveItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   ignoreItem: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   pollTriageCompletion: vi.fn<(...args: unknown[]) => () => void>(),
   // `peekDetail` is the read-only detail load (#1973): it returns the item
@@ -75,6 +77,8 @@ describe('PaperInboxView', () => {
     orchestratorState.clearScope.mockResolvedValue(undefined)
     mockCaptureStore.createItem.mockResolvedValue({ id: 'created-1', metadata: null })
     mockCaptureStore.triageItem.mockResolvedValue({ status: 'Triaging', alreadyTriaging: false })
+    mockCaptureStore.keepItem.mockResolvedValue(undefined)
+    mockCaptureStore.archiveItem.mockResolvedValue(undefined)
     mockCaptureStore.ignoreItem.mockResolvedValue(undefined)
     mockCaptureStore.pollTriageCompletion.mockReturnValue(() => undefined)
     mockCaptureStore.peekDetail.mockReset()
@@ -123,6 +127,8 @@ describe('PaperInboxView', () => {
 
     expect(mockCaptureStore.createItem).not.toHaveBeenCalled()
     expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.keepItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.archiveItem).not.toHaveBeenCalled()
     expect(mockCaptureStore.ignoreItem).not.toHaveBeenCalled()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ';', metaKey: true }))
@@ -660,7 +666,7 @@ describe('PaperInboxView', () => {
     expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-boardless', 'board-alpha')
   })
 
-  it('calls captureStore.ignoreItem by ID without mutating selectedItemId', async () => {
+  it('calls captureStore.archiveItem by ID without mutating selectedItemId', async () => {
     orchestratorState.selectedItemId.value = null
     orchestratorState.items.value = [
       {
@@ -679,8 +685,19 @@ describe('PaperInboxView', () => {
     await wrapper.find('[data-action="reject"]').trigger('click')
     await flushPromises()
 
-    expect(mockCaptureStore.ignoreItem).toHaveBeenCalledWith('capture-reject')
+    expect(mockCaptureStore.archiveItem).toHaveBeenCalledWith('capture-reject')
     expect(orchestratorState.selectedItemId.value).toBeNull()
+  })
+
+  it('keeps a capture for later without starting triage', async () => {
+    orchestratorState.items.value = [captureRow('capture-keep', 'New')]
+
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-action="keep"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.keepItem).toHaveBeenCalledWith('capture-keep')
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
   })
 
   it('starts triage polling when triageItem resolves with non-terminal status', async () => {

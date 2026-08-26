@@ -20,6 +20,16 @@ public interface ICaptureService
         Guid itemId,
         CancellationToken cancellationToken = default);
 
+    Task<Result<CaptureItemDto>> KeepAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default);
+
+    Task<Result<CaptureItemDto>> ArchiveAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default);
+
     Task<Result> IgnoreAsync(
         Guid userId,
         Guid itemId,

@@ -45,7 +45,7 @@ test.describe('Paper capture-review-apply loop', () => {
 
     const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
     await expect(captureRow).toBeVisible()
-    await captureRow.getByRole('button', { name: 'Accept' }).click()
+    await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
 
     const triagedCapture = await waitForProposalCreated(request, paperAuth, capturePayload.id!)
     const proposalId = triagedCapture.provenance?.proposalId

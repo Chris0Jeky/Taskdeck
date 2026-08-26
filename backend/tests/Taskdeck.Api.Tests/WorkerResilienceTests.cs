@@ -467,6 +467,10 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
@@ -590,6 +594,10 @@ public class WorkerResilienceTests
             => Task.FromResult(_pending.FirstOrDefault(i => i.Status == RequestStatus.Pending));
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
         public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 

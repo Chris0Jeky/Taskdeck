@@ -167,6 +167,15 @@ describe('PaperTriageTable', () => {
     expect(events?.[0]).toEqual(['capture-1'])
   })
 
+  it('emits keep without asking for a board or proposal', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+
+    await wrapper.findAll('button[data-action="keep"]')[0].trigger('click')
+
+    expect(wrapper.emitted('keep')?.[0]).toEqual(['capture-1'])
+    expect(wrapper.emitted('accept')).toBeUndefined()
+  })
+
   it('requires a board before accepting a board-less capture (#1764)', async () => {
     const items = makeItems()
     items[0] = { ...items[0], boardId: null }
@@ -589,6 +598,25 @@ describe('PaperTriageTable', () => {
     expect(row.text()).not.toBe(undecidedRow().text())
   })
 
+  it('renders the server-stamped keep receipt while leaving later routing available', () => {
+    const items = makeItems()
+    items[0] = {
+      ...items[0],
+      disposition: {
+        kind: 'Kept',
+        at: '2026-08-26T12:00:00Z',
+        byUserId: 'user-1',
+        boardId: null,
+      },
+    }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.attributes('data-row-state')).toBe('kept')
+    expect(row.get('[data-testid="capture-row-status"]').text()).toContain('Kept for later')
+    expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('never tells a "nothing to propose" row to go decide in Review', () => {
     // A triage that completed with no proposal is a SUCCESS with nothing left
     // to decide (backend: CaptureStatusPolicy maps completed-without-proposal
@@ -636,8 +664,8 @@ describe('PaperTriageTable', () => {
     const row = wrapper.find('.paper-triage__row')
     const line = row.find('[data-testid="capture-row-status"]')
 
-    expect(row.attributes('data-row-state')).toBe('rejecting')
-    expect(line.text()).toContain('Rejecting')
+    expect(row.attributes('data-row-state')).toBe('archiving')
+    expect(line.text()).toContain('Archiving')
     expect(line.text()).not.toContain('Sending to Review')
   })
 

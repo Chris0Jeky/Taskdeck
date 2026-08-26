@@ -226,10 +226,19 @@ async function onTriageAccept(itemId: string, boardId?: string | null) {
   }
 }
 
+async function onCaptureKeep(itemId: string) {
+  if (isArchivedHistory.value) return
+  try {
+    await captureStore.keepItem(itemId)
+  } catch {
+    // Store handles toast + error state.
+  }
+}
+
 async function onTriageReject(itemId: string) {
   if (isArchivedHistory.value) return
   try {
-    await captureStore.ignoreItem(itemId)
+    await captureStore.archiveItem(itemId)
   } catch {
     // Store handles toast + error state.
   }
@@ -421,6 +430,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       :detail-error="historyDetailError"
       :detail-proposal-route="historyProposalHref"
       @accept="onTriageAccept"
+      @keep="onCaptureKeep"
       @reject="onTriageReject"
       @open="onTriageOpen"
       @retry="loadInbox"

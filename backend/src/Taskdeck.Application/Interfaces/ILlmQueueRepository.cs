@@ -7,8 +7,8 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
 {
     /// <summary>
     /// Returns historical total capture progress plus active Inbox workload counts. Active counts
-    /// exclude only captures whose effective extant board is archived; boardless/dangling records
-    /// remain visible. <c>TotalCaptures</c> deliberately retains archived history for onboarding.
+    /// exclude captures kept for later and captures whose effective extant board is archived;
+    /// boardless/dangling records remain visible. <c>TotalCaptures</c> deliberately retains history.
     /// </summary>
     Task<(int TotalCaptures, int NewCount, int FailedCount, int TriagingCount, int TriagedCount)> GetCaptureSummaryByUserAsync(
         Guid userId,
@@ -128,6 +128,30 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<bool> TryClaimProcessingCaptureAsync(
         Guid requestId,
         DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically records a capture disposition when its queue status and update stamp still match.
+    /// This keeps disposition choices mutually exclusive with a concurrent triage enqueue.
+    /// </summary>
+    Task<bool> TrySetCaptureDispositionAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        RequestStatus targetStatus,
+        string payload,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically moves an eligible capture into the triage worker lane while stamping its target
+    /// board and proposal-requested receipt.
+    /// </summary>
+    Task<bool> TryEnqueueCaptureTriageAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        string payload,
+        Guid boardId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
