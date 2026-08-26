@@ -78,7 +78,7 @@ Explorer/SmartScreen acceptance remain unverified.
   governance, and diff hygiene cover the static seam. The separate packaged
   `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
 
-## 2026-08-24 v0.1.2 Priority I partial verification map (through main `55dbf6e14`)
+## 2026-08-24 to 2026-08-26 v0.1.2 Priority I and v0.2 residual verification map (through main `d75d0783a`)
 
 - `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
   exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
