@@ -345,6 +345,48 @@ public class DataExportServiceTests
     }
 
     [Fact]
+    public async Task ExportUserDataAsync_ResolvesLegacyAppliedCaptureProvenanceWithoutPersisting()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var boardId = Guid.NewGuid();
+        var capture = new LlmRequest(
+            _userId,
+            CaptureRequestContract.RequestTypeV1,
+            "legacy capture");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            _userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            capture.Id.ToString());
+        proposal.Approve(_userId);
+        proposal.MarkAsApplied();
+        capture.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, "legacy capture"),
+                capture.Id,
+                proposalId: proposal.Id)));
+        capture.MarkAsProcessing();
+        capture.MarkAsCompleted();
+        _llmQueueRepoMock.Setup(r => r.GetByUserAsync(_userId, default)).ReturnsAsync([capture]);
+        _proposalRepoMock
+            .Setup(r => r.GetByIdsAsync(It.Is<IEnumerable<Guid>>(ids => ids.Contains(proposal.Id)), default))
+            .ReturnsAsync([proposal]);
+
+        var result = await _service.ExportUserDataAsync(_userId);
+
+        result.IsSuccess.Should().BeTrue();
+        var exported = result.Value.Data.CaptureItems.Should().ContainSingle().Subject;
+        exported.BoardId.Should().Be(boardId);
+        exported.Provenance!.ProposalId.Should().Be(proposal.Id);
+        exported.Provenance.ConvertedAt.Should().NotBeNull();
+        CaptureRequestContract.ParseStoredPayload(capture.Payload).Provenance!.ConvertedAt.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExportUserDataAsync_IncludesProposalFeedback()
     {
         // #1245 review: a user's content-free quality-feedback signals are user-scoped data and

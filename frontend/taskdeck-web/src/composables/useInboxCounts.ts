@@ -36,11 +36,16 @@ export function isPendingTriageStatus(status: CaptureStatusValue): boolean {
   return PENDING_TRIAGE_STATUSES.includes(status)
 }
 
+export function isPendingTriageItem(item: CaptureItemSummary): boolean {
+  const isKept = item.disposition?.kind === 'Kept' || item.disposition?.kind === 0
+  return !isKept && isPendingTriageStatus(item.status)
+}
+
 export function useInboxCounts(
   items: Ref<CaptureItemSummary[]> | ComputedRef<CaptureItemSummary[]>,
 ) {
   const pendingTriageCount = computed(
-    () => items.value.filter((item) => isPendingTriageStatus(item.status)).length,
+    () => items.value.filter(isPendingTriageItem).length,
   )
   const capturedCount = computed(() => items.value.length)
 

@@ -879,8 +879,10 @@ function recordedOr(value: string | null | undefined): string {
 }
 .paper-triage__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
+
 .paper-triage__reason {
   grid-column: 2;
   margin-top: 4px;
@@ -1021,5 +1023,21 @@ function recordedOr(value: string | null | undefined): string {
   align-self: flex-start;
   color: var(--ink-1);
   text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .paper-triage__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .paper-triage__tags,
+  .paper-triage__actions,
+  .paper-triage__reason {
+    grid-column: 1;
+  }
+
+  .paper-triage__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

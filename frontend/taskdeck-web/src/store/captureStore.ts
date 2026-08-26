@@ -255,8 +255,9 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const kept = await captureApi.keepItem(itemId)
-      cacheDetail(kept)
+      cacheDetail(kept, items.value.some((item) => item.id === itemId))
       toast.success('Capture kept for later', undefined, { label: 'saved' })
+      notifyTriageCountChanged()
       return kept
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to keep capture item').message
@@ -274,7 +275,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const archived = await captureApi.archiveItem(itemId)
-      cacheDetail(archived)
+      cacheDetail(archived, items.value.some((item) => item.id === itemId))
       toast.success('Capture archived', undefined, { label: 'saved' })
       notifyTriageCountChanged()
       return archived
@@ -384,6 +385,7 @@ export const useCaptureStore = defineStore('capture', () => {
         optimisticDetail = {
           ...existingDetail,
           status: triageResult.status,
+          disposition: null,
         }
         detailById.value[itemId] = optimisticDetail
       }
@@ -392,12 +394,15 @@ export const useCaptureStore = defineStore('capture', () => {
         upsertSummary({
           ...existingSummary,
           status: triageResult.status,
+          disposition: null,
         })
       } else if (optimisticDetail) {
         upsertSummary(toSummary(optimisticDetail))
       }
 
-      await fetchDetail(itemId, { forceRefresh: true, showToast: false })
+      // The enqueue is the write. A transient follow-up GET failure must not report that
+      // successful write as failed or prevent the caller from polling the queued work.
+      await fetchDetail(itemId, { forceRefresh: true, showToast: false }).catch(() => undefined)
       // QUEUED (#1970): triage has been enqueued, not run and not applied.
       // Both branches are the same outcome class — the queue already holds it.
       toast.success(
