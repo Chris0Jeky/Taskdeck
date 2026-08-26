@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import appearanceSource from '../../views/AppearanceSettingsView.vue?raw'
 
 /**
  * Contrast regression (finding M4).
@@ -75,5 +76,20 @@ describe.each([
 
   it('clears 4.5:1 under the brightness(1.1) hover', () => {
     expect(contrast(onEmber, brighten(ember, 1.1))).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+describe('Appearance segmented-control fallback contrast', () => {
+  it('keeps the Legacy active-state fallback pair above 4.5:1', () => {
+    const activeRule = appearanceSource.match(
+      /^\.paper-appearance__segment--active\s*\{([\s\S]*?)\}/m,
+    )?.[1]
+    if (!activeRule) throw new Error('Could not locate the active Appearance segment rule')
+
+    const ember = activeRule.match(/background:\s*var\(--ember,\s*(#[0-9a-fA-F]{3,8})\s*\)/)?.[1]
+    const onEmber = activeRule.match(/color:\s*var\(--td-on-ember,\s*(#[0-9a-fA-F]{3,8})\s*\)/)?.[1]
+    if (!ember || !onEmber) throw new Error('Could not read the active Appearance fallback pair')
+
+    expect(contrast(onEmber, ember)).toBeGreaterThanOrEqual(4.5)
   })
 })
