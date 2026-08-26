@@ -29,6 +29,7 @@ public class Board : Entity
     public string? Description { get; private set; }
     public bool IsArchived { get; private set; }
     public Guid? OwnerId { get; private set; }
+    public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
 
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
     public IReadOnlyCollection<Card> Cards => _cards.AsReadOnly();
@@ -56,7 +57,7 @@ public class Board : Entity
         if (description != null)
             SetDescription(description);
 
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     private void SetDescription(string? description)
@@ -70,13 +71,13 @@ public class Board : Entity
     public void Archive()
     {
         IsArchived = true;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void Unarchive()
     {
         IsArchived = false;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void TransferOwnership(Guid newOwnerId)
@@ -85,7 +86,24 @@ public class Board : Entity
             throw new DomainException(ErrorCodes.ValidationError, "New owner ID cannot be empty");
 
         OwnerId = newOwnerId;
+        TouchAndAdvanceConcurrencyToken();
+    }
+
+    /// <summary>
+    /// Records a card mutation without advancing the board concurrency token. Touching the board
+    /// makes EF issue a conditional update using the current token, so a board mutation that
+    /// advanced the token after the archived-state check still rejects the card write. Independent
+    /// card writes keep the same token and retain their established success semantics.
+    /// </summary>
+    public void RecordCardMutation()
+    {
         Touch();
+    }
+
+    private void TouchAndAdvanceConcurrencyToken()
+    {
+        Touch();
+        ConcurrencyToken = Guid.NewGuid();
     }
 
     // Navigation properties management (called by infrastructure)
