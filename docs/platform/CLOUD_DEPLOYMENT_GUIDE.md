@@ -109,7 +109,7 @@ In the Railway dashboard, go to **Variables** and add:
 |----------|-------|----------|
 | `Jwt__SecretKey` | Output of `openssl rand -base64 48` | Yes |
 | `Connectors__EncryptionKey` | Output of `openssl rand -base64 32`; preserve it with database backups | Yes |
-| `Auth__Registration__Mode` | `Closed` or `InviteOnly` | Yes |
+| `Auth__Registration__Mode` | `InviteOnly` while intended accounts are created; `Closed` only after onboarding | Yes |
 | `Cors__AllowedOrigins` | Your Railway URL (e.g., `https://taskdeck-production.up.railway.app`) | Yes |
 | `ConnectionStrings__DefaultConnection` | `Data Source=/app/data/taskdeck.db` | Yes |
 | `ASPNETCORE_ENVIRONMENT` | `Production` | Yes |
@@ -118,7 +118,9 @@ In the Railway dashboard, go to **Variables** and add:
 | `FirstRun__ResolveAppDataDbPath` | `false` | Yes |
 | `TASKDECK_HEADLESS` | `true` | Yes |
 
-See `deploy/.env.production.template` for the full variable reference including optional LLM provider and observability settings.
+See `deploy/.env.production.template` for the full variable reference including optional LLM
+provider and observability settings. That template retains the restrictive single-user default
+`Closed`; override it with `InviteOnly` for collaborator onboarding.
 
 ### Step 4: Deploy
 
@@ -174,7 +176,11 @@ If creating manually:
 
 ### Step 3: Set environment variables
 
-In the Render dashboard, go to **Environment** and add the same variables as Railway (see table above). The `render.yaml` blueprint pre-populates restrictive defaults; you must set `Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins` manually, then configure a private access boundary before deploying.
+In the Render dashboard, go to **Environment** and add the same variables as Railway (see table
+above). The `render.yaml` blueprint pre-populates the restrictive registration default `Closed`.
+Set `Auth__Registration__Mode=InviteOnly` while creating the intended accounts, as well as setting
+`Jwt__SecretKey`, `Connectors__EncryptionKey`, and `Cors__AllowedOrigins`; then configure a private
+access boundary before deploying. Switch back to `Closed` only after onboarding is complete.
 
 ### Step 4: Deploy
 
