@@ -114,6 +114,46 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
+## Unreleased — after v0.1.2
+
+**BREAKING: none.** These notes cover hosts tracking `main` past the v0.1.2 tag. This heading is
+renamed to the release version when the next version ships; v0.1.2 itself contained no schema
+change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
+
+- **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
+  required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
+  database provider to map, so it is stored in the provider's own native type rather than a
+  hand-written column type. On SQLite — the supported deployment — the migration is a single
+  in-place statement:
+
+  ```sql
+  ALTER TABLE "Boards" ADD "ConcurrencyToken" TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000';
+  ```
+
+  **There is no table rebuild**, so the schema change itself is quick no matter how many boards you
+  have. Existing boards take that all-zero default and are issued a fresh token the first time the
+  board record itself changes (rename, description edit, archive, restore, or ownership transfer).
+- **No action required.** The migration is applied automatically on startup like every other one —
+  steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
+  [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
+  snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
+  what the upgrade spends its time on. Take the manual copy in step 3 as usual; the automatic
+  snapshot is a safety net, not a substitute.
+- **Behavior change: a card write can now lose a race against a board change.** Every accepted card
+  create, update, move, and delete touches its board under this token. Previously, a card write that
+  had already read a board could still commit after another session archived that board — so the
+  write landed in archived history. It now fails the token check, rolls back, and returns
+  `409 Conflict` with *"Record was updated by another session. Refresh and retry your action."*
+  Card writes that do not race a board change keep their existing behavior and success semantics,
+  including creates and updates sent without an `ExpectedUpdatedAt` precondition. Callers that
+  treat `409` as fatal should refresh and retry instead; on retry the board is re-read, and if it is
+  now archived the card write is refused outright — also as a `409` — under
+  [ADR-0063](docs/decisions/ADR-0063-archived-board-card-write-protection.md).
+
+Non-SQLite providers are not a supported Taskdeck deployment. The migration is provider-agnostic and
+its generated SQL Server DDL is covered by an automated check, but it has never been applied to a
+live SQL Server instance; treat any non-SQLite use as unverified.
+
 ## v0.1.1 — 2026-08-21
 
 **BREAKING (configuration):** Gemini live-provider support is removed. Before upgrading, replace
