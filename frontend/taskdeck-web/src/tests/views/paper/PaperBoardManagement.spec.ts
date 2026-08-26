@@ -98,6 +98,8 @@ const mockBoardStore = reactive({
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
 }))
 
 vi.mock('../../../store/boardStore', () => ({

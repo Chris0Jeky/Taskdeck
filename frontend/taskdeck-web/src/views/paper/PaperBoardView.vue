@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
@@ -63,11 +63,23 @@ const { mode: viewportMode } = useViewportMode()
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
 const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
+const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
 const cardEditorDirty = ref(false)
 type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
 const cardPresentation = computed(() => viewportMode.value === 'desktop' ? 'inspector' : 'modal')
+const discardDialogOpen = computed(() => Boolean(pendingCard.value || pendingNavigation.value))
+const discardDialogDescription = computed(() => pendingCard.value
+  ? `Switch to ${pendingCard.value.title} and discard the current unsaved changes?`
+  : 'Leave this board and discard the current unsaved changes?')
+const discardConfirmLabel = computed(() => pendingCard.value ? 'Discard and switch' : 'Discard and leave')
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!selectedCard.value || !cardEditorDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
 
 onMounted(() => {
   try {
@@ -77,6 +89,7 @@ onMounted(() => {
   } catch {
     density.value = 'comfortable'
   }
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 function toggleDensity() {
@@ -221,6 +234,8 @@ function openCard(card: Card) {
 }
 
 function closeCard() {
+  pendingNavigation.value?.resolve(false)
+  pendingNavigation.value = null
   selectedCard.value = null
   pendingCard.value = null
   cardEditorDirty.value = false
@@ -230,16 +245,38 @@ function handleCardEditorDirtyChange(dirty: boolean) {
   cardEditorDirty.value = dirty
 }
 
-function cancelCardSwitch() {
+function cancelPendingDiscard() {
   pendingCard.value = null
+  pendingNavigation.value?.resolve(false)
+  pendingNavigation.value = null
 }
 
-function discardAndSwitchCard() {
-  if (!pendingCard.value) return
-  selectedCard.value = pendingCard.value
+function confirmPendingDiscard() {
+  const cardToOpen = pendingCard.value
+  const navigation = pendingNavigation.value
   pendingCard.value = null
+  pendingNavigation.value = null
   cardEditorDirty.value = false
+  if (cardToOpen) {
+    selectedCard.value = cardToOpen
+    return
+  }
+  if (navigation) {
+    selectedCard.value = null
+    navigation.resolve(true)
+  }
 }
+
+function guardDirtyNavigation(): boolean | Promise<boolean> {
+  if (!selectedCard.value || !cardEditorDirty.value) return true
+  if (discardDialogOpen.value) return false
+  return new Promise<boolean>((resolve) => {
+    pendingNavigation.value = { resolve }
+  })
+}
+
+onBeforeRouteLeave(guardDirtyNavigation)
+onBeforeRouteUpdate(guardDirtyNavigation)
 
 function openCapture(_column: Column) {
   void router.push({
@@ -319,6 +356,9 @@ watch(anyDialogOpen, (open) => {
 // A skin switch or a route change unmounts this view outright. Leaving the flag
 // stuck at `true` would disable the board shortcuts for the Legacy skin too.
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  pendingNavigation.value?.resolve(false)
+  pendingNavigation.value = null
   if (anyDialogOpen.value) emit('dialog-open-change', false)
 })
 
@@ -740,11 +780,11 @@ async function addStarterColumns() {
         />
 
         <TdDialog
-          v-if="pendingCard"
+          v-if="discardDialogOpen"
           :open="true"
           title="Discard card changes?"
-          :description="`Switch to ${pendingCard.title} and discard the current unsaved changes?`"
-          @close="cancelCardSwitch"
+          :description="discardDialogDescription"
+          @close="cancelPendingDiscard"
         >
           <template #footer>
             <PaperHLBtn
@@ -752,14 +792,14 @@ async function addStarterColumns() {
               variant="ghost"
               label="Keep editing"
               data-testid="card-switch-cancel"
-              @click="cancelCardSwitch"
+              @click="cancelPendingDiscard"
             />
             <PaperHLBtn
               type="button"
               variant="primary"
-              label="Discard and switch"
+              :label="discardConfirmLabel"
               data-testid="card-switch-confirm"
-              @click="discardAndSwitchCard"
+              @click="confirmPendingDiscard"
             />
           </template>
         </TdDialog>
