@@ -80,8 +80,8 @@ behaviour.
 - **Release dates are explicit.** v0.2 final targets 2026-09-01. v0.3 RC targets 2026-09-04; final targets 2026-09-08 or 2026-09-09.
 - **v0.2 is split to M1 slices.** `#2085` owns keep/archive/board-target/proposal/provenance; `#2086` owns the side inspector and compact density. Their M2 scope is `#2089` and `#2090` in v0.3. `#2087` is v0.3, not a v0.2 stretch. `#2085` closed on 2026-08-26 (PR `#2098`).
 - **Decision ownership is singular.** `#2084` owns ADR-0060, `#1772` owns ADR-0061, and `#2091` owns ADR-0062. All remain Proposed until ratified.
-- **The bounded queue is active.** Now is `#1271`, `#2083`, `#2086`. Next is `#1512`, `#1938`, `#1961`, `#1967`. The maintainer's intake-cap waiver seeded only typed links `#2092`, participant/assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
-- **The v0.2 milestone now holds exactly five open issues (measured 2026-08-26):** `#1967` and `#1938`, each still open for residual-class slices; `#1304` and `#1305`; and `#1271`, whose acceptance is an explicit human gate.
+- **The bounded queue is active.** Now is `#2083`, `#2086` (`#1271` left the queue with the 2026-08-27 re-scope below — it is a standing tracker, not queued release work). Next is `#1512`, `#1938`, `#1961` (`#1967` closed 2026-08-27 on live verification). The maintainer's intake-cap waiver seeded only typed links `#2092`, participant/assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
+- **The v0.2 milestone held five open issues at the 2026-08-26 measurement; superseded 2026-08-27:** `#1304` and `#1967` are closed (acceptance walkthrough + live verification), `#1271` is unmilestoned as the standing dogfooding tracker (its acceptance no longer gates v0.2), and `#1938`/`#1305` have closing slices in flight — see the Roadmap-impact entry above and `docs/STATUS.md`.
 
 ## Governance update (2026-08-23, DCO enforcement paused)
 
