@@ -92,3 +92,77 @@ export function getErrorDisplay(err: unknown, fallback: string): { message: stri
   }
   return { message: fallback, code: null }
 }
+
+/**
+ * Read the client-generated correlation id (`X-Request-Id`, stamped by
+ * `api/http.ts`) off a failed request's config. `error.config.headers` is an
+ * `AxiosHeaders` instance in production — read it through its case-insensitive
+ * `get()` — and a plain object in tests/other shapes — matched case-insensitively.
+ * Never read the RESPONSE header: CORS does not expose it to the browser.
+ */
+function readRequestId(config: unknown): string | null {
+  if (typeof config !== 'object' || config === null) return null
+  const headers = (config as { headers?: unknown }).headers
+  if (typeof headers !== 'object' || headers === null) return null
+
+  const maybeGet = (headers as { get?: unknown }).get
+  if (typeof maybeGet === 'function') {
+    const value = (headers as { get: (name: string) => unknown }).get('X-Request-Id')
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim()
+  }
+
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() === 'x-request-id' && typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return null
+}
+
+/**
+ * A multi-line, copy-pasteable diagnostic for a failed HTTP request — the
+ * inspectable receipt that makes an opaque "request failed" toast actionable
+ * (GH-1938). Assembled from whatever the error carries: HTTP status, the
+ * endpoint (method + URL from `error.config`), the backend `errorCode`, and the
+ * client correlation id (`X-Request-Id`). A network failure with no response
+ * still yields the endpoint and request id.
+ *
+ * Returns `null` when the error is not an axios-shaped request failure (e.g. a
+ * bare `Error`), so callers render no diagnostic block rather than an empty one.
+ */
+export function getErrorDetails(err: unknown): string | null {
+  if (typeof err !== 'object' || err === null) return null
+  const candidate = err as {
+    response?: { status?: number; data?: { errorCode?: string } }
+    config?: { method?: string; url?: string }
+  }
+
+  const lines: string[] = []
+
+  const status = candidate.response?.status
+  if (typeof status === 'number') {
+    lines.push(`Status: ${status}`)
+  }
+
+  const method = candidate.config?.method
+  const url = candidate.config?.url
+  if (typeof url === 'string' && url.length > 0) {
+    lines.push(
+      typeof method === 'string' && method.length > 0
+        ? `Endpoint: ${method.toUpperCase()} ${url}`
+        : `Endpoint: ${url}`,
+    )
+  }
+
+  const errorCode = candidate.response?.data?.errorCode
+  if (typeof errorCode === 'string' && errorCode.trim().length > 0) {
+    lines.push(`Code: ${errorCode.trim()}`)
+  }
+
+  const requestId = readRequestId(candidate.config)
+  if (requestId) {
+    lines.push(`Request ID: ${requestId}`)
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null
+}
