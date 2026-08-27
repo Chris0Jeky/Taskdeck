@@ -319,10 +319,10 @@ async function submitCapture() {
     await nextTick()
     captureInputRef.value?.focus()
   } catch (error: unknown) {
-    // The store still raises the ordinary toast, but that receipt expires.
-    // Keep a local, inspectable error beside the retained draft so retrying
-    // never depends on noticing a transient notification (GH-1938) — the
-    // human message plus a copy-pasteable request diagnostic.
+    // The store still raises a persistent error toast, but that lives in the
+    // corner and can be dismissed. Keep a local, inspectable error anchored to
+    // the retained draft so retrying never depends on the toast (GH-1938) —
+    // the human message plus a copy-pasteable request diagnostic.
     captureError.value = getErrorDisplay(error, t('home.capture.errorFallback')).message
     captureErrorDetails.value = getErrorDetails(error)
   } finally {

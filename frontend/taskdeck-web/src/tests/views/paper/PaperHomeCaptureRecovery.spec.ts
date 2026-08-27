@@ -112,8 +112,9 @@ describe('PaperHomeView quick-capture recovery', () => {
     expect(error.text()).toContain('Capture not saved. Your text is still here.')
     expect(error.text()).toContain('Capture service unavailable')
 
-    // The store's ordinary error toast expires after five seconds. Advancing
-    // well past that boundary proves the inline receipt has no dismiss timer.
+    // The inline receipt has no dismiss timer: advance well past any plausible
+    // auto-dismiss window and it is still here. (The store's own error toast is
+    // persistent too — duration 0 — but that is the toast store's concern.)
     await vi.advanceTimersByTimeAsync(30_000)
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="paper-home-capture-error"]').exists()).toBe(true)

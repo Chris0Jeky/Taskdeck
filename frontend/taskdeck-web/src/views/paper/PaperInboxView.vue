@@ -167,9 +167,10 @@ async function dispatchCapture(
     })
     return true
   } catch (error: unknown) {
-    // The store's toast remains useful global feedback, but it expires. Keep
-    // an inspectable receipt beside the draft until the user retries (GH-1938):
-    // the human message plus a copy-pasteable request diagnostic.
+    // The store's toast remains useful global feedback, but it lives in the
+    // corner and can be dismissed. Keep an inspectable receipt beside the draft
+    // until the user retries (GH-1938): the human message plus a copy-pasteable
+    // request diagnostic.
     captureErrors.value[sourceVariant] = {
       message: getErrorDisplay(error, t('inbox.capture.errorFallback')).message,
       details: getErrorDetails(error),
