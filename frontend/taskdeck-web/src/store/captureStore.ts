@@ -5,7 +5,7 @@ import { isTriageTerminalStatus } from '../types/capture'
 import type { BatchTriageAction, BatchTriageResult, CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto, UpdateCaptureSuggestionDto } from '../types/capture'
 import { useToastStore } from './toastStore'
 import { useWorkspaceStore } from './workspaceStore'
-import { getErrorDisplay } from '../composables/useErrorMapper'
+import { getErrorDisplay, getErrorDetails } from '../composables/useErrorMapper'
 import { isDemoMode, DemoModeError } from '../utils/demoMode'
 import { buildDemoCaptureItems } from '../utils/demoData'
 
@@ -71,6 +71,22 @@ export const useCaptureStore = defineStore('capture', () => {
     if (isDemoMode) {
       toast.info('This action is view-only in demo mode.')
       throw new DemoModeError()
+    }
+  }
+
+  /**
+   * Raise the standard persistent error toast, attaching an inspectable request
+   * diagnostic (status, endpoint, correlation id) when the failure carries one
+   * (GH-1938) so the expander and Copy on the toast receipt become functional.
+   * When no diagnostic is available the call shape is unchanged
+   * (`toast.error(message)`), leaving unrelated error toasts identical.
+   */
+  function reportCaptureError(message: string, error: unknown) {
+    const details = getErrorDetails(error)
+    if (details) {
+      toast.error(message, undefined, { details })
+    } else {
+      toast.error(message)
     }
   }
 
@@ -225,7 +241,7 @@ export const useCaptureStore = defineStore('capture', () => {
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to capture item').message
       actionError.value = message
-      toast.error(message)
+      reportCaptureError(message, e)
       throw e
     }
   }
@@ -415,7 +431,7 @@ export const useCaptureStore = defineStore('capture', () => {
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to triage capture item').message
       actionError.value = message
-      toast.error(message)
+      reportCaptureError(message, e)
       throw e
     } finally {
       actionBusyItemId.value = null
