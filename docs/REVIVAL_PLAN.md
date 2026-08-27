@@ -89,7 +89,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Item | Issue | Notes |
 |---|---|---|
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
-| Durable `Transcript` entity + evidence spans (`SourceSpan`/`EvidenceLink`) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
+| Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |

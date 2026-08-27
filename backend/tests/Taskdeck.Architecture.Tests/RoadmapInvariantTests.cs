@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -535,60 +536,92 @@ public class RoadmapInvariantTests
         }
     }
 
-    // ─── Invariant 12: Source spans reference source payload ────────────
+    // ─── Invariant 12: Proposal evidence references source payload ───────
 
     /// <summary>
-    /// INV-12: Source spans reference source payload.
-    /// Every automation output (proposal, chat message, tool result) must carry
-    /// a provenance span linking back to the originating source payload.
+    /// INV-12: the integrity contract of a proposal's provenance chain.
+    /// This is a domain-contract spec, not a completeness scan. It deliberately does NOT assert
+    /// that every proposal carries provenance (nothing in the shipped model forces that), nor that
+    /// every field carries evidence (the non-transcript path legally produces inferred fields with
+    /// zero evidence links). It asserts only what the domain types enforce about the chain
+    /// (<see cref="ProposalProvenance"/> → <see cref="ProvenanceField"/> →
+    /// <see cref="ProvenanceEvidenceLink"/>) once it is built: an evidence link resolves to a
+    /// concrete source-payload span (e.g. a transcript range); an extractive field must carry the
+    /// quote it claims; transcript evidence must reference its transcript; spans are ordered; and
+    /// a field or link cannot be attached across different outputs.
+    ///
+    /// Rewritten under issue #1305 AC3: the original RFAI-02 spike vocabulary
+    /// (SourceSpan / IntentCandidate / EvidenceLink / IntentEnvelopeV1) was unmapped, table-less
+    /// scaffolding and was removed. The shipped evidence-span capability lives in the mapped
+    /// <c>ProvenanceEvidenceLink</c> / <c>ProvenanceField</c> tables, so the same guards are now
+    /// asserted against those types — preserving the intent, not merely deleting the test.
     /// </summary>
     [Fact]
-    public void Invariant12_SourceSpans_ReferenceSourcePayload()
+    public void Invariant12_ProposalEvidence_ReferencesSourcePayload()
     {
-        // A SourceSpan must reference its originating source payload (source block + envelope)
-        // and resolve to valid content: ordered offsets and a snippet whose length matches the span.
-        var sourceBlockId = Guid.NewGuid();
-        var envelopeId = Guid.NewGuid();
-        var span = new SourceSpan(sourceBlockId, envelopeId, startOffset: 10, endOffset: 15, snippetText: "hello");
+        // An automation output (a proposal) carries a provenance chain that ties each derived
+        // field back to the source payload it came from.
+        var proposalId = Guid.NewGuid();
+        var transcriptId = Guid.NewGuid();
+        var provenance = new ProposalProvenance(proposalId, "corr-123", "mock");
 
-        Assert.Equal(sourceBlockId, span.SourceBlockId);   // links back to the source block
-        Assert.Equal(envelopeId, span.EnvelopeId);         // and the originating envelope
-        Assert.Equal(10, span.StartOffset);
-        Assert.Equal(15, span.EndOffset);
-        Assert.Equal(5, span.Length);
-        Assert.Equal("hello", span.SnippetText);
-        Assert.Equal(span.Length, span.SnippetText.Length); // snippet resolves to the span range
+        // An extractive field must carry the verbatim quote it was extracted from — this guards
+        // against fabricated evidence (an extraction claim with nothing behind it).
+        var field = new ProvenanceField(
+            "Title", ProvenanceKind.Extractive, confidence: 0.9, provenance.Id,
+            extractiveQuote: "ship the API review card");
+        provenance.AddField(field);
 
-        // Integrity is enforced: a span with no source reference, or whose snippet does not
-        // match its offsets, or with inverted offsets, is rejected.
+        // The evidence link resolves to a concrete source-payload span: a transcript range.
+        var link = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcriptId.ToString("D"),
+            field.Id,
+            label: "contains the request",
+            spanStart: 10,
+            spanEnd: 34,
+            transcriptId: transcriptId);
+        field.AddEvidenceLink(link);
+
+        // The chain resolves end to end: output → field → evidence → source-payload span.
+        Assert.Equal(proposalId, provenance.ProposalId);            // provenance ties to the output
+        var boundField = Assert.Single(provenance.Fields);
+        Assert.Equal(provenance.Id, boundField.ProposalProvenanceId);
+        var boundLink = Assert.Single(boundField.EvidenceLinks);
+        Assert.Equal(field.Id, boundLink.ProvenanceFieldId);        // evidence resolves back to the field
+        Assert.Equal(ProvenanceEvidenceLink.TranscriptSourceType, boundLink.SourceType);
+        Assert.Equal(transcriptId, boundLink.TranscriptId);         // ...and to the originating payload
+        Assert.Equal(transcriptId.ToString("D"), boundLink.SourceId);
+        Assert.Equal(10, boundLink.SpanStart);
+        Assert.Equal(34, boundLink.SpanEnd);
+
+        // Integrity is enforced so INV-12 cannot go false-green:
+
+        // (a) an extractive field with no quote is rejected — no unbacked extraction claims.
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(Guid.Empty, envelopeId, 0, 5, "hello"));         // no source block reference
+            new ProvenanceField("Title", ProvenanceKind.Extractive, 0.9, provenance.Id));
+
+        // (b) transcript evidence must actually reference a transcript payload: a missing
+        //     transcript id, or a SourceId that does not match it, is rejected.
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(sourceBlockId, envelopeId, 10, 15, "mismatch")); // snippet length != span range
+            new ProvenanceEvidenceLink(ProvenanceEvidenceLink.TranscriptSourceType,
+                transcriptId.ToString("D"), field.Id));                                    // no transcript id
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(sourceBlockId, envelopeId, 15, 10, "x"));        // end <= start
+            new ProvenanceEvidenceLink(ProvenanceEvidenceLink.TranscriptSourceType,
+                Guid.NewGuid().ToString("D"), field.Id, transcriptId: transcriptId));      // id mismatch
 
-        // An automation output must actually LINK to a source span — not merely have spans exist
-        // in isolation. An IntentCandidate carries EvidenceLinks that resolve to the SourceSpan
-        // referencing the originating payload; this guards against INV-12 going false-green when an
-        // output ships with no evidence link back to its source.
-        var candidate = new IntentCandidate(envelopeId, "Create card for API review", confidence: 0.9, rank: 0, actionType: "create-card");
-        var evidence = new EvidenceLink(candidate.Id, span.Id, relevance: 1.0, rationale: "contains the request");
-        candidate.AddEvidenceLink(evidence, span);
-
-        var link = Assert.Single(candidate.EvidenceLinks);
-        Assert.Equal(span.Id, link.SourceSpanId);            // the output's evidence resolves to the span...
-        Assert.Equal(candidate.Id, link.IntentCandidateId);  // ...and back to the originating output
-
-        // The link can only be formed when the span belongs to the output's envelope — a span from
-        // an unrelated envelope (i.e., not the output's source payload) is rejected.
-        var foreignSpan = new SourceSpan(Guid.NewGuid(), Guid.NewGuid(), 0, 3, "abc");
+        // (c) an inverted span (end before start) is rejected.
         Assert.Throws<DomainException>(() =>
-            candidate.AddEvidenceLink(new EvidenceLink(candidate.Id, foreignSpan.Id), foreignSpan));
+            new ProvenanceEvidenceLink("capture", "cap-1", field.Id, spanStart: 15, spanEnd: 10));
 
-        // A proposal's provenance chain also ties automation output back to its originating run.
-        var provenance = new ProposalProvenance(Guid.NewGuid(), "corr-123", "mock");
-        Assert.NotEqual(Guid.Empty, provenance.ProposalId);
-        Assert.Equal("corr-123", provenance.CorrelationId);
+        // (d) evidence can only attach to a field of THIS output — a link built for a foreign
+        //     field id is rejected, so evidence cannot be laundered across outputs.
+        var foreignLink = new ProvenanceEvidenceLink("capture", "cap-2", Guid.NewGuid());
+        Assert.Throws<DomainException>(() => field.AddEvidenceLink(foreignLink));
+
+        // (e) a field can only attach to THIS provenance — a field built for a foreign provenance
+        //     id is rejected by AddField.
+        var foreignField = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.5, Guid.NewGuid());
+        Assert.Throws<DomainException>(() => provenance.AddField(foreignField));
     }
 }

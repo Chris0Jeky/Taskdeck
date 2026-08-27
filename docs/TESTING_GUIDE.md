@@ -622,7 +622,7 @@ path-based skips, and CodeQL 4/4 before merging as `840874ac`.
 Tracker `#972` seeds the next review-first AI verification program. Delivered items are marked; remaining items are planned work until their implementation issues land:
 
 - `#973`: (**delivered**, `#986`) twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
-- `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests.
+- `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests. _(Update `#1305` AC3: the `IntentEnvelopeV1`/`TaskdeckProposalBatch` entity suite and its `proposal-batch.v1` schema were later removed as unmapped scaffolding — see the RFAI-02 record under "Roadmap v4 Second-Wave Testing" below.)_
 - `#975`--`#977`: (**delivered**, `#993`/`#994`/`#991` + `#1071`/`#1058`/`#1062`) golden proposal dataset checks, schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths. Full delivery: `IProposalGenerator`/`FieldVerifier`/`ProposalGeneratorV1` (`#1071`), revision endpoints + edit-before-approve flow (`#1058`), Paper Review deep-dive wired to backend APIs (`#1062`). Combined: provenance 139 + revision 70 + confidence 136 + generator/verifier/review wiring tests. _(Update `#1198`, 2026-06-13: `ProposalGeneratorV1` + its `IProposalGenerator` interface and test class were removed as dead code (zero consumers); `FieldVerifierTests` and the provenance/confidence/revision suites are unaffected.)_
 - `#978`--`#979`: (**both delivered**, `#990`/`#1050`) vector-search fallback tests, embedding backfill safety (61 tests). RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation delivered in `#1050`.
 - `#980`: (**delivered**, `#992` + `#1073`/`#1074`) TelemetryGuard fuzz rejection, egress registry completeness (108 tests), egress disclosure API endpoint (`#1073`), privacy insights API for proposal outcome cohorts (`#1074`).
@@ -934,18 +934,11 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Similar
 
 The RFAI-02 through RFAI-08 foundational slice wave (PRs `#989`–`#994`) added ~631 new backend tests across 6 PRs. Each PR received adversarial review with review-added tests fixing bot findings from Gemini and Codex connector reviews.
 
-### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`)
+### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`) — removed under `#1305` AC3
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — **117 tests** covering:
-- IntentEnvelopeV1 lifecycle (Created→Extracting→Processed), candidate addition, evidence linking
-- SourceBlock/SourceSpan validation: offset ranges, snippet length consistency, evidence fabrication prevention
-- IntentCandidate confidence bounds, evidence link construction
-- ProposalBatch schema round-trip smoke tests against handwritten JSON schema
+The RFAI-02 intent-envelope entity suite (`IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — 150 tests, grown from the 117 in the original RFAI-02 wave) was **removed under `#1305` AC3**, together with the unmapped, table-less entities it exercised (`IntentEnvelopeV1`/`SourceBlock`/`SourceSpan`/`IntentCandidate`/`EvidenceLink`/`TaskdeckProposalBatch`) and the `proposal-batch.v1` schema. That vocabulary was scaffolding with no production consumer, superseded by the shipped `ProvenanceEvidenceLink` / `ProvenanceField` provenance chain.
 
-Run:
-```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~IntentEnvelope or FullyQualifiedName~SourceSpan or FullyQualifiedName~SourceBlock or FullyQualifiedName~IntentCandidate or FullyQualifiedName~EvidenceLink or FullyQualifiedName~ProposalBatch"
-```
+The "automation output references its source payload" invariant those tests protected (evidence fabrication prevention, evidence-linked proposals as a first-class concept) now lives in architecture invariant **INV-12** (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`), asserted against the shipped provenance types. Provenance coverage: `ProvenanceFieldTests.cs`, `ProposalProvenanceTests.cs`, and the ProvenanceEvidenceLink suite under `Taskdeck.Domain.Tests`.
 
 ### Semantic Memory Vector Index Tests (RFAI-06, `#978`/`#990`)
 

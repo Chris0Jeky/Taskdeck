@@ -385,6 +385,15 @@ class defaults apply.
 | `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
 | `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
+**Transcript size cap and retention (not configurable).** The transcript text size cap is
+**200,000 characters** — a compile-time domain constant (`Transcript.MaxTextLength`, enforced in the
+`Transcript` constructor), deliberately **not** a configuration knob: it is a fixed data-integrity
+bound, not an operator-tunable limit. Transcript text is user data and is not held under a
+configurable retention policy either. Every transcript is included verbatim in the GDPR data export
+(`DataExportService`, both the buffered and streaming paths) and is removed on account deletion by a
+set-based delete (`ITranscriptRepository.DeleteByUserIdAsync`) inside the account-deletion
+transaction (`AccountDeletionService`); its FK-owned provenance evidence links cascade with it.
+
 ### `AbuseDetection`
 
 Bound to `AbuseDetectionSettings`.
