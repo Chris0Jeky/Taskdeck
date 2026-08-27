@@ -10,7 +10,7 @@ import WorkspaceSetupModal from '../../components/workspace/WorkspaceSetupModal.
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
-import { getErrorDisplay } from '../../composables/useErrorMapper'
+import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
 
 /**
  * PaperHomeView — morning-reset surface in the Paper & Graphite, Ember Edition skin.
@@ -288,6 +288,9 @@ function handleSetupCreated() {
 const captureText = ref('')
 const captureBusy = ref(false)
 const captureError = ref<string | null>(null)
+// Copy-pasteable request diagnostic beside the message (GH-1938): status,
+// endpoint, and the client correlation id, when the failure carries them.
+const captureErrorDetails = ref<string | null>(null)
 const captureInputRef = ref<HTMLInputElement | null>(null)
 
 async function submitCapture() {
@@ -298,6 +301,7 @@ async function submitCapture() {
   }
   if (captureBusy.value) return
   captureError.value = null
+  captureErrorDetails.value = null
   captureBusy.value = true
   try {
     // `refreshWorkload: false` — the full summary fetched below is a superset
@@ -317,8 +321,10 @@ async function submitCapture() {
   } catch (error: unknown) {
     // The store still raises the ordinary toast, but that receipt expires.
     // Keep a local, inspectable error beside the retained draft so retrying
-    // never depends on noticing a transient notification (GH-1938).
+    // never depends on noticing a transient notification (GH-1938) — the
+    // human message plus a copy-pasteable request diagnostic.
     captureError.value = getErrorDisplay(error, t('home.capture.errorFallback')).message
+    captureErrorDetails.value = getErrorDetails(error)
   } finally {
     captureBusy.value = false
   }
@@ -597,6 +603,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
           :placeholder="$t('home.capture.placeholder')"
           autocomplete="off"
           :disabled="captureBusy"
+          :aria-invalid="captureError ? 'true' : undefined"
           :aria-describedby="captureError ? 'paper-home-capture-error' : undefined"
           data-testid="paper-home-capture-input"
         />
@@ -614,6 +621,15 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
       >
         <strong>{{ $t('home.capture.errorLead') }}</strong>
         <span>{{ $t('home.capture.errorDetail', { reason: captureError }) }}</span>
+        <template v-if="captureErrorDetails">
+          <strong class="paper-home__capture-diagnostics-label">
+            {{ $t('home.capture.errorDiagnosticsLabel') }}
+          </strong>
+          <span
+            class="paper-home__capture-diagnostics"
+            data-testid="paper-home-capture-diagnostics"
+          >{{ captureErrorDetails }}</span>
+        </template>
       </p>
     </section>
 
@@ -777,6 +793,20 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
+}
+.paper-home__capture-diagnostics-label {
+  flex-basis: 100%;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.paper-home__capture-diagnostics {
+  flex-basis: 100%;
+  margin: 0;
+  white-space: pre-line;
+  opacity: 0.9;
 }
 
 .paper-home__empty-text,
