@@ -9,6 +9,8 @@ This folder contains deployment, observability, and human-operator runbooks.
 - `DEPLOYMENT_CONTAINERS.md` — Container baseline (Dockerfiles, compose, nginx)
 - `DEPLOYMENT_HARDENING_MATRIX.md` — Container hardening verification matrix
 - `DEPLOYMENT_TERRAFORM_BASELINE.md` — Terraform IaC baseline for AWS — **parked by the archive pivot** (cloud/multi-instance IaC; reference-only, not the personal run path)
+- `RELEASE_TRUST_AND_DISTRIBUTION.md` — **active** Windows-first signing, installer, supply-chain evidence, direct-distribution, and private-cloud boundary programme
+- `EXTERNAL_SERVICES_REGISTER.md` — **active, sanitized** vendor purpose, owner class, expiry/cost risk, and exit-path register; no account or credential evidence
 
 ## Operations
 
@@ -22,9 +24,9 @@ This folder contains deployment, observability, and human-operator runbooks.
 - `INCIDENT_REHEARSAL_CADENCE.md`
 - `SBOM_RELEASE_PROVENANCE.md`
 
-## Cloud / Cost (parked by the archive pivot)
+## Cloud / Cost
 
-These document the de-scoped cloud / multi-instance track and are **reference-only** — Taskdeck is single-instance, SQLite, personal-use (never hosted/scaled out). Each file carries its own de-scope banner.
+Proposed ADR-0061 and `docs/platform/CLOUD_DEPLOYMENT_GUIDE.md` define the maximum boundary for a possible private shared-instance proof: one application instance, one SQLite volume, a few known users, private access, explicit cost/LLM ownership, and tested backup/restore. Deployment remains blocked until the maintainer records the decisions required by ADR-0061/#1772 **and accepts ADR-0061**; this active planning seam grants no account, billing, or deployment authority and does **not** reactivate the older public-cloud, multi-instance, or SaaS architecture below. The files in this subsection remain **reference-only** and each carries its own de-scope banner.
 
 - `CLOUD_REFERENCE_ARCHITECTURE.md` — cloud target topology + autoscaling reference architecture — **parked** (reference-only)
 - `CLOUD_COST_OBSERVABILITY.md` — cloud cost observability (ADR-0026 companion) — **parked** (reference-only)
