@@ -155,6 +155,16 @@ erDiagram
 > Note that `EvidenceLink` (unmapped) is a different type from the mapped
 > `ProvenanceEvidenceLink` below.
 
+> **RFAI-02 vocabulary status (`#1305` AC3):** the shipped evidence-span capability lives entirely
+> in the mapped `ProvenanceEvidenceLink` / `ProvenanceField` tables — not this vocabulary. The six
+> unmapped intent-envelope pipeline shapes above (`EvidenceLink`, `IntentCandidate`,
+> `IntentEnvelopeV1`, `SourceBlock`, `SourceSpan`, `TaskdeckProposalBatch`) are the residue of the
+> RFAI-02 spike. Their two dead companion interfaces (`IProposalCompiler`, `IIntentEnvelopeFactory`),
+> which had no implementations or references, were removed under `#1305` AC3. These six entities are
+> **retained for now**: they are still exercised by the `Taskdeck.Domain.Tests` suite and back
+> architecture invariant INV-12 (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`), so their
+> full removal is deferred rather than complete.
+
 ---
 
 ## Base Entity
