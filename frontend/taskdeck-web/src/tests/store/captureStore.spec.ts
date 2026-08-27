@@ -12,6 +12,10 @@ const workspaceMocks = vi.hoisted(() => ({
   refreshWorkloadCounts: vi.fn(async () => {}),
 }))
 
+const errorMapperMocks = vi.hoisted(() => ({
+  getErrorDetails: vi.fn<(error: unknown) => string | null>(() => null),
+}))
+
 vi.mock('../../api/captureApi', () => ({
   captureApi: {
     createItem: vi.fn(),
@@ -37,6 +41,7 @@ vi.mock('../../store/workspaceStore', () => ({
 
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDetails: errorMapperMocks.getErrorDetails,
 }))
 
 describe('captureStore', () => {
@@ -376,6 +381,35 @@ describe('captureStore', () => {
     })
     // The sidebar badge counts pending captures, so it must be told (#1974).
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('attaches request diagnostics to the capture-failure toast so its receipt is inspectable', async () => {
+    // GH-1938: an opaque "request failed" toast loses the user's text with no
+    // way to inspect or report it. The store must hand the toast a `details`
+    // payload so the receipt's expander and Copy become functional.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockRejectedValueOnce({
+      response: { status: 503, data: { errorCode: 'UnexpectedError' } },
+    })
+    errorMapperMocks.getErrorDetails.mockReturnValueOnce('Status: 503\nRequest ID: req-1938')
+
+    await expect(store.createItem({ boardId: null, text: 'lose me not' })).rejects.toBeTruthy()
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to capture item', undefined, {
+      details: 'Status: 503\nRequest ID: req-1938',
+    })
+  })
+
+  it('raises the capture-failure toast without a details payload when the error carries no diagnostic', async () => {
+    // A bare, non-axios failure has no request context — the toast then keeps
+    // its original single-argument shape rather than an empty expander.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockRejectedValueOnce(new Error('offline'))
+    errorMapperMocks.getErrorDetails.mockReturnValueOnce(null)
+
+    await expect(store.createItem({ boardId: null, text: 'lose me not' })).rejects.toBeTruthy()
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to capture item')
   })
 
   it('skips the badge refresh when the caller opts out because it fetches the full summary itself', async () => {

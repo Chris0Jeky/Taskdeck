@@ -112,11 +112,45 @@ describe('PaperHomeView quick-capture recovery', () => {
     expect(error.text()).toContain('Capture not saved. Your text is still here.')
     expect(error.text()).toContain('Capture service unavailable')
 
-    // The store's ordinary error toast expires after five seconds. Advancing
-    // well past that boundary proves the inline receipt has no dismiss timer.
+    // The inline receipt has no dismiss timer: advance well past any plausible
+    // auto-dismiss window and it is still here. (The store's own error toast is
+    // persistent too — duration 0 — but that is the toast store's concern.)
     await vi.advanceTimersByTimeAsync(30_000)
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="paper-home-capture-error"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('renders inspectable request diagnostics and marks the input invalid when capture fails', async () => {
+    // GH-1938: an opaque "request failed" toast gave the user nothing to inspect
+    // or report. The inline receipt now carries the status + client correlation
+    // id, and the input is flagged invalid and associated with the receipt.
+    vi.mocked(http.post).mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: { errorCode: 'UnexpectedError', message: 'Capture service unavailable' },
+      },
+      config: {
+        method: 'post',
+        url: '/capture/items',
+        headers: { 'X-Request-Id': 'req-home-1938' },
+      },
+    })
+
+    const wrapper = mount(PaperHomeView)
+    const input = wrapper.get<HTMLInputElement>('[data-testid="paper-home-capture-input"]')
+    await input.setValue('Keep this thought recoverable')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const diagnostics = wrapper.get('[data-testid="paper-home-capture-diagnostics"]')
+    expect(diagnostics.text()).toContain('Status: 503')
+    expect(diagnostics.text()).toContain('req-home-1938')
+
+    expect(input.attributes('aria-invalid')).toBe('true')
+    expect(input.attributes('aria-describedby')).toBe('paper-home-capture-error')
 
     wrapper.unmount()
   })

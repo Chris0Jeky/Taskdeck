@@ -63,6 +63,7 @@ export default {
     placeholder: 'Anota una idea...',
     errorLead: 'Nota no guardada. Tu texto sigue aquí.',
     errorDetail: 'Detalles: {reason}',
+    errorDiagnosticsLabel: 'Diagnóstico de la solicitud',
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
   },
 }

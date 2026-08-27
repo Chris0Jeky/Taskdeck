@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getErrorDetails,
   getErrorDisplay,
   getValidationReason,
   isValidationError,
@@ -160,6 +161,61 @@ describe('useErrorMapper', () => {
     it('returns null when the input is not an API error shape', () => {
       expect(getValidationReason(new Error('Local runtime failure'))).toBeNull()
       expect(getValidationReason(null)).toBeNull()
+    })
+  })
+
+  describe('getErrorDetails', () => {
+    // GH-1938: the diagnostic receipt that makes an opaque capture-failure toast
+    // inspectable. Status + endpoint + errorCode + client correlation id.
+    it('assembles status, endpoint, code, and request id from an axios error', () => {
+      const details = getErrorDetails({
+        response: { status: 503, data: { errorCode: 'UnexpectedError' } },
+        config: {
+          method: 'post',
+          url: '/capture/items',
+          headers: { 'X-Request-Id': 'req-abc-123' },
+        },
+      })
+      expect(details).not.toBeNull()
+      expect(details).toContain('Status: 503')
+      expect(details).toContain('Endpoint: POST /capture/items')
+      expect(details).toContain('Code: UnexpectedError')
+      expect(details).toContain('Request ID: req-abc-123')
+    })
+
+    it('reads the request id from an AxiosHeaders-like case-insensitive get()', () => {
+      const headers = {
+        get: (name: string) => (name.toLowerCase() === 'x-request-id' ? 'req-from-get' : null),
+      }
+      const details = getErrorDetails({
+        response: { status: 500 },
+        config: { method: 'post', url: '/capture/items', headers },
+      })
+      expect(details).toContain('Request ID: req-from-get')
+    })
+
+    it('still yields the endpoint and request id for a network failure with no response', () => {
+      const details = getErrorDetails({
+        config: {
+          method: 'get',
+          url: '/workspace/home',
+          headers: { 'x-request-id': 'req-network' },
+        },
+      })
+      expect(details).not.toBeNull()
+      expect(details).not.toContain('Status:')
+      expect(details).toContain('Endpoint: GET /workspace/home')
+      expect(details).toContain('Request ID: req-network')
+    })
+
+    it('returns null for a bare Error with no request context', () => {
+      expect(getErrorDetails(new Error('offline'))).toBeNull()
+    })
+
+    it('returns null for non-object inputs', () => {
+      expect(getErrorDetails(null)).toBeNull()
+      expect(getErrorDetails(undefined)).toBeNull()
+      expect(getErrorDetails('boom')).toBeNull()
     })
   })
 })

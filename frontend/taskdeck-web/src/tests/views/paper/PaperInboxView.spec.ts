@@ -527,6 +527,66 @@ describe('PaperInboxView', () => {
     expect(error.text()).toContain('Capture service unavailable')
   })
 
+  it('surfaces inspectable request diagnostics and associates the nib receipt on failure', async () => {
+    // GH-1938: the receipt must carry the status + client correlation id so the
+    // failure is reportable, and the nib input must point at it for assistive
+    // tech instead of relying on a toast that expires.
+    mockCaptureStore.createItem.mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: { errorCode: 'UnexpectedError', message: 'Capture service unavailable' },
+      },
+      config: {
+        method: 'post',
+        url: '/capture/items',
+        headers: { 'X-Request-Id': 'req-inbox-1938' },
+      },
+    })
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Do not lose this quick note')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const receipt = wrapper.get('[data-testid="paper-inbox-capture-error"]')
+    expect(receipt.attributes('id')).toBe('paper-inbox-capture-error')
+
+    const diagnostics = wrapper.get('[data-testid="paper-inbox-capture-error-diagnostics"]')
+    expect(diagnostics.text()).toContain('Status: 503')
+    expect(diagnostics.text()).toContain('req-inbox-1938')
+
+    const nib = wrapper.find('textarea[aria-label="Quick capture input"]')
+    expect(nib.attributes('aria-invalid')).toBe('true')
+    expect(nib.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+  })
+
+  it('scopes the capture receipt to the variant that failed and drops it on toggle', async () => {
+    // GH-1938: `captureError` was one shared ref, so a nib failure's receipt
+    // stayed rendered under the composer after a `⌘;` toggle. Each variant now
+    // owns its own receipt.
+    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(PaperInboxView)
+    const setVariant = (wrapper.vm as unknown as {
+      setVariant: (next: 'nib' | 'composer') => void
+    }).setVariant
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Nib note')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(true)
+
+    setVariant('composer')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+  })
+
   it('does not label a post-create list refresh failure as an unsaved capture', async () => {
     vi.useFakeTimers()
     orchestratorState.loadInbox.mockRejectedValueOnce(new Error('Inbox refresh unavailable'))

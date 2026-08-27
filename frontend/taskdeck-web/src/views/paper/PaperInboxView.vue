@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getErrorDisplay } from '../../composables/useErrorMapper'
+import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
@@ -39,7 +39,19 @@ const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
 const captureSubmitting = ref(false)
-const captureError = ref<string | null>(null)
+
+/**
+ * A capture failure receipt, scoped PER VARIANT (GH-1938). The nib and composer
+ * are two independent surfaces; a single shared ref left a nib failure's receipt
+ * rendered under the composer after a `⌘;` toggle. Keying by variant means each
+ * surface shows only its own failure, and the active one drives the receipt.
+ */
+type CaptureFailure = { message: string; details: string | null }
+const captureErrors = ref<Record<Variant, CaptureFailure | null>>({ nib: null, composer: null })
+const activeCaptureError = computed(() => captureErrors.value[variant.value])
+const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.nib : null))
+const CAPTURE_ERROR_ID = 'paper-inbox-capture-error'
+
 const captureMetadataCompatibilityWarning = ref(false)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -118,6 +130,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 }
 
 async function dispatchCapture(
+  sourceVariant: Variant,
   text: string,
   opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
 ): Promise<boolean> {
@@ -128,7 +141,7 @@ async function dispatchCapture(
     return false
   }
 
-  captureError.value = null
+  captureErrors.value[sourceVariant] = null
   captureMetadataCompatibilityWarning.value = false
   captureSubmitting.value = true
   try {
@@ -154,9 +167,14 @@ async function dispatchCapture(
     })
     return true
   } catch (error: unknown) {
-    // The store's toast remains useful global feedback, but it expires. Keep
-    // an inspectable receipt beside the draft until the user retries (GH-1938).
-    captureError.value = getErrorDisplay(error, t('inbox.capture.errorFallback')).message
+    // The store's toast remains useful global feedback, but it lives in the
+    // corner and can be dismissed. Keep an inspectable receipt beside the draft
+    // until the user retries (GH-1938): the human message plus a copy-pasteable
+    // request diagnostic.
+    captureErrors.value[sourceVariant] = {
+      message: getErrorDisplay(error, t('inbox.capture.errorFallback')).message,
+      details: getErrorDetails(error),
+    }
     return false
   } finally {
     captureSubmitting.value = false
@@ -164,7 +182,7 @@ async function dispatchCapture(
 }
 
 async function onNibSubmit(text: string) {
-  const created = await dispatchCapture(text)
+  const created = await dispatchCapture('nib', text)
   if (!created) {
     return
   }
@@ -196,7 +214,7 @@ async function onComposerSubmit(payload: {
   const metadata = payload.dueAt || payload.labels.length > 0
     ? { dueDate: payload.dueAt, labels: payload.labels }
     : {}
-  const created = await dispatchCapture(payload.text, {
+  const created = await dispatchCapture('composer', payload.text, {
     boardId: payload.boardId,
     ...metadata,
   })
@@ -386,6 +404,8 @@ defineExpose({ variant, toggleVariant, setVariant })
         ref="nibRef"
         :bleeding="nibBleeding"
         :submitting="captureSubmitting"
+        :invalid="!!nibError"
+        :error-id="nibError ? CAPTURE_ERROR_ID : null"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer
@@ -396,13 +416,23 @@ defineExpose({ variant, toggleVariant, setVariant })
         @submit="onComposerSubmit"
       />
       <p
-        v-if="captureError"
+        v-if="activeCaptureError"
+        :id="CAPTURE_ERROR_ID"
         class="paper-inbox__capture-error"
         role="alert"
         data-testid="paper-inbox-capture-error"
       >
         <strong>{{ $t('inbox.capture.errorLead') }}</strong>
-        <span>{{ $t('inbox.capture.errorDetail', { reason: captureError }) }}</span>
+        <span>{{ $t('inbox.capture.errorDetail', { reason: activeCaptureError.message }) }}</span>
+        <template v-if="activeCaptureError.details">
+          <strong class="paper-inbox__capture-diagnostics-label">
+            {{ $t('inbox.capture.errorDiagnosticsLabel') }}
+          </strong>
+          <span
+            class="paper-inbox__capture-diagnostics"
+            data-testid="paper-inbox-capture-error-diagnostics"
+          >{{ activeCaptureError.details }}</span>
+        </template>
       </p>
       <p
         v-if="captureMetadataCompatibilityWarning"
@@ -492,6 +522,20 @@ defineExpose({ variant, toggleVariant, setVariant })
   font-family: var(--mono);
   font-size: 11px;
   line-height: 1.5;
+}
+.paper-inbox__capture-diagnostics-label {
+  flex-basis: 100%;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.paper-inbox__capture-diagnostics {
+  flex-basis: 100%;
+  margin: 0;
+  white-space: pre-line;
+  opacity: 0.9;
 }
 .paper-inbox__capture-compatibility-warning {
   display: flex;
