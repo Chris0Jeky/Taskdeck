@@ -42,12 +42,12 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 
 | Release | Content | Gate |
 |---|---|---|
-| **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days, running since 2026-08-22, and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
+| **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days — running since 2026-08-22 and re-scoped 2026-08-27 to the #1271 standing tracker, no longer release-gating — and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
 | **v0.1.2** | **SHIPPED 2026-08-25 (tag at `9766edbb5`).** Honest-Windows-Beta correction: the `#1876` double-click/startup fix plus the Priority I tranche | q-3 gate satisfied: maintainer accepted the release deck in-session 2026-08-24 (`#1947`); milestone groomed to zero open and closed, residuals re-milestoned to v0.2 |
 | **v0.2 "Coherent Context-to-Action Loop"** | Final target **2026-09-01**. Phase 2 is largely shipped; the release cut is limited to the open milestone ship list and closure evidence | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
 | **v0.3 "Open Beta + Accountable Agents"** | RC target **2026-09-04**; final target **2026-09-08 or 2026-09-09**. Phase 3 packages MCP, feedback, accountable-agent and trusted-collaboration proof | RC checks green; launch and 48h response plan ready for final |
 | **v0.4 "Every Artefact"** | Phase 4 complete (ADR-0046): artefact intake (screenshots/PDFs/files), project dossiers, generalist legibility, friends-family channel | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
-| **Checkpoint (floor 2026-09-01, walkthrough q-8)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control) | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment |
+| **Checkpoint (floor 2026-09-01, walkthrough q-8; re-scoped 2026-08-27)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control). **2026-08-27 maintainer ruling (recorded on #1271): dogfooding is a standing tracker, not a release gate** — the maintainer tried daily use and found v0.1.2 short of his real workflow; the recorded assessment is *keep building features/polish first*, explicitly not an archive trigger, and no release waits on accumulated usage days | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment — the 2026-08-27 ruling IS such an assessment for the current window |
 
 ### v0.1.2 dogfooding follow-up allocation
 
@@ -62,13 +62,13 @@ Proposed ADR-0060, ADR-0061, and ADR-0062 require maintainer ratification. Until
 
 ## 4. Phases and waves (the issue map)
 
-Dogfooding (`#1271`) runs through everything from day one — including WhisperX transcripts through the existing transcript capture tab. It is both the acceptance test and the cheapest issue-generator; dogfooding findings are exempt from the intake severity bar.
+Dogfooding (`#1271`) runs through everything from day one — including WhisperX transcripts through the existing transcript capture tab. It is both the acceptance test and the cheapest issue-generator; dogfooding findings are exempt from the intake severity bar. **Re-scoped 2026-08-27 (maintainer ruling on #1271): it is a standing tracker feeding milestones, unmilestoned, and no longer gates any release.**
 
 ### Phase 0 — charter (this week)
 | Item | Issue | Done when |
 |---|---|---|
 | Ratify this plan + ship gate; re-scope §G archive issues in place | REVIVAL-00 (amends #1278) | merged + tracker updated |
-| Dogfooding starts | #1271 (unchanged) | daily real use; findings filed |
+| Dogfooding starts | #1271 (re-scoped 2026-08-27: standing tracker, not a release gate) | real use as the product earns it; findings filed |
 
 ### Phase 1 — truth + safety before strangers (v0.1)
 | Item | Issue | Notes |
@@ -167,7 +167,7 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 - **(f)** Paper core loop has E2E + axe coverage; zero always-red CI lanes; branch protection live (#1274, #1275, #1173).
 - **(g)** README/onboarding welcome strangers: no archive messaging, demo GIF present, guided first-board path in Paper (REVIVAL-05, REVIVAL-06).
 - **(h)** Licensing posture published (REVIVAL-03).
-- **(i)** ≥10 days of organic dogfooding data (#1271).
+- **(i)** ≥10 days of organic dogfooding data (#1271). *Re-scoped 2026-08-27: retained as a long-horizon signal on the #1271 standing tracker, decoupled from every release gate (maintainer ruling recorded on the issue).*
 - A written **beta threat model** (public-facing self-hosted instances with untrusted registrants) replaces the single-user threat model; ACL/TOCTOU-class findings are re-triaged against it once (REVIVAL-00).
 
 ## 7. New-surface authority
@@ -184,7 +184,7 @@ Not authorized without a plan amendment: the twin generalist application (GEN-12
 
 Tracked without invasive telemetry: GitHub stars + unique Discussion/issue participants per month + issues-to-stars ratio; GitHub Release download counts for the self-contained executable; opt-in ping count as a clearly-labeled lower bound on active installs; local-only activation milestones (first capture, first approved proposal, first board apply) shown to the user as an onboarding checklist and included in the opt-in ping only as an aggregate boolean. GHCR image pulls are not used as a checkpoint metric because the plan does not depend on a public registry counter.
 
-**Checkpoint (per the q-8 ruling, 2026-08-23: dogfooding floor 2026-09-01 is a floor, not eligibility - ADR-0044's conditions control and its ~8-week framing stands):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete.
+**Checkpoint (per the q-8 ruling, 2026-08-23: dogfooding floor 2026-09-01 is a floor, not eligibility - ADR-0044's conditions control and its ~8-week framing stands):** fall back to the archive plan (`COURSE_CORRECTION.md` §4) only if the beta shows **no organic traction** (real users filing issues/discussions, meaningful downloads, HN/Reddit engagement) **and** the maintainer's own dogfooding has not stuck. Any mixed outcome requires an explicit maintainer assessment and plan amendment rather than an automatic archive decision. Phase 1 leaves the fallback ~90% complete. **2026-08-27: the maintainer supplied exactly that assessment (recorded on #1271): his own use of v0.1.2 stalled on missing features/polish, not on the loop's design — the ruling is to keep building, treat dogfooding as a standing tracker rather than a release gate, and revisit traction at the beta window; this is explicitly not an archive trigger.**
 
 The GEN-11 friends-family channel (`#1325`) adds a second signal stream — non-technical activation and retention — reviewed at the same checkpoint against the GEN-12 (`#1326`) twin-app gate criteria.
 
