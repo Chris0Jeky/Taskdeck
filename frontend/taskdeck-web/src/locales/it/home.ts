@@ -63,6 +63,7 @@ export default {
     placeholder: 'Annota un pensiero...',
     errorLead: 'Appunto non salvato. Il testo è ancora qui.',
     errorDetail: 'Dettagli: {reason}',
+    errorDiagnosticsLabel: 'Diagnostica della richiesta',
     errorFallback: 'Riprova quando la connessione è disponibile.',
   },
 }

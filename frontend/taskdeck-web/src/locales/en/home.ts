@@ -64,6 +64,7 @@ export default {
     placeholder: 'Capture a thought...',
     errorLead: 'Capture not saved. Your text is still here.',
     errorDetail: 'Details: {reason}',
+    errorDiagnosticsLabel: 'Request diagnostics',
     errorFallback: 'Please try again when the connection is available.',
   },
 }

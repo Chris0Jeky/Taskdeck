@@ -48,6 +48,7 @@ export default {
   capture: {
     errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
     errorDetail: 'Detalles: {reason}',
+    errorDiagnosticsLabel: 'Diagnóstico de la solicitud',
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
     metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',
     metadataCompatibilityDetail: 'Esta versión del servidor ignoró esos metadatos. No lo intentes de nuevo: la captura ya está en el Inbox.',

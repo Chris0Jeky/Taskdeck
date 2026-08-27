@@ -46,6 +46,7 @@ export default {
   capture: {
     errorLead: 'Appunto non salvato. La bozza è ancora qui.',
     errorDetail: 'Dettagli: {reason}',
+    errorDiagnosticsLabel: 'Diagnostica della richiesta',
     errorFallback: 'Riprova quando la connessione è disponibile.',
     metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',
     metadataCompatibilityDetail: 'Questa versione del server ha ignorato quei metadati. Non riprovare: la cattura è già nell’Inbox.',

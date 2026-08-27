@@ -57,6 +57,7 @@ export default {
   capture: {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
+    errorDiagnosticsLabel: 'Request diagnostics',
     errorFallback: 'Please try again when the connection is available.',
     metadataCompatibilityLead: 'Capture saved without its due date or labels.',
     metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
