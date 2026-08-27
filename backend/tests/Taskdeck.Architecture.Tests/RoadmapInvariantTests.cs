@@ -539,18 +539,21 @@ public class RoadmapInvariantTests
     // ─── Invariant 12: Proposal evidence references source payload ───────
 
     /// <summary>
-    /// INV-12: Automation output carries provenance evidence that references its source payload.
-    /// Every automation output (a proposal) must expose a provenance chain
+    /// INV-12: the integrity contract of a proposal's provenance chain.
+    /// This is a domain-contract spec, not a completeness scan. It deliberately does NOT assert
+    /// that every proposal carries provenance (nothing in the shipped model forces that), nor that
+    /// every field carries evidence (the non-transcript path legally produces inferred fields with
+    /// zero evidence links). It asserts only what the domain types enforce about the chain
     /// (<see cref="ProposalProvenance"/> → <see cref="ProvenanceField"/> →
-    /// <see cref="ProvenanceEvidenceLink"/>) that links each derived field back to the source
-    /// material it came from — a transcript span, capture, or chat message. Evidence-linked
-    /// proposals are a first-class domain concept, not optional decoration, and the chain's
-    /// integrity is enforced so the invariant cannot go false-green.
+    /// <see cref="ProvenanceEvidenceLink"/>) once it is built: an evidence link resolves to a
+    /// concrete source-payload span (e.g. a transcript range); an extractive field must carry the
+    /// quote it claims; transcript evidence must reference its transcript; spans are ordered; and
+    /// a field or link cannot be attached across different outputs.
     ///
     /// Rewritten under issue #1305 AC3: the original RFAI-02 spike vocabulary
     /// (SourceSpan / IntentCandidate / EvidenceLink / IntentEnvelopeV1) was unmapped, table-less
     /// scaffolding and was removed. The shipped evidence-span capability lives in the mapped
-    /// <c>ProvenanceEvidenceLink</c> / <c>ProvenanceField</c> tables, so the same invariant is now
+    /// <c>ProvenanceEvidenceLink</c> / <c>ProvenanceField</c> tables, so the same guards are now
     /// asserted against those types — preserving the intent, not merely deleting the test.
     /// </summary>
     [Fact]
