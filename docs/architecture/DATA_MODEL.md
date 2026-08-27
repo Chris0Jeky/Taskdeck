@@ -146,24 +146,20 @@ erDiagram
     SourceArtefact o|--o{ Transcript : "optionally originates (FK, SetNull)"
 ```
 
-> **Domain-only entities:** eight classes derive from `Entity` but have no `DbSet`, no EF
-> configuration, and no table, so they never appear in the ERD: `AbuseActor`, `AbuseEvent`,
-> `EvidenceLink`, `IntentCandidate`, `IntentEnvelopeV1`, `SourceBlock`, `SourceSpan`, and
-> `TaskdeckProposalBatch`. `AbuseActor` and `AbuseEvent` are written out in the
-> [Audit and Abuse](#audit-and-abuse) section because an abuse-containment reader expects them;
-> the other six are in-memory pipeline shapes with no persistence contract to document.
-> Note that `EvidenceLink` (unmapped) is a different type from the mapped
-> `ProvenanceEvidenceLink` below.
+> **Domain-only entities:** two classes derive from `Entity` but have no `DbSet`, no EF
+> configuration, and no table, so they never appear in the ERD: `AbuseActor` and `AbuseEvent`. Both
+> are written out in the [Audit and Abuse](#audit-and-abuse) section because an abuse-containment
+> reader expects them.
 
-> **RFAI-02 vocabulary status (`#1305` AC3):** the shipped evidence-span capability lives entirely
-> in the mapped `ProvenanceEvidenceLink` / `ProvenanceField` tables — not this vocabulary. The six
-> unmapped intent-envelope pipeline shapes above (`EvidenceLink`, `IntentCandidate`,
-> `IntentEnvelopeV1`, `SourceBlock`, `SourceSpan`, `TaskdeckProposalBatch`) are the residue of the
-> RFAI-02 spike. Their two dead companion interfaces (`IProposalCompiler`, `IIntentEnvelopeFactory`),
-> which had no implementations or references, were removed under `#1305` AC3. These six entities are
-> **retained for now**: they are still exercised by the `Taskdeck.Domain.Tests` suite and back
-> architecture invariant INV-12 (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`), so their
-> full removal is deferred rather than complete.
+> **RFAI-02 vocabulary removed (`#1305` AC3):** the shipped evidence-span capability lives entirely
+> in the mapped `ProvenanceEvidenceLink` / `ProvenanceField` tables. The unmapped RFAI-02
+> intent-envelope spike vocabulary — `IntentEnvelopeV1`, `SourceBlock`, `SourceSpan`,
+> `IntentCandidate`, the domain-only `EvidenceLink`, `TaskdeckProposalBatch`, their companion
+> interfaces `IProposalCompiler` / `IIntentEnvelopeFactory`, and the `proposal-batch.v1` JSON schema
+> — was table-less scaffolding with no production consumer and has been removed. Architecture
+> invariant INV-12 (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`) now asserts the
+> "automation output references its source payload" invariant against `ProvenanceEvidenceLink` /
+> `ProvenanceField`.
 
 ---
 
@@ -553,8 +549,6 @@ The database check requires typed `TranscriptId` exactly for `SourceType = "Tran
 FK cascades on Transcript deletion. A link committed before erasure is therefore deleted by the
 database; a stale proposal/link save attempted after erasure fails its FK and rolls back atomically.
 Other generic source types remain untyped and retain only `SourceType`/`SourceId`.
-
-> Not to be confused with the unmapped domain class `EvidenceLink`, which has no table.
 
 ---
 

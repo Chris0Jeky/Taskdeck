@@ -934,18 +934,11 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Similar
 
 The RFAI-02 through RFAI-08 foundational slice wave (PRs `#989`–`#994`) added ~631 new backend tests across 6 PRs. Each PR received adversarial review with review-added tests fixing bot findings from Gemini and Codex connector reviews.
 
-### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`)
+### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`) — removed under `#1305` AC3
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — **117 tests** covering:
-- IntentEnvelopeV1 lifecycle (Created→Extracting→Processed), candidate addition, evidence linking
-- SourceBlock/SourceSpan validation: offset ranges, snippet length consistency, evidence fabrication prevention
-- IntentCandidate confidence bounds, evidence link construction
-- ProposalBatch schema round-trip smoke tests against handwritten JSON schema
+The RFAI-02 intent-envelope entity suite (`IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — 117 tests) was **removed under `#1305` AC3**, together with the unmapped, table-less entities it exercised (`IntentEnvelopeV1`/`SourceBlock`/`SourceSpan`/`IntentCandidate`/`EvidenceLink`/`TaskdeckProposalBatch`) and the `proposal-batch.v1` schema. That vocabulary was scaffolding with no production consumer, superseded by the shipped `ProvenanceEvidenceLink` / `ProvenanceField` provenance chain.
 
-Run:
-```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~IntentEnvelope or FullyQualifiedName~SourceSpan or FullyQualifiedName~SourceBlock or FullyQualifiedName~IntentCandidate or FullyQualifiedName~EvidenceLink or FullyQualifiedName~ProposalBatch"
-```
+The "automation output references its source payload" invariant those tests protected (evidence fabrication prevention, evidence-linked proposals as a first-class concept) now lives in architecture invariant **INV-12** (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`), asserted against the shipped provenance types. Provenance coverage: `ProvenanceFieldTests.cs`, `ProposalProvenanceTests.cs`, and the ProvenanceEvidenceLink suite under `Taskdeck.Domain.Tests`.
 
 ### Semantic Memory Vector Index Tests (RFAI-06, `#978`/`#990`)
 
