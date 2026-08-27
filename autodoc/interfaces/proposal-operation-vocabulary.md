@@ -35,7 +35,7 @@ Edit seams:
 
 Do not read by default:
 
-- `backend/src/Taskdeck.Application/Schemas/proposal-batch.v1.schema.json` is aspirational import scaffolding, not the apply-time vocabulary authority.
+- The RFAI-02 `proposal-batch.v1.schema.json` import scaffolding was removed under `#1305` AC3; it was never the apply-time vocabulary authority. The live LLM-output contracts are `backend/src/Taskdeck.Application/Schemas/capture-triage-output.*.json` (transcript triage), and per-field evidence/provenance is carried by the mapped `ProvenanceEvidenceLink` / `ProvenanceField` types — not a batch schema.
 
 Verification:
 
