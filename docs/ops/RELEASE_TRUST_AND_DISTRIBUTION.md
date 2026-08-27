@@ -72,9 +72,10 @@ owns visual identity and release artwork only.
 
 ## Private cloud boundary
 
-Distribution work does not create a public SaaS plan. [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md)
-and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) permit only one trusted private instance: one application
-instance, one SQLite volume, a few known users, private access, InviteOnly onboarding, exact-image evidence, SignalR/reconnect
+Distribution work does not create a public SaaS plan. Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md)
+and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the maximum boundary for a possible trusted private instance;
+deployment remains blocked until the maintainer records the required decisions and accepts the ADR. If authorized, the proof is limited to
+one application instance, one SQLite volume, a few known users, private access, InviteOnly onboarding, exact-image evidence, SignalR/reconnect
 and durable-reload proof, application-consistent encrypted backup, separate connector-key backup, one clean restore drill,
 an infrastructure cost owner, and explicit LLM payer/egress disclosure. [#1777](https://github.com/Chris0Jeky/Taskdeck/issues/1777)
 is the Render implementation split after those decisions. Neither issue authorizes tenancy, public signup, billing, horizontal

@@ -26,7 +26,7 @@ This folder contains deployment, observability, and human-operator runbooks.
 
 ## Cloud / Cost
 
-ADR-0061 and `docs/platform/CLOUD_DEPLOYMENT_GUIDE.md` authorize only a bounded private shared-instance proof: one application instance, one SQLite volume, a few known users, private access, explicit cost/LLM ownership, and tested backup/restore. That active exception does **not** reactivate the older public-cloud, multi-instance, or SaaS architecture below. The files in this subsection remain **reference-only** and each carries its own de-scope banner.
+Proposed ADR-0061 and `docs/platform/CLOUD_DEPLOYMENT_GUIDE.md` define the maximum boundary for a possible private shared-instance proof: one application instance, one SQLite volume, a few known users, private access, explicit cost/LLM ownership, and tested backup/restore. Deployment remains blocked until the maintainer records the decisions required by ADR-0061/#1772; this active planning seam grants no account, billing, or deployment authority and does **not** reactivate the older public-cloud, multi-instance, or SaaS architecture below. The files in this subsection remain **reference-only** and each carries its own de-scope banner.
 
 - `CLOUD_REFERENCE_ARCHITECTURE.md` — cloud target topology + autoscaling reference architecture — **parked** (reference-only)
 - `CLOUD_COST_OBSERVABILITY.md` — cloud cost observability (ADR-0026 companion) — **parked** (reference-only)
