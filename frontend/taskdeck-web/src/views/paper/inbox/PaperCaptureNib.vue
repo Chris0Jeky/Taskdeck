@@ -23,6 +23,15 @@ const props = defineProps<{
    */
   bleeding?: boolean
   submitting?: boolean
+  /**
+   * A capture submitted from this nib failed and its inspectable receipt is
+   * showing (GH-1938). Marks the input invalid and points assistive tech at
+   * the receipt so the failure is announced against the field, not just as a
+   * toast that expires.
+   */
+  invalid?: boolean
+  /** DOM id of the failure receipt to associate via `aria-describedby`. */
+  errorId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -84,6 +93,8 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
       aria-label="Quick capture input"
       placeholder="What's on your mind, quickly?"
       :disabled="submitting"
+      :aria-invalid="invalid ? 'true' : undefined"
+      :aria-describedby="errorId ?? undefined"
       @keydown="onKeydown"
     />
 
