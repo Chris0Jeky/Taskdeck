@@ -1,12 +1,19 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-08-26
+Last Updated: 2026-08-27
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Precedence** when documents disagree: `docs/STATUS.md` > `AGENTS.md` > `CLAUDE.md`.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+Acceptance walkthrough + dogfooding re-scope (2026-08-27, maintainer-directed agent run on main `3adde232b`):
+- **Dogfooding is a standing tracker, not a release gate (maintainer ruling, recorded on `#1271`).** The maintainer's own assessment after using v0.1.2: it is not yet enough for his real workflow — features and polish come first. `#1271` is unmilestoned and stays open as the standing tracker; the ≥10-day floor survives only as a long-horizon signal; this exercises the checkpoint rule's "mixed outcome → explicit maintainer assessment" branch and is explicitly **not** an archive trigger. `REVIVAL_PLAN.md` (horizon checkpoint row, §4, §6(i), §8) and `docs/dogfooding/LOG.md` carry the same record.
+- **The transcript→proposals→evidence→apply loop is live-verified end-to-end, and `#1304` (REVIVAL-08) is closed on its acceptance matrix.** On a fresh isolated instance with live OpenAI at the shipped default `gpt-5.6-luna`: a speaker-labeled transcript produced **7 typed create-card operations** (verbatim quotes as descriptions, the recorded decision extracted, the explicitly-parked question correctly not extracted, confidence .81 with breakdown), all 7 evidence spans resolved to "View in transcript" opening the stored transcript highlighted at the exact span, and two-phase approve/apply landed all 7 cards atomically. The degraded contract was also live-proven: a misconfigured model yielded "LLM triage unavailable (InvalidOutput)" and an honestly-labeled `deterministic-extractor/capture-triage-v1` fallback proposal, never an exception. Code-level: every M1–M3 AC mapped to main with its tests **re-run** (118 + 5 passed). Recorded caveats: v2 `type`/`assigneeHint`/`confidence` are validated then dropped at the service boundary (REVIVAL-11's consumer track); dedupe is a title-set, not the idempotency-key scheme; `#1987`/`#1284` drawer metadata still dark. M4 stays gated and files its own issue when taken.
+- **`#1967` is closed on live verification.** Applied-card `Open Proposal` renders exactly the hash-named proposal in `APPLIED · READ-ONLY`; RECENTLY APPLIED rows are native buttons opening the read-only record; no silent substitution anywhere. Thread-only residuals were transferred to `#2130` (with `#2121` still open) before closing.
+- **New findings filed from the run:** `#2141` — transcript capture has **no Paper-skin entry point** and the transcript loop is not completable within one skin (Legacy owns the transcript tab, Paper owns the triage board picker); `#2142` — the 401 hard navigation destroys the preserved capture draft and its failure receipt (a hole in `#1938`'s "text never lost" for the auth-expiry class). Also observed live: the `#1938` failure path now preserves the draft with a persistent, aria-associated inline receipt and a non-dismissing error toast — but the toast's details expander is dead (nothing populates `toast.details`), which the in-flight `#1938` diagnostics slice closes.
+- **Closing slices for the two remaining v0.2 milestone issues went in flight the same session:** `#1938` capture-failure diagnostics (frontend) and `#1305` orphan intent-envelope vocabulary removal + transcript-cap documentation (backend+docs); their delivery records land with their merges.
 
 DCO enforcement pause (2026-08-23, explicit maintainer decision; restore tracker `#2019`):
 - **DCO no longer runs or gates merges.** The PR-only `DCO (advisory)` job, its upstream action, and

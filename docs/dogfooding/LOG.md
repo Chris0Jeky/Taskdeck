@@ -71,6 +71,19 @@ whole time.
 
 <!-- New entries go directly below this line, newest first. -->
 
+## 2026-08-27 — dogfooding re-scoped to a standing tracker (maintainer ruling, agent-recorded)
+
+Maintainer assessment, given in-session on 2026-08-27 and recorded on #1271: he has tried using
+v0.1.2 for real work and **it is not yet enough for his personal workflow — more features and more
+polish are needed before daily-driver use is realistic**. The ruling: dogfooding stops being a
+v0.2.0 release gate and becomes a **standing tracker** (#1271 unmilestoned, still open); the
+≥10-day floor is retained only as a long-horizon signal; findings from whatever use happens keep
+feeding milestones and stay exempt from the intake severity bar. This is the "mixed outcome
+requires an explicit maintainer assessment" branch of the checkpoint rule, exercised — explicitly
+NOT an archive trigger. Same day, a maintainer-directed agent acceptance walkthrough live-verified
+the transcript→proposals→evidence→apply loop end-to-end on a fresh instance (see #1304's closing
+matrix), so the loop's readiness and the human's appetite are now tracked separately.
+
 ## 2026-08-23 — sprint formally started (agent-recorded)
 
 Maintainer declaration (guided walkthrough 2026-08-23, q-2 = A): **the ≥10-day dogfooding sprint
