@@ -48,35 +48,17 @@ public static class McpResourcesAndToolsRegistration
             {
                 filters.AddIncomingFilter(next => async (context, cancellationToken) =>
                 {
-                    if (context.JsonRpcMessage is JsonRpcRequest request)
+                    if (context.JsonRpcMessage is JsonRpcRequest request
+                        && request.Method == RequestMethods.ToolsCall
+                        && !GetRequiredToolScope(request).HasValue)
                     {
-                        ApiKeyScope? required = request.Method switch
-                        {
-                            RequestMethods.ToolsCall => GetRequiredToolScope(request),
-                            RequestMethods.ResourcesRead => ApiKeyScope.Read,
-                            _ => null
-                        };
-
-                        if (required.HasValue)
-                        {
-                            var granted = await GetValidatedScopesAsync(
-                                context.Services,
-                                context.User,
-                                cancellationToken);
-                            if (!ApiKeyScopeRules.Includes(granted, required.Value))
-                            {
-                                await SendAccessDeniedAsync(context, request, cancellationToken);
-                                return;
-                            }
-                        }
-                        else if (request.Method == RequestMethods.ToolsCall)
-                        {
-                            // Unknown, missing, and unclassified tool names all fail before the SDK's
-                            // primitive matcher. Full is a mask of the three known capability bits,
-                            // not permission to invoke future tools that have no explicit mapping.
-                            await SendAccessDeniedAsync(context, request, cancellationToken);
-                            return;
-                        }
+                        // Unknown, missing, and unclassified tool names all fail before the SDK's
+                        // primitive matcher. Full is a mask of the three known capability bits,
+                        // not permission to invoke future tools that have no explicit mapping.
+                        // Capability checks for known tools run in AddCallToolFilter below, where
+                        // context.Services is the SDK-created request scope rather than the server root.
+                        await SendToolAccessDeniedAsync(context, request, cancellationToken);
+                        return;
                     }
 
                     await next(context, cancellationToken);
@@ -84,6 +66,34 @@ public static class McpResourcesAndToolsRegistration
             })
             .WithRequestFilters(filters =>
             {
+                filters.AddCallToolFilter(next => async (context, cancellationToken) =>
+                {
+                    var required = GetRequiredToolScope(context.Params?.Name);
+                    if (!required.HasValue)
+                        return CreateToolAccessDeniedResult();
+
+                    var granted = await GetValidatedScopesAsync(
+                        context.Services,
+                        context.User,
+                        cancellationToken);
+                    if (!ApiKeyScopeRules.Includes(granted, required.Value))
+                        return CreateToolAccessDeniedResult();
+
+                    return await next(context, cancellationToken);
+                });
+
+                filters.AddReadResourceFilter(next => async (context, cancellationToken) =>
+                {
+                    var granted = await GetValidatedScopesAsync(
+                        context.Services,
+                        context.User,
+                        cancellationToken);
+                    if (!ApiKeyScopeRules.Includes(granted, ApiKeyScope.Read))
+                        throw new McpException(AccessDeniedMessage);
+
+                    return await next(context, cancellationToken);
+                });
+
                 filters.AddListToolsFilter(next => async (context, cancellationToken) =>
                 {
                     var granted = await GetValidatedScopesAsync(
@@ -133,32 +143,60 @@ public static class McpResourcesAndToolsRegistration
 
     private static ApiKeyScope? GetRequiredToolScope(JsonRpcRequest request)
     {
-        if (request.Params is not JsonObject parameters
-            || parameters["name"] is not JsonValue nameNode
-            || !nameNode.TryGetValue<string>(out var name))
-        {
-            return null;
-        }
-
-        return ToolScopes.TryGetValue(name, out var required) ? required : null;
+        var name = GetRequestedToolName(request);
+        return name is not null && ToolScopes.TryGetValue(name, out var required)
+            ? required
+            : null;
     }
 
-    private static Task SendAccessDeniedAsync(
+    private static string? GetRequestedToolName(JsonRpcRequest request)
+    {
+        return request.Params is JsonObject parameters
+            && parameters["name"] is JsonValue nameNode
+            && nameNode.TryGetValue<string>(out var name)
+                ? name
+                : null;
+    }
+
+    private static ApiKeyScope? GetRequiredToolScope(string? name)
+    {
+        return name is not null && ToolScopes.TryGetValue(name, out var required)
+            ? required
+            : null;
+    }
+
+    private static Task SendToolAccessDeniedAsync(
         MessageContext context,
         JsonRpcRequest request,
         CancellationToken cancellationToken)
     {
         return context.Server.SendMessageAsync(
-            new JsonRpcError
+            new JsonRpcResponse
             {
                 Id = request.Id,
-                Error = new JsonRpcErrorDetail
+                Result = new JsonObject
                 {
-                    Code = (int)McpErrorCode.InvalidRequest,
-                    Message = AccessDeniedMessage
+                    ["content"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["type"] = "text",
+                            ["text"] = AccessDeniedMessage
+                        }
+                    },
+                    ["isError"] = true
                 }
             },
             cancellationToken);
+    }
+
+    private static CallToolResult CreateToolAccessDeniedResult()
+    {
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = AccessDeniedMessage }],
+            IsError = true
+        };
     }
 
     private static async Task<ApiKeyScope> GetValidatedScopesAsync(
