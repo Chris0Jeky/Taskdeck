@@ -97,6 +97,9 @@ public class AutomationProposalServiceTests
         _boardRepoMock
             .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(TestDataBuilder.CreateBoard());
+        _boardRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { TestDataBuilder.CreateBoard() });
         _boardAccessRepoMock
             .Setup(r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
