@@ -59,7 +59,7 @@ const VUE_SOURCES = import.meta.glob('../../**/*.vue', {
 }) as Record<string, string>
 
 /** Opening `<a …>` tags. Quoted attribute values are consumed whole so a `>` inside one cannot end the tag early. */
-const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
+const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/gi
 
 /**
  * Each href attribute on a tag: the optional binding prefix, then the quoted
@@ -68,7 +68,7 @@ const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
  * backreference to its own opening quote, so a bound expression may contain the
  * other quote style (`:href="dead ?? '#'"`).
  */
-const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/g
+const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/gi
 
 /** A bare `#` string literal — `'#'`, `"#"`, `` `#` `` — nothing after the hash. `'#section'` does not match. */
 const BARE_HASH_LITERAL = /(['"`])#\1/
@@ -514,11 +514,16 @@ describe('dead affordances', () => {
     expect(findDeadAnchors('<template><a href="#">Tune heuristics</a></template>')).toEqual([
       '<a href="#">',
     ])
+    expect(findDeadAnchors('<template><A HREF="#">Uppercase HTML</A></template>')).toEqual([
+      '<A HREF="#">',
+    ])
     expect(findDeadAnchors(`<template><a href='#'>Single quoted</a></template>`)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a :href="'#'" class="x">Dead</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a :HREF="'#'">Mixed-case shorthand</a></template>`)).toHaveLength(1)
     // The GH-1941 shape: a bound href whose expression falls back to the bare `#`.
     expect(findDeadAnchors(DEAD_ANCHOR_FIXTURE)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a v-bind:href="dead || '#'">Dead</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a V-BIND:HREF="dead || '#'">Mixed-case longhand</a></template>`)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a :href='dead ?? "#"'>Dead</a></template>`)).toHaveLength(1)
     // A multi-line tag is still one tag.
     expect(findDeadAnchors('<template>\n<a\n  href="#"\n  class="x"\n>Dead</a>\n</template>')).toHaveLength(1)
@@ -526,6 +531,7 @@ describe('dead affordances', () => {
 
   it('does not flag anchors that are bound, real, or only talked about', () => {
     expect(findDeadAnchors('<template><a href="#" @click.prevent="open">Live</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="#" @click.prevent="open">Live</A></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#" v-on:click="open">Live</a></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#" @click.stop>Only propagation</a></template>')).toHaveLength(1)
     // The GH-1941 shape, but wired up.
@@ -534,15 +540,19 @@ describe('dead affordances', () => {
     ).toEqual([])
     // Real in-page fragment targets are not placeholders.
     expect(findDeadAnchors('<template><a href="#details">In-page</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="#details">In-page</A></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#td-main-content">Skip link</a></template>')).toEqual([])
     expect(findDeadAnchors(`<template><a :href="'#details'">Bound in-page</a></template>`)).toEqual([])
+    expect(findDeadAnchors(`<template><a V-BIND:HREF="'#details'">Bound in-page</a></template>`)).toEqual([])
     expect(findDeadAnchors('<template><a href="/workspace/home">Real route</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="/workspace/home">Real route</A></template>')).toEqual([])
     // Sibling elements whose names start with "a" are not anchors.
     expect(findDeadAnchors('<template><aside href="#">Not an anchor</aside></template>')).toEqual([])
     // An attribute merely ENDING in "href" is not an href.
     expect(findDeadAnchors('<template><a :capture-href="\'#\'" href="/x">Not an href</a></template>')).toEqual([])
     // Prose explaining a removed dead anchor is prose, not a dead anchor.
     expect(findDeadAnchors('<script>/* was <a href="#">x</a> */</script><template><p>ok</p></template>')).toEqual([])
+    expect(findDeadAnchors('<script>/* was <A HREF="#">x</A> */</script><template><p>ok</p></template>')).toEqual([])
     expect(findDeadAnchors('<template><!-- was <a href="#">x</a> --><p>ok</p></template>')).toEqual([])
   })
 
