@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Domain.Entities;
@@ -49,12 +50,21 @@ public class ApiKey : Entity
     /// <summary>Timestamp of the last successful authentication using this key.</summary>
     public DateTimeOffset? LastUsedAt { get; private set; }
 
+    /// <summary>The capabilities granted to this key.</summary>
+    public ApiKeyScope Scopes { get; private set; }
+
     /// <summary>Whether this key is currently usable (not revoked and not expired).</summary>
     public bool IsActive => RevokedAt is null && (ExpiresAt is null || ExpiresAt > DateTimeOffset.UtcNow);
 
     private ApiKey() : base() { }
 
-    public ApiKey(Guid userId, string keyHash, string keyPrefixChars, string name, DateTimeOffset? expiresAt = null)
+    public ApiKey(
+        Guid userId,
+        string keyHash,
+        string keyPrefixChars,
+        string name,
+        ApiKeyScope scopes,
+        DateTimeOffset? expiresAt = null)
         : base()
     {
         if (userId == Guid.Empty)
@@ -69,10 +79,14 @@ public class ApiKey : Entity
         if (expiresAt.HasValue && expiresAt.Value <= DateTimeOffset.UtcNow)
             throw new DomainException(ErrorCodes.ValidationError, "Expiration must be in the future");
 
+        if (scopes == ApiKeyScope.None || (scopes & ~ApiKeyScope.Full) != 0)
+            throw new DomainException(ErrorCodes.ValidationError, "API key scopes must contain only known, non-empty values");
+
         UserId = userId;
         KeyHash = keyHash;
         KeyPrefix_ = keyPrefixChars;
         Name = name;
+        Scopes = scopes;
         ExpiresAt = expiresAt;
     }
 

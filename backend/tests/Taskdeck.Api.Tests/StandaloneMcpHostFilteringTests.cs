@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -460,7 +461,11 @@ public class StandaloneMcpHostFilteringTests
             var user = new User("standalone-perkey", "standalone-perkey@example.com", "hash");
             db.Users.Add(user);
             db.ApiKeys.Add(new ApiKey(
-                user.Id, ApiKeyService.HashKey(plaintextKey), plaintextKey[..8], "Standalone per-key"));
+                user.Id,
+                ApiKeyService.HashKey(plaintextKey),
+                plaintextKey[..8],
+                "Standalone per-key",
+                ApiKeyScope.Full));
             await db.SaveChangesAsync();
         }
 

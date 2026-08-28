@@ -9,6 +9,7 @@ using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -109,7 +110,12 @@ public sealed class ApiKeyMiddlewareLastUsedPersistenceTests : IDisposable
     {
         var user = new User("lastused-user-" + Guid.NewGuid().ToString("N")[..8], $"{Guid.NewGuid():N}@example.com", "hash");
         db.Users.Add(user);
-        var apiKey = new ApiKey(user.Id, ApiKeyService.HashKey(plaintextKey), plaintextKey[..8], "Last-used test");
+        var apiKey = new ApiKey(
+            user.Id,
+            ApiKeyService.HashKey(plaintextKey),
+            plaintextKey[..8],
+            "Last-used test",
+            ApiKeyScope.Full);
         db.ApiKeys.Add(apiKey);
         await db.SaveChangesAsync();
         return (user.Id, apiKey.Id);
