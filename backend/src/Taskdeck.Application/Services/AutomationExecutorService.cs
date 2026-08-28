@@ -158,6 +158,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         {
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                new[] { effectiveProposal.BoardId },
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                return Result.Failure(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+
             // Execute operations in sequence order
             var orderedOperations = effectiveProposal.Operations.OrderBy(o => o.Sequence).ToList();
             var failedOperation = -1;
@@ -184,10 +193,22 @@ public class AutomationExecutorService : IAutomationExecutorService
                 // Mark proposal as failed and rollback transaction
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
 
-                // Update proposal status
-                var updateResult = await UpdateProposalStatusAsync(proposalId, ProposalStatus.Failed, failureReason, cancellationToken);
+                // The failed status is a separate decision write after the operation transaction
+                // rolls back, so it must load and guard the board again. If the operation itself
+                // lost a race with archive, preserve that Conflict as the primary outcome even
+                // when the now-archived board refuses the follow-up Failed write.
+                var updateResult = await UpdateProposalStatusAsync(
+                    proposalId,
+                    ProposalStatus.Failed,
+                    failureReason,
+                    guardDecisionWrite: true,
+                    cancellationToken);
                 if (!updateResult.IsSuccess)
-                    return Result.Failure(updateResult.ErrorCode, updateResult.ErrorMessage);
+                {
+                    return failedResult.ErrorCode == ErrorCodes.Conflict
+                        ? Result.Failure(failedResult.ErrorCode, failureReason)
+                        : Result.Failure(updateResult.ErrorCode, updateResult.ErrorMessage);
+                }
 
                 _logger?.LogWarning(
                     "Automation proposal execution failed for proposal {ProposalId} at operation {OperationSequence} after {DurationMs}ms: {FailureReason}",
@@ -198,12 +219,22 @@ public class AutomationExecutorService : IAutomationExecutorService
                 return Result.Failure(failedResult.ErrorCode, failureReason);
             }
 
-            // Mark proposal as applied
-            await _unitOfWork.CommitTransactionAsync(cancellationToken);
-
-            var markResult = await UpdateProposalStatusAsync(proposalId, ProposalStatus.Applied, null, cancellationToken);
+            // The board marker, operation effects, audit rows, and Applied status share this outer
+            // transaction. Do not re-check archived state here: an approved operation may itself
+            // archive the board, and the pre-operation guard already ordered that legitimate write.
+            var markResult = await UpdateProposalStatusAsync(
+                proposalId,
+                ProposalStatus.Applied,
+                null,
+                guardDecisionWrite: false,
+                cancellationToken);
             if (!markResult.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
+            }
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
                 effectiveProposal with
@@ -231,7 +262,12 @@ public class AutomationExecutorService : IAutomationExecutorService
         catch (Exception ex)
         {
             await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-            await UpdateProposalStatusAsync(proposalId, ProposalStatus.Failed, ex.Message, cancellationToken);
+            await UpdateProposalStatusAsync(
+                proposalId,
+                ProposalStatus.Failed,
+                ex.Message,
+                guardDecisionWrite: true,
+                cancellationToken);
             _logger?.LogError(
                 ex,
                 "Automation proposal execution threw for proposal {ProposalId} after {DurationMs}ms",
@@ -371,7 +407,12 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
     }
 
-    private async Task<Result> UpdateProposalStatusAsync(Guid proposalId, ProposalStatus status, string? failureReason, CancellationToken cancellationToken)
+    private async Task<Result> UpdateProposalStatusAsync(
+        Guid proposalId,
+        ProposalStatus status,
+        string? failureReason,
+        bool guardDecisionWrite,
+        CancellationToken cancellationToken)
     {
         var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId, cancellationToken);
         if (proposal == null)
@@ -379,6 +420,15 @@ public class AutomationExecutorService : IAutomationExecutorService
 
         try
         {
+            if (guardDecisionWrite)
+            {
+                var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                    new[] { proposal.BoardId },
+                    cancellationToken);
+                if (!decisionGuard.IsSuccess)
+                    return decisionGuard;
+            }
+
             if (status == ProposalStatus.Applied)
             {
                 proposal.MarkAsApplied();

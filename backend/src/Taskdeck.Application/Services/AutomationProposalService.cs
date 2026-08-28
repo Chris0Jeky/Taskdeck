@@ -487,6 +487,13 @@ public class AutomationProposalService : IAutomationProposalService
                 }
             }
 
+            if (proposal.Status == ProposalStatus.PendingReview && !proposal.IsExpired)
+            {
+                var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+                if (!decisionGuard.IsSuccess)
+                    return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+
             proposal.Approve(decidedByUserId, approvedRevisionId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -804,6 +811,10 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             proposal.Reject(decidedByUserId, dto.Reason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -828,6 +839,10 @@ public class AutomationProposalService : IAutomationProposalService
             var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
             proposal.Defer(duration);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -855,6 +870,10 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             proposal.MarkAsApplied();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -877,6 +896,10 @@ public class AutomationProposalService : IAutomationProposalService
             var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
             proposal.MarkAsFailed(failureReason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1173,29 +1196,36 @@ public class AutomationProposalService : IAutomationProposalService
 
         try
         {
-            var proposals = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
-            int dismissed = 0;
+            var proposals = (await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken))
+                .ToList();
+            var dismissibleProposals = proposals
+                .Where(proposal => proposal.CanBeDismissed)
+                .ToList();
 
-            foreach (var proposal in proposals)
-            {
-                if (proposal.CanBeDismissed)
-                {
-                    proposal.Dismiss();
-                    dismissed++;
-                }
-                // Skip proposals not in a dismissible state
-            }
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                dismissibleProposals.Select(proposal => proposal.BoardId),
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<int>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
-            if (dismissed > 0)
+            foreach (var proposal in dismissibleProposals)
+                proposal.Dismiss();
+
+            if (dismissibleProposals.Count > 0)
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result.Success(dismissed);
+            return Result.Success(dismissibleProposals.Count);
         }
         catch (DomainException ex)
         {
             return Result.Failure<int>(ex.ErrorCode, ex.Message);
         }
     }
+
+    private Task<Result> GuardProposalDecisionWriteAsync(
+        Guid? boardId,
+        CancellationToken cancellationToken) =>
+        _policyEngine.GuardProposalDecisionWritesAsync(new[] { boardId }, cancellationToken);
 
     private static ProposalDto MapToDto(AutomationProposal proposal)
     {

@@ -66,6 +66,12 @@ public class ProposalRevisionService : IProposalRevisionService
             var nextRevisionNumber = await _unitOfWork.ProposalRevisions
                 .GetNextRevisionNumberAsync(dto.ProposalId, cancellationToken);
 
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                new[] { proposal.BoardId },
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalRevisionDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             var revision = new ProposalRevision(
                 dto.ProposalId,
                 nextRevisionNumber,
