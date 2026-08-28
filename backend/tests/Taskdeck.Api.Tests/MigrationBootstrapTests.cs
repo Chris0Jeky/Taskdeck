@@ -163,6 +163,7 @@ public class MigrationBootstrapTests : IDisposable
         _context.ChangeTracker.Clear();
         var migratedKey = _context.ApiKeys.Single(key => key.Id == apiKeyId);
         migratedKey.Scopes.Should().Be(ApiKeyScope.Full);
+        ((int)migratedKey.Scopes).Should().Be(7);
 
         var scopesColumn = GetApiKeyScopesColumn();
         scopesColumn.NotNull.Should().BeTrue(

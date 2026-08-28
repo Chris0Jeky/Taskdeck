@@ -9,6 +9,16 @@ namespace Taskdeck.Domain.Tests.Entities;
 public class ApiKeyTests
 {
     [Fact]
+    public void ApiKeyScope_Values_AreStable()
+    {
+        ((int)ApiKeyScope.None).Should().Be(0);
+        ((int)ApiKeyScope.Read).Should().Be(1);
+        ((int)ApiKeyScope.Propose).Should().Be(2);
+        ((int)ApiKeyScope.Manage).Should().Be(4);
+        ((int)ApiKeyScope.Full).Should().Be(7);
+    }
+
+    [Fact]
     public void Constructor_ValidInput_CreatesEntity()
     {
         var userId = Guid.NewGuid();
