@@ -484,7 +484,11 @@ test('the MCP guide covers all shipped launch paths without claiming deferred pr
   }
 
   assert.match(mcpGuide, /not a Claude Code, Claude Desktop, or[\s\S]*Cursor end-to-end test/i)
-  assert.match(mcpGuide, /does not claim scoped-key enforcement or runtime tool-hash[\s\S]*approval/i)
+  assert.match(
+    mcpGuide,
+    /New HTTP API keys require at least one explicit[\s\S]*`read`[\s\S]*`propose`[\s\S]*`manage`/i,
+  )
+  assert.match(mcpGuide, /does not claim runtime tool-hash approval/i)
   assert.doesNotMatch(mcpGuide, /IMAGE --mcp` is a valid invocation/i)
   assert.match(
     readme,
