@@ -1607,6 +1607,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         {{ revisionBadge }}
       </div>
       <ReviewMain
+        :key="activeProposal.id"
         :serial="headerSerial"
         :meta="headerMeta"
         :title-parts="titleParts"
@@ -1818,6 +1819,7 @@ function onQueueFilterChange(filter: QueueFilter) {
 
     <ReviewRightRail
       v-if="activeProposal"
+      :key="activeProposal.id"
       :author-name="authorName"
       :author-meta="authorMeta"
       :proposed-date="proposedDate"
