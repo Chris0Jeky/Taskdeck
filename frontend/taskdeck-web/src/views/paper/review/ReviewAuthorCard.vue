@@ -40,13 +40,28 @@ function barColor(value: number): string {
       <span class="paper-review-author__bullet" aria-hidden="true">✦</span>
       <div>
         <div class="paper-review-author__name">{{ authorName }}</div>
-        <div class="tk-meta paper-review-author__meta">{{ authorMeta }}</div>
+        <div v-if="authorMeta" class="tk-meta paper-review-author__meta">{{ authorMeta }}</div>
       </div>
     </div>
     <hr class="hr-soft paper-review-author__rule" />
     <div class="tk-eyebrow paper-review-author__bd-heading">
-      {{ $t('review.author.breakdownHeading') }}
+      {{
+        breakdown.source === 'model-reported'
+          ? $t('review.author.modelReportedHeading')
+          : $t('review.author.confidenceHeading')
+      }}
     </div>
+    <p
+      v-if="breakdown.components.length === 0"
+      class="paper-review-author__empty tk-meta"
+      data-testid="paper-review-author-confidence-source"
+    >
+      {{
+        breakdown.source === 'deterministic'
+          ? $t('review.author.deterministic')
+          : $t('review.author.notReported')
+      }}
+    </p>
     <div
       v-for="component in breakdown.components"
       :key="component.key"
@@ -135,5 +150,9 @@ function barColor(value: number): string {
   margin: 0;
   font-size: 10.5px;
   line-height: 1.5;
+}
+.paper-review-author__empty {
+  margin: 6px 0 0;
+  line-height: 1.45;
 }
 </style>

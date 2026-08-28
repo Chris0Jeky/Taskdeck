@@ -24,7 +24,11 @@ public class ProvenanceFieldConfiguration : IEntityTypeConfiguration<ProvenanceF
             .HasConversion<int>();
 
         builder.Property(pf => pf.Confidence)
-            .IsRequired();
+            .IsRequired(false);
+
+        builder.Property(pf => pf.ConfidenceSource)
+            .IsRequired()
+            .HasConversion<int>();
 
         builder.Property(pf => pf.ExtractiveQuote)
             .HasMaxLength(2000);

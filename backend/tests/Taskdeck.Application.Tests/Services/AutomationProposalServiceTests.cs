@@ -198,7 +198,7 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
-    public async Task CreateProposalAsync_ShouldPersistBaselineProvenance()
+    public async Task CreateProposalAsync_ShouldPersistBaselineProvenanceWithoutInventedConfidence()
     {
         // Arrange
         var operations = new List<CreateProposalOperationDto>
@@ -241,6 +241,73 @@ public class AutomationProposalServiceTests
         capturedProvenance.Fields.Should().Contain(f =>
             f.FieldName == "Operation 1: create card" &&
             f.Kind == ProvenanceKind.Inferred);
+        capturedProvenance.Fields.Should().OnlyContain(field =>
+            field.Confidence == null &&
+            field.ConfidenceSource == ProvenanceConfidenceSource.NotReported);
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldPersistExactTrustedModelConfidencePerOperation()
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured tasks",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations:
+            [
+                new(0, "create", "card", "{\"title\":\"One\"}", "key1"),
+                new(1, "create", "card", "{\"title\":\"Two\"}", "key2")
+            ])
+        {
+            TrustedConfidence = new TrustedProposalConfidenceInput(
+                ProvenanceConfidenceSource.ModelReported,
+                [new(0, 0.81), new(1, 0.63)])
+        };
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal proposal, CancellationToken _) => proposal);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((provenance, _) => captured = provenance)
+            .ReturnsAsync((ProposalProvenance provenance, CancellationToken _) => provenance);
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        captured!.Fields.Where(field => field.FieldName.StartsWith("Operation "))
+            .Select(field => (field.Confidence, field.ConfidenceSource))
+            .Should().Equal(
+                ((double?)0.81, ProvenanceConfidenceSource.ModelReported),
+                ((double?)0.63, ProvenanceConfidenceSource.ModelReported));
+        captured.Fields.Single(field => field.FieldName == "Summary").Confidence.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldRejectDeterministicConfidenceWithNumericDecoration()
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: [new(0, "create", "card", "{\"title\":\"One\"}", "key1")])
+        {
+            TrustedConfidence = new TrustedProposalConfidenceInput(
+                ProvenanceConfidenceSource.Deterministic,
+                [new(0, 0.8)])
+        };
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("cannot carry numeric values");
+        _proposalRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

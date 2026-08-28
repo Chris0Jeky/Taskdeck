@@ -24,7 +24,14 @@ describe('proposalDeepReviewApi', () => {
   })
 
   it('fetches confidence breakdown for a proposal', async () => {
-    const breakdown = { overall: 0.84, components: [], note: null, threshold: 0.7, meetsThreshold: true }
+    const breakdown = {
+      overall: 0.84,
+      components: [{ key: 'Operation 1: create card', value: 0.84 }],
+      note: null,
+      threshold: null,
+      source: 'model-reported' as const,
+      meetsThreshold: null,
+    }
     vi.mocked(http.get).mockResolvedValue({ data: breakdown })
 
     const result = await proposalDeepReviewApi.getConfidence('p-1')

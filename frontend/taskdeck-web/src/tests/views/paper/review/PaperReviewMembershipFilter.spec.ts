@@ -71,8 +71,9 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
       overall: 0.8,
       components: [],
       note: null,
-      threshold: 0.5,
-      meetsThreshold: true,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
     }),
     getSideEffects: vi.fn().mockResolvedValue({
       rows: [],
