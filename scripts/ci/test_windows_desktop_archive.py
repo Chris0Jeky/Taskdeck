@@ -55,6 +55,79 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 harness.safe_extract_archive(archive, root / "extract")
             self.assertFalse((root / "escape.txt").exists())
 
+    def test_mcp_initialize_request_pins_the_release_protocol(self) -> None:
+        encoded = harness.build_mcp_initialize_request()
+        self.assertTrue(encoded.endswith("\n"))
+        self.assertEqual(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "taskdeck-desktop-archive-smoke",
+                        "version": "1.0",
+                    },
+                },
+            },
+            json.loads(encoded),
+        )
+
+    def test_mcp_initialize_stdout_requires_one_valid_server_info_response(self) -> None:
+        response = self._mcp_initialize_response()
+        self.assertEqual(
+            {
+                "initialized": True,
+                "serverInfoValid": True,
+                "stdoutClean": True,
+            },
+            harness.validate_mcp_initialize_stdout(response),
+        )
+
+        invalid_outputs = (
+            f"startup log\n{response}",
+            f"\n{response}",
+            f"{response}{response}",
+            '{"jsonrpc":"2.0","id":1,"error":{"code":-1}}\n',
+            '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"Taskdeck"}}}\n',
+            '{"jsonrpc":"2.0","id":2,"result":{"serverInfo":{"name":"Taskdeck","version":"1"}}}\n',
+        )
+        for invalid in invalid_outputs:
+            with self.subTest(invalid=invalid[:40]):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_mcp_initialize_stdout(invalid)
+
+    def test_packaged_mcp_probe_launches_the_extracted_executable_and_closes_stdin(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            executable = root / "Taskdeck.Api.exe"
+            executable.write_bytes(b"synthetic executable")
+            cwd = root / "cwd"
+            cwd.mkdir()
+            process = mock.Mock()
+            process.communicate.return_value = (self._mcp_initialize_response(), "stderr-only log")
+            process.returncode = 0
+
+            with mock.patch.object(harness.subprocess, "Popen", return_value=process) as popen:
+                evidence = harness.verify_packaged_mcp_stdio(
+                    executable,
+                    cwd,
+                    {"LOCALAPPDATA": str(root / "local-app-data")},
+                )
+
+            self.assertTrue(evidence["initialized"])
+            self.assertEqual([str(executable), "--mcp"], popen.call_args.args[0])
+            self.assertEqual(str(cwd), popen.call_args.kwargs["cwd"])
+            self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stdin"])
+            self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stdout"])
+            self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stderr"])
+            process.communicate.assert_called_once_with(
+                input=harness.build_mcp_initialize_request(),
+                timeout=harness.MCP_STDIO_TIMEOUT_SECONDS,
+            )
+
     def test_app_environment_preserves_ci_but_removes_false_proof_overrides(self) -> None:
         local_app_data = Path(tempfile.gettempdir()).resolve() / "taskdeck-unit-localappdata"
         source = {
@@ -564,7 +637,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         with self.assertRaises(harness.AcceptanceFailure):
             harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
-    def test_final_evidence_v6_records_both_explicit_journeys(self) -> None:
+    def test_final_evidence_v7_records_both_explicit_journeys_and_mcp_stdio(self) -> None:
         final = harness.build_final_evidence(
             "taskdeck-v0.1.1-win-x64.zip",
             "a" * 64,
@@ -574,6 +647,11 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             {"jwtCreated": False, "connectorCreated": False},
             {"phase": "create"},
             {"phase": "restart"},
+            {
+                "initialized": True,
+                "serverInfoValid": True,
+                "stdoutClean": True,
+            },
             {
                 "legacy": {"location": "adjacent", "state": "retained"},
                 "durable": {"location": "app-data", "state": "imported"},
@@ -585,8 +663,16 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         )
 
         self.assertEqual(3, harness.PHASE_EVIDENCE_SCHEMA_VERSION)
-        self.assertEqual(6, final["schemaVersion"])
+        self.assertEqual(7, final["schemaVersion"])
         self.assertEqual({"cleanInstall", "migration"}, set(final) - {"schemaVersion", "release"})
+        self.assertEqual(
+            {
+                "initialized": True,
+                "serverInfoValid": True,
+                "stdoutClean": True,
+            },
+            final["cleanInstall"]["mcpStdio"],
+        )
         self.assertEqual(
             {"jwtCreated": True, "connectorCreated": True},
             final["cleanInstall"]["launches"][0]["bootstrapIdentity"],
@@ -616,6 +702,11 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                         {"jwtCreated": False, "connectorCreated": False},
                         {"phase": "create"},
                         {"phase": "restart"},
+                        {
+                            "initialized": True,
+                            "serverInfoValid": True,
+                            "stdoutClean": True,
+                        },
                         {
                             "legacy": {"location": "adjacent", "state": "retained"},
                             "durable": {"location": "app-data", "state": "imported"},
@@ -760,6 +851,21 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 "cardCounts": {"beforeProposal": 0, "afterApproval": 0, "afterApply": 1},
             },
         }
+
+    @staticmethod
+    def _mcp_initialize_response() -> str:
+        return json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "serverInfo": {"name": "Taskdeck", "version": "1.0.0"},
+                },
+            },
+            separators=(",", ":"),
+        ) + "\n"
 
 
 if __name__ == "__main__":
