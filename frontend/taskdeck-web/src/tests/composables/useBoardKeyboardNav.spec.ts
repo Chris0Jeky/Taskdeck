@@ -494,6 +494,77 @@ describe('useBoardKeyboardNav', () => {
       }
     })
 
+    it('moves focus to a collapsed lane expand control so Enter cannot open the old card', async () => {
+      const fixture = buildCardFixture(['card-1'])
+      const collapsedColumn = document.createElement('section')
+      collapsedColumn.setAttribute('data-column-id', 'c2')
+      const expandButton = document.createElement('button')
+      expandButton.setAttribute('data-action', 'expand-column')
+      const expandViaEnter = vi.fn()
+      expandButton.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.stopPropagation()
+          event.preventDefault()
+          expandViaEnter()
+        }
+      })
+      collapsedColumn.appendChild(expandButton)
+      document.body.appendChild(collapsedColumn)
+
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          (columnId) => columnId !== 'c2',
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedColumnIndex.value).toBe(1)
+        expect(nav.selectedCardId.value).toBeNull()
+
+        await nextTick()
+        expect(document.activeElement).toBe(expandButton)
+
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+        expect(expandViaEnter).toHaveBeenCalledOnce()
+        expect(fixture.openedCards).toStrictEqual([])
+      } finally {
+        collapsedColumn.remove()
+        fixture.cleanup()
+      }
+    })
+
+    it('keeps the existing focus behavior when column navigation enters an empty expanded lane', async () => {
+      cardsByColumn.set('c2', [])
+      const fixture = buildCardFixture(['card-1'])
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          () => true,
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedColumnIndex.value).toBe(1)
+        expect(nav.selectedCardId.value).toBeNull()
+
+        await nextTick()
+        expect(document.activeElement).toBe(fixture.openers.get('card-1'))
+      } finally {
+        fixture.cleanup()
+      }
+    })
+
     it('leaves focus untouched when focus is outside any card', async () => {
       const fixture = buildCardFixture(['card-1', 'card-2'])
       const outsideButton = document.createElement('button')

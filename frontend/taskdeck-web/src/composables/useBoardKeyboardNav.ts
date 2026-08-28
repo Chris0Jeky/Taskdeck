@@ -41,25 +41,41 @@ export function useBoardKeyboardNav(
     return active instanceof Element && active.closest('[data-card-id]') !== null
   }
 
+  async function focusCollapsedColumnExpandControl() {
+    await nextTick()
+    const currentColumn = sortedColumns.value[selectedColumnIndex.value]
+    if (!currentColumn || !isColumnNavigable || isColumnNavigable(currentColumn.id)) return
+
+    const columnElement = document.querySelector(
+      `[data-column-id="${currentColumn.id}"]`,
+    ) as HTMLElement | null
+    columnElement
+      ?.querySelector<HTMLElement>('[data-action="expand-column"]')
+      ?.focus()
+  }
+
   /**
    * Roving focus for selection movement: when a board selection shortcut
    * (J/K/H/L or plain arrows) changes the selected card while DOM focus sits
    * inside a card (e.g. on its `data-action="open-card"` activator), focus
    * follows the new selection so the focused card and the visible selection
-   * highlight can never disagree — the focused opener's own Enter handler and
-   * the global Enter shortcut then open the same card. When focus is elsewhere
-   * (body, composer, modal), selection movement leaves focus untouched.
+   * highlight can never disagree. When the destination column is intentionally
+   * non-navigable, focus moves to its expand control instead. When focus is
+   * elsewhere (body, composer, modal), selection movement leaves focus untouched.
    */
   function withFocusFollowingSelection(applySelection: () => void) {
     const focusWasWithinCard = focusIsWithinBoardCard()
     const previousCardId = selectedCardId.value
     applySelection()
-    if (
-      focusWasWithinCard &&
-      selectedCardId.value !== null &&
-      selectedCardId.value !== previousCardId
-    ) {
+    if (!focusWasWithinCard) return
+
+    if (selectedCardId.value !== null && selectedCardId.value !== previousCardId) {
       void focusSelectedCard()
+      return
+    }
+
+    if (selectedCardId.value === null) {
+      void focusCollapsedColumnExpandControl()
     }
   }
 
