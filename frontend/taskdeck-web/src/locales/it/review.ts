@@ -224,6 +224,10 @@ export default {
     title: 'Provenienza',
     sub: 'Cosa è stato letto · cosa no · cosa è stato dedotto',
     empty: 'Provenienza non ancora disponibile per questa proposta.',
+    details: {
+      show: 'Mostra i dettagli della provenienza',
+      hide: 'Nascondi i dettagli della provenienza',
+    },
     footnote: {
       deterministic:
         'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck.',
@@ -317,6 +321,10 @@ export default {
     heading: 'Autore',
     confidenceHeading: 'Fonte della confidenza',
     modelReportedHeading: 'Confidenza per elemento dichiarata dal modello',
+    details: {
+      show: 'Mostra i dettagli della confidenza',
+      hide: 'Nascondi i dettagli della confidenza',
+    },
     nameFallback: 'Proposta',
     name: '{actor} · proposta da {source}',
     modelConfidence: 'media dichiarata dal modello {value}',
@@ -338,6 +346,10 @@ export default {
   similarPast: {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
+    details: {
+      show: 'Mostra decisioni simili',
+      hide: 'Nascondi decisioni simili',
+    },
     verdict: {
       applied: 'APPLICATA',
       rejected: 'RIFIUTATA',

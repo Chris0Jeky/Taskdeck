@@ -223,6 +223,10 @@ export default {
     title: 'Procedencia',
     sub: 'Qué se leyó · qué no · qué se dedujo',
     empty: 'Todavía no hay procedencia para esta propuesta.',
+    details: {
+      show: 'Mostrar detalles de procedencia',
+      hide: 'Ocultar detalles de procedencia',
+    },
     footnote: {
       deterministic:
         'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck.',
@@ -316,6 +320,10 @@ export default {
     heading: 'Autor',
     confidenceHeading: 'Fuente de confianza',
     modelReportedHeading: 'Confianza por elemento declarada por el modelo',
+    details: {
+      show: 'Mostrar detalles de confianza',
+      hide: 'Ocultar detalles de confianza',
+    },
     nameFallback: 'Propuesta',
     name: '{actor} · propuesta de {source}',
     modelConfidence: 'promedio declarado por el modelo {value}',
@@ -337,6 +345,10 @@ export default {
   similarPast: {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
+    details: {
+      show: 'Mostrar decisiones parecidas',
+      hide: 'Ocultar decisiones parecidas',
+    },
     verdict: {
       applied: 'APLICADA',
       rejected: 'RECHAZADA',

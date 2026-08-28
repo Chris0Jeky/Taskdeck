@@ -275,6 +275,10 @@ export default {
     title: 'Provenance',
     sub: "What was read · what wasn't · what was inferred",
     empty: 'Provenance not available for this proposal yet.',
+    details: {
+      show: 'Show provenance details',
+      hide: 'Hide provenance details',
+    },
     // One sentence per recorded engine, selected by `views/paper/review/provenanceActor.ts`
     // from the proposal's own provenance. There is deliberately NO unconditional variant:
     // the surface says nothing when the record is absent or incoherent (GH-1963). `{label}`
@@ -378,6 +382,10 @@ export default {
     heading: 'Author',
     confidenceHeading: 'Confidence source',
     modelReportedHeading: 'Model-reported item confidence',
+    details: {
+      show: 'Show confidence details',
+      hide: 'Hide confidence details',
+    },
     nameFallback: 'Proposal',
     // `{source}` is the lowercased backend source type (`chat`, `queue`, …).
     name: '{actor} · {source} proposal',
@@ -400,6 +408,10 @@ export default {
   similarPast: {
     heading: 'Similar past decisions',
     empty: 'No comparable past decisions.',
+    details: {
+      show: 'Show similar decisions',
+      hide: 'Hide similar decisions',
+    },
     verdict: {
       applied: 'APPLIED',
       rejected: 'REJECTED',
