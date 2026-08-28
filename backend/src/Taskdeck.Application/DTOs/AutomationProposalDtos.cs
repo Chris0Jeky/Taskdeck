@@ -57,6 +57,12 @@ public record ProposalDto(
     public Guid? ApprovedRevisionId { get; init; }
 }
 
+/// <summary>
+/// Result of an all-or-none batch approval. Every listed proposal has moved to
+/// <see cref="ProposalStatus.Approved"/>; none has been executed or applied.
+/// </summary>
+public sealed record BatchApproveProposalsResultDto(IReadOnlyList<Guid> ApprovedIds);
+
 public record ProposalPresentationDto(
     string PlainSummary,
     string ImpactSummary,

@@ -17,6 +17,109 @@ namespace Taskdeck.Api.Tests;
 public sealed class ArchivedBoardProposalDecisionConcurrencyTests
 {
     [Fact]
+    public async Task BatchApprove_WhenArchiveCommitsAfterGuard_RollsBackEveryApproval()
+    {
+        var dbPath = TemporaryDatabasePath("batch-archive");
+        try
+        {
+            var options = CreateOptions(dbPath);
+            var seeded = await SeedBatchApprovalAsync(options);
+            await using var decisionDb = new TaskdeckDbContext(options);
+            await using var archiveDb = new TaskdeckDbContext(options);
+            var decisionBoard = await decisionDb.Boards.SingleAsync(board => board.Id == seeded.BoardId);
+            var decisionUser = await decisionDb.Users.SingleAsync(user => user.Id == seeded.UserId);
+            var decisionColumn = await decisionDb.Columns.SingleAsync(column => column.Id == seeded.ColumnId);
+            var decisionProposals = await decisionDb.AutomationProposals
+                .Include(proposal => proposal.Operations)
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .ToListAsync();
+            var archiveBoard = await archiveDb.Boards.SingleAsync(board => board.Id == seeded.BoardId);
+            var unitOfWork = CreateBatchDecisionUnitOfWork(
+                decisionDb,
+                decisionUser,
+                decisionBoard,
+                decisionColumn,
+                decisionProposals,
+                beforeFirstSave: async () =>
+                {
+                    archiveBoard.Archive();
+                    await archiveDb.SaveChangesAsync();
+                });
+            var service = new AutomationProposalService(unitOfWork.Object);
+
+            var result = await service.ApproveProposalsAsync(seeded.ProposalIds, seeded.UserId);
+
+            result.IsSuccess.Should().BeFalse();
+            result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+            await using var verifyDb = new TaskdeckDbContext(options);
+            (await verifyDb.Boards.SingleAsync(board => board.Id == seeded.BoardId))
+                .IsArchived.Should().BeTrue();
+            var statuses = await verifyDb.AutomationProposals
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .Select(proposal => proposal.Status)
+                .ToListAsync();
+            statuses.Should().OnlyContain(status => status == ProposalStatus.PendingReview);
+        }
+        finally
+        {
+            DeleteTemporaryDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task BatchApprove_WhenProposalChangesAfterPreflight_RollsBackEveryApproval()
+    {
+        var dbPath = TemporaryDatabasePath("batch-proposal");
+        try
+        {
+            var options = CreateOptions(dbPath);
+            var seeded = await SeedBatchApprovalAsync(options);
+            await using var decisionDb = new TaskdeckDbContext(options);
+            await using var concurrentDb = new TaskdeckDbContext(options);
+            var decisionBoard = await decisionDb.Boards.SingleAsync(board => board.Id == seeded.BoardId);
+            var decisionUser = await decisionDb.Users.SingleAsync(user => user.Id == seeded.UserId);
+            var decisionColumn = await decisionDb.Columns.SingleAsync(column => column.Id == seeded.ColumnId);
+            var decisionProposals = await decisionDb.AutomationProposals
+                .Include(proposal => proposal.Operations)
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .ToListAsync();
+            var concurrentProposal = await concurrentDb.AutomationProposals
+                .SingleAsync(proposal => proposal.Id == seeded.ProposalIds[0]);
+            var unitOfWork = CreateBatchDecisionUnitOfWork(
+                decisionDb,
+                decisionUser,
+                decisionBoard,
+                decisionColumn,
+                decisionProposals,
+                beforeFirstSave: async () =>
+                {
+                    concurrentProposal.Defer(TimeSpan.FromMinutes(30));
+                    await concurrentDb.SaveChangesAsync();
+                });
+            var service = new AutomationProposalService(unitOfWork.Object);
+
+            var result = await service.ApproveProposalsAsync(seeded.ProposalIds, seeded.UserId);
+
+            result.IsSuccess.Should().BeFalse();
+            result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+            await using var verifyDb = new TaskdeckDbContext(options);
+            var persisted = await verifyDb.AutomationProposals
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .OrderBy(proposal => proposal.Id)
+                .ToListAsync();
+            persisted.Should().OnlyContain(proposal => proposal.Status == ProposalStatus.PendingReview);
+            persisted.Single(proposal => proposal.Id == seeded.ProposalIds[0])
+                .DeferredUntil.Should().NotBeNull("the competing change wins while no batch decision lands");
+            persisted.Single(proposal => proposal.Id == seeded.ProposalIds[1])
+                .DeferredUntil.Should().BeNull();
+        }
+        finally
+        {
+            DeleteTemporaryDatabase(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task Reject_WhenArchiveCommitsAfterGuard_RollsBackDecisionAndKeepsArchive()
     {
         var dbPath = TemporaryDatabasePath("decision");
@@ -372,6 +475,97 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
         return unitOfWork;
     }
 
+    private static Mock<IUnitOfWork> CreateBatchDecisionUnitOfWork(
+        TaskdeckDbContext db,
+        User user,
+        Board board,
+        Column column,
+        IReadOnlyList<AutomationProposal> proposals,
+        Func<Task> beforeFirstSave)
+    {
+        var boardRepository = new Mock<IBoardRepository>();
+        var columnRepository = new Mock<IColumnRepository>();
+        var userRepository = new Mock<IUserRepository>();
+        var boardAccessRepository = new Mock<IBoardAccessRepository>();
+        var proposalRepository = new Mock<IAutomationProposalRepository>();
+        var revisionRepository = new Mock<IProposalRevisionRepository>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var saveStarted = false;
+
+        unitOfWork.SetupGet(work => work.Boards).Returns(boardRepository.Object);
+        unitOfWork.SetupGet(work => work.Columns).Returns(columnRepository.Object);
+        unitOfWork.SetupGet(work => work.Users).Returns(userRepository.Object);
+        unitOfWork.SetupGet(work => work.BoardAccesses).Returns(boardAccessRepository.Object);
+        unitOfWork.SetupGet(work => work.AutomationProposals).Returns(proposalRepository.Object);
+        unitOfWork.SetupGet(work => work.ProposalRevisions).Returns(revisionRepository.Object);
+        proposalRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> ids, CancellationToken _) =>
+            {
+                var requested = ids.ToHashSet();
+                return proposals.Where(proposal => requested.Contains(proposal.Id)).ToList();
+            });
+        revisionRepository
+            .Setup(repository => repository.GetRefsByProposalIdsAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ProposalRevisionRef>());
+        revisionRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ProposalRevision>());
+        userRepository
+            .Setup(repository => repository.GetByIdAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(user);
+        boardRepository
+            .Setup(repository => repository.GetByIdAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+        boardRepository
+            .Setup(repository => repository.GetByIdsAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { board });
+        columnRepository
+            .Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        boardAccessRepository
+            .Setup(repository => repository.HasAccessAsync(
+                board.Id,
+                user.Id,
+                UserRole.Editor,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        unitOfWork
+            .Setup(work => work.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        unitOfWork
+            .Setup(work => work.CommitTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        unitOfWork
+            .Setup(work => work.RollbackTransactionAsync(It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                db.ChangeTracker.Clear();
+                return Task.CompletedTask;
+            });
+        unitOfWork
+            .Setup(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken cancellationToken) =>
+            {
+                if (!saveStarted)
+                {
+                    saveStarted = true;
+                    await beforeFirstSave();
+                }
+
+                return await SaveWithConflictMappingAsync(db, cancellationToken);
+            });
+        return unitOfWork;
+    }
+
     private static async Task<int> SaveWithConflictMappingAsync(
         TaskdeckDbContext db,
         CancellationToken cancellationToken)
@@ -497,6 +691,47 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
         return new SeededProposalPair(user.Id, board.Id, first.Id, second.Id);
     }
 
+    private static async Task<SeededBatchApproval> SeedBatchApprovalAsync(
+        DbContextOptions<TaskdeckDbContext> options)
+    {
+        await using var db = new TaskdeckDbContext(options);
+        await db.Database.MigrateAsync();
+        var user = new User(
+            $"batch-race-{Guid.NewGuid():N}",
+            $"batch-race-{Guid.NewGuid():N}@example.com",
+            "Password1!");
+        var board = new Board("Batch approval concurrency board", ownerId: user.Id);
+        var column = new Column(board.Id, "Backlog", 0);
+        var proposals = Enumerable.Range(0, 2)
+            .Select(index =>
+            {
+                var proposal = new AutomationProposal(
+                    ProposalSourceType.Queue,
+                    user.Id,
+                    $"Batch proposal {index}",
+                    RiskLevel.Low,
+                    Guid.NewGuid().ToString("N"),
+                    board.Id);
+                proposal.AddOperation(new AutomationProposalOperation(
+                    proposal.Id,
+                    0,
+                    "create",
+                    "card",
+                    JsonSerializer.Serialize(new { title = $"Task {index}", boardId = board.Id, columnId = column.Id }),
+                    Guid.NewGuid().ToString("N")));
+                return proposal;
+            })
+            .ToList();
+        db.AddRange(user, board, column);
+        db.AutomationProposals.AddRange(proposals);
+        await db.SaveChangesAsync();
+        return new SeededBatchApproval(
+            user.Id,
+            board.Id,
+            column.Id,
+            proposals.Select(proposal => proposal.Id).OrderBy(id => id).ToList());
+    }
+
     private static async Task AssertArchivedWithProposalStatusAsync(
         DbContextOptions<TaskdeckDbContext> options,
         SeededProposal seeded,
@@ -537,4 +772,10 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
         Guid BoardId,
         Guid FirstProposalId,
         Guid SecondProposalId);
+
+    private sealed record SeededBatchApproval(
+        Guid UserId,
+        Guid BoardId,
+        Guid ColumnId,
+        IReadOnlyList<Guid> ProposalIds);
 }

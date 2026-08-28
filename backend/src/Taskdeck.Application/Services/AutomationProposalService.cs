@@ -13,6 +13,8 @@ public class AutomationProposalService : IAutomationProposalService
 {
     private const string CaptureTriageActionType = "create";
     private const string CaptureTriageTargetType = "card";
+    private const int MaxBatchApprovalCount = 500;
+    private static readonly TimeSpan BatchApprovalFreshnessWindow = TimeSpan.FromHours(24);
 
     private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -510,6 +512,290 @@ public class AutomationProposalService : IAutomationProposalService
         {
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    public async Task<Result<BatchApproveProposalsResultDto>> ApproveProposalsAsync(
+        IReadOnlyList<Guid> ids,
+        Guid decidedByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (decidedByUserId == Guid.Empty)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "DecidedByUserId cannot be empty");
+        }
+
+        if (ids is null || ids.Count == 0)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "At least one proposal ID is required");
+        }
+
+        if (ids.Count > MaxBatchApprovalCount)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                $"Cannot approve more than {MaxBatchApprovalCount} proposals at once");
+        }
+
+        if (ids.Any(id => id == Guid.Empty))
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "Proposal IDs cannot be empty");
+        }
+
+        if (ids.Distinct().Count() != ids.Count)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "Proposal IDs must be unique");
+        }
+
+        var transactionStarted = false;
+        try
+        {
+            var loaded = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
+            var proposalsById = loaded.ToDictionary(proposal => proposal.Id);
+            var missingId = ids.FirstOrDefault(id => !proposalsById.ContainsKey(id));
+            if (missingId != Guid.Empty)
+            {
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    ErrorCodes.NotFound,
+                    $"Proposal with ID {missingId} not found");
+            }
+
+            // Preserve the reviewer's explicit order in both deterministic validation and the
+            // returned receipt. Repository order is provider-dependent and is not a decision order.
+            var proposals = ids.Select(id => proposalsById[id]).ToList();
+            foreach (var proposal in proposals)
+            {
+                if (proposal.RequestedByUserId != decidedByUserId)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.Forbidden,
+                        "Batch approval is limited to your own proposals");
+                }
+
+                if (proposal.Status != ProposalStatus.PendingReview)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Cannot batch approve proposal {proposal.Id} in status {proposal.Status}");
+                }
+            }
+
+            var revisionsResult = await GetBatchApprovalRevisionsAsync(proposals, cancellationToken);
+            if (!revisionsResult.IsSuccess)
+            {
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    revisionsResult.ErrorCode,
+                    revisionsResult.ErrorMessage);
+            }
+
+            var revisions = revisionsResult.Value;
+            var now = DateTimeOffset.UtcNow;
+
+            // Preflight the COMPLETE set before any domain transition or board guard marker is
+            // advanced. One failure therefore leaves every proposal PendingReview.
+            foreach (var proposal in proposals)
+            {
+                revisions.TryGetValue(proposal.Id, out var latestRevision);
+                var effectiveOperations = ResolveEffectiveGateOperations(proposal, latestRevision);
+                if (!effectiveOperations.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        effectiveOperations.ErrorCode,
+                        effectiveOperations.ErrorMessage);
+                }
+
+                var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
+                if (!structureValidation.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        structureValidation.ErrorCode,
+                        structureValidation.ErrorMessage);
+                }
+
+                // Preserve the single-approve gate order: malformed effective content is reported
+                // before expiry, then live permission/contract checks run only for a structurally
+                // valid, current proposal.
+                if (now.UtcDateTime > proposal.ExpiresAt)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Cannot batch approve expired proposal {proposal.Id}");
+                }
+
+                if (now - proposal.CreatedAt >= BatchApprovalFreshnessWindow)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is stale and must be reviewed individually");
+                }
+
+                if (proposal.DeferredUntil is DateTime deferredUntil && deferredUntil > now.UtcDateTime)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is deferred and is not eligible for batch approval");
+                }
+
+                if (proposal.RiskLevel != RiskLevel.Low)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not Low risk and must be reviewed individually");
+                }
+
+                // A revision can replace the effective operation set without rewriting the
+                // proposal's stored risk snapshot. Re-classify the exact operations being
+                // approved so a formerly-Low proposal cannot drift into Medium-or-higher batch
+                // eligibility (for example, six create-card operations).
+                if (_policyEngine.ClassifyRisk(effectiveOperations.Value) != RiskLevel.Low)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not Low risk and must be reviewed individually");
+                }
+
+                if (effectiveOperations.Value.Any(operation =>
+                        !string.Equals(operation.ActionType, CaptureTriageActionType, StringComparison.OrdinalIgnoreCase) ||
+                        !string.Equals(operation.TargetType, CaptureTriageTargetType, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not create-card-only and must be reviewed individually");
+                }
+
+                var permissionValidation = await _policyEngine.ValidatePermissionsAsync(
+                    decidedByUserId,
+                    proposal.BoardId,
+                    effectiveOperations.Value,
+                    BoardAccessBar.Write,
+                    cancellationToken);
+                if (!permissionValidation.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        permissionValidation.ErrorCode,
+                        permissionValidation.ErrorMessage);
+                }
+
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionStarted = true;
+
+            // One marker per distinct board makes an archive/update that wins after the preflight
+            // collide with this same atomic save. Boardless proposals need no marker.
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                proposals.Select(proposal => proposal.BoardId),
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                transactionStarted = false;
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    decisionGuard.ErrorCode,
+                    decisionGuard.ErrorMessage);
+            }
+
+            foreach (var proposal in proposals)
+            {
+                var approvedRevisionId = revisions.TryGetValue(proposal.Id, out var revision)
+                    ? revision.Id
+                    : (Guid?)null;
+                proposal.Approve(decidedByUserId, approvedRevisionId);
+            }
+
+            // Queue the same per-proposal outcome notification as single approve before the one
+            // save, so notification rows and every Approved transition share the atomic commit.
+            foreach (var proposal in proposals)
+            {
+                var notifyResult = await PublishProposalOutcomeNotificationAsync(
+                    proposal,
+                    "approved",
+                    cancellationToken);
+                if (!notifyResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    transactionStarted = false;
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        notifyResult.ErrorCode,
+                        notifyResult.ErrorMessage);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            transactionStarted = false;
+
+            return Result.Success(new BatchApproveProposalsResultDto(ids.ToList()));
+        }
+        catch (DomainException ex)
+        {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+            return Result.Failure<BatchApproveProposalsResultDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the latest revision for every pending batch candidate with two bounded reads. A
+    /// winning metadata row whose payload disappears is rejected rather than silently falling back
+    /// to the original operations: the reviewer selected the effective revision, not that fallback.
+    /// </summary>
+    private async Task<Result<IReadOnlyDictionary<Guid, ProposalRevision>>> GetBatchApprovalRevisionsAsync(
+        IReadOnlyCollection<AutomationProposal> proposals,
+        CancellationToken cancellationToken)
+    {
+        var refs = await _unitOfWork.ProposalRevisions.GetRefsByProposalIdsAsync(
+            proposals.Select(proposal => proposal.Id),
+            cancellationToken);
+        var refsByProposal = refs
+            .GroupBy(revision => revision.ProposalId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<ProposalRevisionRef>)group.ToList());
+
+        var winners = new Dictionary<Guid, ProposalRevisionRef>();
+        foreach (var proposal in proposals)
+        {
+            if (!refsByProposal.TryGetValue(proposal.Id, out var proposalRefs))
+                continue;
+
+            if (SelectEffectiveRevisionRef(proposal, proposalRefs) is ProposalRevisionRef winner)
+                winners[proposal.Id] = winner;
+        }
+
+        if (winners.Count == 0)
+            return Result.Success<IReadOnlyDictionary<Guid, ProposalRevision>>(new Dictionary<Guid, ProposalRevision>());
+
+        var revisions = await _unitOfWork.ProposalRevisions.GetByIdsAsync(
+            winners.Values.Select(winner => winner.Id),
+            cancellationToken);
+        var revisionsById = revisions.ToDictionary(revision => revision.Id);
+        var result = new Dictionary<Guid, ProposalRevision>();
+        foreach (var (proposalId, winner) in winners)
+        {
+            if (!revisionsById.TryGetValue(winner.Id, out var revision) || revision.ProposalId != proposalId)
+            {
+                return Result.Failure<IReadOnlyDictionary<Guid, ProposalRevision>>(
+                    ErrorCodes.InvalidOperation,
+                    $"Effective revision for proposal {proposalId} is no longer available; refresh and review again");
+            }
+
+            result[proposalId] = revision;
+        }
+
+        return Result.Success<IReadOnlyDictionary<Guid, ProposalRevision>>(result);
     }
 
     /// <summary>
