@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -401,6 +402,244 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         approvedProposal!.Status.Should().Be(ProposalStatus.Approved);
         approvedProposal.DecidedByUserId.Should().Be(userId);
         approvedProposal.DecidedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ApproveProposals_ApprovesExactSetWithoutApplyingAnyCard()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-approve");
+        var firstBoardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-first");
+        var secondBoardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-second");
+        var first = await CreateBatchApprovalProposalAsync(client, user.UserId, firstBoardId);
+        var second = await CreateBatchApprovalProposalAsync(client, user.UserId, secondBoardId);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(second), Select(first)]
+            });
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var receipt = JsonSerializer.Deserialize<BatchApproveProposalsResultDto>(
+            body,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        receipt.Should().NotBeNull();
+        receipt!.ApprovedIds.Should().Equal(second.Id, first.Id);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await db.AutomationProposals
+            .Where(proposal => receipt.ApprovedIds.Contains(proposal.Id))
+            .OrderBy(proposal => proposal.Id)
+            .ToListAsync();
+        persisted.Should().HaveCount(2);
+        persisted.Should().OnlyContain(proposal => proposal.Status == ProposalStatus.Approved);
+        persisted.Should().OnlyContain(proposal => proposal.AppliedAt == null);
+        (await db.Notifications.CountAsync(notification =>
+                notification.Type == NotificationType.ProposalOutcome &&
+                (notification.SourceEntityId == first.Id || notification.SourceEntityId == second.Id)))
+            .Should().Be(2, "each approval keeps the normal outcome notification inside the atomic save");
+        (await db.Cards.CountAsync(card => card.BoardId == firstBoardId || card.BoardId == secondBoardId))
+            .Should().Be(0, "batch approval must never execute the create-card operations");
+        (await db.AuditLogs.CountAsync(log =>
+                log.EntityId == first.Id || log.EntityId == second.Id))
+            .Should().Be(0, "operation audit belongs to execute/apply, not approval");
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsStaleSnapshotThenPinsFreshSubmittedRevision()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-revision-snapshot");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-revision-snapshot");
+        var original = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        Guid columnId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            columnId = await db.Columns
+                .Where(column => column.BoardId == boardId)
+                .Select(column => column.Id)
+                .FirstAsync();
+        }
+
+        var revisedPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = JsonSerializer.Serialize(new
+                    {
+                        title = "Fresh reviewed revision",
+                        boardId,
+                        columnId
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString("N")
+                }
+            }
+        });
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{original.Id}/revisions",
+            new CreateRevisionRequest
+            {
+                RevisedPayload = revisedPayload,
+                Reason = "Content changed after selection"
+            });
+        var revisionBody = await revisionResponse.Content.ReadAsStringAsync();
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, revisionBody);
+        var revision = JsonSerializer.Deserialize<ProposalRevisionDto>(
+            revisionBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        revision.Should().NotBeNull();
+
+        var current = await client.GetFromJsonAsync<ProposalDto>(
+            $"/api/automation/proposals/{original.Id}");
+        current.Should().NotBeNull();
+        current!.LatestRevisionId.Should().Be(revision!.Id);
+        current.UpdatedAt.Should().BeAfter(original.UpdatedAt);
+
+        var staleResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(original)] });
+        staleResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var freshResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(current)] });
+        var freshBody = await freshResponse.Content.ReadAsStringAsync();
+        freshResponse.StatusCode.Should().Be(HttpStatusCode.OK, freshBody);
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await verifyDb.AutomationProposals.SingleAsync(proposal => proposal.Id == original.Id);
+        persisted.Status.Should().Be(ProposalStatus.Approved);
+        persisted.ApprovedRevisionId.Should().Be(revision.Id);
+        (await verifyDb.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsMixedEligibilityWithoutApprovingTheValidProposal()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-mixed");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-mixed");
+        var valid = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        var medium = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId, RiskLevel.Medium);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(valid), Select(medium)]
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var statuses = await db.AutomationProposals
+            .Where(proposal => proposal.Id == valid.Id || proposal.Id == medium.Id)
+            .Select(proposal => proposal.Status)
+            .ToListAsync();
+        statuses.Should().Equal(ProposalStatus.PendingReview, ProposalStatus.PendingReview);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsCrossUserInputWithoutApprovingOwnProposal()
+    {
+        var callerClient = _factory.CreateClient();
+        var otherClient = _factory.CreateClient();
+        var caller = await ApiTestHarness.AuthenticateAsync(callerClient, "automation-batch-caller");
+        var other = await ApiTestHarness.AuthenticateAsync(otherClient, "automation-batch-other");
+        var callerBoard = await ApiTestHarness.CreateBoardWithColumnAsync(callerClient, "batch-caller");
+        var otherBoard = await ApiTestHarness.CreateBoardWithColumnAsync(otherClient, "batch-other");
+        var own = await CreateBatchApprovalProposalAsync(callerClient, caller.UserId, callerBoard);
+        var foreign = await CreateBatchApprovalProposalAsync(otherClient, other.UserId, otherBoard);
+
+        var response = await callerClient.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), Select(foreign)]
+            });
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var statuses = await db.AutomationProposals
+            .Where(proposal => proposal.Id == own.Id || proposal.Id == foreign.Id)
+            .Select(proposal => proposal.Status)
+            .ToListAsync();
+        statuses.Should().OnlyContain(status => status == ProposalStatus.PendingReview);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsMixedBoardsWhenOneWriteGrantWasRevoked()
+    {
+        var reviewerClient = _factory.CreateClient();
+        var ownerClient = _factory.CreateClient();
+        var reviewer = await ApiTestHarness.AuthenticateAsync(reviewerClient, "automation-batch-reviewer");
+        _ = await ApiTestHarness.AuthenticateAsync(ownerClient, "automation-batch-board-owner");
+        var ownBoard = await ApiTestHarness.CreateBoardWithColumnAsync(reviewerClient, "batch-owned");
+        var sharedBoard = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-shared");
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{sharedBoard}/access",
+            new GrantAccessDto(sharedBoard, reviewer.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var grant = await grantResponse.Content.ReadFromJsonAsync<BoardAccessDto>();
+        grant.Should().NotBeNull();
+
+        var own = await CreateBatchApprovalProposalAsync(reviewerClient, reviewer.UserId, ownBoard);
+        var formerlyWritable = await CreateBatchApprovalProposalAsync(
+            reviewerClient,
+            reviewer.UserId,
+            sharedBoard);
+        var revokeResponse = await ownerClient.DeleteAsync($"/api/boards/{sharedBoard}/access/{grant!.Id}");
+        revokeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await reviewerClient.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), Select(formerlyWritable)]
+            });
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var statuses = await db.AutomationProposals
+            .Where(proposal => proposal.Id == own.Id || proposal.Id == formerlyWritable.Id)
+            .Select(proposal => proposal.Status)
+            .ToListAsync();
+        statuses.Should().OnlyContain(status => status == ProposalStatus.PendingReview);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        var anonymous = _factory.CreateClient();
+
+        var response = await anonymous.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest
+            {
+                Proposals =
+                [
+                    new ApproveProposalSelectionRequest
+                    {
+                        Id = Guid.NewGuid(),
+                        ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow
+                    }
+                ]
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -1120,6 +1359,51 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await client.PostAsJsonAsync("/api/automation/proposals", createRequest);
         response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private static ApproveProposalSelectionRequest Select(ProposalDto proposal) => new()
+    {
+        Id = proposal.Id,
+        ExpectedProposalUpdatedAt = proposal.UpdatedAt,
+        ExpectedLatestRevisionId = proposal.LatestRevisionId
+    };
+
+    private async Task<ProposalDto> CreateBatchApprovalProposalAsync(
+        HttpClient client,
+        Guid userId,
+        Guid boardId,
+        RiskLevel riskLevel = RiskLevel.Low)
+    {
+        Guid columnId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            columnId = await db.Columns
+                .Where(column => column.BoardId == boardId)
+                .Select(column => column.Id)
+                .SingleAsync();
+        }
+
+        var createRequest = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            userId,
+            $"Batch create card {Guid.NewGuid():N}",
+            riskLevel,
+            Guid.NewGuid().ToString(),
+            boardId,
+            Operations: new List<CreateProposalOperationDto>
+            {
+                new(
+                    0,
+                    "create",
+                    "card",
+                    JsonSerializer.Serialize(new { title = "Batch task", boardId, columnId }),
+                    Guid.NewGuid().ToString())
+            });
+        var response = await client.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
     }
 

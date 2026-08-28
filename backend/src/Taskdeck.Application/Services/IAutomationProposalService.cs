@@ -33,6 +33,16 @@ public interface IAutomationProposalService
     Task<Result<ProposalDto>> ApproveProposalAsync(Guid id, Guid decidedByUserId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Approves an explicit bounded set of fresh, low-risk, create-card-only proposals atomically.
+    /// The complete set is revalidated before any proposal transitions, and this method never executes
+    /// the approved operations.
+    /// </summary>
+    Task<Result<BatchApproveProposalsResultDto>> ApproveProposalsAsync(
+        IReadOnlyList<BatchApproveProposalSelectionDto> proposals,
+        Guid decidedByUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Rejects a pending proposal with optional reason (required for High/Critical risk).
     /// </summary>
     Task<Result<ProposalDto>> RejectProposalAsync(Guid id, Guid decidedByUserId, UpdateProposalStatusDto dto, CancellationToken cancellationToken = default);

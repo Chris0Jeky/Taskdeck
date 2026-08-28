@@ -26,6 +26,7 @@ function mountRail(props?: Partial<{
   recentlyApplied: RecentlyAppliedRow[]
   dismissableCount: number
   busy: boolean
+  batchSelectedCount: number
   applyRate: number
   cadence: number[]
   scopeLabel: string
@@ -39,6 +40,7 @@ function mountRail(props?: Partial<{
       staleCount: 2,
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
+      batchSelectedCount: props?.batchSelectedCount ?? 0,
       recentlyApplied: props?.recentlyApplied ?? [],
       ...(props?.applyRate !== undefined ? { applyRate: props.applyRate } : {}),
       ...(props?.cadence !== undefined ? { cadence: props.cadence } : {}),
@@ -170,6 +172,52 @@ describe('ReviewQueueRail', () => {
   it('disables the bulk file-away action while a review action is in flight', () => {
     const wrapper = mountRail({ dismissableCount: 3, busy: true })
     expect(wrapper.find('[data-testid="queue-file-away-all"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('renders selection only for eligible rows as a sibling of the row button', () => {
+    const wrapper = mountRail({
+      items: [
+        makeItem({ id: 'eligible', title: 'Eligible card', batchEligible: true }),
+        makeItem({ id: 'ineligible', title: 'Needs individual review', batchEligible: false }),
+      ],
+    })
+
+    const checkbox = wrapper.find('[data-testid="queue-batch-select-eligible"]')
+    expect(checkbox.exists()).toBe(true)
+    expect(checkbox.element.tagName).toBe('INPUT')
+    expect(checkbox.attributes('type')).toBe('checkbox')
+    expect(checkbox.attributes('aria-label')).toBe('Select Eligible card for batch approval')
+    expect(wrapper.find('[data-testid="queue-batch-select-ineligible"]').exists()).toBe(false)
+    expect(checkbox.element.parentElement?.contains(wrapper.find('.paper-review-q').element)).toBe(false)
+  })
+
+  it('emits independent selection and explicit confirmation requests', async () => {
+    const wrapper = mountRail({
+      items: [makeItem({ id: 'p-42', batchEligible: true, batchSelected: true })],
+      batchSelectedCount: 1,
+    })
+
+    const checkbox = wrapper.find('[data-testid="queue-batch-select-p-42"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    await checkbox.trigger('change')
+    expect(wrapper.emitted('toggle-batch')?.[0]).toEqual(['p-42'])
+    expect(wrapper.emitted('select')).toBeUndefined()
+
+    const confirm = wrapper.find('[data-testid="queue-batch-approve"]')
+    expect(confirm.text()).toContain('Review 1 selected approval')
+    await confirm.trigger('click')
+    expect(wrapper.emitted('request-batch-approval')).toHaveLength(1)
+  })
+
+  it('disables batch selection and confirmation under the shared review lock', () => {
+    const wrapper = mountRail({
+      items: [makeItem({ id: 'p-42', batchEligible: true })],
+      batchSelectedCount: 1,
+      busy: true,
+    })
+
+    expect(wrapper.find('[data-testid="queue-batch-select-p-42"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="queue-batch-approve"]').attributes('disabled')).toBeDefined()
   })
 
   it('renders recently-applied rows as native exact-id controls', async () => {

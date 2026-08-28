@@ -637,6 +637,13 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         var p3 = new AutomationProposal(
             ProposalSourceType.Queue, user.Id, "Not requested", RiskLevel.Low,
             $"corr-id3-{Guid.NewGuid():N}");
+        p1.AddOperation(new AutomationProposalOperation(
+            p1.Id,
+            0,
+            "create",
+            "card",
+            "{\"title\":\"Loaded with batch\"}",
+            $"key-id1-{Guid.NewGuid():N}"));
         db.AutomationProposals.AddRange(p1, p2, p3);
         await db.SaveChangesAsync();
 
@@ -646,6 +653,8 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         result.Should().Contain(p => p.Id == p1.Id);
         result.Should().Contain(p => p.Id == p2.Id);
         result.Should().NotContain(p => p.Id == p3.Id);
+        result.Single(p => p.Id == p1.Id).Operations.Should().ContainSingle()
+            .Which.ActionType.Should().Be("create");
     }
 
     [Fact]

@@ -131,7 +131,9 @@ public class ProposalRevisionServiceTests
         var result = await _service.CreateRevisionAsync(dto);
 
         result.IsSuccess.Should().BeTrue();
-        proposal.UpdatedAt.Should().Be(originalUpdatedAt, "ordinary reviewer revisions keep their existing commit semantics");
+        proposal.UpdatedAt.Should().BeAfter(
+            originalUpdatedAt,
+            "every accepted revision must invalidate an already-selected approval snapshot");
         _revisions.Verify(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
