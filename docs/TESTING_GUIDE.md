@@ -858,7 +858,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Tomorro
 `backend/tests/Taskdeck.Application.Tests/Services/ProvenanceQueryServiceTests.cs` — **41 tests** covering:
 - Icon map: 26-entry case-insensitive map with fallback default icon
 - Weight bucketing: inferred fields → "inferred"; extractive fields become "primary" only for derived confidence >= 0.7, otherwise "contextual"
-- Human-readable values distinguish exact model-reported confidence, derived confidence, deterministic extraction with no model number, and not-reported with no number; quote truncation and `Math.Round` display remain covered
+- Human-readable-value tests explicitly distinguish exact model-reported confidence from deterministic extraction with no number; quote truncation and `Math.Round` display remain covered. Derived and not-reported endpoint semantics are covered separately by the confidence-service tests below
 - Empty provenance (returns empty list, not error), missing proposal, authorization
 - FK enforcement via `AddProposalProvenanceForeignKey` migration
 
@@ -896,7 +896,7 @@ Together these cover:
 - nullable source/value invariants: model-reported and derived sources require bounded values; deterministic and not-reported sources forbid numeric decoration
 - validated schema-v2 confidence round-tripping per operation through the trusted application-only seam; HTTP create callers cannot inject trusted confidence, and deterministic fallback carries no number
 - `/confidence` returning exact persisted item values plus a display-only average for model-reported or derived sources; `threshold` and `meetsThreshold` are null, and Pattern match/Reach/Reversibility/Recency components are not synthesized
-- Paper Review rendering numeric model/derived evidence or explicit deterministic/not-reported states without using confidence to gate approval or Apply
+- Paper Review rendering model-reported numeric evidence and explicit deterministic/not-reported states without using confidence to gate approval or Apply; derived endpoint behavior is backend-covered, while these focused frontend fixtures do not exercise a derived source
 
 Run from the repository root unless noted:
 
