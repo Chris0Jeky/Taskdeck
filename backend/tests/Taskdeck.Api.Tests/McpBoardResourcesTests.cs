@@ -9,6 +9,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Mcp;
 using Taskdeck.Infrastructure.Persistence;
@@ -123,6 +124,8 @@ public class McpBoardResourcesTests : IDisposable
 
         (await provider.GetCurrentUserIdAsync()).Should().Be(configuredUser.Id);
         (await provider.GetUserIdAsync()).Should().Be(configuredUser.Id);
+        (await provider.GetCurrentContextAsync()).Should().Be(
+            new McpUserContext(configuredUser.Id, ApiKeyScope.Full));
     }
 
     [Fact]
@@ -576,6 +579,8 @@ public class McpBoardResourcesTests : IDisposable
     {
         private readonly Guid _userId;
         public FixedUserContextProvider(Guid userId) => _userId = userId;
+        public Task<McpUserContext> GetCurrentContextAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new McpUserContext(_userId, ApiKeyScope.Full));
         public Task<Guid> GetCurrentUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult(_userId);
         public Task<Guid?> GetUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult<Guid?>(_userId);
     }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Mcp;
@@ -41,6 +42,14 @@ public class StdioUserContextProvider : IUserContextProvider
         }
 
         _configuredUserId = parsed;
+    }
+
+    /// <inheritdoc />
+    public async Task<McpUserContext> GetCurrentContextAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var userId = await GetCurrentUserIdAsync(cancellationToken);
+        return new McpUserContext(userId, ApiKeyScope.Full);
     }
 
     /// <inheritdoc />
