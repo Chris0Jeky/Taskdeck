@@ -209,7 +209,22 @@ Cursor end-to-end test, and it does not prove the separate agent-proposes/human-
 - **Unexpected text on stdout:** treat it as a protocol failure. Application diagnostics belong on
   stderr so stdout remains JSON-RPC only.
 
+## HTTP API-key capabilities
+
 For standalone or co-hosted HTTP, create a Taskdeck API key in **Settings -> API Keys** and follow
-the repository's `mcp-claude-code-http.example.json`. Current keys authorize the key owner's current
-MCP surface; this packaging slice does not claim scoped-key enforcement or runtime tool-hash
-approval.
+the repository's `mcp-claude-code-http.example.json`. New HTTP API keys require at least one explicit
+capability:
+
+- `read` searches and inspects boards, cards, proposals, and every MCP resource.
+- `propose` creates reviewable board-change proposals. It never grants approval or Apply authority.
+- `manage` creates Inbox captures and dismisses completed proposals.
+
+The capabilities are independent and combinable. Existing keys migrated from the unscoped schema
+retain **Full** (`read` + `propose` + `manage`) access until replaced; new API, UI, and CLI keys never
+default to Full. Tool/resource discovery exposes only targets allowed by the authenticated key, and
+missing, unknown, or unauthorized direct invocations fail closed. Stdio does not use an HTTP API key;
+it receives Full local-process capability only after the configured or sole active user resolves
+successfully.
+
+This scoped-key enforcement does not claim runtime tool-hash approval. The hash lifecycle remains
+honestly recorded as not enforced in production under `#1309`.
