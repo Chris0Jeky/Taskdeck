@@ -440,12 +440,15 @@ def verify_packaged_mcp_stdio(
     if not executable.is_absolute() or not executable.is_file():
         raise AcceptanceFailure("The packaged MCP executable path is not an absolute file.")
 
-    # The web journey sets CI=true to suppress browser launch. A packaged desktop deliberately
-    # ignores that flag for its durable bootstrap path, while the Generic Host used by --mcp
-    # treats CI as headless. Remove only that harness-only flag so this probe exercises the same
-    # per-user profile an ordinary desktop MCP client receives.
+    # The web journey sets CI=true to suppress browser launch, and a hosted runner can also set
+    # GITHUB_ACTIONS or TF_BUILD. A packaged desktop deliberately ignores those flags for its
+    # durable bootstrap path, while the Generic Host used by --mcp treats them as headless. Remove
+    # only those runner flags so this probe exercises the same per-user profile an ordinary desktop
+    # MCP client receives.
     mcp_environment = {
-        key: value for key, value in environment.items() if key.upper() != "CI"
+        key: value
+        for key, value in environment.items()
+        if key.upper() not in {"CI", "GITHUB_ACTIONS", "TF_BUILD"}
     }
     creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     process = subprocess.Popen(

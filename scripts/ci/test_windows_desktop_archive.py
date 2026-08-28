@@ -117,13 +117,19 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 evidence = harness.verify_packaged_mcp_stdio(
                     executable,
                     cwd,
-                    {"CI": "true", "LOCALAPPDATA": str(root / "local-app-data")},
+                    {
+                        "CI": "true",
+                        "GITHUB_ACTIONS": "true",
+                        "TF_BUILD": "true",
+                        "LOCALAPPDATA": str(root / "local-app-data"),
+                    },
                 )
 
             self.assertTrue(evidence["initialized"])
             self.assertEqual([str(executable), "--mcp"], popen.call_args.args[0])
             self.assertEqual(str(cwd), popen.call_args.kwargs["cwd"])
-            self.assertNotIn("CI", popen.call_args.kwargs["env"])
+            for runner_flag in ("CI", "GITHUB_ACTIONS", "TF_BUILD"):
+                self.assertNotIn(runner_flag, popen.call_args.kwargs["env"])
             self.assertEqual(
                 str(root / "local-app-data"),
                 popen.call_args.kwargs["env"]["LOCALAPPDATA"],
