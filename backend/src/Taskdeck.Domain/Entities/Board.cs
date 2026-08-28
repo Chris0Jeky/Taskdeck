@@ -32,9 +32,9 @@ public class Board : Entity
     public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
 
     /// <summary>
-    /// Monotonic guard marker advanced by <see cref="RecordCardMutation"/>. It is deliberately
+    /// Monotonic guard marker advanced by <see cref="RecordDependentMutation"/>. It is deliberately
     /// non-user-visible: no DTO, API contract, or query reads it. Its only job is to guarantee the
-    /// board row joins the card write's UPDATE statement so the concurrency-token predicate runs.
+    /// board row joins a dependent write's UPDATE statement so the concurrency-token predicate runs.
     /// It is NOT a reliable mutation count — two writers that read the same value both persist
     /// value + 1, which is harmless because nothing compares it against an expected value.
     /// </summary>
@@ -112,10 +112,18 @@ public class Board : Entity
     /// tick, which leaves the entity Unchanged, emits no board UPDATE, and silently drops the token
     /// predicate (`#2123`). An incremented marker always differs from the value that was read.
     /// </summary>
-    public void RecordCardMutation()
+    /// <remarks>
+    /// The historic marker name is card-specific, but this seam protects any board-dependent write.
+    /// </remarks>
+    public void RecordDependentMutation()
     {
         CardMutationMarker++;
     }
+
+    /// <summary>
+    /// Preserves the card-write vocabulary while sharing the board-level dependent-write marker.
+    /// </summary>
+    public void RecordCardMutation() => RecordDependentMutation();
 
     private void TouchAndAdvanceConcurrencyToken()
     {

@@ -17,12 +17,17 @@ public class ProposalRevisionServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAutomationProposalRepository> _proposals = new();
     private readonly Mock<IProposalRevisionRepository> _revisions = new();
+    private readonly Mock<IBoardRepository> _boards = new();
     private readonly ProposalRevisionService _service;
 
     public ProposalRevisionServiceTests()
     {
         _unitOfWork.SetupGet(unitOfWork => unitOfWork.AutomationProposals).Returns(_proposals.Object);
         _unitOfWork.SetupGet(unitOfWork => unitOfWork.ProposalRevisions).Returns(_revisions.Object);
+        _unitOfWork.SetupGet(unitOfWork => unitOfWork.Boards).Returns(_boards.Object);
+        _boards
+            .Setup(repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new Board("Active proposal board") });
 
         // Use the real policy engine so the structure invariants (#1281) are exercised end-to-end
         // through the save path; ValidateOperationStructure is pure and never touches the unit of work.

@@ -10,6 +10,9 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationPolicyEngine : IAutomationPolicyEngine
 {
+    private const string ArchivedProposalDecisionMessage =
+        "Cannot modify proposals on an archived board. Restore the board before changing its decision history.";
+
     private readonly IUnitOfWork _unitOfWork;
 
     public AutomationPolicyEngine(IUnitOfWork unitOfWork)
@@ -113,6 +116,31 @@ public class AutomationPolicyEngine : IAutomationPolicyEngine
                         ? $"User does not have access to board {boardId}"
                         : $"User does not have write access to board {boardId}");
         }
+
+        return Result.Success();
+    }
+
+    public async Task<Result> GuardProposalDecisionWritesAsync(
+        IEnumerable<Guid?> boardIds,
+        CancellationToken cancellationToken = default)
+    {
+        var distinctBoardIds = boardIds
+            .Where(boardId => boardId.HasValue)
+            .Select(boardId => boardId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (distinctBoardIds.Count == 0)
+            return Result.Success();
+
+        var boards = (await _unitOfWork.Boards.GetByIdsAsync(distinctBoardIds, cancellationToken))
+            .ToList();
+
+        if (boards.Any(board => board.IsArchived))
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedProposalDecisionMessage);
+
+        foreach (var board in boards)
+            board.RecordDependentMutation();
 
         return Result.Success();
     }
