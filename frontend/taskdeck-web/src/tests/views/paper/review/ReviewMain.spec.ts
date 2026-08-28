@@ -197,6 +197,8 @@ describe('ReviewMain', () => {
       'moves focus to the %s receipt at its original decision locus',
       async (decisionReceipt) => {
         const wrapper = mountMain({}, { attachTo: true })
+        document.body.focus()
+        expect(document.activeElement).toBe(document.body)
 
         await wrapper.setProps({ decisionReceipt })
         await wrapper.vm.$nextTick()
@@ -211,6 +213,8 @@ describe('ReviewMain', () => {
 
     it('moves focus to the remaining explicit Apply control after approval', async () => {
       const wrapper = mountMain({}, { applyPhase: 'execute', attachTo: true })
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
 
       await wrapper.setProps({ decisionReceipt: 'approved' })
       await wrapper.vm.$nextTick()

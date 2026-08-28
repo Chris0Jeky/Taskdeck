@@ -156,6 +156,20 @@ watch(
     if (!receipt || receipt === previousReceipt) return
     await nextTick()
 
+    // Decision requests are asynchronous, and the queue plus disclosure
+    // controls remain available while one is pending. Respect a reviewer who
+    // moved to another control; redirect only when focus fell back to the
+    // document because the initiating control was disabled or removed.
+    const activeElement = document.activeElement
+    if (
+      activeElement instanceof HTMLElement &&
+      activeElement !== document.body &&
+      activeElement !== document.documentElement &&
+      activeElement.isConnected
+    ) {
+      return
+    }
+
     if (receipt === 'approved') {
       reviewMainEl.value?.querySelector<HTMLButtonElement>('[data-testid="decision-apply"]')?.focus()
       return
