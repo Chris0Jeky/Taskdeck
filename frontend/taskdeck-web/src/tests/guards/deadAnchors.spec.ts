@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseParse, ElementTypes, NodeTypes } from '@vue/compiler-dom'
+import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler-dom'
 
 /**
  * Dead-affordance source guard.
@@ -235,6 +235,7 @@ function directiveOnlyMarkup(tag: string): string {
 function findCompilerDynamicListenerTags(source: string): string[] {
   const compilerErrors: unknown[] = []
   const root = baseParse(markupOnly(source), {
+    ...parserOptions,
     onError: (error) => compilerErrors.push(error),
   })
 
@@ -617,6 +618,14 @@ describe('dead affordances', () => {
         '<template><div v-if="ready"><button @[eventName]="run">Nested dynamic</button></div></template>',
       ),
     ).toHaveLength(1)
+  })
+
+  it('parses valid HTML void elements with DOM compiler semantics', () => {
+    expect(
+      findCompilerDynamicListenerTags(
+        '<template><input aria-label="Search"><button @[eventName]="run">Dynamic</button></template>',
+      ),
+    ).toEqual(['<button @[eventName]="run">Dynamic</button>'])
   })
 
   it('detects interactive aria labels that are not native or keyboard actionable', () => {
