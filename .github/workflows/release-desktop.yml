@@ -363,6 +363,9 @@ jobs:
           mkdir -p "${stage}/wwwroot" "${stage}/LICENSES"
           cp -r frontend-dist/* "${stage}/wwwroot/"
           cp docs/releases/WINDOWS_QUICK_START.md "${stage}/QUICK_START.md"
+          cp docs/MCP_SERVER.md "${stage}/MCP_SERVER.md"
+          cp mcp.example.json "${stage}/mcp.example.json"
+          cp mcp-docker.example.json "${stage}/mcp-docker.example.json"
           cp LICENSE "${stage}/LICENSE"
           cp RELICENSING.md "${stage}/RELICENSING.md"
           cp LICENSES/MIT.txt "${stage}/LICENSES/MIT.txt"
@@ -421,6 +424,9 @@ jobs:
             'Taskdeck.Api.exe'
             'appsettings.json'
             'QUICK_START.md'
+            'MCP_SERVER.md'
+            'mcp.example.json'
+            'mcp-docker.example.json'
             'wwwroot/index.html'
             'LICENSE'
             'RELICENSING.md'
@@ -436,6 +442,18 @@ jobs:
 
           if ! cmp -s docs/releases/WINDOWS_QUICK_START.md "${stage}/QUICK_START.md"; then
             printf '::error::Archive QUICK_START.md does not match the reviewed source guide.\n'
+            exit 1
+          fi
+          if ! cmp -s docs/MCP_SERVER.md "${stage}/MCP_SERVER.md"; then
+            printf '::error::Archive MCP_SERVER.md does not match the reviewed source guide.\n'
+            exit 1
+          fi
+          if ! cmp -s mcp.example.json "${stage}/mcp.example.json"; then
+            printf '::error::Archive mcp.example.json does not match the reviewed desktop example.\n'
+            exit 1
+          fi
+          if ! cmp -s mcp-docker.example.json "${stage}/mcp-docker.example.json"; then
+            printf '::error::Archive mcp-docker.example.json does not match the reviewed Docker example.\n'
             exit 1
           fi
 

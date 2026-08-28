@@ -109,11 +109,15 @@ For the first guided run, see [START_HERE.md](docs/START_HERE.md).
 
 Taskdeck includes an MCP server for AI clients such as Claude Code and Cursor. Read tools expose boards, cards, captures, and proposal status. Board-mutating tools stop at proposals, and MCP intentionally exposes no approve or apply tool, so an agent cannot approve its own suggested board changes. Bounded workflow actions such as creating a capture or dismissing a proposal are direct writes.
 
-Taskdeck supports local stdio plus API-key-authenticated Streamable HTTP at `/mcp`:
+Taskdeck supports local stdio plus API-key-authenticated Streamable HTTP at `/mcp`. The
+[MCP server quickstart](docs/MCP_SERVER.md) covers the packaged desktop release, released Docker
+image, source checkout, and setup for Claude Code, Claude Desktop, and Cursor:
 
 | Mode | Command / endpoint | Intended use |
 |---|---|---|
-| Local stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Local editor or agent client; zero network listener |
+| Packaged Windows stdio | `C:\absolute\path\to\Taskdeck.Api.exe --mcp` | Released desktop ZIP; zero network listener |
+| Released Docker stdio | `docker run --rm -i --no-healthcheck ... IMAGE dotnet Taskdeck.Api.dll --mcp` | Released image sharing the normal web volume |
+| Source stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Source checkout; zero network listener |
 | Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | Local HTTP client or same-host sidecar |
 | Co-hosted HTTP | `<your Taskdeck API base>/mcp` | Reuse the normal API process and database |
 
@@ -122,11 +126,18 @@ Every Taskdeck process that should share a workspace must use the same `Connecti
 - Windows: `Data Source=$env:LOCALAPPDATA\Taskdeck\taskdeck-dev.db` (PowerShell expands `$env:LOCALAPPDATA` when you assign the value).
 - macOS/Linux: `Data Source=${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` (the shell expands the data directory when you export the value).
 
-Before using stdio, run the web app once and create an active local user. Then copy [mcp.example.json](mcp.example.json) into your client's MCP configuration, replace `REPLACE_WITH_THE_ABSOLUTE_taskdeck-dev.db_PATH` with the absolute database path printed by `dev-up`, and adjust the project path if Taskdeck is not the working directory. The stdio server uses `McpServer__DefaultUserId` only when it names an existing active user. When that setting is absent, stdio starts only if the database has exactly one active user; zero or multiple active users fail with setup guidance. A present empty, zero, malformed, missing, or inactive ID fails closed and never falls back to another account. Stdio also needs the connector encryption key written by the normal first-run flow; for an explicit headless setup, provide `Connectors__EncryptionKey` yourself.
+Before using stdio, run the corresponding web app once and create an active local user. Use
+[mcp.example.json](mcp.example.json) for the packaged Windows executable or
+[mcp-docker.example.json](mcp-docker.example.json) for the released image; each file defines exactly
+one active server. The stdio server uses `McpServer__DefaultUserId` only when it names an existing
+active user. When that setting is absent, stdio starts only if the database has exactly one active
+user; zero or multiple active users fail with setup guidance. A present empty, zero, malformed,
+missing, or inactive ID fails closed and never falls back to another account. See the
+[quickstart](docs/MCP_SERVER.md#from-source) for source-checkout configuration and database paths.
 
 For HTTP, create a key in **Settings → API Keys** and start the standalone command with the same `ConnectionStrings__DefaultConnection` as the web app. Claude Code can use [mcp-claude-code-http.example.json](mcp-claude-code-http.example.json), whose `${VAR}` / `${VAR:-default}` expansion is Claude Code-specific. In Cursor or another client, configure the same URL and `Authorization` header through that client's native secret/environment support rather than committing a raw key. The real route requires `Authorization: Bearer tdsk_...`; missing, invalid, expired, or revoked keys receive `401`, and `/` is not an MCP endpoint. Authentication attempts are bounded by client IP before key lookup, and valid requests are rate-limited independently by the key's opaque ID.
 
-The standalone server binds only to `127.0.0.1` by default and replaces blank or ASP.NET any-host `AllowedHosts` values (`*`, `0.0.0.0`, `[::]`, including mixed lists) with the loopback allowlist. Keep bearer keys on loopback. If you deliberately use `--host` for a container, tunnel, or deployment, terminate TLS before the request reaches an untrusted network and set `AllowedHosts` to the exact public host names; `--host` does not relax host-header validation. Cross-origin browser MCP is not enabled. One-command packaging and scoped-key hardening remain planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309).
+The standalone server binds only to `127.0.0.1` by default and replaces blank or ASP.NET any-host `AllowedHosts` values (`*`, `0.0.0.0`, `[::]`, including mixed lists) with the loopback allowlist. Keep bearer keys on loopback. If you deliberately use `--host` for a container, tunnel, or deployment, terminate TLS before the request reaches an untrusted network and set `AllowedHosts` to the exact public host names; `--host` does not relax host-header validation. Cross-origin browser MCP is not enabled. Scoped-key and runtime tool-hash hardening remain planned for [REVIVAL-13](https://github.com/Chris0Jeky/Taskdeck/issues/1309).
 
 ## Current scope
 
