@@ -93,6 +93,10 @@ public class AutomationProposalService : IAutomationProposalService
         if (!operationValidation.IsSuccess)
             return Result.Failure<ProposalDto>(operationValidation.ErrorCode, operationValidation.ErrorMessage);
 
+        var confidenceValidation = ValidateTrustedConfidence(dto);
+        if (!confidenceValidation.IsSuccess)
+            return Result.Failure<ProposalDto>(confidenceValidation.ErrorCode, confidenceValidation.ErrorMessage);
+
         try
         {
             var proposal = new AutomationProposal(
@@ -156,22 +160,30 @@ public class AutomationProposalService : IAutomationProposalService
         provenance.AddField(new ProvenanceField(
             "Summary",
             ProvenanceKind.Inferred,
-            0.8,
-            provenance.Id));
+            confidence: null,
+            provenance.Id,
+            ProvenanceConfidenceSource.NotReported));
 
         var orderedOperations = proposal.Operations
             .OrderBy(operation => operation.Sequence)
             .ToList();
 
         var evidenceBySequence = evidence?.ToDictionary(item => item.OperationSequence);
+        var confidenceBySequence = dto.TrustedConfidence?.Operations
+            .ToDictionary(item => item.OperationSequence);
+        var confidenceSource = dto.TrustedConfidence?.Source ?? ProvenanceConfidenceSource.NotReported;
         for (var i = 0; i < orderedOperations.Count; i++)
         {
             var operation = orderedOperations[i];
+            var confidence = confidenceBySequence is not null
+                ? confidenceBySequence[operation.Sequence].Value
+                : null;
             var field = new ProvenanceField(
                 TruncateProvenanceFieldName($"Operation {i + 1}: {operation.ActionType} {operation.TargetType}"),
                 ProvenanceKind.Inferred,
-                0.75,
-                provenance.Id);
+                confidence,
+                provenance.Id,
+                confidenceSource);
             if (evidenceBySequence is not null)
             {
                 var link = evidenceBySequence[operation.Sequence];
@@ -189,6 +201,47 @@ public class AutomationProposalService : IAutomationProposalService
         }
 
         return provenance;
+    }
+
+    private static Result ValidateTrustedConfidence(CreateProposalDto dto)
+    {
+        var trusted = dto.TrustedConfidence;
+        if (trusted is null)
+            return Result.Success();
+
+        if (!Enum.IsDefined(trusted.Source))
+            return Result.Failure(ErrorCodes.ValidationError, "Trusted confidence source is invalid");
+
+        if (dto.Operations is null || trusted.Operations is null)
+            return Result.Failure(ErrorCodes.ValidationError, "Trusted confidence must cover every proposal operation exactly once");
+
+        var operationSequences = dto.Operations.Select(operation => operation.Sequence).OrderBy(sequence => sequence).ToList();
+        var confidenceSequences = trusted.Operations.Select(item => item.OperationSequence).OrderBy(sequence => sequence).ToList();
+        if (confidenceSequences.Count != confidenceSequences.Distinct().Count() ||
+            !operationSequences.SequenceEqual(confidenceSequences))
+        {
+            return Result.Failure(ErrorCodes.ValidationError, "Trusted confidence must match proposal operation sequences");
+        }
+
+        foreach (var item in trusted.Operations)
+        {
+            if (item.Value is { } value && (!double.IsFinite(value) || value < 0.0 || value > 1.0))
+                return Result.Failure(ErrorCodes.ValidationError, "Trusted confidence values must be between 0 and 1");
+
+            if (trusted.Source is ProvenanceConfidenceSource.ModelReported or ProvenanceConfidenceSource.Derived &&
+                item.Value is null)
+            {
+                return Result.Failure(ErrorCodes.ValidationError, "Reported or derived confidence requires one value per operation");
+            }
+
+            if (trusted.Source is ProvenanceConfidenceSource.Deterministic or ProvenanceConfidenceSource.NotReported &&
+                item.Value is not null)
+            {
+                return Result.Failure(ErrorCodes.ValidationError, "Deterministic or unreported confidence cannot carry numeric values");
+            }
+        }
+
+        return Result.Success();
     }
 
     private static Result ValidateTranscriptEvidence(

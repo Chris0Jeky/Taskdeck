@@ -496,10 +496,12 @@ public class CaptureTriageServiceTests
         var captureId = Guid.NewGuid();
         var board = new Board("Capture board", ownerId: userId);
         var column = new Column(boardId, "Inbox", 0);
+        CreateProposalDto? createdProposal = null;
 
         _boardsMock.Setup(r => r.GetByIdAsync(boardId, default)).ReturnsAsync(board);
         _columnsMock.Setup(r => r.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => createdProposal = dto)
             .ReturnsAsync(Result.Success(BuildProposalDto(userId, boardId, captureId)));
 
         var result = await _service.CreateProposalFromCaptureAsync(
@@ -518,6 +520,10 @@ public class CaptureTriageServiceTests
         result.Value.Provider.Should().Be("deterministic-extractor");
         result.Value.Model.Should().Be("capture-triage-v1");
         result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionV1);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.ProvenanceModelId.Should().Be("capture-triage-v1");
+        createdProposal.TrustedConfidence!.Source.Should().Be(ProvenanceConfidenceSource.Deterministic);
+        createdProposal.TrustedConfidence.Operations.Should().OnlyContain(item => item.Value == null);
         // Provenance values must satisfy the capture provenance length contract the worker enforces.
         result.Value.Provider.Length.Should().BeLessThanOrEqualTo(CaptureRequestContract.MaxProviderLength);
         result.Value.Model.Length.Should().BeLessThanOrEqualTo(CaptureRequestContract.MaxModelLength);
@@ -1194,6 +1200,10 @@ public class CaptureTriageServiceTests
         createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
         // Evidence rides in the card description so the review rail can show the verbatim quote.
         createdProposal.Operations[0].Parameters.Should().Contain("Alice: I will send the report.");
+        createdProposal.ProvenanceModelId.Should().Be("gpt-4o-mini");
+        createdProposal.TrustedConfidence!.Source.Should().Be(ProvenanceConfidenceSource.ModelReported);
+        createdProposal.TrustedConfidence.Operations.Select(item => item.Value)
+            .Should().Equal(0.9, 0.9);
     }
 
     [Fact]
@@ -1247,6 +1257,8 @@ public class CaptureTriageServiceTests
         createdEvidence[0].TranscriptId.Should().Be(transcriptId);
         createdEvidence[0].SpanStart.Should().BeNull();
         createdEvidence[0].SpanEnd.Should().BeNull();
+        createdProposal!.TrustedConfidence!.Source.Should().Be(ProvenanceConfidenceSource.ModelReported);
+        createdProposal.TrustedConfidence.Operations.Should().ContainSingle().Which.Value.Should().Be(0.9);
     }
 
     [Fact]

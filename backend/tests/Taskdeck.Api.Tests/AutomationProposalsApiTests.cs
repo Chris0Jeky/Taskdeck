@@ -79,6 +79,96 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task CreateProposal_ExternalTrustedConfidence_IsIgnoredAndSerializesWithoutANumber()
+    {
+        var userId = await AuthenticateAsync("automation-confidence-untrusted");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var request = new
+        {
+            sourceType = ProposalSourceType.Chat,
+            requestedByUserId = userId,
+            summary = "Untrusted confidence must not cross the API boundary",
+            riskLevel = RiskLevel.Low,
+            correlationId = Guid.NewGuid().ToString(),
+            boardId,
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "update",
+                    targetType = "board",
+                    parameters = $"{{\"boardId\":\"{boardId}\",\"name\":\"External confidence ignored\"}}",
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    targetId = boardId.ToString(),
+                },
+            },
+            trustedConfidence = new
+            {
+                source = ProvenanceConfidenceSource.ModelReported,
+                operations = new[] { new { operationSequence = 1, value = 0.99 } },
+            },
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", request);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var proposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+
+        var response = await _client.GetAsync($"/api/automation/proposals/{proposal!.Id}/confidence");
+        var rawJson = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {rawJson}");
+        using var document = JsonDocument.Parse(rawJson);
+        document.RootElement.GetProperty("source").GetString().Should().Be("not-reported");
+        document.RootElement.GetProperty("overall").ValueKind.Should().Be(JsonValueKind.Null);
+        document.RootElement.GetProperty("components").GetArrayLength().Should().Be(0);
+        document.RootElement.GetProperty("threshold").ValueKind.Should().Be(JsonValueKind.Null);
+        document.RootElement.GetProperty("meetsThreshold").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task GetProposalConfidence_SerializesExactStoredModelReportedValue()
+    {
+        var userId = await AuthenticateAsync("automation-confidence-model");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var proposal = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var provenance = await db.ProposalProvenances
+                .Include(item => item.Fields)
+                .SingleAsync(item => item.ProposalId == proposal.Id);
+            var operationField = provenance.Fields.Single(field =>
+                field.FieldName.StartsWith("Operation ", StringComparison.Ordinal));
+            db.ProvenanceFields.Remove(operationField);
+            provenance.AddField(new ProvenanceField(
+                operationField.FieldName,
+                operationField.Kind,
+                0.81,
+                provenance.Id,
+                ProvenanceConfidenceSource.ModelReported));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}/confidence");
+        var rawJson = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {rawJson}");
+        var breakdown = JsonSerializer.Deserialize<ConfidenceBreakdownDto>(
+            rawJson,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        breakdown.Should().NotBeNull();
+        breakdown!.Source.Should().Be(ConfidenceBreakdownDto.ModelReportedSource);
+        breakdown.Overall.Should().Be(0.81);
+        breakdown.Components.Should().ContainSingle().Which.Should().Be(
+            new ConfidenceComponentDto("Operation 1: update board", 0.81));
+        breakdown.Threshold.Should().BeNull();
+        breakdown.MeetsThreshold.Should().BeNull();
+        rawJson.Should().NotContain("Reversibility").And.NotContain("Recency").And.NotContain("Pattern match");
+    }
+
+    [Fact]
     public async Task GetProposalProvenance_AsBoardViewer_ReturnsOpaqueTranscriptEvidenceWithoutText()
     {
         var ownerClient = _factory.CreateClient();

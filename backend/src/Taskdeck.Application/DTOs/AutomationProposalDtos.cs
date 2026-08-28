@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.DTOs;
 
@@ -102,7 +104,16 @@ public record CreateProposalDto(
     List<CreateProposalOperationDto>? Operations = null,
     string? ProvenanceModelId = null,
     int ProvenanceTotalTokens = 0
-);
+)
+{
+    /// <summary>
+    /// Trusted application-side confidence metadata. This property is deliberately excluded from
+    /// the HTTP contract: callers cannot label their own proposal confidence as model-reported.
+    /// Capture triage sets it only after schema-v2 validation or deterministic fallback selection.
+    /// </summary>
+    [JsonIgnore]
+    public TrustedProposalConfidenceInput? TrustedConfidence { get; init; }
+}
 
 public record CreateProposalOperationDto(
     int Sequence,
@@ -123,6 +134,16 @@ public sealed record TranscriptEvidenceLinkInput(
     Guid TranscriptId,
     int? SpanStart = null,
     int? SpanEnd = null);
+
+/// <summary>Trusted per-operation confidence metadata supplied by an application pipeline.</summary>
+public sealed record TrustedProposalConfidenceInput(
+    ProvenanceConfidenceSource Source,
+    IReadOnlyList<ProposalOperationConfidenceInput> Operations);
+
+/// <summary>Confidence for one proposal operation, keyed by the persisted operation sequence.</summary>
+public sealed record ProposalOperationConfidenceInput(
+    int OperationSequence,
+    double? Value);
 
 public record UpdateProposalStatusDto(
     string? Reason = null

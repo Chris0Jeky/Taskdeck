@@ -18,6 +18,7 @@ public class ProvenanceFieldTests
         field.FieldName.Should().Be("Title");
         field.Kind.Should().Be(ProvenanceKind.Inferred);
         field.Confidence.Should().Be(0.85);
+        field.ConfidenceSource.Should().Be(ProvenanceConfidenceSource.ModelReported);
         field.ProposalProvenanceId.Should().Be(_provenanceId);
         field.ExtractiveQuote.Should().BeNull();
         field.EvidenceLinks.Should().BeEmpty();
@@ -188,6 +189,7 @@ public class ProvenanceFieldTests
         field.DowngradeConfidence(0.5);
 
         field.Confidence.Should().Be(0.5);
+        field.ConfidenceSource.Should().Be(ProvenanceConfidenceSource.Derived);
     }
 
     [Fact]
@@ -211,6 +213,64 @@ public class ProvenanceFieldTests
 
         act.Should().Throw<DomainException>()
             .WithMessage("Confidence must be between 0.0 and 1.0");
+    }
+
+    [Fact]
+    public void Constructor_ShouldRepresentDeterministicExtractionWithoutConfidence()
+    {
+        var field = new ProvenanceField(
+            "Title",
+            ProvenanceKind.Inferred,
+            confidence: null,
+            _provenanceId,
+            ProvenanceConfidenceSource.Deterministic);
+
+        field.Confidence.Should().BeNull();
+        field.ConfidenceSource.Should().Be(ProvenanceConfidenceSource.Deterministic);
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectNumericConfidenceForDeterministicSource()
+    {
+        var act = () => new ProvenanceField(
+            "Title",
+            ProvenanceKind.Inferred,
+            0.8,
+            _provenanceId,
+            ProvenanceConfidenceSource.Deterministic);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Deterministic or unreported provenance cannot carry a confidence value");
+    }
+
+    [Fact]
+    public void Constructor_ShouldRejectMissingModelReportedConfidence()
+    {
+        var act = () => new ProvenanceField(
+            "Title",
+            ProvenanceKind.Inferred,
+            confidence: null,
+            _provenanceId,
+            ProvenanceConfidenceSource.ModelReported);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("A reported or derived confidence source requires a value");
+    }
+
+    [Fact]
+    public void DowngradeConfidence_ShouldRejectFieldWithoutConfidence()
+    {
+        var field = new ProvenanceField(
+            "Title",
+            ProvenanceKind.Inferred,
+            confidence: null,
+            _provenanceId,
+            ProvenanceConfidenceSource.Deterministic);
+
+        var act = () => field.DowngradeConfidence(0.4);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Cannot downgrade confidence when no confidence was reported");
     }
 
     [Theory]
