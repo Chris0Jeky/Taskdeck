@@ -857,8 +857,8 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Tomorro
 
 `backend/tests/Taskdeck.Application.Tests/Services/ProvenanceQueryServiceTests.cs` — **41 tests** covering:
 - Icon map: 26-entry case-insensitive map with fallback default icon
-- Weight bucketing: extractive >= 0.7 confidence → "primary", < 0.7 → "contextual", inferred → "inferred"
-- Human-readable value strings with quote snippet truncation, `Math.Round` for confidence display
+- Weight bucketing: inferred fields → "inferred"; extractive fields become "primary" only for derived confidence >= 0.7, otherwise "contextual"
+- Human-readable-value tests explicitly distinguish exact model-reported confidence from deterministic extraction with no number; quote truncation and `Math.Round` display remain covered. Derived and not-reported endpoint semantics are covered separately by the confidence-service tests below
 - Empty provenance (returns empty list, not error), missing proposal, authorization
 - FK enforcement via `AddProposalProvenanceForeignKey` migration
 
@@ -879,16 +879,35 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~SideEffect"
 ```
 
-### Confidence Breakdown Tests (`#1021`/`#1036`)
+### Source-labelled Proposal Confidence Tests (originally `#1021`/`#1036`; corrected by `#1307` AC1 / PR `#2160`)
 
-`backend/tests/Taskdeck.Domain.Tests/Confidence/ConfidenceComponentTests.cs`, `ConfidenceBreakdownTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/Confidence/ConfidenceBreakdownServiceTests.cs` — **63 tests** covering:
-- ConfidenceComponent: value range [0..1], NaN/Infinity rejection, key validation
-- ConfidenceBreakdown: overall/threshold range, MeetsThreshold computed property, defensive component list copy
-- ConfidenceBreakdownService: 4-component weighted computation (Pattern match, Reach, Reversibility, Recency), reach formula `2.0 / (2.0 + log2(n))`, risk-level reversibility scoring, recency from expiry window, threshold note generation, static weight map
+Backend coverage lives in `backend/tests/Taskdeck.Domain.Tests/Entities/ProvenanceFieldTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/AutomationProposalServiceTests.cs`, `CaptureTriageServiceTests.cs`, `Confidence/ConfidenceBreakdownServiceTests.cs`, `ProvenanceQueryServiceTests.cs`, and `backend/tests/Taskdeck.Api.Tests/AutomationProposalsApiTests.cs`. Focused Paper Review coverage lives in:
 
-Run:
+- `frontend/taskdeck-web/src/tests/api/proposalDeepReviewApi.spec.ts`
+- `frontend/taskdeck-web/src/tests/composables/usePaperReviewSelectors.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewMembershipFilter.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewView.language.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewView.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/ReviewMain.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/ReviewWhyNow.spec.ts`
+
+Together these cover:
+
+- nullable source/value invariants: model-reported and derived sources require bounded values; deterministic and not-reported sources forbid numeric decoration
+- validated schema-v2 confidence round-tripping per operation through the trusted application-only seam; HTTP create callers cannot inject trusted confidence, and deterministic fallback carries no number
+- `/confidence` returning exact persisted item values plus a display-only average for model-reported or derived sources; `threshold` and `meetsThreshold` are null, and Pattern match/Reach/Reversibility/Recency components are not synthesized
+- Paper Review rendering model-reported numeric evidence and explicit deterministic/not-reported states without using confidence to gate approval or Apply; derived endpoint behavior is backend-covered, while these focused frontend fixtures do not exercise a derived source
+
+Run from the repository root unless noted:
+
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConfidenceBreakdown"
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceFieldTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~ConfidenceBreakdownServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~AutomationProposalsApiTests"
+dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~RoadmapInvariantTests"
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+cd frontend/taskdeck-web
+npx vitest --run --maxWorkers=2 src/tests/api/proposalDeepReviewApi.spec.ts src/tests/composables/usePaperReviewSelectors.spec.ts src/tests/views/paper/review/PaperReviewMembershipFilter.spec.ts src/tests/views/paper/review/PaperReviewView.language.spec.ts src/tests/views/paper/review/PaperReviewView.spec.ts src/tests/views/paper/review/ReviewMain.spec.ts src/tests/views/paper/review/ReviewWhyNow.spec.ts
 ```
 
 ### Conflict Detection Tests (`#1022`/`#1040`)
