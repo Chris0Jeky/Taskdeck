@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
+const readmePath = fileURLToPath(new URL('../../README.md', import.meta.url))
 const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
 const mcpGuidePath = fileURLToPath(new URL('../../docs/MCP_SERVER.md', import.meta.url))
 const mcpDesktopExamplePath = fileURLToPath(new URL('../../mcp.example.json', import.meta.url))
@@ -38,6 +39,7 @@ const materialSymbolsLicensePath = fileURLToPath(
 // break every structural assertion for a reason that has nothing to do with the
 // workflow's content.
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
+const readme = readFileSync(readmePath, 'utf8').replace(/\r\n/g, '\n')
 const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
 const mcpGuide = readFileSync(mcpGuidePath, 'utf8').replace(/\r\n/g, '\n')
 const mcpDesktopExample = JSON.parse(readFileSync(mcpDesktopExamplePath, 'utf8'))
@@ -484,6 +486,10 @@ test('the MCP guide covers all shipped launch paths without claiming deferred pr
   assert.match(mcpGuide, /not a Claude Code, Claude Desktop, or[\s\S]*Cursor end-to-end test/i)
   assert.match(mcpGuide, /does not claim scoped-key enforcement or runtime tool-hash[\s\S]*approval/i)
   assert.doesNotMatch(mcpGuide, /IMAGE --mcp` is a valid invocation/i)
+  assert.match(
+    readme,
+    /docker run --rm -i --no-healthcheck --user 1001:1001 \.\.\. IMAGE dotnet Taskdeck\.Api\.dll --mcp/,
+  )
 })
 
 // -----------------------------------------------------------------------------

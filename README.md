@@ -116,7 +116,7 @@ image, source checkout, and setup for Claude Code, Claude Desktop, and Cursor:
 | Mode | Command / endpoint | Intended use |
 |---|---|---|
 | Packaged Windows stdio | `C:\absolute\path\to\Taskdeck.Api.exe --mcp` | Released desktop ZIP; zero network listener |
-| Released Docker stdio | `docker run --rm -i --no-healthcheck ... IMAGE dotnet Taskdeck.Api.dll --mcp` | Released image sharing the normal web volume |
+| Released Docker stdio | `docker run --rm -i --no-healthcheck --user 1001:1001 ... IMAGE dotnet Taskdeck.Api.dll --mcp` | Released image sharing the normal web volume |
 | Source stdio | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp` | Source checkout; zero network listener |
 | Standalone HTTP | `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp --transport http` → `http://127.0.0.1:5001/mcp` | Local HTTP client or same-host sidecar |
 | Co-hosted HTTP | `<your Taskdeck API base>/mcp` | Reuse the normal API process and database |
