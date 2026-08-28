@@ -515,7 +515,7 @@ public class AutomationProposalService : IAutomationProposalService
     }
 
     public async Task<Result<BatchApproveProposalsResultDto>> ApproveProposalsAsync(
-        IReadOnlyList<Guid> ids,
+        IReadOnlyList<BatchApproveProposalSelectionDto> selections,
         Guid decidedByUserId,
         CancellationToken cancellationToken = default)
     {
@@ -526,28 +526,29 @@ public class AutomationProposalService : IAutomationProposalService
                 "DecidedByUserId cannot be empty");
         }
 
-        if (ids is null || ids.Count == 0)
+        if (selections is null || selections.Count == 0)
         {
             return Result.Failure<BatchApproveProposalsResultDto>(
                 ErrorCodes.ValidationError,
                 "At least one proposal ID is required");
         }
 
-        if (ids.Count > MaxBatchApprovalCount)
+        if (selections.Count > MaxBatchApprovalCount)
         {
             return Result.Failure<BatchApproveProposalsResultDto>(
                 ErrorCodes.ValidationError,
                 $"Cannot approve more than {MaxBatchApprovalCount} proposals at once");
         }
 
-        if (ids.Any(id => id == Guid.Empty))
+        if (selections.Any(selection =>
+                selection.Id == Guid.Empty || selection.ExpectedProposalUpdatedAt == default))
         {
             return Result.Failure<BatchApproveProposalsResultDto>(
                 ErrorCodes.ValidationError,
-                "Proposal IDs cannot be empty");
+                "Proposal IDs and expected update timestamps are required");
         }
 
-        if (ids.Distinct().Count() != ids.Count)
+        if (selections.Select(selection => selection.Id).Distinct().Count() != selections.Count)
         {
             return Result.Failure<BatchApproveProposalsResultDto>(
                 ErrorCodes.ValidationError,
@@ -557,6 +558,7 @@ public class AutomationProposalService : IAutomationProposalService
         var transactionStarted = false;
         try
         {
+            var ids = selections.Select(selection => selection.Id).ToList();
             var loaded = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
             var proposalsById = loaded.ToDictionary(proposal => proposal.Id);
             var missingId = ids.FirstOrDefault(id => !proposalsById.ContainsKey(id));
@@ -596,6 +598,23 @@ public class AutomationProposalService : IAutomationProposalService
             }
 
             var revisions = revisionsResult.Value;
+            for (var index = 0; index < proposals.Count; index++)
+            {
+                var proposal = proposals[index];
+                var selection = selections[index];
+                var latestRevisionId = revisions.TryGetValue(proposal.Id, out var latestRevision)
+                    ? latestRevision.Id
+                    : (Guid?)null;
+
+                if (proposal.UpdatedAt != selection.ExpectedProposalUpdatedAt ||
+                    latestRevisionId != selection.ExpectedLatestRevisionId)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.Conflict,
+                        $"Proposal {proposal.Id} changed after selection; refresh and review the complete batch again");
+                }
+            }
+
             var now = DateTimeOffset.UtcNow;
 
             // Preflight the COMPLETE set before any domain transition or board guard marker is
@@ -702,12 +721,11 @@ public class AutomationProposalService : IAutomationProposalService
                     decisionGuard.ErrorMessage);
             }
 
-            foreach (var proposal in proposals)
+            for (var index = 0; index < proposals.Count; index++)
             {
-                var approvedRevisionId = revisions.TryGetValue(proposal.Id, out var revision)
-                    ? revision.Id
-                    : (Guid?)null;
-                proposal.Approve(decidedByUserId, approvedRevisionId);
+                proposals[index].Approve(
+                    decidedByUserId,
+                    selections[index].ExpectedLatestRevisionId);
             }
 
             // Queue the same per-proposal outcome notification as single approve before the one
@@ -732,7 +750,7 @@ public class AutomationProposalService : IAutomationProposalService
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             transactionStarted = false;
 
-            return Result.Success(new BatchApproveProposalsResultDto(ids.ToList()));
+            return Result.Success(new BatchApproveProposalsResultDto(ids));
         }
         catch (DomainException ex)
         {
@@ -1061,7 +1079,12 @@ public class AutomationProposalService : IAutomationProposalService
         AutomationProposal proposal,
         ProposalRevision? effectiveRevision)
     {
-        var dto = MapToDto(proposal);
+        var dto = MapToDto(proposal) with
+        {
+            LatestRevisionId = proposal.Status == ProposalStatus.PendingReview
+                ? effectiveRevision?.Id
+                : null
+        };
 
         if (effectiveRevision is null)
             return dto;
@@ -1136,7 +1159,7 @@ public class AutomationProposalService : IAutomationProposalService
             // Defer is a self-initiated timing control, not a decision: deliberately no
             // ProposalOutcome (outcomes are terminal-decision telemetry) and no notification
             // (a snooze the reviewer initiated is noise, not news).
-            return Result.Success(MapToDto(proposal));
+            return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
         }
         catch (DomainException ex)
         {

@@ -85,6 +85,8 @@ export interface Proposal {
    * review surface advertising semantics it cannot back).
    */
   approvedRevisionId: string | null
+  /** Latest effective revision while PendingReview; null for original content or decided rows. */
+  latestRevisionId: string | null
 }
 
 /**
@@ -112,4 +114,11 @@ export interface ProposalFilters {
 /** Receipt from the all-or-none approve-only batch endpoint. */
 export interface BatchApproveProposalsResult {
   approvedIds: string[]
+}
+
+/** Exact reviewer-selected snapshot submitted to the all-or-none batch endpoint. */
+export interface BatchApproveProposalSelection {
+  id: string
+  expectedProposalUpdatedAt: string
+  expectedLatestRevisionId: string | null
 }

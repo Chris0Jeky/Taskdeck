@@ -2,12 +2,39 @@ import { computed, ref, watch, type Ref } from 'vue'
 import { automationApi } from '../api/automationApi'
 import { i18n } from '../i18n'
 import { useToastStore } from '../store/toastStore'
-import type { Proposal } from '../types/automation'
+import type { BatchApproveProposalSelection, Proposal } from '../types/automation'
 import { getErrorDisplay } from './useErrorMapper'
 import { STALE_PROPOSAL_MS } from './useReviewProposals'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
 
 const MAX_BATCH_APPROVAL_COUNT = 500
+
+interface CapturedBatchSelection extends BatchApproveProposalSelection {
+  reviewFingerprint: string
+}
+
+function reviewFingerprint(proposal: Proposal): string {
+  return JSON.stringify({
+    status: proposal.status,
+    riskLevel: proposal.riskLevel,
+    summary: proposal.summary,
+    validationIssues: proposal.validationIssues,
+    diffPreview: proposal.diffPreview,
+    updatedAt: proposal.updatedAt,
+    latestRevisionId: proposal.latestRevisionId,
+    operations: proposal.operations,
+    presentation: proposal.presentation,
+  })
+}
+
+function captureSelection(proposal: Proposal): CapturedBatchSelection {
+  return {
+    id: proposal.id,
+    expectedProposalUpdatedAt: proposal.updatedAt,
+    expectedLatestRevisionId: proposal.latestRevisionId,
+    reviewFingerprint: reviewFingerprint(proposal),
+  }
+}
 
 function isExactPendingReview(status: Proposal['status']): boolean {
   return status === 0 || (
@@ -68,6 +95,7 @@ export function useBatchApproveProposals(
   const toast = useToastStore()
   const t = i18n.global.t
   const selectedIds = ref<Set<string>>(new Set())
+  const selectedSnapshots = ref<Map<string, CapturedBatchSelection>>(new Map())
   const confirmationOpen = ref(false)
   const busy = ref(false)
 
@@ -79,8 +107,10 @@ export function useBatchApproveProposals(
 
   const selectedCount = computed(() => selectedIds.value.size)
 
-  function replaceSelection(ids: Iterable<string>) {
-    selectedIds.value = new Set(ids)
+  function replaceSelection(snapshots: Iterable<CapturedBatchSelection>) {
+    const next = [...snapshots]
+    selectedSnapshots.value = new Map(next.map((snapshot) => [snapshot.id, snapshot]))
+    selectedIds.value = new Set(next.map((snapshot) => snapshot.id))
   }
 
   function clearSelection() {
@@ -89,11 +119,17 @@ export function useBatchApproveProposals(
   }
 
   function reconcileSelection(): boolean {
-    const eligible = eligibleIds.value
-    const retained = [...selectedIds.value].filter((id) =>
-      [...eligible].some((eligibleId) => proposalIdsEqual(eligibleId, id)),
-    )
-    const changed = retained.length !== selectedIds.value.size
+    const retained = [...selectedSnapshots.value.values()].filter((snapshot) => {
+      const proposal = proposals.value.find((candidate) =>
+        proposalIdsEqual(candidate.id, snapshot.id),
+      )
+      return !!proposal &&
+        isBatchApproveEligible(proposal, currentUserId.value, nowMs.value) &&
+        proposal.updatedAt === snapshot.expectedProposalUpdatedAt &&
+        proposal.latestRevisionId === snapshot.expectedLatestRevisionId &&
+        reviewFingerprint(proposal) === snapshot.reviewFingerprint
+    })
+    const changed = retained.length !== selectedSnapshots.value.size
     if (changed) {
       replaceSelection(retained)
       // Confirmation belongs to the exact set the reviewer saw. Even when eligible items remain,
@@ -120,17 +156,19 @@ export function useBatchApproveProposals(
     if (busy.value) return
     const canonical = [...eligibleIds.value].find((eligibleId) => proposalIdsEqual(eligibleId, id))
     if (!canonical) return
-    const next = new Set(selectedIds.value)
-    const selected = [...next].find((selectedId) => proposalIdsEqual(selectedId, canonical))
+    const next = new Map(selectedSnapshots.value)
+    const selected = [...next.keys()].find((selectedId) => proposalIdsEqual(selectedId, canonical))
     if (selected) next.delete(selected)
     else {
       if (next.size >= MAX_BATCH_APPROVAL_COUNT) {
         toast.info(t('review.batchApprove.limitReached', { count: MAX_BATCH_APPROVAL_COUNT }))
         return
       }
-      next.add(canonical)
+      const proposal = proposals.value.find((candidate) => proposalIdsEqual(candidate.id, canonical))
+      if (!proposal) return
+      next.set(proposal.id, captureSelection(proposal))
     }
-    replaceSelection(next)
+    replaceSelection(next.values())
   }
 
   function requestConfirmation() {
@@ -168,14 +206,17 @@ export function useBatchApproveProposals(
       return
     }
 
-    const ids = proposals.value
-      .filter((proposal) => isSelected(proposal.id))
-      .map((proposal) => proposal.id)
+    const submitted = [...selectedSnapshots.value.values()].map((snapshot) => ({
+      id: snapshot.id,
+      expectedProposalUpdatedAt: snapshot.expectedProposalUpdatedAt,
+      expectedLatestRevisionId: snapshot.expectedLatestRevisionId,
+    }))
+    const ids = submitted.map((selection) => selection.id)
     confirmationOpen.value = false
     busy.value = true
 
     try {
-      const result = await automationApi.approveProposals(ids)
+      const result = await automationApi.approveProposals(submitted)
       const receiptMatches =
         result.approvedIds.length === ids.length &&
         ids.every((id) => result.approvedIds.some((approvedId) => proposalIdsEqual(approvedId, id)))
@@ -187,16 +228,11 @@ export function useBatchApproveProposals(
         return
       }
 
-      // Reconcile immediately as Approved (never Applied) while canonical decision metadata
-      // refreshes. The receipt does not carry decision timestamps, so do not invent them.
-      proposals.value = proposals.value.map((proposal) =>
-        result.approvedIds.some((id) => proposalIdsEqual(id, proposal.id))
-          ? {
-              ...proposal,
-              status: 'Approved',
-              deferredUntil: null,
-            }
-          : proposal,
+      // The receipt proves the decision but does not carry the pinned effective content. Remove the
+      // stale pending rows before refreshing instead of manufacturing Approved/execute-ready rows
+      // from a snapshot that may no longer be current. A failed refresh therefore remains fail-closed.
+      proposals.value = proposals.value.filter((proposal) =>
+        !result.approvedIds.some((id) => proposalIdsEqual(id, proposal.id)),
       )
       toast.success(
         t('review.batchApprove.approved', { count: ids.length }, ids.length),

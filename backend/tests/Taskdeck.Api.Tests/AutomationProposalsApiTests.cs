@@ -5,6 +5,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -415,7 +416,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await client.PostAsJsonAsync(
             "/api/automation/proposals/approve",
-            new { ids = new[] { second.Id, first.Id } });
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(second), Select(first)]
+            });
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
@@ -446,6 +450,81 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ApproveProposals_RejectsStaleSnapshotThenPinsFreshSubmittedRevision()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-revision-snapshot");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-revision-snapshot");
+        var original = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+        Guid columnId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            columnId = await db.Columns
+                .Where(column => column.BoardId == boardId)
+                .Select(column => column.Id)
+                .FirstAsync();
+        }
+
+        var revisedPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = JsonSerializer.Serialize(new
+                    {
+                        title = "Fresh reviewed revision",
+                        boardId,
+                        columnId
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString("N")
+                }
+            }
+        });
+        var revisionResponse = await client.PostAsJsonAsync(
+            $"/api/automation/proposals/{original.Id}/revisions",
+            new CreateRevisionRequest
+            {
+                RevisedPayload = revisedPayload,
+                Reason = "Content changed after selection"
+            });
+        var revisionBody = await revisionResponse.Content.ReadAsStringAsync();
+        revisionResponse.StatusCode.Should().Be(HttpStatusCode.Created, revisionBody);
+        var revision = JsonSerializer.Deserialize<ProposalRevisionDto>(
+            revisionBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        revision.Should().NotBeNull();
+
+        var current = await client.GetFromJsonAsync<ProposalDto>(
+            $"/api/automation/proposals/{original.Id}");
+        current.Should().NotBeNull();
+        current!.LatestRevisionId.Should().Be(revision!.Id);
+        current.UpdatedAt.Should().BeAfter(original.UpdatedAt);
+
+        var staleResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(original)] });
+        staleResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var freshResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new ApproveProposalsRequest { Proposals = [Select(current)] });
+        var freshBody = await freshResponse.Content.ReadAsStringAsync();
+        freshResponse.StatusCode.Should().Be(HttpStatusCode.OK, freshBody);
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persisted = await verifyDb.AutomationProposals.SingleAsync(proposal => proposal.Id == original.Id);
+        persisted.Status.Should().Be(ProposalStatus.Approved);
+        persisted.ApprovedRevisionId.Should().Be(revision.Id);
+        (await verifyDb.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task ApproveProposals_RejectsMixedEligibilityWithoutApprovingTheValidProposal()
     {
         var client = _factory.CreateClient();
@@ -456,7 +535,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await client.PostAsJsonAsync(
             "/api/automation/proposals/approve",
-            new { ids = new[] { valid.Id, medium.Id } });
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(valid), Select(medium)]
+            });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         using var scope = _factory.Services.CreateScope();
@@ -482,7 +564,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await callerClient.PostAsJsonAsync(
             "/api/automation/proposals/approve",
-            new { ids = new[] { own.Id, foreign.Id } });
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), Select(foreign)]
+            });
 
         await ApiTestHarness.AssertForbiddenAsync(response);
         using var scope = _factory.Services.CreateScope();
@@ -520,7 +605,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await reviewerClient.PostAsJsonAsync(
             "/api/automation/proposals/approve",
-            new { ids = new[] { own.Id, formerlyWritable.Id } });
+            new ApproveProposalsRequest
+            {
+                Proposals = [Select(own), Select(formerlyWritable)]
+            });
 
         await ApiTestHarness.AssertForbiddenAsync(response);
         using var scope = _factory.Services.CreateScope();
@@ -539,7 +627,17 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
 
         var response = await anonymous.PostAsJsonAsync(
             "/api/automation/proposals/approve",
-            new { ids = new[] { Guid.NewGuid() } });
+            new ApproveProposalsRequest
+            {
+                Proposals =
+                [
+                    new ApproveProposalSelectionRequest
+                    {
+                        Id = Guid.NewGuid(),
+                        ExpectedProposalUpdatedAt = DateTimeOffset.UtcNow
+                    }
+                ]
+            });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -1263,6 +1361,13 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProposalDto>())!;
     }
+
+    private static ApproveProposalSelectionRequest Select(ProposalDto proposal) => new()
+    {
+        Id = proposal.Id,
+        ExpectedProposalUpdatedAt = proposal.UpdatedAt,
+        ExpectedLatestRevisionId = proposal.LatestRevisionId
+    };
 
     private async Task<ProposalDto> CreateBatchApprovalProposalAsync(
         HttpClient client,

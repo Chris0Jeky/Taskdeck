@@ -159,6 +159,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }
@@ -325,7 +326,18 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(mocks.approveProposals).toHaveBeenCalledOnce()
-    expect(mocks.approveProposals).toHaveBeenCalledWith(['batch-1', 'batch-2'])
+    expect(mocks.approveProposals).toHaveBeenCalledWith([
+      {
+        id: 'batch-1',
+        expectedProposalUpdatedAt: proposals[0]!.updatedAt,
+        expectedLatestRevisionId: proposals[0]!.latestRevisionId,
+      },
+      {
+        id: 'batch-2',
+        expectedProposalUpdatedAt: proposals[1]!.updatedAt,
+        expectedLatestRevisionId: proposals[1]!.latestRevisionId,
+      },
+    ])
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('data-apply-phase')).toBe('execute')
     expect(wrapper.text()).not.toContain('APPLIED · READ-ONLY')

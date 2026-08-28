@@ -45,12 +45,24 @@ describe('automationApi', () => {
 
   it('posts the exact approve-only batch and returns its explicit receipt', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { approvedIds: ['p-2', 'p-1'] } })
+    const proposals = [
+      {
+        id: 'p-2',
+        expectedProposalUpdatedAt: '2026-08-28T11:59:00.000Z',
+        expectedLatestRevisionId: 'r-2',
+      },
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: '2026-08-28T11:58:00.000Z',
+        expectedLatestRevisionId: null,
+      },
+    ]
 
-    const result = await automationApi.approveProposals(['p-2', 'p-1'])
+    const result = await automationApi.approveProposals(proposals)
 
     expect(http.post).toHaveBeenCalledOnce()
     expect(http.post).toHaveBeenCalledWith('/automation/proposals/approve', {
-      ids: ['p-2', 'p-1'],
+      proposals,
     })
     expect(result.approvedIds).toEqual(['p-2', 'p-1'])
     expect(http.post).not.toHaveBeenCalledWith(
@@ -90,6 +102,11 @@ describe('automationApi', () => {
   it('declares approvedRevisionId as a required, nullable string on Proposal', () => {
     expectTypeOf<Proposal['approvedRevisionId']>().toEqualTypeOf<string | null>()
     expectTypeOf<Proposal>().toHaveProperty('approvedRevisionId')
+  })
+
+  it('declares latestRevisionId as a required, nullable pending snapshot on Proposal', () => {
+    expectTypeOf<Proposal['latestRevisionId']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Proposal>().toHaveProperty('latestRevisionId')
   })
 
   it('preserves approvedRevisionId on listed proposals', async () => {

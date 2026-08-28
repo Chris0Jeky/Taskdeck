@@ -1193,7 +1193,9 @@ public class AutomationProposalServiceTests
         var second = BuildBatchApprovalProposal(requesterId, secondBoard);
         ConfigureBatch([first, second], [firstBoard, secondBoard]);
 
-        var result = await _service.ApproveProposalsAsync([second.Id, first.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync(
+            [Select(second), Select(first)],
+            requesterId);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.ApprovedIds.Should().Equal(second.Id, first.Id);
@@ -1213,6 +1215,76 @@ public class AutomationProposalServiceTests
             Times.Exactly(2));
     }
 
+    [Fact]
+    public async Task ApproveProposalsAsync_PinsExactlyTheSubmittedLatestRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var proposal = BuildBatchApprovalProposal(requesterId, board);
+        var revision = BuildLowBatchRevision(proposal, board, 1, "Selected revision");
+        ConfigureBatch([proposal], [board]);
+        SeedRevisions(proposal.Id, revision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(proposal, revision.Id)],
+            requesterId);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.Status.Should().Be(ProposalStatus.Approved);
+        proposal.ApprovedRevisionId.Should().Be(revision.Id);
+        result.Value.ApprovedIds.Should().Equal(proposal.Id);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsAllWhenStillLowRevisionReplacesSelectedRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        var revised = BuildBatchApprovalProposal(requesterId, board);
+        var selectedRevision = BuildLowBatchRevision(revised, board, 1, "R1");
+        var replacementRevision = BuildLowBatchRevision(revised, board, 2, "R2");
+        ConfigureBatch([companion, revised], [board]);
+        SeedRevisions(revised.Id, selectedRevision, replacementRevision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(revised, selectedRevision.Id)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        companion.ApprovedRevisionId.Should().BeNull();
+        revised.ApprovedRevisionId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _notificationServiceMock.Verify(
+            n => n.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsAllWhenOriginalSelectionGainsRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        var revised = BuildBatchApprovalProposal(requesterId, board);
+        var newRevision = BuildLowBatchRevision(revised, board, 1, "New revision");
+        ConfigureBatch([companion, revised], [board]);
+        SeedRevisions(revised.Id, newRevision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(revised, expectedLatestRevisionId: null)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData("empty")]
     [InlineData("duplicate")]
@@ -1221,16 +1293,16 @@ public class AutomationProposalServiceTests
     public async Task ApproveProposalsAsync_RejectsInvalidExactSetBeforeReads(string invalidShape)
     {
         var id = Guid.NewGuid();
-        IReadOnlyList<Guid> ids = invalidShape switch
+        IReadOnlyList<BatchApproveProposalSelectionDto> proposals = invalidShape switch
         {
-            "empty" => Array.Empty<Guid>(),
-            "duplicate" => new[] { id, id },
-            "over-limit" => Enumerable.Range(0, 501).Select(_ => Guid.NewGuid()).ToList(),
-            "empty-id" => new[] { Guid.Empty },
+            "empty" => Array.Empty<BatchApproveProposalSelectionDto>(),
+            "duplicate" => new[] { Select(id), Select(id) },
+            "over-limit" => Enumerable.Range(0, 501).Select(_ => Select(Guid.NewGuid())).ToList(),
+            "empty-id" => new[] { Select(Guid.Empty) },
             _ => throw new InvalidOperationException("Unknown test shape")
         };
 
-        var result = await _service.ApproveProposalsAsync(ids, Guid.NewGuid());
+        var result = await _service.ApproveProposalsAsync(proposals, Guid.NewGuid());
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
@@ -1264,7 +1336,9 @@ public class AutomationProposalServiceTests
             Guid.NewGuid().ToString()));
         ConfigureBatch([valid, ineligible], [board]);
 
-        var result = await _service.ApproveProposalsAsync([valid.Id, ineligible.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync(
+            [Select(valid), Select(ineligible)],
+            requesterId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
@@ -1299,7 +1373,7 @@ public class AutomationProposalServiceTests
         var revision = new ProposalRevision(proposal.Id, 1, requesterId, revisedPayload, "Expanded scope");
         SeedRevisions(proposal.Id, revision);
 
-        var result = await _service.ApproveProposalsAsync([proposal.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync([Select(proposal, revision.Id)], requesterId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
@@ -1319,7 +1393,9 @@ public class AutomationProposalServiceTests
         SetCreatedAt(stale, DateTimeOffset.UtcNow.AddHours(-24).AddSeconds(-1));
         ConfigureBatch([fresh, stale], [board]);
 
-        var result = await _service.ApproveProposalsAsync([fresh.Id, stale.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync(
+            [Select(fresh), Select(stale)],
+            requesterId);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("stale");
@@ -1377,7 +1453,7 @@ public class AutomationProposalServiceTests
         ConfigureBatch([companion, ineligible], [board]);
 
         var result = await _service.ApproveProposalsAsync(
-            [companion.Id, ineligible.Id],
+            [Select(companion), Select(ineligible)],
             requesterId);
 
         result.IsSuccess.Should().BeFalse();
@@ -1394,12 +1470,16 @@ public class AutomationProposalServiceTests
         var companion = BuildBatchApprovalProposal(requesterId, board);
         var revised = BuildBatchApprovalProposal(requesterId, board);
         ConfigureBatch([companion, revised], [board]);
-        SeedRevisions(
+        var invalidRevision = new ProposalRevision(
             revised.Id,
-            new ProposalRevision(revised.Id, 1, requesterId, "{not-json", "Invalid payload"));
+            1,
+            requesterId,
+            "{not-json",
+            "Invalid payload");
+        SeedRevisions(revised.Id, invalidRevision);
 
         var result = await _service.ApproveProposalsAsync(
-            [companion.Id, revised.Id],
+            [Select(companion), Select(revised, invalidRevision.Id)],
             requesterId);
 
         result.IsSuccess.Should().BeFalse();
@@ -1420,9 +1500,13 @@ public class AutomationProposalServiceTests
         var other = BuildBatchApprovalProposal(otherUserId, board);
         ConfigureBatch([own, other], [board]);
 
-        var crossUser = await _service.ApproveProposalsAsync([own.Id, other.Id], requesterId);
+        var crossUser = await _service.ApproveProposalsAsync(
+            [Select(own), Select(other)],
+            requesterId);
         var missingId = Guid.NewGuid();
-        var missing = await _service.ApproveProposalsAsync([own.Id, missingId], requesterId);
+        var missing = await _service.ApproveProposalsAsync(
+            [Select(own), Select(missingId)],
+            requesterId);
 
         crossUser.IsSuccess.Should().BeFalse();
         crossUser.ErrorCode.Should().Be(ErrorCodes.Forbidden);
@@ -1444,7 +1528,9 @@ public class AutomationProposalServiceTests
         archivedBoard.Archive();
         ConfigureBatch([first, second], [archivedBoard]);
 
-        var result = await _service.ApproveProposalsAsync([first.Id, second.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync(
+            [Select(first), Select(second)],
+            requesterId);
 
         result.IsSuccess.Should().BeFalse();
         first.Status.Should().Be(ProposalStatus.PendingReview);
@@ -1469,7 +1555,9 @@ public class AutomationProposalServiceTests
                 ? Result.Success(true)
                 : Result.Failure<bool>(ErrorCodes.InvalidOperation, "Notification staging failed"));
 
-        var result = await _service.ApproveProposalsAsync([first.Id, second.Id], requesterId);
+        var result = await _service.ApproveProposalsAsync(
+            [Select(first), Select(second)],
+            requesterId);
 
         result.IsSuccess.Should().BeFalse();
         _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
@@ -1505,6 +1593,16 @@ public class AutomationProposalServiceTests
             .ReturnsAsync((Guid id, CancellationToken _) => columns.FirstOrDefault(column => column.Id == id));
     }
 
+    private static BatchApproveProposalSelectionDto Select(
+        AutomationProposal proposal,
+        Guid? expectedLatestRevisionId = null) =>
+        new(proposal.Id, proposal.UpdatedAt, expectedLatestRevisionId);
+
+    private static BatchApproveProposalSelectionDto Select(
+        Guid proposalId,
+        Guid? expectedLatestRevisionId = null) =>
+        new(proposalId, DateTimeOffset.UtcNow, expectedLatestRevisionId);
+
     private static AutomationProposal BuildBatchApprovalProposal(Guid requesterId, Board board)
     {
         var column = board.Columns.FirstOrDefault();
@@ -1529,6 +1627,41 @@ public class AutomationProposalServiceTests
             System.Text.Json.JsonSerializer.Serialize(new { title = "Task", boardId = board.Id, columnId = column.Id }),
             Guid.NewGuid().ToString()));
         return proposal;
+    }
+
+    private static ProposalRevision BuildLowBatchRevision(
+        AutomationProposal proposal,
+        Board board,
+        int revisionNumber,
+        string title)
+    {
+        var column = board.Columns.Single();
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        title,
+                        boardId = board.Id,
+                        columnId = column.Id
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString("N")
+                }
+            }
+        });
+        return new ProposalRevision(
+            proposal.Id,
+            revisionNumber,
+            proposal.RequestedByUserId,
+            payload,
+            title);
     }
 
     #endregion
@@ -4139,6 +4272,9 @@ public class AutomationProposalServiceTests
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var listed = result.Value.Should().ContainSingle().Which;
+        listed.LatestRevisionId.Should().Be(
+            revision.Id,
+            "the pending review snapshot must identify the exact effective revision displayed");
         listed.Operations.Should().HaveCount(2,
             "the list must expose the revised operation set, not the single original operation");
         listed.Operations.Select(o => o.Parameters).Should()

@@ -47,6 +47,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     failureReason: null,
     correlationId: 'corr-1',
     approvedRevisionId: null,
+    latestRevisionId: null,
     operations: [
       {
         id: 'op-1',
@@ -188,8 +189,68 @@ describe('useBatchApproveProposals', () => {
     expect(actions.confirmationOpen.value).toBe(true)
     await actions.confirmApproval()
     expect(automationApi.approveProposals).toHaveBeenCalledOnce()
-    expect(automationApi.approveProposals).toHaveBeenCalledWith(['p-1'])
+    expect(automationApi.approveProposals).toHaveBeenCalledWith([
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: new Date(NOW - 60_000).toISOString(),
+        expectedLatestRevisionId: null,
+      },
+    ])
     expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('closes confirmation and requires fresh selection when same-ID Low content drifts', async () => {
+    const proposals = ref([makeProposal({ latestRevisionId: 'r-1' })])
+    const actions = useBatchApproveProposals(
+      proposals,
+      ref('u-1'),
+      ref(NOW),
+      vi.fn().mockResolvedValue(undefined),
+    )
+    actions.toggleSelection('p-1')
+    actions.requestConfirmation()
+
+    proposals.value = [makeProposal({
+      latestRevisionId: 'r-1',
+      summary: 'Create a different card',
+      operations: [{
+        ...makeProposal().operations[0],
+        parameters: '{"title":"Different"}',
+      }],
+    })]
+    await actions.confirmApproval()
+
+    expect(actions.confirmationOpen.value).toBe(false)
+    expect(actions.selectedCount.value).toBe(0)
+    expect(automationApi.approveProposals).not.toHaveBeenCalled()
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('submits the update and latest-revision values captured by explicit selection', async () => {
+    const selectedAt = '2026-08-28T11:58:45.123Z'
+    const proposals = ref([makeProposal({
+      updatedAt: selectedAt,
+      latestRevisionId: 'r-selected',
+    })])
+    vi.mocked(automationApi.approveProposals).mockResolvedValue({ approvedIds: ['p-1'] })
+    const actions = useBatchApproveProposals(
+      proposals,
+      ref('u-1'),
+      ref(NOW),
+      vi.fn().mockResolvedValue(undefined),
+    )
+    actions.toggleSelection('p-1')
+    actions.requestConfirmation()
+
+    await actions.confirmApproval()
+
+    expect(automationApi.approveProposals).toHaveBeenCalledWith([
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: selectedAt,
+        expectedLatestRevisionId: 'r-selected',
+      },
+    ])
   })
 
   it('accepts only an exact receipt and reconciles every row to Approved, never Applied', async () => {
@@ -197,7 +258,18 @@ describe('useBatchApproveProposals', () => {
       makeProposal({ id: 'p-1' }),
       makeProposal({ id: 'p-2', operations: [{ ...makeProposal().operations[0], proposalId: 'p-2' }] }),
     ])
-    const loadProposals = vi.fn().mockResolvedValue(undefined)
+    const loadProposals = vi.fn(async () => {
+      proposals.value = proposals.value.length === 0
+        ? [
+            makeProposal({ id: 'p-1', status: 'Approved' }),
+            makeProposal({
+              id: 'p-2',
+              status: 'Approved',
+              operations: [{ ...makeProposal().operations[0], proposalId: 'p-2' }],
+            }),
+          ]
+        : proposals.value
+    })
     vi.mocked(automationApi.approveProposals).mockResolvedValue({ approvedIds: ['p-2', 'p-1'] })
     const actions = useBatchApproveProposals(proposals, ref('u-1'), ref(NOW), loadProposals)
     actions.toggleSelection('p-1')
@@ -206,7 +278,18 @@ describe('useBatchApproveProposals', () => {
 
     await actions.confirmApproval()
 
-    expect(automationApi.approveProposals).toHaveBeenCalledWith(['p-1', 'p-2'])
+    expect(automationApi.approveProposals).toHaveBeenCalledWith([
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: new Date(NOW - 60_000).toISOString(),
+        expectedLatestRevisionId: null,
+      },
+      {
+        id: 'p-2',
+        expectedProposalUpdatedAt: new Date(NOW - 60_000).toISOString(),
+        expectedLatestRevisionId: null,
+      },
+    ])
     expect(automationApi.executeProposal).not.toHaveBeenCalled()
     expect(proposals.value.map((proposal) => proposal.status)).toEqual(['Approved', 'Approved'])
     expect(proposals.value.every((proposal) => proposal.status !== 'Applied')).toBe(true)
@@ -215,7 +298,7 @@ describe('useBatchApproveProposals', () => {
     expect(loadProposals).toHaveBeenCalledOnce()
   })
 
-  it('keeps an authoritative success when the follow-up refresh fails', async () => {
+  it('never leaves stale content Approved or execute-ready when the follow-up refresh fails', async () => {
     const proposals = ref([makeProposal()])
     const loadProposals = vi.fn().mockRejectedValue(new Error('refresh unavailable'))
     vi.mocked(automationApi.approveProposals).mockResolvedValue({ approvedIds: ['p-1'] })
@@ -225,7 +308,8 @@ describe('useBatchApproveProposals', () => {
 
     await expect(actions.confirmApproval()).resolves.toBeUndefined()
 
-    expect(proposals.value[0]?.status).toBe('Approved')
+    expect(proposals.value).toEqual([])
+    expect(proposals.value.some((proposal) => proposal.status === 'Approved')).toBe(false)
     expect(toast.success).toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
     expect(automationApi.executeProposal).not.toHaveBeenCalled()

@@ -204,28 +204,29 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
             return errorResult!;
 
-        if (request.Ids is null || request.Ids.Count == 0)
+        if (request.Proposals is null || request.Proposals.Count == 0)
         {
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
                 "At least one proposal ID is required"));
         }
 
-        if (request.Ids.Count > MaxProposalListLimit)
+        if (request.Proposals.Count > MaxProposalListLimit)
         {
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
                 $"Cannot approve more than {MaxProposalListLimit} proposals at once"));
         }
 
-        if (request.Ids.Any(id => id == Guid.Empty))
+        if (request.Proposals.Any(proposal =>
+                proposal.Id == Guid.Empty || proposal.ExpectedProposalUpdatedAt == default))
         {
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
-                "Proposal IDs cannot be empty"));
+                "Proposal IDs and expected update timestamps are required"));
         }
 
-        if (request.Ids.Distinct().Count() != request.Ids.Count)
+        if (request.Proposals.Select(proposal => proposal.Id).Distinct().Count() != request.Proposals.Count)
         {
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
@@ -237,8 +238,9 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         // deliberately limited to the reviewer's own proposals so a broad selection cannot make
         // decisions on another author's behalf.
         var boardIds = new HashSet<Guid>();
-        foreach (var proposalId in request.Ids)
+        foreach (var selection in request.Proposals)
         {
+            var proposalId = selection.Id;
             var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
             if (!proposalResult.IsSuccess)
                 return proposalResult.ToErrorActionResult();
@@ -271,7 +273,10 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         }
 
         var result = await _proposalService.ApproveProposalsAsync(
-            request.Ids,
+            request.Proposals.Select(proposal => new BatchApproveProposalSelectionDto(
+                proposal.Id,
+                proposal.ExpectedProposalUpdatedAt,
+                proposal.ExpectedLatestRevisionId)).ToList(),
             decidedByUserId,
             cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();

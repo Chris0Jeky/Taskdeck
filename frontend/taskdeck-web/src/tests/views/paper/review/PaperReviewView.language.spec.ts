@@ -157,6 +157,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }

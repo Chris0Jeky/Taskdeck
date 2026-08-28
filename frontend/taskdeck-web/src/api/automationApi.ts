@@ -1,5 +1,10 @@
 import http from './http'
-import type { BatchApproveProposalsResult, Proposal, ProposalFilters } from '../types/automation'
+import type {
+  BatchApproveProposalSelection,
+  BatchApproveProposalsResult,
+  Proposal,
+  ProposalFilters,
+} from '../types/automation'
 import { buildQueryString } from '../utils/queryBuilder'
 
 export const automationApi = {
@@ -18,10 +23,12 @@ export const automationApi = {
     return data
   },
 
-  async approveProposals(ids: string[]): Promise<BatchApproveProposalsResult> {
+  async approveProposals(
+    proposals: BatchApproveProposalSelection[],
+  ): Promise<BatchApproveProposalsResult> {
     const { data } = await http.post<BatchApproveProposalsResult>(
       '/automation/proposals/approve',
-      { ids },
+      { proposals },
     )
     return data
   },

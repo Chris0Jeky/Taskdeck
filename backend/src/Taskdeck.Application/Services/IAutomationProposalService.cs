@@ -38,7 +38,7 @@ public interface IAutomationProposalService
     /// the approved operations.
     /// </summary>
     Task<Result<BatchApproveProposalsResultDto>> ApproveProposalsAsync(
-        IReadOnlyList<Guid> ids,
+        IReadOnlyList<BatchApproveProposalSelectionDto> proposals,
         Guid decidedByUserId,
         CancellationToken cancellationToken = default);
 

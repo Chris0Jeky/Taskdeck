@@ -47,7 +47,9 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
                 });
             var service = new AutomationProposalService(unitOfWork.Object);
 
-            var result = await service.ApproveProposalsAsync(seeded.ProposalIds, seeded.UserId);
+            var result = await service.ApproveProposalsAsync(
+                SelectBatch(decisionProposals, seeded.ProposalIds),
+                seeded.UserId);
 
             result.IsSuccess.Should().BeFalse();
             result.ErrorCode.Should().Be(ErrorCodes.Conflict);
@@ -98,7 +100,9 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
                 });
             var service = new AutomationProposalService(unitOfWork.Object);
 
-            var result = await service.ApproveProposalsAsync(seeded.ProposalIds, seeded.UserId);
+            var result = await service.ApproveProposalsAsync(
+                SelectBatch(decisionProposals, seeded.ProposalIds),
+                seeded.UserId);
 
             result.IsSuccess.Should().BeFalse();
             result.ErrorCode.Should().Be(ErrorCodes.Conflict);
@@ -112,6 +116,110 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
                 .DeferredUntil.Should().NotBeNull("the competing change wins while no batch decision lands");
             persisted.Single(proposal => proposal.Id == seeded.ProposalIds[1])
                 .DeferredUntil.Should().BeNull();
+        }
+        finally
+        {
+            DeleteTemporaryDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task BatchApprove_WhenRevisionCommitsAfterSnapshotCompare_RollsBackCompanionsAndNotifications()
+    {
+        var dbPath = TemporaryDatabasePath("batch-revision");
+        try
+        {
+            var options = CreateOptions(dbPath);
+            var seeded = await SeedBatchApprovalAsync(options);
+            await using var decisionDb = new TaskdeckDbContext(options);
+            await using var revisionDb = new TaskdeckDbContext(options);
+            var decisionBoard = await decisionDb.Boards.SingleAsync(board => board.Id == seeded.BoardId);
+            var decisionUser = await decisionDb.Users.SingleAsync(user => user.Id == seeded.UserId);
+            var decisionColumn = await decisionDb.Columns.SingleAsync(column => column.Id == seeded.ColumnId);
+            var decisionProposals = await decisionDb.AutomationProposals
+                .Include(proposal => proposal.Operations)
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .ToListAsync();
+            var revisionProposal = await revisionDb.AutomationProposals
+                .SingleAsync(proposal => proposal.Id == seeded.ProposalIds[0]);
+            var revisionUnitOfWork = CreateRevisionUnitOfWork(revisionDb, revisionProposal);
+            var revisionPolicy = new Mock<IAutomationPolicyEngine>();
+            revisionPolicy
+                .Setup(policy => policy.ValidateOperationStructure(
+                    It.IsAny<IReadOnlyCollection<ProposalOperationDto>>()))
+                .Returns(Result.Success());
+            revisionPolicy
+                .Setup(policy => policy.GuardProposalDecisionWritesAsync(
+                    It.IsAny<IEnumerable<Guid?>>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(Result.Success());
+            var revisionService = new ProposalRevisionService(
+                revisionUnitOfWork.Object,
+                revisionPolicy.Object);
+            var revisionResult = Result.Failure<ProposalRevisionDto>(
+                ErrorCodes.InvalidOperation,
+                "Revision race did not run");
+            var unitOfWork = CreateBatchDecisionUnitOfWork(
+                decisionDb,
+                decisionUser,
+                decisionBoard,
+                decisionColumn,
+                decisionProposals,
+                beforeFirstSave: async () =>
+                {
+                    revisionResult = await revisionService.CreateRevisionAsync(
+                        new CreateProposalRevisionDto(
+                            revisionProposal.Id,
+                            seeded.UserId,
+                            BuildBatchRevisionPayload(seeded.BoardId, seeded.ColumnId),
+                            "Revision wins after batch compare"));
+                });
+            var notificationService = new Mock<INotificationService>();
+            notificationService
+                .Setup(service => service.PublishAsync(
+                    It.IsAny<CreateNotificationRequestDto>(),
+                    It.IsAny<CancellationToken>()))
+                .Returns((CreateNotificationRequestDto dto, CancellationToken _) =>
+                {
+                    decisionDb.Notifications.Add(new Notification(
+                        dto.UserId,
+                        dto.Type,
+                        NotificationCadence.Immediate,
+                        dto.Title,
+                        dto.Message,
+                        dto.BoardId,
+                        dto.SourceEntityType,
+                        dto.SourceEntityId,
+                        dto.DeduplicationKey));
+                    return Task.FromResult(Result.Success(true));
+                });
+            var service = new AutomationProposalService(
+                unitOfWork.Object,
+                notificationService.Object);
+
+            var result = await service.ApproveProposalsAsync(
+                SelectBatch(decisionProposals, seeded.ProposalIds),
+                seeded.UserId);
+
+            revisionResult.IsSuccess.Should().BeTrue("the ordinary revision writer wins the race");
+            result.IsSuccess.Should().BeFalse();
+            result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+            notificationService.Verify(
+                service => service.PublishAsync(
+                    It.IsAny<CreateNotificationRequestDto>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Exactly(2));
+            await using var verifyDb = new TaskdeckDbContext(options);
+            var persisted = await verifyDb.AutomationProposals
+                .Where(proposal => seeded.ProposalIds.Contains(proposal.Id))
+                .ToListAsync();
+            persisted.Should().OnlyContain(proposal => proposal.Status == ProposalStatus.PendingReview);
+            persisted.Should().OnlyContain(proposal => proposal.ApprovedRevisionId == null);
+            (await verifyDb.ProposalRevisions.CountAsync(revision => revision.ProposalId == revisionProposal.Id))
+                .Should().Be(1, "the racing accepted revision persists");
+            (await verifyDb.Notifications.CountAsync(notification =>
+                    seeded.ProposalIds.Contains(notification.SourceEntityId ?? Guid.Empty)))
+                .Should().Be(0, "staged companion notifications share the failed atomic save");
         }
         finally
         {
@@ -475,6 +583,50 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
         return unitOfWork;
     }
 
+    private static Mock<IUnitOfWork> CreateRevisionUnitOfWork(
+        TaskdeckDbContext db,
+        AutomationProposal proposal)
+    {
+        var proposals = new Mock<IAutomationProposalRepository>();
+        var revisions = new Mock<IProposalRevisionRepository>();
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.SetupGet(work => work.AutomationProposals).Returns(proposals.Object);
+        unitOfWork.SetupGet(work => work.ProposalRevisions).Returns(revisions.Object);
+        proposals
+            .Setup(repository => repository.GetByIdAsync(
+                proposal.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        revisions
+            .Setup(repository => repository.GetNextRevisionNumberAsync(
+                proposal.Id,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        revisions
+            .Setup(repository => repository.AddAsync(
+                It.IsAny<ProposalRevision>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((ProposalRevision revision, CancellationToken _) =>
+            {
+                db.ProposalRevisions.Add(revision);
+                return Task.FromResult(revision);
+            });
+        unitOfWork
+            .Setup(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .Returns((CancellationToken cancellationToken) =>
+                SaveWithConflictMappingAsync(db, cancellationToken));
+        return unitOfWork;
+    }
+
+    private static IReadOnlyList<BatchApproveProposalSelectionDto> SelectBatch(
+        IReadOnlyCollection<AutomationProposal> proposals,
+        IReadOnlyList<Guid> orderedIds) =>
+        orderedIds.Select(id =>
+        {
+            var proposal = proposals.Single(candidate => candidate.Id == id);
+            return new BatchApproveProposalSelectionDto(proposal.Id, proposal.UpdatedAt, null);
+        }).ToList();
+
     private static Mock<IUnitOfWork> CreateBatchDecisionUnitOfWork(
         TaskdeckDbContext db,
         User user,
@@ -689,6 +841,31 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
         db.AddRange(user, board, first, second);
         await db.SaveChangesAsync();
         return new SeededProposalPair(user.Id, board.Id, first.Id, second.Id);
+    }
+
+    private static string BuildBatchRevisionPayload(Guid boardId, Guid columnId)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = JsonSerializer.Serialize(new
+                    {
+                        title = "Same-Low racing revision",
+                        boardId,
+                        columnId
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString("N"),
+                    expectedVersion = (string?)null
+                }
+            }
+        });
     }
 
     private static async Task<SeededBatchApproval> SeedBatchApprovalAsync(

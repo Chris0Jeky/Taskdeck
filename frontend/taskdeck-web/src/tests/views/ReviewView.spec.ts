@@ -167,6 +167,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
       ],
     },
     approvedRevisionId: null,
+    latestRevisionId: null,
   }
 
   const hasPresentationOverride = 'presentation' in overrides
