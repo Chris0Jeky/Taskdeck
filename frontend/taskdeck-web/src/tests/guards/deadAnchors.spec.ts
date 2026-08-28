@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { baseParse, NodeTypes } from '@vue/compiler-dom'
+import { baseParse, ElementTypes, NodeTypes } from '@vue/compiler-dom'
 
 /**
  * Dead-affordance source guard.
@@ -248,13 +248,18 @@ function findCompilerDynamicListenerTags(source: string): string[] {
     const candidate = node as {
       type?: unknown
       tag?: unknown
+      tagType?: unknown
       props?: unknown
       children?: unknown
       branches?: unknown
       loc?: { source?: unknown }
     }
 
-    if (candidate.type === NodeTypes.ELEMENT && typeof candidate.tag === 'string') {
+    if (
+      candidate.type === NodeTypes.ELEMENT &&
+      candidate.tagType === ElementTypes.ELEMENT &&
+      typeof candidate.tag === 'string'
+    ) {
       const hasDynamicListener = Array.isArray(candidate.props) && candidate.props.some((prop) => {
         if (!prop || typeof prop !== 'object') return false
         const directive = prop as {
@@ -269,7 +274,26 @@ function findCompilerDynamicListenerTags(source: string): string[] {
         )
       })
 
-      if (hasDynamicListener && COMPILER_ACTIONABLE_TAGS.has(candidate.tag.toLowerCase())) {
+      const hasStaticNativeNavigationHref =
+        candidate.tag.toLowerCase() === 'a' &&
+        Array.isArray(candidate.props) &&
+        candidate.props.some((prop) => {
+          if (!prop || typeof prop !== 'object') return false
+          const attribute = prop as {
+            type?: unknown
+            name?: unknown
+            value?: { content?: unknown }
+          }
+          if (attribute.type !== NodeTypes.ATTRIBUTE || attribute.name !== 'href') return false
+          const value = typeof attribute.value?.content === 'string' ? attribute.value.content.trim() : ''
+          return value.length > 0 && value !== '#' && !/^javascript:/i.test(value)
+        })
+
+      if (
+        hasDynamicListener &&
+        COMPILER_ACTIONABLE_TAGS.has(candidate.tag.toLowerCase()) &&
+        !hasStaticNativeNavigationHref
+      ) {
         findings.push(typeof candidate.loc?.source === 'string' ? candidate.loc.source : candidate.tag)
       }
     }
@@ -576,6 +600,13 @@ describe('dead affordances', () => {
   it('detects dynamic and object listeners through the Vue compiler AST', () => {
     expect(findCompilerDynamicListenerTags(COMPILER_DYNAMIC_LISTENER_FIXTURE)).toHaveLength(2)
     expect(findCompilerDynamicListenerTags('<template><button @click="run">Static</button></template>')).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags('<template><a href="#" @[eventName]="run">Placeholder</a></template>'),
+    ).toHaveLength(1)
+    expect(findCompilerDynamicListenerTags('<template><Button v-on="listeners">Component</Button></template>')).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags('<template><a href="/settings" v-on="listeners">Real navigation</a></template>'),
+    ).toEqual([])
     expect(
       findCompilerDynamicListenerTags(
         `<template><button data-note='@[eventName]="run"'>Inert note</button></template>`,
