@@ -1419,9 +1419,11 @@ Manual validation recommended: send "What cards are in my Backlog?" via chat wit
 Tracking issue: `#652` (Phase 1 of `#648`)
 
 New test coverage:
-- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, phantom-user fallback, multi-user board scoping
+- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, fail-closed identity resolution, multi-user board scoping
 
-Manual validation recommended: configure `mcp.example.json` in Claude Code / Cursor and ask "What boards do I have?" to verify resource delivery.
+Manual validation recommended: follow [MCP Server — From source](MCP_SERVER.md#from-source) in
+Claude Code or Cursor and ask "What boards do I have?" to verify resource delivery against the
+intended source database and identity.
 
 ## GDPR Data Portability Coverage (PR #666, delivered 2026-04-01)
 
@@ -2453,7 +2455,7 @@ Planned quality expectations when implementation starts:
   - Includes LLM tool-calling orchestrator coverage (multi-turn loop, timeout, round limits) and read tool schema generation
   - Includes GDPR data export service (user-scoped completeness, versioned payload) and account deletion service (re-auth, confirmation phrase, PII anonymization)
   - Includes board metrics service coverage (aggregation, date range, label grouping)
-  - Includes MCP board resource coverage (listing, phantom-user fallback, multi-user scoping)
+  - Includes MCP board resource coverage (listing, fail-closed identity resolution, multi-user scoping)
   - Includes integrations registry service coverage (connector CRUD, enable/disable lifecycle, event logging)
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`
