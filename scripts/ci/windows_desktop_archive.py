@@ -440,33 +440,95 @@ def verify_packaged_mcp_stdio(
     if not executable.is_absolute() or not executable.is_file():
         raise AcceptanceFailure("The packaged MCP executable path is not an absolute file.")
 
+    # The web journey sets CI=true to suppress browser launch. A packaged desktop deliberately
+    # ignores that flag for its durable bootstrap path, while the Generic Host used by --mcp
+    # treats CI as headless. Remove only that harness-only flag so this probe exercises the same
+    # per-user profile an ordinary desktop MCP client receives.
+    mcp_environment = {
+        key: value for key, value in environment.items() if key.upper() != "CI"
+    }
     creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     process = subprocess.Popen(
         [str(executable), "--mcp"],
         cwd=str(cwd),
-        env=dict(environment),
+        env=mcp_environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True,
         encoding="utf-8",
         errors="replace",
         creationflags=creation_flags,
     )
+
+    response_available: queue.Queue[bool] = queue.Queue(maxsize=1)
+    stdout_chunks: list[str] = []
+    stdout_bytes = 0
+    stdout_overflow = False
+
+    def drain_stdout() -> None:
+        nonlocal stdout_bytes, stdout_overflow
+        saw_line = False
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                encoded_size = len(raw_line.encode("utf-8"))
+                stdout_bytes += encoded_size
+                if stdout_bytes <= MAX_MCP_STDOUT_BYTES:
+                    stdout_chunks.append(raw_line)
+                else:
+                    stdout_overflow = True
+                if not saw_line:
+                    saw_line = True
+                    response_available.put(True)
+        finally:
+            if not saw_line:
+                response_available.put(False)
+
+    stdout_thread = threading.Thread(target=drain_stdout, daemon=True)
+    stdout_thread.start()
     try:
-        stdout, _ = process.communicate(
-            input=build_mcp_initialize_request(),
-            timeout=MCP_STDIO_TIMEOUT_SECONDS,
-        )
+        assert process.stdin is not None
+        process.stdin.write(build_mcp_initialize_request())
+        process.stdin.flush()
+        try:
+            has_response = response_available.get(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+        except queue.Empty:
+            _terminate_tracked_process_tree(process)
+            raise AcceptanceFailure(
+                "The packaged MCP initialize probe did not respond within the bounded wait."
+            ) from None
+
+        if not has_response:
+            process.wait(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+            if process.returncode != 0:
+                raise AcceptanceFailure("The packaged MCP initialize probe exited non-zero.")
+            raise AcceptanceFailure("The packaged MCP initialize probe returned no response.")
+
+        # Keep stdin open until the response arrives. Closing it with communicate(input=...) can
+        # end the SDK transport before its initialize response is flushed.
+        process.stdin.close()
+        process.wait(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+    except (BrokenPipeError, OSError):
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure(
+            "The packaged MCP initialize probe closed its transport before responding."
+        ) from None
     except subprocess.TimeoutExpired:
         _terminate_tracked_process_tree(process)
         raise AcceptanceFailure(
             "The packaged MCP initialize probe did not complete within the bounded wait."
         ) from None
 
+    stdout_thread.join(timeout=2)
+    if stdout_thread.is_alive():
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure("The packaged MCP stdout did not close after shutdown.")
     if process.returncode != 0:
         raise AcceptanceFailure("The packaged MCP initialize probe exited non-zero.")
-    return validate_mcp_initialize_stdout(stdout)
+    if stdout_overflow:
+        raise AcceptanceFailure("The packaged MCP stdout exceeded its bounded protocol response.")
+    return validate_mcp_initialize_stdout("".join(stdout_chunks))
 
 
 def validate_retired_provider_failure_output(output: str) -> None:

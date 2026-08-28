@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -99,7 +100,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_mcp_initialize_stdout(invalid)
 
-    def test_packaged_mcp_probe_launches_the_extracted_executable_and_closes_stdin(self) -> None:
+    def test_packaged_mcp_probe_waits_for_response_then_closes_stdin(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw).resolve()
             executable = root / "Taskdeck.Api.exe"
@@ -107,25 +108,34 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
             cwd = root / "cwd"
             cwd.mkdir()
             process = mock.Mock()
-            process.communicate.return_value = (self._mcp_initialize_response(), "stderr-only log")
+            process.stdin = mock.Mock()
+            process.stdout = io.StringIO(self._mcp_initialize_response())
+            process.wait.return_value = 0
             process.returncode = 0
 
             with mock.patch.object(harness.subprocess, "Popen", return_value=process) as popen:
                 evidence = harness.verify_packaged_mcp_stdio(
                     executable,
                     cwd,
-                    {"LOCALAPPDATA": str(root / "local-app-data")},
+                    {"CI": "true", "LOCALAPPDATA": str(root / "local-app-data")},
                 )
 
             self.assertTrue(evidence["initialized"])
             self.assertEqual([str(executable), "--mcp"], popen.call_args.args[0])
             self.assertEqual(str(cwd), popen.call_args.kwargs["cwd"])
+            self.assertNotIn("CI", popen.call_args.kwargs["env"])
+            self.assertEqual(
+                str(root / "local-app-data"),
+                popen.call_args.kwargs["env"]["LOCALAPPDATA"],
+            )
             self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stdin"])
             self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stdout"])
-            self.assertEqual(harness.subprocess.PIPE, popen.call_args.kwargs["stderr"])
-            process.communicate.assert_called_once_with(
-                input=harness.build_mcp_initialize_request(),
-                timeout=harness.MCP_STDIO_TIMEOUT_SECONDS,
+            self.assertEqual(harness.subprocess.DEVNULL, popen.call_args.kwargs["stderr"])
+            process.stdin.write.assert_called_once_with(harness.build_mcp_initialize_request())
+            process.stdin.flush.assert_called_once_with()
+            process.stdin.close.assert_called_once_with()
+            process.wait.assert_called_once_with(
+                timeout=harness.MCP_STDIO_TIMEOUT_SECONDS
             )
 
     def test_app_environment_preserves_ci_but_removes_false_proof_overrides(self) -> None:
