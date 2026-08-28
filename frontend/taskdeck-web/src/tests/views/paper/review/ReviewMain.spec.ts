@@ -53,9 +53,11 @@ function mountMain(
     history?: HistoryRow[]
     applyPhase?: 'approve' | 'execute'
     dismissable?: boolean
+    attachTo?: boolean
   } = {},
 ) {
   return mount(ReviewMain, {
+    attachTo: deepReview.attachTo ? document.body : undefined,
     props: {
       serial: '#2026-04-25-014',
       meta: '11:42 PT · awaiting decision',
@@ -179,6 +181,35 @@ describe('ReviewMain', () => {
         'PRESS ⌫ TO FILE AWAY',
       )
       expect(wrapper.text()).toContain('SETTLED')
+    })
+  })
+
+  describe('decision receipt focus', () => {
+    it.each(['applied', 'rejected', 'deferred'] as const)(
+      'moves focus to the %s receipt at its original decision locus',
+      async (decisionReceipt) => {
+        const wrapper = mountMain({}, { attachTo: true })
+
+        await wrapper.setProps({ decisionReceipt })
+        await wrapper.vm.$nextTick()
+
+        expect(document.activeElement).toBe(
+          wrapper.get('[data-testid="paper-review-decision-receipt"]').element,
+        )
+
+        wrapper.unmount()
+      },
+    )
+
+    it('moves focus to the remaining explicit Apply control after approval', async () => {
+      const wrapper = mountMain({}, { applyPhase: 'execute', attachTo: true })
+
+      await wrapper.setProps({ decisionReceipt: 'approved' })
+      await wrapper.vm.$nextTick()
+
+      expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
+
+      wrapper.unmount()
     })
   })
 
