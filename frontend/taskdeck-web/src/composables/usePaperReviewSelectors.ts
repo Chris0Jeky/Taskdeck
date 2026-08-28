@@ -72,18 +72,18 @@ export interface SideEffects {
 }
 
 export interface ConfidenceBreakdown {
-  overall: number
+  overall: number | null
   components: Array<{ key: string; value: number }>
   note?: string
-  threshold: number
+  threshold: null
+  source: ConfidenceValueSource
 }
 
-/**
- * Confidence as HELD IN STATE: structurally identical to `ConfidenceBreakdown`,
- * but every `components[].key` is still the raw backend wire key. Translation
- * happens in the exposed `computed` (`localizeConfidence`), never at fetch time.
- */
-type StoredConfidenceBreakdown = ConfidenceBreakdown
+export type ConfidenceValueSource =
+  | 'model-reported'
+  | 'deterministic'
+  | 'derived'
+  | 'not-reported'
 
 export interface ConflictRow {
   tone: 'warn' | 'info' | 'ok'
@@ -142,9 +142,10 @@ const EMPTY_SIDE_EFFECT_ROWS: SideEffectRow[] = Object.freeze(
   [] as SideEffectRow[],
 ) as SideEffectRow[]
 const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
-  overall: 0,
+  overall: null,
   components: Object.freeze([] as ConfidenceBreakdown['components']) as ConfidenceBreakdown['components'],
-  threshold: 0.7,
+  threshold: null,
+  source: 'not-reported',
 }) as ConfidenceBreakdown
 
 const VALID_WEIGHTS = new Set<ProvenanceWeight>(['primary', 'contextual', 'excluded', 'inferred'])
@@ -237,45 +238,32 @@ function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v))
 }
 
-/**
- * `Reversibility` is a backend WIRE VALUE — the comparison is never translated.
- * Only its display relabel is catalog material; every other component key is
- * server-supplied text this client cannot localise.
- */
-const REVERSIBILITY_WIRE_KEY = 'Reversibility'
+const CONFIDENCE_SOURCES = new Set<ConfidenceValueSource>([
+  'model-reported',
+  'deterministic',
+  'derived',
+  'not-reported',
+])
 
-function mapConfidence(dto: ConfidenceBreakdownDto): StoredConfidenceBreakdown {
+function mapConfidence(dto: ConfidenceBreakdownDto): ConfidenceBreakdown {
+  const source = CONFIDENCE_SOURCES.has(dto.source) ? dto.source : 'not-reported'
+  const canShowNumber = source === 'model-reported' || source === 'derived'
   return {
-    overall: clamp01(dto.overall),
-    // Stored with the WIRE key; `localizeConfidence` relabels at read time.
-    components: dto.components.map((c) => ({
-      key: c.key,
-      value: clamp01(c.value),
-    })),
+    overall:
+      canShowNumber && typeof dto.overall === 'number' && Number.isFinite(dto.overall)
+        ? clamp01(dto.overall)
+        : null,
+    components: canShowNumber
+      ? dto.components
+          .filter((component) => Number.isFinite(component.value))
+          .map((component) => ({
+            key: component.key,
+            value: clamp01(component.value),
+          }))
+      : [],
     note: dto.note ?? undefined,
-    threshold: dto.threshold,
-  }
-}
-
-/**
- * Resolves the one catalog-driven component label. Called from a `computed`,
- * NOT from the fetch path: `i18n.global.t` reads `i18n.global.locale`
- * internally, so deriving here is what makes the label follow a language
- * switch instead of freezing the locale that was active at deep-review load
- * (ADR-0054 decision 2, #1857 — the same rule `emptySideEffects()` follows).
- */
-function localizeConfidence(stored: StoredConfidenceBreakdown): ConfidenceBreakdown {
-  return {
-    overall: stored.overall,
-    components: stored.components.map((c) => ({
-      key:
-        c.key === REVERSIBILITY_WIRE_KEY
-          ? i18n.global.t('review.author.component.operationSafety')
-          : c.key,
-      value: c.value,
-    })),
-    note: stored.note,
-    threshold: stored.threshold,
+    threshold: null,
+    source,
   }
 }
 
@@ -321,7 +309,7 @@ export function usePaperReviewSelectors(
   // null means "nothing loaded" — the computed below then renders the
   // catalog-driven empty shape, so a language switch re-renders the fallback.
   const sideEffectsData: Ref<SideEffects | null> = ref(null)
-  const confidenceData: Ref<StoredConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
+  const confidenceData: Ref<ConfidenceBreakdown> = ref(EMPTY_CONFIDENCE)
   const conflictsData: Ref<ConflictRow[]> = ref([])
   const historyData: Ref<HistoryRow[]> = ref([])
   const similarPastData: Ref<SimilarPastRow[]> = ref([])
@@ -398,9 +386,7 @@ export function usePaperReviewSelectors(
   const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
   const evidenceLinks = computed<EvidenceLink[]>(() => evidenceLinksData.value)
   const sideEffects = computed<SideEffects>(() => sideEffectsData.value ?? emptySideEffects())
-  const confidenceBreakdown = computed<ConfidenceBreakdown>(() =>
-    localizeConfidence(confidenceData.value),
-  )
+  const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
   const conflicts = computed<ConflictRow[]>(() => conflictsData.value)
   const history = computed<HistoryRow[]>(() => historyData.value)
   const similarPast = computed<SimilarPastRow[]>(() => similarPastData.value)

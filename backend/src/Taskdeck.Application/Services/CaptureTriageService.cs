@@ -7,6 +7,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -226,6 +227,7 @@ public class CaptureTriageService : ICaptureTriageService
 
         IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
         IReadOnlyList<string?>? dueDateHints = null;
+        IReadOnlyList<decimal>? modelReportedConfidences = null;
         LlmCaptureTriageExtraction? successfulLlmExtraction = null;
         var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
@@ -248,6 +250,9 @@ public class CaptureTriageService : ICaptureTriageService
                         .ToList();
                     dueDateHints = outputValidation.Value.Tasks
                         .Select(task => task.DueDateHint)
+                        .ToList();
+                    modelReportedConfidences = outputValidation.Value.Tasks
+                        .Select(task => task.Confidence)
                         .ToList();
                     successfulLlmExtraction = extraction;
                     triagePromptVersion = outputValidation.Value.PromptVersion;
@@ -358,6 +363,16 @@ public class CaptureTriageService : ICaptureTriageService
                 permissionResult.ErrorMessage);
         }
 
+        var confidenceSource = modelReportedConfidences is null
+            ? ProvenanceConfidenceSource.Deterministic
+            : ProvenanceConfidenceSource.ModelReported;
+        var trustedConfidence = new TrustedProposalConfidenceInput(
+            confidenceSource,
+            operations.Select((operation, sequence) => new ProposalOperationConfidenceInput(
+                operation.Sequence,
+                modelReportedConfidences is null ? null : (double)modelReportedConfidences[sequence]))
+                .ToList());
+
         var createProposalDto = new CreateProposalDto(
                 SourceType: ProposalSourceType.Queue,
                 RequestedByUserId: userId,
@@ -366,7 +381,11 @@ public class CaptureTriageService : ICaptureTriageService
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
                 SourceReferenceId: captureReferenceId,
-                Operations: operations);
+                Operations: operations,
+                ProvenanceModelId: triageModel)
+        {
+            TrustedConfidence = trustedConfidence
+        };
 
         Result<ProposalDto> createProposalResult;
         if (transcriptId is Guid linkedTranscriptId && successfulLlmExtraction is not null)

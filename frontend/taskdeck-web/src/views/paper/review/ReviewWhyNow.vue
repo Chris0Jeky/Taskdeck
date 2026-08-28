@@ -5,11 +5,8 @@
  *
  * NO "tune heuristics" link (#1941). The card used to end in
  * `<a href="#">Tune heuristics →</a>` with no handler and no route: a dead
- * link. There is nothing to point it at either — the apply threshold is
- * `ConfidenceBreakdownService.DefaultThreshold`, a backend constant with no
- * API and no settings surface behind it. Re-add the link when a surface that
- * actually owns the threshold exists; until then the card is read-only, and
- * the confidence dial in `ReviewMain` already states the threshold in force.
+ * link. There is nothing to point it at either. Confidence is evidence shown
+ * during review, never a setting or threshold that authorizes Apply.
  */
 defineProps<{
   body: string

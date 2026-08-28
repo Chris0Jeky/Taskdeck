@@ -87,7 +87,7 @@ public class ProvenanceQueryServiceTests
     }
 
     [Fact]
-    public async Task GetProvenanceRowsAsync_MapsInferredFieldCorrectly()
+    public async Task GetProvenanceRowsAsync_MapsModelReportedInferredFieldCorrectly()
     {
         var provenance = CreateProvenance();
         var field = new ProvenanceField(
@@ -107,7 +107,7 @@ public class ProvenanceQueryServiceTests
         var row = result.Value[0];
         row.Key.Should().Be("due date");
         row.Weight.Should().Be("inferred");
-        row.Value.Should().Contain("Inferred");
+        row.Value.Should().Contain("Model reported");
         row.Value.Should().Contain("65%");
     }
 
@@ -381,7 +381,7 @@ public class ProvenanceQueryServiceTests
     }
 
     [Fact]
-    public void BuildValue_ShowsInferredLabel()
+    public void BuildValue_LabelsModelReportedConfidence()
     {
         var provenance = CreateProvenance();
         var field = new ProvenanceField(
@@ -392,8 +392,24 @@ public class ProvenanceQueryServiceTests
 
         var value = ProvenanceQueryService.BuildValue(field);
 
-        value.Should().Contain("Inferred");
+        value.Should().Contain("Model reported");
         value.Should().Contain("72%");
+    }
+
+    [Fact]
+    public void BuildValue_DeterministicFieldContainsNoNumericConfidence()
+    {
+        var provenance = CreateProvenance();
+        var field = new ProvenanceField(
+            "title",
+            ProvenanceKind.Inferred,
+            confidence: null,
+            provenance.Id,
+            ProvenanceConfidenceSource.Deterministic);
+
+        var row = ProvenanceQueryService.MapFieldToRow(field, NoOwnedTranscripts);
+
+        row.Value.Should().Be("Deterministic extraction (no model confidence)");
     }
 
     [Fact]

@@ -449,7 +449,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Gets the multi-component confidence breakdown for a proposal.
+    /// Gets source-labelled confidence recorded with proposal provenance. Deterministic and
+    /// unreported paths return no numeric confidence.
     /// </summary>
     [HttpGet("{id}/confidence")]
     public async Task<IActionResult> GetProposalConfidence(Guid id, CancellationToken cancellationToken = default)
