@@ -31,6 +31,8 @@ namespace Taskdeck.Api.Tests;
 /// </summary>
 public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFactory>
 {
+    private static readonly IReadOnlyList<string> FullScopes = ["read", "propose", "manage"];
+
     private readonly TestWebApplicationFactory _factory;
 
     public McpHttpTransportApiKeyTests(TestWebApplicationFactory factory)
@@ -46,7 +48,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-create");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Test Key"));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Test Key", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
@@ -55,6 +59,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         result.Key.Length.Should().Be(ApiKey.RawKeyLength);
         result.KeyPrefix.Should().Be(result.Key[..8]);
         result.Name.Should().Be("Test Key");
+        result.Scopes.Should().Equal(FullScopes);
         result.ExpiresAt.Should().BeNull();
     }
 
@@ -64,7 +69,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-expiry");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Expiring Key", 30));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Expiring Key", FullScopes, 30));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
@@ -79,7 +86,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-noname");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(""));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -91,9 +100,13 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(client, "apikey-list");
 
         // Create two keys
-        var r1 = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Key 1"));
+        var r1 = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Key 1", FullScopes));
         r1.StatusCode.Should().Be(HttpStatusCode.Created);
-        var r2 = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Key 2"));
+        var r2 = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Key 2", FullScopes));
         r2.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var listResponse = await client.GetAsync("/api/apikeys");
@@ -115,7 +128,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-revoke");
 
-        var createResponse = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Revoke Me"));
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Revoke Me", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         var revokeResponse = await client.DeleteAsync($"/api/apikeys/{created!.Id}");
@@ -136,7 +151,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-double-revoke");
 
-        var createResponse = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Double Revoke"));
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Double Revoke", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         await client.DeleteAsync($"/api/apikeys/{created!.Id}");
@@ -150,7 +167,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client1 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client1, "apikey-owner");
 
-        var createResponse = await client1.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Owner Key"));
+        var createResponse = await client1.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Owner Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         // Different user tries to revoke
@@ -213,7 +232,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-revoked");
 
         // Create and revoke a key
-        var createResponse = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Revoked Key"));
+        var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Revoked Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         await jwtClient.DeleteAsync($"/api/apikeys/{created!.Id}");
 
@@ -232,7 +253,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-expired");
         using var createResponse = await jwtClient.PostAsJsonAsync(
             "/api/apikeys",
-            new CreateApiKeyRequest("Expired Key", 1));
+            new CreateApiKeyRequest("Expired Key", FullScopes, 1));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
 
@@ -259,7 +280,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var jwtClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-valid");
 
-        var createResponse = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Valid MCP Key"));
+        var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Valid MCP Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         // Use the key on MCP endpoint - even though we send a bad body,
@@ -469,7 +492,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         using var jwtClient = factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-stale-owner");
         using var createResponse = await jwtClient.PostAsJsonAsync(
-            "/api/apikeys", new CreateApiKeyRequest("Stale Owner Key"));
+            "/api/apikeys", new CreateApiKeyRequest("Stale Owner Key", FullScopes));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -664,11 +687,15 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     {
         var client1 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client1, "apikey-iso-a");
-        await client1.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("User A Key"));
+        await client1.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("User A Key", FullScopes));
 
         var client2 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client2, "apikey-iso-b");
-        await client2.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("User B Key"));
+        await client2.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("User B Key", FullScopes));
 
         var listA = await (await client1.GetAsync("/api/apikeys")).Content.ReadFromJsonAsync<ListApiKeysResponse>();
         var listB = await (await client2.GetAsync("/api/apikeys")).Content.ReadFromJsonAsync<ListApiKeysResponse>();
@@ -677,9 +704,14 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         listB!.Keys.Should().NotContain(k => k.Name == "User A Key");
     }
 
-    private async Task<string> CreateApiKeyAsync(HttpClient jwtClient, string name)
+    private async Task<string> CreateApiKeyAsync(
+        HttpClient jwtClient,
+        string name,
+        IReadOnlyList<string>? scopes = null)
     {
-        using var response = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(name));
+        using var response = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest(name, scopes ?? FullScopes));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -811,7 +843,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     {
         var client = _factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("No Auth Key"));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("No Auth Key", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

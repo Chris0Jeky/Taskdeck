@@ -11,12 +11,16 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        var result = await harness.RunAsync("api-key create --name \"Test Key\"");
+        var result = await harness.RunAsync(
+            "api-key create --name \"Test Key\" --scopes read,manage");
 
         result.ExitCode.Should().Be(0, result.StdErr);
         using var doc = JsonDocument.Parse(result.StdOut);
         doc.RootElement.GetProperty("key").GetString().Should().StartWith("tdsk_");
         doc.RootElement.GetProperty("name").GetString().Should().Be("Test Key");
+        doc.RootElement.GetProperty("scopes").EnumerateArray()
+            .Select(scope => scope.GetString())
+            .Should().Equal("read", "manage");
         doc.RootElement.GetProperty("message").GetString().Should().Contain("cannot be retrieved");
     }
 
@@ -25,7 +29,8 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        var result = await harness.RunAsync("api-key create --name \"Expiring\" --expires 90d");
+        var result = await harness.RunAsync(
+            "api-key create --name \"Expiring\" --scopes propose --expires 90d");
 
         result.ExitCode.Should().Be(0, result.StdErr);
         using var doc = JsonDocument.Parse(result.StdOut);
@@ -38,7 +43,8 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        var result = await harness.RunAsync("api-key create --name \"NumExpiry\" --expires 30");
+        var result = await harness.RunAsync(
+            "api-key create --name \"NumExpiry\" --scopes manage --expires 30");
 
         result.ExitCode.Should().Be(0, result.StdErr);
         using var doc = JsonDocument.Parse(result.StdOut);
@@ -62,7 +68,8 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        var result = await harness.RunAsync("api-key create --name \"Bad\" --expires abc");
+        var result = await harness.RunAsync(
+            "api-key create --name \"Bad\" --scopes read --expires abc");
 
         result.ExitCode.Should().Be(2);
         result.StdErr.Should().Contain("Invalid --expires");
@@ -73,8 +80,8 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        await harness.RunAsync("api-key create --name \"List Key A\"");
-        await harness.RunAsync("api-key create --name \"List Key B\"");
+        await harness.RunAsync("api-key create --name \"List Key A\" --scopes read");
+        await harness.RunAsync("api-key create --name \"List Key B\" --scopes propose,manage");
 
         var result = await harness.RunAsync("api-key list");
 
@@ -87,6 +94,13 @@ public class ApiKeyCommandTests
             .ToList();
         names.Should().Contain("List Key A");
         names.Should().Contain("List Key B");
+
+        var listedScopes = doc.RootElement.EnumerateArray()
+            .Single(e => e.GetProperty("name").GetString() == "List Key B")
+            .GetProperty("scopes")
+            .EnumerateArray()
+            .Select(scope => scope.GetString());
+        listedScopes.Should().Equal("propose", "manage");
     }
 
     [Fact]
@@ -94,7 +108,7 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        await harness.RunAsync("api-key create --name \"Prefix Key\"");
+        await harness.RunAsync("api-key create --name \"Prefix Key\" --scopes read");
 
         var result = await harness.RunAsync("api-key list");
 
@@ -110,7 +124,7 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        await harness.RunAsync("api-key create --name \"Revoke Me\"");
+        await harness.RunAsync("api-key create --name \"Revoke Me\" --scopes read");
 
         var revokeResult = await harness.RunAsync("api-key revoke --name \"Revoke Me\"");
         revokeResult.ExitCode.Should().Be(0, revokeResult.StdErr);
@@ -130,7 +144,8 @@ public class ApiKeyCommandTests
     {
         await using var harness = new CliTestHarness("cli-apikey");
 
-        var createResult = await harness.RunAsync("api-key create --name \"Revoke By Id\"");
+        var createResult = await harness.RunAsync(
+            "api-key create --name \"Revoke By Id\" --scopes manage");
         using var createDoc = JsonDocument.Parse(createResult.StdOut);
         var keyId = createDoc.RootElement.GetProperty("id").GetGuid();
 
@@ -158,6 +173,26 @@ public class ApiKeyCommandTests
 
         result.ExitCode.Should().Be(2);
         result.StdErr.Should().Contain("--name");
+    }
+
+    [Theory]
+    [InlineData("api-key create --name \"Missing Scopes\"")]
+    [InlineData("api-key create --name \"Empty Scopes\" --scopes \"\"")]
+    [InlineData("api-key create --name \"None Scope\" --scopes none")]
+    [InlineData("api-key create --name \"Full Alias\" --scopes full")]
+    [InlineData("api-key create --name \"Unknown Scope\" --scopes read,unknown")]
+    public async Task ApiKeyCreate_InvalidScopeSelection_ReturnsUsageError(string command)
+    {
+        await using var harness = new CliTestHarness("cli-apikey-invalid-scope");
+
+        var result = await harness.RunAsync(command);
+
+        result.ExitCode.Should().Be(2);
+        result.StdErr.Should().Contain("--scopes");
+
+        var list = await harness.RunAsync("api-key list");
+        using var doc = JsonDocument.Parse(list.StdOut);
+        doc.RootElement.EnumerateArray().Should().BeEmpty();
     }
 
     [Fact]
