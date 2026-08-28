@@ -253,6 +253,7 @@ describe('ApiKeySettingsView', () => {
       expect(submitBtn!.disabled).toBe(true)
 
       findScopeCheckbox('read').click()
+      await wrapper.vm.$nextTick()
       findScopeCheckbox('manage').click()
       await wrapper.vm.$nextTick()
       expect(submitBtn!.disabled).toBe(false)
