@@ -1,6 +1,7 @@
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Cli.Commands;
@@ -36,7 +37,16 @@ internal sealed class ApiKeysCommandHandler
         {
             return ConsoleOutput.PrintUsageError(
                 "Missing --name.",
-                "taskdeck api-key create --name <name> [--expires <days>]");
+                "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
+        }
+
+        var scopesText = ArgParser.GetOption(args, "--scopes");
+        var scopeNames = scopesText?.Split(',', StringSplitOptions.None);
+        if (!ApiKeyScopeRules.TryParseNames(scopeNames, out var scopes))
+        {
+            return ConsoleOutput.PrintUsageError(
+                "Missing or invalid --scopes. Select one or more of: read, propose, manage.",
+                "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
         }
 
         var expiresText = ArgParser.GetOption(args, "--expires");
@@ -49,7 +59,7 @@ internal sealed class ApiKeysCommandHandler
             {
                 return ConsoleOutput.PrintUsageError(
                     $"Invalid --expires value: '{expiresText}'. Provide a positive number of days (e.g., 90 or 90d).",
-                    "taskdeck api-key create --name <name> [--expires <days>]");
+                    "taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]");
             }
             expiresIn = TimeSpan.FromDays(days);
         }
@@ -58,7 +68,7 @@ internal sealed class ApiKeysCommandHandler
 
         try
         {
-            var (plaintextKey, entity) = await _apiKeyService.CreateKeyAsync(userId, name, expiresIn);
+            var (plaintextKey, entity) = await _apiKeyService.CreateKeyAsync(userId, name, scopes, expiresIn);
 
             ConsoleOutput.WriteJson(new
             {
@@ -66,6 +76,7 @@ internal sealed class ApiKeysCommandHandler
                 key = plaintextKey,
                 keyPrefix = entity.KeyPrefix_,
                 name = entity.Name,
+                scopes = ApiKeyScopeRules.ToNames(entity.Scopes),
                 createdAt = entity.CreatedAt,
                 expiresAt = entity.ExpiresAt,
                 message = "Save this key — it cannot be retrieved again."
@@ -89,6 +100,7 @@ internal sealed class ApiKeysCommandHandler
             id = k.Id,
             keyPrefix = k.KeyPrefix_,
             name = k.Name,
+            scopes = ApiKeyScopeRules.ToNames(k.Scopes),
             createdAt = k.CreatedAt,
             expiresAt = k.ExpiresAt,
             revokedAt = k.RevokedAt,

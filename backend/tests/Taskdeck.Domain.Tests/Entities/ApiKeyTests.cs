@@ -148,4 +148,47 @@ public class ApiKeyTests
         act.Should().Throw<DomainException>()
             .WithMessage("*scopes*known*non-empty*");
     }
+
+    [Fact]
+    public void ApiKeyScopeRules_TryParseNames_BuildsIndependentCombination()
+    {
+        var parsed = ApiKeyScopeRules.TryParseNames(
+            new[] { "Manage", "read" },
+            out var scopes);
+
+        parsed.Should().BeTrue();
+        scopes.Should().Be(ApiKeyScope.Read | ApiKeyScope.Manage);
+        ApiKeyScopeRules.ToNames(scopes).Should().Equal("read", "manage");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidScopeNames))]
+    public void ApiKeyScopeRules_TryParseNames_RejectsOmittedEmptyOrUnknown(
+        IEnumerable<string>? names)
+    {
+        ApiKeyScopeRules.TryParseNames(names, out var scopes).Should().BeFalse();
+        scopes.Should().Be(ApiKeyScope.None);
+    }
+
+    [Fact]
+    public void ApiKeyScopeRules_Includes_RequiresEveryRequestedBit()
+    {
+        var granted = ApiKeyScope.Read | ApiKeyScope.Propose;
+
+        ApiKeyScopeRules.Includes(granted, ApiKeyScope.Read).Should().BeTrue();
+        ApiKeyScopeRules.Includes(granted, ApiKeyScope.Propose).Should().BeTrue();
+        ApiKeyScopeRules.Includes(granted, ApiKeyScope.Manage).Should().BeFalse();
+        ApiKeyScopeRules.Includes(granted, ApiKeyScope.Full).Should().BeFalse();
+        ApiKeyScopeRules.Includes(ApiKeyScope.Full, ApiKeyScope.Full).Should().BeTrue();
+    }
+
+    public static TheoryData<IEnumerable<string>?> InvalidScopeNames => new()
+    {
+        null,
+        Array.Empty<string>(),
+        new[] { "" },
+        new[] { "none" },
+        new[] { "full" },
+        new[] { "read", "unknown" }
+    };
 }

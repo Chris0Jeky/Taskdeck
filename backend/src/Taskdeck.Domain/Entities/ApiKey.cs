@@ -79,8 +79,7 @@ public class ApiKey : Entity
         if (expiresAt.HasValue && expiresAt.Value <= DateTimeOffset.UtcNow)
             throw new DomainException(ErrorCodes.ValidationError, "Expiration must be in the future");
 
-        if (scopes == ApiKeyScope.None || (scopes & ~ApiKeyScope.Full) != 0)
-            throw new DomainException(ErrorCodes.ValidationError, "API key scopes must contain only known, non-empty values");
+        ApiKeyScopeRules.EnsureValid(scopes);
 
         UserId = userId;
         KeyHash = keyHash;

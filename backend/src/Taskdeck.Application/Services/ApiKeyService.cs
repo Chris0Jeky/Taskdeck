@@ -30,9 +30,12 @@ public class ApiKeyService
     public async Task<(string PlaintextKey, ApiKey Entity)> CreateKeyAsync(
         Guid userId,
         string name,
+        ApiKeyScope scopes,
         TimeSpan? expiresIn = null,
         CancellationToken cancellationToken = default)
     {
+        ApiKeyScopeRules.EnsureValid(scopes);
+
         // Verify user exists
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
         if (user is null)
@@ -46,7 +49,7 @@ public class ApiKeyService
             ? DateTimeOffset.UtcNow.Add(expiresIn.Value)
             : null;
 
-        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, ApiKeyScope.Full, expiresAt);
+        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, scopes, expiresAt);
 
         await _unitOfWork.ApiKeys.AddAsync(apiKey, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
