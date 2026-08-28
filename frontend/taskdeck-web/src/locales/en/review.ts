@@ -75,6 +75,25 @@ export default {
     },
   },
 
+  batchApprove: {
+    selectLabel: 'Select {title} for batch approval',
+    request: 'Review {count} selected approval | Review {count} selected approvals',
+    requestLabel: 'Open confirmation for {count} selected proposal | Open confirmation for {count} selected proposals',
+    limitReached: 'A batch can contain at most {count} proposals.',
+    selectionChanged: 'The selection changed because one or more proposals are no longer eligible. Review the selection again.',
+    receiptMismatch: 'Taskdeck could not confirm the complete batch. Review the queue before trying again.',
+    approved: 'Approved {count} proposal — not applied. | Approved {count} proposals — not applied.',
+    failed: 'The selected proposals could not be approved.',
+    dialog: {
+      title: 'Approve selected proposals?',
+      description: 'Confirm approval for {count} proposal | Confirm approval for {count} proposals',
+      body: 'Taskdeck will re-check all {count} proposal and approve the whole set or none of it. | Taskdeck will re-check all {count} proposals and approve the whole set or none of it.',
+      notApplied: 'This records approval only. Nothing is applied to a board.',
+      cancel: 'Keep reviewing',
+      confirm: 'Approve {count} proposal | Approve {count} proposals',
+    },
+  },
+
   scope: {
     board: 'Board: {board}',
     clear: 'Show all boards',

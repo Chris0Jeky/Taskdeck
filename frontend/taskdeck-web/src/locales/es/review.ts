@@ -42,6 +42,25 @@ export default {
     },
   },
 
+  batchApprove: {
+    selectLabel: 'Seleccionar {title} para aprobación por lotes',
+    request: 'Revisar {count} aprobación seleccionada | Revisar {count} aprobaciones seleccionadas',
+    requestLabel: 'Abrir la confirmación para {count} propuesta seleccionada | Abrir la confirmación para {count} propuestas seleccionadas',
+    limitReached: 'Un lote puede contener como máximo {count} propuestas.',
+    selectionChanged: 'La selección cambió porque una o más propuestas ya no son aptas. Revísala de nuevo.',
+    receiptMismatch: 'Taskdeck no pudo confirmar el lote completo. Revisa la cola antes de volver a intentarlo.',
+    approved: 'Se aprobó {count} propuesta; no se aplicó. | Se aprobaron {count} propuestas; no se aplicaron.',
+    failed: 'No se pudieron aprobar las propuestas seleccionadas.',
+    dialog: {
+      title: '¿Aprobar las propuestas seleccionadas?',
+      description: 'Confirmar la aprobación de {count} propuesta | Confirmar la aprobación de {count} propuestas',
+      body: 'Taskdeck volverá a comprobar la {count} propuesta y aprobará el lote completo o ninguna. | Taskdeck volverá a comprobar las {count} propuestas y aprobará el lote completo o ninguna.',
+      notApplied: 'Esto solo registra la aprobación. No se aplica nada a ningún tablero.',
+      cancel: 'Seguir revisando',
+      confirm: 'Aprobar {count} propuesta | Aprobar {count} propuestas',
+    },
+  },
+
   scope: {
     board: 'Tablero: {board}',
     clear: 'Mostrar todos los tableros',

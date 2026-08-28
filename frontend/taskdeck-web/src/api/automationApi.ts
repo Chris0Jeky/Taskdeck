@@ -1,5 +1,5 @@
 import http from './http'
-import type { Proposal, ProposalFilters } from '../types/automation'
+import type { BatchApproveProposalsResult, Proposal, ProposalFilters } from '../types/automation'
 import { buildQueryString } from '../utils/queryBuilder'
 
 export const automationApi = {
@@ -15,6 +15,14 @@ export const automationApi = {
 
   async approveProposal(id: string): Promise<Proposal> {
     const { data } = await http.post<Proposal>(`/automation/proposals/${encodeURIComponent(id)}/approve`)
+    return data
+  },
+
+  async approveProposals(ids: string[]): Promise<BatchApproveProposalsResult> {
+    const { data } = await http.post<BatchApproveProposalsResult>(
+      '/automation/proposals/approve',
+      { ids },
+    )
     return data
   },
 

@@ -43,6 +43,23 @@ describe('automationApi', () => {
     expect(http.post).toHaveBeenCalledWith('/automation/proposals/p1/reject', { reason: null })
   })
 
+  it('posts the exact approve-only batch and returns its explicit receipt', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { approvedIds: ['p-2', 'p-1'] } })
+
+    const result = await automationApi.approveProposals(['p-2', 'p-1'])
+
+    expect(http.post).toHaveBeenCalledOnce()
+    expect(http.post).toHaveBeenCalledWith('/automation/proposals/approve', {
+      ids: ['p-2', 'p-1'],
+    })
+    expect(result.approvedIds).toEqual(['p-2', 'p-1'])
+    expect(http.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/execute'),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
   // #1462: the backend carries ApprovedRevisionId on every REST proposal payload, but no frontend type
   // declared it, so it was invisible to consumers. These assert it is not dropped between the response
   // body and the caller, on the reads AND on the decide responses (which is where the pin is born).

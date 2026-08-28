@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
+  approveProposals: vi.fn(),
   rejectProposal: vi.fn(),
   deferProposal: vi.fn(),
   executeProposal: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('../../../../api/automationApi', () => ({
     getProposals: mocks.getProposals,
     getProposal: mocks.getProposal,
     approveProposal: mocks.approveProposal,
+    approveProposals: mocks.approveProposals,
     rejectProposal: mocks.rejectProposal,
     deferProposal: mocks.deferProposal,
     executeProposal: mocks.executeProposal,
@@ -279,6 +281,54 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').exists()).toBe(true)
     // Active proposal title surfaces in the main column header.
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
+  })
+
+  it('batch-selects only eligible rows, confirms explicitly, and stops at Approved', async () => {
+    const proposals = [
+      makeProposal({
+        id: 'batch-1',
+        summary: 'First batch proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-1', actionType: 'create', targetType: 'card' }],
+      }),
+      makeProposal({
+        id: 'batch-2',
+        summary: 'Second batch proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-2', actionType: 'create', targetType: 'card' }],
+      }),
+      makeProposal({ id: 'batch-medium', summary: 'Medium proposal', riskLevel: 'Medium' }),
+    ]
+    const wrapper = await mountView(proposals, '/workspace/review', [], [], { attachTo: true })
+
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-medium"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="queue-batch-select-batch-1"]').trigger('change')
+    await wrapper.get('[data-testid="queue-batch-select-batch-2"]').trigger('change')
+    await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="batch-approve-dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="batch-approve-not-applied"]')?.textContent)
+      .toContain('Nothing is applied to a board')
+    expect(mocks.approveProposals).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    mocks.approveProposals.mockResolvedValueOnce({ approvedIds: ['batch-2', 'batch-1'] })
+    mocks.getProposals.mockResolvedValueOnce(
+      proposals.map((proposal) =>
+        proposal.id === 'batch-1' || proposal.id === 'batch-2'
+          ? { ...proposal, status: 'Approved' as const }
+          : proposal,
+      ),
+    )
+    ;(document.body.querySelector('[data-testid="batch-approve-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mocks.approveProposals).toHaveBeenCalledOnce()
+    expect(mocks.approveProposals).toHaveBeenCalledWith(['batch-1', 'batch-2'])
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="decision-apply"]').attributes('data-apply-phase')).toBe('execute')
+    expect(wrapper.text()).not.toContain('APPLIED · READ-ONLY')
   })
 
   it('keeps secondary evidence collapsed per proposal without changing selection or queue focus', async () => {

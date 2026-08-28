@@ -108,3 +108,8 @@ export interface ProposalFilters {
   riskLevel?: ProposalRiskLevel
   limit?: number
 }
+
+/** Receipt from the all-or-none approve-only batch endpoint. */
+export interface BatchApproveProposalsResult {
+  approvedIds: string[]
+}

@@ -1,0 +1,231 @@
+import { computed, ref, watch, type Ref } from 'vue'
+import { automationApi } from '../api/automationApi'
+import { i18n } from '../i18n'
+import { useToastStore } from '../store/toastStore'
+import type { Proposal } from '../types/automation'
+import { getErrorDisplay } from './useErrorMapper'
+import { STALE_PROPOSAL_MS } from './useReviewProposals'
+import { proposalIdsEqual } from '../utils/proposalIdentity'
+
+const MAX_BATCH_APPROVAL_COUNT = 500
+
+function isExactPendingReview(status: Proposal['status']): boolean {
+  return status === 0 || (
+    typeof status === 'string' && status.toLowerCase() === 'pendingreview'
+  )
+}
+
+function isExactLowRisk(risk: Proposal['riskLevel']): boolean {
+  return risk === 0 || (
+    typeof risk === 'string' && risk.toLowerCase() === 'low'
+  )
+}
+
+/**
+ * Paper's fail-closed batch boundary. Unlike the general display normalizers, unknown wire values
+ * are never treated as PendingReview/Low. Eligibility is presentation-only; the server repeats
+ * every gate authoritatively at confirmation time.
+ */
+export function isBatchApproveEligible(
+  proposal: Proposal,
+  currentUserId: string | null,
+  nowMs: number,
+): boolean {
+  if (!currentUserId || !proposalIdsEqual(proposal.requestedByUserId, currentUserId)) return false
+  if (!isExactPendingReview(proposal.status) || !isExactLowRisk(proposal.riskLevel)) return false
+  if (proposal.isExpired === true) return false
+
+  const expiresAt = new Date(proposal.expiresAt).getTime()
+  if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) return false
+
+  const createdAt = new Date(proposal.createdAt).getTime()
+  if (!Number.isFinite(createdAt) || nowMs - createdAt >= STALE_PROPOSAL_MS) return false
+
+  if (proposal.deferredUntil) {
+    const deferredUntil = new Date(proposal.deferredUntil).getTime()
+    if (!Number.isFinite(deferredUntil) || deferredUntil > nowMs) return false
+  }
+
+  const operations = proposal.operations
+  return Array.isArray(operations) &&
+    operations.length > 0 &&
+    operations.length <= 5 &&
+    operations.every(
+      (operation) =>
+        typeof operation.actionType === 'string' &&
+        typeof operation.targetType === 'string' &&
+        operation.actionType.toLowerCase() === 'create' &&
+        operation.targetType.toLowerCase() === 'card',
+    )
+}
+
+export function useBatchApproveProposals(
+  proposals: Ref<Proposal[]>,
+  currentUserId: Ref<string | null>,
+  nowMs: Ref<number>,
+  loadProposals: () => Promise<void>,
+) {
+  const toast = useToastStore()
+  const t = i18n.global.t
+  const selectedIds = ref<Set<string>>(new Set())
+  const confirmationOpen = ref(false)
+  const busy = ref(false)
+
+  const eligibleIds = computed(() => new Set(
+    proposals.value
+      .filter((proposal) => isBatchApproveEligible(proposal, currentUserId.value, nowMs.value))
+      .map((proposal) => proposal.id),
+  ))
+
+  const selectedCount = computed(() => selectedIds.value.size)
+
+  function replaceSelection(ids: Iterable<string>) {
+    selectedIds.value = new Set(ids)
+  }
+
+  function clearSelection() {
+    replaceSelection([])
+    confirmationOpen.value = false
+  }
+
+  function reconcileSelection(): boolean {
+    const eligible = eligibleIds.value
+    const retained = [...selectedIds.value].filter((id) =>
+      [...eligible].some((eligibleId) => proposalIdsEqual(eligibleId, id)),
+    )
+    const changed = retained.length !== selectedIds.value.size
+    if (changed) {
+      replaceSelection(retained)
+      // Confirmation belongs to the exact set the reviewer saw. Even when eligible items remain,
+      // pruning one member invalidates that consent and requires a fresh explicit confirmation.
+      confirmationOpen.value = false
+    }
+    if (selectedIds.value.size === 0) confirmationOpen.value = false
+    return changed
+  }
+
+  watch(
+    [proposals, currentUserId, nowMs],
+    () => {
+      if (reconcileSelection()) toast.info(t('review.batchApprove.selectionChanged'))
+    },
+    { deep: true, flush: 'sync' },
+  )
+
+  function isSelected(id: string): boolean {
+    return [...selectedIds.value].some((selectedId) => proposalIdsEqual(selectedId, id))
+  }
+
+  function toggleSelection(id: string) {
+    if (busy.value) return
+    const canonical = [...eligibleIds.value].find((eligibleId) => proposalIdsEqual(eligibleId, id))
+    if (!canonical) return
+    const next = new Set(selectedIds.value)
+    const selected = [...next].find((selectedId) => proposalIdsEqual(selectedId, canonical))
+    if (selected) next.delete(selected)
+    else {
+      if (next.size >= MAX_BATCH_APPROVAL_COUNT) {
+        toast.info(t('review.batchApprove.limitReached', { count: MAX_BATCH_APPROVAL_COUNT }))
+        return
+      }
+      next.add(canonical)
+    }
+    replaceSelection(next)
+  }
+
+  function requestConfirmation() {
+    if (busy.value) return
+    if (reconcileSelection() || selectedIds.value.size === 0) {
+      toast.info(t('review.batchApprove.selectionChanged'))
+      return
+    }
+    confirmationOpen.value = true
+  }
+
+  function cancelConfirmation() {
+    if (busy.value) return
+    confirmationOpen.value = false
+  }
+
+  async function refreshProposalsBestEffort() {
+    try {
+      await loadProposals()
+    } catch {
+      // The approve receipt remains authoritative. The caller has already reconciled the visible
+      // state (or deliberately left it untouched for an invalid receipt), so a secondary refresh
+      // failure must not turn a successful approval into a false failure or hide the primary error.
+    }
+  }
+
+  async function confirmApproval() {
+    if (busy.value || !confirmationOpen.value) return
+
+    // Revalidate against the immediately-current queue before the POST. The backend performs the
+    // authoritative second revalidation, including permissions and concurrency tokens.
+    if (reconcileSelection() || selectedIds.value.size === 0) {
+      confirmationOpen.value = false
+      toast.error(t('review.batchApprove.selectionChanged'))
+      return
+    }
+
+    const ids = proposals.value
+      .filter((proposal) => isSelected(proposal.id))
+      .map((proposal) => proposal.id)
+    confirmationOpen.value = false
+    busy.value = true
+
+    try {
+      const result = await automationApi.approveProposals(ids)
+      const receiptMatches =
+        result.approvedIds.length === ids.length &&
+        ids.every((id) => result.approvedIds.some((approvedId) => proposalIdsEqual(approvedId, id)))
+
+      replaceSelection([])
+      if (!receiptMatches) {
+        await refreshProposalsBestEffort()
+        toast.error(t('review.batchApprove.receiptMismatch'))
+        return
+      }
+
+      // Reconcile immediately as Approved (never Applied) while canonical decision metadata
+      // refreshes. The receipt does not carry decision timestamps, so do not invent them.
+      proposals.value = proposals.value.map((proposal) =>
+        result.approvedIds.some((id) => proposalIdsEqual(id, proposal.id))
+          ? {
+              ...proposal,
+              status: 'Approved',
+              deferredUntil: null,
+            }
+          : proposal,
+      )
+      toast.success(
+        t('review.batchApprove.approved', { count: ids.length }, ids.length),
+        undefined,
+        { label: 'approved' },
+      )
+      await refreshProposalsBestEffort()
+    } catch (error: unknown) {
+      // A server-side drift/conflict is authoritative. Refresh before reporting it so the queue does
+      // not continue advertising stale selection, but never claim any item was approved locally.
+      replaceSelection([])
+      await refreshProposalsBestEffort()
+      toast.error(getErrorDisplay(error, t('review.batchApprove.failed')).message)
+    } finally {
+      busy.value = false
+    }
+  }
+
+  return {
+    eligibleIds,
+    selectedIds,
+    selectedCount,
+    confirmationOpen,
+    busy,
+    clearSelection,
+    isSelected,
+    toggleSelection,
+    requestConfirmation,
+    cancelConfirmation,
+    confirmApproval,
+  }
+}
