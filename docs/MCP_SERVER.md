@@ -211,5 +211,5 @@ Cursor end-to-end test, and it does not prove the separate agent-proposes/human-
 
 For standalone or co-hosted HTTP, create a Taskdeck API key in **Settings -> API Keys** and follow
 the repository's `mcp-claude-code-http.example.json`. Current keys authorize the key owner's current
-MCP surface; this integration branch does not yet ship scoped-key enforcement or runtime tool-hash
+MCP surface; this packaging slice does not claim scoped-key enforcement or runtime tool-hash
 approval.
