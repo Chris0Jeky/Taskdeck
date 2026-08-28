@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -89,6 +89,8 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
+const reviewMainEl = ref<HTMLElement | null>(null)
+const decisionReceiptEl = ref<HTMLElement | null>(null)
 
 const isAppliedRecord = computed(
   () =>
@@ -122,10 +124,31 @@ const dialSubline = computed(() =>
     ? t('review.main.dial.above')
     : t('review.main.dial.below'),
 )
+
+/**
+ * A receipt replaces the controls that created it. Keep the reviewer at that
+ * decision locus instead of leaving focus on a removed button or a global
+ * keymap. Approval is the sole exception: its receipt truthfully leaves one
+ * explicit control, Apply to board, so focus advances only to that control.
+ */
+watch(
+  () => props.decisionReceipt,
+  async (receipt, previousReceipt) => {
+    if (!receipt || receipt === previousReceipt) return
+    await nextTick()
+
+    if (receipt === 'approved') {
+      reviewMainEl.value?.querySelector<HTMLButtonElement>('[data-testid="decision-apply"]')?.focus()
+      return
+    }
+
+    decisionReceiptEl.value?.focus()
+  },
+)
 </script>
 
 <template>
-  <div class="paper-review-main" data-testid="paper-review-main">
+  <div ref="reviewMainEl" class="paper-review-main" data-testid="paper-review-main">
     <header class="paper-review-main__header">
       <div class="paper-review-main__header-text">
         <div class="paper-review-main__tagrow">
@@ -199,6 +222,8 @@ const dialSubline = computed(() =>
       v-else-if="decisionReceipt"
       class="paper-review-main__decision-receipt"
       role="status"
+      tabindex="-1"
+      ref="decisionReceiptEl"
       data-testid="paper-review-decision-receipt"
       :data-decision="decisionReceipt"
     >
