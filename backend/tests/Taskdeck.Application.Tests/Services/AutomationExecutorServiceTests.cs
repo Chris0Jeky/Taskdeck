@@ -53,6 +53,11 @@ public class AutomationExecutorServiceTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.RollbackTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ReturnsAsync(1);
+        _policyEngineMock
+            .Setup(engine => engine.GuardProposalDecisionWritesAsync(
+                It.IsAny<IEnumerable<Guid?>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
         _auditLogRepoMock.Setup(r => r.AddAsync(It.IsAny<AuditLog>(), default))
             .ReturnsAsync((AuditLog auditLog, CancellationToken _) => auditLog);
 

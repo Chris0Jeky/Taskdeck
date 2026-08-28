@@ -36,6 +36,69 @@ public class AutomationPolicyEngineTests
         _engine = new AutomationPolicyEngine(_unitOfWorkMock.Object);
     }
 
+    [Fact]
+    public async Task GuardProposalDecisionWrites_ShouldRejectWholeBatch_WhenAnyBoardIsArchived()
+    {
+        var activeBoard = TestDataBuilder.CreateBoard("Active");
+        var archivedBoard = TestDataBuilder.CreateBoard("Archived", isArchived: true);
+        var markerBefore = activeBoard.CardMutationMarker;
+
+        _boardRepoMock
+            .Setup(repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { activeBoard, archivedBoard });
+
+        var result = await _engine.GuardProposalDecisionWritesAsync(
+            new Guid?[] { activeBoard.Id, archivedBoard.Id, activeBoard.Id, null });
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Be(
+            "Cannot modify proposals on an archived board. Restore the board before changing its decision history.");
+        activeBoard.CardMutationMarker.Should().Be(markerBefore,
+            "the batch validates every board before arming any marker");
+    }
+
+    [Fact]
+    public async Task GuardProposalDecisionWrites_ShouldArmEachDistinctActiveBoardOnce()
+    {
+        var firstBoard = TestDataBuilder.CreateBoard("First");
+        var secondBoard = TestDataBuilder.CreateBoard("Second");
+
+        _boardRepoMock
+            .Setup(repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { firstBoard, secondBoard });
+
+        var result = await _engine.GuardProposalDecisionWritesAsync(
+            new Guid?[] { firstBoard.Id, firstBoard.Id, secondBoard.Id });
+
+        result.IsSuccess.Should().BeTrue();
+        firstBoard.CardMutationMarker.Should().Be(1);
+        secondBoard.CardMutationMarker.Should().Be(1);
+        _boardRepoMock.Verify(
+            repo => repo.GetByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.Count() == 2),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task GuardProposalDecisionWrites_ShouldPreserveNullAndMissingBoardValidation()
+    {
+        _boardRepoMock
+            .Setup(repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Board>());
+
+        var nullResult = await _engine.GuardProposalDecisionWritesAsync(new Guid?[] { null });
+        var missingResult = await _engine.GuardProposalDecisionWritesAsync(new Guid?[] { Guid.NewGuid() });
+
+        nullResult.IsSuccess.Should().BeTrue();
+        missingResult.IsSuccess.Should().BeTrue();
+        _boardRepoMock.Verify(
+            repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Once,
+            "null boards bypass lookup while missing boards remain for existing validators to decide");
+    }
+
     #region ClassifyRisk Tests
 
     [Fact]

@@ -238,11 +238,28 @@ public class UnitOfWork : IUnitOfWork
 
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
-        if (_transaction != null)
+        var transaction = _transaction;
+        _transaction = null;
+
+        try
         {
-            await _transaction.RollbackAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            if (transaction != null)
+                await transaction.RollbackAsync(cancellationToken);
+        }
+        finally
+        {
+            try
+            {
+                if (transaction != null)
+                    await transaction.DisposeAsync();
+            }
+            finally
+            {
+                // EF does not restore tracked entity values or states when a database transaction
+                // rolls back. Clear them before any recovery write can accidentally re-save stale,
+                // rolled-back state or reuse an obsolete concurrency token.
+                _context.ChangeTracker.Clear();
+            }
         }
     }
 
