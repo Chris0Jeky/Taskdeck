@@ -2914,6 +2914,9 @@ describe('PaperReviewView', () => {
         makeProposal({ id: 'other-stale', summary: 'Other stale proposal', createdAt: staleAt }),
       ],
       '/workspace/review#proposal-receipt-approved',
+      [],
+      [],
+      { attachTo: true },
     )
 
     await wrapper.find('[data-testid="decision-apply"]').trigger('click')
@@ -2923,6 +2926,9 @@ describe('PaperReviewView', () => {
     expect(receipt.attributes('role')).toBe('status')
     expect(receipt.attributes('data-decision')).toBe('approved')
     expect(receipt.text()).toContain('not yet applied')
+    // Approval retains exactly one explicit next action. Focus advances only to
+    // that control; the global keymap cannot revive reject, edit, or defer.
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
     expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
