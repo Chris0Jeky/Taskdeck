@@ -87,6 +87,7 @@ $script:NpmCmd = $null
 $script:ComSpecExe = $null
 $script:OperationLockStream = $null
 $script:TransactionActive = $false
+$script:TransientStageCleanupUnproved = $false
 $script:State = $null
 
 function Write-Step { param([string]$Message) Write-Host "[dev-up] $Message" -ForegroundColor Cyan }
@@ -420,6 +421,7 @@ function Stop-RecordedProcess {
 }
 
 function Stop-LoadedStack {
+    param([switch]$RetainState)
     $clean = $true
     if (-not (Stop-RecordedProcess -Record $script:State.FrontendRecord)) { $clean = $false }
     if (-not (Stop-RecordedProcess -Record $script:State.ApiRecord)) { $clean = $false }
@@ -430,6 +432,10 @@ function Stop-LoadedStack {
     if ($clean -and $null -ne $script:State.Frontend -and -not (Wait-PortRelease -Port ([int]$script:State.Frontend.Port))) {
         Write-DevWarning "Frontend port $($script:State.Frontend.Port) is still occupied. No foreign listener was killed; PID state is retained."
         $clean = $false
+    }
+    if ($clean -and $RetainState) {
+        Write-DevWarning "Recorded process trees exited, but transient command cleanup was unproved; PID state is retained."
+        return $false
     }
     if ($clean) {
         try {
@@ -531,12 +537,28 @@ function Invoke-NpmStage {
     $stderr = Join-Path $DataDir "dev-up-$($script:State.RunId)-$Stage.stderr.log"
     New-EmptyLogFiles -Paths @($stdout, $stderr)
     $process = Start-LoggedCommand -Executable $script:NpmCmd -Arguments $Arguments -WorkingDirectory $FrontendDir -StdoutLog $stdout -StderrLog $stderr -EnvironmentOverrides $EnvironmentOverrides
-    $process.WaitForExit()
-    if ($process.ExitCode -ne 0) {
-        $tail = Get-LogTail -Path $stderr
-        if (-not [string]::IsNullOrWhiteSpace($tail)) { [Console]::Error.WriteLine($tail) }
+    $record = New-ProcessRecord -Role "$Stage npm stage" -Process $process
+    try {
+        # WaitForExit() blocks a Stop-Job cancellation until the npm broker exits.
+        # A short process wait keeps cancellation observable so the finally block
+        # can prove and reap this transient cmd.exe tree by its creation identity.
+        while (-not $process.WaitForExit(100)) { }
+        $exitCode = [int]$process.ExitCode
+        if ($exitCode -ne 0) {
+            $tail = Get-LogTail -Path $stderr
+            if (-not [string]::IsNullOrWhiteSpace($tail)) { [Console]::Error.WriteLine($tail) }
+        }
+        return $exitCode
+    } finally {
+        $exited = $false
+        try { $exited = $process.HasExited } catch { }
+        if (-not $exited -and -not (Stop-RecordedProcess -Record $record)) {
+            $script:TransientStageCleanupUnproved = $true
+            Write-DevWarning "Transient $Stage npm stage cleanup was unproved; any active launcher state will be retained."
+        }
+        Disconnect-LoggedBroker -Process $process
+        try { $process.Dispose() } catch { }
     }
-    return [int]$process.ExitCode
 }
 
 function Test-HttpReady {
@@ -638,7 +660,7 @@ function Test-FrontendEndpoint {
 function Invoke-TransactionCleanup {
     if (-not $script:TransactionActive -or $null -eq $script:State) { return $true }
     Write-DevWarning "Startup failed; cleaning only process trees created by this invocation."
-    $clean = Stop-LoadedStack
+    $clean = Stop-LoadedStack -RetainState:$script:TransientStageCleanupUnproved
     if ($clean) { $script:TransactionActive = $false; return $true }
     Write-DevWarning "Startup cleanup was incomplete; PID state is retained at $PidFile."
     return $false

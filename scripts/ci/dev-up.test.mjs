@@ -118,6 +118,11 @@ if (kind === 'linger') {
     process.exit(0)
   }
   if (args[0] === 'run' && args[1] === 'demo:seed') {
+    if (process.env.FAKE_SEED_MODE === 'hang') {
+      while (!fs.existsSync(process.env.FAKE_NPM_RELEASE_FILE)) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
     process.exit(process.env.FAKE_SEED_MODE === 'fail' ? 43 : 0)
   }
   if (args[0] !== 'run' || args[1] !== 'dev') process.exit(91)
@@ -261,21 +266,35 @@ const interruptHarnessSource = String.raw`
 param(
   [Parameter(Mandatory = $true)][string]$Launcher,
   [Parameter(Mandatory = $true)][int]$ApiPort,
-  [Parameter(Mandatory = $true)][string]$StateFile
+  [Parameter(Mandatory = $true)][string]$StateFile,
+  [Parameter(Mandatory = $true)][string]$NpmLog,
+  [switch]$AfterSeed
 )
 $ErrorActionPreference = 'Stop'
 $job = Start-Job -ScriptBlock {
-  param($LauncherPath, $SelectedApiPort)
-  & $LauncherPath -ApiPort $SelectedApiPort
-} -ArgumentList $Launcher, $ApiPort
+  param($LauncherPath, $SelectedApiPort, $CancelAfterSeed)
+  if ($CancelAfterSeed) {
+    & $LauncherPath -ApiPort $SelectedApiPort -Seed -ResetSeed
+  } else {
+    & $LauncherPath -ApiPort $SelectedApiPort
+  }
+} -ArgumentList $Launcher, $ApiPort, $AfterSeed
 try {
   $deadline = [DateTime]::UtcNow.AddSeconds(10)
-  while (-not (Test-Path -LiteralPath $StateFile -PathType Leaf)) {
+  $reachedCancellationPoint = $false
+  while (-not $reachedCancellationPoint) {
     if ($job.State -ne 'Running') {
       Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-String | Write-Output
-      throw 'Launcher exited before transactional state was written.'
+      throw 'Launcher exited before the cancellation point was reached.'
     }
     if ([DateTime]::UtcNow -ge $deadline) { throw 'Timed out waiting for transactional state.' }
+    if ($AfterSeed) {
+      if (Test-Path -LiteralPath $NpmLog -PathType Leaf) {
+        $reachedCancellationPoint = @(Select-String -LiteralPath $NpmLog -SimpleMatch '"demo:seed"' -ErrorAction SilentlyContinue).Count -gt 0
+      }
+    } else {
+      $reachedCancellationPoint = Test-Path -LiteralPath $StateFile -PathType Leaf
+    }
     Start-Sleep -Milliseconds 50
   }
   Stop-Job -Job $job
@@ -709,7 +728,7 @@ function runLauncher(platform, fixture, options = {}) {
   return result
 }
 
-function runPowerShellCancellation(fixture, apiPort) {
+function runPowerShellCancellation(fixture, apiPort, { afterSeed = false } = {}) {
   const stdoutPath = join(fixture.root, '.interrupt.stdout.log')
   const stderrPath = join(fixture.root, '.interrupt.stderr.log')
   const stdoutFd = openSync(stdoutPath, 'w')
@@ -730,12 +749,19 @@ function runPowerShellCancellation(fixture, apiPort) {
         String(apiPort),
         '-StateFile',
         fixture.stateFile,
+        '-NpmLog',
+        fixture.npmLog,
+        ...(afterSeed ? ['-AfterSeed'] : []),
       ],
       {
         cwd: fixture.root,
         timeout: 20_000,
         windowsHide: true,
-        env: fixtureEnvironment({ name: 'PowerShell' }, fixture, { FAKE_API_MODE: 'timeout' }),
+        env: fixtureEnvironment(
+          { name: 'PowerShell' },
+          fixture,
+          afterSeed ? { FAKE_SEED_MODE: 'hang' } : { FAKE_API_MODE: 'timeout' },
+        ),
         stdio: ['ignore', stdoutFd, stderrFd],
       },
     )
@@ -1002,6 +1028,24 @@ if (powershell) {
       const events = await readEvents(fixture)
       assert.ok(events.some((event) => event.kind === 'dotnet'))
       assert.equal(events.some((event) => event.args.join(' ') === 'run dev'), false)
+    } finally {
+      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+      await removeFixture(fixture)
+    }
+  })
+
+  test('PowerShell: reset-seed cancellation reaps the transient npm tree before releasing state', { concurrency: false }, async () => {
+    const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
+    const fixture = await createFixture(platform)
+    const apiPort = await getFreePort()
+    try {
+      const result = runPowerShellCancellation(fixture, apiPort, { afterSeed: true })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, combinedOutput(result))
+      await assertNoStateAndPortsReleased(fixture, [apiPort])
+      assert.equal(await describeLiveFixtureProcesses(fixture), 'none still alive')
+      const seedEvents = (await readEvents(fixture)).filter((event) => event.args.join(' ') === 'run demo:seed -- --reset')
+      assert.equal(seedEvents.length, 1)
     } finally {
       if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
       await removeFixture(fixture)
