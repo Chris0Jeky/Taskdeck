@@ -846,7 +846,7 @@ key → user mapping via `HttpUserContextProvider` and does not read these keys.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `McpServer:DefaultUserId` | `string` (GUID) | unset | User ID used to identify the MCP stdio caller. When unset, the provider falls back to the first local user in the database — which is safe for single-user installs but risks routing actions to the wrong account in multi-user databases. When set to a GUID that no longer exists, the provider logs a warning and falls back to the first local user. | Recommended for multi-user installs running MCP stdio |
+| `McpServer:DefaultUserId` | `string` (non-empty GUID) | unset | User ID used to identify the MCP stdio caller. When configured, it must name an existing active local user; an empty, zero, malformed, missing, or inactive value fails closed without trying another account. When truly unset, the provider selects the only active local user. Zero or multiple active users are errors, and inactive users do not count toward that fallback. | Required for MCP stdio when more than one active local user exists |
 
 ## Logging
 

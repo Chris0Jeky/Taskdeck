@@ -9,8 +9,8 @@ namespace Taskdeck.Infrastructure.Mcp;
 /// <summary>
 /// Resolves user identity for stdio MCP sessions.
 /// In stdio mode the process runs under the OS user's identity, so no network
-/// authentication is needed. We map to the configured default local user or,
-/// if none is configured, to the first user found in the database.
+/// authentication is available. We map to an explicitly configured active
+/// local user or, when configuration is absent, the only active local user.
 /// </summary>
 public class StdioUserContextProvider : IUserContextProvider
 {
@@ -30,13 +30,17 @@ public class StdioUserContextProvider : IUserContextProvider
         _logger = logger;
 
         var configuredId = configuration["McpServer:DefaultUserId"];
-        if (configuredId is not null
-            && Guid.TryParse(configuredId, out var parsed)
-            && parsed != Guid.Empty)
+        if (configuredId is null)
+            return;
+
+        if (!Guid.TryParse(configuredId, out var parsed) || parsed == Guid.Empty)
         {
-            _configuredUserId = parsed;
-            _logger.LogInformation("MCP stdio: using configured DefaultUserId {UserId}", parsed);
+            throw new InvalidOperationException(
+                "MCP stdio: McpServer:DefaultUserId must be a non-empty GUID when configured. " +
+                "Correct the value or remove it; without it, exactly one active local user is required.");
         }
+
+        _configuredUserId = parsed;
     }
 
     /// <inheritdoc />
@@ -44,8 +48,7 @@ public class StdioUserContextProvider : IUserContextProvider
     {
         var userId = await GetUserIdAsync(cancellationToken);
         return userId ?? throw new InvalidOperationException(
-            "MCP stdio: no users found in database and McpServer:DefaultUserId is not configured. " +
-            "Run the app in web mode first to create a user, then configure McpServer:DefaultUserId.");
+            "MCP stdio: user identity resolution returned no result.");
     }
 
     /// <inheritdoc />
@@ -56,32 +59,52 @@ public class StdioUserContextProvider : IUserContextProvider
 
         if (_configuredUserId.HasValue)
         {
-            // Verify the configured user actually exists in the database.
             var exists = await _dbContext.Users
-                .AnyAsync(u => u.Id == _configuredUserId.Value, cancellationToken);
+                .AsNoTracking()
+                .AnyAsync(
+                    u => u.Id == _configuredUserId.Value && u.IsActive,
+                    cancellationToken);
 
-            if (exists)
+            if (!exists)
             {
-                _resolvedUserId = _configuredUserId;
-                return _resolvedUserId;
+                throw new InvalidOperationException(
+                    "MCP stdio: McpServer:DefaultUserId does not identify an active local user. " +
+                    "Set it to an existing active user ID before starting stdio MCP.");
             }
 
-            _logger.LogWarning(
-                "MCP stdio: configured DefaultUserId {UserId} not found in database; falling back to first local user",
-                _configuredUserId.Value);
+            _resolvedUserId = _configuredUserId.Value;
+            _logger.LogInformation(
+                "MCP stdio: resolved configured DefaultUserId {UserId}",
+                _resolvedUserId.Value);
+            return _resolvedUserId.Value;
         }
 
-        // Fall back to the first user in the database (single-user local-first scenario).
-        // Uses a targeted query (LIMIT 1) rather than loading all users into memory.
-        var firstUser = await _dbContext.Users
-            .Select(u => (Guid?)u.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var activeUserIds = await _dbContext.Users
+            .AsNoTracking()
+            .Where(u => u.IsActive)
+            .Select(u => u.Id)
+            .Take(2)
+            .ToListAsync(cancellationToken);
 
-        if (firstUser is null || firstUser == Guid.Empty)
-            return null;
+        if (activeUserIds.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "MCP stdio: no active local users are available. " +
+                "Run the app in web mode and create or reactivate a user before starting stdio MCP.");
+        }
 
-        _resolvedUserId = firstUser;
-        _logger.LogInformation("MCP stdio: resolved to first local user {UserId}", firstUser);
-        return _resolvedUserId;
+        if (activeUserIds.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "MCP stdio: multiple active local users exist. " +
+                "Configure McpServer:DefaultUserId (environment variable McpServer__DefaultUserId) " +
+                "with the intended active user ID before starting stdio MCP.");
+        }
+
+        _resolvedUserId = activeUserIds[0];
+        _logger.LogInformation(
+            "MCP stdio: resolved the only active local user {UserId}",
+            _resolvedUserId.Value);
+        return _resolvedUserId.Value;
     }
 }
