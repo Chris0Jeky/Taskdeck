@@ -125,6 +125,7 @@ describe('ReviewMain', () => {
   it('forwards provenance report events with the active proposal id', async () => {
     const wrapper = mountMain()
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement

@@ -281,6 +281,56 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
   })
 
+  it('keeps secondary evidence collapsed per proposal without changing selection or queue focus', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
+        makeProposal({ id: 'proposal-second', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-proposal-first',
+      [],
+      [],
+      { attachTo: true },
+    )
+
+    const activeRow = wrapper.findAll('.paper-review-q').find((row) => row.text().includes('First proposal'))
+    expect(activeRow?.attributes('aria-pressed')).toBe('true')
+
+    for (const testId of [
+      'paper-review-confidence-disclosure',
+      'paper-review-provenance-disclosure',
+      'paper-review-similar-past-disclosure',
+    ]) {
+      const button = wrapper.get(`[data-testid="${testId}"]`)
+      expect(button.attributes('aria-expanded')).toBe('false')
+      await button.trigger('click')
+      expect(button.attributes('aria-expanded')).toBe('true')
+    }
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+    expect(activeRow?.attributes('aria-pressed')).toBe('true')
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-proposal-first',
+    )
+
+    const secondRow = wrapper.findAll('.paper-review-q').find((row) => row.text().includes('Second proposal'))
+    expect(secondRow).toBeDefined()
+    ;(secondRow!.element as HTMLButtonElement).focus()
+    await secondRow!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(secondRow!.attributes('aria-pressed')).toBe('true')
+    expect(document.activeElement).toBe(secondRow!.element)
+    for (const testId of [
+      'paper-review-confidence-disclosure',
+      'paper-review-provenance-disclosure',
+      'paper-review-similar-past-disclosure',
+    ]) {
+      expect(wrapper.get(`[data-testid="${testId}"]`).attributes('aria-expanded')).toBe('false')
+    }
+  })
+
   it('uses historical change copy for applied records without changing pending copy', async () => {
     const pendingWrapper = await mountView([makeProposal()])
     const pendingChange = pendingWrapper.get('.paper-review-change')
@@ -1550,6 +1600,7 @@ describe('PaperReviewView', () => {
     mocks.reportBadSuggestion.mockResolvedValueOnce(undefined)
     const wrapper = await mountView([makeProposal({ id: 'proposal-001', summary: 'Report me' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -1566,6 +1617,7 @@ describe('PaperReviewView', () => {
     mocks.reportBadSuggestion.mockRejectedValueOnce(new Error('feedback boom'))
     const wrapper = await mountView([makeProposal({ id: 'report-err', summary: 'Report error' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -1583,6 +1635,7 @@ describe('PaperReviewView', () => {
     )
     const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
