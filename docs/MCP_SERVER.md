@@ -84,16 +84,21 @@ Its effective stdio command is:
 
 ```bash
 docker run --rm -i --no-healthcheck \
+  --user 1001:1001 \
   --env-file /absolute/path/to/taskdeck-mcp.env \
   --mount source=taskdeck-data,target=/app/data \
   ghcr.io/chris0jeky/taskdeck:REPLACE_WITH_RELEASE_VERSION \
   dotnet Taskdeck.Api.dll --mcp
 ```
 
-Both details at the end are required:
+These launch details are required:
 
 - `--no-healthcheck` disables the image's HTTP readiness probe because stdio mode intentionally
   opens no HTTP listener.
+- `--user 1001:1001` uses the image's non-root Taskdeck account after normal web startup has
+  initialized ownership of the named volume. It also keeps the privilege wrapper's root-mode
+  informational message off the JSON-RPC stdout channel. Do not skip the normal startup and user
+  registration steps above.
 - `dotnet Taskdeck.Api.dll --mcp` overrides the image's normal web command. The image entrypoint is
   only the privilege-dropping data-directory wrapper, so `IMAGE --mcp` is not a valid invocation.
 

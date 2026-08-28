@@ -446,7 +446,14 @@ test('the packaged MCP examples each define one exact stdio launch path', () => 
   const docker = mcpDockerExample.mcpServers.taskdeck
   assert.equal(docker.type, 'stdio')
   assert.equal(docker.command, 'docker')
-  assert.deepEqual(docker.args.slice(0, 4), ['run', '--rm', '-i', '--no-healthcheck'])
+  assert.deepEqual(docker.args.slice(0, 6), [
+    'run',
+    '--rm',
+    '-i',
+    '--no-healthcheck',
+    '--user',
+    '1001:1001',
+  ])
   assert.deepEqual(docker.args.slice(-4), [
     'ghcr.io/chris0jeky/taskdeck:REPLACE_WITH_RELEASE_VERSION',
     'dotnet',
@@ -466,6 +473,7 @@ test('the MCP guide covers all shipped launch paths without claiming deferred pr
     'Cursor',
     'McpServer__DefaultUserId',
     'docker run --rm -i --no-healthcheck',
+    '--user 1001:1001',
     'dotnet Taskdeck.Api.dll --mcp',
     'result.serverInfo',
     'stdout',

@@ -8,6 +8,8 @@
         "--rm",
         "-i",
         "--no-healthcheck",
+        "--user",
+        "1001:1001",
         "--env-file",
         "C:\\REPLACE_WITH_YOUR_TASKDECK_FOLDER\\taskdeck-mcp.env",
         "--mount",
