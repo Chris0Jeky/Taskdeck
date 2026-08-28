@@ -201,7 +201,8 @@ function onCardDragOver(card: Card, e: DragEvent) {
           :aria-controls="contentId"
           :data-action="collapsed ? 'expand-column' : 'collapse-column'"
           :data-testid="`paper-column-collapse-${column.id}`"
-          @keydown.stop
+          @keydown.enter.stop
+          @keydown.space.stop
           @click="onToggleCollapse"
         >
           <PaperIcon

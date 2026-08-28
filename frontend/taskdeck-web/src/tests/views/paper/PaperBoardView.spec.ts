@@ -483,6 +483,18 @@ describe('PaperBoardView', () => {
 
     ;(toggle.element as HTMLElement).focus()
     expect(document.activeElement).toBe(toggle.element)
+
+    const globalShortcutListener = vi.fn()
+    window.addEventListener('keydown', globalShortcutListener)
+    for (const key of ['h', 'l', 'j', 'k', 'n', 'Escape']) {
+      toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    }
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    window.removeEventListener('keydown', globalShortcutListener)
+
     await toggle.trigger('click')
     await nextTick()
 
