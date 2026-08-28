@@ -119,10 +119,29 @@ const emit = defineEmits<{
   (event: 'report', proposalId: string): void
 }>()
 
-const dialSubline = computed(() =>
-  props.confidence.overall >= props.confidence.threshold
-    ? t('review.main.dial.above')
-    : t('review.main.dial.below'),
+const hasNumericConfidence = computed(
+  () =>
+    props.confidence.overall !== null &&
+    Number.isFinite(props.confidence.overall) &&
+    (props.confidence.source === 'model-reported' || props.confidence.source === 'derived'),
+)
+
+const confidenceCaption = computed(() =>
+  props.confidence.source === 'model-reported'
+    ? t('review.main.dial.modelCaption')
+    : t('review.main.dial.derivedCaption'),
+)
+
+const confidenceSubline = computed(() =>
+  props.confidence.source === 'model-reported'
+    ? t('review.main.dial.modelReported')
+    : t('review.main.dial.derived'),
+)
+
+const confidenceWithoutNumber = computed(() =>
+  props.confidence.source === 'deterministic'
+    ? t('review.main.dial.deterministic')
+    : t('review.main.dial.notReported'),
 )
 
 /**
@@ -169,13 +188,19 @@ watch(
       </div>
       <div v-if="!isAppliedRecord" class="paper-review-main__dial card">
         <PaperConfidenceDial
+          v-if="hasNumericConfidence && confidence.overall !== null"
           :value="confidence.overall"
-          :caption="$t('review.main.dial.caption')"
-          :subline="dialSubline"
+          :caption="confidenceCaption"
+          :subline="confidenceSubline"
           data-testid="paper-review-confidence-dial"
         />
-        <div class="tk-meta paper-review-main__dial-threshold">
-          {{ $t('review.main.dial.threshold', { value: confidence.threshold.toFixed(2) }) }}
+        <div
+          v-else
+          class="paper-review-main__confidence-badge"
+          data-testid="paper-review-confidence-source"
+        >
+          <strong>{{ confidenceWithoutNumber }}</strong>
+          <span class="tk-meta">{{ $t('review.main.dial.noModelNumber') }}</span>
         </div>
       </div>
     </header>
@@ -333,9 +358,19 @@ watch(
   flex-direction: column;
   align-items: center;
 }
-.paper-review-main__dial-threshold {
-  font-size: 10px;
-  margin-top: 2px;
+.paper-review-main__confidence-badge {
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+.paper-review-main__confidence-badge strong {
+  color: var(--ink-deep);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 .paper-review-main__approved-banner {
   margin: 18px 0 0;

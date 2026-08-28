@@ -100,7 +100,14 @@ vi.mock('../../../../api/proposalRevisionsApi', () => ({
 vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   proposalDeepReviewApi: {
     getProvenance: vi.fn().mockResolvedValue([]),
-    getConfidence: vi.fn().mockResolvedValue({ overall: 0.8, components: [], note: null, threshold: 0.5, meetsThreshold: true }),
+    getConfidence: vi.fn().mockResolvedValue({
+      overall: 0.8,
+      components: [],
+      note: null,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
+    }),
     getSideEffects: vi.fn().mockResolvedValue({
       rows: [],
       reversibility: {
@@ -243,8 +250,9 @@ describe('PaperReviewView', () => {
       overall: 0.84,
       components: [],
       note: null,
-      threshold: 0.7,
-      meetsThreshold: true,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
     })
     mocks.getSideEffects.mockResolvedValue({
       rows: [],

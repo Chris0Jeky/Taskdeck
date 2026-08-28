@@ -29,18 +29,16 @@
  *
  * 2. BACKEND WIRE VALUES ARE NEVER KEYS. `PendingReview`, `Approved`, `Applied`,
  *    `Rejected`, `Failed`, `Expired`, `Dismissed`, `Transcript`, `Chat`,
- *    `Queue`, `High`, `Critical`, `Reversibility` are compared as literals in
- *    code. Only their RENDERED labels live here (`status.*`, `statusInline.*`,
- *    `author.actor.*`, `author.component.operationSafety`).
+ *    `Queue`, `High`, `Critical` are compared as literals in code. Only their
+ *    RENDERED labels live here (`status.*`, `statusInline.*`, `author.actor.*`).
  *
  * 3. API-SOURCED TEXT IS NOT TRANSLATED. Proposal titles and summaries, board
  *    names, provenance row keys/values/icons, evidence reasons, side-effect
  *    rows, conflict keys/values, history events, similar-past titles and dates,
- *    confidence component keys other than the `Reversibility` relabel, backend
- *    validation messages, and revision payload field names all arrive from the
- *    server and are interpolated as `{placeholders}`. A server-supplied
- *    `component.key` that is not `Reversibility` renders verbatim and is
- *    UNTRANSLATABLE from here — that is a backend-localisation concern.
+ *    confidence component keys, backend validation messages, and revision payload
+ *    field names all arrive from the server and are interpolated as `{placeholders}`.
+ *    A server-supplied `component.key` renders verbatim and is UNTRANSLATABLE from
+ *    here — that is a backend-localisation concern.
  *
  * 4. `age.*` are the queue rail's compact age suffixes. They are appended to a
  *    bare number, so they must stay ONE OR TWO CHARACTERS or the rail wraps.
@@ -149,10 +147,13 @@ export default {
     ledeFallback:
       'Awaiting decision. Review the change, provenance, and side-effects below before applying.',
     dial: {
-      caption: 'CONF',
-      above: 'Above your apply threshold',
-      below: 'Below your apply threshold',
-      threshold: '(set {value} · Settings)',
+      modelCaption: 'MODEL',
+      derivedCaption: 'DERIVED',
+      modelReported: 'Reported item average',
+      derived: 'Verification average',
+      deterministic: 'DETERMINISTIC',
+      notReported: 'NOT REPORTED',
+      noModelNumber: 'No model confidence number',
     },
     approvedBanner: {
       title: 'Approved — not yet applied to the board.',
@@ -375,19 +376,18 @@ export default {
   // ── Right column ──────────────────────────────────────────────────────────
   author: {
     heading: 'Author',
-    breakdownHeading: 'Confidence breakdown',
+    confidenceHeading: 'Confidence source',
+    modelReportedHeading: 'Model-reported item confidence',
     nameFallback: 'Proposal',
     // `{source}` is the lowercased backend source type (`chat`, `queue`, …).
     name: '{actor} · {source} proposal',
-    confidence: '{value} confidence',
+    modelConfidence: '{value} model-reported average',
+    derivedConfidence: '{value} derived average',
+    deterministic: 'Deterministic extraction · no model confidence',
+    notReported: 'No model confidence reported',
     actor: {
       assistant: 'Assistant',
       capture: 'Capture',
-    },
-    component: {
-      // Display relabel of the `Reversibility` confidence component. The wire
-      // value stays `Reversibility` in the comparison that selects this label.
-      operationSafety: 'Operation safety',
     },
   },
 

@@ -111,10 +111,13 @@ export default {
     ledeFallback:
       'En espera de decisión. Revisa el cambio, la procedencia y los efectos secundarios antes de aplicar.',
     dial: {
-      caption: 'CONF',
-      above: 'Por encima de tu umbral de aplicación',
-      below: 'Por debajo de tu umbral de aplicación',
-      threshold: '(fijado {value} · Ajustes)',
+      modelCaption: 'MODELO',
+      derivedCaption: 'DERIVADA',
+      modelReported: 'Promedio declarado por elemento',
+      derived: 'Promedio de verificación',
+      deterministic: 'DETERMINISTA',
+      notReported: 'NO DECLARADA',
+      noModelNumber: 'Sin valor de confianza del modelo',
     },
     approvedBanner: {
       title: 'Aprobada — todavía no aplicada al tablero.',
@@ -311,16 +314,17 @@ export default {
 
   author: {
     heading: 'Autor',
-    breakdownHeading: 'Desglose de la confianza',
+    confidenceHeading: 'Fuente de confianza',
+    modelReportedHeading: 'Confianza por elemento declarada por el modelo',
     nameFallback: 'Propuesta',
     name: '{actor} · propuesta de {source}',
-    confidence: '{value} de confianza',
+    modelConfidence: 'promedio declarado por el modelo {value}',
+    derivedConfidence: 'promedio derivado {value}',
+    deterministic: 'Extracción determinista · sin confianza del modelo',
+    notReported: 'No se declaró confianza del modelo',
     actor: {
       assistant: 'Asistente',
       capture: 'Captura',
-    },
-    component: {
-      operationSafety: 'Seguridad de las operaciones',
     },
   },
 
