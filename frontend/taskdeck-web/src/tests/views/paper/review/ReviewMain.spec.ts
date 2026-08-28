@@ -70,10 +70,11 @@ function mountMain(
       decisionSummary: '3 ops · explicit review · atomic apply',
       busy: false,
       confidence: {
-        overall: confidence.overall ?? 0.84,
+        overall: confidence.overall === undefined ? 0.84 : confidence.overall,
         components: confidence.components ?? [],
-        threshold: confidence.threshold ?? 0.7,
+        threshold: null,
         note: confidence.note,
+        source: confidence.source ?? 'model-reported',
       },
       before,
       after,
@@ -132,14 +133,20 @@ describe('ReviewMain', () => {
     expect(wrapper.emitted('report')).toEqual([['proposal-001']])
   })
 
-  it('shows "Above your apply threshold" when confidence >= threshold', () => {
-    const wrapper = mountMain({ overall: 0.9, threshold: 0.7 })
-    expect(wrapper.text()).toContain('Above your apply threshold')
+  it('labels the numeric dial as model-reported without apply-threshold language', () => {
+    const wrapper = mountMain({ overall: 0.9, source: 'model-reported' })
+    expect(wrapper.text()).toContain('Reported item average')
+    expect(wrapper.text()).not.toContain('apply threshold')
   })
 
-  it('shows "Below your apply threshold" when confidence < threshold', () => {
-    const wrapper = mountMain({ overall: 0.4, threshold: 0.7 })
-    expect(wrapper.text()).toContain('Below your apply threshold')
+  it('shows deterministic provenance without inventing a confidence number', () => {
+    const wrapper = mountMain({ overall: null, source: 'deterministic' })
+
+    expect(wrapper.find('[data-testid="paper-review-confidence-dial"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-confidence-source"]').text()).toContain(
+      'DETERMINISTIC',
+    )
+    expect(wrapper.text()).toContain('No model confidence number')
   })
 
   // --- #1818: approved-but-not-executed must read differently from pending ---

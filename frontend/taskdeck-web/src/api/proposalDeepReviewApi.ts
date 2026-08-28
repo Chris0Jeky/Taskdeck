@@ -36,11 +36,14 @@ export interface ConfidenceComponentDto {
 }
 
 export interface ConfidenceBreakdownDto {
-  overall: number
+  overall: number | null
   components: ConfidenceComponentDto[]
   note: string | null
-  threshold: number
-  meetsThreshold: boolean
+  /** Nullable compatibility field; confidence never controls apply eligibility. */
+  threshold: null
+  /** Nullable compatibility field; confidence never controls apply eligibility. */
+  meetsThreshold: null
+  source: 'model-reported' | 'deterministic' | 'derived' | 'not-reported'
 }
 
 export interface SideEffectRowDto {

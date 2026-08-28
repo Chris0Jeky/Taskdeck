@@ -112,10 +112,13 @@ export default {
     ledeFallback:
       'In attesa di decisione. Rivedi la modifica, la provenienza e gli effetti collaterali qui sotto prima di applicare.',
     dial: {
-      caption: 'CONF',
-      above: 'Sopra la tua soglia di applicazione',
-      below: 'Sotto la tua soglia di applicazione',
-      threshold: '(impostata {value} · Impostazioni)',
+      modelCaption: 'MODELLO',
+      derivedCaption: 'DERIVATA',
+      modelReported: 'Media dichiarata per elemento',
+      derived: 'Media della verifica',
+      deterministic: 'DETERMINISTICA',
+      notReported: 'NON DICHIARATA',
+      noModelNumber: 'Nessun valore di confidenza del modello',
     },
     approvedBanner: {
       title: 'Approvata — non ancora applicata alla bacheca.',
@@ -312,16 +315,17 @@ export default {
 
   author: {
     heading: 'Autore',
-    breakdownHeading: 'Dettaglio della confidenza',
+    confidenceHeading: 'Fonte della confidenza',
+    modelReportedHeading: 'Confidenza per elemento dichiarata dal modello',
     nameFallback: 'Proposta',
     name: '{actor} · proposta da {source}',
-    confidence: '{value} di confidenza',
+    modelConfidence: 'media dichiarata dal modello {value}',
+    derivedConfidence: 'media derivata {value}',
+    deterministic: 'Estrazione deterministica · nessuna confidenza del modello',
+    notReported: 'Nessuna confidenza del modello dichiarata',
     actor: {
       assistant: 'Assistente',
       capture: 'Cattura',
-    },
-    component: {
-      operationSafety: 'Sicurezza delle operazioni',
     },
   },
 

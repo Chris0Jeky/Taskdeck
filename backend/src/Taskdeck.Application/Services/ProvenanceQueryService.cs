@@ -149,7 +149,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
         var icon = ResolveIcon(field.FieldName);
         var key = field.FieldName;
         var value = BuildValue(field);
-        var weight = MapWeight(field.Kind, field.Confidence);
+        var weight = MapWeight(field.Kind, field.Confidence, field.ConfidenceSource);
         var evidenceLinks = field.EvidenceLinks
             .OrderBy(link => link.SourceType, StringComparer.Ordinal)
             .ThenBy(link => link.SourceId, StringComparer.Ordinal)
@@ -184,13 +184,21 @@ public class ProvenanceQueryService : IProvenanceQueryService
     }
 
     /// <summary>
-    /// Builds a human-readable value string from the provenance field.
-    /// For extractive fields, includes the quote snippet.
-    /// For inferred fields, notes the confidence level.
+    /// Builds a human-readable value string from the provenance field without presenting a number
+    /// unless its persisted source says it was model-reported or algorithmically derived.
     /// </summary>
     internal static string BuildValue(ProvenanceField field)
     {
-        var confidencePercent = (int)Math.Round(field.Confidence * 100);
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.Deterministic)
+            return "Deterministic extraction (no model confidence)";
+
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.NotReported || field.Confidence is null)
+            return "No model confidence reported";
+
+        var confidencePercent = (int)Math.Round(field.Confidence.Value * 100);
+
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.ModelReported)
+            return $"Model reported {confidencePercent}% confidence";
 
         if (field.Kind == ProvenanceKind.Extractive && !string.IsNullOrWhiteSpace(field.ExtractiveQuote))
         {
@@ -202,9 +210,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
         }
 
         if (field.Kind == ProvenanceKind.Inferred)
-        {
-            return $"Inferred by model ({confidencePercent}% confidence)";
-        }
+            return $"Derived confidence: {confidencePercent}%";
 
         // Fallback for extractive fields without a quote (should not happen per domain rules,
         // but we handle it defensively).
@@ -212,7 +218,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
     }
 
     /// <summary>
-    /// Maps the domain <see cref="ProvenanceKind"/> and confidence score to
+    /// Maps the domain <see cref="ProvenanceKind"/> and trustworthy confidence score to
     /// the 4-bucket weight system used by the Paper deep-Review surface.
     ///
     /// Buckets:
@@ -227,13 +233,27 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// data. The frontend can inject them client-side or a future backend
     /// enhancement can add a dedicated "excluded sources" list.
     /// </summary>
-    internal static string MapWeight(ProvenanceKind kind, double confidence)
+    internal static string MapWeight(
+        ProvenanceKind kind,
+        double? confidence,
+        ProvenanceConfidenceSource confidenceSource)
     {
         return kind switch
         {
             ProvenanceKind.Inferred => "inferred",
-            ProvenanceKind.Extractive => confidence >= 0.7 ? "primary" : "contextual",
+            ProvenanceKind.Extractive when
+                confidenceSource == ProvenanceConfidenceSource.Derived && confidence >= 0.7 => "primary",
+            ProvenanceKind.Extractive => "contextual",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unrecognized ProvenanceKind")
         };
     }
+
+    internal static string MapWeight(ProvenanceKind kind, double confidence) =>
+        MapWeight(
+            kind,
+            confidence,
+            kind == ProvenanceKind.Extractive
+                ? ProvenanceConfidenceSource.Derived
+                : ProvenanceConfidenceSource.ModelReported);
+
 }

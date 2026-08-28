@@ -6,8 +6,9 @@ import type { ConfidenceBreakdown } from '../../../../composables/usePaperReview
 
 const breakdown: ConfidenceBreakdown = {
   overall: 0.96,
-  components: [{ key: 'patternMatch', value: 1 }],
-  threshold: 0.7,
+  components: [{ key: 'Operation 1: create card', value: 0.96 }],
+  threshold: null,
+  source: 'model-reported',
 }
 
 function mountRightRail() {
@@ -44,9 +45,9 @@ describe('ReviewWhyNow', () => {
   })
 
   // #1941 — the card shipped `<a href="#">Tune heuristics →</a>` with no
-  // handler and no route. There is no surface that owns the apply threshold
-  // (it is a backend constant), so the card carries no link at all rather
-  // than a dead one. Mutation guard: restoring the anchor fails here.
+  // handler and no route. Confidence evidence has no tuning surface here, so
+  // the card carries no link at all rather than a dead one. Mutation guard:
+  // restoring the anchor fails here.
   it('renders no link at all — never a dead one', () => {
     const wrapper = mount(ReviewWhyNow, { props: { body: 'Any body.' } })
 
