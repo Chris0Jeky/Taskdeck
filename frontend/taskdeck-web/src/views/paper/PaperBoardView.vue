@@ -68,6 +68,26 @@ const cardEditorDirty = ref(false)
 type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
+const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
+const BOARD_COLUMN_WIDTH_PRESETS = [
+  { value: 'narrow', label: 'Narrow', width: '240px' },
+  { value: 'standard', label: 'Standard', width: '280px' },
+  { value: 'wide', label: 'Wide', width: '340px' },
+] as const
+type BoardColumnWidth = typeof BOARD_COLUMN_WIDTH_PRESETS[number]['value']
+const DEFAULT_BOARD_COLUMN_WIDTH: BoardColumnWidth = 'standard'
+const columnWidth = ref<BoardColumnWidth>(DEFAULT_BOARD_COLUMN_WIDTH)
+const selectedColumnWidth = computed(() => BOARD_COLUMN_WIDTH_PRESETS
+  .find((preset) => preset.value === columnWidth.value)?.width ?? '280px')
+const responsiveColumnWidth = computed(() => {
+  if (viewportMode.value === 'phone') return '100%'
+  if (viewportMode.value === 'tablet') return '280px'
+  return selectedColumnWidth.value
+})
+const columnWidthStyle = computed(() => ({
+  flex: `0 0 ${responsiveColumnWidth.value}`,
+  width: responsiveColumnWidth.value,
+}))
 const cardPresentation = computed(() => viewportMode.value === 'desktop' ? 'inspector' : 'modal')
 const discardDialogOpen = computed(() => Boolean(pendingCard.value || pendingNavigation.value))
 const discardDialogDescription = computed(() => pendingCard.value
@@ -81,6 +101,10 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = ''
 }
 
+function isBoardColumnWidth(value: string | null): value is BoardColumnWidth {
+  return BOARD_COLUMN_WIDTH_PRESETS.some((preset) => preset.value === value)
+}
+
 onMounted(() => {
   try {
     density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
@@ -89,6 +113,14 @@ onMounted(() => {
   } catch {
     density.value = 'comfortable'
   }
+  try {
+    const storedColumnWidth = window.localStorage.getItem(BOARD_COLUMN_WIDTH_KEY)
+    columnWidth.value = isBoardColumnWidth(storedColumnWidth)
+      ? storedColumnWidth
+      : DEFAULT_BOARD_COLUMN_WIDTH
+  } catch {
+    columnWidth.value = DEFAULT_BOARD_COLUMN_WIDTH
+  }
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
@@ -96,6 +128,19 @@ function toggleDensity() {
   density.value = density.value === 'compact' ? 'comfortable' : 'compact'
   try {
     window.localStorage.setItem(BOARD_DENSITY_KEY, density.value)
+  } catch {
+    // Local fallback only. The preference remains active for this mounted board.
+  }
+}
+
+function changeColumnWidth(event: Event) {
+  const requestedWidth = (event.target as HTMLSelectElement).value
+  columnWidth.value = isBoardColumnWidth(requestedWidth)
+    ? requestedWidth
+    : DEFAULT_BOARD_COLUMN_WIDTH
+
+  try {
+    window.localStorage.setItem(BOARD_COLUMN_WIDTH_KEY, columnWidth.value)
   } catch {
     // Local fallback only. The preference remains active for this mounted board.
   }
@@ -547,7 +592,12 @@ async function addStarterColumns() {
 </script>
 
 <template>
-  <div class="paper-board-view" data-surface="paper-board" :data-density="density">
+  <div
+    class="paper-board-view"
+    data-surface="paper-board"
+    :data-density="density"
+    :data-column-width="columnWidth"
+  >
     <div class="paper-board-view__inner">
       <header class="paper-board-view__head">
         <div class="paper-board-view__title-block">
@@ -560,6 +610,28 @@ async function addStarterColumns() {
           </p>
         </div>
         <div class="paper-board-view__actions">
+          <label
+            class="paper-board-view__width-control"
+            data-testid="paper-board-width-control"
+          >
+            <span class="paper-board-view__width-label">Width</span>
+            <select
+              class="paper-board-view__width-select"
+              :value="columnWidth"
+              aria-label="Column width"
+              data-testid="paper-board-width-select"
+              @keydown.stop
+              @change="changeColumnWidth"
+            >
+              <option
+                v-for="preset in BOARD_COLUMN_WIDTH_PRESETS"
+                :key="preset.value"
+                :value="preset.value"
+              >
+                {{ preset.label }}
+              </option>
+            </select>
+          </label>
           <PaperHLBtn
             label="Compact density"
             :aria-pressed="density === 'compact'"
@@ -689,6 +761,7 @@ async function addStarterColumns() {
             :index="idx + 1"
             :cards="cardsByColumn.get(column.id) ?? []"
             :card-variant="props.cardVariant"
+            :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
             :can-move-left="idx > 0"
@@ -844,6 +917,7 @@ async function addStarterColumns() {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 24px;
 }
 
@@ -864,8 +938,46 @@ async function addStarterColumns() {
 
 .paper-board-view__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   flex: none;
+}
+
+.paper-board-view__width-control {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-1);
+  background: var(--paper-2);
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.paper-board-view__width-control:focus-within {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+.paper-board-view__width-select {
+  max-width: 84px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.paper-board-view__width-select:focus-visible {
+  outline: none;
 }
 
 .paper-board-view__error {
