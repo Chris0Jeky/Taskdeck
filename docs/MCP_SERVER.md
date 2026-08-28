@@ -210,6 +210,12 @@ Cursor end-to-end test, and it does not prove the separate agent-proposes/human-
   stderr so stdout remains JSON-RPC only.
 
 For standalone or co-hosted HTTP, create a Taskdeck API key in **Settings -> API Keys** and follow
-the repository's `mcp-claude-code-http.example.json`. Current keys authorize the key owner's current
-MCP surface; this packaging slice does not claim scoped-key enforcement or runtime tool-hash
+the repository's `mcp-claude-code-http.example.json`. Every new key requires at least one capability:
+**Read** exposes resources and read-only tools, **Propose** exposes the five proposal-producing board
+mutation tools, and **Manage** exposes direct capture creation and proposal dismissal. The same scope
+checks filter discovery and invocation, and invalid persisted scope masks fail authentication rather
+than widening access. Keys migrated from an earlier release are backfilled to **Full** (all three
+capabilities) to preserve existing integrations; rotate them with only the capabilities each client
+needs when practical. Stdio does not use an API key and receives Full only after its local user
+identity resolves successfully. Neither transport exposes approve/apply tools or runtime tool-hash
 approval.
