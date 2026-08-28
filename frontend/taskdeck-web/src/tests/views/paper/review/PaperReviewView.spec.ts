@@ -1775,15 +1775,26 @@ describe('PaperReviewView', () => {
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
   })
 
-  it('surfaces feedback when provenance toggle is invoked before collapsible mode exists', async () => {
+  it('toggles the active proposal provenance open then closed with P', async () => {
     const wrapper = await mountView([makeProposal()])
+    const disclosure = wrapper.get('[data-testid="paper-review-provenance-disclosure"]')
+    const details = wrapper.get('[data-testid="paper-review-provenance-details"]')
+
+    expect(disclosure.attributes('aria-expanded')).toBe('false')
+    expect(details.isVisible()).toBe(false)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', cancelable: true }))
     await flushPromises()
 
-    expect(mocks.infoToast).toHaveBeenCalledWith(
-      'Provenance toggle is not wired yet; provenance is rendered inline below.',
-    )
+    expect(disclosure.attributes('aria-expanded')).toBe('true')
+    expect(details.isVisible()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', cancelable: true }))
+    await flushPromises()
+
+    expect(disclosure.attributes('aria-expanded')).toBe('false')
+    expect(details.isVisible()).toBe(false)
+    expect(mocks.infoToast).not.toHaveBeenCalled()
 
     wrapper.unmount()
   })
