@@ -434,15 +434,18 @@ public class RoadmapInvariantTests
     // ─── Invariant 10: MCP tool hash-pinning ───────────────────────────
 
     /// <summary>
-    /// INV-10: MCP tool hash-pinning.
-    /// Each MCP tool definition should include a content hash so that tool
-    /// schema changes are detectable and auditable.
+    /// INV-10: MCP tool definition hash mechanism.
+    /// This invariant verifies deterministic detection of changes to a declared
+    /// tool's name, description, or input schema. It does not assert runtime
+    /// approval or invocation enforcement: the shipped code has no user-driven
+    /// definition-recording or approval lifecycle.
     /// </summary>
     [Fact]
-    public void Invariant10_McpToolHashPinning()
+    public void Invariant10_McpToolDefinitionHashes_DetectDefinitionDrift()
     {
-        // McpToolDefinitionHashService pins a tool's (name, description, inputSchema) into a
-        // content hash so schema changes are detectable and require re-approval.
+        // McpToolDefinitionHashService hashes a tool's (name, description, inputSchema) so
+        // definition changes are detectable. It is mechanism-only until a user-driven approval
+        // lifecycle can supply records and approvals to an invocation-time enforcement path.
         const string name = "propose_create_card";
         const string description = "Create a card via a proposal.";
         const string schema = "{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"}}}";
@@ -475,19 +478,49 @@ public class RoadmapInvariantTests
             McpToolDefinitionHashService.ComputeDefinitionHash("a", "b|c", schema),
             McpToolDefinitionHashService.ComputeDefinitionHash("a|b", "c", schema));
 
-        // Connect the invariant to the REAL MCP tool surface: load the actual [McpServerTool]
-        // definitions and confirm the hash mechanism applies to them and distinguishes them
-        // (distinct tools -> distinct hashes, so a schema change is detectable).
-        // NOTE: the hash service is shipped but not yet invoked by the MCP runtime, so end-to-end
-        // re-approval enforcement is tracked separately in #1154; this guards the mechanism + drift
-        // detection across the real tool set, not the (un-wired) runtime enforcement.
+        // Connect the invariant to the declared MCP tool surface. This guards the mechanism and
+        // the existing inventory; it deliberately does not claim invocation-time enforcement.
         var mcpToolNames = GetSourceFiles("src/Taskdeck.Api/Mcp")
             .SelectMany(f => Regex.Matches(ReadFile(f), @"\[McpServerTool\s*\(\s*Name\s*=\s*""([^""]+)""\s*\)")
                 .Select(m => m.Groups[1].Value))
             .Distinct()
             .ToList();
 
-        Assert.NotEmpty(mcpToolNames);
+        var expectedMcpToolNames = new[]
+        {
+            "archive_card",
+            "create_capture",
+            "create_card",
+            "create_column",
+            "dismiss_proposal",
+            "get_board_summary",
+            "get_proposal_status",
+            "list_proposals",
+            "move_card",
+            "search_cards",
+            "update_card",
+        };
+
+        Assert.Equal(expectedMcpToolNames, mcpToolNames.OrderBy(name => name, StringComparer.Ordinal));
+
+        // The hash-service lifecycle has no production caller. This is intentional: enabling a
+        // deny gate before users can record and approve definitions would deny every tool, while
+        // automatic approval would not be user approval. When a user-driven lifecycle is introduced,
+        // replace this assertion with end-to-end approved, missing, and stale-definition invocation tests.
+        var approvalLifecycleMethods = new[]
+        {
+            "IsToolApprovedAsync(",
+            "RecordToolDefinitionAsync(",
+            "ApproveToolAsync(",
+        };
+        var approvalLifecycleCallers = GetSourceFiles("src")
+            .Where(file => !Path.GetFileName(file).Equals(
+                "McpToolDefinitionHashService.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(file => approvalLifecycleMethods.Any(method =>
+                ReadFile(file).Contains(method, StringComparison.Ordinal)))
+            .ToList();
+        Assert.Empty(approvalLifecycleCallers);
+
         var toolHashes = mcpToolNames
             .Select(n => McpToolDefinitionHashService.ComputeDefinitionHash(n, description, schema))
             .ToList();
