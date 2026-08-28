@@ -147,8 +147,8 @@ change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
 - **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
   integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
   then makes the column required without a database default. Existing integrations therefore retain
-  their prior MCP access after upgrade; newly issued keys must select at least one capability. For
-  least privilege, rotate migrated keys and grant only the capabilities each client needs.
+  their prior MCP access after upgrade. Current integration builds also issue new keys as **Full**;
+  user-selectable least-privilege enforcement is not shipped yet.
 - **No migration action required.** All three migrations are applied automatically on startup like
   every other one — steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
   [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the

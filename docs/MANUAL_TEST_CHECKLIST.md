@@ -1171,7 +1171,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 ### Z19. MCP HTTP Transport and API Key CLI (PR #819 — merged 2026-04-12)
 
-1. [ ] Verify `taskdeck api-key create --name "test" --scopes read,propose,manage` generates a key with `tdsk_` prefix.
+1. [ ] Verify `taskdeck api-key create --name "test"` generates a key with `tdsk_` prefix.
    - Expected: key displayed once, starts with `tdsk_`, stored hashed.
 2. [ ] Verify `taskdeck api-key list` shows created keys with masked values.
    - Expected: list shows key name, created date, last-used date; value is masked.
