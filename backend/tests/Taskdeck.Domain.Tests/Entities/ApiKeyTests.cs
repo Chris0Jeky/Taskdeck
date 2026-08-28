@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -8,10 +9,20 @@ namespace Taskdeck.Domain.Tests.Entities;
 public class ApiKeyTests
 {
     [Fact]
+    public void ApiKeyScope_Values_AreStable()
+    {
+        ((int)ApiKeyScope.None).Should().Be(0);
+        ((int)ApiKeyScope.Read).Should().Be(1);
+        ((int)ApiKeyScope.Propose).Should().Be(2);
+        ((int)ApiKeyScope.Manage).Should().Be(4);
+        ((int)ApiKeyScope.Full).Should().Be(7);
+    }
+
+    [Fact]
     public void Constructor_ValidInput_CreatesEntity()
     {
         var userId = Guid.NewGuid();
-        var apiKey = new ApiKey(userId, "abc123hash", "tdsk_abc", "Test Key");
+        var apiKey = new ApiKey(userId, "abc123hash", "tdsk_abc", "Test Key", ApiKeyScope.Full);
 
         apiKey.UserId.Should().Be(userId);
         apiKey.KeyHash.Should().Be("abc123hash");
@@ -21,13 +32,14 @@ public class ApiKeyTests
         apiKey.RevokedAt.Should().BeNull();
         apiKey.ExpiresAt.Should().BeNull();
         apiKey.LastUsedAt.Should().BeNull();
+        apiKey.Scopes.Should().Be(ApiKeyScope.Full);
     }
 
     [Fact]
     public void Constructor_WithExpiration_SetsExpiresAt()
     {
         var expiresAt = DateTimeOffset.UtcNow.AddDays(30);
-        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", expiresAt);
+        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", ApiKeyScope.Full, expiresAt);
 
         apiKey.ExpiresAt.Should().Be(expiresAt);
         apiKey.IsActive.Should().BeTrue();
@@ -36,7 +48,7 @@ public class ApiKeyTests
     [Fact]
     public void Constructor_EmptyUserId_Throws()
     {
-        var act = () => new ApiKey(Guid.Empty, "hash", "tdsk_abc", "Key");
+        var act = () => new ApiKey(Guid.Empty, "hash", "tdsk_abc", "Key", ApiKeyScope.Full);
 
         act.Should().Throw<DomainException>()
             .WithMessage("*UserId*empty*");
@@ -45,7 +57,7 @@ public class ApiKeyTests
     [Fact]
     public void Constructor_EmptyKeyHash_Throws()
     {
-        var act = () => new ApiKey(Guid.NewGuid(), "", "tdsk_abc", "Key");
+        var act = () => new ApiKey(Guid.NewGuid(), "", "tdsk_abc", "Key", ApiKeyScope.Full);
 
         act.Should().Throw<DomainException>()
             .WithMessage("*Key hash*empty*");
@@ -54,7 +66,7 @@ public class ApiKeyTests
     [Fact]
     public void Constructor_EmptyName_Throws()
     {
-        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "");
+        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "", ApiKeyScope.Full);
 
         act.Should().Throw<DomainException>()
             .WithMessage("*name*empty*");
@@ -64,7 +76,7 @@ public class ApiKeyTests
     public void Constructor_NameTooLong_Throws()
     {
         var longName = new string('x', 101);
-        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", longName);
+        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", longName, ApiKeyScope.Full);
 
         act.Should().Throw<DomainException>()
             .WithMessage("*name*100*");
@@ -74,7 +86,7 @@ public class ApiKeyTests
     public void Constructor_PastExpiration_Throws()
     {
         var pastDate = DateTimeOffset.UtcNow.AddDays(-1);
-        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", pastDate);
+        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", ApiKeyScope.Full, pastDate);
 
         act.Should().Throw<DomainException>()
             .WithMessage("*future*");
@@ -83,7 +95,7 @@ public class ApiKeyTests
     [Fact]
     public void Revoke_SetsRevokedAt()
     {
-        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key");
+        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", ApiKeyScope.Full);
 
         apiKey.Revoke();
 
@@ -94,7 +106,7 @@ public class ApiKeyTests
     [Fact]
     public void Revoke_AlreadyRevoked_Throws()
     {
-        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key");
+        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", ApiKeyScope.Full);
         apiKey.Revoke();
 
         var act = () => apiKey.Revoke();
@@ -106,9 +118,34 @@ public class ApiKeyTests
     [Fact]
     public void IsActive_RevokedKey_ReturnsFalse()
     {
-        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key");
+        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", ApiKeyScope.Full);
         apiKey.Revoke();
 
         apiKey.IsActive.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(ApiKeyScope.Read)]
+    [InlineData(ApiKeyScope.Propose)]
+    [InlineData(ApiKeyScope.Manage)]
+    [InlineData(ApiKeyScope.Read | ApiKeyScope.Propose)]
+    [InlineData(ApiKeyScope.Full)]
+    public void Constructor_KnownNonEmptyScopes_PreservesMask(ApiKeyScope scopes)
+    {
+        var apiKey = new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", scopes);
+
+        apiKey.Scopes.Should().Be(scopes);
+    }
+
+    [Theory]
+    [InlineData(ApiKeyScope.None)]
+    [InlineData((ApiKeyScope)8)]
+    [InlineData(ApiKeyScope.Read | (ApiKeyScope)8)]
+    public void Constructor_NoneOrUnknownScopes_Throws(ApiKeyScope scopes)
+    {
+        var act = () => new ApiKey(Guid.NewGuid(), "hash", "tdsk_abc", "Key", scopes);
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("*scopes*known*non-empty*");
     }
 }
