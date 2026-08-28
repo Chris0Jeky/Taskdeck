@@ -181,6 +181,8 @@ public sealed class ArchivedBoardProposalDecisionConcurrencyTests
                 .Setup(work => work.RollbackTransactionAsync(It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
+                    // Mirrors UnitOfWork's rollback contract. UnitOfWorkRollbackTests is the direct
+                    // real-transaction regression that pins the tracker reset itself.
                     executionDb.ChangeTracker.Clear();
                     return Task.CompletedTask;
                 });
