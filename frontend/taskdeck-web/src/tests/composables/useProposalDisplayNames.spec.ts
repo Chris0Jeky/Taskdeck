@@ -60,6 +60,7 @@ function makeProposal(boardId: string, columnId: string): Proposal {
       expectedVersion: null,
     }],
     approvedRevisionId: null,
+    latestRevisionId: null,
   }
 }
 

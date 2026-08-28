@@ -43,6 +43,25 @@ export default {
     },
   },
 
+  batchApprove: {
+    selectLabel: 'Seleziona {title} per l’approvazione in blocco',
+    request: 'Rivedi {count} approvazione selezionata | Rivedi {count} approvazioni selezionate',
+    requestLabel: 'Apri la conferma per {count} proposta selezionata | Apri la conferma per {count} proposte selezionate',
+    limitReached: 'Un blocco può contenere al massimo {count} proposte.',
+    selectionChanged: 'La selezione è cambiata perché una o più proposte non sono più idonee. Rivedila di nuovo.',
+    receiptMismatch: 'Taskdeck non ha potuto confermare il blocco completo. Controlla la coda prima di riprovare.',
+    approved: 'Approvata {count} proposta, non applicata. | Approvate {count} proposte, non applicate.',
+    failed: 'Non è stato possibile approvare le proposte selezionate.',
+    dialog: {
+      title: 'Approvare le proposte selezionate?',
+      description: 'Conferma l’approvazione di {count} proposta | Conferma l’approvazione di {count} proposte',
+      body: 'Taskdeck ricontrollerà la {count} proposta e approverà l’intero blocco oppure nessuna. | Taskdeck ricontrollerà tutte le {count} proposte e approverà l’intero blocco oppure nessuna.',
+      notApplied: 'Registra solo l’approvazione. Nulla viene applicato a una bacheca.',
+      cancel: 'Continua la revisione',
+      confirm: 'Approva {count} proposta | Approva {count} proposte',
+    },
+  },
+
   scope: {
     board: 'Bacheca: {board}',
     clear: 'Mostra tutte le bacheche',

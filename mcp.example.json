@@ -1,12 +1,9 @@
 {
   "mcpServers": {
     "taskdeck": {
-      "command": "dotnet",
-      "args": ["run", "--project", "backend/src/Taskdeck.Api/Taskdeck.Api.csproj", "--", "--mcp"],
-      "env": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "ConnectionStrings__DefaultConnection": "Data Source=REPLACE_WITH_THE_ABSOLUTE_taskdeck-dev.db_PATH"
-      }
+      "type": "stdio",
+      "command": "C:\\REPLACE_WITH_YOUR_TASKDECK_FOLDER\\Taskdeck.Api.exe",
+      "args": ["--mcp"]
     }
   }
 }

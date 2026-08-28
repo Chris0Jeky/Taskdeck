@@ -55,7 +55,26 @@ public record ProposalDto(
     /// doing so would reintroduce the N+1 that boundary existed to avoid.
     /// </summary>
     public Guid? ApprovedRevisionId { get; init; }
+
+    /// <summary>
+    /// The effective/latest saved revision for a pending proposal. This is a review concurrency
+    /// snapshot, not an approval pin; non-pending proposals expose null and use
+    /// <see cref="ApprovedRevisionId"/> for the separate approve-time contract.
+    /// </summary>
+    public Guid? LatestRevisionId { get; init; }
 }
+
+/// <summary>
+/// Result of an all-or-none batch approval. Every listed proposal has moved to
+/// <see cref="ProposalStatus.Approved"/>; none has been executed or applied.
+/// </summary>
+public sealed record BatchApproveProposalsResultDto(IReadOnlyList<Guid> ApprovedIds);
+
+/// <summary>The exact pending proposal and revision snapshot selected for batch approval.</summary>
+public sealed record BatchApproveProposalSelectionDto(
+    Guid Id,
+    DateTimeOffset ExpectedProposalUpdatedAt,
+    Guid? ExpectedLatestRevisionId);
 
 public record ProposalPresentationDto(
     string PlainSummary,

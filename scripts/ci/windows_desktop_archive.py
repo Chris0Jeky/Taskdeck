@@ -50,8 +50,12 @@ RETIRED_PROVIDER_FATAL_GUIDANCE = (
 SYNTHETIC_RETIRED_PROVIDER_VALUE = "synthetic-secret-never-print"
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 3
-FINAL_EVIDENCE_SCHEMA_VERSION = 6
+FINAL_EVIDENCE_SCHEMA_VERSION = 7
 MAX_PROBE_LATENCY_MS = 300_000
+MCP_PROTOCOL_VERSION = "2025-11-25"
+MCP_INITIALIZE_ID = 1
+MCP_STDIO_TIMEOUT_SECONDS = 120
+MAX_MCP_STDOUT_BYTES = 1_048_576
 OPERATOR_KEY_ENV_NAMES = (
     "Llm__OpenAi__ApiKey",
     "TASKDECK_RELEASE_OPENAI_API_KEY",
@@ -371,6 +375,163 @@ def start_packaged_process(executable: Path, cwd: Path, environment: Mapping[str
         creationflags=creation_flags,
     )
     return ProcessMonitor(process)
+
+
+def build_mcp_initialize_request() -> str:
+    request = {
+        "jsonrpc": "2.0",
+        "id": MCP_INITIALIZE_ID,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {
+                "name": "taskdeck-desktop-archive-smoke",
+                "version": "1.0",
+            },
+        },
+    }
+    return json.dumps(request, separators=(",", ":")) + "\n"
+
+
+def validate_mcp_initialize_stdout(output: str) -> dict[str, bool]:
+    if len(output.encode("utf-8")) > MAX_MCP_STDOUT_BYTES:
+        raise AcceptanceFailure("The packaged MCP stdout exceeded its bounded protocol response.")
+
+    lines = output.splitlines()
+    if len(lines) != 1 or not lines[0].strip():
+        raise AcceptanceFailure(
+            "The packaged MCP stdout contained non-protocol output or multiple responses."
+        )
+
+    try:
+        response = json.loads(lines[0])
+    except json.JSONDecodeError:
+        raise AcceptanceFailure("The packaged MCP stdout was not one JSON-RPC response.") from None
+
+    if not isinstance(response, dict) or set(response) != {"jsonrpc", "id", "result"}:
+        raise AcceptanceFailure("The packaged MCP initialize response shape was invalid.")
+    if response["jsonrpc"] != "2.0" or response["id"] != MCP_INITIALIZE_ID:
+        raise AcceptanceFailure("The packaged MCP initialize response identity was invalid.")
+
+    result = response["result"]
+    if not isinstance(result, dict):
+        raise AcceptanceFailure("The packaged MCP initialize result was invalid.")
+    server_info = result.get("serverInfo")
+    if not isinstance(server_info, dict):
+        raise AcceptanceFailure("The packaged MCP initialize result omitted serverInfo.")
+    for field in ("name", "version"):
+        value = server_info.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > 256:
+            raise AcceptanceFailure("The packaged MCP initialize serverInfo was invalid.")
+
+    return {
+        "initialized": True,
+        "serverInfoValid": True,
+        "stdoutClean": True,
+    }
+
+
+def verify_packaged_mcp_stdio(
+    executable: Path,
+    cwd: Path,
+    environment: Mapping[str, str],
+) -> dict[str, bool]:
+    if not executable.is_absolute() or not executable.is_file():
+        raise AcceptanceFailure("The packaged MCP executable path is not an absolute file.")
+
+    # The web journey sets CI=true to suppress browser launch, and a hosted runner can also set
+    # GITHUB_ACTIONS or TF_BUILD. A packaged desktop deliberately ignores those flags for its
+    # durable bootstrap path, while the Generic Host used by --mcp treats them as headless. Remove
+    # only those runner flags so this probe exercises the same per-user profile an ordinary desktop
+    # MCP client receives.
+    mcp_environment = {
+        key: value
+        for key, value in environment.items()
+        if key.upper() not in {"CI", "GITHUB_ACTIONS", "TF_BUILD"}
+    }
+    creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    process = subprocess.Popen(
+        [str(executable), "--mcp"],
+        cwd=str(cwd),
+        env=mcp_environment,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creation_flags,
+    )
+
+    response_available: queue.Queue[bool] = queue.Queue(maxsize=1)
+    stdout_chunks: list[str] = []
+    stdout_bytes = 0
+    stdout_overflow = False
+
+    def drain_stdout() -> None:
+        nonlocal stdout_bytes, stdout_overflow
+        saw_line = False
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                encoded_size = len(raw_line.encode("utf-8"))
+                stdout_bytes += encoded_size
+                if stdout_bytes <= MAX_MCP_STDOUT_BYTES:
+                    stdout_chunks.append(raw_line)
+                else:
+                    stdout_overflow = True
+                if not saw_line:
+                    saw_line = True
+                    response_available.put(True)
+        finally:
+            if not saw_line:
+                response_available.put(False)
+
+    stdout_thread = threading.Thread(target=drain_stdout, daemon=True)
+    stdout_thread.start()
+    try:
+        assert process.stdin is not None
+        process.stdin.write(build_mcp_initialize_request())
+        process.stdin.flush()
+        try:
+            has_response = response_available.get(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+        except queue.Empty:
+            _terminate_tracked_process_tree(process)
+            raise AcceptanceFailure(
+                "The packaged MCP initialize probe did not respond within the bounded wait."
+            ) from None
+
+        if not has_response:
+            process.wait(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+            if process.returncode != 0:
+                raise AcceptanceFailure("The packaged MCP initialize probe exited non-zero.")
+            raise AcceptanceFailure("The packaged MCP initialize probe returned no response.")
+
+        # Keep stdin open until the response arrives. Closing it with communicate(input=...) can
+        # end the SDK transport before its initialize response is flushed.
+        process.stdin.close()
+        process.wait(timeout=MCP_STDIO_TIMEOUT_SECONDS)
+    except (BrokenPipeError, OSError):
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure(
+            "The packaged MCP initialize probe closed its transport before responding."
+        ) from None
+    except subprocess.TimeoutExpired:
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure(
+            "The packaged MCP initialize probe did not complete within the bounded wait."
+        ) from None
+
+    stdout_thread.join(timeout=2)
+    if stdout_thread.is_alive():
+        _terminate_tracked_process_tree(process)
+        raise AcceptanceFailure("The packaged MCP stdout did not close after shutdown.")
+    if process.returncode != 0:
+        raise AcceptanceFailure("The packaged MCP initialize probe exited non-zero.")
+    if stdout_overflow:
+        raise AcceptanceFailure("The packaged MCP stdout exceeded its bounded protocol response.")
+    return validate_mcp_initialize_stdout("".join(stdout_chunks))
 
 
 def validate_retired_provider_failure_output(output: str) -> None:
@@ -848,6 +1009,7 @@ def build_final_evidence(
     second_bootstrap_identity: dict[str, bool],
     create_evidence: dict[str, Any],
     restart_evidence: dict[str, Any],
+    mcp_stdio_evidence: Mapping[str, bool],
     migration_evidence: Any,
     migration_create_evidence: dict[str, Any],
     migration_restart_evidence: dict[str, Any],
@@ -856,6 +1018,14 @@ def build_final_evidence(
         _require_exact_keys(identity, {"jwtCreated", "connectorCreated"}, "bootstrap identity")
         if any(type(identity[key]) is not bool for key in ("jwtCreated", "connectorCreated")):
             raise AcceptanceFailure("Packaged bootstrap identity evidence is invalid.")
+
+    expected_mcp_stdio_evidence = {
+        "initialized": True,
+        "serverInfoValid": True,
+        "stdoutClean": True,
+    }
+    if dict(mcp_stdio_evidence) != expected_mcp_stdio_evidence:
+        raise AcceptanceFailure("Packaged MCP stdio evidence did not match the initialize contract.")
 
     final_evidence = {
         "schemaVersion": FINAL_EVIDENCE_SCHEMA_VERSION,
@@ -879,6 +1049,7 @@ def build_final_evidence(
             ],
             "create": create_evidence,
             "restart": restart_evidence,
+            "mcpStdio": expected_mcp_stdio_evidence,
         },
         "migration": {
             **validate_migration_evidence(migration_evidence),
@@ -996,6 +1167,11 @@ def run_packaged_journey(
         )
         stop_packaged_process(first_monitor)
         monitors.remove(first_monitor)
+        mcp_stdio_evidence = verify_packaged_mcp_stdio(
+            (first_extract / "Taskdeck.Api.exe").resolve(),
+            unrelated_cwd,
+            app_environment,
+        )
         assert_data_isolated(journey_root, local_app_data, retained_legacy_path)
         if expected_legacy_payload is not None and retained_legacy_path is not None:
             assert_legacy_identity_imported_and_retained(
@@ -1062,6 +1238,7 @@ def run_packaged_journey(
                 journey_id,
                 require_live_openai=require_live_openai,
             ),
+            "mcpStdio": mcp_stdio_evidence,
         }
     finally:
         if port_guard is not None:
@@ -1219,6 +1396,7 @@ def run(argv: list[str]) -> int:
             clean_journey["secondBootstrapIdentity"],
             clean_journey["create"],
             clean_journey["restart"],
+            clean_journey["mcpStdio"],
             {
                 "legacy": {"location": "adjacent", "state": "retained"},
                 "durable": {"location": "app-data", "state": "imported"},
@@ -1232,7 +1410,10 @@ def run(argv: list[str]) -> int:
         live_result = clean_journey["create"]["liveOpenAi"]
         outcome = live_result["outcome"]
         outcome_label = outcome if outcome == "passed" else f"skipped:{live_result['reason']}"
-        print(f"Packaged desktop acceptance passed (live OpenAI: {outcome_label}).")
+        print(
+            "Packaged desktop acceptance passed "
+            f"(MCP stdio initialize: passed; live OpenAI: {outcome_label})."
+        )
         return 0
     finally:
         remove_temp_root(temp_root, temp_parent)
