@@ -27,6 +27,8 @@ export default {
     settingsAria: 'Impostazioni della colonna {column}',
     moveLeft: 'Sposta la colonna a sinistra',
     moveRight: 'Sposta la colonna a destra',
+    collapseAria: 'Comprimi la colonna {column}',
+    expandAria: 'Espandi la colonna {column}',
     add: '+ colonna',
     addAria: 'Aggiungi una colonna a questa bacheca',
     addInputLabel: 'Nome della nuova colonna',

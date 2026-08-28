@@ -16,6 +16,7 @@ export function useBoardKeyboardNav(
   sortedColumns: ComputedRef<Column[]>,
   boardId?: () => string,
   cardsByColumnSource?: ComputedRef<Map<string, Card[]>>,
+  isColumnNavigable?: (columnId: string) => boolean,
 ) {
   const boardStore = useBoardStore()
 
@@ -26,8 +27,13 @@ export function useBoardKeyboardNav(
     return cardElement.querySelector<HTMLElement>('[data-action="open-card"]') ?? cardElement
   }
 
-  function cardsForColumn(columnId: string): Card[] {
+  function allCardsForColumn(columnId: string): Card[] {
     return cardsByColumnSource?.value.get(columnId) ?? boardStore.cardsByColumn.get(columnId) ?? []
+  }
+
+  function cardsForColumn(columnId: string): Card[] {
+    if (isColumnNavigable && !isColumnNavigable(columnId)) return []
+    return allCardsForColumn(columnId)
   }
 
   function focusIsWithinBoardCard(): boolean {
@@ -183,20 +189,34 @@ export function useBoardKeyboardNav(
 
     if (!columnElement) return
 
-    const toggleButton = columnElement.querySelector(
-      '[data-action="toggle-add-card"]'
-    ) as HTMLButtonElement | null
+    const openComposerAndFocus = () => {
+      const toggleButton = columnElement.querySelector(
+        '[data-action="toggle-add-card"]'
+      ) as HTMLButtonElement | null
 
-    if (!toggleButton) return
+      if (!toggleButton) return
 
-    toggleButton.click()
+      toggleButton.click()
 
-    window.setTimeout(() => {
-      const cardInput = columnElement.querySelector(
-        '[data-action="add-card-input"]'
-      ) as HTMLTextAreaElement | null
-      cardInput?.focus()
-    }, 0)
+      window.setTimeout(() => {
+        const cardInput = columnElement.querySelector(
+          '[data-action="add-card-input"]'
+        ) as HTMLTextAreaElement | null
+        cardInput?.focus()
+      }, 0)
+    }
+
+    if (columnElement.dataset.collapsed === 'true') {
+      const expandButton = columnElement.querySelector(
+        '[data-action="expand-column"]'
+      ) as HTMLButtonElement | null
+      if (!expandButton) return
+      expandButton.click()
+      window.setTimeout(openComposerAndFocus, 0)
+      return
+    }
+
+    openComposerAndFocus()
   }
 
   /**
@@ -238,11 +258,11 @@ export function useBoardKeyboardNav(
     const targetColumn = columns[targetColIndex]
     if (!targetColumn) return
 
-    const cards = cardsForColumn(currentColumn.id)
+    const cards = allCardsForColumn(currentColumn.id)
     const card = cards.find((c) => c.id === selectedCardId.value)
     if (!card) return
 
-    const targetCards = cardsForColumn(targetColumn.id)
+    const targetCards = allCardsForColumn(targetColumn.id)
     const targetPosition = targetCards.length
 
     try {
@@ -283,7 +303,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = cardsForColumn(currentColumn.id)
+    const cards = allCardsForColumn(currentColumn.id)
     const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
 
     if (direction === 'up') {

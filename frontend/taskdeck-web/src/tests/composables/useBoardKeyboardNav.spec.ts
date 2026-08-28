@@ -223,6 +223,27 @@ describe('useBoardKeyboardNav', () => {
       expect(nav.selectedColumnIndex.value).toBe(1)
     })
 
+    it('treats a non-navigable lane as empty without losing its real append position', async () => {
+      const nav = useBoardKeyboardNav(
+        sortedColumns,
+        () => 'board-1',
+        computed(() => cardsByColumn),
+        (columnId) => columnId !== 'c2',
+      )
+
+      nav.selectNextColumn()
+      expect(nav.selectedColumnIndex.value).toBe(1)
+      expect(nav.selectedCardId.value).toBeNull()
+      nav.selectNextCard()
+      expect(nav.selectedCardId.value).toBeNull()
+
+      nav.selectedColumnIndex.value = 0
+      nav.selectedCardId.value = 'card-1'
+      await nav.moveCardToNextColumn()
+
+      expect(moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'c2', 1)
+    })
+
     it('does nothing when already in last column', async () => {
       const nav = useBoardKeyboardNav(sortedColumns, () => 'board-1')
       nav.selectedCardId.value = 'card-3'

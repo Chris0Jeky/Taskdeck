@@ -5,6 +5,7 @@ import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
+import type { Card } from '../../types/board'
 
 const mockSessionStore = reactive<{ userId: string | null; username: string | null }>({
   userId: 'user-abc',
@@ -22,6 +23,23 @@ const routerMock = vi.hoisted(() => ({
 const routeMock = reactive({
   params: { id: 'board-1' },
 })
+
+function makeCard(id: string, columnId: string, position = 0): Card {
+  return {
+    id,
+    boardId: 'board-1',
+    columnId,
+    title: `Card ${id}`,
+    description: '',
+    dueDate: null,
+    isBlocked: false,
+    blockReason: null,
+    position,
+    labels: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
 
 const addCardToggleMock = vi.fn()
 const mountedWrappers: Array<{ unmount: () => void }> = []
@@ -58,8 +76,8 @@ const mockBoardStore = reactive({
     updatedAt: new Date().toISOString(),
   },
   currentBoardLabels: [],
-  cardsByColumn: new Map([['column-1', []]]),
-  currentBoardCards: [],
+  cardsByColumn: new Map<string, Card[]>([['column-1', []]]),
+  currentBoardCards: [] as Card[],
   boardPresenceMembers: [] as Array<{ userId: string }>,
   editingCardId: null as string | null,
   loading: false,
@@ -282,6 +300,99 @@ describe('BoardView', () => {
     await waitForUi()
 
     expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
+  })
+
+  it('keeps global board shortcuts coherent across collapsed and empty Paper lanes', async () => {
+    usePaperThemeStore().setMode('paper')
+    const secondColumn = {
+      ...mockBoardStore.currentBoard.columns[0]!,
+      id: 'column-2',
+      name: 'Done',
+      position: 1,
+    }
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      columns: [mockBoardStore.currentBoard.columns[0]!, secondColumn],
+    }
+    mockBoardStore.currentBoardCards = [makeCard('card-1', 'column-1')]
+    mockBoardStore.cardsByColumn = new Map<string, Card[]>([
+      ['column-1', mockBoardStore.currentBoardCards],
+      ['column-2', []],
+    ])
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    const shortcuts = vi.mocked(useKeyboardShortcuts).mock.calls.at(-1)?.[0] ?? []
+    const action = (key: string, description: string) =>
+      shortcuts.find((shortcut) => shortcut.key === key && shortcut.description === description)?.action
+
+    action('j', 'Next card')?.()
+    await nextTick()
+    expect(wrapper.get('[data-card-id="card-1"]').classes()).toContain('paper-board-card--selected')
+
+    await wrapper.get('[data-testid="paper-column-collapse-column-1"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+    expect(wrapper.find('.paper-board-card--selected').exists()).toBe(false)
+
+    action('j', 'Next card')?.()
+    action('k', 'Previous card')?.()
+    action('l', 'Next column')?.()
+    action('h', 'Previous column')?.()
+    action('Enter', 'Open selected card')?.()
+    await nextTick()
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+
+    action('n', 'New card in current column')?.()
+    await new Promise((resolve) => window.setTimeout(resolve, 10))
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-column-collapse-column-1"]').attributes('aria-expanded'))
+      .toBe('true')
+    expect(wrapper.find('[data-testid="paper-card-composer"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(wrapper.get('[data-action="add-card-input"]').element)
+  })
+
+  it('clears a keyboard selection when realtime replacement moves its card into a collapsed lane', async () => {
+    usePaperThemeStore().setMode('paper')
+    const secondColumn = {
+      ...mockBoardStore.currentBoard.columns[0]!,
+      id: 'column-2',
+      name: 'Done',
+      position: 1,
+    }
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      columns: [mockBoardStore.currentBoard.columns[0]!, secondColumn],
+    }
+    const card = makeCard('card-1', 'column-1')
+    mockBoardStore.currentBoardCards = [card]
+    window.localStorage.setItem(
+      'td.paper.board-collapsed-columns.v1',
+      JSON.stringify(['column-2']),
+    )
+
+    const wrapper = mountView()
+    await waitForUi()
+    await nextTick()
+
+    const shortcuts = vi.mocked(useKeyboardShortcuts).mock.calls.at(-1)?.[0] ?? []
+    shortcuts.find((shortcut) => shortcut.key === 'j' && shortcut.description === 'Next card')
+      ?.action()
+    await nextTick()
+    expect(wrapper.get('[data-card-id="card-1"]').classes()).toContain('paper-board-card--selected')
+
+    mockBoardStore.currentBoardCards = [{ ...card, columnId: 'column-2' }]
+    await nextTick()
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-column-collapse-column-2"]').attributes('aria-expanded'))
+      .toBe('false')
+
+    await wrapper.get('[data-testid="paper-column-collapse-column-2"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-card-id="card-1"]').classes()).not.toContain('paper-board-card--selected')
   })
 
   it('shows a demo-board badge for the client onboarding demo board', async () => {
