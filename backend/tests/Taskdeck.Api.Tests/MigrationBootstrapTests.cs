@@ -151,6 +151,28 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void AddApiKeyScopes_backfills_legacy_keys_and_leaves_no_database_default()
+    {
+        var migrator = _context.GetService<IMigrator>();
+        migrator.Migrate("20260828034240_MakeProvenanceConfidenceHonest");
+        var userId = InsertLegacyUser("legacy-api-key-owner", "legacy-api-key-owner@example.test");
+        var apiKeyId = InsertLegacyApiKey(userId);
+
+        migrator.Migrate();
+
+        _context.ChangeTracker.Clear();
+        var migratedKey = _context.ApiKeys.Single(key => key.Id == apiKeyId);
+        migratedKey.Scopes.Should().Be(ApiKeyScope.Full);
+        ((int)migratedKey.Scopes).Should().Be(7);
+
+        var scopesColumn = GetApiKeyScopesColumn();
+        scopesColumn.NotNull.Should().BeTrue(
+            "new API key rows must always supply an explicit scope mask");
+        scopesColumn.DefaultValue.Should().BeNull(
+            "Full is an upgrade backfill value, not an implicit database default for new keys");
+    }
+
+    [Fact]
     public void AddTypedTranscriptEvidenceLink_removes_orphaned_transcript_evidence_when_reapplied_after_rollback()
     {
         _context.Database.Migrate();
@@ -649,17 +671,64 @@ public class MigrationBootstrapTests : IDisposable
         }
     }
 
-    private void InsertLegacyUser(string username, string email)
+    private Guid InsertLegacyUser(string username, string email)
     {
+        var userId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         _context.Database.ExecuteSqlInterpolated($"""
             INSERT INTO "Users"
                 ("Id", "Username", "Email", "PasswordHash", "DefaultRole", "IsActive",
                  "TokenInvalidatedAt", "MfaEnabled", "CreatedAt", "UpdatedAt")
             VALUES
-                ({Guid.NewGuid()}, {username}, {email}, {"hash"},
+                ({userId}, {username}, {email}, {"hash"},
                  {2}, {true}, {(DateTimeOffset?)null}, {false}, {now}, {now});
             """);
+
+        return userId;
+    }
+
+    private Guid InsertLegacyApiKey(Guid userId)
+    {
+        var apiKeyId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var keyHash = new string('a', 64);
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO "ApiKeys"
+                ("Id", "UserId", "KeyHash", "KeyPrefix", "Name", "ExpiresAt", "RevokedAt",
+                 "LastUsedAt", "CreatedAt", "UpdatedAt")
+            VALUES
+                ({apiKeyId}, {userId}, {keyHash}, {"tdsk_leg"}, {"Legacy key"},
+                 {(DateTimeOffset?)null}, {(DateTimeOffset?)null}, {(DateTimeOffset?)null}, {now}, {now});
+            """);
+
+        return apiKeyId;
+    }
+
+    private (bool NotNull, string? DefaultValue) GetApiKeyScopesColumn()
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA table_info(\"ApiKeys\")";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetString(1) != "Scopes")
+                    continue;
+
+                return (
+                    NotNull: reader.GetInt32(3) == 1,
+                    DefaultValue: reader.IsDBNull(4) ? null : reader.GetString(4));
+            }
+
+            throw new InvalidOperationException("ApiKeys.Scopes was not present after migration");
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
     }
 
     public void Dispose()

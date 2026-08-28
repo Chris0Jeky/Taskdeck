@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -45,7 +46,7 @@ public class ApiKeyService
             ? DateTimeOffset.UtcNow.Add(expiresIn.Value)
             : null;
 
-        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, expiresAt);
+        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, ApiKeyScope.Full, expiresAt);
 
         await _unitOfWork.ApiKeys.AddAsync(apiKey, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
