@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-27
+Last Updated: 2026-08-28
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -68,6 +68,13 @@ behaviour.
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
+
+## Closeout checkpoint (2026-08-28, v0.3 integration wave)
+
+- **The bounded wave is integrated and closed at last product merge `778a9f847`.** History-preserving merges delivered the Windows launcher substrate repair (`#2177`), explicit MCP key capabilities (`#2174`), operator-doc truth sync (`#2178`), and delayed Paper Review focus ownership (`#2179`). The focus slice passed 139 focused Review tests, typecheck, scoped ESLint, exact-head review, and hosted Required CI; hosted E2E smoke is not dedicated browser/screen-reader proof, and public-release, external-client, or human acceptance is not claimed.
+- **The unfinished next `#1940` slice is durable but intentionally unpublished.** `origin/issue-1940/provenance-shortcut@c9135fef3` contains a single test-only checkpoint commit and has no PR. A future worker should recreate an isolated worktree from that head, install locked frontend dependencies, prove the regression red, and implement only the controlled provenance-disclosure event/state seam before focused Review/keymap verification.
+- **The remaining work has bounded entry conditions.** `#1309` has a LOW validator candidate for `result.protocolVersion` and terminal-newline enforcement, but LF-only versus LF/CRLF must be pinned first. `#1307` and `#1992` remain owner-decision gated; `#1949` has no acceptance-ready next contract; `#2090` is Blocked behind parked PR `#2165`, with its recovery worktree preserved.
+- **Promotion remains gated.** At closeout, `main` is `927236bd0`; no remote `v0.2.0` tag or GitHub release exists; the v0.3 milestone has 20 open and 1 closed issue; and `#2165` is the only open PR targeting integration. Merge `integration/v0.3.0` to `main` only after the v0.2 release and the v0.3 completion audit.
 
 ## Planning update (2026-08-27, release trust, distribution, and private cloud)
 

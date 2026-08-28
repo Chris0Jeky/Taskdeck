@@ -1,6 +1,6 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
@@ -33,16 +33,16 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-tokenization` (`d89bd7cc3`) became `#2072`, and `origin/issue-1967/applied-read-only-detail` (`010021a745`) became `#2073`. Do not publish either again. v0.1.2 subsequently shipped; refresh live state before using this historical list.
 
-**Current continuation:** PR `#2088` merged as `70835b2b6c39504a530c4ff0c8aebc8916a0093b`. v0.2 final targets 2026-09-01; v0.3 RC targets 2026-09-04; v0.3 final targets 2026-09-08 or 2026-09-09. The release-cut correction is tracked on `#1947`. Refresh open PRs and ProjectV2 before acting.
+**Current continuation (2026-08-28 closeout):** `integration/v0.3.0` is saved after last product merge `778a9f8470197cf2f92231813eac743e804f03e9`; `main` remains `927236bd0304e9dfae59a7116394e4fcb7b0ec07`. No remote `v0.2.0` tag or GitHub release exists. Milestone `v0.3 — Open Beta + Accountable Agents` has 20 open and 1 closed issue. Parked PR `#2165` is the only open PR targeting integration. Refresh all of these live before acting; this is a restart pointer, not current proof.
 
 **Continuation order:**
 
 1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestones, releases, and worktrees; live state outranks this checkpoint.
-2. Use standing tracker `#1947` and `docs/analysis/2026-08-26-v012-dogfooding-reconciliation.md`; do not create a replacement strategy document.
-3. Treat ADR-0060 through ADR-0062 as Proposed. `#2084` owns ADR-0060, `#1772` owns ADR-0061, and `#2091` owns ADR-0062.
-4. Exact Now queue after correction: `#1271`, `#2083`, `#2085`, `#2086`. Exact Next queue: `#1512`, `#1938`, `#1961`, `#1967`, `#2080`.
-5. v0.2 M1 is narrow: `#2085` excludes links/ledger/MCP (`#2089`), and `#2086` excludes widths/collapse/titles-only (`#2090`). `#2087` is v0.3, not a v0.2 stretch.
-6. Keep the grouped maintainer decision in `OUTSTANDING_TASKS.md` open. The dogfooding/traction checkpoint remains separately governed by ADR-0044 and the live revival plan.
+2. The saved `#1940` provenance-shortcut slice is `origin/issue-1940/provenance-shortcut@c9135fef3b64da5d6c578bd4d9c76fe4fdb7eb65`, with no PR. It is deliberately incomplete and test-only. Recreate an isolated worktree from that remote head, install locked frontend dependencies, prove the new regression red, then wire the smallest controlled `ReviewProvenance` → `ReviewMain` → `PaperReviewView` seam while preserving key guards, manual activation, independent disclosures, proposal reset, and decision/receipt behavior.
+3. If a fresh lane is selected instead, `#1309` has one known LOW archive-validator slice: reject missing `result.protocolVersion` and a missing terminal newline. Before implementation, pin whether the terminal policy permits CRLF or requires LF-only; do not infer it.
+4. Do not manufacture work around gates: `#1307` still needs the owner to choose batch-execute atomic-versus-partial failure semantics; `#1992` still needs case/encoded-slash parity decisions; `#1949` has no acceptance-ready next contract; `#2090` remains Blocked behind parked PR `#2165`, and `.worktrees/codex-2090-focus-following-recovery` is preserved.
+5. Final integration → `main` remains unauthorized until a v0.2 release exists and the v0.3 completion audit passes.
+6. Keep every unchecked human action in `OUTSTANDING_TASKS.md` open unless its full condition is directly verified; never infer approval or subjective acceptance.
 
 - capture should be near-zero friction
 - automation-originated board writes must remain proposal-first and human-approved
