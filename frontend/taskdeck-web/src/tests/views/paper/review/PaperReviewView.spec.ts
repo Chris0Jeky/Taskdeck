@@ -3315,6 +3315,44 @@ describe('PaperReviewView', () => {
     // things that used to be impossible now are: focus is elsewhere when the
     // dialog mounts, and the reviewer can move the queue underneath it.
 
+    it('preserves focus on another connected control when a delayed approval completes', async () => {
+      let resolveApprove!: (proposal: Proposal) => void
+      mocks.approveProposal.mockImplementationOnce(
+        () =>
+          new Promise<Proposal>((resolve) => {
+            resolveApprove = resolve
+          }),
+      )
+      const wrapper = await mountView(
+        [makeProposal({ id: 'focus-owner' })],
+        '/workspace/review',
+        [],
+        [],
+        { attachTo: true },
+      )
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      const technicalDetails = wrapper.get(
+        '[data-testid="paper-review-technical-details"] summary',
+      ).element as HTMLElement
+      technicalDetails.focus()
+      expect(document.activeElement).toBe(technicalDetails)
+
+      resolveApprove(makeProposal({ id: 'focus-owner', status: 'Approved' }))
+      await flushPromises()
+      await nextTick()
+
+      expect(
+        wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'),
+      ).toBe('approved')
+      expect(technicalDetails.isConnected).toBe(true)
+      expect(document.activeElement).toBe(technicalDetails)
+
+      wrapper.unmount()
+    })
+
     it('returns focus to the rail when the explicitly requested Apply dialog is dismissed', async () => {
       // NOTE ON FIDELITY. jsdom does NOT implement the HTML rule that a focused
       // element losing focusability (here: `disabled` flipping on while the
