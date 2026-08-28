@@ -45,6 +45,19 @@ test.describe('Paper capture-review-apply loop', () => {
 
     const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
     await expect(captureRow).toBeVisible()
+
+    await test.step('Paper Home triage card opens the seeded capture in Inbox', async () => {
+      await page.goto('/workspace/home')
+      await expect(page.getByTestId('paper-home')).toBeVisible()
+
+      const triageCard = page.getByTestId('paper-home-card-carryover').first()
+      await expect(triageCard).toBeVisible()
+      await triageCard.getByRole('button').click()
+
+      await expect(page).toHaveURL(/\/workspace\/inbox$/)
+      await expect(captureRow).toBeVisible()
+    })
+
     await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
 
     const triagedCapture = await waitForProposalCreated(request, paperAuth, capturePayload.id!)
