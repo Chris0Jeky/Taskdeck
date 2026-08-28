@@ -168,6 +168,7 @@ describe('PaperBoardView', () => {
     routeLeaveGuard = null
     routeUpdateGuard = null
     window.localStorage.removeItem('td.paper.board-density.v1')
+    window.localStorage.removeItem('td.paper.board-column-width.v1')
   })
 
   afterEach(() => {
@@ -373,6 +374,97 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+  })
+
+  it('changes and persists named column-width presets through a labelled native select', async () => {
+    const wrapper = mountView()
+    const control = wrapper.get('[data-testid="paper-board-width-control"]')
+    const select = wrapper.get('[data-testid="paper-board-width-select"]')
+    const firstColumn = wrapper.get('.paper-board-column').element as HTMLElement
+
+    expect(control.element.tagName).toBe('LABEL')
+    expect(select.element.tagName).toBe('SELECT')
+    expect(select.attributes('aria-label')).toBe('Column width')
+    expect(select.findAll('option').map((option) => option.text())).toEqual(['Narrow', 'Standard', 'Wide'])
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('standard')
+    expect(firstColumn.style.width).toBe('280px')
+
+    const bubbledKeydown = vi.fn()
+    window.addEventListener('keydown', bubbledKeydown)
+    const selectArrow = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    })
+    select.element.dispatchEvent(selectArrow)
+    window.removeEventListener('keydown', bubbledKeydown)
+    expect(bubbledKeydown).not.toHaveBeenCalled()
+    expect(selectArrow.defaultPrevented).toBe(false)
+
+    await select.setValue('narrow')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('narrow')
+    expect(firstColumn.style.width).toBe('240px')
+    expect(window.localStorage.getItem('td.paper.board-column-width.v1')).toBe('narrow')
+
+    await select.setValue('wide')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('wide')
+    expect(firstColumn.style.width).toBe('340px')
+    expect(window.localStorage.getItem('td.paper.board-column-width.v1')).toBe('wide')
+
+    mockBoardStore.currentBoard = { ...board, updatedAt: new Date().toISOString() }
+    await nextTick()
+    expect((wrapper.get('.paper-board-column').element as HTMLElement).style.width).toBe('340px')
+  })
+
+  it('restores a column-width preference after the board unmounts and remounts', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-board-width-select"]').setValue('wide')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+
+    expect(reloaded.get('[data-testid="paper-board-width-select"]').element)
+      .toHaveProperty('value', 'wide')
+    expect(reloaded.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('wide')
+    expect((reloaded.get('.paper-board-column').element as HTMLElement).style.width).toBe('340px')
+  })
+
+  it('falls back to the standard column width for invalid stored values', async () => {
+    window.localStorage.setItem('td.paper.board-column-width.v1', 'stretch-to-fit')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-board-width-select"]').element)
+      .toHaveProperty('value', 'standard')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('standard')
+    expect((wrapper.get('.paper-board-column').element as HTMLElement).style.width).toBe('280px')
+  })
+
+  it('uses presets on desktop while retaining tablet snap sizing and phone stacking width', async () => {
+    window.localStorage.setItem('td.paper.board-column-width.v1', 'wide')
+    const wrapper = mountView()
+    await nextTick()
+
+    const columnWidth = () => (wrapper.get('.paper-board-column').element as HTMLElement).style.width
+    const lanes = () => wrapper.get('[data-testid="paper-board-lanes"]')
+    expect(columnWidth()).toBe('340px')
+    expect(lanes().classes()).not.toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+    expect(columnWidth()).toBe('280px')
+    expect(lanes().classes()).toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'phone'
+    await nextTick()
+    expect(columnWidth()).toBe('100%')
+    expect(lanes().classes()).not.toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'desktop'
+    await nextTick()
+    expect(columnWidth()).toBe('340px')
   })
 
   it('blocks paper card drags that do not start from the card handle', async () => {
