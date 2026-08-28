@@ -537,8 +537,18 @@ function Invoke-NpmStage {
     $stderr = Join-Path $DataDir "dev-up-$($script:State.RunId)-$Stage.stderr.log"
     New-EmptyLogFiles -Paths @($stdout, $stderr)
     $process = Start-LoggedCommand -Executable $script:NpmCmd -Arguments $Arguments -WorkingDirectory $FrontendDir -StdoutLog $stdout -StderrLog $stderr -EnvironmentOverrides $EnvironmentOverrides
-    $record = New-ProcessRecord -Role "$Stage npm stage" -Process $process
+    $record = $null
     try {
+        try {
+            $record = New-ProcessRecord -Role "$Stage npm stage" -Process $process
+        } catch {
+            $exitedBeforeRecord = $false
+            try { $exitedBeforeRecord = $process.HasExited } catch { }
+            if (-not $exitedBeforeRecord) {
+                $script:TransientStageCleanupUnproved = $true
+                throw
+            }
+        }
         # WaitForExit() blocks a Stop-Job cancellation until the npm broker exits.
         # A short process wait keeps cancellation observable so the finally block
         # can prove and reap this transient cmd.exe tree by its creation identity.
@@ -552,9 +562,11 @@ function Invoke-NpmStage {
     } finally {
         $exited = $false
         try { $exited = $process.HasExited } catch { }
-        if (-not $exited -and -not (Stop-RecordedProcess -Record $record)) {
-            $script:TransientStageCleanupUnproved = $true
-            Write-DevWarning "Transient $Stage npm stage cleanup was unproved; any active launcher state will be retained."
+        if (-not $exited) {
+            if ($null -eq $record -or -not (Stop-RecordedProcess -Record $record)) {
+                $script:TransientStageCleanupUnproved = $true
+                Write-DevWarning "Transient $Stage npm stage cleanup was unproved; any active launcher state will be retained."
+            }
         }
         Disconnect-LoggedBroker -Process $process
         try { $process.Dispose() } catch { }

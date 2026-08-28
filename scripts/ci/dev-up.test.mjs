@@ -563,6 +563,22 @@ function Assert-ProcessIdentityMatch {`,
   await writeFile(launcherPath, instrumented)
 }
 
+async function installExitedPreflightRecordProbe(fixture) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = normalise(await readFile(launcherPath, 'utf8'))
+  const recordSignature = 'function New-ProcessRecord {\n    param([string]$Role, [System.Diagnostics.Process]$Process)'
+  assert.equal(source.split(recordSignature).length - 1, 1, 'unexpected process-record function count')
+  const instrumented = source.replace(
+    recordSignature,
+    `${recordSignature}
+    if ($Role -eq "preflight npm stage") {
+        $Process.WaitForExit()
+        throw "Could not capture the $Role process creation identity."
+    }`,
+  )
+  await writeFile(launcherPath, instrumented)
+}
+
 async function installPowerShellStubs(fakeBin) {
   await writeFile(
     join(fakeBin, 'node.cmd'),
@@ -1046,6 +1062,24 @@ if (powershell) {
       assert.equal(await describeLiveFixtureProcesses(fixture), 'none still alive')
       const seedEvents = (await readEvents(fixture)).filter((event) => event.args.join(' ') === 'run demo:seed -- --reset')
       assert.equal(seedEvents.length, 1)
+    } finally {
+      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+      await removeFixture(fixture)
+    }
+  })
+
+  test('PowerShell: an exited preflight broker does not fail process identity capture', { concurrency: false }, async () => {
+    const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
+    const fixture = await createFixture(platform)
+    const apiPort = await getFreePort()
+    const frontendPort = await getFreePort()
+    try {
+      await installExitedPreflightRecordProbe(fixture)
+      const result = runLauncher(platform, fixture, { apiPort, env: { FAKE_FRONTEND_PORT: String(frontendPort) } })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, combinedOutput(result))
+      await stopSuccessfulStack(platform, fixture)
+      await assertNoStateAndPortsReleased(fixture, [apiPort, frontendPort])
     } finally {
       if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
       await removeFixture(fixture)
