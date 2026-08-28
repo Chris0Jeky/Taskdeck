@@ -144,12 +144,16 @@ change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
   **BREAKING: none.** Again a single in-place statement with no table rebuild; existing boards take
   the `0` default. Nothing reads the value — it exists so a card write always marks its board row
   modified, which keeps the token check below deterministic instead of clock-dependent.
+- **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
+  migration makes `ProvenanceFields.Confidence` nullable and adds the required integer
+  `ConfidenceSource` column. Existing rows keep their stored numeric value but receive source `0`
+  (`NotReported`), so an upgrade does not relabel historical confidence as model-reported evidence.
 - **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
   integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
   then makes the column required without a database default. Existing integrations therefore retain
   their prior MCP access after upgrade. Current integration builds also issue new keys as **Full**;
   user-selectable least-privilege enforcement is not shipped yet.
-- **No migration action required.** All three migrations are applied automatically on startup like
+- **No migration action required.** All four migrations are applied automatically on startup like
   every other one — steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
   [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
   snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
