@@ -1,6 +1,6 @@
-# Taskdeck Windows Quick Start (0.1.x – 0.2.x)
+# Taskdeck Windows Quick Start (0.2.x)
 
-Taskdeck 0.1.x and 0.2.x support **Windows 10/11 x64**. Download the Windows ZIP and its
+Taskdeck 0.2.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
 `.sha256` file from the [official Taskdeck Releases page](https://github.com/Chris0Jeky/Taskdeck/releases/latest).
 The other archives attached to v0.1.0 are preserved historical artifacts, not a continuing support
 promise.
@@ -43,7 +43,7 @@ extracted folder.
 
 ### Windows unsigned-beta warning
 
-The 0.1.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
+The 0.2.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
 Continue with **More info -> Run anyway** only when the ZIP came from the official Taskdeck release
 and the SHA-256 check above passed. Do not disable SmartScreen globally. Delete the download and
 [report it](https://github.com/Chris0Jeky/Taskdeck/issues) if its source or hash is wrong.
