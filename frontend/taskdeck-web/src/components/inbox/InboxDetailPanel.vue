@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../ui'
-import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel, triageDegradedNotice } from './inboxUtils'
+import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel, triageDegradedNotice, triageDegradedReviewKey } from './inboxUtils'
 import type { CaptureItem } from '../../types/capture'
 
 const props = withDefaults(defineProps<{
@@ -48,6 +48,13 @@ const canTriageSelection = canMutateSelection
  * needs no `useI18n()` line of its own.
  */
 const degradedNotice = triageDegradedNotice
+
+/**
+ * Which `inbox.degraded.review*` sentence is true for this capture's status
+ * (PR #2224 review). The notice rides `Triaged`, `ProposalCreated` and
+ * `Converted`; apply guidance is only accurate on the middle one.
+ */
+const degradedReviewKey = triageDegradedReviewKey
 </script>
 
 <template>
@@ -187,7 +194,7 @@ const degradedNotice = triageDegradedNotice
         <p class="td-inbox-detail__degraded-reason" data-testid="capture-degraded-reason">
           {{ $t('inbox.degraded.reason', { reason: degradedNotice(selectedItem) }) }}
         </p>
-        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.review') }}</p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t(degradedReviewKey(selectedItem)) }}</p>
         <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.action') }}</p>
       </div>
 
@@ -477,9 +484,18 @@ const degradedNotice = triageDegradedNotice
   margin-bottom: 0;
 }
 
-/* The server's own words, set apart from Taskdeck's explanation around them. */
+/*
+ * The server's own words, set apart from Taskdeck's explanation around them.
+ *
+ * `--td-text-secondary`, not `--td-text-tertiary` (PR #2224 review). Composited
+ * over this panel (`--td-color-warning-light`, rgba(251,191,36,0.15), over the
+ * detail surface #1c1b1b => rgb(61,52,28)), the tertiary token is a 40% white
+ * wash that lands at 2.87:1 — under WCAG AA for normal text, on the one line
+ * that carries the server's diagnosis. #e4beba on the same composite is 7.25:1,
+ * so the 11px mono size stands; the mono face and size still set it apart.
+ */
 .td-inbox-detail__degraded-reason {
-  color: var(--td-text-tertiary);
+  color: var(--td-text-secondary);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: var(--td-font-xs);
   line-height: 1.5;

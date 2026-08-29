@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { triageDegradedNotice } from '../../../components/inbox/inboxUtils'
+import { triageDegradedNotice, triageDegradedReviewKey } from '../../../components/inbox/inboxUtils'
 import type { CaptureStatusValue } from '../../../types/capture'
 
 /**
@@ -77,5 +77,24 @@ describe('triageDegradedNotice', () => {
 
   it('returns null for an out-of-contract status', () => {
     expect(triageDegradedNotice({ status: 99, errorMessage: NOTICE })).toBeNull()
+  })
+})
+
+/**
+ * The review guidance is status-specific (PR #2224 review): "read it closely
+ * before you apply it" is impossible on `Triaged`, which has no proposal, and
+ * stale on `Converted`, which was applied already. One case per status, both
+ * spellings, because the allowlist accepts both.
+ */
+describe('triageDegradedReviewKey', () => {
+  it.each<[CaptureStatusValue, string]>([
+    ['Triaged', 'inbox.degraded.reviewTriaged'],
+    [2, 'inbox.degraded.reviewTriaged'],
+    ['ProposalCreated', 'inbox.degraded.reviewProposal'],
+    [3, 'inbox.degraded.reviewProposal'],
+    ['Converted', 'inbox.degraded.reviewConverted'],
+    [4, 'inbox.degraded.reviewConverted'],
+  ])('keys %s to its own guidance', (status, key) => {
+    expect(triageDegradedReviewKey({ status })).toBe(key)
   })
 })

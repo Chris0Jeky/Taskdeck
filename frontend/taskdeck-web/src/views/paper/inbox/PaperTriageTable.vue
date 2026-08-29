@@ -11,6 +11,7 @@ import {
   sourceLabel,
   statusLabel,
   triageDegradedNotice,
+  triageDegradedReviewKey,
 } from '../../../components/inbox/inboxUtils'
 import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
 import type { Board } from '../../../types/board'
@@ -442,6 +443,15 @@ function degradedNotice(item: CaptureItemSummary): string | null {
   return triageDegradedNotice(item)
 }
 
+/**
+ * Which `inbox.degraded.review*` sentence is true for this row's status (PR
+ * #2224 review): a `Triaged` row has no proposal to apply and a `Converted`
+ * row was applied already, so the apply guidance is only right in between.
+ */
+function degradedReviewKey(item: CaptureItemSummary): string {
+  return triageDegradedReviewKey(item)
+}
+
 function degradedNoticeId(item: CaptureItemSummary): string {
   return `paper-capture-degraded-${item.id}`
 }
@@ -619,7 +629,7 @@ function recordedOr(value: string | null | undefined): string {
           <p class="paper-triage__degraded-reason" data-testid="capture-degraded-reason">
             {{ t('inbox.degraded.reason', { reason: degradedNotice(item) }) }}
           </p>
-          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.review') }}</p>
+          <p class="paper-triage__degraded-line">{{ t(degradedReviewKey(item)) }}</p>
           <p class="paper-triage__degraded-line">{{ t('inbox.degraded.action') }}</p>
         </div>
 

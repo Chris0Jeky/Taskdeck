@@ -44,12 +44,17 @@ export default {
     },
   },
   // Avviso di smistamento degradato (#2202). È una cautela su un successo, non
-  // un errore. `reason` riporta testualmente la notifica del server.
+  // un errore. `reason` riporta testualmente la notifica del server. Il testo
+  // non afferma MAI quale motore abbia prodotto il risultato: una delle
+  // notifiche del server (recupero dopo un arresto anomalo) dichiara essa
+  // stessa che l’autore è incerto (revisione della PR #2224; #2212).
   degraded: {
-    label: 'Smistata senza il modello',
-    lead: 'Il modello non ha potuto rispondere, così l’estrattore deterministico offline di Taskdeck ha smistato questa cattura al suo posto.',
+    label: 'Smistata senza una lettura del modello confermata',
+    lead: 'Taskdeck non può confermare che il risultato sia stato prodotto dal modello. Il server ha riportato lo smistamento così:',
     reason: 'Segnalato: {reason}',
-    review: 'Un risultato deterministico è un’ipotesi basata su schemi di testo, non una lettura del modello, e non porta collegamenti alle prove. Leggilo con attenzione prima di applicarlo.',
+    reviewProposal: 'Se questa proposta è stata prodotta dall’estrattore deterministico offline, è un’ipotesi basata su schemi di testo e non una lettura del modello, e non porta collegamenti alle prove. Leggila con attenzione prima di applicarla.',
+    reviewTriaged: 'Lo smistamento si è concluso senza proporre nulla. Potrebbe essere l’estrattore deterministico offline che non ha riconosciuto alcuno schema, non l’assenza di cose da fare: rileggi tu la cattura.',
+    reviewConverted: 'Questa cattura è già stata applicata a una bacheca. Verifica le modifiche risultanti rispetto al testo della cattura, perché il risultato potrebbe non provenire da una lettura del modello.',
     action: 'Se il modello doveva essere eseguito, controlla le impostazioni del provider LLM.',
   },
   capture: {

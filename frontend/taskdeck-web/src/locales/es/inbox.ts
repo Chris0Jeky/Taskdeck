@@ -47,12 +47,16 @@ export default {
   },
   // Aviso de clasificación degradada (#2202). Es una advertencia sobre un
   // resultado correcto, no un fallo. `reason` reproduce literalmente el aviso
-  // del servidor.
+  // del servidor. El texto NUNCA afirma qué motor produjo el resultado: uno de
+  // los avisos del servidor (recuperación tras un fallo) declara él mismo que
+  // la autoría es incierta (revisión de la PR #2224; #2212).
   degraded: {
-    label: 'Clasificada sin el modelo',
-    lead: 'El modelo no pudo responder, así que el extractor determinista sin conexión de Taskdeck clasificó esta captura en su lugar.',
+    label: 'Clasificada sin una lectura del modelo confirmada',
+    lead: 'Taskdeck no puede confirmar que el modelo haya producido este resultado. El servidor informó la clasificación así:',
     reason: 'Informado: {reason}',
-    review: 'Un resultado determinista es una conjetura basada en patrones de texto, no una lectura del modelo, y no incluye enlaces de evidencia. Léelo con atención antes de aplicarlo.',
+    reviewProposal: 'Si el extractor determinista sin conexión produjo esta propuesta, es una conjetura basada en patrones de texto y no una lectura del modelo, y no incluye enlaces de evidencia. Léela con atención antes de aplicarla.',
+    reviewTriaged: 'La clasificación terminó sin proponer nada. Puede que el extractor determinista sin conexión no reconociera ningún patrón, no que no haya nada que hacer: revisa tú la captura.',
+    reviewConverted: 'Esta captura ya se aplicó a un tablero. Revisa los cambios resultantes frente al texto de la captura, porque el resultado podría no provenir de una lectura del modelo.',
     action: 'Si el modelo debía ejecutarse, revisa la configuración del proveedor de LLM.',
   },
   capture: {

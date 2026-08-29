@@ -69,7 +69,7 @@ describe('PaperTriageTable — degraded triage notice', () => {
 
     expect(wrapper.find('[data-testid="capture-degraded-notice"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="capture-failure-reason"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Triaged without the model')
+    expect(wrapper.text()).not.toContain('Triaged without a confirmed model reading')
   })
 
   it('renders the notice on a degraded successful capture, verbatim and in the caution tone', () => {
@@ -86,9 +86,13 @@ describe('PaperTriageTable — degraded triage notice', () => {
     expect(wrapper.find('[data-testid="capture-failure-reason"]').exists()).toBe(false)
     expect(wrapper.find('.paper-triage__reason').exists()).toBe(false)
 
-    // Copy names the producer and what the fallback means for review.
-    expect(notice.text()).toContain('Triaged without the model')
-    expect(notice.text()).toContain("Taskdeck's deterministic offline extractor")
+    // Copy says a model reading could not be CONFIRMED, and never asserts which
+    // engine authored the result — one server notice (crash recovery,
+    // `ResolveReuseDegradedNotice`) reports the author as unknown (PR #2224).
+    expect(notice.text()).toContain('Triaged without a confirmed model reading')
+    expect(notice.text()).toContain('cannot confirm that the model produced this result')
+    expect(notice.text()).not.toContain('extractor triaged this capture instead')
+    expect(notice.text()).toContain('If the deterministic offline extractor produced this proposal')
     expect(notice.text()).toContain('no evidence links')
 
     // The server's own words, unedited and with nothing appended.
@@ -112,6 +116,22 @@ describe('PaperTriageTable — degraded triage notice', () => {
     expect(wrapper.find('[data-testid="capture-failure-reason"]').exists()).toBe(false)
   })
 
+  it('pins one review sentence per allowlisted status', () => {
+    const proposal = mountTable(makeItem('ProposalCreated', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+    expect(proposal).toContain('Read it closely before you apply it.')
+
+    const triaged = mountTable(makeItem('Triaged', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+    expect(triaged).toContain('Triage finished without proposing anything.')
+    expect(triaged).not.toContain('before you apply it')
+
+    const converted = mountTable(makeItem('Converted', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+    expect(converted).toContain('This capture has already been applied to a board.')
+    expect(converted).not.toContain('before you apply it')
+  })
+
   it('keeps the existing failure rendering for a failed capture and adds no caution notice', () => {
     const wrapper = mountTable(makeItem('Failed', 'Triage failed: the capture text was unusable.'))
 
@@ -122,7 +142,7 @@ describe('PaperTriageTable — degraded triage notice', () => {
 
     expect(wrapper.find('[data-testid="capture-degraded-notice"]').exists()).toBe(false)
     expect(wrapper.find('.paper-triage__open').attributes('aria-describedby')).toBeUndefined()
-    expect(wrapper.text()).not.toContain('Triaged without the model')
+    expect(wrapper.text()).not.toContain('Triaged without a confirmed model reading')
   })
 
   it('keeps the numeric Failed status on the failure path', () => {

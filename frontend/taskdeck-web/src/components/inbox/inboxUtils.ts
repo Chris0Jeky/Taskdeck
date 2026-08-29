@@ -169,3 +169,26 @@ export function triageDegradedNotice(
   const notice = item.errorMessage?.trim()
   return notice ? notice : null
 }
+
+/**
+ * The `inbox.degraded.review*` catalog key whose guidance is true for THIS
+ * capture's status (PR #2224 review).
+ *
+ * One sentence cannot cover the three statuses the notice rides. "Read it
+ * closely before you apply it" is impossible on `Triaged` — triage completed
+ * with nothing to propose, so there is no proposal to read or apply — and
+ * stale on `Converted`, where the proposal was applied to the board already.
+ * Only `ProposalCreated` has something pending review.
+ *
+ * Callers reach this only when `triageDegradedNotice` returned a notice, which
+ * already restricts the status to the allowlist above; the `ProposalCreated`
+ * key is the fallback purely so the return type stays total.
+ */
+export function triageDegradedReviewKey(
+  item: { status?: CaptureStatusValue } | null | undefined,
+): string {
+  const status = item?.status
+  if (status === 'Triaged' || status === 2) return 'inbox.degraded.reviewTriaged'
+  if (status === 'Converted' || status === 4) return 'inbox.degraded.reviewConverted'
+  return 'inbox.degraded.reviewProposal'
+}

@@ -59,7 +59,7 @@ describe('InboxDetailPanel — degraded triage notice', () => {
 
     expect(wrapper.find('[data-testid="capture-degraded-notice"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="capture-error-banner"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Triaged without the model')
+    expect(wrapper.text()).not.toContain('Triaged without a confirmed model reading')
   })
 
   it('renders the notice on a degraded successful capture, verbatim and in the caution tone', () => {
@@ -77,9 +77,13 @@ describe('InboxDetailPanel — degraded triage notice', () => {
     expect(wrapper.find('[data-testid="capture-error-banner"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Triage failed')
 
-    // Copy names the producer and what the fallback means for review.
-    expect(notice.text()).toContain('Triaged without the model')
-    expect(notice.text()).toContain("Taskdeck's deterministic offline extractor")
+    // Copy says a model reading could not be CONFIRMED, and never asserts which
+    // engine authored the result — one server notice (crash recovery,
+    // `ResolveReuseDegradedNotice`) reports the author as unknown (PR #2224).
+    expect(notice.text()).toContain('Triaged without a confirmed model reading')
+    expect(notice.text()).toContain('cannot confirm that the model produced this result')
+    expect(notice.text()).not.toContain('extractor triaged this capture instead')
+    expect(notice.text()).toContain('If the deterministic offline extractor produced this proposal')
     expect(notice.text()).toContain('no evidence links')
 
     // The server's own words, unedited and with nothing appended.
@@ -94,6 +98,37 @@ describe('InboxDetailPanel — degraded triage notice', () => {
     expect(wrapper.find('[data-testid="capture-error-banner"]').exists()).toBe(false)
   })
 
+  /**
+   * One case per allowlisted status, pinning the review sentence (PR #2224
+   * review). The apply instruction is impossible on `Triaged` and stale on
+   * `Converted`, so each status must get its own guidance and must NOT get the
+   * other two.
+   */
+  it('gives ProposalCreated the apply guidance and nothing else', () => {
+    const text = mountPanel(makeItem('ProposalCreated', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+
+    expect(text).toContain('Read it closely before you apply it.')
+    expect(text).not.toContain('Triage finished without proposing anything')
+    expect(text).not.toContain('already been applied to a board')
+  })
+
+  it('tells a Triaged capture that nothing was proposed, without an apply instruction', () => {
+    const text = mountPanel(makeItem('Triaged', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+
+    expect(text).toContain('Triage finished without proposing anything.')
+    expect(text).not.toContain('before you apply it')
+  })
+
+  it('tells a Converted capture the change already landed, without an apply instruction', () => {
+    const text = mountPanel(makeItem('Converted', NOTICE))
+      .find('[data-testid="capture-degraded-notice"]').text()
+
+    expect(text).toContain('This capture has already been applied to a board.')
+    expect(text).not.toContain('before you apply it')
+  })
+
   it('keeps the existing error rendering for a failed capture and adds no caution notice', () => {
     const wrapper = mountPanel(makeItem('Failed', 'Triage failed: the capture text was unusable.'))
 
@@ -103,7 +138,7 @@ describe('InboxDetailPanel — degraded triage notice', () => {
     expect(banner.text()).toContain('Triage failed: the capture text was unusable.')
 
     expect(wrapper.find('[data-testid="capture-degraded-notice"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Triaged without the model')
+    expect(wrapper.text()).not.toContain('Triaged without a confirmed model reading')
   })
 
   it('keeps the numeric Failed status on the error path', () => {
