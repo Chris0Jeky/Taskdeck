@@ -91,7 +91,7 @@ describe('WorkspaceSetupModal', () => {
     })
 
     await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Product Sprint')
-    await wrapper.get('.td-btn--primary').trigger('click')
+    await wrapper.get('form').trigger('submit')
     await waitForUi()
 
     expect(mocks.createBoard).toHaveBeenCalledWith({ name: 'Product Sprint' })
@@ -99,6 +99,69 @@ describe('WorkspaceSetupModal', () => {
     expect(mocks.clearTodaySummary).toHaveBeenCalled()
     expect(mocks.push).toHaveBeenCalledWith('/workspace/boards/board-1')
     expect(wrapper.emitted('created')?.[0]?.[0]).toEqual({ boardId: 'board-1', templateId: 'blank-board' })
+  })
+
+  it('submits from the board name Enter path and ignores duplicate form submits', async () => {
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    const input = wrapper.get('input[placeholder="For example: Product Sprint"]')
+    await input.setValue('Keyboard Board')
+
+    input.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    const submitEvent = new Event('submit', { bubbles: true, cancelable: true })
+    wrapper.get('form').element.dispatchEvent(submitEvent)
+    wrapper.get('form').element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await waitForUi()
+
+    expect(mocks.createBoard).toHaveBeenCalledTimes(1)
+    expect(mocks.createBoard).toHaveBeenCalledWith({ name: 'Keyboard Board' })
+    expect(mocks.push).toHaveBeenCalledWith('/workspace/boards/board-1')
+  })
+
+  it('cancels on a dispatched Escape while allowing the submitting lock to hold', async () => {
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: false,
+      },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ isOpen: true })
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await waitForUi()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+
+    let resolveBoard: ((board: { id: string; name: string }) => void) | undefined
+    mocks.createBoard.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBoard = resolve
+      }),
+    )
+    const submittingWrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: false,
+      },
+    })
+    await submittingWrapper.setProps({ isOpen: true })
+    await submittingWrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Pending Board')
+    submittingWrapper.get('form').element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await waitForUi()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await waitForUi()
+
+    expect(submittingWrapper.emitted('close')).toBeUndefined()
+    expect(submittingWrapper.get('button.td-btn--secondary').attributes('disabled')).toBeDefined()
+
+    resolveBoard?.({ id: 'board-1', name: 'Pending Board' })
+    await waitForUi()
+    submittingWrapper.unmount()
   })
 
   it('applies the selected starter pack before routing', async () => {
@@ -110,7 +173,7 @@ describe('WorkspaceSetupModal', () => {
 
     await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Sprint Board')
     await wrapper.get('input[value="engineering-sprint"]').setValue(true)
-    await wrapper.get('.td-btn--primary').trigger('click')
+    await wrapper.get('form').trigger('submit')
     await waitForUi()
 
     expect(mocks.getCatalog).toHaveBeenCalledWith('board-1')
@@ -130,7 +193,7 @@ describe('WorkspaceSetupModal', () => {
 
     await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Client Onboarding Demo')
     await wrapper.get('input[value="client-onboarding"]').setValue(true)
-    await wrapper.get('.td-btn--primary').trigger('click')
+    await wrapper.get('form').trigger('submit')
     await waitForUi()
 
     expect(mocks.getCatalog).toHaveBeenCalledWith('board-1')
@@ -155,7 +218,7 @@ describe('WorkspaceSetupModal', () => {
 
     await wrapper.get('input[placeholder="For example: Product Sprint"]').setValue('Support Board')
     await wrapper.get('input[value="engineering-sprint"]').setValue(true)
-    await wrapper.get('.td-btn--primary').trigger('click')
+    await wrapper.get('form').trigger('submit')
     await waitForUi()
 
     expect(mocks.toastWarning).toHaveBeenCalledWith(
