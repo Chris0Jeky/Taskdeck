@@ -62,9 +62,25 @@ export function useProposalRevisions(
     }
   }
 
+  // Keyed on the proposal AND its latest revision (#2215 B). Watching the id
+  // alone left this state stale whenever a background queue poll brought in a
+  // revision another session had saved: `revisionCount` kept the count from
+  // entry, and `editablePayload` kept preferring the cached earlier
+  // `latestRevision`, so opening Edit and saving would build a newer revision
+  // out of operations the server had already superseded.
   watch(
-    () => activeProposal.value?.id,
-    (id) => {
+    () => [activeProposal.value?.id, activeProposal.value?.latestRevisionId ?? null] as const,
+    ([id], previous) => {
+      const previousId = previous?.[0]
+      if (id && previousId && id === previousId) {
+        // Same proposal, newer revision. Resync the authoritative state without
+        // the full reset below: the reviewer may have the editor open, and
+        // clearing `editing` here would close a composer mid-sentence over a
+        // change that happened elsewhere.
+        loadGeneration += 1
+        void loadRevisionState(id)
+        return
+      }
       loadGeneration += 1
       saveGeneration += 1
       editing.value = false

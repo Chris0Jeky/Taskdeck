@@ -480,6 +480,13 @@ export default {
       title: 'Sin resultados en {filter}.',
       body: 'Cambia de filtro para revisar propuestas que siguen en espera en otra parte de la cola.',
     },
+    // Machine-translated (see ADR-0054).
+    settledElsewhere: {
+      eyebrow: 'Propuesta seleccionada',
+      title: 'Esta propuesta ya no esta pendiente.',
+      body: 'Se decidio o se retiro en otro lugar mientras la revisabas. Aqui no se decidio nada y no se abrio ninguna otra propuesta en su lugar.',
+      return: 'Volver a la cola',
+    },
     unavailable: {
       eyebrow: 'Propuesta solicitada',
       title: 'Esta propuesta no esta disponible.',

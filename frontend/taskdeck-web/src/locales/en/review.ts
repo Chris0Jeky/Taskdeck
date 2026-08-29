@@ -566,6 +566,15 @@ export default {
       title: 'No matches in {filter}.',
       body: 'Switch filters to review proposals that are still waiting elsewhere in the queue.',
     },
+    // #2215 A: shown when a background queue poll takes the proposal the
+    // reviewer is on. It exists so the surface can stop here rather than move
+    // them onto a record they never chose.
+    settledElsewhere: {
+      eyebrow: 'Selected proposal',
+      title: 'This proposal is no longer pending.',
+      body: 'It was decided or withdrawn somewhere else while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place.',
+      return: 'Back to the queue',
+    },
     unavailable: {
       eyebrow: 'Requested proposal',
       title: 'This proposal is unavailable.',
