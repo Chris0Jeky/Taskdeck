@@ -11,6 +11,13 @@ public class ProposalHousekeepingWorker : BackgroundService
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly ILogger<ProposalHousekeepingWorker> _logger;
 
+    /// <summary>
+    /// The archived-board skip count reported by the previous sweep, so the operator log line is
+    /// emitted on transitions rather than once a minute forever. Touched only from the single
+    /// sequential <see cref="ExecuteAsync"/> loop, so it needs no synchronization.
+    /// </summary>
+    private int _lastSkippedArchivedBoardCount;
+
     public ProposalHousekeepingWorker(
         IServiceScopeFactory scopeFactory,
         WorkerSettings settings,
@@ -79,14 +86,36 @@ public class ProposalHousekeepingWorker : BackgroundService
             "taskdeck.proposals.skipped_archived_board_count",
             sweep.SkippedArchivedBoardCount);
 
-        if (sweep.SkippedArchivedBoardCount > 0)
+        // Report what the guard withheld, but only when the figure CHANGES. This sweep runs every
+        // 60s and a withheld proposal stays PendingReview until its board is restored, so logging
+        // unconditionally emitted ~1,440 identical Information lines a day for a single archived
+        // board — which trains operators to filter the line out, costing the signal it exists for.
+        // Steady state is therefore Debug; a transition is Information, including the transition
+        // back to zero so the condition CLEARING is visible and not just its onset.
+        if (sweep.SkippedArchivedBoardCount != _lastSkippedArchivedBoardCount)
         {
-            // Count only — no proposal id, summary, or board name — so this stays non-secret.
-            _logger.LogInformation(
-                "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
-                    + "restore the board to let them expire.",
+            if (sweep.SkippedArchivedBoardCount > 0)
+            {
+                // Count only — no proposal id, summary, or board name — so this stays non-secret.
+                _logger.LogInformation(
+                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                        + "restore the board to let them expire.",
+                    sweep.SkippedArchivedBoardCount);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "No stale proposals are being withheld for archived boards any more.");
+            }
+        }
+        else if (sweep.SkippedArchivedBoardCount > 0)
+        {
+            _logger.LogDebug(
+                "Still skipping {SkippedCount} stale proposals because their board is archived.",
                 sweep.SkippedArchivedBoardCount);
         }
+
+        _lastSkippedArchivedBoardCount = sweep.SkippedArchivedBoardCount;
 
         foreach (var proposal in expiredProposals)
         {
