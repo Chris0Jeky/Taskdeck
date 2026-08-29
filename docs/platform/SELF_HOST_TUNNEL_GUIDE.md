@@ -1,6 +1,6 @@
 # Self-Host + Tunnel Guide — private shared instance
 
-Last Updated: 2026-08-19
+Last Updated: 2026-08-29
 
 Purpose: run one Taskdeck instance on your own machine and share it with a small,
 trusted group (the #1772 two-person collaboration setup) over HTTPS, without a
@@ -104,7 +104,69 @@ Render for an always-on host.
 
 3. Send the code to your friend; they open the public URL → Register.
 
-## 5. Share a board
+## 5. LLM providers, quota, and the egress disclosure
+
+Skip this section entirely if you are staying on the mock provider — `deploy/docker-compose.yml`
+defaults `Llm__EnableLiveProviders` to `false` and `Llm__Provider` to `Mock`, so a stock stack
+sends nothing to any LLM provider.
+
+Turning live triage on puts this instance in ADR-0061's **operator-funded** variant
+(`llm-cost-ownership` = A): your provider key is the deployment-global key, your collaborator's
+captured content egresses under **your** provider account, and you bear the cost. Per-user BYO keys
+are not buildable today (`#1879` is open), so this is the only buildable variant. Do all four steps
+below — the disclosure is not optional and must be given **before the collaborator captures
+anything real**.
+
+1. **Enable the live provider.** Add to `deploy/.env` (compose maps these onto
+   `Llm__EnableLiveProviders`, `Llm__Provider`, and `Llm__OpenAi__ApiKey`):
+
+   ```bash
+   TASKDECK_LLM_ENABLE_LIVE_PROVIDERS=true
+   TASKDECK_LLM_PROVIDER=OpenAI
+   TASKDECK_LLM_OPENAI_API_KEY=<your provider key>
+   ```
+
+   The key is a host secret: keep it in `deploy/.env` only, which is gitignored and already backed
+   up in separate custody from the database (step 1). Generate and paste it yourself so it never
+   passes through an agent transcript, and never put it in the compose file or an image.
+
+2. **Set a real global ceiling.** `LlmQuota:GlobalBudgetCeilingTokens` is `0` — *unlimited* — by
+   default, and ADR-0061 `budget-alerts-cost-owner` requires a real number before live providers
+   carry someone else's traffic. **There is no `TASKDECK_*` passthrough for it**: unlike the keys
+   above, setting it in `deploy/.env` alone does nothing, because `deploy/docker-compose.yml`
+   forwards only the variables its `environment:` block names. Add it to the `api` service
+   environment directly, or in a compose override file layered with a second `-f`:
+
+   ```yaml
+   services:
+     api:
+       environment:
+         LlmQuota__GlobalBudgetCeilingTokens: "<tokens per day>"
+   ```
+
+   The per-user limits (`LlmQuota:RequestsPerHour` 60, `LlmQuota:TokensPerDay` 100000) already
+   default to non-zero values; the global ceiling is the one that does not. On breach the ruled
+   action is to **disable live providers, not to shut the instance down**, so collaboration
+   walkthroughs survive a spend stop.
+
+3. **Configure a provider spend alert** where the provider offers one, and record the all-in monthly
+   ceiling on `#1772`. Both the ceiling and the alert threshold are still **pending maintainer
+   values** on `#1772`, and the amounts must be re-verified against current provider prices before
+   any purchase — until they are supplied, this step is not executable and live providers should
+   stay off.
+
+4. **Give the written disclosure.** Before the collaborator captures anything real, send them a
+   written note stating that live triage runs on your provider key, that their captured content
+   therefore leaves the instance under your provider account, and that you pay for it. Point them at
+   both:
+
+   - `GET /api/privacy/egress` — the live destination list, readable once they are logged in;
+   - `docs/security/MANAGED_KEY_USAGE_POLICY.md` — the managed-key usage policy.
+
+   Connectors, outbound webhooks, and analytics remain independent egress destinations covered by
+   the general egress disclosure; enabling or disabling live LLM providers does not change them.
+
+## 6. Share a board
 
 Boards → create or open a board → Settings → **Access** (`/workspace/settings/access`):
 grant your friend the `Editor` role. On builds that include PR #1774 (issue
@@ -112,7 +174,7 @@ grant your friend the `Editor` role. On builds that include PR #1774 (issue
 their user ID, which they can read from `GET /api/users` after logging in.
 Realtime presence and updates are per-board and re-check read access on join.
 
-## 6. Care and feeding
+## 7. Care and feeding
 
 - **Backup**: the database lives in the `taskdeck-db` volume
   (`/app/data/taskdeck.db`) in WAL mode — **never copy the file while the app is
@@ -124,9 +186,11 @@ Realtime presence and updates are per-board and re-check read access on join.
   explicit `--db-path` is required:
 
   ```bash
-  # from the repo root; the volume name is what `docker volume ls` reports
-  # (Compose prefixes it with the project name, e.g. deploy_taskdeck-db)
-  docker run --rm -v deploy_taskdeck-db:/data -v "$PWD/backups:/backups" \
+  # from the repo root. Compose prefixes the volume with the project name, and
+  # deploy/docker-compose.yml:1 fixes that name (`name: taskdeck`) rather than
+  # deriving it from the directory — so the volume is taskdeck_taskdeck-db.
+  # Always confirm against what `docker volume ls` actually reports before running.
+  docker run --rm -v taskdeck_taskdeck-db:/data -v "$PWD/backups:/backups" \
     -v "$PWD/scripts:/scripts:ro" alpine:3 sh -c \
     'apk add --no-cache bash sqlite >/dev/null && bash /scripts/backup.sh --db-path /data/taskdeck.db --output-dir /backups --retain 7'
   ```

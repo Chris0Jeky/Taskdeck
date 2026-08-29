@@ -4,12 +4,14 @@ Last Verified: 2026-08-26 (current model unchanged; full-model recertification a
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
-> **Current versus proposed:** the shipped ownership model remains `Board -> Column -> Card`. Workspace,
-> Project, canonical WorkItem, hierarchy, typed work relations, Actor/Principal, Assignment, custom fields,
-> work logs, templates, and recurrence do not exist in the current schema. Proposed ADR-0060 defines a
-> compatibility-first work-model direction, and proposed ADR-0062 separates fields, aggregates, and rules.
-> Neither proposal changes the entity blocks or diagram below until accepted and implemented through a
-> reviewed EF Core migration.
+> **Current versus accepted-but-unimplemented:** the shipped ownership model remains
+> `Board -> Column -> Card`. Workspace, Project, canonical WorkItem, hierarchy, typed work relations,
+> Actor/Principal, Assignment, custom fields, work logs, templates, and recurrence do not exist in the
+> current schema. ADR-0060 (compatibility-first work-model direction) and ADR-0062 (fields, aggregates,
+> and threshold rules separated) are both **Accepted** as of 2026-08-29 — maintainer rulings recorded on
+> `#2084` and `#2091`; see `docs/decisions/INDEX.md` for the canonical status. Acceptance is a decision,
+> not a schema change: neither ADR changes the entity blocks or diagram below until it is implemented
+> through a reviewed EF Core migration, so everything documented here remains the shipped model.
 
 > **Coverage claim (self-checkable):** every `DbSet` on `TaskdeckDbContext` has a `###` block below,
 > and the only `###` blocks that are *not* a `DbSet` are the domain-only entities named under the

@@ -1,15 +1,22 @@
 # Cloud Deployment Guide
 
-Last Updated: 2026-08-26
+Last Updated: 2026-08-29
 Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 
 > **Private evaluation only.** Registration gating shipped in [#1297](https://github.com/Chris0Jeky/Taskdeck/issues/1297), but a public URL is not a managed-service safety boundary. Use `InviteOnly` while every intended account is created, then optionally use `Closed`; also keep provider access controls, a private network, or another authentication layer for evaluation deployments.
 >
 > Taskdeck's current supported posture is local-first, self-hosted, single-instance SQLite. This guide is an evaluation reference for a single private hosted container. A managed Taskdeck cloud is a future possibility, not a shipped beta service; multi-instance/PostgreSQL work remains unsupported today. [PR #1296](https://github.com/Chris0Jeky/Taskdeck/pull/1296) merged on 2026-07-13 and is historical context, not a landing prerequisite.
 >
-> Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. Use `InviteOnly` while collaborators are onboarding; `Closed` is safe only after every intended account already exists. This is not evidence of a managed public SaaS.
+> [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) and issue [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the next decision boundary. ADR-0061 is **Accepted as direction only, evidence pending** (maintainer ruling 2026-08-29, recorded on `#1772`) — the boundary is decided, no Stage 1 evidence exists, and acceptance authorizes no deployment. A trusted shared instance means one application instance, one persistent SQLite volume, a few known invitees, verified reconnect recovery, concurrency checks, and a tested backup/restore procedure that preserves both SQLite and the connector-encryption key. Use `InviteOnly` while collaborators are onboarding; `Closed` is safe only after every intended account already exists. This is not evidence of a managed public SaaS. ADR-0061's `host-selection` ruling also keeps Stage 1 on self-hosted maintainer hardware behind a tunnel (see `docs/platform/SELF_HOST_TUNNEL_GUIDE.md`); the Render migration `#1777` stays parked, so the provider steps below are not the chosen Stage 1 path.
 >
-> **Owner gate:** Until the maintainer records every decision required by ADR-0061/#1772 **and accepts ADR-0061**, the provider-account, billing, provisioning, and deployment steps below are reference-only. Do not purchase, register, enrol, redeem a benefit, create a hosted service, attach billing, or deploy from this guide before that gate is satisfied. Keep human actions and private account evidence in `OUTSTANDING_TASKS.md` and the maintainer's private ledger respectively.
+> **Owner gate:** ADR-0061's acceptance did **not** open the deployment steps. The provider-account, billing, provisioning, and deployment steps below remain reference-only until all of the following hold:
+>
+> - the three deployment-critical values still pending on `#1772` are supplied by the maintainer — the collaborator's identity/handle, the all-in monthly ceiling **and** its alert threshold, and the off-platform backup retention window;
+> - the Stage 1 prerequisites tracked on `#1772` are closed (notably the backup tooling gap: the production image ships neither `scripts/backup.sh` nor a `sqlite3` binary, and a non-secret-exposing decrypt-verification seam must exist);
+> - MFA remains off (`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets, so the instance must not be treated as MFA-protected; and
+> - an access policy sits in front of the tunnel — the tunnel itself is transport, not authorization.
+>
+> Do not purchase, register, enrol, redeem a benefit, create a hosted service, attach billing, or deploy from this guide before that gate is satisfied. Keep human actions and private account evidence in `OUTSTANDING_TASKS.md` and the maintainer's private ledger respectively.
 
 ---
 
@@ -35,7 +42,7 @@ Related documents:
 - `docs/ops/CLOUD_REFERENCE_ARCHITECTURE.md` -- exploratory AWS/ECS scale-out architecture; not a supported beta run path
 - `docs/platform/SQLITE_TO_POSTGRES_MIGRATION_RUNBOOK.md` -- PostgreSQL migration path
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` -- strategic context
-- `docs/decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md` -- proposed trusted-instance, small-team-alpha, and managed-SaaS boundary
+- `docs/decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md` -- trusted-instance, small-team-alpha, and managed-SaaS boundary (Accepted as direction only, evidence pending, 2026-08-29)
 
 ---
 
