@@ -17,7 +17,11 @@
 # Publish is resumable (#1806): draft -> per-asset `--clobber` upload with
 # retries -> flip to published.
 #
-# Tracked by: #535 (PKG-03), #1795, #1806, #1878
+# A tag carrying a semver prerelease segment (v1.2.3-rc.1) is published as a
+# GitHub PRERELEASE (#2217), so a release candidate never takes the Latest badge
+# that README and the packaged quick start point users at.
+#
+# Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217
 # =============================================================================
 
 name: Release Desktop
@@ -68,6 +72,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       sha: ${{ steps.resolve.outputs.sha }}
       publish: ${{ steps.resolve.outputs.publish }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
     steps:
       # Only the tag validator is needed here; nothing in this job writes to Git.
       - name: Checkout
@@ -90,6 +95,7 @@ jobs:
 
           raw_tag="${RAW_TAG:-}"
           publish="false"
+          prerelease="false"
           tag=""
           sha=""
 
@@ -152,10 +158,23 @@ jobs:
           # Re-validate the final tag, which also covers the generated rehearsal name.
           tag="$(bash scripts/ci/validate-release-tag.sh "${tag}")"
 
+          # --- 4. Decide the publish semantics from that same tag ------------
+          # Read off the VALIDATED tag string, so the release's label and the
+          # bytes published under it can never disagree about which tag they
+          # describe. The grammar in scripts/ci/validate-release-tag.sh spells
+          # "-" only as the prerelease separator: build-metadata identifiers are
+          # [0-9A-Za-z] joined by ".", never a hyphen. A "-" anywhere in a
+          # validated tag therefore means a prerelease segment and nothing else.
+          case "${tag}" in
+            *-*) prerelease="true" ;;
+            *)   prerelease="false" ;;
+          esac
+
           {
             printf 'tag=%s\n' "${tag}"
             printf 'sha=%s\n' "${sha}"
             printf 'publish=%s\n' "${publish}"
+            printf 'prerelease=%s\n' "${prerelease}"
           } >> "${GITHUB_OUTPUT}"
 
           # The Markdown code-span delimiter is held in a variable and passed as a
@@ -169,6 +188,7 @@ jobs:
             printf '| tag | %s%s%s |\n' "${bt}" "${tag}" "${bt}"
             printf '| commit | %s%s%s |\n' "${bt}" "${sha}" "${bt}"
             printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
+            printf '| published as a prerelease | %s%s%s |\n' "${bt}" "${prerelease}" "${bt}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
@@ -306,8 +326,10 @@ jobs:
       #   * any "+<build>" meta  — `ProductVersion.Normalize` drops build metadata before
       #     reporting, so keeping it here would stamp a value the running binary can never
       #     echo back, and the container smoke test would compare mismatched strings.
-      # The validation regex therefore refuses "+" too: admitting a character we have just
-      # stripped would only hide a bug in the stripping.
+      # The plain-token check below therefore refuses "+" as a redundancy check on that
+      # stripping. The release-tag GRAMMAR does admit "+<build>"
+      # (scripts/ci/validate-release-tag.sh), so a "+" surviving to that point means the
+      # strip above failed rather than that the tag was invalid.
       #
       # Deliberately separate from the later "Determine version tag" step, which resolves the
       # ARTIFACT FILENAME tag and runs after publish.
@@ -647,6 +669,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ needs.resolve-source.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -664,12 +687,21 @@ jobs:
             printf 'Release %s already exists (id %s, draft=%s) — adopting it; assets are re-uploaded with --clobber.\n' \
               "${RELEASE_TAG}" "${release_id}" "${release_is_draft}"
           else
+            # A prerelease tag is flagged from creation, not only at publish, so
+            # the draft is never briefly a full release. The array is EMPTY for a
+            # stable tag, where it expands to zero words and this call stays
+            # byte-identical to the pre-#2217 one.
+            prerelease_flag=()
+            if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+              prerelease_flag=(--prerelease)
+            fi
             gh release create "${RELEASE_TAG}" \
               --draft \
+              "${prerelease_flag[@]}" \
               --title "Taskdeck ${RELEASE_TAG}" \
               --generate-notes \
               --verify-tag
-            printf 'Draft release %s created.\n' "${RELEASE_TAG}"
+            printf 'Draft release %s created (prerelease=%s).\n' "${RELEASE_TAG}" "${RELEASE_PRERELEASE}"
           fi
 
       - name: Upload release assets
@@ -713,15 +745,27 @@ jobs:
           done
           printf 'All %s release assets uploaded.\n' "${#assets[@]}"
 
-      # `--draft=false` leaves the "latest release" choice to GitHub's default
-      # (semver/date based), which is what the previous single `gh release create`
-      # did too — this step does not change which release is marked latest.
+      # Publishing DOES move the Latest badge, which the previous comment here denied:
+      # GitHub shows the most recent non-draft, non-prerelease release at
+      # /releases/latest (gh's own `--latest` default is "automatic based on date and
+      # version"), and README plus the packaged quick start send users to that URL.
+      #
+      # `--prerelease` therefore travels in the SAME edit that clears the draft flag, so
+      # a release candidate is never momentarily a full release (#2217). Re-asserting it
+      # here also covers the adoption path above, where the draft left behind by an
+      # earlier attempt may predate this flag. A stable tag is unchanged: the array is
+      # empty and the call is exactly `gh release edit <tag> --draft=false`.
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ needs.resolve-source.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release edit "${RELEASE_TAG}" --draft=false
-          printf 'Published release %s.\n' "${RELEASE_TAG}"
+          prerelease_flag=()
+          if [ "${RELEASE_PRERELEASE}" = "true" ]; then
+            prerelease_flag=(--prerelease)
+          fi
+          gh release edit "${RELEASE_TAG}" --draft=false "${prerelease_flag[@]}"
+          printf 'Published release %s (prerelease=%s).\n' "${RELEASE_TAG}" "${RELEASE_PRERELEASE}"
