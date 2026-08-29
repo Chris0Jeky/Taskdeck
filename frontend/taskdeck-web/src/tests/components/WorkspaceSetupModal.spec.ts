@@ -111,10 +111,8 @@ describe('WorkspaceSetupModal', () => {
     const input = wrapper.get('input[placeholder="For example: Product Sprint"]')
     await input.setValue('Keyboard Board')
 
-    input.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    const submitEvent = new Event('submit', { bubbles: true, cancelable: true })
-    wrapper.get('form').element.dispatchEvent(submitEvent)
-    wrapper.get('form').element.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    expect(input.element.dispatchEvent(enterEvent)).toBe(false)
     await waitForUi()
 
     expect(mocks.createBoard).toHaveBeenCalledTimes(1)

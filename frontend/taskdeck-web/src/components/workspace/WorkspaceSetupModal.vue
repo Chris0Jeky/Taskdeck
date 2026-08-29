@@ -154,6 +154,7 @@ watch(
               type="text"
               maxlength="100"
               placeholder="For example: Product Sprint"
+              @keydown.enter.prevent="submitSetup"
             />
           </label>
 
