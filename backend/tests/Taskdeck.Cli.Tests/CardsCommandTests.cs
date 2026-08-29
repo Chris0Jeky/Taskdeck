@@ -127,6 +127,59 @@ public class CardsCommandTests
     }
 
     [Fact]
+    public async Task CardsMove_ForeignTargetColumn_ReturnsNotFoundAndLeavesCardInSourceColumn()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (sourceBoardId, sourceColumnId) = await harness.CreateBoardAndColumnAsync("Source");
+        var (_, foreignColumnId) = await harness.CreateBoardAndColumnAsync("Foreign");
+
+        var cardResult = await harness.RunAsync($"cards add --board {sourceBoardId} --column {sourceColumnId} --title \"Movable\" --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+        using var cardDoc = JsonDocument.Parse(cardResult.StdOut);
+        var cardId = cardDoc.RootElement.GetProperty("id").GetGuid();
+
+        var moveResult = await harness.RunAsync($"cards move --card {cardId} --target-column {foreignColumnId} --json");
+
+        moveResult.ExitCode.Should().Be(1);
+        moveResult.StdErr.Should().Contain("Error [NotFound]");
+
+        var listResult = await harness.RunAsync($"cards list --board {sourceBoardId} --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        listDoc.RootElement.EnumerateArray()
+            .Single(card => card.GetProperty("id").GetGuid() == cardId)
+            .GetProperty("columnId").GetGuid().Should().Be(sourceColumnId);
+    }
+
+    [Fact]
+    public async Task CardsMove_ArchivedTargetBoard_ReturnsConflictAndLeavesCardInSourceColumn()
+    {
+        await using var harness = new CliTestHarness("cli-cards");
+        var (sourceBoardId, sourceColumnId) = await harness.CreateBoardAndColumnAsync("Source");
+        var (archivedBoardId, archivedColumnId) = await harness.CreateBoardAndColumnAsync("Archived");
+
+        var archiveResult = await harness.RunAsync($"boards update --board {archivedBoardId} --archive --json");
+        archiveResult.ExitCode.Should().Be(0, archiveResult.StdErr);
+
+        var cardResult = await harness.RunAsync($"cards add --board {sourceBoardId} --column {sourceColumnId} --title \"Movable\" --json");
+        cardResult.ExitCode.Should().Be(0, cardResult.StdErr);
+        using var cardDoc = JsonDocument.Parse(cardResult.StdOut);
+        var cardId = cardDoc.RootElement.GetProperty("id").GetGuid();
+
+        var moveResult = await harness.RunAsync($"cards move --card {cardId} --target-column {archivedColumnId} --json");
+
+        moveResult.ExitCode.Should().Be(1);
+        moveResult.StdErr.Should().Contain("Error [InvalidOperation]");
+
+        var listResult = await harness.RunAsync($"cards list --board {sourceBoardId} --json");
+        listResult.ExitCode.Should().Be(0, listResult.StdErr);
+        using var listDoc = JsonDocument.Parse(listResult.StdOut);
+        listDoc.RootElement.EnumerateArray()
+            .Single(card => card.GetProperty("id").GetGuid() == cardId)
+            .GetProperty("columnId").GetGuid().Should().Be(sourceColumnId);
+    }
+
+    [Fact]
     public async Task CardsMove_MissingCard_ReturnsUsageError()
     {
         await using var harness = new CliTestHarness("cli-cards");
