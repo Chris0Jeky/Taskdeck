@@ -37,8 +37,8 @@ Choose the path that matches how you want to evaluate Taskdeck.
 
 ### 1. Desktop release
 
-The self-contained desktop executable is the quickest path for v0.1.x. **Windows 10/11 x64 is the
-only supported 0.1.x desktop platform.** Download the Windows ZIP and checksum from the
+The self-contained desktop executable is the quickest path for the 0.x releases. **Windows 10/11 x64
+is the only supported desktop platform.** Download the Windows ZIP and checksum from the
 [latest public release](https://github.com/Chris0Jeky/Taskdeck/releases/latest), then follow the
 [Windows quick start](docs/releases/WINDOWS_QUICK_START.md) for verification, extraction, launch,
 registration, shutdown, backup, and optional OpenAI setup. **Known v0.1.1 limitation:** on a machine

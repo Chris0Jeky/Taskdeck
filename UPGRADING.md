@@ -114,11 +114,10 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## Unreleased — after v0.1.2
+## v0.2.0 — 2026-09-01
 
-**BREAKING: none.** These notes cover hosts tracking `main` past the v0.1.2 tag. This heading is
-renamed to the release version when the next version ships; v0.1.2 itself contained no schema
-change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
+**BREAKING: none.** v0.1.2 itself contained no schema change, so upgrading v0.1.1 → v0.1.2 needed
+no entry of its own; everything below applies when moving from any v0.1.x to v0.2.0.
 
 - **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
   required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
