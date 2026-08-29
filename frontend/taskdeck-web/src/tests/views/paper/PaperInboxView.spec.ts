@@ -1066,6 +1066,10 @@ describe('PaperInboxView', () => {
 
       const wrapper = mount(PaperInboxView)
       await flushPromises()
+      // The session expired again before the restored draft was re-sent, so a
+      // fresh stash exists at discard time; discarding must take it with it.
+      expireSession()
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).not.toBeNull()
 
       await wrapper.get('[data-testid="paper-inbox-capture-restored-discard"]').trigger('click')
       await flushPromises()
@@ -1094,14 +1098,18 @@ describe('PaperInboxView', () => {
       expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
     })
 
-    it('stops stashing once the view is unmounted', async () => {
+    it('leaves no auth-expiry listener behind when the view is unmounted', async () => {
+      const removeSpy = vi.spyOn(window, 'removeEventListener')
       const wrapper = mount(PaperInboxView)
       await flushPromises()
       await wrapper.find('textarea[aria-label="Capture body"]').setValue('Gone with the view')
 
       wrapper.unmount()
-      expireSession()
 
+      expect(removeSpy).toHaveBeenCalledWith(AUTH_EXPIRED_EVENT, expect.any(Function))
+      removeSpy.mockRestore()
+
+      expireSession()
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
     })
   })
