@@ -393,8 +393,6 @@ public static class CaptureTriageOutputContract
             return null;
         }
 
-        var reference = referenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-
         if (!TryParseDueDateHint(dueDateHint, out var dueDate))
         {
             note = $"Task {taskNumber}: dropped the due date '{TruncateDueDateHintForNote(dueDateHint)}' " +
@@ -406,7 +404,7 @@ public static class CaptureTriageOutputContract
         {
             note = $"Task {taskNumber}: dropped the due date '{dueDateHint}' because it is not within " +
                    $"{MaxDueDateYearsBeforeReference} years before or {MaxDueDateYearsAfterReference} years after " +
-                   $"the capture date {reference}.";
+                   $"the capture date {referenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
             return null;
         }
 
