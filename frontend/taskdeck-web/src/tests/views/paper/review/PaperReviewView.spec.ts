@@ -4,11 +4,13 @@ import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import { REVIEW_QUEUE_REFRESH_MS } from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
+  refreshWorkloadCounts: vi.fn(),
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
   approveProposals: vi.fn(),
@@ -89,6 +91,10 @@ vi.mock('../../../../store/toastStore', () => ({
 
 vi.mock('../../../../store/sessionStore', () => ({
   useSessionStore: () => mocks.sessionState,
+}))
+
+vi.mock('../../../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ refreshWorkloadCounts: mocks.refreshWorkloadCounts }),
 }))
 
 vi.mock('../../../../api/proposalRevisionsApi', () => ({
@@ -174,6 +180,12 @@ async function mountView(
   options: { attachTo?: boolean } = {},
 ) {
   mocks.getProposals.mockResolvedValueOnce(proposals)
+  // The Review surface re-reads its queue on a bounded poll while it is open
+  // (#2194), so a `...Once` fixture alone would leave any timer-advancing test
+  // facing a drained mock and an empty queue. A real server keeps answering
+  // with the same list, so the default answers it too. Per-test `...Once`
+  // overrides still take precedence -- the Once queue drains first.
+  mocks.getProposals.mockResolvedValue(proposals)
   mocks.getBoards.mockResolvedValueOnce(boards)
   mocks.getColumns.mockResolvedValue(columns)
   const router = createRouter({
@@ -2617,6 +2629,94 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-diff-revised-note"]').exists()).toBe(false)
 
     wrapper.unmount()
+  })
+
+  it('announces the awaiting count in a polite live region (#2194)', async () => {
+    const wrapper = await mountView([makeProposal({ id: 'live-1', status: 'PendingReview' })])
+    const live = wrapper.find('[data-testid="paper-review-queue-live"]')
+    expect(live.exists()).toBe(true)
+    expect(live.attributes('role')).toBe('status')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(live.text()).toContain('1 proposal awaiting review')
+    wrapper.unmount()
+  })
+
+  it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'gone-1' })])
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // Clearing the queue silently would swap a permission failure for a fresh
+      // "Nothing waiting. Good." -- the exact false negative #2194 is about.
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('Nothing waiting')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.refreshWorkloadCounts.mockClear()
+
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'badge-1', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // The sidebar badge reads a home-summary workload count that AppShell
+      // fetches once at sign-in; nothing on Review touched it, so it froze at
+      // its mount-time value and survived every decision made here.
+      expect(mocks.refreshWorkloadCounts).toHaveBeenCalled()
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces a proposal created while Review stays open, and stops reading on unmount (#2194)', async () => {
+    // The defect: with Review open, a proposal created server-side stayed
+    // invisible for 115 s behind "Nothing waiting. Good." while the API already
+    // reported it pending. Only setInterval and Date are faked so flushPromises
+    // (setTimeout-based) keeps working.
+    // `clearInterval` must be faked alongside `setInterval`: the real one cannot
+    // cancel a fake handle, and the unmount half of this test asserts exactly
+    // that cancellation.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      expect(wrapper.text()).toContain('Nothing waiting')
+
+      // Ask AI runs on a capture elsewhere; the queue now has one pending item.
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'late-1', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // No navigation happened -- the queue caught up on its own.
+      expect(wrapper.text()).not.toContain('Nothing waiting')
+
+      // Leaving the surface must end the reads.
+      const callsWhileOpen = mocks.getProposals.mock.calls.length
+      wrapper.unmount()
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS * 3)
+      await flushPromises()
+      expect(mocks.getProposals.mock.calls.length).toBe(callsWhileOpen)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('re-derives an open live pane to the stored presentation when the expiry clock passes (#1397 LOW-5)', async () => {

@@ -23,6 +23,34 @@ describe('automationApi', () => {
     expect(http.get).toHaveBeenCalledWith('/automation/proposals?status=PendingReview&limit=25')
   })
 
+  // #2194 added an optional request config for the background review-queue poll.
+  // These two cases pin BOTH halves of that contract: the config reaches the
+  // client when supplied, and the call shape is untouched when it is not. The
+  // second is what the assertion above already guarded -- forwarding `undefined`
+  // unconditionally changed every caller's arity and turned this suite red.
+  it('forwards the request config when one is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+    const controller = new AbortController()
+
+    await automationApi.getProposals(
+      { limit: 200 },
+      { skipRetry: true, signal: controller.signal },
+    )
+
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals?limit=200', {
+      skipRetry: true,
+      signal: controller.signal,
+    })
+  })
+
+  it('omits the config argument entirely when none is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+    await automationApi.getProposals()
+
+    expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals'])
+  })
+
   it('sends idempotency key when executing proposal', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'p1' } })
 

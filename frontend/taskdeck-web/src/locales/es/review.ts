@@ -20,6 +20,7 @@ export default {
   queueRail: {
     eyebrow: 'Cola · {awaiting} en espera · {stale} estancadas',
     eyebrowScoped: 'Cola · {awaiting} en espera en este tablero · {stale} estancadas',
+    liveAnnounce: '{count} propuesta en espera de revisión. | {count} propuestas en espera de revisión.',
     filters: {
       label: 'Filtros de la cola',
     },
@@ -467,6 +468,10 @@ export default {
     title: 'Nada pendiente. Bien.',
     body: 'Cuando el asistente tenga algo que proponer aparecerá aquí para revisarlo.',
     loading: 'Cargando las propuestas…',
+    accessRevoked: {
+      title: 'Esta cola de revisión ya no está disponible para ti.',
+      body: 'Tu acceso a estos tableros cambió, así que la cola se vació y dejó de actualizarse. Vuelve a cargar la página o elige un tablero al que todavía tengas acceso.',
+    },
     scoped: {
       title: 'No hay propuestas en {scope}.',
       body: 'Esta lista de revisión está limitada al tablero activo. Muestra todos los tableros para restaurar la cola completa.',

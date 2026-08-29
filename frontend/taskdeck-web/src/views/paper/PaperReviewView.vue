@@ -24,6 +24,7 @@ import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollabo
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useToastStore } from '../../store/toastStore'
 import {
   normalizeProposalSourceType,
@@ -67,6 +68,7 @@ const {
   proposals,
   proposalsLoading,
   unavailableProposalId,
+  queueAccessRevoked,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -82,14 +84,18 @@ const {
   isStaleProposal,
   clearProposalDeepLink,
   loadProposals,
+  invalidateQueueReads,
   loadBoardOptions,
   availableBoards,
   startClock,
   stopClock,
+  startQueueRefresh,
+  stopQueueRefresh,
   clearBoardFilter,
   openProposal,
 } = useReviewProposals()
 const session = useSessionStore()
+const workspace = useWorkspaceStore()
 const toast = useToastStore()
 const route = useRoute()
 const collaboration = useWorkspaceCollaboration()
@@ -490,7 +496,7 @@ const {
   cancelEditing: cancelRevisionEditing,
   saveRevision,
   loadRevisionState,
-} = useProposalRevisions(activeProposal)
+} = useProposalRevisions(activeProposal, { onRevisionSaved: invalidateQueueReads })
 
 watch(isArchivedHistory, (readOnly) => {
   if (!readOnly) return
@@ -1541,10 +1547,63 @@ useReviewKeymap(
 
 // --- Lifecycle ---------------------------------------------------------
 
+/**
+ * Whether a background queue tick may land right now (#2194).
+ *
+ * The poll must never move the ground under a decision in progress, so it holds
+ * off while an action is in flight or a confirm dialog is open. `busy` already
+ * folds in the revision-editor lock, bulk dismiss, and the batch-approve
+ * confirmation; the two dialog refs cover the Apply and Reject gates, which are
+ * the moments the reviewer is being asked to commit to the exact record on
+ * screen. A held tick is simply skipped -- the next one lands 15 s later, and
+ * closing the dialog also releases the hold.
+ */
+function canRefreshQueue(): boolean {
+  return (
+    !busy.value &&
+    executeConfirmProposal.value === null &&
+    rejectPromptProposal.value === null
+  )
+}
+
+/**
+ * Keep the shell's `Review · N` badge honest while Review is the open surface
+ * (#2194 acceptance 3).
+ *
+ * The badge reads `workspace.homeSummary.workload.proposalsPendingReview`,
+ * which `AppShell` fetches once when the session authenticates and which is
+ * otherwise refreshed only by a capture or a Home visit -- so it froze at its
+ * mount-time value and survived every decision made here.
+ *
+ * The trigger is the queue ARRAY, not the awaiting COUNT. Watching the count
+ * misses two real cases: while Review is board-scoped a proposal arriving on
+ * another board never moves the scoped count, and a decision that swaps one
+ * pending row for another leaves it unchanged. Every decision path and every
+ * successful background refresh assigns a new array, so this fires exactly once
+ * per queue change. It is only a trigger -- the authoritative number is re-read
+ * from the server, and `refreshWorkloadCounts` is version-guarded, silent on
+ * failure, and a no-op until a summary exists.
+ */
+let badgeSyncArmed = false
+watch(proposals, () => {
+  // Skip the first assignment: that is the route-entry load, and AppShell has
+  // already read the summary this badge renders (review round L-1).
+  if (!badgeSyncArmed) {
+    badgeSyncArmed = true
+    return
+  }
+  void workspace.refreshWorkloadCounts()
+})
+
 onMounted(() => {
   startClock()
   void loadBoardOptions()
   void loadProposals()
+  // The review queue has no realtime channel to subscribe to -- the only hub is
+  // per-board and silent on proposals -- so a bounded, visibility-aware poll is
+  // what keeps an open Review page from showing "Nothing waiting" while a
+  // proposal sits pending server-side (#2194).
+  startQueueRefresh(canRefreshQueue)
   // Membership has no realtime event to subscribe to (the only hub is
   // per-board and silent on access grants), so the composable reads it once
   // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
@@ -1554,6 +1613,7 @@ onMounted(() => {
 onUnmounted(() => {
   clearBatchSelection()
   stopClock()
+  stopQueueRefresh()
   collaboration.stop()
 })
 
@@ -1812,7 +1872,14 @@ async function onClearBoardScope() {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="unavailableProposalId">
+      <template v-if="queueAccessRevoked">
+        <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
+        <h2 class="tk-h2" data-testid="paper-review-access-revoked">
+          {{ $t('review.empty.accessRevoked.title') }}
+        </h2>
+        <p class="tk-lede">{{ $t('review.empty.accessRevoked.body') }}</p>
+      </template>
+      <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
         <p class="tk-lede">
