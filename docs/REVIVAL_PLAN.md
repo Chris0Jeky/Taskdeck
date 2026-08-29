@@ -55,10 +55,10 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 
 - **v0.2 M1:** `#2083` appearance contrast, `#2085` keep/archive/board-target/proposal/provenance, and `#2086` side inspector plus compact density. `#2080`, the remaining Priority I core-loop fixes, and release closure evidence stay on the bounded milestone ship list.
 - **v0.3 M2:** `#2089` capture links/ledger/lifecycle, `#2090` widths/collapse/titles-only, and `#2087` minimal types/parent. ADR-0060 is owned only by `#2084`; ADR-0061 decisions by `#1772`; ADR-0062 decisions by `#2091`.
-- **Waiver-seeded v0.3 candidates:** minimal typed links `#2092`, participant/multiple-assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
+- **Waiver-seeded v0.3 candidates:** minimal typed links `#2092` and participant/multiple-assignment/estimate roll-ups `#2093`. Conditional minimal custom fields `#2094` were moved after ADR-0061 Stage 2 (the small-team alpha) by the 2026-08-29 ADR-0062 ruling and are no longer a v0.3 candidate.
 - **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
-Proposed ADR-0060, ADR-0061, and ADR-0062 require maintainer ratification. Until then the shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged.
+ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the v0.3 slices (`#2087`, `#2092`, `#2093`) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and the Stage 1 prerequisites tracked on `#1772` (`#1777` stays parked).
 
 ## 4. Phases and waves (the issue map)
 
