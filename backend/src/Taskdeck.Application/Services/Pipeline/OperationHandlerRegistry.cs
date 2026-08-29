@@ -12,6 +12,8 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public class OperationHandlerRegistry
 {
+    internal const string ArchiveCardBlockReason = "Archived by an approved proposal.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
@@ -231,7 +233,7 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        var dto = new UpdateCardDto(null, null, null, true, null, null);
+        var dto = new UpdateCardDto(null, null, null, true, ArchiveCardBlockReason, null);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);

@@ -269,6 +269,24 @@ public class OperationHandlerRegistryTests
     }
 
     [Fact]
+    public async Task ExecuteOperationAsync_ShouldBlockCardWithArchiveReason_WhenArchivingCard()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var card = new Card(board.Id, Guid.NewGuid(), "File release notes");
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _cardRepoMock.Setup(repository => repository.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "archive", "card", card.Id.ToString(),
+            $$"""{"cardId":"{{card.Id}}"}""", "archive-card", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        card.IsBlocked.Should().BeTrue();
+        card.BlockReason.Should().Be(OperationHandlerRegistry.ArchiveCardBlockReason);
+    }
+
+    [Fact]
     public async Task ExecuteOperationAsync_ShouldCreateCardWithUtcDueDateAndResolvedLabels()
     {
         var board = TestDataBuilder.CreateBoard();

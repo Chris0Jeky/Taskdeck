@@ -1490,6 +1490,7 @@ public class AutomationProposalService : IAutomationProposalService
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
+        var cardStates = new Dictionary<Guid, CardDiffState>();
         var labelNames = new Dictionary<Guid, string>();
 
         if (boardId.HasValue)
@@ -1502,7 +1503,10 @@ public class AutomationProposalService : IAutomationProposalService
 
                 var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var card in cards)
+                {
                     cardTitles[card.Id] = card.Title;
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason);
+                }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var label in labels)
@@ -1514,9 +1518,14 @@ public class AutomationProposalService : IAutomationProposalService
             }
         }
 
-        return string.Join(
-            Environment.NewLine,
-            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles, labelNames)));
+        var descriptions = new List<string>(orderedOperations.Count);
+        foreach (var operation in orderedOperations)
+        {
+            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            ApplyPreviewCardArchiveState(operation, cardStates);
+        }
+
+        return string.Join(Environment.NewLine, descriptions);
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -1778,6 +1787,24 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+
+    private static void ApplyPreviewCardArchiveState(
+        DiffOperationView operation,
+        IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            !operation.ActionType.Equals("archive", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
+            ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
+        if (cardId.HasValue)
+            cardStates[cardId.Value] = new CardDiffState(true, OperationHandlerRegistry.ArchiveCardBlockReason);
+    }
+
     /// <summary>
     /// Produces a human-readable diff line for a single operation, resolving
     /// card IDs to titles and column IDs to names where possible.
@@ -1786,6 +1813,7 @@ public class AutomationProposalService : IAutomationProposalService
         DiffOperationView operation,
         IReadOnlyDictionary<Guid, string> columnNames,
         IReadOnlyDictionary<Guid, string> cardTitles,
+        IReadOnlyDictionary<Guid, CardDiffState> cardStates,
         IReadOnlyDictionary<Guid, string> labelNames)
     {
         var verb = HumanizeActionVerb(operation.ActionType);
@@ -1828,6 +1856,23 @@ public class AutomationProposalService : IAutomationProposalService
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
             var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        if (isCardTarget && string.Equals(operation.ActionType, "archive", StringComparison.OrdinalIgnoreCase))
+        {
+            var archiveCardId = ExtractGuidParameter(operation.Parameters, "cardId")
+                ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
+            var cardDisplay = namedTarget is not null
+                ? $"\"{namedTarget}\""
+                : archiveCardId?.ToString() ?? "(unspecified)";
+
+            if (archiveCardId.HasValue && cardStates.TryGetValue(archiveCardId.Value, out var cardState))
+            {
+                var previousReason = cardState.BlockReason is null ? "none" : $"\"{cardState.BlockReason}\"";
+                return $"{operation.Sequence}. Archive card {cardDisplay}; Blocked: {cardState.IsBlocked.ToString().ToLowerInvariant()} -> true; Block reason: {previousReason} -> \"{OperationHandlerRegistry.ArchiveCardBlockReason}\"";
+            }
+
+            return $"{operation.Sequence}. Archive card {cardDisplay}; Blocked: (current state unavailable) -> true; Block reason: (current value unavailable) -> \"{OperationHandlerRegistry.ArchiveCardBlockReason}\"";
         }
 
         if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&

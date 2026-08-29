@@ -2485,6 +2485,118 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldShowSequentialArchiveCardBlockTransitions()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Done", 0);
+        var card = new Card(Guid.NewGuid(), boardId, column.Id, "File release notes");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Archive card",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { cardId = card.Id });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "archive", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "archive", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Columns).Returns(columnRepoMock.Object);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        cardRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Split(Environment.NewLine).Should().Equal(
+            "0. Archive card \"File release notes\"; Blocked: false -> true; Block reason: none -> \"Archived by an approved proposal.\"",
+            "1. Archive card \"File release notes\"; Blocked: true -> true; Block reason: \"Archived by an approved proposal.\" -> \"Archived by an approved proposal.\"");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldCarryInitialBlockReasonAcrossArchiveSequence()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = new Column(boardId, "Done", 0);
+        var card = new Card(Guid.NewGuid(), boardId, column.Id, "File release notes");
+        card.Block("Awaiting reviewer");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Archive card",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var parameters = System.Text.Json.JsonSerializer.Serialize(new { cardId = card.Id });
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "archive", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "archive", "card", parameters, Guid.NewGuid().ToString(),
+            targetId: card.Id.ToString()));
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var columnRepoMock = new Mock<IColumnRepository>();
+        columnRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { column });
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Columns).Returns(columnRepoMock.Object);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        cardRepoMock.Setup(repository => repository.GetByBoardIdAsync(boardId, default)).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Split(Environment.NewLine).Should().Equal(
+            "0. Archive card \"File release notes\"; Blocked: true -> true; Block reason: \"Awaiting reviewer\" -> \"Archived by an approved proposal.\"",
+            "1. Archive card \"File release notes\"; Blocked: true -> true; Block reason: \"Archived by an approved proposal.\" -> \"Archived by an approved proposal.\"");
+    }
+
+    [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectCardArchiveAfterEarlierBoardArchive()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "File release notes");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Archive board then card",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, isArchived = true }),
+            Guid.NewGuid().ToString(), targetId: boardId.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "archive", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = card.Id }),
+            Guid.NewGuid().ToString(), targetId: card.Id.ToString()));
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Be(
+            "Cannot apply an operation after archiving the proposal board. Restore the board before making further changes.");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldDiscloseCanonicalCreateColumnEffects()
     {
         // The approval preview must disclose every field execution passes to
