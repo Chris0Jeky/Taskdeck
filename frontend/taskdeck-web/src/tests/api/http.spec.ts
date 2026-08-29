@@ -62,6 +62,7 @@ vi.mock('../../utils/errorReporting', () => errorReportingMock)
 
 import http from '../../api/http'
 import * as tokenStorage from '../../utils/tokenStorage'
+import { AUTH_EXPIRED_EVENT } from '../../utils/authExpiry'
 
 // ─── Test suite ─────────────────────────────────────────────────────────────
 
@@ -221,6 +222,77 @@ describe('http interceptors (#725)', () => {
 
       // href should not have been changed to a redirect
       expect(window.location.href).toBe('')
+    })
+
+    it('announces auth expiry BEFORE navigating so open surfaces can stash unsaved input', async () => {
+      // GH-2142: the href assignment is a full document navigation. Anything
+      // holding typed text gets exactly one synchronous beat before it, so the
+      // notice must fire while href is still unset.
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      vi.spyOn(tokenStorage, 'clearAll')
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/inbox', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const hrefAtNoticeTime: string[] = []
+      const listener = () => hrefAtNoticeTime.push(window.location.href)
+      window.addEventListener(AUTH_EXPIRED_EVENT, listener)
+      mock.onGet('/test').reply(401, { message: 'Unauthorized' })
+
+      try {
+        await expect(http.get('/test')).rejects.toThrow()
+      } finally {
+        window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
+      }
+
+      expect(hrefAtNoticeTime).toEqual([''])
+      expect(window.location.href).toBe(
+        '/login?redirect=' + encodeURIComponent('/workspace/inbox'),
+      )
+    })
+
+    it('does not announce auth expiry when already on an auth path', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      vi.spyOn(tokenStorage, 'clearAll')
+      navigationMock.isAuthRoutePath.mockReturnValue(true)
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/login', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const listener = vi.fn()
+      window.addEventListener(AUTH_EXPIRED_EVENT, listener)
+      mock.onGet('/test').reply(401, { message: 'Unauthorized' })
+
+      try {
+        await expect(http.get('/test')).rejects.toThrow()
+      } finally {
+        window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
+      }
+
+      expect(listener).not.toHaveBeenCalled()
+    })
+
+    it('does not announce auth expiry in demo mode', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      demoModeFlag.value = true
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/inbox', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const listener = vi.fn()
+      window.addEventListener(AUTH_EXPIRED_EVENT, listener)
+      mock.onGet('/test').reply(401, { message: 'Unauthorized' })
+
+      try {
+        await expect(http.get('/test')).rejects.toThrow()
+      } finally {
+        window.removeEventListener(AUTH_EXPIRED_EVENT, listener)
+      }
+
+      expect(listener).not.toHaveBeenCalled()
     })
 
     it('does not redirect or clear storage on 401 when in demo mode', async () => {
