@@ -538,6 +538,7 @@ function Invoke-NpmStage {
     New-EmptyLogFiles -Paths @($stdout, $stderr)
     $process = Start-LoggedCommand -Executable $script:NpmCmd -Arguments $Arguments -WorkingDirectory $FrontendDir -StdoutLog $stdout -StderrLog $stderr -EnvironmentOverrides $EnvironmentOverrides
     $record = $null
+    $completed = $false
     try {
         try {
             $record = New-ProcessRecord -Role "$Stage npm stage" -Process $process
@@ -553,6 +554,7 @@ function Invoke-NpmStage {
         # A short process wait keeps cancellation observable so the finally block
         # can prove and reap this transient cmd.exe tree by its creation identity.
         while (-not $process.WaitForExit(100)) { }
+        $completed = $true
         $exitCode = [int]$process.ExitCode
         if ($exitCode -ne 0) {
             $tail = Get-LogTail -Path $stderr
@@ -560,9 +562,7 @@ function Invoke-NpmStage {
         }
         return $exitCode
     } finally {
-        $exited = $false
-        try { $exited = $process.HasExited } catch { }
-        if (-not $exited) {
+        if (-not $completed) {
             if ($null -eq $record -or -not (Stop-RecordedProcess -Record $record)) {
                 $script:TransientStageCleanupUnproved = $true
                 Write-DevWarning "Transient $Stage npm stage cleanup was unproved; any active launcher state will be retained."
