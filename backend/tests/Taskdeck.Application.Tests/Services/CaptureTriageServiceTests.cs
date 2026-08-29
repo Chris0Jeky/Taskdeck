@@ -1840,6 +1840,21 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public void BuildDegradedTriageNotice_ShouldRedactSecretsOutOfTheDetail()
+    {
+        // The notice is served to the client, unlike the log line it replaces. Details come from
+        // provider reasons, validation errors, and caught exception messages, so a credential that
+        // reaches one must not be published on the capture.
+        var notice = CaptureTriageService.BuildDegradedTriageNotice(
+            LlmCaptureTriageOutcome.ProviderUnavailable,
+            "request rejected: Authorization: Bearer sk-live-should-not-appear");
+
+        notice.Should().NotBeNull();
+        notice.Should().NotContain("sk-live-should-not-appear");
+        notice.Should().Contain(SensitiveDataRedactor.RedactedValue);
+    }
+
+    [Fact]
     public void BuildDegradedTriageNotice_ShouldBoundAnOverlongProviderDetail()
     {
         // A provider detail is untrusted text of unbounded length; the notice is persisted into a

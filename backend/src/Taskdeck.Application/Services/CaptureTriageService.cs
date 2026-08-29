@@ -480,18 +480,23 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         var notice = $"{DegradedTriageNoticePrefix} ({outcome}); using deterministic extractor";
-        if (string.IsNullOrWhiteSpace(detail))
+
+        // The detail reaches a user-visible field, unlike the log line this replaces. Details come
+        // from provider reasons, contract-validation errors, and caught exception messages, so it
+        // is redacted on the way out — the worker's failure lane already sanitizes for the same
+        // reason, and the success lane must not be the weaker path.
+        var safeDetail = SensitiveDataRedactor.Redact(detail).Trim();
+        if (safeDetail.Length == 0)
         {
             return notice;
         }
 
-        var trimmedDetail = detail.Trim();
-        if (trimmedDetail.Length > MaxDegradedNoticeDetailLength)
+        if (safeDetail.Length > MaxDegradedNoticeDetailLength)
         {
-            trimmedDetail = trimmedDetail[..MaxDegradedNoticeDetailLength];
+            safeDetail = safeDetail[..MaxDegradedNoticeDetailLength];
         }
 
-        return $"{notice}. {trimmedDetail}";
+        return $"{notice}. {safeDetail}";
     }
 
     /// <summary>
