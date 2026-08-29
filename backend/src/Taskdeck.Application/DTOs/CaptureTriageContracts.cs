@@ -64,6 +64,21 @@ public static class CaptureTriageOutputContract
     public const int MaxTaskAssigneeHintLength = 100;
     public const int DueDateHintLength = 10;
 
+    /// <summary>
+    /// Plausibility window for a model-supplied due-date hint, measured from the capture's
+    /// reference date (#2193). A prompt that carries no reference date leaves the model free to
+    /// invent a year — the shipped 2026-08-29 acceptance run returned 2023-09-01 for "Monday 1
+    /// September" — and a format-only check let it through onto a card. The window is deliberately
+    /// wide: it exists to catch a fabricated year, not to second-guess a distant real deadline.
+    /// </summary>
+    public const int MaxDueDateYearsBeforeReference = 2;
+
+    /// <inheritdoc cref="MaxDueDateYearsBeforeReference"/>
+    public const int MaxDueDateYearsAfterReference = 5;
+
+    /// <summary>Longest model-supplied hint echoed back in a dropped-due-date note.</summary>
+    private const int MaxDueDateHintNoteLength = 40;
+
     private static readonly string[] KnownPromptVersions = [PromptVersionV1, PromptVersionLlmV1];
     private static readonly string[] KnownTaskTypes = ["action", "decision", "question"];
 
@@ -209,7 +224,16 @@ public static class CaptureTriageOutputContract
         return Result.Success(output);
     }
 
-    public static Result<CaptureTriageOutputV2> Validate(CaptureTriageOutputV2 output)
+    /// <summary>
+    /// Validates a schema-v2 output. When <paramref name="referenceDate"/> is supplied, a due-date
+    /// hint outside the plausibility window around it is rejected as well as format-checked
+    /// (#2193). It stays optional so callers that hold no capture day keep the format-only
+    /// contract they had; the live extraction path drops such a hint earlier, in
+    /// <c>LlmCaptureTriagePrompt.TryParseTasks</c>, so one bad date never costs the whole run.
+    /// </summary>
+    public static Result<CaptureTriageOutputV2> Validate(
+        CaptureTriageOutputV2 output,
+        DateOnly? referenceDate = null)
     {
         if (output.Version != SchemaVersionV2)
         {
@@ -280,13 +304,24 @@ public static class CaptureTriageOutputContract
                     $"Capture triage task {index} assignee hint must be non-empty and cannot exceed {MaxTaskAssigneeHintLength} characters");
             }
 
-            if (task.DueDateHint is not null &&
-                (task.DueDateHint.Length != DueDateHintLength ||
-                 !DateOnly.TryParseExact(task.DueDateHint, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)))
+            if (task.DueDateHint is not null)
             {
-                return Result.Failure<CaptureTriageOutputV2>(
-                    ErrorCodes.ValidationError,
-                    $"Capture triage task {index} due date hint must use YYYY-MM-DD when provided");
+                if (!TryParseDueDateHint(task.DueDateHint, out var dueDate))
+                {
+                    return Result.Failure<CaptureTriageOutputV2>(
+                        ErrorCodes.ValidationError,
+                        $"Capture triage task {index} due date hint must use YYYY-MM-DD when provided");
+                }
+
+                if (referenceDate is DateOnly reference &&
+                    !IsWithinDueDatePlausibilityWindow(dueDate, reference))
+                {
+                    return Result.Failure<CaptureTriageOutputV2>(
+                        ErrorCodes.ValidationError,
+                        $"Capture triage task {index} due date hint must fall between " +
+                        $"{MaxDueDateYearsBeforeReference} years before and {MaxDueDateYearsAfterReference} years after " +
+                        $"the reference date {reference.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+                }
             }
 
             if (task.Confidence is < 0m or > 1m)
@@ -312,6 +347,90 @@ public static class CaptureTriageOutputContract
         }
 
         return Result.Success(output);
+    }
+
+    /// <summary>
+    /// Parses a model-supplied due-date hint in the one accepted form. Length is checked as well as
+    /// the pattern so a padded or suffixed value cannot slip past <c>DateOnly.TryParseExact</c>.
+    /// </summary>
+    public static bool TryParseDueDateHint(string? dueDateHint, out DateOnly dueDate)
+    {
+        dueDate = default;
+        return dueDateHint is not null &&
+               dueDateHint.Length == DueDateHintLength &&
+               DateOnly.TryParseExact(
+                   dueDateHint,
+                   "yyyy-MM-dd",
+                   CultureInfo.InvariantCulture,
+                   DateTimeStyles.None,
+                   out dueDate);
+    }
+
+    /// <summary>
+    /// Whether a due date is close enough to the capture's reference date to have been read out of
+    /// the transcript rather than invented. See <see cref="MaxDueDateYearsBeforeReference"/>.
+    /// </summary>
+    public static bool IsWithinDueDatePlausibilityWindow(DateOnly dueDate, DateOnly referenceDate) =>
+        dueDate >= referenceDate.AddYears(-MaxDueDateYearsBeforeReference) &&
+        dueDate <= referenceDate.AddYears(MaxDueDateYearsAfterReference);
+
+    /// <summary>
+    /// Applies the due-date rule to one model-supplied hint (#2193). Returns the hint unchanged
+    /// when it is absent or usable, and null plus an honest note when it must be dropped: an
+    /// unusable date is a hint on a reviewable proposal, so it is worth dropping but not worth
+    /// discarding every other item the model extracted.
+    /// </summary>
+    /// <param name="taskNumber">1-based position of the task, matching validation error wording.</param>
+    public static string? ReviewDueDateHint(
+        string? dueDateHint,
+        int taskNumber,
+        DateOnly referenceDate,
+        out string? note)
+    {
+        note = null;
+        if (dueDateHint is null)
+        {
+            return null;
+        }
+
+        var reference = referenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        if (!TryParseDueDateHint(dueDateHint, out var dueDate))
+        {
+            note = $"Task {taskNumber}: dropped the due date '{TruncateDueDateHintForNote(dueDateHint)}' " +
+                   "because it is not a YYYY-MM-DD calendar date.";
+            return null;
+        }
+
+        if (!IsWithinDueDatePlausibilityWindow(dueDate, referenceDate))
+        {
+            note = $"Task {taskNumber}: dropped the due date '{dueDateHint}' because it is not within " +
+                   $"{MaxDueDateYearsBeforeReference} years before or {MaxDueDateYearsAfterReference} years after " +
+                   $"the capture date {reference}.";
+            return null;
+        }
+
+        return dueDateHint;
+    }
+
+    /// <summary>
+    /// An unparseable hint is arbitrary model text, so a note quoting it stays bounded and single
+    /// line. Control characters are replaced rather than dropped so the length stays honest.
+    /// </summary>
+    private static string TruncateDueDateHintForNote(string dueDateHint)
+    {
+        var sanitized = string.Create(
+            Math.Min(dueDateHint.Length, MaxDueDateHintNoteLength),
+            dueDateHint,
+            static (span, source) =>
+            {
+                for (var i = 0; i < span.Length; i++)
+                {
+                    span[i] = char.IsControl(source[i]) ? ' ' : source[i];
+                }
+            });
+
+        return dueDateHint.Length > MaxDueDateHintNoteLength ? sanitized + "..." : sanitized;
     }
 
     public static string Serialize(CaptureTriageOutputV1 output)
