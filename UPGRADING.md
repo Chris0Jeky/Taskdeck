@@ -116,8 +116,11 @@ to a later release applies every intervening migration in one startup.
 
 ## v0.2.0 — 2026-09-01
 
-**BREAKING: none.** v0.1.2 itself contained no schema change, so upgrading v0.1.1 → v0.1.2 needed
-no entry of its own; everything below applies when moving from any v0.1.x to v0.2.0.
+**BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
+v0.1.1 → v0.1.2 needed no entry of its own; everything below applies when moving from any v0.1.x to
+v0.2.0. **Skipping from v0.1.0:** the retired Gemini provider migration in the
+[v0.1.1 notes](#v011--2026-08-21) still applies — a host that still sets `Llm:Provider=Gemini` or any
+`Llm:Gemini` value fails startup with migration guidance until that selector is replaced.
 
 - **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
   required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
