@@ -348,6 +348,52 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
   })
 
+  it.each([
+    ['h', '/workspace/home'],
+    ['t', '/workspace/today'],
+    ['b', '/workspace/boards'],
+    ['i', '/workspace/inbox'],
+    ['r', '/workspace/review'],
+  ])('navigates with the bare %s workspace binding', async (key, path) => {
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith(path)
+  })
+
+  it('navigates to Today through the G T chord', async () => {
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g' }))
+    expect(mockRouter.push).not.toHaveBeenCalled()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/today')
+  })
+
+  it.each(['input', 'textarea', 'select', 'contenteditable'])(
+    'suppresses bare and chord navigation inside %s targets',
+    async (kind) => {
+      mountedWrapper = mountShell()
+      const target = kind === 'contenteditable'
+        ? document.createElement('div')
+        : document.createElement(kind)
+      if (kind === 'contenteditable') target.setAttribute('contenteditable', 'true')
+      document.body.appendChild(target)
+
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }))
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }))
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }))
+      await waitForUi()
+
+      expect(mockRouter.push).not.toHaveBeenCalled()
+      target.remove()
+    },
+  )
+
   it('does not fire global shortcuts while the workspace mode select is focused', async () => {
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper

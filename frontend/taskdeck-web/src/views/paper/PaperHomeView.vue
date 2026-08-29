@@ -11,6 +11,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
 import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 
 /**
  * PaperHomeView — morning-reset surface in the Paper & Graphite, Ember Edition skin.
@@ -608,8 +609,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
           data-testid="paper-home-capture-input"
         />
         <span class="paper-home__capture-hint">
-          <PaperKbd>⌘</PaperKbd>
-          <PaperKbd>;</PaperKbd>
+          <PaperKbd>{{ formatShortcut('mod+;') }}</PaperKbd>
         </span>
       </form>
       <p

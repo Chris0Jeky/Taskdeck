@@ -12,6 +12,7 @@ import PaperStatusPill from '../components/paper/PaperStatusPill.vue'
 import PaperLedgerRow from '../components/paper/PaperLedgerRow.vue'
 import PaperConfidenceDial from '../components/paper/PaperConfidenceDial.vue'
 import { PAPER_ICON_SHAPES, type PaperIconName } from '../components/paper/paperIconPaths'
+import { formatShortcut } from '../utils/keyboardShortcuts'
 
 const themeStore = usePaperThemeStore()
 
@@ -146,9 +147,9 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <button class="pbtn pbtn-primary" type="button" data-dead-affordance-exempt="visual-specimen">Primary <span class="pkbd">P</span></button>
           <button class="pbtn pbtn-ember" type="button" data-dead-affordance-exempt="visual-specimen">Apply <span class="pkbd">⏎</span></button>
           <button class="pbtn pbtn-ghost" type="button" data-dead-affordance-exempt="visual-specimen">Ghost</button>
-          <span class="pkbd">⌘</span>
-          <span class="pkbd">K</span>
+          <span class="pkbd">{{ formatShortcut('mod+k') }}</span>
           <span class="pkbd-light pkbd">space</span>
+          <span class="tk-meta">Canonical modifier notation: {{ formatShortcut('mod+k') }}</span>
         </div>
 
         <hr class="hr-line sg-rule" />
@@ -260,8 +261,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
 
         <h3 class="tk-eyebrow sg-section-eyebrow">PaperKbd</h3>
         <div class="sg-row">
-          <PaperKbd>⌘</PaperKbd>
-          <PaperKbd>K</PaperKbd>
+          <PaperKbd>{{ formatShortcut('mod+k') }}</PaperKbd>
           <PaperKbd>⌫</PaperKbd>
           <PaperKbd :light="true">space</PaperKbd>
           <PaperKbd :light="true">tab</PaperKbd>

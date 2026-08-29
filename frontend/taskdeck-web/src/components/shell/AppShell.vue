@@ -7,6 +7,11 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
+import {
+  APP_SHELL_SHORTCUT_BINDINGS,
+  type AppShellShortcutBinding,
+  type ShortcutStroke,
+} from '../../utils/keyboardShortcuts'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
 import SwUpdatePrompt from './SwUpdatePrompt.vue'
@@ -126,29 +131,99 @@ function handleNavigateToCard(boardId: string, _cardId: string) {
 // ── Keyboard shortcuts ──
 
 function isTextEntryTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
+  if (!(target instanceof Element)) return false
+
+  const selector = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+  return target.matches(selector) || target.closest(selector) !== null
+}
+
+const CHORD_TIMEOUT_MS = 1_000
+let pendingChord: AppShellShortcutBinding | null = null
+let chordTimer: ReturnType<typeof window.setTimeout> | null = null
+
+function clearPendingChord() {
+  pendingChord = null
+  if (chordTimer !== null) {
+    window.clearTimeout(chordTimer)
+    chordTimer = null
+  }
+}
+
+function strokeMatches(event: KeyboardEvent, stroke: ShortcutStroke): boolean {
+  const modPressed = event.ctrlKey || event.metaKey
+  const shiftMatches = stroke.shift === undefined || stroke.shift === event.shiftKey
+  return event.key.toLowerCase() === stroke.key.toLowerCase() &&
+    modPressed === Boolean(stroke.mod) &&
+    event.altKey === Boolean(stroke.alt) &&
+    shiftMatches
+}
+
+function consumeShortcut(event: KeyboardEvent) {
+  event.preventDefault()
+  // AppShell owns the workspace-level keys. Capture-phase handling keeps a
+  // board-local `H` listener from also moving selection before Home navigation.
+  event.stopImmediatePropagation()
+}
+
+function runAppShellShortcut(binding: AppShellShortcutBinding) {
+  switch (binding.action.type) {
+    case 'navigate':
+      showKeyboardHelp.value = false
+      closeCommandPalette()
+      void router.push(binding.action.path)
+      return
+    case 'command-palette':
+      if (showCommandPalette.value) closeCommandPalette()
+      else openCommandPalette()
+      return
+    case 'quick-capture':
+      openCaptureModal()
+      return
+    case 'keyboard-help':
+      showKeyboardHelp.value = !showKeyboardHelp.value
+      return
+  }
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault()
-    if (showCommandPalette.value) {
-      closeCommandPalette()
+  if (event.isComposing) {
+    clearPendingChord()
+    return
+  }
+
+  const textEntryTarget = isTextEntryTarget(event.target)
+
+  if (pendingChord) {
+    const chord = pendingChord
+    clearPendingChord()
+    const nextStroke = chord.sequence[1]
+    if (!textEntryTarget && nextStroke && strokeMatches(event, nextStroke)) {
+      consumeShortcut(event)
+      runAppShellShortcut(chord)
       return
     }
-    openCommandPalette()
   }
 
-  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'c' && !isTextEntryTarget(event.target)) {
-    event.preventDefault()
-    openCaptureModal()
+  const direct = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
+    binding.sequence.length === 1 &&
+    strokeMatches(event, binding.sequence[0]!) &&
+    (!textEntryTarget || binding.allowInTextEntry === true),
+  )
+  if (direct) {
+    consumeShortcut(event)
+    runAppShellShortcut(direct)
+    return
   }
 
-  if (event.key === '?' && !isTextEntryTarget(event.target)) {
-    showKeyboardHelp.value = !showKeyboardHelp.value
+  if (textEntryTarget) return
+
+  const chord = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
+    binding.sequence.length > 1 && strokeMatches(event, binding.sequence[0]!),
+  )
+  if (chord) {
+    consumeShortcut(event)
+    pendingChord = chord
+    chordTimer = window.setTimeout(clearPendingChord, CHORD_TIMEOUT_MS)
   }
 }
 
@@ -180,7 +255,7 @@ function handleLogout() {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('keydown', handleKeydown, true)
 })
 
 function hydratePreferencesIfNeeded() {
@@ -210,7 +285,8 @@ watch(
 )
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
+  clearPendingChord()
+  window.removeEventListener('keydown', handleKeydown, true)
 })
 </script>
 
