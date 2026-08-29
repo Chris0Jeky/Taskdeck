@@ -10,6 +10,7 @@ import {
   captureRowState,
   sourceLabel,
   statusLabel,
+  triageDegradedNotice,
 } from '../../../components/inbox/inboxUtils'
 import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
 import type { Board } from '../../../types/board'
@@ -420,6 +421,31 @@ function failureReason(item: CaptureItemSummary): string | null {
   return statusTone(item.status) === 'overdue' ? message : null
 }
 
+/**
+ * The degradation notice for a row whose triage SUCCEEDED on the deterministic
+ * extractor after its LLM leg could not deliver (#2202).
+ *
+ * Deliberately a second, separate accessor rather than a widening of
+ * `failureReason`: the two are mutually exclusive by construction (that one
+ * fires only on the `overdue` tone, this one only on a completed status), and
+ * they must stay so. `failureReason` renders inside the row button with
+ * `role="alert"` in the failure tone; this renders as its own `role="status"`
+ * block outside the button. Merging them is what would produce "Triage failed"
+ * over a capture that did not fail.
+ *
+ * Paper has no capture detail panel outside read-only history, so the row is
+ * the ONLY place a Paper user can be told — which is why it carries the whole
+ * notice (who produced it, what the server reported, what it means for review,
+ * what to check) rather than a one-line teaser.
+ */
+function degradedNotice(item: CaptureItemSummary): string | null {
+  return triageDegradedNotice(item)
+}
+
+function degradedNoticeId(item: CaptureItemSummary): string {
+  return `paper-capture-degraded-${item.id}`
+}
+
 onMounted(() => {
   // Prime boards so the picker is ready if the user accepts a board-less capture.
   // Archived history has no Accept path, so it must not prime the picker.
@@ -541,6 +567,7 @@ function recordedOr(value: string | null | undefined): string {
             : `Open capture ${item.id}`"
           :aria-expanded="readOnly ? isDetailOpen(item) : undefined"
           :aria-controls="readOnly ? detailPanelId(item) : undefined"
+          :aria-describedby="degradedNotice(item) ? degradedNoticeId(item) : undefined"
           :data-testid="readOnly ? 'capture-history-open' : undefined"
           @click="emit('open', item.id)"
         >
@@ -569,6 +596,31 @@ function recordedOr(value: string | null | undefined): string {
             data-tag-kind="source"
             :title="sourceTagTitle(item)"
           >{{ sourceLabel(item.source) }}</PaperTagstamp>
+        </div>
+
+        <!--
+          Degraded triage (#2202). A capture whose LLM leg could not deliver
+          still TRIAGED, so this is a caution on a success and is built to be
+          unmistakable for the failure above it: its own block outside the row
+          button (not a span inside the button's accessible name), `role="status"`
+          rather than `alert`, and the note palette rather than `--overdue`.
+          The server's notice renders verbatim — it is already redacted and
+          bounded upstream, and nothing local is ever appended to it.
+        -->
+        <div
+          v-if="degradedNotice(item)"
+          :id="degradedNoticeId(item)"
+          class="paper-triage__degraded"
+          role="status"
+          data-testid="capture-degraded-notice"
+        >
+          <p class="paper-triage__degraded-label">{{ t('inbox.degraded.label') }}</p>
+          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.lead') }}</p>
+          <p class="paper-triage__degraded-reason" data-testid="capture-degraded-reason">
+            {{ t('inbox.degraded.reason', { reason: degradedNotice(item) }) }}
+          </p>
+          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.review') }}</p>
+          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.action') }}</p>
         </div>
 
         <!--
@@ -952,6 +1004,47 @@ function recordedOr(value: string | null | undefined): string {
  */
 .paper-triage__edit-block--row {
   grid-column: 1 / -1;
+}
+
+/*
+ * Degraded-triage note (#2202). Deliberately NOT `--overdue`: that colour is
+ * the failure tone this row did not earn. A quiet panel with an ember rule
+ * reads as an annotation on a result, which is what it is.
+ */
+.paper-triage__degraded {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--paper-2);
+  border-left: 2px solid var(--ember);
+  border-radius: 2px;
+}
+.paper-triage__degraded-label {
+  margin: 0 0 4px;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+.paper-triage__degraded-line {
+  margin: 0 0 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.paper-triage__degraded-line:last-child {
+  margin-bottom: 0;
+}
+/* The server's own words, set apart from Taskdeck's explanation around them. */
+.paper-triage__degraded-reason {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--mute);
+  overflow-wrap: anywhere;
 }
 
 .paper-triage__decision {

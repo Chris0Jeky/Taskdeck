@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../ui'
-import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel } from './inboxUtils'
+import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel, triageDegradedNotice } from './inboxUtils'
 import type { CaptureItem } from '../../types/capture'
 
 const props = withDefaults(defineProps<{
@@ -31,6 +31,23 @@ const emit = defineEmits<{
 }>()
 
 const canTriageSelection = canMutateSelection
+
+/**
+ * The degradation notice for a capture whose triage SUCCEEDED on the
+ * deterministic extractor after its LLM leg could not deliver (#2202).
+ *
+ * Kept strictly apart from the Failed block below it. That block is a
+ * `TdInlineAlert variant="error"` headed "Triage failed" and offers a retry;
+ * this one is a `warning` note on a capture that completed, and offers nothing
+ * to retry because there is nothing to retry. Widening the Failed `v-if` to
+ * cover both is exactly the trade of one dishonest surface for another that
+ * #2202 was filed to prevent.
+ *
+ * Copy comes from the `inbox.degraded.*` catalog; `$t` is available in the
+ * template through `globalInjection` (see `src/i18n/index.ts`), so this panel
+ * needs no `useI18n()` line of its own.
+ */
+const degradedNotice = triageDegradedNotice
 </script>
 
 <template>
@@ -149,6 +166,29 @@ const canTriageSelection = canMutateSelection
             Edit Text
           </button>
         </template>
+      </div>
+
+      <!--
+        Degraded triage (#2202). Rendered as a plain block, NOT a TdInlineAlert:
+        that primitive hardcodes `role="alert"`, and a capture that completed
+        must not interrupt a screen reader as though something had failed. The
+        enclosing section is already an `aria-live="polite"` region, so
+        `role="status"` here matches the surface it sits in. The server's notice
+        is presented verbatim; nothing local is appended to it.
+      -->
+      <div
+        v-if="degradedNotice(selectedItem)"
+        class="td-inbox-detail__degraded"
+        role="status"
+        data-testid="capture-degraded-notice"
+      >
+        <p class="td-inbox-detail__degraded-title">{{ $t('inbox.degraded.label') }}</p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.lead') }}</p>
+        <p class="td-inbox-detail__degraded-reason" data-testid="capture-degraded-reason">
+          {{ $t('inbox.degraded.reason', { reason: degradedNotice(selectedItem) }) }}
+        </p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.review') }}</p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.action') }}</p>
       </div>
 
       <TdInlineAlert
@@ -399,6 +439,52 @@ const canTriageSelection = canMutateSelection
   font-size: var(--td-font-xs);
   line-height: 1.5;
   margin: 0;
+}
+
+/*
+ * Degraded-triage note (#2202). It sits above the Failed alert and must never
+ * be mistaken for it: no error tint, no red rule, no retry affordance — a
+ * warning-toned side rule on the panel's own surface, which reads as an
+ * annotation on a result rather than a report of a broken one.
+ */
+.td-inbox-detail__degraded {
+  border: 0.5px solid var(--td-border-ghost);
+  border-left: 3px solid var(--td-color-warning);
+  border-radius: var(--td-radius-md);
+  background: var(--td-color-warning-light);
+  padding: var(--td-space-3);
+}
+
+.td-inbox-detail__degraded-title {
+  color: var(--td-text-primary);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin: 0 0 var(--td-space-1) 0;
+  font-weight: 600;
+}
+
+.td-inbox-detail__degraded-msg {
+  color: var(--td-text-primary);
+  font-size: var(--td-font-sm);
+  line-height: 1.5;
+  margin: 0 0 var(--td-space-1) 0;
+  word-break: break-word;
+}
+
+.td-inbox-detail__degraded-msg:last-child {
+  margin-bottom: 0;
+}
+
+/* The server's own words, set apart from Taskdeck's explanation around them. */
+.td-inbox-detail__degraded-reason {
+  color: var(--td-text-tertiary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: var(--td-font-xs);
+  line-height: 1.5;
+  margin: 0 0 var(--td-space-1) 0;
+  overflow-wrap: anywhere;
 }
 
 .td-inbox-detail__proposal-link-content {
