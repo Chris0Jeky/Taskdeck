@@ -26,6 +26,26 @@ import { usePerformanceMark } from './usePerformanceMark'
 export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
 
 /**
+ * How often the Review surface re-reads the queue while it is open and the tab
+ * is visible (#2194).
+ *
+ * There is nothing to subscribe to: the only SignalR hub is `BoardsHub`
+ * (`/hubs/boards`), its groups are strictly per-board, and it emits exactly
+ * `boardMutation` / `boardPresence` / `toolStatus` over board/card/column/label
+ * entities. `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
+ * so proposal creation is silent on the wire and the all-boards review queue has
+ * no board group to join in the first place. A bounded poll is therefore the
+ * whole available mechanism until a proposal event exists server-side.
+ *
+ * 15 s is short enough that a proposal created by Ask AI elsewhere appears
+ * inside one glance -- #2194 measured 115 s of a false "Nothing waiting" -- and
+ * long enough that an idle Review tab costs 4 requests/minute against an
+ * endpoint the surface already calls on entry. Ticks are skipped entirely while
+ * the tab is hidden, so a backgrounded tab costs nothing.
+ */
+export const REVIEW_QUEUE_REFRESH_MS = 15_000
+
+/**
  * Decision rules shared by every review surface (Paper deep-review and the
  * Legacy card). These are pure functions so the prop-driven Legacy components
  * can reuse the exact same gating without importing the composable. The
@@ -466,6 +486,114 @@ export function useReviewProposals() {
     }
   }
 
+  // --- Background queue refresh (#2194) ---------------------------------
+
+  let refreshInterval: ReturnType<typeof setInterval> | null = null
+  let refreshInFlight = false
+  let shouldRefreshNow: (() => boolean) | null = null
+
+  function isDocumentVisible(): boolean {
+    // No document (non-DOM test context) counts as NOT visible: a surface that
+    // cannot be looked at must not generate background traffic.
+    if (typeof document === 'undefined') return false
+    return document.visibilityState === 'visible'
+  }
+
+  /**
+   * A background re-read of the queue. Deliberately gentler than
+   * `loadProposals`, because it fires under a reviewer who did not ask for it:
+   *
+   *  - it never raises `proposalsLoading`, so no skeleton flashes and no
+   *    decision control blinks disabled mid-review;
+   *  - it defers to any explicit load (route change, post-decision reload)
+   *    rather than racing it, and drops its own answer if one started while it
+   *    was in flight -- the explicit load is the fresher truth;
+   *  - it stays silent on failure: a poll the user never requested must not
+   *    raise a toast. The error is logged, never swallowed.
+   *
+   * Server truth wins for ordering and removals -- the response replaces the
+   * list, exactly as `loadProposals` does -- with one carve-out: a `#proposal-`
+   * deep-link target is fetched by id and may legitimately sit outside the list
+   * page, so a refresh must not evict the very record the URL names.
+   */
+  async function refreshProposals(): Promise<void> {
+    // An explicit load is authoritative and about to replace the list wholesale.
+    if (proposalsLoading.value || refreshInFlight) return
+    // Snapshot the load counter rather than incrementing it: bumping it here
+    // would make an in-flight `loadProposals` discard its own result AND skip
+    // the `proposalsLoading = false` reset in its finally block, wedging the
+    // surface in a permanent loading state.
+    const observedLoadId = latestProposalLoadRequestId
+    refreshInFlight = true
+    try {
+      const loadedProposals = await automationApi.getProposals({
+        limit: 200,
+        boardId: activeBoardFilter.value || undefined,
+      })
+      // A newer explicit load started while this poll was in flight; its answer
+      // supersedes this one.
+      if (observedLoadId !== latestProposalLoadRequestId || proposalsLoading.value) return
+      const hashTargetId = getProposalIdFromHash(route.hash)
+      const next = [...loadedProposals]
+      if (hashTargetId && !next.some((p) => proposalIdsEqual(p.id, hashTargetId))) {
+        const pinned = proposals.value.find((p) => proposalIdsEqual(p.id, hashTargetId))
+        if (pinned) next.push(pinned)
+      }
+      proposals.value = next
+    } catch (e: unknown) {
+      logError('Review queue background refresh failed:', e)
+    } finally {
+      refreshInFlight = false
+    }
+  }
+
+  function onRefreshVisibilityChange() {
+    // Re-entering a tab is the moment a stale "Nothing waiting" is most likely
+    // to be on screen, so read immediately instead of waiting out the interval.
+    if (!isDocumentVisible()) return
+    void maybeRefresh()
+  }
+
+  function maybeRefresh(): Promise<void> {
+    if (!isDocumentVisible()) return Promise.resolve()
+    // The surface can veto a tick -- see the call site in PaperReviewView for
+    // the mid-decision conditions it holds off on.
+    if (shouldRefreshNow && !shouldRefreshNow()) return Promise.resolve()
+    return refreshProposals()
+  }
+
+  /**
+   * Starts the bounded, visibility-aware queue poll. `shouldRefresh` lets the
+   * owning surface hold a tick while the reviewer is mid-decision (a confirm
+   * dialog open, an action in flight) so the record under the cursor cannot
+   * change underneath the decision being made.
+   */
+  function startQueueRefresh(shouldRefresh?: () => boolean) {
+    // Guard against double-start exactly as startClock does: a second call
+    // would overwrite the handle and leak the first interval forever.
+    if (refreshInterval !== null) return
+    shouldRefreshNow = shouldRefresh ?? null
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    refreshInterval = setInterval(() => {
+      void maybeRefresh()
+    }, REVIEW_QUEUE_REFRESH_MS)
+  }
+
+  function stopQueueRefresh() {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    if (refreshInterval !== null) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+    shouldRefreshNow = null
+  }
+
+  onScopeDispose(stopQueueRefresh)
+
   async function loadBoardOptions() {
     try {
       loadingBoards.value = true
@@ -603,9 +731,12 @@ export function useReviewProposals() {
     isStaleProposal,
     clearProposalDeepLink,
     loadProposals,
+    refreshProposals,
     loadBoardOptions,
     startClock,
     stopClock,
+    startQueueRefresh,
+    stopQueueRefresh,
     openInbox,
     proposalHref,
     captureHrefForProposal,

@@ -87,6 +87,7 @@ vi.mock('../../utils/errorReporting', () => ({
 }))
 
 import {
+  REVIEW_QUEUE_REFRESH_MS,
   STALE_PROPOSAL_MS,
   isProposalApplyActionable,
   isProposalApproveActionable,
@@ -965,6 +966,173 @@ describe('useReviewProposals', () => {
       mockRoute.query = { boardId: 'board-filter-probe' }
       await watcherForCurrentSourceValue('board-filter-probe')[1]()
       expect(mockAutomationApi.getProposals).toHaveBeenCalled()
+    })
+  })
+
+  // #2194 - with Review open, a proposal created server-side never appeared:
+  // measured 115 s of "QUEUE - 0 AWAITING" while the API reported 1 pending, and
+  // only re-navigation surfaced it. There is no proposal event on the wire (the
+  // sole hub is per-board and silent on proposals), so the queue is kept live by
+  // a bounded, visibility-aware poll.
+  describe('background queue refresh (#2194)', () => {
+    function setVisibility(state: 'visible' | 'hidden') {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => state,
+      })
+    }
+
+    beforeEach(() => {
+      setVisibility('visible')
+    })
+
+    it('surfaces a proposal created after load, without a navigation', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.visibleProposals.value).toHaveLength(0)
+
+      // Ask AI ran on a capture elsewhere; the server now has one pending item.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-new' })])
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['p-new'])
+      // Re-navigation is the defect's only workaround today; it must not be the fix.
+      expect(mockRouter.push).not.toHaveBeenCalled()
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+      rp.stopQueueRefresh()
+    })
+
+    it('stops polling on route leave', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+
+      rp.stopQueueRefresh() // what onUnmounted does when Review is left
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 4)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips ticks while the tab is hidden, and reads immediately on re-entry', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      setVisibility('hidden')
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+
+      setVisibility('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
+    it('holds a tick while the surface reports a decision in progress', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      let deciding = true
+      rp.startQueueRefresh(() => !deciding)
+
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 2)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+
+      deciding = false // the confirm dialog closed
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
+    it('keeps the deep-linked proposal in view when the refresh page omits it', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-open'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-open' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-open'])
+
+      // The record the URL names has dropped out of the list page. It is fetched
+      // by id, so a background refresh must not evict the proposal the reviewer
+      // is actually looking at.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-other' })])
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.proposals.value.map((p: any) => p.id).sort()).toEqual(['p-open', 'p-other'])
+      rp.stopQueueRefresh()
+    })
+
+    it('never raises proposalsLoading, so no skeleton flashes under a reviewer', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      let release: (value: unknown[]) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve as (value: unknown[]) => void
+        }),
+      )
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.proposalsLoading.value).toBe(false) // in flight, and still quiet
+      release([])
+      rp.stopQueueRefresh()
+    })
+
+    it('keeps the queue and stays silent when a background read fails', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      mockToast.error.mockClear()
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('offline'))
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // A poll the reviewer never asked for must not raise a toast, and must not
+      // empty the queue it failed to re-read.
+      expect(mockToast.error).not.toHaveBeenCalled()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-1'])
+      rp.stopQueueRefresh()
+    })
+
+    it('startQueueRefresh is idempotent so a double call cannot leak an interval', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+      rp.startQueueRefresh() // guarded no-op
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+
+      // One stop fully halts it - proving no orphaned second interval.
+      rp.stopQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+    })
+
+    it('registers stopQueueRefresh via onScopeDispose', async () => {
+      vi.useFakeTimers()
+      mockOnScopeDispose.mockClear()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+
+      const disposers = mockOnScopeDispose.mock.calls.map((call: any[]) => call[0] as () => void)
+      disposers.forEach((dispose) => dispose())
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
     })
   })
 })
