@@ -51,6 +51,7 @@ export default {
   queueRail: {
     eyebrow: 'Queue · {awaiting} awaiting · {stale} stale',
     eyebrowScoped: 'Queue · {awaiting} awaiting in this board · {stale} stale',
+    liveAnnounce: '{count} proposal awaiting review. | {count} proposals awaiting review.',
     filters: {
       label: 'Queue filters',
     },
@@ -553,6 +554,10 @@ export default {
     title: 'Nothing waiting. Good.',
     body: 'When the assistant has something to propose it will appear here for review.',
     loading: 'Loading proposals…',
+    accessRevoked: {
+      title: 'This review queue is no longer available to you.',
+      body: 'Your access to these boards changed, so the queue was cleared and has stopped updating. Reload or pick a board you can still reach.',
+    },
     scoped: {
       title: 'No proposals in {scope}.',
       body: 'This review list is limited to the active board. Show all boards to restore the full queue.',

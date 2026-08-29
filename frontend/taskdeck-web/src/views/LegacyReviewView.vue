@@ -13,6 +13,7 @@ import { useReviewProposals } from '../composables/useReviewProposals'
 import { useReviewActions } from '../composables/useReviewActions'
 import { useVirtualList } from '../composables/useVirtualList'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 const {
   proposals,
@@ -26,6 +27,7 @@ const {
   boardOptions,
   visibleProposals,
   summaryCards,
+  queueAccessRevoked,
   dismissableProposalIds,
   isProposalExpired,
   clearProposalDeepLink,
@@ -189,6 +191,36 @@ function handleReviewKeydown(event: KeyboardEvent) {
   }
 }
 
+const workspace = useWorkspaceStore()
+
+// This skin renders no translated strings (`$t` appears nowhere in this file and
+// its specs install no i18n plugin), so the announcement is plain text, matching
+// the existing hardcoded copy above.
+const awaitingCount = computed(
+  () => summaryCards.value.find((card) => card.id === 'pending-review')?.value ?? 0,
+)
+const awaitingAnnouncement = computed(() =>
+  awaitingCount.value === 1
+    ? '1 proposal awaiting review.'
+    : `${awaitingCount.value} proposals awaiting review.`,
+)
+
+/**
+ * Same badge contract as the Paper skin (#2194 acceptance 3): the shell's
+ * `Review · N` count is a home-summary workload figure AppShell reads once at
+ * sign-in, and nothing here ever refreshed it. Triggered on the queue ARRAY so a
+ * board-scoped view still re-reads when another board's proposal arrives.
+ */
+let badgeSyncArmed = false
+watch(proposals, () => {
+  // Skip the route-entry load; AppShell has already read that summary.
+  if (!badgeSyncArmed) {
+    badgeSyncArmed = true
+    return
+  }
+  void workspace.refreshWorkloadCounts()
+})
+
 /**
  * Mirror of the Paper guard (#2194): hold a background queue tick while an
  * action is in flight or a confirm dialog is open, so the record the reviewer
@@ -252,7 +284,25 @@ onUnmounted(() => {
 
     <ReviewSummaryCards :cards="summaryCards" />
 
-    <div v-if="proposalsLoading" class="td-review__skeleton" aria-live="polite" role="status">
+    <!-- The queue now changes without user action (#2194); announce it politely. -->
+    <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
+      {{ awaitingAnnouncement }}
+    </p>
+
+    <div
+      v-if="queueAccessRevoked"
+      class="td-panel"
+      role="status"
+      data-testid="review-access-revoked"
+    >
+      <p>This review queue is no longer available to you.</p>
+      <p>
+        Your access to these boards changed, so the queue was cleared and has stopped
+        updating. Reload or pick a board you can still reach.
+      </p>
+    </div>
+
+    <div v-else-if="proposalsLoading" class="td-review__skeleton" aria-live="polite" role="status">
       <span class="sr-only">Loading proposals to review...</span>
       <div v-for="n in 3" :key="n" class="td-panel td-review__skeleton-card">
         <div class="td-review__skeleton-header">

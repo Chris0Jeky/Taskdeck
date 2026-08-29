@@ -8,8 +8,20 @@ import type {
 import { buildQueryString } from '../utils/queryBuilder'
 
 export const automationApi = {
-  async getProposals(filters?: ProposalFilters): Promise<Proposal[]> {
-    const { data } = await http.get<Proposal[]>(`/automation/proposals${buildQueryString(filters)}`)
+  /**
+   * `options` exists for the background review-queue poll (#2194): it opts out
+   * of the shared retry interceptor and carries an abort signal so a poll can be
+   * cancelled when the surface is left. Ordinary callers pass nothing and keep
+   * the retrying, uncancellable behaviour.
+   */
+  async getProposals(
+    filters?: ProposalFilters,
+    options?: { signal?: AbortSignal; skipRetry?: boolean },
+  ): Promise<Proposal[]> {
+    const { data } = await http.get<Proposal[]>(
+      `/automation/proposals${buildQueryString(filters)}`,
+      options,
+    )
     return data
   },
 

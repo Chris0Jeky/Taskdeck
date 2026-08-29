@@ -21,6 +21,7 @@ export default {
   queueRail: {
     eyebrow: 'Coda · {awaiting} in attesa · {stale} ferme',
     eyebrowScoped: 'Coda · {awaiting} in attesa in questa bacheca · {stale} ferme',
+    liveAnnounce: '{count} proposta in attesa di revisione. | {count} proposte in attesa di revisione.',
     filters: {
       label: 'Filtri della coda',
     },
@@ -469,6 +470,10 @@ export default {
     title: 'Niente in attesa. Bene.',
     body: 'Quando l’assistente avrà qualcosa da proporre comparirà qui per la revisione.',
     loading: 'Caricamento delle proposte…',
+    accessRevoked: {
+      title: 'Questa coda di revisione non è più disponibile per te.',
+      body: 'Il tuo accesso a queste bacheche è cambiato, quindi la coda è stata svuotata e non si aggiorna più. Ricarica la pagina o scegli una bacheca a cui hai ancora accesso.',
+    },
     scoped: {
       title: 'Nessuna proposta in {scope}.',
       body: 'Questo elenco di revisione è limitato alla bacheca attiva. Mostra tutte le bacheche per ripristinare la coda completa.',

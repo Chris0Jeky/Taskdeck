@@ -160,6 +160,19 @@ function onFilterPillClick(key: QueueFilter) {
           })
         }}
       </div>
+      <!--
+        The awaiting count now changes without any user action (#2194's bounded
+        poll), so a screen-reader user gets no notification that the queue moved
+        under them. The eyebrow itself cannot carry the live region: it also
+        renders the stale count and is rewritten by filter clicks, which would
+        make it chatter on ordinary interaction.
+      -->
+      <p
+        class="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="paper-review-queue-live"
+      >{{ $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) }}</p>
       <PaperScopeDisclosure
         v-if="scopeLabel && scopeClearLabel"
         :label="scopeLabel"

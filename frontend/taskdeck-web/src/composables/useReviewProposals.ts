@@ -106,6 +106,17 @@ export function isProposalReadOnly(proposal: ApiProposal, isExpired: boolean): b
   )
 }
 
+/**
+ * A 403 on the review-queue read means board access was revoked, not a blip.
+ * Deliberately narrower than `isAccessDeniedError` (403 OR 404): a 404 from the
+ * LIST endpoint is not a permission signal, and treating it as one would tear
+ * down a queue over a routing mistake.
+ */
+function isForbiddenError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  return (err as { response?: { status?: number } }).response?.status === 403
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
@@ -133,6 +144,12 @@ export function useReviewProposals() {
   // confirmed 404 separately so Paper can say what happened instead of
   // presenting the ordinary empty queue or a different actionable proposal.
   const unavailableProposalId = ref<string | null>(null)
+  // Set when a background read is refused with 403 (board access revoked
+  // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
+  // for an honest one -- clearing the queue without saying why would turn a
+  // permission failure into a fresh false negative, which is the exact class
+  // #2194 exists to remove.
+  const queueAccessRevoked = ref(false)
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
@@ -473,6 +490,8 @@ export function useReviewProposals() {
       })
       if (requestId !== latestProposalLoadRequestId) return
       proposals.value = loadedProposals
+      // An explicit load that succeeded is proof access is back.
+      queueAccessRevoked.value = false
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
@@ -491,6 +510,7 @@ export function useReviewProposals() {
   let refreshInterval: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
   let shouldRefreshNow: (() => boolean) | null = null
+  let refreshAbort: AbortController | null = null
 
   function isDocumentVisible(): boolean {
     // No document (non-DOM test context) counts as NOT visible: a surface that
@@ -524,26 +544,74 @@ export function useReviewProposals() {
     // the `proposalsLoading = false` reset in its finally block, wedging the
     // surface in a permanent loading state.
     const observedLoadId = latestProposalLoadRequestId
+    // Identity snapshot of the queue. EVERY single-proposal decision path
+    // (approve/reject/defer/execute in useReviewActions) patches the row locally
+    // with `proposals.value = proposals.value.map(...)`, assigning a NEW array
+    // and never touching the load counter. So a read issued BEFORE the click can
+    // resolve AFTER it, and writing its answer would revert the row to
+    // PendingReview while the decision receipt on screen says approved. A changed
+    // reference is the signal that a decision landed under this read.
+    const observedProposals = proposals.value
+    const controller = new AbortController()
+    refreshAbort = controller
     refreshInFlight = true
     try {
-      const loadedProposals = await automationApi.getProposals({
-        limit: 200,
-        boardId: activeBoardFilter.value || undefined,
-      })
+      const loadedProposals = await automationApi.getProposals(
+        {
+          limit: 200,
+          boardId: activeBoardFilter.value || undefined,
+        },
+        // Fail fast and stay cancellable. The shared interceptor retries a
+        // transient failure three times with backoff, which would keep a dead
+        // poll running for seconds past the tick that asked for it and land its
+        // answer arbitrarily late; `stopQueueRefresh` aborts whatever is open.
+        { skipRetry: true, signal: controller.signal },
+      )
+      if (controller.signal.aborted) return
       // A newer explicit load started while this poll was in flight; its answer
       // supersedes this one.
       if (observedLoadId !== latestProposalLoadRequestId || proposalsLoading.value) return
+      if (proposals.value !== observedProposals) return
+      // Re-checked AFTER the await, not only before it: a confirm dialog can open
+      // while the read is in flight, and landing then would pull the record out
+      // from under the reviewer -- the Reject dialog is bound to a computed that
+      // closes itself when its proposal leaves the list, discarding a half-typed
+      // reason.
+      if (shouldRefreshNow && !shouldRefreshNow()) return
       const hashTargetId = getProposalIdFromHash(route.hash)
       const next = [...loadedProposals]
       if (hashTargetId && !next.some((p) => proposalIdsEqual(p.id, hashTargetId))) {
         const pinned = proposals.value.find((p) => proposalIdsEqual(p.id, hashTargetId))
-        if (pinned) next.push(pinned)
+        if (pinned) {
+          // Restore it at its createdAt position, by the same rule
+          // `upsertProposal` uses. Appending would drop the record the reviewer
+          // is reading to the bottom of a rail that renders array order, so it
+          // would visibly jump on the first refresh.
+          const pinnedCreatedAt = new Date(pinned.createdAt).getTime()
+          const insertIndex = next.findIndex(
+            (current) => new Date(current.createdAt).getTime() < pinnedCreatedAt,
+          )
+          if (insertIndex >= 0) next.splice(insertIndex, 0, pinned)
+          else next.push(pinned)
+        }
       }
       proposals.value = next
     } catch (e: unknown) {
+      // An abort is this surface's own teardown, not a failure.
+      if (controller.signal.aborted) return
+      if (isForbiddenError(e)) {
+        // Board access was revoked. Stop polling rather than hammering an
+        // endpoint that will keep refusing, drop rows the server no longer
+        // authorises, and let the surface say so.
+        queueAccessRevoked.value = true
+        proposals.value = []
+        stopQueueRefresh()
+        return
+      }
       logError('Review queue background refresh failed:', e)
     } finally {
       refreshInFlight = false
+      if (refreshAbort === controller) refreshAbort = null
     }
   }
 
@@ -588,6 +656,12 @@ export function useReviewProposals() {
     if (refreshInterval !== null) {
       clearInterval(refreshInterval)
       refreshInterval = null
+    }
+    if (refreshAbort) {
+      // Cancel a read that is still open, so a late answer cannot write into a
+      // surface that has already been left.
+      refreshAbort.abort()
+      refreshAbort = null
     }
     shouldRefreshNow = null
   }
@@ -710,6 +784,7 @@ export function useReviewProposals() {
     proposals,
     proposalsLoading,
     unavailableProposalId,
+    queueAccessRevoked,
     availableBoards,
     loadingBoards,
     boardFilterInput,

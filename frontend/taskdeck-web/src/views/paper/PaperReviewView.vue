@@ -68,6 +68,7 @@ const {
   proposals,
   proposalsLoading,
   unavailableProposalId,
+  queueAccessRevoked,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -1569,14 +1570,27 @@ function canRefreshQueue(): boolean {
  * (#2194 acceptance 3).
  *
  * The badge reads `workspace.homeSummary.workload.proposalsPendingReview`,
- * which is fetched once by `AppShell` when the session authenticates and is
+ * which `AppShell` fetches once when the session authenticates and which is
  * otherwise refreshed only by a capture or a Home visit -- so it froze at its
- * mount-time value and survived every decision made here. `awaitingCount` is a
- * local, board-scoped signal, used only as a CHANGE TRIGGER: the authoritative
- * number still comes from the server on each re-read. `refreshWorkloadCounts`
- * is version-guarded, silent on failure, and a no-op until a summary exists.
+ * mount-time value and survived every decision made here.
+ *
+ * The trigger is the queue ARRAY, not the awaiting COUNT. Watching the count
+ * misses two real cases: while Review is board-scoped a proposal arriving on
+ * another board never moves the scoped count, and a decision that swaps one
+ * pending row for another leaves it unchanged. Every decision path and every
+ * successful background refresh assigns a new array, so this fires exactly once
+ * per queue change. It is only a trigger -- the authoritative number is re-read
+ * from the server, and `refreshWorkloadCounts` is version-guarded, silent on
+ * failure, and a no-op until a summary exists.
  */
-watch(awaitingCount, () => {
+let badgeSyncArmed = false
+watch(proposals, () => {
+  // Skip the first assignment: that is the route-entry load, and AppShell has
+  // already read the summary this badge renders (review round L-1).
+  if (!badgeSyncArmed) {
+    badgeSyncArmed = true
+    return
+  }
   void workspace.refreshWorkloadCounts()
 })
 
@@ -1857,7 +1871,14 @@ async function onClearBoardScope() {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
-      <template v-if="unavailableProposalId">
+      <template v-if="queueAccessRevoked">
+        <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
+        <h2 class="tk-h2" data-testid="paper-review-access-revoked">
+          {{ $t('review.empty.accessRevoked.title') }}
+        </h2>
+        <p class="tk-lede">{{ $t('review.empty.accessRevoked.body') }}</p>
+      </template>
+      <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
         <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
         <p class="tk-lede">

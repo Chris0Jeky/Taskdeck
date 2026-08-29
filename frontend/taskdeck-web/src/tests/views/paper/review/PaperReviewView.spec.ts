@@ -2631,6 +2631,36 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('announces the awaiting count in a polite live region (#2194)', async () => {
+    const wrapper = await mountView([makeProposal({ id: 'live-1', status: 'PendingReview' })])
+    const live = wrapper.find('[data-testid="paper-review-queue-live"]')
+    expect(live.exists()).toBe(true)
+    expect(live.attributes('role')).toBe('status')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(live.text()).toContain('1 proposal awaiting review')
+    wrapper.unmount()
+  })
+
+  it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'gone-1' })])
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // Clearing the queue silently would swap a permission failure for a fresh
+      // "Nothing waiting. Good." -- the exact false negative #2194 is about.
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('Nothing waiting')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
