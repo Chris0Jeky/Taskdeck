@@ -30,6 +30,20 @@ public class CaptureTriageService : ICaptureTriageService
     public const string TriageModelName = "capture-triage-v1";
 
     /// <summary>
+    /// Opening clause of the notice recorded when an attempted LLM triage leg could not deliver and
+    /// the deterministic extractor produced the result instead (#2192). Every degraded outcome uses
+    /// this one wording family and names its own outcome, so a silent fallback is impossible.
+    /// </summary>
+    public const string DegradedTriageNoticePrefix = "LLM triage unavailable";
+
+    /// <summary>
+    /// Bound on the provider/validation detail appended to a degraded-triage notice. Keeps the
+    /// whole notice comfortably inside the stored <c>ErrorMessage</c> column bound
+    /// (<see cref="LlmRequest.MaxErrorMessageLength"/>) without relying on truncation there.
+    /// </summary>
+    private const int MaxDegradedNoticeDetailLength = 300;
+
+    /// <summary>
     /// Provenance value recorded when the engine that produced an existing proposal cannot be
     /// determined (a prior run created the proposal but crashed before stamping the payload; on
     /// retry either engine could have been the author). Matches
@@ -228,6 +242,7 @@ public class CaptureTriageService : ICaptureTriageService
         IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
         IReadOnlyList<string?>? dueDateHints = null;
         IReadOnlyList<decimal>? modelReportedConfidences = null;
+        string? degradedNotice = null;
         LlmCaptureTriageExtraction? successfulLlmExtraction = null;
         var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
@@ -267,6 +282,13 @@ public class CaptureTriageService : ICaptureTriageService
                         "LLM transcript triage returned a succeeded but invalid schema-v2 output for capture {CaptureItemId}; using deterministic extractor. {Error}",
                         captureItemId,
                         outputValidation.ErrorMessage ?? string.Empty);
+
+                    // The leg reported success but its payload failed the contract, so the
+                    // deterministic extractor below authors the proposal. That is the same
+                    // degradation class as InvalidOutput and is recorded under that name (#2192).
+                    degradedNotice = BuildDegradedTriageNotice(
+                        LlmCaptureTriageOutcome.InvalidOutput,
+                        outputValidation.ErrorMessage);
                 }
             }
             else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
@@ -297,6 +319,12 @@ public class CaptureTriageService : ICaptureTriageService
                     captureItemId,
                     extraction.Outcome,
                     extraction.Detail ?? string.Empty);
+
+                // Every remaining outcome falls through to the deterministic extractor. Until
+                // #2192 this log line was the only record of that, so a failed provider request
+                // produced a deterministic proposal the user could not distinguish from a
+                // model-authored one. Carry the outcome out to the caller instead (#2192).
+                degradedNotice = BuildDegradedTriageNotice(extraction.Outcome, extraction.Detail);
             }
         }
 
@@ -305,9 +333,14 @@ public class CaptureTriageService : ICaptureTriageService
             var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
             if (taskCandidates.Count == 0)
             {
+                // The capture fails here, so the notice cannot ride the success DTO. Append it to
+                // the failure message instead: a user whose provider is misconfigured must not be
+                // told only that their text was unactionable when an LLM leg failed first (#2192).
                 return Result.Failure<CaptureTriageProposalResultDto>(
                     ErrorCodes.ValidationError,
-                    "Capture text did not produce actionable triage items");
+                    degradedNotice is null
+                        ? "Capture text did not produce actionable triage items"
+                        : $"Capture text did not produce actionable triage items. {degradedNotice}");
             }
 
             var outputValidation = CaptureTriageOutputContract.Validate(BuildOutputModel(taskCandidates, contextHint));
@@ -430,8 +463,73 @@ public class CaptureTriageService : ICaptureTriageService
             operations.Count,
             triagePromptVersion,
             triageProvider,
-            triageModel));
+            triageModel,
+            degradedNotice));
     }
+
+    /// <summary>
+    /// Builds the notice recorded on a capture whose LLM triage leg was attempted but could not
+    /// deliver, so the deterministic extractor authored the proposal instead (#2192). Returns null
+    /// for outcomes that are not degradations, so callers record nothing in those cases.
+    /// </summary>
+    internal static string? BuildDegradedTriageNotice(LlmCaptureTriageOutcome outcome, string? detail)
+    {
+        if (!IsDegradedTriageOutcome(outcome))
+        {
+            return null;
+        }
+
+        var notice = $"{DegradedTriageNoticePrefix} ({outcome}); using deterministic extractor";
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return notice;
+        }
+
+        var trimmedDetail = detail.Trim();
+        if (trimmedDetail.Length > MaxDegradedNoticeDetailLength)
+        {
+            trimmedDetail = trimmedDetail[..MaxDegradedNoticeDetailLength];
+        }
+
+        return $"{notice}. {trimmedDetail}";
+    }
+
+    /// <summary>
+    /// Classifies an extraction outcome as a degradation worth recording on the capture.
+    /// <para>
+    /// True for every outcome where a live LLM leg was expected to run and did not deliver — the
+    /// kill switch, an unavailable or degraded provider (which covers a failed provider request,
+    /// an unknown model, a timeout, and an open circuit, since the providers return those as
+    /// degraded results rather than throwing), an exhausted quota, and unusable output.
+    /// </para>
+    /// <para>
+    /// False for <see cref="LlmCaptureTriageOutcome.Disabled"/> and
+    /// <see cref="LlmCaptureTriageOutcome.ProviderIsMock"/>: those are configuration states, not
+    /// failures. No live provider was ever expected to run, the deterministic extractor is the
+    /// intended engine, and the proposal's provenance already names it — so reporting them as
+    /// "unavailable" would make the ordinary offline configuration look broken on every capture.
+    /// </para>
+    /// <para>
+    /// False for <see cref="LlmCaptureTriageOutcome.Succeeded"/> and
+    /// <see cref="LlmCaptureTriageOutcome.EmptyExtraction"/>: the LLM produced the result, so
+    /// nothing degraded. A succeeded leg whose payload fails contract validation is reported by its
+    /// caller as <see cref="LlmCaptureTriageOutcome.InvalidOutput"/>, which is the class it belongs
+    /// to.
+    /// </para>
+    /// </summary>
+    private static bool IsDegradedTriageOutcome(LlmCaptureTriageOutcome outcome) => outcome switch
+    {
+        LlmCaptureTriageOutcome.KillSwitchActive => true,
+        LlmCaptureTriageOutcome.ProviderUnavailable => true,
+        LlmCaptureTriageOutcome.QuotaExceeded => true,
+        LlmCaptureTriageOutcome.ProviderDegraded => true,
+        LlmCaptureTriageOutcome.InvalidOutput => true,
+        LlmCaptureTriageOutcome.Disabled => false,
+        LlmCaptureTriageOutcome.ProviderIsMock => false,
+        LlmCaptureTriageOutcome.Succeeded => false,
+        LlmCaptureTriageOutcome.EmptyExtraction => false,
+        _ => false,
+    };
 
     /// <summary>
     /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window. A

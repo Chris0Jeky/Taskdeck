@@ -1582,4 +1582,274 @@ public class CaptureTriageServiceTests
             Guid.NewGuid().ToString(),
             new List<ProposalOperationDto>());
     }
+
+    // ---------------------------------------------------------------------------------------
+    // #2192 — an attempted LLM triage leg that cannot deliver must never fall back silently.
+    // Before this, every non-LLM outcome was recorded only in an ILogger call, so a user whose
+    // provider request failed (nonexistent model / non-2xx) received a deterministic proposal
+    // with no degraded message anywhere on the capture.
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDegradedNotice_WhenLiveProviderRequestFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        // The exact shape a failed live request takes: OpenAiLlmProvider returns a DEGRADED result
+        // (it does not throw) for a non-2xx / unknown-model response, which the extractor maps to
+        // ProviderDegraded carrying the provider's reason.
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.ProviderDegraded,
+                Detail: "Live provider request failed."));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Follow up with Alice\n- [ ] Ship the fix"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.OperationCount.Should().Be(2);
+
+        // The degradation is carried out of the service so the worker can record it on the capture.
+        result.Value.DegradedNotice.Should().NotBeNull();
+        result.Value.DegradedNotice.Should().StartWith(CaptureTriageService.DegradedTriageNoticePrefix);
+        result.Value.DegradedNotice.Should().Contain(nameof(LlmCaptureTriageOutcome.ProviderDegraded));
+        result.Value.DegradedNotice.Should().Contain("using deterministic extractor");
+        result.Value.DegradedNotice.Should().Contain("Live provider request failed.");
+
+        // ...and the proposal still names the engine that actually authored it, with no
+        // model-style confidence attached to deterministic output.
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+        result.Value.Model.Should().Be(CaptureTriageService.TriageModelName);
+        createdProposal.Should().NotBeNull();
+        createdProposal!.ProvenanceModelId.Should().Be(CaptureTriageService.TriageModelName);
+        createdProposal.TrustedConfidence!.Source.Should().Be(ProvenanceConfidenceSource.Deterministic);
+        createdProposal.TrustedConfidence.Operations.Should().OnlyContain(op => op.Value == null);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDegradedNotice_WhenProviderDegradesWithoutDetail()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.ProviderDegraded));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Ship the fix"));
+
+        result.IsSuccess.Should().BeTrue();
+
+        // A missing provider detail must still name the outcome, not degrade to a bare or empty
+        // notice: naming the outcome is the whole point of the record.
+        result.Value.DegradedNotice.Should()
+            .Be($"{CaptureTriageService.DegradedTriageNoticePrefix} (ProviderDegraded); using deterministic extractor");
+    }
+
+    [Theory]
+    [InlineData(LlmCaptureTriageOutcome.KillSwitchActive)]
+    [InlineData(LlmCaptureTriageOutcome.ProviderUnavailable)]
+    [InlineData(LlmCaptureTriageOutcome.QuotaExceeded)]
+    [InlineData(LlmCaptureTriageOutcome.ProviderDegraded)]
+    [InlineData(LlmCaptureTriageOutcome.InvalidOutput)]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDegradedNotice_ForEveryAttemptedButUndeliveredOutcome(
+        LlmCaptureTriageOutcome outcome)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        CreateProposalDto? createdProposal = null;
+        SetupBoardAndProposalCreation(userId, boardId, captureId, dto => createdProposal = dto);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(outcome, Detail: "degradation detail"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Ship the fix"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DegradedNotice.Should().NotBeNull();
+        result.Value.DegradedNotice.Should().Contain(outcome.ToString());
+        result.Value.DegradedNotice.Should().Contain("using deterministic extractor");
+        createdProposal!.TrustedConfidence!.Source.Should().Be(ProvenanceConfidenceSource.Deterministic);
+    }
+
+    [Theory]
+    [InlineData(LlmCaptureTriageOutcome.Disabled)]
+    [InlineData(LlmCaptureTriageOutcome.ProviderIsMock)]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotRecordDegradedNotice_WhenNoLiveProviderWasEverExpected(
+        LlmCaptureTriageOutcome outcome)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(outcome));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Ship the fix"));
+
+        // Disabled / mock are configuration states, not failures: the deterministic extractor is
+        // the intended engine and the provenance already names it. Reporting "LLM triage
+        // unavailable" here would make the ordinary offline setup look broken on every capture.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DegradedNotice.Should().BeNull();
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDegradedNotice_WhenExtractorThrows()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("unexpected provider bug"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Survive extractor bugs"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DegradedNotice.Should().NotBeNull();
+        result.Value.DegradedNotice.Should().Contain(nameof(LlmCaptureTriageOutcome.InvalidOutput));
+        result.Value.DegradedNotice.Should().Contain("unexpected provider bug");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldRecordDegradedNotice_WhenSucceededOutputFailsContractValidation()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        // A leg that reports Succeeded but whose payload cannot pass the contract still falls back
+        // to the deterministic extractor, so it belongs to the same degradation class.
+        var invalidOutput = new CaptureTriageOutputV2(
+            CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            new List<CaptureTriageTaskV2>());
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.Succeeded,
+                invalidOutput,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(
+            captureId,
+            userId,
+            boardId,
+            TranscriptPayload("- [ ] Ship the fix"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DegradedNotice.Should().NotBeNull();
+        result.Value.DegradedNotice.Should().Contain(nameof(LlmCaptureTriageOutcome.InvalidOutput));
+        result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotRecordDegradedNotice_WhenTheLlmProducedTheProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(SuccessfulExtraction(("Send the report", "Alice: I'll send the report.")));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DegradedNotice.Should().BeNull();
+        result.Value.Provider.Should().Be("OpenAI");
+    }
+
+    [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNameTheDegradation_WhenTheDeterministicFallbackAlsoFindsNothing()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.ProviderDegraded,
+                Detail: "Live provider request failed."));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload("   "));
+
+        // The capture fails, so the notice cannot ride the success DTO. The failure message the
+        // worker persists must still say the provider leg failed first, rather than blaming the
+        // user's text alone.
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("did not produce actionable triage items");
+        result.ErrorMessage.Should().Contain(CaptureTriageService.DegradedTriageNoticePrefix);
+        result.ErrorMessage.Should().Contain(nameof(LlmCaptureTriageOutcome.ProviderDegraded));
+    }
+
+    [Fact]
+    public void BuildDegradedTriageNotice_ShouldBoundAnOverlongProviderDetail()
+    {
+        // A provider detail is untrusted text of unbounded length; the notice is persisted into a
+        // 1000-character column, so it must be bounded before it gets there.
+        var notice = CaptureTriageService.BuildDegradedTriageNotice(
+            LlmCaptureTriageOutcome.ProviderUnavailable,
+            new string('x', 5000));
+
+        notice.Should().NotBeNull();
+        notice!.Length.Should().BeLessThan(LlmRequest.MaxErrorMessageLength);
+        notice.Should().Contain(nameof(LlmCaptureTriageOutcome.ProviderUnavailable));
+    }
 }
