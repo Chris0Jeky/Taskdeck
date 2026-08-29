@@ -2,7 +2,7 @@
 
 Status: **Active**
 
-Last reconciled: **2026-08-27**
+Last reconciled: **2026-08-29**
 
 Tracker: [#1167](https://github.com/Chris0Jeky/Taskdeck/issues/1167)
 
@@ -13,7 +13,7 @@ evidence.
 
 ## Current truth
 
-The latest release, [v0.1.2](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.1.2), contains a Windows x64 portable ZIP,
+The latest release, [v0.2.0](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.2.0), contains a Windows x64 portable ZIP,
 its SHA-256 file, and Taskdeck's custom provenance record. The workflow already resolves and rechecks the exact tag/commit,
 builds from a pinned checkout, checks the untouched archive, runs acceptance checks, and supports resumable publication.
 
