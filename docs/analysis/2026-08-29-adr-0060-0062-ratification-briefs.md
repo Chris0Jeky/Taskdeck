@@ -2,6 +2,13 @@
 
 Last Updated: 2026-08-29
 
+> **Superseded as a status source — the rulings landed the same day.** This is the pre-ruling brief;
+> it is kept as the decision record and its "Proposed" statements describe the state it was drafted
+> against, not the state now. All three ADRs were ratified in-session on 2026-08-29: **ADR-0060
+> Accepted** (`#2084`), **ADR-0062 Accepted** (`#2091`), **ADR-0061 Accepted as direction only,
+> evidence pending** (`#1772`, with three CL-1 values still outstanding). `docs/decisions/INDEX.md`
+> and each ADR's own "Decisions recorded (2026-08-29)" section are the canonical statuses.
+
 Prepared under the maintainer's 2026-08-29 walkthrough reply **q-1 = A** ("dedicated ratification session — one decision brief per ADR with per-question options"). Nothing here is ratified: all three ADRs remain **Proposed** until the maintainer records rulings on `#2084`, `#1772`, and `#2091`. Every brief was drafted from the ADR text, its owning issues, and shipped reality on `main` `927236bd0`, then adversarially critiqued by an independent agent. Recommendations are evidence-based defaults, not decisions.
 
 How to use: each ADR has a numbered list of sub-decisions with lettered options. Reply per ADR either "accept the recommended letters" or name the overrides (`<id>=<letter>`). **Letters alone do not complete ADR-0061 / CL-1:** `access-boundary` needs the collaborator named, `budget-alerts-cost-owner` needs the monthly ceiling and alert threshold, and `backup-retention-destination` needs the off-platform retention window — supply them in the reply scope (e.g. `collaborator=<handle> ceiling=<USD/month> alert=<USD> retention=<days>`), or the agent records the letters as decided-pending-values and the deployment-critical inputs stay open. After the rulings are recorded on the owning issue, an agent writes a "Decisions recorded" section into the ADR, flips its status, and updates `docs/decisions/INDEX.md`.
@@ -129,7 +136,7 @@ How to use: each ADR has a numbered list of sub-decisions with lettered options.
 
 *Options.*
 
-- **A.** Detach: deleting or archiving a parent clears the child's parent pointer; children keep their IDs, board, column, history and exports. Never cascade. — *Consequence:* One rule, no new bulk operation, no proposal-op surface change. Deep trees can silently flatten, and re-parenting after an accidental delete is manual. NOTE (review finding): detach is a derived mutation of every child, so an archive/delete proposal on a parent must list the child detaches in proposal preview/apply/audit — today ProposeArchiveCardExecutor summarizes only the single parent operation (ProposeArchiveCardExecutor.cs:66-80); #2087 must extend preview/apply parity to those child pointer changes before A is honest.
+- **A.** Detach: deleting or archiving a parent clears the child's parent pointer; children keep their IDs, board, column, history and exports. Never cascade. — *Consequence:* One rule and no new bulk operation. Deep trees can silently flatten, and re-parenting after an accidental delete is manual. NOTE (review finding): detach is a derived mutation of every child, so an archive/delete proposal on a parent must list the child detaches in proposal preview/apply/audit — today ProposeArchiveCardExecutor summarizes only the single parent operation (ProposeArchiveCardExecutor.cs:66-80); #2087 must extend preview/apply parity to those child pointer changes before A is honest.
 - **B.** Block: a parent with children cannot be deleted or archived until the children are re-parented or removed; the server returns a stable 409. — *Consequence:* No data ever flattens, but it puts a new failure mode on shipped delete/archive paths — including account deletion and board archive, which ADR:78-80 requires be proven for the stage.
 - **C.** Cascade-archive with explicit confirmation (never cascade delete): archiving a parent archives its subtree after the user confirms the count. — *Consequence:* Matches user intent for epic wind-down, but needs a new bulk operation with proposal preview/apply parity, realtime invalidation for N cards, and a defined partial-failure rule — real scope inside the RC window.
 
@@ -751,7 +758,7 @@ WHAT IT STILL DOES NOT DO: it authorises no schema and creates no release commit
 
 *Options.*
 
-- **A.** Record #2094's six (text, number, date, boolean, single-select, URL) as the first slice; duration stays only in the built-in estimate, participant references only in Assignment. No ADR text change — the ADR's list is optional ("may include"). — *Consequence:* Smallest typed-value surface; no overlap with the built-in estimate or with ADR-0060 identity concepts; multi-select/duration/participant become later additive types. Requires editing the ADR's type list, which must be recorded as a revision, not a ratification.
+- **A.** Record #2094's six (text, number, date, boolean, single-select, URL) as the first slice; duration stays only in the built-in estimate, participant references only in Assignment. No ADR text change — the ADR's list is optional ("may include"). — *Consequence:* Smallest typed-value surface; no overlap with the built-in estimate or with ADR-0060 identity concepts; multi-select/duration/participant become later additive types.
 - **B.** Record all nine listed types as the first slice. — *Consequence:* One migration covers everything and the ADR needs no edit, but duration duplicates the built-in estimate (ADR-0062:37) and participant reference duplicates Assignment (ADR-0060:53-54); multi-select also complicates proposal diffs and export round-trips. #2094's Scope and Non-goals must be rewritten to match.
 - **C.** Six plus duration, so custom fields can express time measures without a new built-in. — *Consequence:* ADR-faithful on the type list (duration is at ADR-0062:24) but lets a mutable "actual hours" number stand in for recorded activity, which ADR-0062:65 says a current value cannot prove, and it duplicates the built-in estimate's shared-semantics role (ADR-0062:35-37). #2094's Non-goals must be amended.
 

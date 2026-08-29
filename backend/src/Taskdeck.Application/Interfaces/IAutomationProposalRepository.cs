@@ -33,7 +33,11 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
         ProposalSourceType sourceType,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default);
-    Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default);
+    // Automatic-expiry read. Expired PendingReview rows whose board is archived are withheld from
+    // Expirable and counted instead: expiry is a decision write, and ADR-0063 / #2168 make archived
+    // decision history read-only (#2197). Board-less and dangling-board rows stay expirable, matching
+    // GetActiveByUserIdAsync's predicate. Callers must expire only Expirable.
+    Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets proposals that have at least one operation matching the given action type
