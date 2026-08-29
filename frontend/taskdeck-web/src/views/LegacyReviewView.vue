@@ -33,6 +33,8 @@ const {
   loadBoardOptions,
   startClock,
   stopClock,
+  startQueueRefresh,
+  stopQueueRefresh,
   captureHrefForProposal,
   proposalHref,
   openRoute,
@@ -187,14 +189,31 @@ function handleReviewKeydown(event: KeyboardEvent) {
   }
 }
 
+/**
+ * Mirror of the Paper guard (#2194): hold a background queue tick while an
+ * action is in flight or a confirm dialog is open, so the record the reviewer
+ * is being asked to commit to cannot change underneath the decision. Kept in
+ * step with `PaperReviewView.canRefreshQueue` so the two skins cannot drift
+ * (the #1124 / ADR-0038 class).
+ */
+function canRefreshQueue(): boolean {
+  return (
+    proposalActionBusyId.value === null &&
+    executeConfirmProposal.value === null &&
+    rejectPromptProposal.value === null
+  )
+}
+
 onMounted(() => {
   void loadBoardOptions()
   void loadProposals()
   startClock()
+  startQueueRefresh(canRefreshQueue)
 })
 
 onUnmounted(() => {
   stopClock()
+  stopQueueRefresh()
 })
 </script>
 

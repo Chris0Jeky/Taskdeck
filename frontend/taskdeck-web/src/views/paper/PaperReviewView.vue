@@ -24,6 +24,7 @@ import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollabo
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useToastStore } from '../../store/toastStore'
 import {
   normalizeProposalSourceType,
@@ -86,10 +87,13 @@ const {
   availableBoards,
   startClock,
   stopClock,
+  startQueueRefresh,
+  stopQueueRefresh,
   clearBoardFilter,
   openProposal,
 } = useReviewProposals()
 const session = useSessionStore()
+const workspace = useWorkspaceStore()
 const toast = useToastStore()
 const route = useRoute()
 const collaboration = useWorkspaceCollaboration()
@@ -1541,10 +1545,50 @@ useReviewKeymap(
 
 // --- Lifecycle ---------------------------------------------------------
 
+/**
+ * Whether a background queue tick may land right now (#2194).
+ *
+ * The poll must never move the ground under a decision in progress, so it holds
+ * off while an action is in flight or a confirm dialog is open. `busy` already
+ * folds in the revision-editor lock, bulk dismiss, and the batch-approve
+ * confirmation; the two dialog refs cover the Apply and Reject gates, which are
+ * the moments the reviewer is being asked to commit to the exact record on
+ * screen. A held tick is simply skipped -- the next one lands 15 s later, and
+ * closing the dialog also releases the hold.
+ */
+function canRefreshQueue(): boolean {
+  return (
+    !busy.value &&
+    executeConfirmProposal.value === null &&
+    rejectPromptProposal.value === null
+  )
+}
+
+/**
+ * Keep the shell's `Review · N` badge honest while Review is the open surface
+ * (#2194 acceptance 3).
+ *
+ * The badge reads `workspace.homeSummary.workload.proposalsPendingReview`,
+ * which is fetched once by `AppShell` when the session authenticates and is
+ * otherwise refreshed only by a capture or a Home visit -- so it froze at its
+ * mount-time value and survived every decision made here. `awaitingCount` is a
+ * local, board-scoped signal, used only as a CHANGE TRIGGER: the authoritative
+ * number still comes from the server on each re-read. `refreshWorkloadCounts`
+ * is version-guarded, silent on failure, and a no-op until a summary exists.
+ */
+watch(awaitingCount, () => {
+  void workspace.refreshWorkloadCounts()
+})
+
 onMounted(() => {
   startClock()
   void loadBoardOptions()
   void loadProposals()
+  // The review queue has no realtime channel to subscribe to -- the only hub is
+  // per-board and silent on proposals -- so a bounded, visibility-aware poll is
+  // what keeps an open Review page from showing "Nothing waiting" while a
+  // proposal sits pending server-side (#2194).
+  startQueueRefresh(canRefreshQueue)
   // Membership has no realtime event to subscribe to (the only hub is
   // per-board and silent on access grants), so the composable reads it once
   // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
@@ -1554,6 +1598,7 @@ onMounted(() => {
 onUnmounted(() => {
   clearBatchSelection()
   stopClock()
+  stopQueueRefresh()
   collaboration.stop()
 })
 
