@@ -137,6 +137,26 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return target.matches(selector) || target.closest(selector) !== null
 }
 
+const KEYBOARD_OWNING_SURFACE_SELECTOR = [
+  'dialog[open]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[aria-modal="true"]',
+].join(', ')
+
+function hasActiveKeyboardOwningSurface(): boolean {
+  if (typeof document === 'undefined') return false
+
+  return Array.from(document.querySelectorAll<HTMLElement>(KEYBOARD_OWNING_SURFACE_SELECTOR))
+    .some((surface) => {
+      if (!surface.isConnected) return false
+      if (surface.closest('[hidden], [aria-hidden="true"], [inert]')) return false
+
+      const style = window.getComputedStyle(surface)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+    })
+}
+
 const CHORD_TIMEOUT_MS = 1_000
 let pendingChord: AppShellShortcutBinding | null = null
 let chordTimer: ReturnType<typeof window.setTimeout> | null = null
@@ -192,6 +212,9 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   const textEntryTarget = isTextEntryTarget(event.target)
+  const keyboardOwningSurfaceActive = hasActiveKeyboardOwningSurface()
+
+  if (keyboardOwningSurfaceActive) clearPendingChord()
 
   if (pendingChord) {
     const chord = pendingChord
@@ -207,6 +230,7 @@ function handleKeydown(event: KeyboardEvent) {
   const direct = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length === 1 &&
     strokeMatches(event, binding.sequence[0]!) &&
+    (binding.action.type !== 'navigate' || !keyboardOwningSurfaceActive) &&
     (!textEntryTarget || binding.allowInTextEntry === true),
   )
   if (direct) {
@@ -215,7 +239,7 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
 
-  if (textEntryTarget) return
+  if (textEntryTarget || keyboardOwningSurfaceActive) return
 
   const chord = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length > 1 && strokeMatches(event, binding.sequence[0]!),

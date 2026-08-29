@@ -81,15 +81,16 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: false }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
-function mountShell() {
+function mountShell(attachTo?: HTMLElement) {
   return mount(AppShell, {
+    attachTo,
     global: {
       stubs: {
         RouterView: true,
         Teleport: true,
         CaptureModal: {
           template: `
-            <div aria-label="Capture modal">
+            <div role="dialog" aria-modal="true" aria-label="Capture modal">
               <button class="capture-close" @click="$emit('close')">Close</button>
               <button class="capture-created" @click="$emit('created', 'capture-1')">Created</button>
             </div>
@@ -372,6 +373,40 @@ describe('AppShell workspace navigation and command palette', () => {
     await waitForUi()
 
     expect(mockRouter.push).toHaveBeenCalledWith('/workspace/today')
+  })
+
+  it('suppresses workspace navigation while a modal owns the keyboard', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'C',
+      ctrlKey: true,
+      shiftKey: true,
+    }))
+    await waitForUi()
+
+    const modalButton = wrapper.get('.capture-close')
+    const modalButtonElement = modalButton.element as HTMLButtonElement
+    modalButtonElement.focus()
+    expect(document.activeElement).toBe(modalButtonElement)
+    mockRouter.push.mockClear()
+
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'h',
+      bubbles: true,
+    }))
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'g',
+      bubbles: true,
+    }))
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 't',
+      bubbles: true,
+    }))
+    await waitForUi()
+
+    expect(mockRouter.push).not.toHaveBeenCalled()
   })
 
   it.each(['input', 'textarea', 'select', 'contenteditable'])(
