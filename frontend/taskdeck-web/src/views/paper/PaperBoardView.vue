@@ -52,6 +52,13 @@ const emit = defineEmits<{
    * yanked focus to the composer a moment later.
    */
   (event: 'dialog-open-change', open: boolean): void
+  /**
+   * Keeps the wrapping BoardView keyboard model aligned with card DOM that is
+   * intentionally absent while a column is collapsed.
+   */
+  (event: 'collapsed-columns-change', columnIds: string[]): void
+  /** Keeps BoardView's logical lane selection aligned with a focused lane control. */
+  (event: 'column-select', columnId: string): void
 }>()
 
 const route = useRoute()
@@ -69,6 +76,7 @@ type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
 const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
+const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v1'
 const BOARD_COLUMN_WIDTH_PRESETS = [
   { value: 'narrow', label: 'Narrow', width: '240px' },
   { value: 'standard', label: 'Standard', width: '280px' },
@@ -77,6 +85,7 @@ const BOARD_COLUMN_WIDTH_PRESETS = [
 type BoardColumnWidth = typeof BOARD_COLUMN_WIDTH_PRESETS[number]['value']
 const DEFAULT_BOARD_COLUMN_WIDTH: BoardColumnWidth = 'standard'
 const columnWidth = ref<BoardColumnWidth>(DEFAULT_BOARD_COLUMN_WIDTH)
+const persistedCollapsedColumnIds = ref<Set<string>>(new Set())
 const selectedColumnWidth = computed(() => BOARD_COLUMN_WIDTH_PRESETS
   .find((preset) => preset.value === columnWidth.value)?.width ?? '280px')
 const responsiveColumnWidth = computed(() => {
@@ -105,6 +114,18 @@ function isBoardColumnWidth(value: string | null): value is BoardColumnWidth {
   return BOARD_COLUMN_WIDTH_PRESETS.some((preset) => preset.value === value)
 }
 
+function parseCollapsedColumnIds(value: string | null): Set<string> {
+  if (!value) return new Set()
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((entry): entry is string => typeof entry === 'string'))
+  } catch {
+    return new Set()
+  }
+}
+
 onMounted(() => {
   try {
     density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
@@ -120,6 +141,13 @@ onMounted(() => {
       : DEFAULT_BOARD_COLUMN_WIDTH
   } catch {
     columnWidth.value = DEFAULT_BOARD_COLUMN_WIDTH
+  }
+  try {
+    persistedCollapsedColumnIds.value = parseCollapsedColumnIds(
+      window.localStorage.getItem(BOARD_COLLAPSED_COLUMNS_KEY),
+    )
+  } catch {
+    persistedCollapsedColumnIds.value = new Set()
   }
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -150,6 +178,39 @@ const sortedColumns = computed<Column[]>(() => {
   if (!boardStore.currentBoard) return []
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
+
+const activeCollapsedColumnIds = computed(() => sortedColumns.value
+  .filter((column) => persistedCollapsedColumnIds.value.has(column.id))
+  .map((column) => column.id))
+
+watch(
+  activeCollapsedColumnIds,
+  (columnIds) => emit('collapsed-columns-change', columnIds),
+  { immediate: true },
+)
+
+function isColumnCollapsed(columnId: string): boolean {
+  return persistedCollapsedColumnIds.value.has(columnId)
+}
+
+function toggleColumnCollapse(column: Column) {
+  const next = new Set(persistedCollapsedColumnIds.value)
+  if (next.has(column.id)) {
+    next.delete(column.id)
+  } else {
+    next.add(column.id)
+  }
+  persistedCollapsedColumnIds.value = next
+
+  try {
+    window.localStorage.setItem(
+      BOARD_COLLAPSED_COLUMNS_KEY,
+      JSON.stringify([...next].sort()),
+    )
+  } catch {
+    // Local fallback only. The collapse remains active for this mounted board.
+  }
+}
 
 const cardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
@@ -760,6 +821,7 @@ async function addStarterColumns() {
             :column="column"
             :index="idx + 1"
             :cards="cardsByColumn.get(column.id) ?? []"
+            :collapsed="isColumnCollapsed(column.id)"
             :card-variant="props.cardVariant"
             :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
@@ -770,6 +832,8 @@ async function addStarterColumns() {
             :composer-busy="composerBusy"
             :composer-error="composerError"
             @capture="openCapture"
+            @select="emit('column-select', column.id)"
+            @toggle-collapse="toggleColumnCollapse"
             @edit="openColumnSettings"
             @move="moveColumn"
             @open-composer="openComposer"

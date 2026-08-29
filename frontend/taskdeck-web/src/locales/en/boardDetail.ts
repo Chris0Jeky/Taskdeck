@@ -35,6 +35,8 @@ export default {
     settingsAria: 'Settings for column {column}',
     moveLeft: 'Move column left',
     moveRight: 'Move column right',
+    collapseAria: 'Collapse column {column}',
+    expandAria: 'Expand column {column}',
     // The add-column control at the end of the lane rail. Distinct from the
     // zero-column empty state, which is a first-run bootstrap: this one is the
     // ordinary "the board needs another lane" affordance, and without it a

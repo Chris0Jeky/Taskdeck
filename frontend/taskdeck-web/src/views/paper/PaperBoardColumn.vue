@@ -33,6 +33,8 @@ const props = withDefaults(
     /** 1-based index used to render the `§ NN` serial. */
     index: number
     cards: Card[]
+    /** Hide card DOM and footer actions while retaining the lane header/drop surface. */
+    collapsed?: boolean
     /** Card visual variant — propagated to every card in the column. */
     cardVariant?: PaperBoardCardVariant
     selectedCardId?: string | null
@@ -49,6 +51,7 @@ const props = withDefaults(
   }>(),
   {
     cardVariant: 'index',
+    collapsed: false,
     selectedCardId: null,
     isDragOver: false,
     canMoveLeft: false,
@@ -61,6 +64,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: 'capture', column: Column): void
+  (event: 'select', column: Column): void
+  (event: 'toggle-collapse', column: Column): void
   (event: 'edit', column: Column): void
   (event: 'move', column: Column, direction: 'left' | 'right'): void
   (event: 'open-composer', column: Column): void
@@ -74,6 +79,12 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const contentId = computed(() => `paper-board-column-content-${props.column.id}`)
+const collapseLabel = computed(() => t(
+  props.collapsed ? 'boardDetail.column.expandAria' : 'boardDetail.column.collapseAria',
+  { column: props.column.name },
+))
 
 const serial = computed(() => `§ ${String(props.index).padStart(2, '0')}`)
 
@@ -98,6 +109,15 @@ function onCapture() {
 
 function onEdit() {
   emit('edit', props.column)
+}
+
+function onToggleCollapse() {
+  emit('select', props.column)
+  emit('toggle-collapse', props.column)
+}
+
+function onSelect() {
+  emit('select', props.column)
 }
 
 function onMoveLeft() {
@@ -152,8 +172,12 @@ function onCardDragOver(card: Card, e: DragEvent) {
 <template>
   <section
     class="paper-board-column"
-    :class="{ 'paper-board-column--drag-over': isDragOver }"
+    :class="{
+      'paper-board-column--drag-over': isDragOver,
+      'paper-board-column--collapsed': collapsed,
+    }"
     :data-column-id="column.id"
+    :data-collapsed="collapsed"
     role="group"
     :aria-label="`Column ${column.name}`"
   >
@@ -174,6 +198,25 @@ function onCardDragOver(card: Card, e: DragEvent) {
           :style="{ color: 'var(--overdue)' }"
         >OVERDUE</span>
         <span class="paper-board-column__count">{{ countLabel }}</span>
+        <button
+          type="button"
+          class="paper-board-column__ctl paper-board-column__collapse"
+          :aria-label="collapseLabel"
+          :title="collapseLabel"
+          :aria-expanded="!collapsed"
+          :aria-controls="contentId"
+          :data-action="collapsed ? 'expand-column' : 'collapse-column'"
+          :data-testid="`paper-column-collapse-${column.id}`"
+          @keydown.enter.stop
+          @keydown.space.stop
+          @focus="onSelect"
+          @click="onToggleCollapse"
+        >
+          <PaperIcon
+            name="chevronDown"
+            :class="{ 'paper-board-column__collapse-icon--collapsed': collapsed }"
+          />
+        </button>
         <button
           type="button"
           class="paper-board-column__ctl paper-board-column__ctl--flip"
@@ -210,65 +253,72 @@ function onCardDragOver(card: Card, e: DragEvent) {
       </div>
     </header>
 
-    <div class="paper-board-column__cards" data-testid="paper-column-cards">
-      <PaperBoardCard
-        v-for="card in cards"
-        :key="card.id"
-        :card="card"
-        :variant="cardVariant"
-        :selected="card.id === selectedCardId"
-        @click="onCardClick"
-        @dragstart="onCardDragStart"
-        @dragend="onCardDragEnd"
-        @dragover="onCardDragOver(card, $event)"
-        @drop="onCardDrop(card, $event)"
-      />
+    <div
+      :id="contentId"
+      class="paper-board-column__content"
+      :hidden="collapsed"
+    >
+      <div v-if="!collapsed" class="paper-board-column__cards" data-testid="paper-column-cards">
+        <PaperBoardCard
+          v-for="card in cards"
+          :key="card.id"
+          :card="card"
+          :variant="cardVariant"
+          :selected="card.id === selectedCardId"
+          @click="onCardClick"
+          @dragstart="onCardDragStart"
+          @dragend="onCardDragEnd"
+          @dragover="onCardDragOver(card, $event)"
+          @drop="onCardDrop(card, $event)"
+        />
 
-      <p
-        v-if="cards.length === 0"
-        class="paper-board-column__empty"
-        data-testid="paper-column-empty"
-      >
-        — empty —
-      </p>
+        <p
+          v-if="cards.length === 0"
+          class="paper-board-column__empty"
+          data-testid="paper-column-empty"
+        >
+          — empty —
+        </p>
+      </div>
+
+      <footer class="paper-board-column__footer">
+        <PaperHLBtn
+          variant="primary"
+          class="paper-board-column__add-card"
+          :label="t('boardDetail.card.add')"
+          :aria-label="t('boardDetail.card.addAria', { column: column.name })"
+          data-action="toggle-add-card"
+          data-testid="paper-column-add-card"
+          @click="onAddCard"
+        />
+
+        <PaperCardComposer
+          v-if="composerOpen"
+          :column-id="column.id"
+          :busy="composerBusy"
+          :error="composerError"
+          @submit="onComposerSubmit"
+          @cancel="onComposerCancel"
+        />
+
+        <button
+          type="button"
+          class="paper-board-column__capture"
+          :aria-label="t('boardDetail.card.captureAria', { column: column.name })"
+          :data-action="`capture-column-${column.id}`"
+          data-testid="paper-column-capture"
+          @click="onCapture"
+        >
+          {{ t('boardDetail.card.capture') }}
+        </button>
+      </footer>
     </div>
-
-    <footer class="paper-board-column__footer">
-      <PaperHLBtn
-        variant="primary"
-        class="paper-board-column__add-card"
-        :label="t('boardDetail.card.add')"
-        :aria-label="t('boardDetail.card.addAria', { column: column.name })"
-        data-action="toggle-add-card"
-        data-testid="paper-column-add-card"
-        @click="onAddCard"
-      />
-
-      <PaperCardComposer
-        v-if="composerOpen"
-        :column-id="column.id"
-        :busy="composerBusy"
-        :error="composerError"
-        @submit="onComposerSubmit"
-        @cancel="onComposerCancel"
-      />
-
-      <button
-        type="button"
-        class="paper-board-column__capture"
-        :aria-label="t('boardDetail.card.captureAria', { column: column.name })"
-        :data-action="`capture-column-${column.id}`"
-        data-testid="paper-column-capture"
-        @click="onCapture"
-      >
-        {{ t('boardDetail.card.capture') }}
-      </button>
-    </footer>
   </section>
 </template>
 
 <style scoped>
 .paper-board-column {
+  container-type: inline-size;
   flex: 0 0 280px;
   width: 280px;
   display: flex;
@@ -290,6 +340,10 @@ function onCardDragOver(card: Card, e: DragEvent) {
   box-shadow: 0 0 0 1px var(--ember), var(--shadow-press);
 }
 
+.paper-board-column--collapsed {
+  min-height: 96px;
+}
+
 .paper-board-column__header {
   display: flex;
   align-items: center;
@@ -301,6 +355,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
 
 .paper-board-column__heading {
   display: flex;
+  flex: 1 1 auto;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
@@ -373,6 +428,10 @@ function onCardDragOver(card: Card, e: DragEvent) {
   transform: scaleX(-1);
 }
 
+.paper-board-column__collapse-icon--collapsed {
+  transform: rotate(-90deg);
+}
+
 .paper-board-column__wip {
   font-family: var(--mono);
   font-size: 9px;
@@ -391,6 +450,36 @@ function onCardDragOver(card: Card, e: DragEvent) {
   gap: 8px;
   padding-top: 4px;
   min-height: 64px;
+}
+
+.paper-board-column__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paper-board-column__content[hidden] {
+  display: none;
+}
+
+@container (max-width: 250px) {
+  .paper-board-column__header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .paper-board-column__heading {
+    flex-basis: 100%;
+    min-width: 100%;
+    width: 100%;
+  }
+
+  .paper-board-column__meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    width: 100%;
+  }
 }
 
 .paper-board-column__empty {

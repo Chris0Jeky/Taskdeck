@@ -95,6 +95,7 @@ const sortedColumns = computed(() => {
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
 const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
+const paperCollapsedColumnIds = ref<Set<string>>(new Set())
 const paperCardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
   for (const card of boardStore.currentBoardCards) {
@@ -126,6 +127,7 @@ const {
 
 const {
   selectedCardId,
+  selectedColumnIndex,
   selectNextCard,
   selectPreviousCard,
   selectNextColumn,
@@ -141,6 +143,36 @@ const {
   sortedColumns,
   () => boardId.value,
   computed(() => paperOn.value ? paperCardsByColumn.value : boardStore.cardsByColumn),
+  (columnId) => !paperOn.value || !paperCollapsedColumnIds.value.has(columnId),
+)
+
+function handlePaperCollapsedColumnsChange(columnIds: string[]) {
+  paperCollapsedColumnIds.value = new Set(columnIds)
+
+  if (!selectedCardId.value) return
+  const selectedCard = boardStore.currentBoardCards.find((card) => card.id === selectedCardId.value)
+  if (selectedCard && paperCollapsedColumnIds.value.has(selectedCard.columnId)) {
+    selectedCardId.value = null
+  }
+}
+
+function handlePaperColumnSelect(columnId: string) {
+  const columnIndex = sortedColumns.value.findIndex((column) => column.id === columnId)
+  if (columnIndex < 0) return
+
+  selectedColumnIndex.value = columnIndex
+  selectedCardId.value = null
+}
+
+watch(
+  () => {
+    if (!paperOn.value || !selectedCardId.value) return false
+    const selectedCard = boardStore.currentBoardCards.find((card) => card.id === selectedCardId.value)
+    return Boolean(selectedCard && paperCollapsedColumnIds.value.has(selectedCard.columnId))
+  },
+  (selectionIsHidden) => {
+    if (selectionIsHidden) selectedCardId.value = null
+  },
 )
 
 function applyPresenceSeed() {
@@ -390,6 +422,8 @@ useKeyboardShortcuts([
   <PaperBoardView
     v-if="paperOn"
     :selected-card-id="selectedCardId"
+    @collapsed-columns-change="handlePaperCollapsedColumnsChange"
+    @column-select="handlePaperColumnSelect"
     @dialog-open-change="paperDialogOpen = $event"
   />
   <div v-else class="min-h-screen bg-surface">

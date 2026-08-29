@@ -223,6 +223,27 @@ describe('useBoardKeyboardNav', () => {
       expect(nav.selectedColumnIndex.value).toBe(1)
     })
 
+    it('treats a non-navigable lane as empty without losing its real append position', async () => {
+      const nav = useBoardKeyboardNav(
+        sortedColumns,
+        () => 'board-1',
+        computed(() => cardsByColumn),
+        (columnId) => columnId !== 'c2',
+      )
+
+      nav.selectNextColumn()
+      expect(nav.selectedColumnIndex.value).toBe(1)
+      expect(nav.selectedCardId.value).toBeNull()
+      nav.selectNextCard()
+      expect(nav.selectedCardId.value).toBeNull()
+
+      nav.selectedColumnIndex.value = 0
+      nav.selectedCardId.value = 'card-1'
+      await nav.moveCardToNextColumn()
+
+      expect(moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'c2', 1)
+    })
+
     it('does nothing when already in last column', async () => {
       const nav = useBoardKeyboardNav(sortedColumns, () => 'board-1')
       nav.selectedCardId.value = 'card-3'
@@ -416,6 +437,22 @@ describe('useBoardKeyboardNav', () => {
       }
     }
 
+    function buildColumnControlFixture(
+      columnId: string,
+      action: 'expand-column' | 'collapse-column',
+    ) {
+      const column = document.createElement('section')
+      column.setAttribute('data-column-id', columnId)
+      const button = document.createElement('button')
+      button.setAttribute('data-action', action)
+      column.appendChild(button)
+      document.body.appendChild(column)
+      return {
+        button,
+        cleanup: () => column.remove(),
+      }
+    }
+
     it('moves focus to the newly selected card opener when an opener had focus', async () => {
       const fixture = buildCardFixture(['card-1', 'card-2'])
       try {
@@ -469,6 +506,143 @@ describe('useBoardKeyboardNav', () => {
         await nextTick()
         expect(document.activeElement).toBe(fixture.openers.get('card-3'))
       } finally {
+        fixture.cleanup()
+      }
+    })
+
+    it('moves focus to a collapsed lane expand control so Enter cannot open the old card', async () => {
+      const fixture = buildCardFixture(['card-1'])
+      const collapsedColumn = document.createElement('section')
+      collapsedColumn.setAttribute('data-column-id', 'c2')
+      const expandButton = document.createElement('button')
+      expandButton.setAttribute('data-action', 'expand-column')
+      const expandViaEnter = vi.fn()
+      expandButton.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.stopPropagation()
+          event.preventDefault()
+          expandViaEnter()
+        }
+      })
+      collapsedColumn.appendChild(expandButton)
+      document.body.appendChild(collapsedColumn)
+
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          (columnId) => columnId !== 'c2',
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedColumnIndex.value).toBe(1)
+        expect(nav.selectedCardId.value).toBeNull()
+
+        await nextTick()
+        expect(document.activeElement).toBe(expandButton)
+
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+        expect(expandViaEnter).toHaveBeenCalledOnce()
+        expect(fixture.openedCards).toStrictEqual([])
+      } finally {
+        collapsedColumn.remove()
+        fixture.cleanup()
+      }
+    })
+
+    it('moves focus to an empty expanded lane control', async () => {
+      cardsByColumn.set('c2', [])
+      const fixture = buildCardFixture(['card-1'])
+      const emptyColumn = buildColumnControlFixture('c2', 'collapse-column')
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          () => true,
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        expect(nav.selectedColumnIndex.value).toBe(1)
+        expect(nav.selectedCardId.value).toBeNull()
+
+        await nextTick()
+        expect(document.activeElement).toBe(emptyColumn.button)
+      } finally {
+        emptyColumn.cleanup()
+        fixture.cleanup()
+      }
+    })
+
+    it('moves focus back from a collapsed lane control to the selected card opener', async () => {
+      const fixture = buildCardFixture(['card-1'])
+      const collapsedColumn = buildColumnControlFixture('c2', 'expand-column')
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          (columnId) => columnId !== 'c2',
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        await nextTick()
+        expect(document.activeElement).toBe(collapsedColumn.button)
+
+        nav.selectPreviousColumn()
+        await nextTick()
+        expect(nav.selectedCardId.value).toBe('card-1')
+        expect(document.activeElement).toBe(fixture.openers.get('card-1'))
+
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+        expect(fixture.openedCards).toStrictEqual(['card-1'])
+      } finally {
+        collapsedColumn.cleanup()
+        fixture.cleanup()
+      }
+    })
+
+    it('keeps focus aligned across consecutive collapsed lanes', async () => {
+      const col3 = makeColumn('c3', 2)
+      const threeColumns = computed(() => [col1, col2, col3])
+      const fixture = buildCardFixture(['card-1'])
+      const secondColumn = buildColumnControlFixture('c2', 'expand-column')
+      const thirdColumn = buildColumnControlFixture('c3', 'expand-column')
+      try {
+        const nav = useBoardKeyboardNav(
+          threeColumns,
+          undefined,
+          computed(() => cardsByColumn),
+          (columnId) => columnId === 'c1',
+        )
+        nav.selectedCardId.value = 'card-1'
+        fixture.openers.get('card-1')!.focus()
+
+        nav.selectNextColumn()
+        await nextTick()
+        expect(document.activeElement).toBe(secondColumn.button)
+
+        nav.selectNextColumn()
+        await nextTick()
+        expect(nav.selectedColumnIndex.value).toBe(2)
+        expect(document.activeElement).toBe(thirdColumn.button)
+      } finally {
+        thirdColumn.cleanup()
+        secondColumn.cleanup()
         fixture.cleanup()
       }
     })
@@ -552,6 +726,33 @@ describe('useBoardKeyboardNav', () => {
       await expect(nav.moveCardToNextColumn()).resolves.not.toThrow()
 
       querySpy.mockRestore()
+    })
+
+    it('focuses the destination expand control after moving a card into a collapsed lane', async () => {
+      const collapsedColumn = document.createElement('section')
+      collapsedColumn.setAttribute('data-column-id', 'c2')
+      const expandButton = document.createElement('button')
+      expandButton.setAttribute('data-action', 'expand-column')
+      collapsedColumn.appendChild(expandButton)
+      document.body.appendChild(collapsedColumn)
+
+      try {
+        const nav = useBoardKeyboardNav(
+          sortedColumns,
+          () => 'board-1',
+          computed(() => cardsByColumn),
+          (columnId) => columnId !== 'c2',
+        )
+        nav.selectedCardId.value = 'card-1'
+        nav.selectedColumnIndex.value = 0
+
+        await nav.moveCardToNextColumn()
+
+        expect(nav.selectedColumnIndex.value).toBe(1)
+        expect(document.activeElement).toBe(expandButton)
+      } finally {
+        collapsedColumn.remove()
+      }
     })
   })
 })

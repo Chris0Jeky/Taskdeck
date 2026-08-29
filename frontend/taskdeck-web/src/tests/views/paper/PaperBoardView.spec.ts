@@ -169,6 +169,7 @@ describe('PaperBoardView', () => {
     routeUpdateGuard = null
     window.localStorage.removeItem('td.paper.board-density.v1')
     window.localStorage.removeItem('td.paper.board-column-width.v1')
+    window.localStorage.removeItem('td.paper.board-collapsed-columns.v1')
   })
 
   afterEach(() => {
@@ -491,6 +492,117 @@ describe('PaperBoardView', () => {
     expect(columnWidth()).toBe('340px')
   })
 
+  it('collapses a column with a localized native toggle while retaining header identity and focus', async () => {
+    const wrapper = mountView()
+    const column = wrapper.get('[data-column-id="col-backlog"]')
+    const toggle = column.get('[data-testid="paper-column-collapse-col-backlog"]')
+    const contentId = toggle.attributes('aria-controls')
+
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('aria-label')).toBe('Collapse column Backlog')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(contentId).toBe('paper-board-column-content-col-backlog')
+    expect(column.get(`#${contentId}`).attributes('hidden')).toBeUndefined()
+    expect(column.find('[data-card-id="card-1"]').exists()).toBe(true)
+
+    ;(toggle.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(toggle.element)
+
+    const globalShortcutListener = vi.fn()
+    window.addEventListener('keydown', globalShortcutListener)
+    for (const key of ['h', 'l', 'j', 'k', 'n', 'Escape']) {
+      toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    }
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    window.removeEventListener('keydown', globalShortcutListener)
+
+    await toggle.trigger('click')
+    await nextTick()
+
+    expect(document.activeElement).toBe(toggle.element)
+    expect(toggle.attributes('aria-label')).toBe('Expand column Backlog')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(column.get(`#${contentId}`).attributes('hidden')).toBe('')
+    expect(column.classes()).toContain('paper-board-column--collapsed')
+    expect(column.find('[data-card-id="card-1"]').exists()).toBe(false)
+    expect(column.find('[data-testid="paper-column-cards"]').exists()).toBe(false)
+    expect(column.get('.paper-board-column__name').text()).toBe('Backlog')
+    expect(column.get('.paper-board-column__count').text()).toBe('3/2')
+    expect(JSON.parse(window.localStorage.getItem('td.paper.board-collapsed-columns.v1')!))
+      .toEqual(['col-backlog'])
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([['col-backlog']])
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-backlog'])
+  })
+
+  it('selects a lane as soon as its collapse control receives focus', async () => {
+    const wrapper = mountView()
+    await wrapper.get('[data-testid="paper-column-collapse-col-today"]').trigger('focus')
+
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-today'])
+  })
+
+  it('hydrates only known string column IDs and ignores malformed or unknown entries', async () => {
+    window.localStorage.setItem(
+      'td.paper.board-collapsed-columns.v1',
+      JSON.stringify(['missing-column', 42, null, 'col-progress']),
+    )
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-column-id="col-progress"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('[data-column-id="missing-column"]').exists()).toBe(false)
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([['col-progress']])
+  })
+
+  it.each([
+    'not-json',
+    JSON.stringify({ columnId: 'col-backlog' }),
+    JSON.stringify('col-backlog'),
+  ])('defaults every column to expanded for invalid stored collapse JSON: %s', async (stored) => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', stored)
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.findAll('.paper-board-column--collapsed')).toHaveLength(0)
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([[]])
+  })
+
+  it('restores collapse by stable ID across remount, reorder, and realtime object replacement', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-column-collapse-col-backlog"]').trigger('click')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+    expect(reloaded.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('true')
+
+    const replacementColumns = [
+      { ...columns[2]!, position: 0, updatedAt: new Date().toISOString() },
+      { ...columns[0]!, position: 1, name: 'Backlog refreshed', updatedAt: new Date().toISOString() },
+      { ...columns[1]!, position: 2, updatedAt: new Date().toISOString() },
+      { ...columns[3]!, position: 3, updatedAt: new Date().toISOString() },
+      makeColumn({ id: 'col-new', name: 'New lane', position: 4 }),
+    ]
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: replacementColumns,
+      updatedAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(reloaded.findAllComponents(PaperBoardColumn).map((item) => item.props('column').id))
+      .toEqual(['col-progress', 'col-backlog', 'col-today', 'col-done', 'col-new'])
+    expect(reloaded.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('true')
+    expect(reloaded.get('[data-column-id="col-backlog"] .paper-board-column__name').text())
+      .toBe('Backlog refreshed')
+    expect(reloaded.get('[data-column-id="col-new"]').attributes('data-collapsed')).toBe('false')
+  })
+
   it('blocks paper card drags that do not start from the card handle', async () => {
     const wrapper = mountView()
     const card = wrapper.get('[data-card-id="card-1"]')
@@ -514,13 +626,16 @@ describe('PaperBoardView', () => {
     expect(dragStart.defaultPrevented).toBe(false)
   })
 
-  it('highlights the target lane while a paper card is dragged over it and moves on drop', async () => {
+  it('keeps a collapsed target lane as a coherent card drop surface', async () => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-today']))
     const wrapper = mountView()
     const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
     handle.element.dispatchEvent(makeDragEvent('dragstart'))
     await nextTick()
 
     const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
+    expect(targetLane.get('[data-column-id="col-today"]').attributes('data-collapsed')).toBe('true')
+    expect(targetLane.find('[data-testid="paper-column-cards"]').exists()).toBe(false)
     targetLane.element.dispatchEvent(makeDragEvent('dragover'))
     await nextTick()
 

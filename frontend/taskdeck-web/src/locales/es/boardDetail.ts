@@ -27,6 +27,8 @@ export default {
     settingsAria: 'Ajustes de la columna {column}',
     moveLeft: 'Mueve la columna a la izquierda',
     moveRight: 'Mueve la columna a la derecha',
+    collapseAria: 'Contrae la columna {column}',
+    expandAria: 'Expande la columna {column}',
     add: '+ columna',
     addAria: 'Añade una columna a este tablero',
     addInputLabel: 'Nombre de la nueva columna',

@@ -16,6 +16,7 @@ export function useBoardKeyboardNav(
   sortedColumns: ComputedRef<Column[]>,
   boardId?: () => string,
   cardsByColumnSource?: ComputedRef<Map<string, Card[]>>,
+  isColumnNavigable?: (columnId: string) => boolean,
 ) {
   const boardStore = useBoardStore()
 
@@ -26,35 +27,75 @@ export function useBoardKeyboardNav(
     return cardElement.querySelector<HTMLElement>('[data-action="open-card"]') ?? cardElement
   }
 
-  function cardsForColumn(columnId: string): Card[] {
+  function allCardsForColumn(columnId: string): Card[] {
     return cardsByColumnSource?.value.get(columnId) ?? boardStore.cardsByColumn.get(columnId) ?? []
   }
 
-  function focusIsWithinBoardCard(): boolean {
+  function cardsForColumn(columnId: string): Card[] {
+    if (isColumnNavigable && !isColumnNavigable(columnId)) return []
+    return allCardsForColumn(columnId)
+  }
+
+  function focusIsWithinBoardSelectionContext(): boolean {
     const active = document.activeElement
-    return active instanceof Element && active.closest('[data-card-id]') !== null
+    return active instanceof Element && active.closest(
+      '[data-card-id], [data-action="expand-column"], [data-action="collapse-column"]',
+    ) !== null
+  }
+
+  async function focusSelectionTarget() {
+    await nextTick()
+    const currentColumn = sortedColumns.value[selectedColumnIndex.value]
+    if (!currentColumn) return
+
+    const columnElement = document.querySelector(
+      `[data-column-id="${currentColumn.id}"]`,
+    ) as HTMLElement | null
+
+    if (!isColumnNavigable || isColumnNavigable(currentColumn.id)) {
+      if (selectedCardId.value) {
+        const cardElement = document.querySelector(
+          `[data-card-id="${selectedCardId.value}"]`,
+        ) as HTMLElement | null
+        if (cardElement) {
+          cardElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+          cardActivator(cardElement).focus()
+          return
+        }
+      }
+
+      columnElement
+        ?.querySelector<HTMLElement>('[data-action="collapse-column"]')
+        ?.focus()
+      return
+    }
+
+    columnElement
+      ?.querySelector<HTMLElement>('[data-action="expand-column"]')
+      ?.focus()
   }
 
   /**
    * Roving focus for selection movement: when a board selection shortcut
    * (J/K/H/L or plain arrows) changes the selected card while DOM focus sits
-   * inside a card (e.g. on its `data-action="open-card"` activator), focus
-   * follows the new selection so the focused card and the visible selection
-   * highlight can never disagree — the focused opener's own Enter handler and
-   * the global Enter shortcut then open the same card. When focus is elsewhere
-   * (body, composer, modal), selection movement leaves focus untouched.
+   * inside the board's selection context (a card opener or lane collapse
+   * control), focus follows the logical selection. A selected card targets its
+   * opener; collapsed and empty expanded lanes target their expand/collapse
+   * control. When focus is elsewhere (body, composer, modal), selection
+   * movement leaves focus untouched.
    */
   function withFocusFollowingSelection(applySelection: () => void) {
-    const focusWasWithinCard = focusIsWithinBoardCard()
+    const focusWasWithinSelectionContext = focusIsWithinBoardSelectionContext()
     const previousCardId = selectedCardId.value
+    const previousColumnIndex = selectedColumnIndex.value
     applySelection()
+    if (!focusWasWithinSelectionContext) return
     if (
-      focusWasWithinCard &&
-      selectedCardId.value !== null &&
-      selectedCardId.value !== previousCardId
-    ) {
-      void focusSelectedCard()
-    }
+      selectedCardId.value === previousCardId &&
+      selectedColumnIndex.value === previousColumnIndex
+    ) return
+
+    void focusSelectionTarget()
   }
 
   function selectNextCard() {
@@ -183,20 +224,34 @@ export function useBoardKeyboardNav(
 
     if (!columnElement) return
 
-    const toggleButton = columnElement.querySelector(
-      '[data-action="toggle-add-card"]'
-    ) as HTMLButtonElement | null
+    const openComposerAndFocus = () => {
+      const toggleButton = columnElement.querySelector(
+        '[data-action="toggle-add-card"]'
+      ) as HTMLButtonElement | null
 
-    if (!toggleButton) return
+      if (!toggleButton) return
 
-    toggleButton.click()
+      toggleButton.click()
 
-    window.setTimeout(() => {
-      const cardInput = columnElement.querySelector(
-        '[data-action="add-card-input"]'
-      ) as HTMLTextAreaElement | null
-      cardInput?.focus()
-    }, 0)
+      window.setTimeout(() => {
+        const cardInput = columnElement.querySelector(
+          '[data-action="add-card-input"]'
+        ) as HTMLTextAreaElement | null
+        cardInput?.focus()
+      }, 0)
+    }
+
+    if (columnElement.dataset.collapsed === 'true') {
+      const expandButton = columnElement.querySelector(
+        '[data-action="expand-column"]'
+      ) as HTMLButtonElement | null
+      if (!expandButton) return
+      expandButton.click()
+      window.setTimeout(openComposerAndFocus, 0)
+      return
+    }
+
+    openComposerAndFocus()
   }
 
   /**
@@ -238,17 +293,17 @@ export function useBoardKeyboardNav(
     const targetColumn = columns[targetColIndex]
     if (!targetColumn) return
 
-    const cards = cardsForColumn(currentColumn.id)
+    const cards = allCardsForColumn(currentColumn.id)
     const card = cards.find((c) => c.id === selectedCardId.value)
     if (!card) return
 
-    const targetCards = cardsForColumn(targetColumn.id)
+    const targetCards = allCardsForColumn(targetColumn.id)
     const targetPosition = targetCards.length
 
     try {
       await boardStore.moveCard(boardId(), card.id, targetColumn.id, targetPosition)
       selectedColumnIndex.value = targetColIndex
-      await focusSelectedCard()
+      await focusSelectionTarget()
     } catch {
       // moveCard already surfaces toast errors via the store
     }
@@ -283,7 +338,7 @@ export function useBoardKeyboardNav(
     const currentColumn = columns[selectedColumnIndex.value]
     if (!currentColumn) return
 
-    const cards = cardsForColumn(currentColumn.id)
+    const cards = allCardsForColumn(currentColumn.id)
     const cardIndex = cards.findIndex((c) => c.id === selectedCardId.value)
 
     if (direction === 'up') {
