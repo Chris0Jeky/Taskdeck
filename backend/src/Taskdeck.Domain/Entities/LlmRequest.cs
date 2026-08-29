@@ -10,6 +10,12 @@ namespace Taskdeck.Domain.Entities;
 /// </summary>
 public class LlmRequest : Entity
 {
+    /// <summary>
+    /// Maximum stored length of <see cref="ErrorMessage"/>. Mirrors the column bound declared in
+    /// <c>LlmRequestConfiguration</c>.
+    /// </summary>
+    public const int MaxErrorMessageLength = 1000;
+
     public Guid UserId { get; private set; }
     public Guid? BoardId { get; private set; }
     public Guid? TranscriptId { get; private set; }
@@ -69,7 +75,20 @@ public class LlmRequest : Entity
         Touch();
     }
 
-    public void MarkAsCompleted()
+    /// <summary>
+    /// Completes the request, optionally recording a non-fatal degradation notice (#2192).
+    /// </summary>
+    /// <param name="degradedNotice">
+    /// Describes a degradation the run survived — for capture triage, that the LLM leg could not
+    /// deliver and the deterministic extractor produced the result instead. A degraded run still
+    /// produced a reviewable result, so the request stays <see cref="RequestStatus.Completed"/> and
+    /// <see cref="RetryCount"/> is untouched; only <see cref="ErrorMessage"/> carries the notice.
+    /// Recording it here is what stops a fallback from being silent: without it the caller has no
+    /// place to say which engine actually produced the output.
+    /// Null (the default) clears the field, so a completed request never keeps a message left over
+    /// from an earlier attempt. Longer text is truncated to <see cref="MaxErrorMessageLength"/>.
+    /// </param>
+    public void MarkAsCompleted(string? degradedNotice = null)
     {
         if (Status != RequestStatus.Processing)
             throw new DomainException(
@@ -77,8 +96,24 @@ public class LlmRequest : Entity
                 "Can only complete requests that are processing");
 
         Status = RequestStatus.Completed;
+        ErrorMessage = NormalizeNotice(degradedNotice);
         ProcessedAt = DateTimeOffset.UtcNow;
         Touch();
+    }
+
+    /// <summary>
+    /// Trims a stored notice to the persisted column bound so an unexpectedly long provider detail
+    /// is shortened here rather than truncated (or rejected) at the persistence boundary.
+    /// </summary>
+    private static string? NormalizeNotice(string? notice)
+    {
+        if (string.IsNullOrWhiteSpace(notice))
+            return null;
+
+        var trimmed = notice.Trim();
+        return trimmed.Length <= MaxErrorMessageLength
+            ? trimmed
+            : trimmed[..MaxErrorMessageLength];
     }
 
     public void MarkAsFailed(string errorMessage)

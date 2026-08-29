@@ -244,4 +244,55 @@ public class LlmRequestTests
             .WithMessage("Cannot fail request in Completed status")
             .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
     }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldRecordDegradedNotice_WithoutFailingOrRetryingTheRequest()
+    {
+        // #2192: a capture whose LLM triage leg failed still produced a reviewable proposal from
+        // the deterministic extractor. It must complete — not fail, not burn a retry — while
+        // carrying the record of which engine actually produced the result.
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        request.MarkAsCompleted("LLM triage unavailable (ProviderDegraded); using deterministic extractor");
+
+        request.Status.Should().Be(RequestStatus.Completed);
+        request.ErrorMessage.Should()
+            .Be("LLM triage unavailable (ProviderDegraded); using deterministic extractor");
+        request.RetryCount.Should().Be(0);
+        request.ProcessedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldLeaveNoNotice_WhenNoneIsSupplied()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        request.MarkAsCompleted();
+
+        request.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldTreatWhitespaceNoticeAsAbsent()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        request.MarkAsCompleted("   ");
+
+        request.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldTruncateANoticeToThePersistedColumnBound()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+
+        request.MarkAsCompleted(new string('x', LlmRequest.MaxErrorMessageLength + 250));
+
+        request.ErrorMessage.Should().HaveLength(LlmRequest.MaxErrorMessageLength);
+    }
 }
