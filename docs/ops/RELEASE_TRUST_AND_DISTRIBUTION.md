@@ -2,7 +2,7 @@
 
 Status: **Active**
 
-Last reconciled: **2026-08-27**
+Last reconciled: **2026-08-29**
 
 Tracker: [#1167](https://github.com/Chris0Jeky/Taskdeck/issues/1167)
 
@@ -13,7 +13,7 @@ evidence.
 
 ## Current truth
 
-The latest release, [v0.1.2](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.1.2), contains a Windows x64 portable ZIP,
+The latest release, [v0.2.0](https://github.com/Chris0Jeky/Taskdeck/releases/tag/v0.2.0), contains a Windows x64 portable ZIP,
 its SHA-256 file, and Taskdeck's custom provenance record. The workflow already resolves and rechecks the exact tag/commit,
 builds from a pinned checkout, checks the untouched archive, runs acceptance checks, and supports resumable publication.
 
@@ -72,9 +72,13 @@ owns visual identity and release artwork only.
 
 ## Private cloud boundary
 
-Distribution work does not create a public SaaS plan. Proposed [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md)
-and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772) define the maximum boundary for a possible trusted private instance;
-deployment remains blocked until the maintainer records the required decisions and accepts the ADR. If authorized, the proof is limited to
+Distribution work does not create a public SaaS plan. [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md)
+(Accepted as direction only, evidence pending — maintainer ruling 2026-08-29) and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772)
+define the maximum boundary for a possible trusted private instance. Deployment remains blocked until the maintainer supplies the three
+pending CL-1 values (the collaborator's handle, the monthly ceiling and alert threshold, the off-platform retention window), names the
+collaborator and authorizes any account or billing, and the Stage 1 prerequisites tracked on `#1772` are closed (backup tooling present in the production
+image or a sidecar/host procedure; a non-secret-exposing connector-decrypt verification seam for the restore drill); MFA stays disabled on
+that instance until `#1653` lands. If authorized, the proof is limited to
 one application instance, one SQLite volume, a few known users, private access, InviteOnly onboarding, exact-image evidence, SignalR/reconnect
 and durable-reload proof, application-consistent encrypted backup, separate connector-key backup, one clean restore drill,
 an infrastructure cost owner, and explicit LLM payer/egress disclosure. [#1777](https://github.com/Chris0Jeky/Taskdeck/issues/1777)

@@ -1,6 +1,6 @@
 # Taskdeck Product Direction
 
-Last Updated: 2026-08-25
+Last Updated: 2026-08-29
 
 **Status: ACTIVE — the canonical current strategy document.**
 **Authority:** this file owns the product identity, direction, and release-theme ladder. The active
@@ -101,7 +101,7 @@ an Accepted ADR today, the ADR wins.
 | Horizon | Theme | Content | Label |
 |---|---|---|---|
 | **v0.1.x** | **Honest Windows Beta** | v0.1.0, v0.1.1, and v0.1.2 are shipped facts (v0.1.2 tagged 2026-08-25 at `9766edbb5` under the maintainer's accepted release deck; milestone closed, residuals re-milestoned to v0.2). Windows stays the only supported desktop claim through v0.1.x; macOS is the next platform proof. | COMMITTED |
-| **v0.2** | **Coherent Context-to-Action Loop** | The former "Transcript Engine" scope (largely shipped: LLM transcript triage, durable transcripts, evidence spans) widened to one coherent loop: capture integrity (no silently dropped fields), grounded chat that always yields a proposal or an explicit inability, evidence/inference inspection and correction, review legibility, guided daily journey, and a victory/progress export candidate. | LEANING |
+| **v0.2** | **Coherent Context-to-Action Loop** | **v0.2.0 shipped 2026-08-29** (tag at `48c05e1dc`; milestone closed 0/15 under the maintainer's accepted release deck, `#1947`). What shipped: The former "Transcript Engine" scope (largely shipped: LLM transcript triage, durable transcripts, evidence spans) widened to one coherent loop: capture integrity (no silently dropped fields), grounded chat that always yields a proposal or an explicit inability, evidence/inference inspection and correction, review legibility, guided daily journey, and a victory/progress export candidate. Carried-forward residuals live on their issues (`#2141`, `#2142`, `#2004`, `#1940`, `#2130`, `#2185`, `#2192`–`#2195`), not in this row. | COMMITTED (shipped) |
 | **v0.3** | **Open Beta + Accountable Agents** | The REVIVAL Phase-3 launch (slimmed surface, packaged MCP, feedback channel) plus the first accountable-agent proof: scoped credentials, attribution, stdio + one local HTTP path release-quality. Small-team collaboration proof (trusted shared instance, macOS golden path) begins here and completes post-launch. | LEANING |
 | **v0.4** | **Every Artefact, Everyone** | ADR-0046 generalist expansion, unchanged (tracker `#1327`). | POLICY |
 | **Later** | Hosted/commercial exploration | Managed hosting/backup, remote MCP, pricing — only after retention evidence. | LEANING |

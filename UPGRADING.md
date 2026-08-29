@@ -23,7 +23,7 @@ packaged Windows install also generates secrets in `appsettings.local.json`; cop
 
 | How you run Taskdeck | Database file |
 | --- | --- |
-| Supported Windows 0.1.x release | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
+| Supported Windows release (0.1.x / 0.2.x) | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
 | Source `dev-up` launcher | `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db` on Windows; `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` on Linux/macOS |
 | Raw developer `dotnet run` | A relative path resolves from that command's working directory; use `dev-up` for the stable source path above |
 | Explicit connection string | Whatever path `ConnectionStrings:DefaultConnection` points at |
@@ -114,11 +114,13 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## Unreleased — after v0.1.2
+## v0.2.0 — 2026-08-29
 
-**BREAKING: none.** These notes cover hosts tracking `main` past the v0.1.2 tag. This heading is
-renamed to the release version when the next version ships; v0.1.2 itself contained no schema
-change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
+**BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
+v0.1.1 → v0.1.2 needed no entry of its own; everything below applies when moving from any v0.1.x to
+v0.2.0. **Skipping from v0.1.0:** the retired Gemini provider migration in the
+[v0.1.1 notes](#v011--2026-08-21) still applies — a host that still sets `Llm:Provider=Gemini` or any
+`Llm:Gemini` value fails startup with migration guidance until that selector is replaced.
 
 - **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
   required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
@@ -203,9 +205,8 @@ $taskdeckV011 = Join-Path $env:USERPROFILE 'Desktop\taskdeck-v0.1.1-win-x64\Task
 
 `Env:` changes above apply only to that PowerShell process and its children; the persistent user
 variables and their values remain untouched. Close the PowerShell window to discard the temporary
-environment. Do not paste keys into a terminal transcript or issue. The preserved v0.1.2 draft
-would tolerate those inert child names after an explicit supported selector, but that behavior is
-not yet published.
+environment. Do not paste keys into a terminal transcript or issue. v0.1.2 and later tolerate
+those inert child names after an explicit supported selector.
 See the [v0.1.1 Windows startup incident checkpoint](docs/platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
 for the sanitized diagnosis, attempted paths, current workaround, and exact implementation resume point.
 

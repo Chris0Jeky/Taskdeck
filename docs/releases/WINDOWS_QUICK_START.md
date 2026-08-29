@@ -1,6 +1,6 @@
-# Taskdeck Windows Quick Start (0.1.x)
+# Taskdeck Windows Quick Start (0.2.x)
 
-Taskdeck 0.1.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
+Taskdeck 0.2.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
 `.sha256` file from the [official Taskdeck Releases page](https://github.com/Chris0Jeky/Taskdeck/releases/latest).
 The other archives attached to v0.1.0 are preserved historical artifacts, not a continuing support
 promise.
@@ -11,7 +11,7 @@ Open PowerShell in the download folder, set the version you downloaded, and comp
 its checksum file:
 
 ```powershell
-$version = 'v0.1.1' # change this to the version you downloaded
+$version = 'v0.2.0' # change this to the version you downloaded
 $zip = "taskdeck-$version-win-x64.zip"
 $expected = ((Get-Content "$zip.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
@@ -43,7 +43,7 @@ extracted folder.
 
 ### Windows unsigned-beta warning
 
-The 0.1.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
+The 0.2.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
 Continue with **More info -> Run anyway** only when the ZIP came from the official Taskdeck release
 and the SHA-256 check above passed. Do not disable SmartScreen globally. Delete the download and
 [report it](https://github.com/Chris0Jeky/Taskdeck/issues) if its source or hash is wrong.
@@ -166,12 +166,12 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
 
 - No browser: use the exact `Taskdeck is ready at ...` URL printed in the console.
 - Port 5000 busy: use the printed fallback URL. Stop the other listener only if you recognize it.
-- Startup fails with `TASKDECK_DESKTOP_FATAL code=startup_failed` (v0.1.1 known issue): if this
+- Startup fails with `TASKDECK_DESKTOP_FATAL code=startup_failed` (v0.1.1 only): if this
   machine ever configured the retired Gemini provider through user-scoped environment variables
-  (`Llm__Provider=Gemini` or `Llm__Gemini__*`), the app inherits them and exits before listening,
-  and the packaged error wrongly suggests a port/data-folder problem. Follow the provider-migration
-  workaround in [UPGRADING.md](../../UPGRADING.md#version-notes). A future correction adds the
-  accurate diagnostic below.
+  (`Llm__Provider=Gemini` or `Llm__Gemini__*`), v0.1.1 inherits them, exits before listening,
+  and wrongly suggests a port/data-folder problem. Follow the provider-migration workaround in
+  [UPGRADING.md](../../UPGRADING.md#version-notes). v0.1.2 and later print the accurate
+  diagnostic below instead.
 - `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
   retired Gemini provider and refused to switch providers silently. Close Taskdeck, then use a fresh
   PowerShell window to explicitly return **User**-scoped configuration to deterministic Mock and

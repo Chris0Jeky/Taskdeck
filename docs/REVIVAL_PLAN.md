@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-26
+Last Updated: 2026-08-29
 
 **Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -44,7 +44,7 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 |---|---|---|
 | **v0.1 "First Light"** | **SHIPPED 2026-08-19 (tag `v0.1.0`) + 2026-08-21 (`v0.1.1`, Windows).** Phase 1 complete: honest surfaces, safe public defaults, exercised release pipeline, welcoming README/onboarding | §6 ship gate (delivered except (i) dogfooding days — running since 2026-08-22 and re-scoped 2026-08-27 to the #1271 standing tracker, no longer release-gating — and the §6 beta threat model + one-time ACL/TOCTOU re-triage, still outstanding on #1311) |
 | **v0.1.2** | **SHIPPED 2026-08-25 (tag at `9766edbb5`).** Honest-Windows-Beta correction: the `#1876` double-click/startup fix plus the Priority I tranche | q-3 gate satisfied: maintainer accepted the release deck in-session 2026-08-24 (`#1947`); milestone groomed to zero open and closed, residuals re-milestoned to v0.2 |
-| **v0.2 "Coherent Context-to-Action Loop"** | Final target **2026-09-01**. Phase 2 is largely shipped; the release cut is limited to the open milestone ship list and closure evidence | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
+| **v0.2 "Coherent Context-to-Action Loop"** | **SHIPPED 2026-08-29 (tag at `48c05e1dc`).** Milestone 0 open / 15 closed; the transcript loop acceptance is recorded in `docs/STATUS.md`; the maintainer accepted the release deck in-session (q-1 B, `#1947`) and the agent cut the tag under that ruling | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
 | **v0.3 "Open Beta + Accountable Agents"** | RC target **2026-09-04**; final target **2026-09-08 or 2026-09-09**. Phase 3 packages MCP, feedback, accountable-agent and trusted-collaboration proof | RC checks green; launch and 48h response plan ready for final |
 | **v0.4 "Every Artefact"** | Phase 4 complete (ADR-0046): artefact intake (screenshots/PDFs/files), project dossiers, generalist legibility, friends-family channel | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
 | **Checkpoint (floor 2026-09-01, walkthrough q-8; re-scoped 2026-08-27)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control). **2026-08-27 maintainer ruling (recorded on #1271): dogfooding is a standing tracker, not a release gate** — the maintainer tried daily use and found v0.1.2 short of his real workflow; the recorded assessment is *keep building features/polish first*, explicitly not an archive trigger, and no release waits on accumulated usage days | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment — the 2026-08-27 ruling IS such an assessment for the current window |
@@ -55,10 +55,10 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 
 - **v0.2 M1:** `#2083` appearance contrast, `#2085` keep/archive/board-target/proposal/provenance, and `#2086` side inspector plus compact density. `#2080`, the remaining Priority I core-loop fixes, and release closure evidence stay on the bounded milestone ship list.
 - **v0.3 M2:** `#2089` capture links/ledger/lifecycle, `#2090` widths/collapse/titles-only, and `#2087` minimal types/parent. ADR-0060 is owned only by `#2084`; ADR-0061 decisions by `#1772`; ADR-0062 decisions by `#2091`.
-- **Waiver-seeded v0.3 candidates:** minimal typed links `#2092`, participant/multiple-assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
+- **Waiver-seeded v0.3 candidates:** minimal typed links `#2092` and participant/multiple-assignment/estimate roll-ups `#2093`. Conditional minimal custom fields `#2094` were moved after ADR-0061 Stage 2 (the small-team alpha) by the 2026-08-29 ADR-0062 ruling and are no longer a v0.3 candidate.
 - **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
-Proposed ADR-0060, ADR-0061, and ADR-0062 require maintainer ratification. Until then the shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged.
+ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the v0.3 slices (`#2087`, `#2092`, `#2093`) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and the Stage 1 prerequisites tracked on `#1772` (`#1777` stays parked).
 
 ## 4. Phases and waves (the issue map)
 
@@ -89,7 +89,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Item | Issue | Notes |
 |---|---|---|
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
-| Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
+| Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` **closed 2026-08-27** (PR `#2144`: orphan vocabulary removed, INV-12 rewired onto `ProvenanceEvidenceLink`, cap/retention documented; spans live-verified in the acceptance walkthrough) — shipped in v0.2.0; residuals `#1987`/`#1284` (provenance footnote wiring) |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
@@ -141,7 +141,7 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
      deliberately being resumed;
   4. the slice advances the active product direction or repairs correctness, security, reliability,
      test, documentation-truth, or delivery substrate; and
-  5. it does not require a credential/private data, production mutation, release tag, legal or
+  5. it does not require a credential/private data, production mutation, release tag without an accepted release deck or explicit release ruling (mechanics are agent-executable per the 2026-08-29 q-1 B ruling), legal or
      licensing decision, repository/environment setting, destructive work-loss action, or subjective
      dogfooding/beta judgment.
 - Keep no more than **four issue items in `Now`** and **eight in `Next`**. Finish or deliberately park
