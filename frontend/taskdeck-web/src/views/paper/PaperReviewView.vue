@@ -84,6 +84,7 @@ const {
   isStaleProposal,
   clearProposalDeepLink,
   loadProposals,
+  invalidateQueueReads,
   loadBoardOptions,
   availableBoards,
   startClock,
@@ -495,7 +496,7 @@ const {
   cancelEditing: cancelRevisionEditing,
   saveRevision,
   loadRevisionState,
-} = useProposalRevisions(activeProposal)
+} = useProposalRevisions(activeProposal, { onRevisionSaved: invalidateQueueReads })
 
 watch(isArchivedHistory, (readOnly) => {
   if (!readOnly) return

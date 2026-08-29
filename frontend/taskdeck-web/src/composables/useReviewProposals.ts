@@ -511,6 +511,24 @@ export function useReviewProposals() {
   let refreshInFlight = false
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
+  // Bumped by any out-of-band write that a queue read started earlier would
+  // clobber. The array-identity guard cannot catch every such write: saving a
+  // proposal revision updates `useProposalRevisions` state and never touches
+  // `proposals`, so a GET issued before the save would sail through the identity
+  // check and restore the pre-revision summary, operations and latestRevisionId.
+  let queueWriteGeneration = 0
+
+  /**
+   * Invalidate every queue read currently in flight. Callers are surfaces that
+   * have just written something a pre-write read would undo -- today that is a
+   * saved proposal revision. Deliberately NOT `latestProposalLoadRequestId`:
+   * bumping that counter would make an in-flight `loadProposals` discard its own
+   * result AND skip the `proposalsLoading = false` reset in its finally block,
+   * wedging the surface in a permanent loading state.
+   */
+  function invalidateQueueReads() {
+    queueWriteGeneration += 1
+  }
 
   function isDocumentVisible(): boolean {
     // No document (non-DOM test context) counts as NOT visible: a surface that
@@ -552,6 +570,19 @@ export function useReviewProposals() {
     // PendingReview while the decision receipt on screen says approved. A changed
     // reference is the signal that a decision landed under this read.
     const observedProposals = proposals.value
+    const observedWriteGeneration = queueWriteGeneration
+    // The scope this read is ASKING about. A late answer -- success or 403 --
+    // describes the board it queried, never whichever board is on screen now.
+    const requestedBoardId = activeBoardFilter.value || null
+    // True when this answer is about a different question than the one the
+    // surface is now asking: a newer explicit load started, or the board scope
+    // moved. Applies to the 403 branch too, which is the whole point: a 403 from
+    // a board the reviewer has already left says nothing about the board they
+    // are on, and must not clear it or stop its polling.
+    const isSupersededRead = () =>
+      observedLoadId !== latestProposalLoadRequestId ||
+      proposalsLoading.value ||
+      (activeBoardFilter.value || null) !== requestedBoardId
     const controller = new AbortController()
     refreshAbort = controller
     refreshInFlight = true
@@ -568,10 +599,14 @@ export function useReviewProposals() {
         { skipRetry: true, signal: controller.signal },
       )
       if (controller.signal.aborted) return
-      // A newer explicit load started while this poll was in flight; its answer
-      // supersedes this one.
-      if (observedLoadId !== latestProposalLoadRequestId || proposalsLoading.value) return
+      // A newer explicit load started, or the scope moved, while this poll was in
+      // flight; its answer supersedes this one.
+      if (isSupersededRead()) return
       if (proposals.value !== observedProposals) return
+      // An out-of-band write landed that this read predates -- a saved revision,
+      // which leaves the `proposals` reference untouched and so is invisible to
+      // the identity check above.
+      if (observedWriteGeneration !== queueWriteGeneration) return
       // Re-checked AFTER the await, not only before it: a confirm dialog can open
       // while the read is in flight, and landing then would pull the record out
       // from under the reviewer -- the Reject dialog is bound to a computed that
@@ -600,6 +635,10 @@ export function useReviewProposals() {
       // An abort is this surface's own teardown, not a failure.
       if (controller.signal.aborted) return
       if (isForbiddenError(e)) {
+        // Only trust a 403 that answers the question currently being asked.
+        // Without this, a late refusal from a board the reviewer just left would
+        // wipe the board they moved to and stop polling a scope that is fine.
+        if (isSupersededRead()) return
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.
@@ -807,6 +846,7 @@ export function useReviewProposals() {
     clearProposalDeepLink,
     loadProposals,
     refreshProposals,
+    invalidateQueueReads,
     loadBoardOptions,
     startClock,
     stopClock,

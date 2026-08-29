@@ -1176,6 +1176,72 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('discards a read that resolves after a proposal revision was saved', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-1', summary: 'pre-revision' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      const queueBeforeSave = rp.proposals.value
+
+      // A queue read goes in flight BEFORE the reviewer saves an edit.
+      const inFlight = deferredProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The revision POST lands first. Saving a revision updates
+      // useProposalRevisions' own state and NEVER replaces the proposals array,
+      // so the identity guard cannot see it -- the write generation is what makes
+      // this read stale.
+      rp.invalidateQueueReads()
+
+      // The pre-save answer arrives, still carrying the pre-revision record.
+      inFlight.release([makeProposal({ id: 'p-1', summary: 'pre-revision' })])
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Writing it would restore the pre-revision summary/operations under the
+      // saved-revision state the reviewer is looking at.
+      expect(rp.proposals.value).toBe(queueBeforeSave)
+      rp.stopQueueRefresh()
+    })
+
+    it('ignores a 403 answering a board scope the reviewer already left', async () => {
+      vi.useFakeTimers()
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'a-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      // A scoped poll for board A goes in flight.
+      let rejectA: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectA = reject
+        }),
+      )
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The reviewer switches to board B, which they can read fine.
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'b-1' })])
+      await rp.loadProposals()
+
+      // Only now does board A's 403 arrive.
+      rejectA({ response: { status: 403 } })
+      await vi.advanceTimersByTimeAsync(0)
+
+      // B is authorized: its queue must survive and its polling must continue.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['b-1'])
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'b-2' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['b-2'])
+      rp.stopQueueRefresh()
+    })
+
     it('stops polling and reports revoked access when a read is refused with 403', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
