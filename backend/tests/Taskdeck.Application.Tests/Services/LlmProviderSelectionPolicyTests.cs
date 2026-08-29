@@ -566,4 +566,95 @@ public class LlmProviderSelectionPolicyTests
             }
         };
     }
+
+    // -----------------------------------------------------------------------------------------
+    // #2192 review, HIGH: a live request that ends on the mock must be distinguishable from mock
+    // by choice, so capture triage can record the degradation instead of falling back silently.
+    // -----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenRequestedOpenAiSettingsFailValidation()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi!.ApiKey = "   ";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("The configured live provider failed startup validation.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenTheEnvironmentDeclinesARequestedLiveProvider()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = false;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("Live providers are not permitted in this environment.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenTheProviderSelectorIsNotRecognized()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "not-a-real-provider";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("The configured provider selector is not recognized.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldNotFlagMockDiversion_WhenTheMockIsWhatWasAskedFor()
+    {
+        var settings = BuildValidSettings();
+        settings.Provider = "Mock";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Evaluate_ShouldNotFlagMockDiversion_WhenLiveProvidersAreDeliberatelyDisabled()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = false;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        // The operator turned live providers off. That is a choice, not a broken deployment, so it
+        // must not put a degradation notice on every capture.
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Evaluate_ShouldKeepTheConfiguredEndpointOutOfTheDiversionReason()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi!.BaseUrl = "not-an-absolute-uri-secret-host";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        // The precise cause can name the configured BaseUrl and belongs in the startup log only;
+        // the diversion reason is published on a capture, so it stays coarse.
+        result.MockDiversionReason.Should().Be("The configured live provider failed startup validation.");
+        result.MockDiversionReason.Should().NotContain("secret-host");
+    }
 }

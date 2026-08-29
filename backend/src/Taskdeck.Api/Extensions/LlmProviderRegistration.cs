@@ -213,11 +213,19 @@ public static class LlmProviderRegistration
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
 
         services.AddScoped<MockLlmProvider>();
+
+        // Registered so consumers can see WHY this provider was chosen, not just which one. The
+        // capture-triage extractor needs it to tell "mock because that is what was configured"
+        // from "mock because the requested live provider was rejected" (#2192 review) — the second
+        // is a broken live deployment and must be recorded on the capture, not just at startup.
+        services.AddScoped(sp => LlmProviderSelectionPolicy.Evaluate(
+            sp.GetRequiredService<LlmProviderSettings>(),
+            sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName));
+
         services.AddScoped<ILlmProvider>(sp =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
-            var environment = sp.GetRequiredService<IWebHostEnvironment>();
-            var decision = LlmProviderSelectionPolicy.Evaluate(settings, environment.EnvironmentName);
+            var decision = sp.GetRequiredService<LlmProviderDecision>();
 
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Taskdeck.Api.LlmProviderSelection");
             logger.LogInformation(

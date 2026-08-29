@@ -131,6 +131,16 @@ ships; nothing below is in the published v0.2.0 artifacts.
   and CLI key to select one or more of `read`, `propose`, and `manage`; omitted, empty, or unknown
   selections are rejected instead of defaulting to Full. Existing backfilled keys remain Full until
   they are replaced with least-privilege keys.
+- **Behavior change, no schema change: a capture's `errorMessage` can now be non-null on a
+  *successful* capture.** Previously only a `Failed` capture carried one. When transcript triage
+  attempts its LLM leg and cannot deliver — kill switch, an unavailable, misconfigured, or degraded
+  provider, exhausted quota, or unusable model output — the capture now completes as
+  `Completed`/`Triaged` **and** carries a degradation notice naming the outcome, e.g.
+  `LLM triage unavailable (ProviderDegraded); using deterministic extractor.` The status is
+  unchanged and no retry is consumed; the field is simply no longer exclusive to failures. It is
+  exposed wherever the capture is: the capture API (`CaptureItemDto` / `CaptureItemSummaryDto`) and
+  the MCP `CaptureResources` surface. Anything that treats a non-null `errorMessage` as "this
+  capture failed" needs to key on the status instead.
 - **No migration action required.** Both migrations are applied automatically on startup after
   the automatic [pre-migration snapshot](#automatic-pre-migration-backups); take the manual copy from
   the [General upgrade procedure](#general-upgrade-procedure) as usual.

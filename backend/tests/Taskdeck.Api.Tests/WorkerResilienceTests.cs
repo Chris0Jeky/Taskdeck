@@ -699,13 +699,15 @@ public class WorkerResilienceTests
             => Task.FromResult<IEnumerable<AutomationProposal>>(
                 _proposals.Take(limit).ToList());
 
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(
+        public Task<ExpiredProposalSweep> GetExpiredAsync(
             CancellationToken cancellationToken = default)
             // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync
             // above) so a non-PendingReview proposal still reaches the worker's Expire() catch path, which is
-            // exactly what the housekeeping resilience tests exercise.
-            => Task.FromResult<IEnumerable<AutomationProposal>>(
-                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
+            // exactly what the housekeeping resilience tests exercise. No archived-board withholding here:
+            // this fake holds no boards, so every candidate is expirable (#2197).
+            => Task.FromResult(new ExpiredProposalSweep(
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList(),
+                SkippedArchivedBoardCount: 0));
 
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_proposals.SingleOrDefault(p => p.Id == id));

@@ -71,6 +71,10 @@ public record CaptureTriageEnqueueResultDto(
 /// propose" outcome (an LLM run that deliberately found zero action items): the workers mark the
 /// item Completed WITHOUT a linked proposal, which the capture status policy renders as the
 /// terminal Triaged state — not Failed, because a correct empty verdict is a successful triage.
+/// <see cref="DegradedNotice"/> is non-null when the LLM leg was attempted, could not deliver, and
+/// the deterministic extractor produced this result instead (#2192). It names the outcome so the
+/// fallback is recorded on the capture rather than being silent; the run still succeeded, so the
+/// workers complete the item and never fail or retry it on account of the notice.
 /// </summary>
 public record CaptureTriageProposalResultDto(
     Guid CaptureItemId,
@@ -79,7 +83,8 @@ public record CaptureTriageProposalResultDto(
     int OperationCount,
     string PromptVersion,
     string Provider,
-    string Model);
+    string Model,
+    string? DegradedNotice = null);
 
 /// <summary>
 /// Describes a single item action within a batch triage request.

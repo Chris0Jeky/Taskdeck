@@ -8,7 +8,17 @@ public enum LlmProviderKind
     OpenAiCompatible = 4
 }
 
-public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
+/// <summary>
+/// The resolved provider and why. <paramref name="MockDiversionReason"/> is non-null ONLY when the
+/// operator asked for a live provider and the request was diverted to the mock (#2192 review);
+/// mock-by-choice leaves it null. It is a deliberately coarse, non-secret sentence — the precise
+/// cause, which can embed a configured BaseUrl, stays in <paramref name="Reason"/> for the startup
+/// log and must not be published on a capture.
+/// </summary>
+public sealed record LlmProviderDecision(
+    LlmProviderKind ProviderKind,
+    string Reason,
+    string? MockDiversionReason = null);
 
 public static class LlmProviderSelectionPolicy
 {
@@ -32,7 +42,10 @@ public static class LlmProviderSelectionPolicy
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Provider mode '{settings.Provider}' resolves to mock.");
+                $"Provider mode '{settings.Provider}' resolves to mock.",
+                settings.EnableLiveProviders
+                    ? "The configured provider selector is not recognized."
+                    : null);
         }
 
         if (requestedProvider.Value == LlmProviderKind.Mock)
@@ -53,7 +66,8 @@ public static class LlmProviderSelectionPolicy
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                "Live providers are disabled for development-like environments.");
+                "Live providers are disabled for development-like environments.",
+                "Live providers are not permitted in this environment.");
         }
 
         // In development with AllowLiveProvidersInDevelopment, permit localhost endpoints
@@ -67,7 +81,8 @@ public static class LlmProviderSelectionPolicy
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
-                    $"OpenAI configuration is invalid: {validationError}");
+                    $"OpenAI configuration is invalid: {validationError}",
+                "The configured live provider failed startup validation.");
             }
 
             return new LlmProviderDecision(
@@ -81,7 +96,8 @@ public static class LlmProviderSelectionPolicy
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
-                    $"OpenAI-compatible configuration is invalid: {compatibleValidationError}");
+                    $"OpenAI-compatible configuration is invalid: {compatibleValidationError}",
+                "The configured live provider failed startup validation.");
             }
 
             return new LlmProviderDecision(
@@ -97,7 +113,8 @@ public static class LlmProviderSelectionPolicy
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Ollama configuration is invalid: {ollamaValidationError}");
+                $"Ollama configuration is invalid: {ollamaValidationError}",
+            "The configured live provider failed startup validation.");
         }
 
         return new LlmProviderDecision(

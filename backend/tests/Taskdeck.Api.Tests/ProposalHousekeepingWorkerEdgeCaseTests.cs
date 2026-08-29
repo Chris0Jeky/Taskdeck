@@ -314,8 +314,10 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
         public Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync) so a
         // non-PendingReview proposal still reaches the worker's Expire() catch path.
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IEnumerable<AutomationProposal>>(_proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
+        public Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExpiredProposalSweep(
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList(),
+                SkippedArchivedBoardCount: 0));
         public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
@@ -325,7 +327,7 @@ public class ProposalHousekeepingWorkerEdgeCaseTests
             ProposalStatus status, int limit = 100, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database connection failed");
 
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
+        public Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Database connection failed");
 
         public Task<IReadOnlyList<AutomationProposal>> GetByIdsAsync(IEnumerable<Guid> ids, CancellationToken cancellationToken = default) => throw new NotSupportedException();

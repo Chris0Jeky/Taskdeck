@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -41,16 +42,21 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly INotificationService _notificationService;
     private readonly IProposalProvenanceRepository? _provenanceRepository;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly ILogger<AutomationProposalService>? _logger;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
         INotificationService? notificationService = null,
         IProposalProvenanceRepository? provenanceRepository = null,
-        IAutomationPolicyEngine? policyEngine = null)
+        IAutomationPolicyEngine? policyEngine = null,
+        ILogger<AutomationProposalService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _provenanceRepository = provenanceRepository;
+        // Optional, like AccountDeletionService's: direct construction in tests and the DI-less
+        // fallback paths keep working, and the archived-board skip line is simply not emitted.
+        _logger = logger;
         // Fall back to a plain engine over the same unit of work when DI does not supply one
         // (direct construction in tests). The engine is stateless apart from _unitOfWork, so
         // the fallback runs the identical read-safe permission gates the injected one does.
@@ -1229,7 +1235,22 @@ public class AutomationProposalService : IAutomationProposalService
     {
         try
         {
-            var expiredProposals = await _unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
+            // Partitioned by the query: proposals on an extant archived board are withheld, never
+            // expired, never notified about (ADR-0063 / #2168, defect #2197). Both loops below read
+            // the SAME Expirable list, so a withheld proposal cannot pick up an "expired"
+            // notification without having been expired.
+            var sweep = await _unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
+            var expiredProposals = sweep.Expirable;
+
+            if (sweep.SkippedArchivedBoardCount > 0)
+            {
+                // Count only — no id, summary, or board name — so this stays non-secret.
+                _logger?.LogInformation(
+                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                        + "restore the board to let them expire.",
+                    sweep.SkippedArchivedBoardCount);
+            }
+
             int count = 0;
 
             foreach (var proposal in expiredProposals)
