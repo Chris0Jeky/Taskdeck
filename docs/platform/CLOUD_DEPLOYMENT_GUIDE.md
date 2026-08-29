@@ -13,8 +13,9 @@ Issue: `#538` CLD-01 Deploy Taskdeck to managed cloud platform
 >
 > - the three deployment-critical values still pending on `#1772` are supplied by the maintainer — the collaborator's identity/handle, the all-in monthly ceiling **and** its alert threshold, and the off-platform backup retention window;
 > - the Stage 1 prerequisites tracked on `#1772` are closed (notably the backup tooling gap: the production image ships neither `scripts/backup.sh` nor a `sqlite3` binary, and a non-secret-exposing decrypt-verification seam must exist);
-> - MFA remains off (`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets, so the instance must not be treated as MFA-protected; and
 > - an access policy sits in front of the tunnel — the tunnel itself is transport, not authorization.
+>
+> **Not a gate item, a standing constraint:** MFA is not a prerequisite and `#1653` does not block Stage 1. ADR-0061 `access-boundary` permits the private proof specifically *while* MFA stays off (`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets at rest — enabling it there would persist plaintext TOTP secrets outside the accepted risk. Keep MFA disabled and never represent the instance as MFA-protected.
 >
 > Do not purchase, register, enrol, redeem a benefit, create a hosted service, attach billing, or deploy from this guide before that gate is satisfied. Keep human actions and private account evidence in `OUTSTANDING_TASKS.md` and the maintainer's private ledger respectively.
 

@@ -220,12 +220,20 @@ portrait, at a width under the 640 px mobile breakpoint.
 4. **Seed a reviewable proposal (skip only if this instance already has one).** The next step needs a
    proposal sitting in Review, and Path A's packaged release starts on a **fresh data root** where
    Review is empty — an empty Review makes step 5 unrunnable, not passing. Easiest on the host
-   desktop before you pick the phone up: create a board, add a capture in the Paper composer
-   (a couple of sentences naming an action is enough), then in the Inbox select that board and press
-   **Ask AI** — the control stays disabled until a board is selected. Wait for triage to produce the
-   proposal and confirm it is listed in Review. Do **not** approve or execute it; step 5 needs it
-   pending so **Reject** is available. If you are pointing at a data root that already holds a
-   pending proposal, use that one and skip this step.
+   desktop before you pick the phone up: create a board, then add a capture in the Paper composer
+   (a couple of sentences naming an action is enough). In the Inbox, the action order depends on
+   whether the capture already carries a board:
+
+   - **Capture made without a board** (the default if you did not pick one in the composer): press
+     **Ask AI** — that first click is enabled and its job is to *reveal the board picker*, not to
+     queue triage. Choose the board in the revealed picker, then press **Ask AI for proposal**,
+     which is the control that stays disabled until a board is selected.
+   - **Capture made with a board already chosen in the composer**: a single **Ask AI** press queues
+     triage directly.
+
+   Wait for triage to produce the proposal and confirm it is listed in Review. Do **not** approve or
+   execute it; step 5 needs it pending so **Reject** is available. If you are pointing at a data root
+   that already holds a pending proposal, use that one and skip this step.
 5. **`TdDialog` with the keyboard genuinely up.** Go to Review, open a proposal, tap **Reject**, and
    tap into the reason textarea. Within the review flow this is the dialog that contains a text field, so it is the case where a
    `TdDialog` is certainly rendered with the keyboard open (the API-keys settings dialog also has an

@@ -113,7 +113,7 @@ sends nothing to any LLM provider.
 Turning live triage on puts this instance in ADR-0061's **operator-funded** variant
 (`llm-cost-ownership` = A): your provider key is the deployment-global key, your collaborator's
 captured content egresses under **your** provider account, and you bear the cost. Per-user BYO keys
-are not buildable today (`#1879` is open), so this is the only buildable variant. Do all four steps
+are not buildable today (`#1879` is open), so this is the only buildable variant. Do all five steps
 below — the disclosure is not optional and must be given **before the collaborator captures
 anything real**.
 
@@ -134,8 +134,8 @@ anything real**.
    default, and ADR-0061 `budget-alerts-cost-owner` requires a real number before live providers
    carry someone else's traffic. **There is no `TASKDECK_*` passthrough for it**: unlike the keys
    above, setting it in `deploy/.env` alone does nothing, because `deploy/docker-compose.yml`
-   forwards only the variables its `environment:` block names. Add it to the `api` service
-   environment directly, or in a compose override file layered with a second `-f`:
+   forwards only the variables its `environment:` block names. Create
+   **`deploy/docker-compose.llm-quota.yml`** with exactly this content:
 
    ```yaml
    services:
@@ -149,13 +149,35 @@ anything real**.
    action is to **disable live providers, not to shut the instance down**, so collaboration
    walkthroughs survive a spend stop.
 
-3. **Configure a provider spend alert** where the provider offers one, and record the all-in monthly
+3. **Recreate the API so the new values take effect.** Editing `deploy/.env` and adding an override
+   file change nothing in the container that is already running from step 2 — `docker compose up`
+   applies changed service configuration by recreating the container, exactly as the
+   registration-mode step in section 4 does. From now on **every** compose command for this stack
+   must pass both files, in this order:
+
+   ```bash
+   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.llm-quota.yml \
+     --env-file deploy/.env --profile baseline up -d --build
+   ```
+
+   Compose merges only the files given with `-f`, so a later base-only `up` silently drops
+   `LlmQuota__GlobalBudgetCeilingTokens` and restores the **unlimited** default while the live
+   provider credentials in `deploy/.env` stay enabled — an uncapped live instance. That is why the
+   upgrade step in section 7 repeats the two-file command. Verify the ceiling actually reached the
+   container before handing the instance over:
+
+   ```bash
+   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.llm-quota.yml \
+     --env-file deploy/.env exec api printenv LlmQuota__GlobalBudgetCeilingTokens
+   ```
+
+4. **Configure a provider spend alert** where the provider offers one, and record the all-in monthly
    ceiling on `#1772`. Both the ceiling and the alert threshold are still **pending maintainer
    values** on `#1772`, and the amounts must be re-verified against current provider prices before
    any purchase — until they are supplied, this step is not executable and live providers should
    stay off.
 
-4. **Give the written disclosure.** Before the collaborator captures anything real, send them a
+5. **Give the written disclosure.** Before the collaborator captures anything real, send them a
    written note stating that live triage runs on your provider key, that their captured content
    therefore leaves the instance under your provider account, and that you pay for it. Point them at
    both:
@@ -199,8 +221,16 @@ Realtime presence and updates are per-board and re-check read access on join.
   encrypted, with a stated retention window (ADR-0061 `backup-retention-destination`;
   for host loss the RPO is the age of that off-platform copy). Keep `deploy/.env` (the
   connector key) in separate custody, never in the same bundle.
-- **Upgrade**: `git pull`, then re-run the `docker compose … up -d --build`
-  command. Migrations run automatically through the serialized migrator.
+- **Upgrade**: `git pull`, then re-run the same `docker compose … up -d --build`
+  command you started with. Migrations run automatically through the serialized migrator.
+  **If you enabled live providers in section 5, that command is the two-file one** — a
+  base-only `up` drops the quota override and restores the unlimited default while the
+  provider key stays enabled:
+
+  ```bash
+  docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.llm-quota.yml \
+    --env-file deploy/.env --profile baseline up -d --build
+  ```
 - **Revoke access**: remove the grant in the Access view; revoke a registration
   by deactivating the user; rotate the tunnel URL if it leaks.
 - Do not enable MFA on this instance until #1653 lands.
