@@ -60,6 +60,13 @@ export default {
   capture: {
     errorLead: 'Appunto non salvato. La bozza è ancora qui.',
     errorDetail: 'Dettagli: {reason}',
+    // GH-2142 -- traduzione automatica (machine-translated).
+    sessionExpiredReason: 'La sessione è scaduta prima che questa cattura venisse salvata.',
+    draftRestoredLead: 'Bozza ripristinata.',
+    draftRestoredDetail:
+      'Il nuovo accesso ha interrotto questa cattura, quindi nulla è arrivato nell’Inbox. Inviala quando vuoi.',
+    draftRestoredTruncated: 'Il testo era molto lungo, quindi la parte finale non è stata conservata.',
+    draftRestoredDiscard: 'Elimina questa bozza',
     errorDiagnosticsLabel: 'Diagnostica della richiesta',
     errorFallback: 'Riprova quando la connessione è disponibile.',
     metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',

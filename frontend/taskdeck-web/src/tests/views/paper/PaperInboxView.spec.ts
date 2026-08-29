@@ -4,6 +4,12 @@ import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
 import { i18n } from '../../../i18n'
 import type { CaptureItem, CaptureItemSummary } from '../../../types/capture'
+import { AUTH_EXPIRED_EVENT } from '../../../utils/authExpiry'
+import {
+  CAPTURE_DRAFT_STORAGE_KEY,
+  peekCaptureDraft,
+  stashCaptureDraft,
+} from '../../../utils/captureDraftStash'
 
 const mockCaptureStore = reactive({
   loadingList: false,
@@ -909,6 +915,194 @@ describe('PaperInboxView', () => {
       // other catalogs a singular slot, so neither may drift.
       expect(eyebrowFor('en', 1)).toContain('1 captured')
       expect(eyebrowFor('en', 4)).toContain('4 captured')
+    })
+  })
+
+  // ── 401 draft survival (GH-2142) ───────────────────────────────────────
+  //
+  // The 401 handler in api/http.ts hard-navigates to /login, destroying the
+  // retained draft AND its failure receipt. These specs cover the stash-then-
+  // restore round trip that makes the capture survive that journey.
+  describe('capture draft across the 401 redirect', () => {
+    beforeEach(() => {
+      window.sessionStorage.clear()
+    })
+
+    afterEach(() => {
+      window.sessionStorage.clear()
+    })
+
+    function expireSession() {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    }
+
+    it('stashes the composer draft with its metadata when the session expires', async () => {
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Do not lose this')
+      await wrapper.find('select[aria-label="Board picker"]').setValue('board-9')
+      await wrapper.find('input[aria-label="Add label"]').setValue('ops')
+      await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
+      await wrapper.find('input[aria-label="Due date"]').setValue('2026-09-02')
+
+      expireSession()
+
+      const stashed = peekCaptureDraft()
+      expect(stashed).toMatchObject({
+        variant: 'composer',
+        text: 'Do not lose this',
+        boardId: 'board-9',
+        labels: ['ops'],
+        dueAt: '2026-09-02',
+      })
+      // The redirect usually beats the request's own rejection, so the receipt
+      // is synthesised rather than left empty.
+      expect(stashed?.failure?.message).toBe('Your session expired before this capture was saved.')
+    })
+
+    it('carries an existing failure receipt into the stash instead of overwriting it', async () => {
+      mockCaptureStore.createItem.mockRejectedValueOnce({
+        response: { status: 401, data: { errorCode: 'AuthenticationFailed', message: 'Token expired' } },
+        config: { method: 'post', url: '/capture' },
+      })
+      const wrapper = mount(PaperInboxView)
+      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Receipt keeper')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      expireSession()
+
+      const stashed = peekCaptureDraft()
+      expect(stashed?.failure?.message).toBe('Token expired')
+      expect(stashed?.failure?.details).toContain('Status: 401')
+    })
+
+    it('stashes nothing when the draft is empty', async () => {
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('does not stash from archived history, which has no capture surface', async () => {
+      orchestratorState.isArchivedHistory.value = true
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('restores the stashed composer draft, its receipt, and an explicit affordance', async () => {
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+      stashCaptureDraft({
+        variant: 'composer',
+        text: 'Survived the redirect',
+        boardId: 'board-9',
+        labels: ['ops'],
+        dueAt: '2026-09-02',
+        failure: { message: 'Your session expired before this capture was saved.', details: null },
+      })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+      expect(textarea.element.value).toBe('Survived the redirect')
+      expect(
+        wrapper.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+      ).toBe('board-9')
+      expect(wrapper.find<HTMLInputElement>('input[aria-label="Due date"]').element.value).toBe(
+        '2026-09-02',
+      )
+      expect(wrapper.text()).toContain('ops')
+
+      const notice = wrapper.get('[data-testid="paper-inbox-capture-restored"]')
+      expect(notice.attributes('role')).toBe('status')
+      expect(notice.text()).toContain('Draft restored.')
+
+      expect(wrapper.get('[data-testid="paper-inbox-capture-error"]').text()).toContain(
+        'Your session expired before this capture was saved.',
+      )
+
+      // Single use: a later reload must not resurrect a second copy.
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('restores a nib stash onto the nib surface', async () => {
+      stashCaptureDraft({ variant: 'nib', text: 'Quick note that survived' })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(wrapper.attributes('data-variant')).toBe('nib')
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Quick capture input"]').element.value,
+      ).toBe('Quick note that survived')
+    })
+
+    it('leaves the stash alone when the Inbox opens in archived history', async () => {
+      orchestratorState.isArchivedHistory.value = true
+      stashCaptureDraft({ variant: 'composer', text: 'Wait for a live inbox' })
+
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expect(peekCaptureDraft()?.text).toBe('Wait for a live inbox')
+    })
+
+    it('discarding the restored draft empties the surface, the receipt, and the affordance', async () => {
+      stashCaptureDraft({
+        variant: 'composer',
+        text: 'Not wanted after all',
+        failure: { message: 'Your session expired before this capture was saved.', details: null },
+      })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      await wrapper.get('[data-testid="paper-inbox-capture-restored-discard"]').trigger('click')
+      await flushPromises()
+
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('')
+      expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('clears the stash once a capture is saved', async () => {
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      // A stash left behind by an earlier interrupted attempt in this tab.
+      stashCaptureDraft({ variant: 'composer', text: 'Stale interrupted attempt' })
+
+      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Saved for real')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+      expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+    })
+
+    it('stops stashing once the view is unmounted', async () => {
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Gone with the view')
+
+      wrapper.unmount()
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
     })
   })
 })

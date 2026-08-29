@@ -62,6 +62,13 @@ export default {
   capture: {
     errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
     errorDetail: 'Detalles: {reason}',
+    // GH-2142 -- traducción automática (machine-translated).
+    sessionExpiredReason: 'Tu sesión caducó antes de que se guardara esta captura.',
+    draftRestoredLead: 'Borrador restaurado.',
+    draftRestoredDetail:
+      'Volver a iniciar sesión interrumpió esta captura, así que nada llegó al Inbox. Envíala cuando quieras.',
+    draftRestoredTruncated: 'El texto era muy largo, así que no se pudo conservar el final.',
+    draftRestoredDiscard: 'Descartar este borrador',
     errorDiagnosticsLabel: 'Diagnóstico de la solicitud',
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
     metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',

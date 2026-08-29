@@ -128,6 +128,33 @@ function resetDraft() {
   dueAt.value = ''
 }
 
+/**
+ * The draft as it stands, for the parent to persist across a 401 redirect
+ * (GH-2142). Returns the RAW body, not the trimmed submit payload: what the
+ * user gets back must be what they were looking at.
+ */
+function snapshotDraft() {
+  return {
+    text: body.value,
+    boardId: boardId.value,
+    labels: [...labels.value],
+    dueAt: dueAt.value || null,
+  }
+}
+
+/** Put a previously stashed draft back into the composer (GH-2142). */
+function restoreDraft(draft: {
+  text: string
+  boardId?: string | null
+  labels?: string[]
+  dueAt?: string | null
+}) {
+  body.value = draft.text
+  boardId.value = draft.boardId ?? null
+  labels.value = [...(draft.labels ?? [])]
+  dueAt.value = draft.dueAt ?? ''
+}
+
 onMounted(async () => {
   // Best-effort prime — boards are useful in the picker.  Errors are handled
   // by the store's toast surface; we don't block rendering on it.
@@ -142,7 +169,7 @@ onMounted(async () => {
   bodyRef.value?.focus()
 })
 
-defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
+defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, restoreDraft })
 </script>
 
 <template>

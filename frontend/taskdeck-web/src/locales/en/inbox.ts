@@ -87,6 +87,15 @@ export default {
   capture: {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
+    // GH-2142 -- a 401 hard-navigates to /login, so the draft is stashed in
+    // sessionStorage first and restored here. `sessionExpiredReason` is the
+    // synthesised receipt shown when the redirect beat the request's own error.
+    sessionExpiredReason: 'Your session expired before this capture was saved.',
+    draftRestoredLead: 'Draft restored.',
+    draftRestoredDetail:
+      'Signing in again interrupted this capture, so nothing reached Inbox. Send it when you are ready.',
+    draftRestoredTruncated: 'The text was very long, so the end of it could not be kept.',
+    draftRestoredDiscard: 'Discard this draft',
     errorDiagnosticsLabel: 'Request diagnostics',
     errorFallback: 'Please try again when the connection is available.',
     metadataCompatibilityLead: 'Capture saved without its due date or labels.',

@@ -5,6 +5,13 @@ import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapp
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
+import { onAuthExpired } from '../../utils/authExpiry'
+import {
+  clearCaptureDraft,
+  stashCaptureDraft,
+  takeCaptureDraft,
+  type StashedCaptureDraft,
+} from '../../utils/captureDraftStash'
 import type { CaptureItem } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
@@ -53,6 +60,13 @@ const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.n
 const CAPTURE_ERROR_ID = 'paper-inbox-capture-error'
 
 const captureMetadataCompatibilityWarning = ref(false)
+
+/**
+ * A draft that survived the 401 redirect (GH-2142) and was put back into the
+ * capture surface, until the user sends it or discards it. Not a failure by
+ * itself -- the failure receipt beside it carries the reason.
+ */
+const restoredDraft = ref<StashedCaptureDraft | null>(null)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
@@ -160,6 +174,10 @@ async function dispatchCapture(
       // that would create a duplicate capture.
       captureMetadataCompatibilityWarning.value = true
     }
+    // The draft is saved; nothing is left to restore, so the stash and its
+    // "draft restored" affordance go (GH-2142).
+    restoredDraft.value = null
+    clearCaptureDraft()
     await loadInbox().catch(() => {
       // The capture already exists. The orchestrator/store owns listError and
       // its toast; treating this refresh failure as a rejected create would
@@ -316,12 +334,103 @@ watch([isArchivedHistory, activeBoardId], () => {
   closeHistoryDetail()
 })
 
+/**
+ * The session expired and `api/http.ts` is about to hard-navigate to /login
+ * (GH-2142). This runs synchronously in that last beat: persist the active
+ * surface's draft -- text, board target, labels, due date -- plus its failure
+ * receipt, so the flagship "capture a thought" path does not silently eat the
+ * typed text on the auth-expiry class.
+ *
+ * The receipt is usually still empty here: the interceptor fires before the
+ * capture call's own rejection reaches `dispatchCapture`. A session-expiry
+ * reason is synthesised in that case so the restored draft always arrives with
+ * an explanation rather than sitting there unaccounted for.
+ */
+function handleAuthExpired() {
+  if (isArchivedHistory.value) return
+  const active = variant.value
+  const snapshot =
+    active === 'nib' ? nibRef.value?.snapshotDraft() : composerRef.value?.snapshotDraft()
+  if (!snapshot) return
+  const draft = snapshot as {
+    text: string
+    boardId?: string | null
+    labels?: string[]
+    dueAt?: string | null
+  }
+  stashCaptureDraft({
+    variant: active,
+    text: draft.text,
+    boardId: draft.boardId ?? null,
+    labels: draft.labels ?? [],
+    dueAt: draft.dueAt ?? null,
+    failure:
+      captureErrors.value[active] ?? {
+        message: t('inbox.capture.sessionExpiredReason'),
+        details: null,
+      },
+  })
+}
+
+/**
+ * Put a stashed draft back after re-authentication. Read-and-clear: once the
+ * text is in the composer it lives there, and a later reload must not
+ * resurrect a copy of something already sent or discarded. Archived history
+ * has no capture surface at all, so the stash is left untouched for the next
+ * live visit rather than silently dropped.
+ */
+function restoreStashedDraft() {
+  if (isArchivedHistory.value) return
+  const stashed = takeCaptureDraft()
+  if (!stashed) return
+  restoredDraft.value = stashed
+  variant.value = stashed.variant
+  captureErrors.value[stashed.variant] = stashed.failure
+  void nextTick(() => {
+    if (stashed.variant === 'nib') {
+      nibRef.value?.restoreDraft({ text: stashed.text })
+      nibRef.value?.focus()
+      return
+    }
+    composerRef.value?.restoreDraft({
+      text: stashed.text,
+      boardId: stashed.boardId,
+      labels: stashed.labels,
+      dueAt: stashed.dueAt,
+    })
+    composerRef.value?.focus()
+  })
+}
+
+/** Explicit "I do not want this back" -- empties the surface and the stash. */
+function discardRestoredDraft() {
+  const surface = restoredDraft.value?.variant ?? variant.value
+  restoredDraft.value = null
+  captureErrors.value[surface] = null
+  clearCaptureDraft()
+  if (surface === 'nib') {
+    nibRef.value?.resetDraft()
+    nibRef.value?.focus()
+    return
+  }
+  composerRef.value?.resetDraft()
+  composerRef.value?.focus()
+}
+
+let stopAuthExpiredListener: (() => void) | null = null
+
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
+  stopAuthExpiredListener = onAuthExpired(handleAuthExpired)
+  restoreStashedDraft()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  if (stopAuthExpiredListener) {
+    stopAuthExpiredListener()
+    stopAuthExpiredListener = null
+  }
   if (bleedTimer) {
     clearTimeout(bleedTimer)
     bleedTimer = null
@@ -416,6 +525,26 @@ defineExpose({ variant, toggleVariant, setVariant })
         @submit="onComposerSubmit"
       />
       <p
+        v-if="restoredDraft"
+        class="paper-inbox__capture-restored"
+        role="status"
+        data-testid="paper-inbox-capture-restored"
+      >
+        <strong>{{ $t('inbox.capture.draftRestoredLead') }}</strong>
+        <span>{{ $t('inbox.capture.draftRestoredDetail') }}</span>
+        <span v-if="restoredDraft.truncated" data-testid="paper-inbox-capture-restored-truncated">
+          {{ $t('inbox.capture.draftRestoredTruncated') }}
+        </span>
+        <button
+          type="button"
+          class="paper-inbox__capture-restored-discard"
+          data-testid="paper-inbox-capture-restored-discard"
+          @click="discardRestoredDraft"
+        >
+          {{ $t('inbox.capture.draftRestoredDiscard') }}
+        </button>
+      </p>
+      <p
         v-if="activeCaptureError"
         :id="CAPTURE_ERROR_ID"
         class="paper-inbox__capture-error"
@@ -508,6 +637,30 @@ defineExpose({ variant, toggleVariant, setVariant })
 }
 .paper-inbox__capture {
   margin-top: 8px;
+}
+.paper-inbox__capture-restored {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--ember);
+  border-radius: 2px;
+  background: var(--paper-2);
+  font-size: 13px;
+  color: var(--ink);
+}
+.paper-inbox__capture-restored-discard {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--mute);
+  text-decoration: underline;
+  cursor: pointer;
 }
 .paper-inbox__capture-error {
   display: flex;
