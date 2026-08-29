@@ -2,6 +2,13 @@
 
 Last Updated: 2026-08-29
 
+> **Superseded as a status source — the rulings landed the same day.** This is the pre-ruling brief;
+> it is kept as the decision record and its "Proposed" statements describe the state it was drafted
+> against, not the state now. All three ADRs were ratified in-session on 2026-08-29: **ADR-0060
+> Accepted** (`#2084`), **ADR-0062 Accepted** (`#2091`), **ADR-0061 Accepted as direction only,
+> evidence pending** (`#1772`, with three CL-1 values still outstanding). `docs/decisions/INDEX.md`
+> and each ADR's own "Decisions recorded (2026-08-29)" section are the canonical statuses.
+
 Prepared under the maintainer's 2026-08-29 walkthrough reply **q-1 = A** ("dedicated ratification session — one decision brief per ADR with per-question options"). Nothing here is ratified: all three ADRs remain **Proposed** until the maintainer records rulings on `#2084`, `#1772`, and `#2091`. Every brief was drafted from the ADR text, its owning issues, and shipped reality on `main` `927236bd0`, then adversarially critiqued by an independent agent. Recommendations are evidence-based defaults, not decisions.
 
 How to use: each ADR has a numbered list of sub-decisions with lettered options. Reply per ADR either "accept the recommended letters" or name the overrides (`<id>=<letter>`). **Letters alone do not complete ADR-0061 / CL-1:** `access-boundary` needs the collaborator named, `budget-alerts-cost-owner` needs the monthly ceiling and alert threshold, and `backup-retention-destination` needs the off-platform retention window — supply them in the reply scope (e.g. `collaborator=<handle> ceiling=<USD/month> alert=<USD> retention=<days>`), or the agent records the letters as decided-pending-values and the deployment-critical inputs stay open. After the rulings are recorded on the owning issue, an agent writes a "Decisions recorded" section into the ADR, flips its status, and updates `docs/decisions/INDEX.md`.
