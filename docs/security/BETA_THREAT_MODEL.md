@@ -57,10 +57,11 @@ referenced here, not duplicated.
 | B3 | User → user | Invited collaborator with a board grant | Claims-first authorization via `AuthorizationService` / `BoardAccessService`; roles carry a read/write lane split. |
 | B4 | HTTP API-key holder | Scoped `tdsk_` key — `Read` / `Propose` / `Manage` / `Full` (`backend/src/Taskdeck.Domain/Enums/ApiKeyScope.cs:9-13`) | Key is SHA-256 at rest (`ApiKeyService.cs:97`); an 8-char prefix is stored for display (`:46`). |
 | B5 | MCP stdio client | Local agent process | Identity resolved fail-closed from `McpServer:DefaultUserId` (`Infrastructure/Mcp/StdioUserContextProvider.cs:33,80`); no approve/apply tool exists (`docs/MCP_SERVER.md:3`). |
-| B6 | Taskdeck → LLM provider | OpenAI only (ADR-0055) | Transcript-source triage may send bounded chunks off-device; mock is the default. |
+| B6 | Taskdeck → LLM provider | OpenAI is the supported vendor-hosted provider, but **`OpenAiCompatible` is retained** (ADR-0055 decisions 1 and 6) alongside `Ollama` and `Mock` | Transcript-source triage may send bounded chunks off-device; mock is the default. Under `Llm:Provider = OpenAiCompatible` the API key **and** the transcript chunks go to whatever operator-configured third-party endpoint `Llm:OpenAiCompatible:BaseUrl` names — OpenRouter, Groq and DeepSeek are the documented examples (`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md:156-222`; `CONFIGURATION_REFERENCE.md:294-296`). That endpoint's operator becomes a third party to assets 2 and 4, and the URL is SSRF/egress-validated but not vendor-vetted. |
 | B7 | Local machine access | Anyone with the OS account | SQLite file, `appsettings.local.json`, connector key, JWT in `localStorage`. |
 | B8 | Release channel → user | Downloader | Unsigned artefacts (§4, B8). |
 | B9 | Untrusted content → prompt/board | Artefact/transcript ingress | Delegated to `UNTRUSTED_ARTEFACT_THREAT_MODEL.md`. |
+| B10 | Taskdeck → operator-chosen webhook endpoint | Board owner registering an outbound webhook | A **live runtime surface** (`docs/STATUS.md:496`), not a dormant registry entry: `POST /api/boards/{boardId}/webhooks` (`Api/Controllers/OutboundWebhooksController.cs:21,88`) registers a caller-supplied URL; board mutation events are queued as `OutboundWebhookDelivery` rows whose `Payload` (board content) is persisted in the same SQLite file (`Domain/Entities/OutboundWebhookDelivery.cs:15`), and `OutboundWebhookDeliveryWorker` POSTs them signed to that URL. The `SigningSecret` is stored **plaintext** (`Domain/Entities/OutboundWebhookSubscription.cs:16`; no converter in `Persistence/Configurations/OutboundWebhookSubscriptionConfiguration.cs:25`). |
 
 ## 4. Threats, current control, status
 
@@ -74,7 +75,7 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Anyone who finds the tunnel URL reaches login / health / SignalR | Operator-side identity perimeter (Cloudflare Access, or a Tailscale tailnet with an ACL); Funnel and quick tunnels explicitly rejected for the private instance | **partial** — the control is *operator procedure*, not enforced by Taskdeck (`SELF_HOST_TUNNEL_GUIDE.md:55-81`) |
-| Credential stuffing / brute force | Fixed-window `AuthPerIp`, production default 120/60s (`CONFIGURATION_REFERENCE.md:531`); MCP has a separate authentication-failure budget and pre-auth concurrency cap (`:541-543`) | **partial** — behind a reverse proxy, `AuthPerIp` can collapse users into one bucket (`Api/Extensions/PipelineConfiguration.cs:57`) |
+| Credential stuffing / brute force | Fixed-window `AuthPerIp`, production default **20 permits / 60 s** (`backend/src/Taskdeck.Api/appsettings.json:87-90`; `CONFIGURATION_REFERENCE.md:531`) — 120/60 s is the **Development** override (`appsettings.Development.json:64-67`); MCP has a separate authentication-failure budget and pre-auth concurrency cap (`:541-543`) | **partial** — behind a reverse proxy, `AuthPerIp` can collapse users into one bucket (`Api/Extensions/PipelineConfiguration.cs:57`) |
 | Plaintext traffic on the LAN posture | None in-product; login works over plain HTTP and the JWT rides it | **partial (documented)** — `LAN_DEVICE_ACCESS_GUIDE.md:295`; teardown is the mitigation |
 | Volumetric abuse / DoS | Rate limits only; one SQLite file, no per-account resource isolation | **partial** |
 
@@ -113,7 +114,7 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Private transcript content leaves the device | Live providers off by default (`Llm__EnableLiveProviders=false`, `Llm__Provider=Mock` in the compose stack); egress disclosure documented (ADR-0055; `SELF_HOST_TUNNEL_GUIDE.md:107`) | **shipped** |
-| Runaway spend | `LlmQuota:RequestsPerHour` 60, `TokensPerDay` 100000, optional `GlobalBudgetCeilingTokens` (`CONFIGURATION_REFERENCE.md:349-353`) | **shipped** — the global ceiling defaults to unlimited |
+| Runaway spend | `LlmQuota:RequestsPerHour` 60, `TokensPerDay` 100000, optional `GlobalBudgetCeilingTokens` (`CONFIGURATION_REFERENCE.md:349-353`) | **partial** — the ceiling defaults to unlimited **and is not a whole-instance cap**: it is evaluated **per `LlmSurface`**. The check reads `GetTotalTokensAsync(null, surface, …)` (`Application/Services/LlmQuotaService.cs:88-91`) and the reservation SQL filters `WHERE Surface = {surfaceValue}` (`Infrastructure/Repositories/LlmUsageRecordRepository.cs:149,183`), so each of `Chat`, `CaptureTriage` and `Worker` (`Domain/Enums/LlmSurface.cs:7-11`) gets its own full ceiling. Worst-case daily spend is **up to 3 × the configured value**, before the `#1435` reservation overshoot below |
 | Concurrent callers overshoot the budget | Reservation of `ReservationEstimatedTokens` (default 2000) with a TTL sweep (`:352-353`) | **open — `#1435`** LLM quota reservation TOCTOU |
 | A provider call hangs and pins resources | Per-client `HttpClient.Timeout` (`Api/Extensions/LlmProviderRegistration.cs:136,164,194`); connector calls 10s (`Application/Connectors/ConnectorExecutionService.cs:20`) | **shipped** |
 | Provider-side retention or compromise | Disclosure only | **accepted residual** |
@@ -124,10 +125,21 @@ unverified.
 
 | Threat | Current control | Status |
 | --- | --- | --- |
-| Connector credentials readable from disk | AES-256 with `Connectors:EncryptionKey`; Production **refuses to start** without it, Development uses a deterministic fallback (`CONFIGURATION_REFERENCE.md:824`; `Api/FirstRun/FirstRunBootstrapper.cs:646-653`) | **shipped** |
+| Connector credentials readable from disk — **headless Production** (Docker/GHCR, model B) | AES-256 with `Connectors:EncryptionKey`. `ShouldAutoGenerateConnectorKey => !isProduction \|\| !isHeadless` (`Api/FirstRun/FirstRunBootstrapper.cs:684-685`) is **false** here, so no key is generated and `ValidateProductionSecrets` throws (`:623,648-657`). The operator must supply the key out of band | **shipped** — fail-closed |
+| Connector credentials readable from disk — **non-headless Production** (the desktop exe, model A) and every non-Production environment | The app does **not** fail fast. `RunFirstRunChecks` (`Api/Program.cs:363`) runs *before* `ValidateProductionSecrets` (`:369`) and auto-generates a random 256-bit key, persisting it to `appsettings.local.json` (`FirstRunBootstrapper.cs:811-818,963-1005`), so validation always finds a key. The key then sits **next to the database on the same disk**, defeating the AES-at-rest control against anyone with the OS account | **partial** — deliberate (a self-contained exe stays runnable), but it is *not* a "Production refuses to start" guarantee. Model B is the only one that enforces external key custody |
 | Silent key rotation destroying stored credentials | Startup stops instead of rotating (`CONFIGURATION_REFERENCE.md:200`) | **shipped** |
 | JWT theft via XSS or local access | Token in `localStorage` (ADR-0009, per `LAN_DEVICE_ACCESS_GUIDE.md:295`) | **accepted residual** |
 | SQLite file copied off the machine | No database-level encryption | **accepted residual** — this is what makes `#1653` material |
+
+### B10 — outbound webhooks
+
+| Threat | Current control | Status |
+| --- | --- | --- |
+| A registered endpoint is used to reach the host's own network (SSRF) | `OutboundWebhookEndpointGuard` blocks private/loopback/link-local addresses, `.local` / `.internal` / `.home.arpa` / `.localhost` / `.localtest.me` suffixes, cloud-metadata hosts and `nip.io`-class dynamic-DNS rebinding roots, resolving the host and rejecting when no address survives (`Application/Services/OutboundWebhookEndpointGuard.cs:9-43,45,71`); `OutboundWebhookConnectCallback` re-pins the connect target and the handler sets `UseProxy = false` (`docs/STATUS.md:264`) | **shipped** — `Connectors:AllowLocalhostEndpoints` (`OutboundWebhookSecuritySettings.cs:5`) deliberately re-opens loopback; keep it off outside development |
+| Board content leaves the instance to a caller-chosen URL | Non-localhost endpoints **must** be `https` (`Application/Services/OutboundWebhookService.cs:227-246`); subscriptions are board-scoped and revocable, with secret rotation (`OutboundWebhooksController.cs:140`) | **partial** — the destination is the *operator's own* choice, so this is disclosure, not prevention; the payload is board data leaving the perimeter |
+| Delivery payloads readable from a copied database | None — `OutboundWebhookDelivery.Payload` is stored as plaintext board content beside the plaintext `SigningSecret` (`OutboundWebhookSubscription.cs:16`) | **accepted residual** — same root cause as `#1653`: no database-level encryption |
+| A stolen signing secret lets an attacker forge deliveries to the receiver | HMAC signing (`OutboundWebhookSignature.cs`); the secret is plaintext at rest and readable by anyone holding the SQLite file | **partial** — rotate via the endpoint above after any file exposure |
+| A hostile or dead endpoint pins the worker | Bounded attempts with configured backoff then a dead-letter terminal state (`Api/Workers/OutboundWebhookDeliveryWorker.cs:323-340`); failure messages are redacted before persistence (`docs/STATUS.md:502`) | **shipped** |
 
 ### B8 — distribution
 
@@ -162,10 +174,16 @@ unverified.
 
 ## 6. Operator guidance — minimum safe posture for a self-hosted beta
 
-1. **Registration.** Start in `InviteOnly`, register yourself first (the first registration claims
-   the bootstrap slot), mint one invite per person, then switch to `Closed` and recreate the
-   container. Verify that a fresh `POST /api/auth/register` is refused
-   (`SELF_HOST_TUNNEL_GUIDE.md:87-106`).
+1. **Registration.** Start in `InviteOnly`, then **mint the first invite from the CLI before you
+   register** — `taskdeck invite create --expires 7` (`backend/src/Taskdeck.Cli/Commands/InvitesCommandHandler.cs:21-24`;
+   `CONFIGURATION_REFERENCE.md:220`). There is **no unauthenticated bootstrap exemption**: outside
+   `Open`, `RegistrationPolicyService.CheckNewUserEligibilityAsync` requires a well-formed, available
+   invite for *every* registration including the first
+   (`backend/src/Taskdeck.Application/Services/RegistrationPolicyService.cs:33-55`), so a fresh
+   `InviteOnly` or `Closed` instance answers the very first `POST /api/auth/register` with `403`.
+   Register yourself with that invite (the registration claims the bootstrap slot), mint one invite
+   per person, then switch to `Closed` and recreate the container. Verify that a fresh
+   `POST /api/auth/register` is refused (`SELF_HOST_TUNNEL_GUIDE.md:87-106`).
 2. **Perimeter.** Never expose the origin behind only an unlisted URL. Use a named Cloudflare tunnel
    fronted by a Cloudflare Access application, or `tailscale serve` inside an ACL-scoped tailnet —
    **never** Tailscale Funnel and never a quick tunnel beyond a minutes-long smoke test. Verify from
@@ -177,14 +195,33 @@ unverified.
    secret store, never the repository. Back both up *separately from the database* — losing the
    connector key makes stored credentials unrecoverable, and the app refuses to start rather than
    rotate.
-5. **Backups.** The SQLite file plus the two keys. Treat the file as credential-bearing: today it
-   contains plaintext TOTP seeds (`#1653`).
+5. **Backups.** **Never raw-copy the live database file.** SQLite runs in WAL mode, so committed
+   rows sit in the `-wal` sidecar and a plain `cp` of `taskdeck.db` yields an incomplete or corrupt
+   snapshot (`SELF_HOST_TUNNEL_GUIDE.md:201-208`). Take an **application-consistent** backup by one
+   of two routes:
+   - the SQLite online-backup API via `scripts/backup.sh`, which uses `sqlite3 .backup` and is safe
+     against an active writer (`scripts/backup.sh:1-7`). It defaults to `~/.taskdeck/taskdeck.db`, so
+     pass `--db-path` explicitly; for the Docker stack the guide's throwaway-container invocation
+     (`SELF_HOST_TUNNEL_GUIDE.md:210-218`) is the supported form, because the production image ships
+     neither the script nor `sqlite3` (`#1772`);
+   - or **stop the container first**, then copy `taskdeck.db` *together with* its `-wal` and `-shm`
+     sidecars, and restore all of them together.
+
+   Back the two keys up separately from the database, never in the same bundle
+   (`SELF_HOST_TUNNEL_GUIDE.md:29-34`). Treat the database as credential-bearing: today it contains
+   plaintext TOTP seeds (`#1653`), plaintext webhook signing secrets and persisted webhook payloads.
 6. **API keys.** Mint the narrowest scope that works — `Read` or `Propose`, not `Full` — and set an
    expiry. Rotate on any suspicion; the plaintext is shown once.
 7. **LLM spend.** Keep live providers off unless needed. When on, set
    `LlmQuota:GlobalBudgetCeilingTokens` as well as the per-user limits (the global ceiling defaults
    to unlimited) and set a hard spend cap at the provider too.
-8. **MFA.** Turn on `MfaPolicy:EnableMfaSetup` and enroll, accepting the seed-at-rest residual.
+8. **MFA.** **Leave `MfaPolicy:EnableMfaSetup` at its `false` default for the self-hosted beta.**
+   Production MFA remains blocked until `#1653` ships seed encryption, key management, migration,
+   rotation and fail-closed handling (`docs/STATUS.md:219`): the TOTP seed is stored as plaintext
+   Base32 (`Domain/Entities/MfaCredential.cs:20-22`), so enrolling would put a working second factor
+   in every copy and every backup of the database — the seed-at-rest exposure is *created* by
+   enrolling, and it buys no protection against the file-copy attacker it would be defending against.
+   Revisit only when `#1653` has landed.
 9. **Downloads.** Verify the published SHA-256 and expect the unsigned-binary warning
    (`docs/releases/WINDOWS_QUICK_START.md`, `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`).
 
