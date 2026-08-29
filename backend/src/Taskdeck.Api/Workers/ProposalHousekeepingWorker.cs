@@ -66,9 +66,27 @@ public class ProposalHousekeepingWorker : BackgroundService
         // than a bounded display-order page (#1259): the prior GetByStatusAsync(limit 100) + in-memory
         // ExpiresAt filter could leave genuinely-expired proposals un-expired once the pending backlog
         // exceeded the page (the bottom of the window — typically the oldest/stalest — was dropped).
-        var expiredProposals = (await unitOfWork.AutomationProposals.GetExpiredAsync(ct)).ToList();
+        //
+        // The sweep arrives already partitioned by ADR-0063's archived-board rule (#2197): proposals
+        // on an extant archived board are withheld by the query, so this loop cannot expire one, and
+        // no save, notification, or audit row is produced for them. They are not dropped — restoring
+        // the board makes them eligible on a later cycle.
+        var sweep = await unitOfWork.AutomationProposals.GetExpiredAsync(ct);
+        var expiredProposals = sweep.Expirable;
         var expiredCount = 0;
         activity?.SetTag("taskdeck.proposals.expired_candidate_count", expiredProposals.Count);
+        activity?.SetTag(
+            "taskdeck.proposals.skipped_archived_board_count",
+            sweep.SkippedArchivedBoardCount);
+
+        if (sweep.SkippedArchivedBoardCount > 0)
+        {
+            // Count only — no proposal id, summary, or board name — so this stays non-secret.
+            _logger.LogInformation(
+                "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                    + "restore the board to let them expire.",
+                sweep.SkippedArchivedBoardCount);
+        }
 
         foreach (var proposal in expiredProposals)
         {
