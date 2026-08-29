@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-26
+Last Updated: 2026-08-29
 
 **Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -89,7 +89,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Item | Issue | Notes |
 |---|---|---|
 | LLM transcript triage (epic): strategy behind `ICaptureTriageService` for transcript sources, worker dispatch branch, chunked map-reduce, cap raise, triage schema v2 (type/assignee/due), deterministic fallback | REVIVAL-08 | the WhisperX payoff; seam verified in the assessment |
-| Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` remains open for triage linkage, spans, provenance API, and Paper deep links |
+| Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` **closed 2026-08-27** (PR `#2144`: orphan vocabulary removed, INV-12 rewired onto `ProvenanceEvidenceLink`, cap/retention documented; spans live-verified in the acceptance walkthrough) — shipped in v0.2.0; residuals `#1987`/`#1284` (provenance footnote wiring) |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
 | Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
