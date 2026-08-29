@@ -37,6 +37,15 @@ public class CaptureTriageService : ICaptureTriageService
     public const string DegradedTriageNoticePrefix = "LLM triage unavailable";
 
     /// <summary>
+    /// Detail published when the extraction leg threw an unexpected exception. The exception's own
+    /// message is deliberately NOT used: it is arbitrary text from any layer the extractor touches,
+    /// and this detail reaches a client-visible capture field, so pattern-based redaction (which
+    /// only masks shapes it recognizes) is not a sufficient guard. The exception is logged in full.
+    /// </summary>
+    public const string UnexpectedExtractorFailureDetail =
+        "The triage engine failed unexpectedly; the reason is in the server log.";
+
+    /// <summary>
     /// Bound on the provider/validation detail appended to a degraded-triage notice. Keeps the
     /// whole notice comfortably inside the stored <c>ErrorMessage</c> column bound
     /// (<see cref="LlmRequest.MaxErrorMessageLength"/>) without relying on truncation there.
@@ -201,7 +210,8 @@ public class CaptureTriageService : ICaptureTriageService
                 reconciliation.Value,
                 reusePromptVersion,
                 reuseProvider,
-                reuseModel));
+                reuseModel,
+                ResolveReuseDegradedNotice(llmIsCandidate, reuseProvider)));
         }
 
         // Re-check current board access before service-level board/column reads or transcript extraction. A queued
@@ -500,6 +510,52 @@ public class CaptureTriageService : ICaptureTriageService
     }
 
     /// <summary>
+    /// Recovers the degradation record for a proposal that an EARLIER run authored and this run is
+    /// only reusing (#2192 review). Without this, the crash-recovery replay — a degraded attempt
+    /// that committed its proposal and stopped before the worker stamped the capture — completed
+    /// with no notice, leaving exactly the silent fallback this issue is about.
+    /// <para>
+    /// The current run did not author the proposal, so the notice is derived from what the author
+    /// actually recorded rather than from anything observed now. It never names an outcome: the
+    /// authoring run's outcome was not persisted, and inventing one would be the same dishonesty
+    /// in the other direction.
+    /// </para>
+    /// </summary>
+    /// <param name="reuseProvider">
+    /// The provenance resolved by <see cref="ResolveReuseProvenance"/> — the author's own stamped
+    /// provider when it recorded one, otherwise <see cref="UnknownProvenanceValue"/>.
+    /// </param>
+    private static string? ResolveReuseDegradedNotice(bool llmIsCandidate, string reuseProvider)
+    {
+        if (!llmIsCandidate)
+        {
+            // No LLM leg was ever a candidate for this capture, so the deterministic extractor is
+            // the expected engine and nothing degraded.
+            return null;
+        }
+
+        if (string.Equals(reuseProvider, TriageProviderName, StringComparison.Ordinal))
+        {
+            // The author stamped its own provenance and it names the deterministic extractor, so a
+            // fallback definitely happened on the run that created this proposal.
+            return $"{DegradedTriageNoticePrefix}; using deterministic extractor. " +
+                   "Recovered from an earlier triage run, which did not record why.";
+        }
+
+        if (string.Equals(reuseProvider, UnknownProvenanceValue, StringComparison.Ordinal))
+        {
+            // The authoring run committed the proposal and crashed before stamping provenance, so
+            // either engine could have produced it. Silence would hide a possible fallback and
+            // naming an outcome would fabricate one, so the honest record is the uncertainty.
+            return "Triage engine unknown for this proposal: it was recovered from an interrupted " +
+                   "run and may have come from the deterministic extractor rather than the model.";
+        }
+
+        // Stamped provenance names a live model — the LLM authored this proposal.
+        return null;
+    }
+
+    /// <summary>
     /// Classifies an extraction outcome as a degradation worth recording on the capture.
     /// <para>
     /// True for every outcome where a live LLM leg was expected to run and did not deliver — the
@@ -778,9 +834,15 @@ public class CaptureTriageService : ICaptureTriageService
                 ex,
                 "LLM transcript triage threw unexpectedly for capture {CaptureItemId}; using deterministic extractor",
                 captureItemId);
+
+            // The exception itself stays in the log above and nowhere else. Its message is
+            // arbitrary text from any layer the extractor touches — internal paths, connection
+            // details, a secret embedded in an unrecognized format — and this Detail is now
+            // published on the capture, so it cannot be a pass-through. Pattern redaction is not
+            // sufficient here because it only masks shapes it already recognizes.
             return new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.InvalidOutput,
-                Detail: ex.Message);
+                Detail: UnexpectedExtractorFailureDetail);
         }
     }
 
