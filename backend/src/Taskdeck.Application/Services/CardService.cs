@@ -282,6 +282,13 @@ public class CardService
             if (targetColumn == null)
                 return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.TargetColumnId} not found");
 
+            var targetBoard = await _unitOfWork.Boards.GetByIdAsync(targetColumn.BoardId, cancellationToken);
+            if (targetBoard?.IsArchived == true)
+                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+
+            if (targetColumn.BoardId != card.BoardId)
+                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.TargetColumnId} not found in board {card.BoardId}");
+
             // Check WIP limit (only if moving to a different column)
             if (card.ColumnId != dto.TargetColumnId && targetColumn.WouldExceedWipLimitIfAdded())
                 return Result.Failure<CardDto>(ErrorCodes.WipLimitExceeded,

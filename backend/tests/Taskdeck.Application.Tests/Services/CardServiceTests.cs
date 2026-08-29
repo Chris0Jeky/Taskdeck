@@ -845,6 +845,48 @@ public class CardServiceTests
     }
 
     [Fact]
+    public async Task MoveCardAsync_ShouldReturnNotFound_WhenTargetColumnBelongsToAnotherBoard()
+    {
+        var sourceBoard = TestDataBuilder.CreateBoard();
+        var targetBoard = TestDataBuilder.CreateBoard();
+        var sourceColumn = TestDataBuilder.CreateColumn(sourceBoard.Id);
+        var targetColumn = TestDataBuilder.CreateColumn(targetBoard.Id);
+        var card = TestDataBuilder.CreateCard(sourceBoard.Id, sourceColumn.Id);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(sourceBoard.Id, default)).ReturnsAsync(sourceBoard);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(targetBoard.Id, default)).ReturnsAsync(targetBoard);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+
+        var result = await _service.MoveCardAsync(card.Id, new MoveCardDto(targetColumn.Id, 0));
+
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        card.ColumnId.Should().Be(sourceColumn.Id);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task MoveCardAsync_ShouldReturnInvalidOperation_WhenTargetBoardIsArchived()
+    {
+        var sourceBoard = TestDataBuilder.CreateBoard();
+        var targetBoard = TestDataBuilder.CreateBoard(isArchived: true);
+        var sourceColumn = TestDataBuilder.CreateColumn(sourceBoard.Id);
+        var targetColumn = TestDataBuilder.CreateColumn(targetBoard.Id);
+        var card = TestDataBuilder.CreateCard(sourceBoard.Id, sourceColumn.Id);
+
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(sourceBoard.Id, default)).ReturnsAsync(sourceBoard);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(targetBoard.Id, default)).ReturnsAsync(targetBoard);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(targetColumn.Id, default)).ReturnsAsync(targetColumn);
+
+        var result = await _service.MoveCardAsync(card.Id, new MoveCardDto(targetColumn.Id, 0));
+
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        card.ColumnId.Should().Be(sourceColumn.Id);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task MoveCardAsync_ShouldReturnInvalidOperation_WhenBoardIsArchived()
     {
         var board = TestDataBuilder.CreateBoard(isArchived: true);
