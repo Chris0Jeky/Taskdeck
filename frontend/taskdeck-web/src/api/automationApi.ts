@@ -13,15 +13,22 @@ export const automationApi = {
    * of the shared retry interceptor and carries an abort signal so a poll can be
    * cancelled when the surface is left. Ordinary callers pass nothing and keep
    * the retrying, uncancellable behaviour.
+   *
+   * The config is forwarded ONLY when one was supplied. Passing `undefined`
+   * unconditionally is behaviourally identical to axios but NOT identical to
+   * observe: it changes the arity of every existing caller's `http.get` call,
+   * which is what the exact-args assertion below in `automationApi.spec.ts`
+   * pins -- and it went red in CI. Keeping the one-argument shape leaves every
+   * other caller byte-identical, which is the whole promise of an optional arg.
    */
   async getProposals(
     filters?: ProposalFilters,
     options?: { signal?: AbortSignal; skipRetry?: boolean },
   ): Promise<Proposal[]> {
-    const { data } = await http.get<Proposal[]>(
-      `/automation/proposals${buildQueryString(filters)}`,
-      options,
-    )
+    const url = `/automation/proposals${buildQueryString(filters)}`
+    const { data } = options
+      ? await http.get<Proposal[]>(url, options)
+      : await http.get<Proposal[]>(url)
     return data
   },
 
