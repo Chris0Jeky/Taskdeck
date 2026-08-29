@@ -201,6 +201,180 @@ public class CaptureTriageOutputContractTests
         result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV1);
     }
 
+    // ---- Due-date plausibility (#2193) ------------------------------------------------------
+    // A prompt with no reference date let gpt-4o-mini answer "Monday 1 September", spoken in
+    // August 2026, with 2023-09-01, and a format-only contract carried it onto a card.
+
+    /// <summary>The capture day used by the plausibility tests: the day the defect was reported.</summary>
+    private static readonly DateOnly ReferenceDate = new(2026, 8, 29);
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldKeepHintAndRaiseNoNote_WhenDateIsPlausible()
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            "2026-09-05",
+            1,
+            ReferenceDate,
+            out var note);
+
+        reviewed.Should().Be("2026-09-05");
+        note.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldDropHallucinatedYearWithAnHonestNote()
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            "2023-09-01",
+            3,
+            ReferenceDate,
+            out var note);
+
+        reviewed.Should().BeNull();
+        note.Should().NotBeNull();
+        note.Should().Contain("Task 3");
+        note.Should().Contain("2023-09-01");
+        note.Should().Contain("2026-08-29");
+    }
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldKeepANextYearResolution_FromADecemberCaptureDay()
+    {
+        // The prompt resolves a partial date forward, so a December capture saying "1 January"
+        // legitimately resolves into the NEXT calendar year. The window must not treat that
+        // year change as the hallucination it exists to catch.
+        var newYearsEve = new DateOnly(2026, 12, 31);
+
+        CaptureTriageOutputContract
+            .IsWithinDueDatePlausibilityWindow(new DateOnly(2027, 1, 1), newYearsEve)
+            .Should().BeTrue();
+
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            "2027-01-01",
+            1,
+            newYearsEve,
+            out var note);
+
+        reviewed.Should().Be("2027-01-01");
+        note.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldDropDateFarBeyondTheWindow()
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            "2036-01-01",
+            1,
+            ReferenceDate,
+            out var note);
+
+        reviewed.Should().BeNull();
+        note.Should().Contain("2036-01-01");
+    }
+
+    [Theory]
+    [InlineData("next Friday")]
+    [InlineData("2026-02-30")]
+    [InlineData("2026-9-5")]
+    [InlineData(" 2026-09-05 ")]
+    public void ReviewDueDateHint_ShouldDropHintThatIsNotACalendarDate(string dueDateHint)
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            dueDateHint,
+            2,
+            ReferenceDate,
+            out var note);
+
+        reviewed.Should().BeNull();
+        note.Should().Contain("not a YYYY-MM-DD calendar date");
+    }
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldBoundTheQuotedHint_WhenTheModelReturnsArbitraryText()
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            new string('x', 500) + "\n" + new string('y', 500),
+            1,
+            ReferenceDate,
+            out var note);
+
+        reviewed.Should().BeNull();
+        note.Should().NotBeNull();
+        note!.Length.Should().BeLessThan(200);
+        note.Should().NotContain("\n");
+    }
+
+    [Fact]
+    public void ReviewDueDateHint_ShouldPassThroughNull()
+    {
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(null, 1, ReferenceDate, out var note);
+
+        reviewed.Should().BeNull();
+        note.Should().BeNull();
+    }
+
+    [Fact]
+    public void IsWithinDueDatePlausibilityWindow_ShouldIncludeItsOwnEdgesAndExcludeOneDayBeyond()
+    {
+        var earliest = ReferenceDate.AddYears(-CaptureTriageOutputContract.MaxDueDateYearsBeforeReference);
+        var latest = ReferenceDate.AddYears(CaptureTriageOutputContract.MaxDueDateYearsAfterReference);
+
+        CaptureTriageOutputContract.IsWithinDueDatePlausibilityWindow(earliest, ReferenceDate).Should().BeTrue();
+        CaptureTriageOutputContract.IsWithinDueDatePlausibilityWindow(latest, ReferenceDate).Should().BeTrue();
+        CaptureTriageOutputContract.IsWithinDueDatePlausibilityWindow(ReferenceDate, ReferenceDate).Should().BeTrue();
+        CaptureTriageOutputContract
+            .IsWithinDueDatePlausibilityWindow(earliest.AddDays(-1), ReferenceDate).Should().BeFalse();
+        CaptureTriageOutputContract
+            .IsWithinDueDatePlausibilityWindow(latest.AddDays(1), ReferenceDate).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateV2_ShouldRejectImplausibleDueDate_WhenAReferenceDateIsSupplied()
+    {
+        var result = CaptureTriageOutputContract.Validate(
+            BuildOutputWithDueDateHint("2023-09-01"),
+            ReferenceDate);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("2026-08-29");
+    }
+
+    [Fact]
+    public void ValidateV2_ShouldAcceptPlausibleDueDate_WhenAReferenceDateIsSupplied()
+    {
+        var result = CaptureTriageOutputContract.Validate(
+            BuildOutputWithDueDateHint("2026-09-05"),
+            ReferenceDate);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Tasks[0].DueDateHint.Should().Be("2026-09-05");
+    }
+
+    [Fact]
+    public void ValidateV2_ShouldStayFormatOnly_WhenNoReferenceDateIsSupplied()
+    {
+        // The reference date is optional so stored payloads and callers that hold no capture day
+        // keep the contract they were written against; the live path drops an implausible hint
+        // earlier, at parse time.
+        var result = CaptureTriageOutputContract.Validate(BuildOutputWithDueDateHint("2023-09-01"));
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    private static CaptureTriageOutputV2 BuildOutputWithDueDateHint(string dueDateHint) =>
+        new(CaptureTriageOutputContract.SchemaVersionV2,
+            CaptureTriageOutputContract.PromptVersionLlmV2,
+            [
+                new CaptureTriageTaskV2(
+                    "Send the revised budget",
+                    "action",
+                    "Alice",
+                    dueDateHint,
+                    0.9m,
+                    "Alice: I'll send the revised budget on Monday 1 September.")
+            ]);
+
     [Fact]
     public void TriageSchemaFile_ShouldDeclarePromptVersionAndStrictness()
     {
