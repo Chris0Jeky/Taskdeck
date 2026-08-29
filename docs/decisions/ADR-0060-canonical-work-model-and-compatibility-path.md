@@ -108,14 +108,16 @@ identity stays the card GUID; separating stable work identity from board placeme
 its own ruling. This neither grants nor forbids cross-board typed edges — that is `relation-scope`
 below. Maintainer scope note: "let's keep this for an architecture review for v0.3.0 or later" —
 `#2187` is seeded for an architecture review of multi-board identity and
-hierarchy boundaries, targeted at v0.3.0 or later, and A holds until that review records a change.
+hierarchy boundaries, targeted at v0.3.0 or later. A holds until that review's recommendation
+is recorded as an amendment to this ADR — a conclusion on `#2187` alone neither changes the
+ruling nor authorizes the stage-5 placement migration.
 
 **hierarchy-boundaries** — A: Parent/child hierarchy is same-board only, one optional parent, a hard
 depth cap of 3, a server-side cycle check, and type-agnostic — any admitted type may parent any
 admitted type, per the item-type independence rule above. Cross-project hierarchy is recorded as
 "no", vacuously while no Project entity exists, to be re-decided if stage 4 is ever ratified.
 Maintainer scope note: "same as previous" — this ruling is included in the same architecture review,
-`#2187`, and holds until that review records a change.
+`#2187`, and holds until that review's recommendation is recorded as an amendment to this ADR.
 
 **parent-lifecycle** — A: The default is detach, never cascade — deleting or archiving a parent
 clears the child's parent pointer, and children keep their IDs, board, column, history, and
@@ -161,7 +163,8 @@ export compatibility. This is a timing ruling, not a rejection: admitting a mini
 later takes an amendment here plus a `#2091` ruling.
 
 **time-tracking-fit** — A: Actual time tracking is not in the thesis for now — no WorkLog and no
-actual-time capture before the collaboration alpha, and only the built-in estimate in `#2093`
+actual-time capture during v0.3 or the Stage 2 small-team alpha (the same boundary ADR-0062
+records), and only the built-in estimate in `#2093`
 ships. The same question posed in ADR-0062 is answered here. Admitting a WorkLog event model later
 is an additive decision plus an admitted issue.
 
@@ -190,7 +193,7 @@ sufficient for the expected scale and preserve the modular monolith.
 - Stages 4-5 stay gated behind an amendment to this ADR; `#2188` reviews the
   ladder and that gating.
 - The multi-board-identity and hierarchy-boundaries rulings hold as recorded until the architecture
-  review seeded as `#2187` records a change.
+  review seeded as `#2187` produces an amendment to this ADR; the review alone changes nothing.
 - Parent archive and delete behavior depends on a real card-archive operation, so `#2185` is a
   prerequisite for the `#2087` slice that defines child behavior.
 

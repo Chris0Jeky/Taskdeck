@@ -75,7 +75,10 @@ instance): a named Cloudflare tunnel (requires a domain on Cloudflare) fronted b
 a Cloudflare Access application that allows only the two named identities, or
 Tailscale **Serve** (`tailscale serve 8080`) inside a tailnet the collaborator has
 joined — a stable `https://<machine>.<tailnet>.ts.net` URL reachable only by tailnet
-members. Do not use Tailscale Funnel for this instance: Funnel URLs are public
+members. A tailnet is not the perimeter by itself: on any tailnet with a third user,
+add a Tailscale ACL/grant that limits access to the two named identities (or use a
+dedicated two-user tailnet) and verify from a third tailnet identity that the login page
+is denied. Do not use Tailscale Funnel for this instance: Funnel URLs are public
 internet URLs with no identity check.
 
 The instance is only up while your machine is on. #1777 tracks migrating to
@@ -85,6 +88,13 @@ Render for an always-on host.
 
 1. Open the public URL yourself and **register first** — the first registration
    claims the bootstrap slot even in InviteOnly mode.
+
+   **After the collaborator's account exists, close registration** (ADR-0061
+   `access-boundary`: exactly two accounts; InviteOnly only while the second is created):
+   set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
+   `docker compose … up -d` command so the container is recreated with the new value,
+   and verify that a fresh `POST /api/auth/register` is refused. Any invite minted
+   earlier must not be able to create a third account.
 2. Mint an invite code for each additional person:
 
    ```bash
@@ -107,12 +117,24 @@ Realtime presence and updates are per-board and re-check read access on join.
 - **Backup**: the database lives in the `taskdeck-db` volume
   (`/app/data/taskdeck.db`) in WAL mode — **never copy the file while the app is
   running** (`scripts/backup.sh` and `CLOUD_DEPLOYMENT_GUIDE.md` both warn a live copy
-  can be incomplete or corrupt). Use the application-consistent path:
-  `scripts/backup.sh --retain 7` daily (it uses the SQLite online backup API), plus a
-  weekly encrypted copy to maintainer-controlled off-platform storage with a stated
-  retention window (ADR-0061 `backup-retention-destination`; for host loss the RPO is
-  the age of that off-platform copy). Keep `deploy/.env` (the connector key) in
-  separate custody, never in the same bundle.
+  can be incomplete or corrupt). The production image ships neither `scripts/backup.sh`
+  nor `sqlite3` (closing that gap is tracked on #1772), so until then run the
+  application-consistent backup from the host through a throwaway container that mounts
+  the volume — note `scripts/backup.sh` defaults to `~/.taskdeck/taskdeck.db`, so the
+  explicit `--db-path` is required:
+
+  ```bash
+  # from the repo root; the volume name is what `docker volume ls` reports
+  # (Compose prefixes it with the project name, e.g. deploy_taskdeck-db)
+  docker run --rm -v deploy_taskdeck-db:/data -v "$PWD/backups:/backups" \
+    -v "$PWD/scripts:/scripts:ro" alpine:3 sh -c \
+    'apk add --no-cache bash sqlite >/dev/null && bash /scripts/backup.sh --db-path /data/taskdeck.db --output-dir /backups --retain 7'
+  ```
+
+  Run it daily, then copy the newest file to maintainer-controlled off-platform storage,
+  encrypted, with a stated retention window (ADR-0061 `backup-retention-destination`;
+  for host loss the RPO is the age of that off-platform copy). Keep `deploy/.env` (the
+  connector key) in separate custody, never in the same bundle.
 - **Upgrade**: `git pull`, then re-run the `docker compose … up -d --build`
   command. Migrations run automatically through the serialized migrator.
 - **Revoke access**: remove the grant in the Access view; revoke a registration

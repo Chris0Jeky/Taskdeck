@@ -76,7 +76,7 @@ Distribution work does not create a public SaaS plan. [ADR-0061](../decisions/AD
 (Accepted as direction only, evidence pending — maintainer ruling 2026-08-29) and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772)
 define the maximum boundary for a possible trusted private instance. Deployment remains blocked until the maintainer supplies the three
 pending CL-1 values (the collaborator's handle, the monthly ceiling and alert threshold, the off-platform retention window), names the
-collaborator and authorizes any account or billing, and the `#1777` prerequisites are closed (backup tooling present in the production
+collaborator and authorizes any account or billing, and the Stage 1 prerequisites tracked on `#1772` are closed (backup tooling present in the production
 image or a sidecar/host procedure; a non-secret-exposing connector-decrypt verification seam for the restore drill); MFA stays disabled on
 that instance until `#1653` lands. If authorized, the proof is limited to
 one application instance, one SQLite volume, a few known users, private access, InviteOnly onboarding, exact-image evidence, SignalR/reconnect
