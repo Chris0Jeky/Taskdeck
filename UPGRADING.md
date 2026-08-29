@@ -114,7 +114,7 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## v0.2.0 — 2026-09-01
+## v0.2.0 — 2026-08-29
 
 **BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
 v0.1.1 → v0.1.2 needed no entry of its own; everything below applies when moving from any v0.1.x to

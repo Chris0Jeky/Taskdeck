@@ -141,7 +141,7 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
      deliberately being resumed;
   4. the slice advances the active product direction or repairs correctness, security, reliability,
      test, documentation-truth, or delivery substrate; and
-  5. it does not require a credential/private data, production mutation, release tag, legal or
+  5. it does not require a credential/private data, production mutation, release tag without an accepted release deck or explicit release ruling (mechanics are agent-executable per the 2026-08-29 q-1 B ruling), legal or
      licensing decision, repository/environment setting, destructive work-loss action, or subjective
      dogfooding/beta judgment.
 - Keep no more than **four issue items in `Now`** and **eight in `Next`**. Finish or deliberately park
