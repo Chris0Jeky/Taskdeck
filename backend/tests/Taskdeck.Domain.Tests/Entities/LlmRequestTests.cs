@@ -275,6 +275,45 @@ public class LlmRequestTests
     }
 
     [Fact]
+    public void MarkAsCompleted_ShouldNotCarryAMessageForwardFromAFailedAttempt()
+    {
+        // Walks the real retry lifecycle rather than calling MarkAsCompleted in isolation, which
+        // is the only way to observe whether a clean completion can inherit an earlier failure's
+        // message. ResetForRetry is the sole route from Failed back to Processing and it already
+        // clears ErrorMessage, so a request is provably always clean by the time it completes —
+        // the assignment in MarkAsCompleted is defence in depth, not the thing doing the work.
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsFailed("Transient provider error");
+        request.ErrorMessage.Should().Be("Transient provider error");
+
+        request.ResetForRetry();
+        request.MarkAsProcessing();
+        request.MarkAsCompleted();
+
+        request.Status.Should().Be(RequestStatus.Completed);
+        request.ErrorMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public void MarkAsCompleted_ShouldRecordADegradedNotice_OnARetryThatFollowedAFailure()
+    {
+        // The same lifecycle, but the retry degrades: the notice from THIS run must land, and it
+        // must not be confused with the previous attempt's failure message.
+        var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsFailed("Transient provider error");
+        request.ResetForRetry();
+        request.MarkAsProcessing();
+
+        request.MarkAsCompleted("LLM triage unavailable (QuotaExceeded); using deterministic extractor");
+
+        request.Status.Should().Be(RequestStatus.Completed);
+        request.ErrorMessage.Should().Be("LLM triage unavailable (QuotaExceeded); using deterministic extractor");
+        request.ErrorMessage.Should().NotContain("Transient provider error");
+    }
+
+    [Fact]
     public void MarkAsCompleted_ShouldTreatWhitespaceNoticeAsAbsent()
     {
         var request = new LlmRequest(Guid.NewGuid(), "transcript", "payload");

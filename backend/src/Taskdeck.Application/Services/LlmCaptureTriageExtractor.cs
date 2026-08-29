@@ -20,6 +20,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
     private readonly ILlmQuotaService? _quotaService;
     private readonly ILogger<LlmCaptureTriageExtractor>? _logger;
     private readonly ILlmCaptureTriageProgressReporter? _progressReporter;
+    private readonly LlmProviderDecision? _providerDecision;
 
     public LlmCaptureTriageExtractor(
         ILlmProvider llmProvider,
@@ -27,7 +28,8 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         ILlmKillSwitchService? killSwitchService = null,
         ILlmQuotaService? quotaService = null,
         ILogger<LlmCaptureTriageExtractor>? logger = null,
-        ILlmCaptureTriageProgressReporter? progressReporter = null)
+        ILlmCaptureTriageProgressReporter? progressReporter = null,
+        LlmProviderDecision? providerDecision = null)
     {
         _llmProvider = llmProvider;
         _settings = settings;
@@ -35,6 +37,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         _quotaService = quotaService;
         _logger = logger;
         _progressReporter = progressReporter;
+        _providerDecision = providerDecision;
     }
 
     public async Task<LlmCaptureTriageExtraction> ExtractAsync(
@@ -194,6 +197,23 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         var health = await _llmProvider.GetHealthAsync(cancellationToken);
         if (health.IsMock)
         {
+            // The mock is reached two very different ways, and conflating them is what #2192 is
+            // about. Mock BY CHOICE is an ordinary offline configuration and stays quiet. Mock by
+            // DIVERSION - the operator asked for a live provider and selection rejected it, so
+            // LlmProviderRegistration injected the mock instead - is a live provider that is not
+            // working, and it was recorded nowhere but a startup log line.
+            if (_providerDecision?.MockDiversionReason is { } diversionReason)
+            {
+                _logger?.LogWarning(
+                    "Transcript triage for user {UserId} resolved to the mock provider after a live " +
+                    "provider was requested: {DiversionReason}",
+                    userId,
+                    diversionReason);
+                return new LlmCaptureTriageExtraction(
+                    LlmCaptureTriageOutcome.ProviderUnavailable,
+                    Detail: diversionReason);
+            }
+
             return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.ProviderIsMock);
         }
 

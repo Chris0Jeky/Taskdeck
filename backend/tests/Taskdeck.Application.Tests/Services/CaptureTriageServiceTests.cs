@@ -1827,6 +1827,33 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
+    public async Task CreateProposalFromCaptureAsync_ShouldNotRecordDegradedNotice_WhenTheLlmDeliberatelyFoundNothing()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        SetupBoardAndProposalCreation(userId, boardId, captureId);
+
+        var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
+        extractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCaptureTriageExtraction(
+                LlmCaptureTriageOutcome.EmptyExtraction,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini"));
+        var service = BuildServiceWithExtractor(extractorMock);
+
+        var result = await service.CreateProposalFromCaptureAsync(captureId, userId, boardId, TranscriptPayload());
+
+        // A zero-item verdict is a successful LLM run, not a degradation. The model produced the
+        // result, so there is nothing to disclose and the provenance names the model.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ProposalId.Should().BeNull();
+        result.Value.DegradedNotice.Should().BeNull();
+        result.Value.Provider.Should().Be("OpenAI");
+    }
+
+    [Fact]
     public async Task CreateProposalFromCaptureAsync_ShouldNotRecordDegradedNotice_WhenTheLlmProducedTheProposal()
     {
         var userId = Guid.NewGuid();

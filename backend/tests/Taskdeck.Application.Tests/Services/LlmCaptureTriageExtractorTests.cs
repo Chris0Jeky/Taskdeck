@@ -539,6 +539,72 @@ public class LlmCaptureTriageExtractorTests
         _providerMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // -----------------------------------------------------------------------------------------
+    // #2192 review, HIGH: the mock is reached two ways. Mock BY CHOICE is an ordinary offline
+    // setup. Mock by DIVERSION — the operator asked for a live provider and selection rejected it
+    // — is a broken live deployment, and reporting it as ProviderIsMock made the capture-triage
+    // fallback silent for exactly the misconfiguration #2192 was filed about.
+    // -----------------------------------------------------------------------------------------
+
+    [Theory]
+    // Live requested, but the OpenAI settings fail validation (missing key, bad BaseUrl,
+    // disallowed localhost) — LlmProviderSelectionPolicy diverts to the mock.
+    [InlineData("The configured live provider failed startup validation.")]
+    // Live requested and enabled, but the environment policy declines it.
+    [InlineData("Live providers are not permitted in this environment.")]
+    // Live enabled, but the provider selector is not a recognized value.
+    [InlineData("The configured provider selector is not recognized.")]
+    public async Task ExtractAsync_ShouldReportProviderUnavailable_WhenAMockWasSubstitutedForARequestedLiveProvider(
+        string diversionReason)
+    {
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            providerDecision: new LlmProviderDecision(
+                LlmProviderKind.Mock,
+                "Reason for the startup log, which may embed the configured BaseUrl.",
+                diversionReason));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        // Unavailable, not "mock" — this deployment asked for a model and is not getting one, so
+        // CaptureTriageService records the degradation on the capture instead of staying silent.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderUnavailable);
+        result.Detail.Should().Be(diversionReason);
+
+        // The coarse reason is published; the precise one (which can embed a configured BaseUrl)
+        // stays in the startup log.
+        result.Detail.Should().NotContain("BaseUrl");
+        _providerMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldStayQuiet_WhenTheMockIsTheDeliberateConfiguration()
+    {
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            // A decision with no diversion reason: the mock is what was asked for.
+            providerDecision: new LlmProviderDecision(LlmProviderKind.Mock, "Mock provider selected."));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        // No live provider was ever expected here, so this must NOT become a degradation notice on
+        // every capture in an ordinary offline install.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderIsMock);
+        result.Detail.Should().BeNull();
+    }
+
     [Fact]
     public async Task ExtractAsync_ShouldReturnProviderUnavailable_WhenHealthCheckFails()
     {
