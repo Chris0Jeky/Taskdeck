@@ -81,8 +81,9 @@ deployment cannot proceed without them. Nothing below is implemented: no instanc
 **adr-status-disposition** — B: this ADR takes the status "Accepted as direction only, evidence
 pending", carrying a dated maintainer-ruling qualifier on the ADR-0057 precedent
 (`docs/decisions/INDEX.md:61`), rather than staying Proposed or being accepted outright. That
-discharges the ratification item and the "records the required decisions and accepts the ADR" clause
-in `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md:77` without claiming evidence that does not exist.
+discharges the ratification item, but NOT the deployment gate in
+`docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`: that gate is restated there as the still-pending CL-1
+values, the human acts, and the `#1777` prerequisites, without claiming evidence that does not exist.
 `#1772`'s fourth blocking checkbox — "ADR-0061 records those answers and moves from Proposed only
 after the evidence exists" — now reads as governing the later move to an unqualified status: the ADR
 carries the direction-only qualifier from today, and the qualifier is lifted (the status becomes
@@ -93,7 +94,9 @@ on `#1772`'s remaining human acts and the recorded solo-sprint sequencing.
 collaborator — with InviteOnly registration only while the second account is created and Closed
 afterwards, and the registration mode set explicitly at deploy time because the shipped default is
 Open. This stays inside the literal wording of the `#1644` and `#1653` risk acceptances, so neither
-has to be re-recorded. Decided — value pending from the maintainer: the collaborator has not been
+has to be re-recorded — provided the Stage 1 instance keeps MFA disabled
+(`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets
+at rest; enabling MFA there would persist plaintext TOTP secrets outside the accepted risk. Decided — value pending from the maintainer: the collaborator has not been
 named, which is `#1772`'s first blocking checkbox and is human-only.
 
 **private-access-perimeter** — A: an independent identity/access policy sits in front of the

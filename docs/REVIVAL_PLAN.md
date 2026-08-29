@@ -58,7 +58,7 @@ The 2026-08-26 reconciliation is recorded in `docs/analysis/2026-08-26-v012-dogf
 - **Waiver-seeded v0.3 candidates:** minimal typed links `#2092`, participant/multiple-assignment/estimate roll-ups `#2093`, and conditional minimal custom fields `#2094`.
 - **Later:** full Workspace/Project/WorkItem migration, boards as views over canonical items, formulas, thresholds, time logs, capacity planning, recurrence, templates, and managed multi-tenant SaaS.
 
-Proposed ADR-0060, ADR-0061, and ADR-0062 require maintainer ratification. Until then the shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged.
+ADR-0060 and ADR-0062 are Accepted and ADR-0061 is Accepted as direction only, evidence pending (maintainer rulings of 2026-08-29, recorded in each ADR). The shipped `Board -> Column -> Card` model and proposal-first automation contract remain unchanged until the v0.3 slices (`#2087`, `#2092`, `#2093`) land under those rulings; ADR-0060 stages 4–5 remain gated on an ADR amendment, and the private shared instance stays gated on the pending CL-1 values and `#1777` prerequisites.
 
 ## 4. Phases and waves (the issue map)
 

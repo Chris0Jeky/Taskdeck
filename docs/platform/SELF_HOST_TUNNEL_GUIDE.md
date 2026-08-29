@@ -26,9 +26,12 @@ printf 'TASKDECK_JWT_SECRET=%s\nTASKDECK_CONNECTORS_ENCRYPTION_KEY=%s\nTASKDECK_
   "$(openssl rand -base64 48)" "$(openssl rand -base64 32)" > .env
 ```
 
-Back up `deploy/.env` alongside the database volume: the encryption key is
-required to decrypt stored connector credentials, and the JWT secret keeps
-sessions valid across restarts.
+Back up `deploy/.env` **separately from** the database backups — never in the
+same bundle or location (ADR-0061 connector-key custody, 2026-08-29): keep it in
+a password manager plus one offline copy. The encryption key it holds is required
+to decrypt stored connector credentials, and the JWT secret keeps sessions valid
+across restarts; a single stolen bundle containing both the database and the key
+would expose every stored connector credential.
 
 ## 2. Start the stack
 
@@ -91,7 +94,8 @@ Realtime presence and updates are per-board and re-check read access on join.
 ## 6. Care and feeding
 
 - **Backup**: the database lives in the `taskdeck-db` volume
-  (`/app/data/taskdeck.db`). Snapshot it together with `deploy/.env`.
+  (`/app/data/taskdeck.db`). Snapshot it; keep `deploy/.env` (the connector key)
+  in separate custody, never in the same bundle (ADR-0061).
 - **Upgrade**: `git pull`, then re-run the `docker compose … up -d --build`
   command. Migrations run automatically through the serialized migrator.
 - **Revoke access**: remove the grant in the Access view; revoke a registration
