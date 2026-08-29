@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Card } from '../../../types/board'
+import { TdDateField } from '../../ui'
 
 defineProps<{
   card: Card
@@ -54,10 +55,9 @@ defineEmits<{
       Due Date
     </label>
     <div class="flex gap-2">
-      <input
+      <TdDateField
         id="card-due-date"
         v-model="dueDate"
-        type="date"
         class="flex-1 px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
       />
       <button

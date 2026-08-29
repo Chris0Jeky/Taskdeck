@@ -6,6 +6,7 @@ export { default as TdIconButton } from './TdIconButton.vue'
 
 /* Inputs */
 export { default as TdInput } from './TdInput.vue'
+export { default as TdDateField } from './TdDateField.vue'
 export { default as TdTextarea } from './TdTextarea.vue'
 export { default as TdSelect } from './TdSelect.vue'
 export { default as TdFieldWrapper } from './TdFieldWrapper.vue'
