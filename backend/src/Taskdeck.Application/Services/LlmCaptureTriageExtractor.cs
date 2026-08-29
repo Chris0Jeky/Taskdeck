@@ -77,6 +77,19 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         if (chunks.Count > _settings.MaxChunkCount)
         {
+            // Ask the guardrail chain FIRST. The budget decline below reports InvalidOutput, which
+            // CaptureTriageService records as "LLM triage unavailable" - true only if a live leg
+            // was ever going to run. On a deliberately offline deployment (triage disabled, or the
+            // mock by choice) no model was expected, so a merely long transcript must not
+            // manufacture a degradation notice. A kill switch, an unhealthy provider, or a mock
+            // substituted for a REQUESTED live provider still report their own outcomes here, and
+            // those are genuine degradations.
+            var offlineDecline = await DeclineBeforeProviderWorkAsync(userId, cancellationToken);
+            if (offlineDecline is not null)
+            {
+                return offlineDecline;
+            }
+
             _logger?.LogWarning(
                 "Transcript triage requires {ChunkCount} map chunks, exceeding configured maximum {MaxChunkCount}; using deterministic fallback without provider calls.",
                 chunks.Count,
@@ -170,15 +183,19 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             EvidenceSpans: reduced.Spans);
     }
 
-    private async Task<LlmCaptureTriageExtraction> ExtractChunkAsync(
+    /// <summary>
+    /// The guardrail chain that decides whether a live LLM leg is possible at all, before any
+    /// provider work or quota spend. Returns null when the leg may proceed.
+    /// <para>
+    /// Shared by the per-chunk path and the map-chunk budget decline so the two cannot drift: the
+    /// budget decline reports InvalidOutput, which the caller records as a degradation, and that is
+    /// only honest when a live leg was actually possible (#2192 review round 2).
+    /// </para>
+    /// </summary>
+    private async Task<LlmCaptureTriageExtraction?> DeclineBeforeProviderWorkAsync(
         Guid userId,
-        Guid? boardId,
-        CapturePayloadV1 payload,
-        int sourceOffset = 0,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
         if (!_settings.Enabled)
         {
             return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.Disabled);
@@ -222,6 +239,24 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.ProviderUnavailable,
                 Detail: health.ErrorMessage);
+        }
+
+        return null;
+    }
+
+    private async Task<LlmCaptureTriageExtraction> ExtractChunkAsync(
+        Guid userId,
+        Guid? boardId,
+        CapturePayloadV1 payload,
+        int sourceOffset = 0,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var decline = await DeclineBeforeProviderWorkAsync(userId, cancellationToken);
+        if (decline is not null)
+        {
+            return decline;
         }
 
         // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
