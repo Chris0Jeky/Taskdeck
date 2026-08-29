@@ -646,8 +646,8 @@ async function addStarterColumns() {
             data-testid="paper-board-settings"
             @click="openBoardSettings"
           />
-          <PaperHLBtn label="Capture here" kbd="C" @click="openCaptureBoard" />
-          <PaperHLBtn variant="ember" label="Review" kbd="R" @click="openReview" />
+          <PaperHLBtn label="Capture here" @click="openCaptureBoard" />
+          <PaperHLBtn variant="ember" label="Review" @click="openReview" />
         </div>
       </header>
 
