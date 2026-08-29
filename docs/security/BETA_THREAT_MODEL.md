@@ -52,16 +52,19 @@ referenced here, not duplicated.
 
 | # | Boundary | Actor crossing it | Notes |
 | --- | --- | --- | --- |
-| B1 | Public network → origin | Anonymous internet when a tunnel is open | Login, health and SignalR answer anyone who reaches the URL; the perimeter must be an identity/access policy, not an unlisted URL (`SELF_HOST_TUNNEL_GUIDE.md:55-61`). |
-| B2 | Unauthenticated → authenticated | Registrant, then owner | Registration mode + invite (`RegistrationPolicyService.cs:33-80`), password login, optional TOTP. |
+| B1 | Public network → origin | Anonymous internet when a tunnel is open | Login, health and SignalR answer anyone who reaches the URL; the perimeter must be an identity/access policy, not an unlisted URL (`SELF_HOST_TUNNEL_GUIDE.md:55-61`). The perimeter provider itself is a separate boundary — B13. |
+| B2 | Unauthenticated → authenticated | Registrant, then owner | Registration mode + invite (`RegistrationPolicyService.cs:33-80`), password login, optional TOTP. When an external identity provider is configured it is a second door into this boundary — B11. |
 | B3 | User → user | Invited collaborator with a board grant | Claims-first authorization via `AuthorizationService` / `BoardAccessService`; roles carry a read/write lane split. |
 | B4 | HTTP API-key holder | Scoped `tdsk_` key — `Read` / `Propose` / `Manage` / `Full` (`backend/src/Taskdeck.Domain/Enums/ApiKeyScope.cs:9-13`) | Key is SHA-256 at rest (`ApiKeyService.cs:97`); an 8-char prefix is stored for display (`:46`). |
-| B5 | MCP stdio client | Local agent process | Identity resolved fail-closed from `McpServer:DefaultUserId` (`Infrastructure/Mcp/StdioUserContextProvider.cs:33,80`); no approve/apply tool exists (`docs/MCP_SERVER.md:3`). |
-| B6 | Taskdeck → LLM provider | OpenAI is the supported vendor-hosted provider, but **`OpenAiCompatible` is retained** (ADR-0055 decisions 1 and 6) alongside `Ollama` and `Mock` | Transcript-source triage may send bounded chunks off-device; mock is the default. Under `Llm:Provider = OpenAiCompatible` the API key **and** the transcript chunks go to whatever operator-configured third-party endpoint `Llm:OpenAiCompatible:BaseUrl` names — OpenRouter, Groq and DeepSeek are the documented examples (`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md:156-222`; `CONFIGURATION_REFERENCE.md:294-296`). That endpoint's operator becomes a third party to assets 2 and 4, and the URL is SSRF/egress-validated but not vendor-vetted. |
+| B5 | MCP stdio client | Local agent process | Identity comes from `McpServer:DefaultUserId` when it is set, and **falls back to the sole active local user when it is unset** — only zero or multiple active users fail closed (`Infrastructure/Mcp/StdioUserContextProvider.cs:33-45,68-88,91-117`). Every resolved context is granted `ApiKeyScope.Full` (`:48-52`). No approve/apply tool exists (`docs/MCP_SERVER.md:3`). |
+| B6 | Taskdeck → LLM provider | OpenAI is the supported vendor-hosted provider, but **`OpenAiCompatible` is retained** (ADR-0055 decisions 1 and 6) alongside `Ollama` and `Mock` | Transcript-source triage may send bounded chunks off-device; mock is the default. Under `Llm:Provider = OpenAiCompatible` the API key **and** the transcript chunks go to whatever operator-configured third-party endpoint `Llm:OpenAiCompatible:BaseUrl` names — OpenRouter, Groq and DeepSeek are the documented examples (`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md:156-222`; `CONFIGURATION_REFERENCE.md:294-296`). That endpoint's operator becomes a third party to assets 2 and 4, and the URL is SSRF/egress-validated but not vendor-vetted. **Egress is not only transcript chunks.** The same live provider serves Automation Chat: the registered egress classification for both `api.openai.com` and an `OpenAiCompatible` base URL is "LLM prompt with board context and user input" (`Api/Extensions/LlmProviderRegistration.cs:393-397`; `Application/Services/EgressRegistry.cs:164-168`), and `ChatService.SendMessageAsync` (`Application/Services/ChatService.cs:164`) sends the user's chat text together with board context on the `Chat` surface. Transcript-chunk egress is bounded per capture and only for transcript-source captures; chat/board-context egress follows **every** chat turn. |
 | B7 | Local machine access | Anyone with the OS account | SQLite file, `appsettings.local.json`, connector key, JWT in `localStorage`. |
-| B8 | Release channel → user | Downloader | Unsigned artefacts (§4, B8). |
+| B8 | Release channel → user | Downloader | Unsigned artefacts **and an unsigned, unattested GHCR image** (§4, B8). |
+| B11 | External identity provider → Taskdeck identity | GitHub OAuth App, or any operator-configured generic OIDC provider | **Off unless configured** (`GitHubOAuth` needs both `ClientId` and `ClientSecret`; each `Oidc:Providers` entry needs `Authority`, `ClientId` and `ClientSecret` — `CONFIGURATION_REFERENCE.md:233-260`). When on, `GET /api/auth/github/login`/`callback` and `POST /api/auth/github/exchange`/`link`, plus `GET /api/auth/oidc/{provider}/login`/`callback` and `POST /api/auth/oidc/exchange` (`Api/Controllers/AuthController.cs:193,228,361,409,546,573,655`), create **or link** a local identity from provider claims (`AuthenticationService.ExternalLoginAsync`, `:168`). The IdP, its own account-recovery process and the stored client secret all join the login trust chain. |
+| B12 | Taskdeck → telemetry / analytics vendors | Operator who opts in | Sentry, an OTLP collector, and a Plausible/Umami script — all three off by default; see §4, B12. |
+| B13 | Perimeter provider → origin traffic | Cloudflare (Access / tunnel) or Tailscale | **Materially different trust.** `cloudflared tunnel --url http://localhost:8080` (`SELF_HOST_TUNNEL_GUIDE.md:70`) makes Cloudflare terminate the public TLS session and re-originate over **plaintext** to the local port, so Cloudflare is inside the confidentiality boundary. `tailscale serve 8080` (`:76`) terminates inside the tailnet instead. Threats and residuals are in the B1 table (§4). |
 | B9 | Untrusted content → prompt/board | Artefact/transcript ingress | Delegated to `UNTRUSTED_ARTEFACT_THREAT_MODEL.md`. |
-| B10 | Taskdeck → operator-chosen webhook endpoint | Board owner registering an outbound webhook | A **live runtime surface** (`docs/STATUS.md:496`), not a dormant registry entry: `POST /api/boards/{boardId}/webhooks` (`Api/Controllers/OutboundWebhooksController.cs:21,88`) registers a caller-supplied URL; board mutation events are queued as `OutboundWebhookDelivery` rows whose `Payload` (board content) is persisted in the same SQLite file (`Domain/Entities/OutboundWebhookDelivery.cs:15`), and `OutboundWebhookDeliveryWorker` POSTs them signed to that URL. The `SigningSecret` is stored **plaintext** (`Domain/Entities/OutboundWebhookSubscription.cs:16`; no converter in `Persistence/Configurations/OutboundWebhookSubscriptionConfiguration.cs:25`). |
+| B10 | Taskdeck → operator-chosen webhook endpoint | Board owner registering an outbound webhook | A **live runtime surface** (`docs/STATUS.md:496`), not a dormant registry entry: `POST /api/boards/{boardId}/webhooks` (`Api/Controllers/OutboundWebhooksController.cs:21,88`) registers a caller-supplied URL; board mutation events are queued as `OutboundWebhookDelivery` rows whose `Payload` carries **event metadata (identifiers) only** — delivery ID, event type, board ID, entity type, operation, entity ID and timestamp, with no card title, description or comment text (`Application/Services/OutboundWebhookService.cs:185-194`) — and is persisted in the same SQLite file (`Domain/Entities/OutboundWebhookDelivery.cs:15`), and `OutboundWebhookDeliveryWorker` POSTs them signed to that URL. The `SigningSecret` is stored **plaintext** (`Domain/Entities/OutboundWebhookSubscription.cs:16`; no converter in `Persistence/Configurations/OutboundWebhookSubscriptionConfiguration.cs:25`). |
 
 ## 4. Threats, current control, status
 
@@ -75,6 +78,9 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Anyone who finds the tunnel URL reaches login / health / SignalR | Operator-side identity perimeter (Cloudflare Access, or a Tailscale tailnet with an ACL); Funnel and quick tunnels explicitly rejected for the private instance | **partial** — the control is *operator procedure*, not enforced by Taskdeck (`SELF_HOST_TUNNEL_GUIDE.md:55-81`) |
+| The perimeter provider itself reads the traffic — **Cloudflare route** | None. The documented invocation is `cloudflared tunnel --url http://localhost:8080` (`SELF_HOST_TUNNEL_GUIDE.md:70`): Cloudflare terminates the public TLS session at its edge and re-originates over **plaintext HTTP** to the local port, so Cloudflare can observe request and response bodies, the submitted password and the `Authorization` bearer JWT | **accepted residual** — inherent to the deployment choice, not a defect; see B13 |
+| The perimeter provider is an availability and policy dependency — **Cloudflare route** | None in-product | **accepted residual** — the Cloudflare account, the Access application's policy and Cloudflare's own uptime all gate reachability; account takeover or a policy edit is an authentication bypass, and the operator gets no in-product signal that either happened |
+| Same two threats — **Tailscale route** | `tailscale serve 8080` (`SELF_HOST_TUNNEL_GUIDE.md:76`) keeps the session inside a WireGuard mesh terminating on the host, so the coordination service brokers keys and sees connection metadata rather than plaintext content | **materially better** — Tailscale remains an availability and ACL dependency, but not a content observer. **Never** Tailscale Funnel, which is public (`:60`) |
 | Credential stuffing / brute force | Fixed-window `AuthPerIp`, production default **20 permits / 60 s** (`backend/src/Taskdeck.Api/appsettings.json:87-90`; `CONFIGURATION_REFERENCE.md:531`) — 120/60 s is the **Development** override (`appsettings.Development.json:64-67`); MCP has a separate authentication-failure budget and pre-auth concurrency cap (`:541-543`) | **partial** — behind a reverse proxy, `AuthPerIp` can collapse users into one bucket (`Api/Extensions/PipelineConfiguration.cs:57`) |
 | Plaintext traffic on the LAN posture | None in-product; login works over plain HTTP and the JWT rides it | **partial (documented)** — `LAN_DEVICE_ACCESS_GUIDE.md:295`; teardown is the mitigation |
 | Volumetric abuse / DoS | Rate limits only; one SQLite file, no per-account resource isolation | **partial** |
@@ -85,9 +91,20 @@ unverified.
 | --- | --- | --- |
 | Untrusted registrant creates an account on an exposed instance | `Open` / `InviteOnly` / `Closed` enforced in `RegistrationPolicyService.CheckNewUserEligibilityAsync` and `AuthorizeNewUserAsync` (`:33-80`), called from `AuthenticationService.cs:108,121,214,227`; `UsersController.CreateUser` refuses outside `Open` (`:78`) | **shipped**, but the **shipped default is `Open`** (`RegistrationSettings.cs:15`) |
 | Invite replay, or a third account after the perimeter is set | Invite codes are hashed, one-time and expiring; the bootstrap slot is claimed even in `Open` so a later mode switch cannot reopen it (`RegistrationPolicyService.cs:63-74`) | **shipped** |
-| Password compromise | BCrypt at library defaults (`Application/Services/IPasswordHasher.cs:12`); login pre-checks before paying the BCrypt cost (`AuthenticationService.cs:106`) | **shipped** — work factor not tuned or measured (*unverified*) |
+| Password compromise | BCrypt at library defaults (`Application/Services/IPasswordHasher.cs:12`) | **shipped** — work factor not tuned or measured (*unverified*) |
+| Account enumeration via login timing | None. `LoginAsync` returns `AuthenticationFailed` immediately when `ResolveLoginCandidatesAsync` yields no candidate (`AuthenticationService.cs:46-48`), so an **absent** identifier never pays the BCrypt verify cost while a present one does — a measurable timing difference between the two. Only the fixed-window `AuthPerIp` limit slows the probe | **accepted residual** — an earlier draft credited a login-side BCrypt precheck here; the precheck at `AuthenticationService.cs:106` is `RegisterAsync`'s invite-eligibility check (deliberately run before hashing), not a login control |
 | MFA secret theft from a copied database | TOTP seed stored as plain Base32 (`Domain/Entities/MfaCredential.cs:20-22`); recovery codes *are* BCrypt-hashed (`MfaService.cs:75`) | **open — `#1653`** MFA TOTP seeds unencrypted at rest |
 | MFA not enforced | `MfaPolicy:EnableMfaSetup` defaults `false` and MFA is never forced (`CONFIGURATION_REFERENCE.md:270-271`) | **partial by design** |
+
+### B11 — external identity providers (opt-in)
+
+| Threat | Current control | Status |
+| --- | --- | --- |
+| Provider-account takeover becomes Taskdeck-account takeover | None in-product — this is the boundary's nature: a compromised GitHub or OIDC account signs in as the linked Taskdeck user | **accepted residual** — the surface is off unless configured, and the operator inherits the IdP's MFA and account-recovery posture wholesale |
+| Attacker registers a provider account with a victim's email to seize the account | **Explicitly prevented.** `ExternalLoginAsync` never auto-links by email; an unlinked external login always creates a *new* account, and a colliding email is rewritten to `{provider}-{providerUserId}@external.taskdeck.local` (`AuthenticationService.cs:207-210,242-245`) | **shipped** |
+| External login bypasses the registration perimeter | The same `RegistrationPolicyService` eligibility and authorization checks run for a new external account (`AuthenticationService.cs:214-235`); already-linked accounts sign in unaffected | **shipped** |
+| GitHub withholds the user's email | A synthetic `{providerUserId}@users.noreply.github.com` address is stored (`Api/Controllers/AuthController.cs:313-315`) | **shipped** — but that address is not a deliverable contact and must not be treated as a verified one |
+| Client secret disclosure | Configuration/environment custody only; the same rules as `Jwt:SecretKey` apply (`CONFIGURATION_REFERENCE.md:241,260`) | **partial** — a leaked client secret is an account-minting capability, and rotation is an IdP-side act with no in-product prompt |
 
 ### B3 — user to user
 
@@ -106,7 +123,8 @@ unverified.
 | A stolen key confers full account power | Scopes validated on mint (`ApiKeyService.cs:33-52`) and enforced fail-closed on invocation; unknown or unauthorized direct invocations fail closed (`docs/MCP_SERVER.md:222-229`) | **shipped** |
 | Key recoverable from the database | SHA-256 of the key at rest; only an 8-char prefix is plaintext (`ApiKeyService.cs:46,97`) | **shipped** — sound for a 62-alphabet random key, not for a guessable one |
 | An agent silently applies board changes | The MCP surface has no approve or apply tool (`docs/MCP_SERVER.md:3`) | **shipped** |
-| The stdio server acts as the wrong user | `McpServer:DefaultUserId` must name an existing **active** local user; empty, zero, malformed, missing or inactive fails closed without trying another account (`StdioUserContextProvider.cs:33-86`; `CONFIGURATION_REFERENCE.md:849`) | **shipped** |
+| The stdio server acts as the wrong user — **misconfigured or ambiguous** | When `McpServer:DefaultUserId` is *set* it must parse as a non-empty GUID (`StdioUserContextProvider.cs:37-44`) and name an existing **active** user, or resolution throws without falling back to another account (`:68-79`). With it *unset*, **zero** active users and **more than one** active user both throw (`:98-111`) | **shipped** — fail-closed |
+| The stdio server acts as the wrong user — **unset with exactly one active user** | Not a failure path: with `McpServer:DefaultUserId` unset and exactly one active user, the provider silently selects that account (`StdioUserContextProvider.cs:91-96,113-117`) and hands it an `ApiKeyScope.Full` context (`:48-52`) | **partial by design** — convenient for model A (single-user portable), but it means any local process that can start the stdio server acts as that user at full scope, and the *same* configuration flips from "silently full access" to a startup error the moment a second active account exists (`CONFIGURATION_REFERENCE.md:849`) |
 | Runtime tool-hash approval | Explicitly not claimed (`docs/MCP_SERVER.md:229`) | **out (this release)** |
 
 ### B6 — LLM egress and spend
@@ -114,12 +132,21 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Private transcript content leaves the device | Live providers off by default (`Llm__EnableLiveProviders=false`, `Llm__Provider=Mock` in the compose stack); egress disclosure documented (ADR-0055; `SELF_HOST_TUNNEL_GUIDE.md:107`) | **shipped** |
-| Runaway spend | `LlmQuota:RequestsPerHour` 60, `TokensPerDay` 100000, optional `GlobalBudgetCeilingTokens` (`CONFIGURATION_REFERENCE.md:349-353`) | **partial** — the ceiling defaults to unlimited **and is not a whole-instance cap**: it is evaluated **per `LlmSurface`**. The check reads `GetTotalTokensAsync(null, surface, …)` (`Application/Services/LlmQuotaService.cs:88-91`) and the reservation SQL filters `WHERE Surface = {surfaceValue}` (`Infrastructure/Repositories/LlmUsageRecordRepository.cs:149,183`), so each of `Chat`, `CaptureTriage` and `Worker` (`Domain/Enums/LlmSurface.cs:7-11`) gets its own full ceiling. Worst-case daily spend is **up to 3 × the configured value**, before the `#1435` reservation overshoot below |
+| Runaway spend | `LlmQuota:RequestsPerHour` 60, `TokensPerDay` 100000, optional `GlobalBudgetCeilingTokens` (`CONFIGURATION_REFERENCE.md:349-353`) | **partial** — the ceiling defaults to unlimited **and is not a whole-instance cap**: it is evaluated **per `LlmSurface`**. The check reads `GetTotalTokensAsync(null, surface, …)` (`Application/Services/LlmQuotaService.cs:88-91`) and the reservation SQL filters `WHERE Surface = {surfaceValue}` (`Infrastructure/Repositories/LlmUsageRecordRepository.cs:149,183`), so every `LlmSurface` that actually reaches the quota path gets its own full ceiling. **Only two do:** `Chat` (`Application/Services/ChatService.cs`) and `CaptureTriage` (`Application/Services/LlmCaptureTriageExtractor.cs`). The enum's third member, `Worker` (`Domain/Enums/LlmSurface.cs:7-11`), has **no production caller** — a repo-wide grep for `LlmSurface.` across `backend/src` outside the enum declaration returns only `Chat` and `CaptureTriage` uses. Worst-case daily spend is therefore **up to 2 × the configured value** today, rising to 3 × only if a worker surface is ever wired up, and that is before the `#1435` reservation overshoot below |
 | Concurrent callers overshoot the budget | Reservation of `ReservationEstimatedTokens` (default 2000) with a TTL sweep (`:352-353`) | **open — `#1435`** LLM quota reservation TOCTOU |
 | A provider call hangs and pins resources | Per-client `HttpClient.Timeout` (`Api/Extensions/LlmProviderRegistration.cs:136,164,194`); connector calls 10s (`Application/Connectors/ConnectorExecutionService.cs:20`) | **shipped** |
 | Provider-side retention or compromise | Disclosure only | **accepted residual** |
 | Prompt injection from ingested content | See `UNTRUSTED_ARTEFACT_THREAT_MODEL.md` | **partial** — the hostile-fixture suite is still not bound to the effective prompt/parser path (`#1323`) |
 | Extraction bomb (archive / PDF / OCR amplification) | — | **open — `#1429`**. Extraction is currently **not wired to any request path**, so the exposure is latent rather than live |
+
+### B12 — opt-in telemetry and analytics egress
+
+| Threat | Current control | Status |
+| --- | --- | --- |
+| Error reports carry user content to Sentry | Off by default — `Sentry:Enabled` **and** a non-empty DSN are both required (`Api/Extensions/SentryRegistration.cs:28,33-40`); the egress registry declares `*.ingest.sentry.io` as "Error reports with stack traces and request metadata", `MetadataOnly` (`Application/Services/EgressRegistry.cs:183-188`) | **partial** — that classification is a *declaration*, not a scrubber. Exception messages and request context can still carry board or capture strings, and nothing in the pipeline proves otherwise; treat enabling Sentry as consenting to content egress |
+| Traces and metrics reach an operator-named OTLP collector | Off unless `Observability:OtlpEndpoint` parses as an absolute URI, then gRPC to that endpoint only (`Api/Extensions/ObservabilityRegistration.cs:42-48,67-73`) | **partial** — span and metric attributes are operational rather than content, but the endpoint is unvetted and **not** seeded in the egress registry, so it is undeclared egress |
+| A third-party analytics script runs in the app origin | Consent-gated and HTTPS-only: the script is injected only after telemetry consent and a valid `https` `scriptUrl`, and is removed if consent is withdrawn (`frontend/taskdeck-web/src/composables/useAnalyticsScript.ts:41-44,57-58,74-88`); the backend settings are off by default (`Application/Services/AnalyticsSettings.cs:8-29`) | **partial** — consent does not contain the script: anything running in the app origin can read the JWT in `localStorage` (B7). Self-host the Plausible/Umami instance, or leave analytics off |
+| The operator cannot enumerate where data goes | The egress registry is the single declaration point (`Application/Services/EgressRegistry.cs:159-204`) | **partial** — it seeds `*.ingest.sentry.io` and `*.plausible.io` but covers neither an OTLP collector nor a self-hosted Plausible/Umami host, which is the configuration this document recommends |
 
 ### B7 — local machine
 
@@ -136,8 +163,8 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | A registered endpoint is used to reach the host's own network (SSRF) | `OutboundWebhookEndpointGuard` blocks private/loopback/link-local addresses, `.local` / `.internal` / `.home.arpa` / `.localhost` / `.localtest.me` suffixes, cloud-metadata hosts and `nip.io`-class dynamic-DNS rebinding roots, resolving the host and rejecting when no address survives (`Application/Services/OutboundWebhookEndpointGuard.cs:9-43,45,71`); `OutboundWebhookConnectCallback` re-pins the connect target and the handler sets `UseProxy = false` (`docs/STATUS.md:264`) | **shipped** — `Connectors:AllowLocalhostEndpoints` (`OutboundWebhookSecuritySettings.cs:5`) deliberately re-opens loopback; keep it off outside development |
-| Board content leaves the instance to a caller-chosen URL | Non-localhost endpoints **must** be `https` (`Application/Services/OutboundWebhookService.cs:227-246`); subscriptions are board-scoped and revocable, with secret rotation (`OutboundWebhooksController.cs:140`) | **partial** — the destination is the *operator's own* choice, so this is disclosure, not prevention; the payload is board data leaving the perimeter |
-| Delivery payloads readable from a copied database | None — `OutboundWebhookDelivery.Payload` is stored as plaintext board content beside the plaintext `SigningSecret` (`OutboundWebhookSubscription.cs:16`) | **accepted residual** — same root cause as `#1653`: no database-level encryption |
+| Board **event metadata** leaves the instance to a caller-chosen URL | The envelope carries identifiers only — delivery ID, event type, board ID, entity type, operation, entity ID, timestamp — and **no card title, description or comment text** (`Application/Services/OutboundWebhookService.cs:185-194`). Non-localhost endpoints **must** be `https` (`:227-246`); subscriptions are board-scoped and revocable, with secret rotation (`OutboundWebhooksController.cs:140`) | **partial** — narrower than card content, but not harmless: the receiver learns which boards exist, their entity IDs, and a precise timeline of activity, and those IDs are the join keys for anyone who also holds an export or an API key. The destination is the *operator's own* choice, so this is disclosure, not prevention |
+| Delivery payloads readable from a copied database | None — `OutboundWebhookDelivery.Payload` is stored as plaintext beside the plaintext `SigningSecret` (`OutboundWebhookSubscription.cs:16`). The payload is event metadata rather than card text (`OutboundWebhookService.cs:185-194`), so a file-copy attacker gains a board-activity timeline, not card content | **accepted residual** — same root cause as `#1653`: no database-level encryption. The plaintext `SigningSecret` is the sharper half of this row |
 | A stolen signing secret lets an attacker forge deliveries to the receiver | HMAC signing (`OutboundWebhookSignature.cs`); the secret is plaintext at rest and readable by anyone holding the SQLite file | **partial** — rotate via the endpoint above after any file exposure |
 | A hostile or dead endpoint pins the worker | Bounded attempts with configured backoff then a dead-letter terminal state (`Api/Workers/OutboundWebhookDeliveryWorker.cs:323-340`); failure messages are redacted before persistence (`docs/STATUS.md:502`) | **shipped** |
 
@@ -146,7 +173,9 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Tampered or spoofed download | SHA-256 file plus a custom provenance record, built from a pinned checkout; **no Authenticode signature, no user-grade installer, no release SBOM, no GitHub attestation** | **partial — `#1167` wave (`#2148`–`#2152`)**, `RELEASE_TRUST_AND_DISTRIBUTION.md` "Current truth" |
-| Prerelease semantics on the release lane | — | **open — `#2217`** release lane prerelease semantics |
+| Tampered or substituted **container image** | `release-container.yml` publishes the GHCR image on `v*` tags under `{{version}}`, `{{major}}.{{minor}}` and `latest` (`.github/workflows/release-container.yml:92-96`) via `docker/build-push-action@v7` with **no checksum sidecar, no cosign signature and no `provenance` or `sbom` attestation** (`:98-110`) — the registry addresses it by digest, but nothing signs or attests it | **open** — the `#1167` wave (`#2148`–`#2152`) is scoped to *file* artefacts; container signing and attestation are not covered by it |
+| A mutable tag is repointed under a running operator | None in-product. The operator mitigation is **digest pinning**: deploy the `@sha256:` digest form rather than `:latest` or `:0.2`, record the digest, and re-pin deliberately at upgrade time | **partial (operator procedure)** |
+| `latest` follows a prerelease | Measured at this branch's HEAD, `latest` is enabled for **every** `v*` tag, prereleases included (`.github/workflows/release-container.yml:95`), so a `v0.3.0-rc.1` tag would move `latest` onto a release candidate | **open — `#2217`**. PR `#2223` is the in-flight fix that keeps `latest` off prereleases; it is **not present at this branch's merge base** (`d9adf8705`), so this row states what the branch can verify, not the post-merge state |
 
 ## 5. Residual risks for the beta — the honest list
 
@@ -164,11 +193,22 @@ unverified.
 6. **Availability is unprotected beyond rate limits** — one SQLite file, no per-account resource
    caps, no isolation between accounts.
 7. **Artefacts are unsigned**, with no SBOM or attestation; users must verify a SHA-256 by hand and
-   click through a SmartScreen warning.
+   click through a SmartScreen warning. **The GHCR image is worse off than the file artefacts** — it
+   has no checksum sidecar at all, and `latest` currently follows prereleases (`#2217`). Pin by
+   digest.
 8. **Plain HTTP is a documented supported posture** for LAN testing, and the JWT travels over it.
 9. **Cross-user isolation is asserted but not adversarially proven at beta scale** — no third-party
    penetration test, no fuzzing of the authorization surface. *Unverified.*
-10. **Client-side robustness gaps can lose user work** — a 401 hard-navigation destroys an
+10. **The perimeter provider is inside the boundary on the Cloudflare route.** Cloudflare
+    terminates TLS and re-originates in plaintext to the local port, so it can observe credentials
+    and content, and its account, policy and availability gate access. Tailscale Serve does not
+    have this property.
+11. **Opt-in telemetry can carry content.** Sentry's `MetadataOnly` classification is a
+    declaration, not a scrubber; an OTLP collector is undeclared egress; and an analytics script
+    in the app origin can read the `localStorage` JWT.
+12. **The stdio MCP server grants `Full` scope to the only active user when `DefaultUserId` is
+    unset.** It is not unconditionally fail-closed — only zero or multiple active users fail.
+13. **Client-side robustness gaps can lose user work** — a 401 hard-navigation destroys an
     in-progress capture draft (`#2142`) and the Review poll lacks a per-poll deadline (`#2214`).
     Not confidentiality defects, but trust defects in a beta.
 
@@ -223,7 +263,22 @@ unverified.
    enrolling, and it buys no protection against the file-copy attacker it would be defending against.
    Revisit only when `#1653` has landed.
 9. **Downloads.** Verify the published SHA-256 and expect the unsigned-binary warning
-   (`docs/releases/WINDOWS_QUICK_START.md`, `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`).
+   (`docs/releases/WINDOWS_QUICK_START.md`, `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`). For the
+   Docker stack, **pin the image by digest** (`@sha256:`), not by `:latest` or a floating
+   `major.minor` tag: the image carries no checksum sidecar, no signature and no attestation,
+   and `latest` currently follows prereleases as well as stable tags
+   (`.github/workflows/release-container.yml:92-96`).
+10. **MCP stdio.** Set `McpServer:DefaultUserId` explicitly even on a single-user instance.
+    Leaving it unset is not fail-closed — the provider selects the only active user and grants
+    it a `Full` context (`StdioUserContextProvider.cs:91-96,113-117,48-52`) — and the same
+    configuration starts failing the moment a second active account exists.
+11. **Telemetry and analytics.** Leave Sentry, OTLP export and web analytics off unless you
+    need them. Sentry's `MetadataOnly` classification is a declaration, not a scrubber; an
+    OTLP endpoint is undeclared egress; and an analytics script runs in the app origin
+    alongside the `localStorage` JWT, so self-host Plausible or Umami if you enable it.
+12. **External login.** GitHub OAuth and OIDC are off unless configured. If you enable one,
+    the provider's MFA and account-recovery posture becomes yours, and the client secret
+    needs the same custody as `Jwt:SecretKey`.
 
 ## 7. What would change this model
 
