@@ -144,7 +144,9 @@ shipped board-authorization set — board ownership OR a board-access row. Assig
 card and the user and is validated through that same owner-or-access check, never against a
 board-access row alone, so assigning a card to the board's own owner works. No new identity tables
 until `#1772` evidence; invites and pending external participants are out of scope, and a later
-rename to Participant is a table rename rather than a semantic change.
+Participant model must materialize the owner-or-access union by a data migration (no single
+shipped table holds it: owners hold no `BoardAccess` row), preserving that union rather than
+renaming either table.
 
 **relation-scope** — A: In the first typed-link slice both endpoints must share a board, and a
 cross-board endpoint fails server-side with a stable error. Scope validation stays one equality

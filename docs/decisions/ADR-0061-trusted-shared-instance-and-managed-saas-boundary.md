@@ -83,7 +83,7 @@ pending", carrying a dated maintainer-ruling qualifier on the ADR-0057 precedent
 (`docs/decisions/INDEX.md:61`), rather than staying Proposed or being accepted outright. That
 discharges the ratification item, but NOT the deployment gate in
 `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`: that gate is restated there as the still-pending CL-1
-values, the human acts, and the `#1777` prerequisites, without claiming evidence that does not exist.
+values, the human acts, and the Stage 1 prerequisites tracked on `#1772`, without claiming evidence that does not exist.
 `#1772`'s fourth blocking checkbox — "ADR-0061 records those answers and moves from Proposed only
 after the evidence exists" — now reads as governing the later move to an unqualified status: the ADR
 carries the direction-only qualifier from today, and the qualifier is lifted (the status becomes
@@ -135,7 +135,7 @@ analytics remain independent egress destinations covered by the general egress d
 copies stored separately from the connector key; provider disk snapshots are a supplement, never the
 recovery mechanism. Two prerequisites attach. The production image ships neither `scripts/backup.sh`
 nor a `sqlite3` binary, so a scheduled on-instance job needs the tooling added to the image, a
-sidecar, or a host-volume procedure first — that gap is `#1777` scope and must be closed before this
+sidecar, or a host-volume procedure first — that gap is tracked on `#1772` (the active Stage 1 issue; `#1777` stays parked) and must be closed before this
 ruling is executable. And the recovery-point objective for host loss is the age of the last
 off-platform copy, not of the last on-instance copy, so either the encrypted off-platform transfer
 runs after every daily backup or the weekly disaster-loss window is recorded as accepted. Decided —
@@ -154,7 +154,7 @@ the shared board, connector decryption, and the health/version endpoint, with th
 time recorded. It needs no account action and no billing, and it does not prove host-side disk or
 volume mechanics. Prerequisite: connector decryptability cannot be verified by the login, board, and
 health checks alone — no production call site decrypts a stored credential, so a wrong key would
-pass every one of them. A non-secret-exposing decrypt-verification seam must exist first (`#1777`
+pass every one of them. A non-secret-exposing decrypt-verification seam must exist first (tracked on `#1772`, the active Stage 1 issue, not the parked `#1777`
 prerequisite); without it the drill proves restore, not decryptability.
 
 **operating-model** — A: the v0.3 proof is maintainer-operated trusted self-hosting, not the start
