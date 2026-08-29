@@ -45,6 +45,16 @@ export default {
       none: 'No registrado',
     },
   },
+  // Aviso de clasificación degradada (#2202). Es una advertencia sobre un
+  // resultado correcto, no un fallo. `reason` reproduce literalmente el aviso
+  // del servidor.
+  degraded: {
+    label: 'Clasificada sin el modelo',
+    lead: 'El modelo no pudo responder, así que el extractor determinista sin conexión de Taskdeck clasificó esta captura en su lugar.',
+    reason: 'Informado: {reason}',
+    review: 'Un resultado determinista es una conjetura basada en patrones de texto, no una lectura del modelo, y no incluye enlaces de evidencia. Léelo con atención antes de aplicarlo.',
+    action: 'Si el modelo debía ejecutarse, revisa la configuración del proveedor de LLM.',
+  },
   capture: {
     errorLead: 'Nota no guardada. Tu borrador sigue aquí.',
     errorDetail: 'Detalles: {reason}',

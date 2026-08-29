@@ -43,6 +43,15 @@ export default {
       none: 'Non registrato',
     },
   },
+  // Avviso di smistamento degradato (#2202). È una cautela su un successo, non
+  // un errore. `reason` riporta testualmente la notifica del server.
+  degraded: {
+    label: 'Smistata senza il modello',
+    lead: 'Il modello non ha potuto rispondere, così l’estrattore deterministico offline di Taskdeck ha smistato questa cattura al suo posto.',
+    reason: 'Segnalato: {reason}',
+    review: 'Un risultato deterministico è un’ipotesi basata su schemi di testo, non una lettura del modello, e non porta collegamenti alle prove. Leggilo con attenzione prima di applicarlo.',
+    action: 'Se il modello doveva essere eseguito, controlla le impostazioni del provider LLM.',
+  },
   capture: {
     errorLead: 'Appunto non salvato. La bozza è ancora qui.',
     errorDetail: 'Dettagli: {reason}',

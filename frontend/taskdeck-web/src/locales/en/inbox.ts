@@ -54,6 +54,19 @@ export default {
       none: 'Not recorded',
     },
   },
+  // Degraded-triage notice (#2202; backend half #2192 / #2203). A capture whose
+  // LLM leg could not deliver still COMPLETES on the deterministic extractor,
+  // so this is a caution on a success and never a failure — it must not borrow
+  // the Failed styling or the `alert` role. `reason` interpolates the server's
+  // own notice VERBATIM: it is server-authored, redacted and bounded upstream,
+  // and nothing from local configuration is ever appended to it.
+  degraded: {
+    label: 'Triaged without the model',
+    lead: "The model could not deliver, so Taskdeck's deterministic offline extractor triaged this capture instead.",
+    reason: 'Reported: {reason}',
+    review: 'A deterministic result is a text-pattern guess rather than a model reading, and it carries no evidence links. Read it closely before you apply it.',
+    action: 'If the model was meant to run, check the LLM provider settings.',
+  },
   capture: {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
