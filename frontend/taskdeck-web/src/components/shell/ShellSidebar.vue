@@ -8,6 +8,11 @@ import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { FeatureFlags } from '../../types/feature-flags'
 import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
+
+// Rendered notation follows the viewer's platform (Command glyph on Apple),
+// so the palette hint is never a hardcoded Ctrl literal.
+const commandPaletteKeys = formatShortcut('mod+k')
 
 export type NavItem = {
   id: string
@@ -489,17 +494,17 @@ defineExpose({
         >{{ navBadgeCounts[item.path] }}</span>
       </router-link>
 
-      <!-- Search opens the command palette (Ctrl+K) -->
+      <!-- Search opens the command palette -->
       <button
         class="td-nav-item"
-        aria-label="Search (Ctrl+K)"
+        :aria-label="`Search (${commandPaletteKeys})`"
         @click="emit('open-search'); closeMobileMenu()"
       >
         <span class="td-nav-item__icon">
           <span class="material-symbols-outlined text-base">search</span>
         </span>
         <span v-if="!sidebarCollapsed" class="td-nav-item__label">Search</span>
-        <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">Ctrl+K</span>
+        <span v-if="!sidebarCollapsed" class="td-nav-item__kbd">{{ commandPaletteKeys }}</span>
       </button>
 
       <div

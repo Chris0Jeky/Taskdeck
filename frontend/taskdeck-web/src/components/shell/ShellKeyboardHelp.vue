@@ -1,4 +1,24 @@
 <script setup lang="ts">
+import {
+  formatShortcut,
+  KEYBOARD_HELP_SHORTCUT,
+  PAPER_SHORTCUT_GROUPS,
+} from '../../utils/keyboardShortcuts'
+
+/**
+ * ShellKeyboardHelp - the Legacy shell's `?` map (Paper renders
+ * PaperShortcutsOverlay instead).
+ *
+ * Rows come from the shared ledger in `utils/keyboardShortcuts.ts`, the same
+ * source PaperShortcutsOverlay renders, so the two surfaces cannot drift and
+ * every row named here has a named handler owner. Modifier notation goes
+ * through `formatShortcut` so Apple platforms see the Command glyph instead of
+ * a hardcoded `Ctrl+` literal.
+ *
+ * Rows that no runtime implements (the former Editor section's Ctrl+S /
+ * Ctrl+Enter / Alt+N jumps, and Shift+N "New column") were removed rather than
+ * left advertising keys that do nothing.
+ */
 defineProps<{
   visible: boolean
 }>()
@@ -26,36 +46,31 @@ const emit = defineEmits<{
           <button aria-label="Close" @click="emit('close')">X</button>
         </div>
         <div class="td-keyboard-help__content">
-          <div class="td-keyboard-help__section">
-            <h3>Global</h3>
-            <div class="td-shortcut-row"><kbd>Ctrl+K</kbd><span>Command palette / Search</span></div>
-            <div class="td-shortcut-row"><kbd>Ctrl+Shift+C</kbd><span>Quick capture modal</span></div>
-            <div class="td-shortcut-row"><kbd>?</kbd><span>This help</span></div>
-            <div class="td-shortcut-row"><kbd>Escape</kbd><span>Close top surface</span></div>
+          <div
+            v-for="group in PAPER_SHORTCUT_GROUPS"
+            :key="group.title"
+            class="td-keyboard-help__section"
+            :data-group="group.title"
+          >
+            <h3>{{ group.title }}</h3>
+            <div
+              v-for="row in group.rows"
+              :key="row.id"
+              class="td-shortcut-row"
+              :data-shortcut-id="row.id"
+            >
+              <kbd>{{ formatShortcut(row.descriptor) }}</kbd>
+              <span>{{ row.label }}<template v-if="row.note"> ({{ row.note }})</template></span>
+            </div>
           </div>
-          <div class="td-keyboard-help__section">
-            <h3>Navigation</h3>
-            <div class="td-shortcut-row"><span class="td-shortcut-hint">Sidebar</span><span>Today, Inbox, Review, Boards, Search</span></div>
-            <div class="td-shortcut-row"><span class="td-shortcut-hint">Ctrl+K</span><span>All other surfaces (Chat, Metrics, Ops, etc.)</span></div>
-            <div class="td-shortcut-row"><span class="td-shortcut-hint">Settings</span><span>Activity, Notifications, Archive, Calendar, etc.</span></div>
-          </div>
-          <div class="td-keyboard-help__section">
-            <h3>Board Navigation</h3>
-            <div class="td-shortcut-row"><kbd>h / Left</kbd><span>Previous column</span></div>
-            <div class="td-shortcut-row"><kbd>l / Right</kbd><span>Next column</span></div>
-            <div class="td-shortcut-row"><kbd>j / Down</kbd><span>Next card</span></div>
-            <div class="td-shortcut-row"><kbd>k / Up</kbd><span>Previous card</span></div>
-            <div class="td-shortcut-row"><kbd>Enter</kbd><span>Open card</span></div>
-            <div class="td-shortcut-row"><kbd>n</kbd><span>New card</span></div>
-            <div class="td-shortcut-row"><kbd>Shift+N</kbd><span>New column</span></div>
-          </div>
-          <div class="td-keyboard-help__section">
-            <h3>Editor</h3>
-            <div class="td-shortcut-row"><kbd>Ctrl+S</kbd><span>Save section</span></div>
-            <div class="td-shortcut-row"><kbd>Ctrl+Enter</kbd><span>Save and close</span></div>
-            <div class="td-shortcut-row"><kbd>Alt+1</kbd><span>Jump to title</span></div>
-            <div class="td-shortcut-row"><kbd>Alt+2</kbd><span>Jump to description</span></div>
-            <div class="td-shortcut-row"><kbd>Alt+4</kbd><span>Jump to labels</span></div>
+          <div class="td-keyboard-help__section" data-group="Help">
+            <h3>Help</h3>
+            <div class="td-shortcut-row" data-shortcut-id="keyboard-help">
+              <kbd>{{ formatShortcut(KEYBOARD_HELP_SHORTCUT.descriptor) }}</kbd><span>This help</span>
+            </div>
+            <div class="td-shortcut-row" data-shortcut-id="escape">
+              <kbd>Escape</kbd><span>Close top surface</span>
+            </div>
           </div>
         </div>
       </div>

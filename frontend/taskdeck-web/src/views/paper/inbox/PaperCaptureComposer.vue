@@ -241,7 +241,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
         Captures land in <span class="tk-ink-italic">Inbox</span>. Linking to a board creates a proposal, not a card.
       </span>
       <span class="paper-composer__spacer" />
-      <PaperHLBtn label="Capture" kbd="⌘⏎" variant="ember" :disabled="!canSubmit" @click="submit" />
+      <PaperHLBtn label="Capture" kbd="mod+enter" variant="ember" :disabled="!canSubmit" @click="submit" />
     </footer>
   </section>
 </template>

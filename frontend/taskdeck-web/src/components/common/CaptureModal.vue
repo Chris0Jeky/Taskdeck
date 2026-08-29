@@ -3,6 +3,7 @@ import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { usePerformanceMark } from '../../composables/usePerformanceMark'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 
 // Mirrors CaptureRequestContract.MaxTranscriptTextLength. Keep this client-side guard source-specific:
 // quick captures retain the backend's smaller general-text limit.
@@ -207,7 +208,7 @@ onUnmounted(() => {
 
       <template v-if="captureMode === 'typed'">
         <p class="td-capture-modal__hint">
-          Write or paste anything. Press Ctrl/Cmd+Enter to save.
+          Write or paste anything. Press {{ formatShortcut('mod+enter') }} to save.
           <span v-if="props.boardName">This capture will stay linked to {{ props.boardName }}.</span>
         </p>
 

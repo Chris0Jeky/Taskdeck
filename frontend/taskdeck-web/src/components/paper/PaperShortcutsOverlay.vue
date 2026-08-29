@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import {
+  formatShortcut,
+  KEYBOARD_HELP_SHORTCUT,
+  PAPER_SHORTCUT_GROUPS,
+} from '../../utils/keyboardShortcuts'
 import PaperKbd from './PaperKbd.vue'
 
 /**
@@ -20,53 +25,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
-
-type ShortcutRow = {
-  kbd: string
-  label: string
-  /** Optional mono-style note ("anywhere", "global", "during review"). */
-  note?: string
-}
-type ShortcutGroup = { title: string; rows: ShortcutRow[] }
-
-const groups: ShortcutGroup[] = [
-  {
-    title: 'Navigate',
-    rows: [
-      { kbd: 'H', label: 'Home', note: 'workspace' },
-      { kbd: 'T', label: 'Today' },
-      { kbd: 'B', label: 'Boards' },
-      { kbd: 'I', label: 'Inbox' },
-      { kbd: 'R', label: 'Review' },
-      { kbd: '⌘K', label: 'Command palette', note: 'anywhere' },
-      { kbd: 'G T', label: 'Go to Today' },
-    ],
-  },
-  {
-    title: 'Capture & Review',
-    rows: [
-      { kbd: 'Ctrl/Cmd+Shift+C', label: 'Quick capture', note: 'anywhere' },
-      { kbd: '⏎', label: 'Apply / commit decision' },
-      { kbd: '⌫', label: 'Reject / dismiss' },
-      { kbd: 'E', label: 'Request edit' },
-      { kbd: 'P', label: 'Provenance pane', note: 'during review' },
-    ],
-  },
-  {
-    title: 'Boards',
-    rows: [
-      { kbd: 'J / Down', label: 'Next card' },
-      { kbd: 'K / Up', label: 'Previous card' },
-      { kbd: 'H / Left', label: 'Previous column' },
-      { kbd: 'L / Right', label: 'Next column' },
-      { kbd: 'Enter', label: 'Open card' },
-      { kbd: 'Alt+Left', label: 'Move card to previous column' },
-      { kbd: 'Alt+Right', label: 'Move card to next column' },
-      { kbd: 'Alt+Up', label: 'Move card up in column' },
-      { kbd: 'Alt+Down', label: 'Move card down in column' },
-    ],
-  },
-]
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // Escape always closes when open, even from inside the overlay.
@@ -120,7 +78,7 @@ function onBackdropClick() {
 
         <div class="paper-shortcuts-overlay__grid">
           <section
-            v-for="group in groups"
+            v-for="group in PAPER_SHORTCUT_GROUPS"
             :key="group.title"
             class="paper-shortcuts-overlay__group"
             :data-group="group.title"
@@ -129,11 +87,12 @@ function onBackdropClick() {
             <ul class="paper-shortcuts-overlay__rows">
               <li
                 v-for="row in group.rows"
-                :key="`${group.title}-${row.kbd}`"
+                :key="row.id"
                 class="paper-shortcuts-overlay__row"
+                :data-shortcut-id="row.id"
               >
                 <span class="paper-shortcuts-overlay__row-kbd">
-                  <PaperKbd>{{ row.kbd }}</PaperKbd>
+                  <PaperKbd>{{ formatShortcut(row.descriptor) }}</PaperKbd>
                 </span>
                 <span class="paper-shortcuts-overlay__row-label">{{ row.label }}</span>
                 <span v-if="row.note" class="paper-shortcuts-overlay__row-note">{{ row.note }}</span>
@@ -143,9 +102,9 @@ function onBackdropClick() {
         </div>
 
         <footer class="paper-shortcuts-overlay__footer">
-          <span class="tk-meta">Bindings are remappable · Settings → Keyboard</span>
+          <span class="tk-meta">Workspace navigation pauses while you type</span>
           <span class="tk-meta">
-            Press <PaperKbd>?</PaperKbd> at any time
+            Press <PaperKbd>{{ formatShortcut(KEYBOARD_HELP_SHORTCUT.descriptor) }}</PaperKbd> at any time
           </span>
         </footer>
       </div>
