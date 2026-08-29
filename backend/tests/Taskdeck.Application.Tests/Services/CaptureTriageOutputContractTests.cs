@@ -238,6 +238,28 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void ReviewDueDateHint_ShouldKeepANextYearResolution_FromADecemberCaptureDay()
+    {
+        // The prompt resolves a partial date forward, so a December capture saying "1 January"
+        // legitimately resolves into the NEXT calendar year. The window must not treat that
+        // year change as the hallucination it exists to catch.
+        var newYearsEve = new DateOnly(2026, 12, 31);
+
+        CaptureTriageOutputContract
+            .IsWithinDueDatePlausibilityWindow(new DateOnly(2027, 1, 1), newYearsEve)
+            .Should().BeTrue();
+
+        var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(
+            "2027-01-01",
+            1,
+            newYearsEve,
+            out var note);
+
+        reviewed.Should().Be("2027-01-01");
+        note.Should().BeNull();
+    }
+
+    [Fact]
     public void ReviewDueDateHint_ShouldDropDateFarBeyondTheWindow()
     {
         var reviewed = CaptureTriageOutputContract.ReviewDueDateHint(

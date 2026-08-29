@@ -60,7 +60,7 @@ public class LlmCaptureTriagePromptTests
 
         prompt.Should().Contain("reference date");
         prompt.Should().Contain("on or after the reference date");
-        prompt.Should().Contain("Never guess or invent a year");
+        prompt.Should().Contain("never guess or invent a year");
         // A weekday name that disagrees with the resolved date must not drag the year forward:
         // 2026-09-01 is a Tuesday, and the first Monday 1 September is 2031 - outside the window.
         prompt.Should().Contain("A weekday name is not part of the date");
@@ -84,6 +84,37 @@ public class LlmCaptureTriagePromptTests
             CaptureTriageOutputContract.MaxTaskTitleLength.ToString());
         LlmCaptureTriagePrompt.SystemPrompt.Should().Contain(
             CaptureTriageOutputContract.MaxTaskEvidenceLength.ToString());
+    }
+
+    [Fact]
+    public void BuildSystemPrompt_ShouldAllowForwardResolutionToCrossIntoTheNextYear()
+    {
+        // Round-2 review catch: forward resolution from a December reference NECESSARILY lands in
+        // the next calendar year, so a blanket "never assume a different year" made the two rules
+        // unsatisfiable together - a compliant model could emit the already-past 1 January (which
+        // the two-year window accepts) or give up and return null.
+        var prompt = LlmCaptureTriagePrompt.BuildSystemPrompt(new DateOnly(2026, 12, 31));
+
+        prompt.Should().Contain("2026-12-31");
+        prompt.Should().Contain("may fall in the calendar year AFTER the reference date");
+        prompt.Should().Contain("\"1 January\" resolves to 2027-01-01");
+        prompt.Should().NotContain("never assume a different year");
+    }
+
+    [Fact]
+    public void TryParseTasks_ShouldKeepANextYearResolvedDate_FromADecemberCaptureDay()
+    {
+        var newYearsEve = new DateOnly(2026, 12, 31);
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(
+            BuildSingleTaskContent("2027-01-01"),
+            newYearsEve,
+            out var tasks,
+            out var notes);
+
+        parsed.Should().BeTrue();
+        tasks[0].DueDateHint.Should().Be("2027-01-01");
+        notes.Should().BeEmpty();
     }
 
     [Fact]

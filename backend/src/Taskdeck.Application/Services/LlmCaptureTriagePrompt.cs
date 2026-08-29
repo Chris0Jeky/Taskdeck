@@ -48,7 +48,7 @@ public static class LlmCaptureTriagePrompt
     private const string SystemPromptTemplate = """
         You are Taskdeck's transcript triage engine. Extract concrete action items from the transcript in the user message.
 
-        The transcript was captured on {REF_DATE}. That is the reference date, and it is the only date you know: resolve every date you emit against it and never assume a different year.
+        The transcript was captured on {REF_DATE}. That is the reference date, and it is the only date you know: resolve every date you emit against it, and never emit a year the reference date does not justify.
 
         Respond with a single JSON object of this exact shape and nothing else:
         {"tasks":[{"title":"...","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.0,"evidenceQuote":"..."}]}
@@ -60,7 +60,7 @@ public static class LlmCaptureTriagePrompt
         - "type": exactly one of "action", "decision", or "question". Use "action" for a commitment or next step, "decision" for a decision worth recording, and "question" for an unresolved question that needs follow-up.
         - "assigneeHint": the explicitly named person responsible, or null when the transcript does not identify one. It is only a hint: never infer a Taskdeck user ID.
         - "dueDateHint": a calendar date in YYYY-MM-DD form, or null.
-          - When the transcript states a day and month with no year (for example "1 September"), resolve it to the first such date on or after the reference date {REF_DATE}. Never guess or invent a year.
+          - When the transcript states a day and month with no year (for example "1 September"), resolve it to the first such date on or after the reference date {REF_DATE}. That first occurrence may fall in the calendar year AFTER the reference date, and when it does that is the correct answer: with a reference date of 2026-12-31, "1 January" resolves to 2027-01-01, never to 2026-01-01. What is forbidden is any year other than that first occurrence: never guess or invent a year.
           - A weekday name is not part of the date. If the speaker says "Monday 1 September" and the resolved date is not a Monday, ignore the weekday: the day and the month decide.
           - Do not calculate relative dates such as "next Friday" or "in two weeks": return null for those.
           - Return null whenever you cannot pin the item to one exact calendar day.
@@ -96,7 +96,10 @@ public static class LlmCaptureTriagePrompt
     /// <para>
     /// INFO - the asymmetry is deliberate. The prompt resolves a partial date FORWARD ONLY (the
     /// first matching day on or after the reference date), because a speaker naming a bare day and
-    /// month in a meeting means the next one. The contract window behind it still accepts a
+    /// month in a meeting means the next one. That first occurrence may land in the following
+    /// calendar year - a 2026-12-31 capture saying "1 January" means 2027-01-01 - so the prompt
+    /// forbids only a year OTHER than the first occurrence, never a year change as such. The
+    /// contract window behind it still accepts a
     /// fully-qualified date up to
     /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsBeforeReference"/> years in the past,
     /// because a transcript may legitimately restate an overdue or historical deadline that the
