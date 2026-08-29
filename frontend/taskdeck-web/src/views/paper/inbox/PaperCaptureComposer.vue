@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import { TdDateField } from '../../../components/ui'
 import type { Board } from '../../../types/board'
 
 /**
@@ -225,10 +226,9 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
 
         <label class="paper-composer__label">
           <span class="tk-eyebrow">Due (optional)</span>
-          <input
+          <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
-            type="date"
             aria-label="Due date"
             :disabled="inputsDisabled"
           />
@@ -241,7 +241,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
         Captures land in <span class="tk-ink-italic">Inbox</span>. Linking to a board creates a proposal, not a card.
       </span>
       <span class="paper-composer__spacer" />
-      <PaperHLBtn label="Capture" kbd="⌘⏎" variant="ember" :disabled="!canSubmit" @click="submit" />
+      <PaperHLBtn label="Capture" kbd="mod+enter" variant="ember" :disabled="!canSubmit" @click="submit" />
     </footer>
   </section>
 </template>

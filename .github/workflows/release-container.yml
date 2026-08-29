@@ -7,6 +7,10 @@
 # used). ADR-0044 selects GHCR as the required public image channel; this
 # closes REVIVAL-07 (#1303) AC2.
 #
+# A prerelease tag (v1.2.3-rc.1) publishes ONLY its own full version ref: the
+# floating `latest` and `<major>.<minor>` tags stay on the last stable release
+# (#2217).
+#
 # Verify a published image with:
 #   docker run -v taskdeck-data:/app/data -p 5000:5000 ghcr.io/chris0jeky/taskdeck:<version>
 # =============================================================================
@@ -63,9 +67,10 @@ jobs:
       # Any "+<build>" metadata is stripped, because `ProductVersion.Normalize` drops it
       # before reporting: without this, a v1.2.3+meta tag would stamp "1.2.3+meta" while
       # /health/live echoed "1.2.3", and the version-stamp assertion in the smoke step below
-      # would fail on two spellings of the same version. The validation regex refuses "+" for
-      # the same reason — admitting a character we have just stripped would only hide a bug
-      # in the stripping.
+      # would fail on two spellings of the same version. The plain-token check below refuses
+      # "+" as a redundancy check on that stripping — the release-tag grammar itself ADMITS
+      # "+<build>" (scripts/ci/validate-release-tag.sh), so a "+" surviving to that point
+      # means the strip above failed rather than that the tag was invalid.
       - name: Resolve product version
         id: product-version
         run: |
@@ -84,6 +89,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Stamping product version $VERSION"
 
+      # FLOATING tags are for stable releases only (#2217). `latest` and the
+      # `<major>.<minor>` alias are where a version-less `docker pull` lands, so a release
+      # candidate must move neither: an RC tag publishes exactly one ref, its own full
+      # version (`{{version}}` -> 0.3.0-rc.1), which is also the ref the smoke test below
+      # pulls. Both floating entries are gated here rather than relying on
+      # docker/metadata-action's own prerelease handling, which this repo does not pin.
+      #
+      # The gate is the literal "-" in the ref name. Under the tag grammar this repo ships
+      # (scripts/ci/validate-release-tag.sh) a hyphen occurs only in a prerelease segment —
+      # build-metadata identifiers are alphanumeric — and this workflow takes no dispatch
+      # input, so `github.ref_name` on these paths is a real pushed tag. A hyphen anywhere
+      # unexpected would only suppress the floating tags, never move them: it fails safe.
       - name: Compute image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -91,8 +108,8 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
             type=raw,value=rehearsal,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build (and push on tag refs)

@@ -87,6 +87,7 @@ vi.mock('../../utils/errorReporting', () => ({
 }))
 
 import {
+  REVIEW_QUEUE_REFRESH_MS,
   STALE_PROPOSAL_MS,
   isProposalApplyActionable,
   isProposalApproveActionable,
@@ -965,6 +966,377 @@ describe('useReviewProposals', () => {
       mockRoute.query = { boardId: 'board-filter-probe' }
       await watcherForCurrentSourceValue('board-filter-probe')[1]()
       expect(mockAutomationApi.getProposals).toHaveBeenCalled()
+    })
+  })
+
+  // #2194 - with Review open, a proposal created server-side never appeared:
+  // measured 115 s of "QUEUE - 0 AWAITING" while the API reported 1 pending, and
+  // only re-navigation surfaced it. There is no proposal event on the wire (the
+  // sole hub is per-board and silent on proposals), so the queue is kept live by
+  // a bounded, visibility-aware poll.
+  describe('background queue refresh (#2194)', () => {
+    function setVisibility(state: 'visible' | 'hidden') {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => state,
+      })
+    }
+
+    beforeEach(() => {
+      setVisibility('visible')
+    })
+
+    it('surfaces a proposal created after load, without a navigation', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.visibleProposals.value).toHaveLength(0)
+
+      // Ask AI ran on a capture elsewhere; the server now has one pending item.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-new' })])
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.visibleProposals.value.map((p: any) => p.id)).toEqual(['p-new'])
+      // Re-navigation is the defect's only workaround today; it must not be the fix.
+      expect(mockRouter.push).not.toHaveBeenCalled()
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+      rp.stopQueueRefresh()
+    })
+
+    it('stops polling on route leave', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+
+      rp.stopQueueRefresh() // what onUnmounted does when Review is left
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 4)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+    })
+
+    it('skips ticks while the tab is hidden, and reads immediately on re-entry', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      setVisibility('hidden')
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+
+      setVisibility('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
+    it('holds a tick while the surface reports a decision in progress', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      let deciding = true
+      rp.startQueueRefresh(() => !deciding)
+
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 2)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+
+      deciding = false // the confirm dialog closed
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
+    it('keeps the deep-linked proposal at its own position when the page omits it', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-open'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-open', createdAt: '2026-01-02T00:00:00Z' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-open'])
+
+      // The record the URL names has dropped out of the list page. It is fetched
+      // by id, so a background refresh must not evict the proposal the reviewer
+      // is actually looking at -- and must not relegate it either: the rail
+      // renders array order, so appending would make the record being reviewed
+      // jump to the bottom on the first tick.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-newer', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-older', createdAt: '2026-01-01T00:00:00Z' }),
+      ])
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-newer', 'p-open', 'p-older'])
+      rp.stopQueueRefresh()
+    })
+
+    it('never raises proposalsLoading, so no skeleton flashes under a reviewer', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      let release: (value: unknown[]) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve as (value: unknown[]) => void
+        }),
+      )
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.proposalsLoading.value).toBe(false) // in flight, and still quiet
+      release([])
+      rp.stopQueueRefresh()
+    })
+
+    it('keeps the queue and stays silent when a background read fails', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      mockToast.error.mockClear()
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('offline'))
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // A poll the reviewer never asked for must not raise a toast, and must not
+      // empty the queue it failed to re-read.
+      expect(mockToast.error).not.toHaveBeenCalled()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-1'])
+      rp.stopQueueRefresh()
+    })
+
+    function deferredProposals() {
+      let release: (value: unknown[]) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve as (value: unknown[]) => void
+        }),
+      )
+      return {
+        release: (value: unknown[]) => release(value),
+      }
+    }
+
+    it('discards a read that resolves after a decision patched the queue', async () => {
+      vi.useFakeTimers()
+      const pending = makeProposal({ id: 'p-1', status: 'PendingReview' })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([pending])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      // A background read is issued BEFORE the reviewer clicks.
+      const inFlight = deferredProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The approve lands first and patches the row locally, assigning a NEW
+      // array -- exactly what useReviewActions does, without touching the load
+      // counter.
+      rp.proposals.value = rp.proposals.value.map((p: any) =>
+        p.id === 'p-1' ? { ...p, status: 'Approved' } : p,
+      )
+
+      // Only now does the stale read answer, still carrying PendingReview.
+      inFlight.release([pending])
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Writing it would revert the row under a receipt that says approved.
+      expect(rp.proposals.value.map((p: any) => p.status)).toEqual(['Approved'])
+      rp.stopQueueRefresh()
+    })
+
+    it('discards a read that resolves after a confirm dialog opened', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      let deciding = false
+      const inFlight = deferredProposals()
+      rp.startQueueRefresh(() => !deciding)
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The Reject dialog opens while the read is in flight. Its proposal is a
+      // computed over the queue, so landing this answer would close the dialog
+      // and discard a half-typed reason.
+      deciding = true
+      inFlight.release([makeProposal({ id: 'p-2' })])
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-1'])
+      rp.stopQueueRefresh()
+    })
+
+    it('discards a read that resolves after a proposal revision was saved', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-1', summary: 'pre-revision' }),
+      ])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      const queueBeforeSave = rp.proposals.value
+
+      // A queue read goes in flight BEFORE the reviewer saves an edit.
+      const inFlight = deferredProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The revision POST lands first. Saving a revision updates
+      // useProposalRevisions' own state and NEVER replaces the proposals array,
+      // so the identity guard cannot see it -- the write generation is what makes
+      // this read stale.
+      rp.invalidateQueueReads()
+
+      // The pre-save answer arrives, still carrying the pre-revision record.
+      inFlight.release([makeProposal({ id: 'p-1', summary: 'pre-revision' })])
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Writing it would restore the pre-revision summary/operations under the
+      // saved-revision state the reviewer is looking at.
+      expect(rp.proposals.value).toBe(queueBeforeSave)
+      rp.stopQueueRefresh()
+    })
+
+    it('ignores a 403 answering a board scope the reviewer already left', async () => {
+      vi.useFakeTimers()
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'a-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      // A scoped poll for board A goes in flight.
+      let rejectA: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectA = reject
+        }),
+      )
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The reviewer switches to board B, which they can read fine.
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'b-1' })])
+      await rp.loadProposals()
+
+      // Only now does board A's 403 arrive.
+      rejectA({ response: { status: 403 } })
+      await vi.advanceTimersByTimeAsync(0)
+
+      // B is authorized: its queue must survive and its polling must continue.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['b-1'])
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'b-2' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['b-2'])
+      rp.stopQueueRefresh()
+    })
+
+    it('stops polling and reports revoked access when a read is refused with 403', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.proposals.value).toEqual([])
+
+      // And it must not keep hammering an endpoint that will keep refusing.
+      const calls = mockAutomationApi.getProposals.mock.calls.length
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 4)
+      expect(mockAutomationApi.getProposals.mock.calls.length).toBe(calls)
+    })
+
+    it('treats a transient failure as transient, not as revoked access', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // A 500 must not tear down a queue the user still has access to.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-1'])
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-2' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-2'])
+      rp.stopQueueRefresh()
+    })
+
+    it('opts out of the retry interceptor and cancels an in-flight read on stop', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      const inFlight = deferredProposals()
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      const lastCall = mockAutomationApi.getProposals.mock.calls.at(-1) as [
+        unknown,
+        { skipRetry?: boolean; signal?: AbortSignal },
+      ]
+      const options = lastCall[1]
+      // The shared interceptor would retry three times with backoff, keeping a
+      // dead poll alive for seconds past the tick that asked for it.
+      expect(options.skipRetry).toBe(true)
+      expect(options.signal?.aborted).toBe(false)
+
+      rp.stopQueueRefresh()
+      expect(options.signal?.aborted).toBe(true)
+
+      // A late answer from the cancelled read must not write into a left surface.
+      inFlight.release([makeProposal({ id: 'ghost' })])
+      await vi.advanceTimersByTimeAsync(0)
+      expect(rp.proposals.value).toEqual([])
+    })
+
+    it('startQueueRefresh is idempotent so a double call cannot leak an interval', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+      rp.startQueueRefresh() // guarded no-op
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+
+      // One stop fully halts it - proving no orphaned second interval.
+      rp.stopQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+    })
+
+    it('registers stopQueueRefresh via onScopeDispose', async () => {
+      vi.useFakeTimers()
+      mockOnScopeDispose.mockClear()
+      mockAutomationApi.getProposals.mockResolvedValue([])
+      const rp = useReviewProposals()
+      rp.startQueueRefresh()
+
+      const disposers = mockOnScopeDispose.mock.calls.map((call: any[]) => call[0] as () => void)
+      disposers.forEach((dispose) => dispose())
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
     })
   })
 })

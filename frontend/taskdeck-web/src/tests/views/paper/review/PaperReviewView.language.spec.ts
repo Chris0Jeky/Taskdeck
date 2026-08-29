@@ -157,6 +157,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }
@@ -228,6 +229,15 @@ describe('PaperReviewView — language', () => {
     )
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).toContain(
       'Decidi con i tasti',
+    )
+    expect(wrapper.get('[data-testid="paper-review-confidence-disclosure"]').text()).toContain(
+      'Mostra i dettagli della confidenza',
+    )
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').text()).toContain(
+      'Mostra i dettagli della provenienza',
+    )
+    expect(wrapper.get('[data-testid="paper-review-similar-past-disclosure"]').text()).toContain(
+      'Mostra decisioni simili',
     )
     expect(wrapper.find('[data-testid="paper-review-key-hint"]').text()).toBe(
       'PREMI ⏎ PER APPROVARE · ⌫ PER RIFIUTARE',

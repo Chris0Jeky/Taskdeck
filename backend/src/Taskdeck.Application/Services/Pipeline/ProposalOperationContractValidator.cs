@@ -78,6 +78,12 @@ public static class ProposalOperationContractValidator
             if (!fieldResult.IsSuccess)
                 return fieldResult;
 
+            var archiveStateResult = validationContext.ValidateOperationAfterPlannedBoardArchive(operation, parameters);
+            if (!archiveStateResult.IsSuccess)
+                return archiveStateResult;
+
+            validationContext.ApplyPlannedBoardArchiveState(operation, parameters);
+
             if (operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
                 operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase) &&
                 Guid.TryParse(operation.TargetId, out var createdCardId))
@@ -621,8 +627,39 @@ public static class ProposalOperationContractValidator
         private Dictionary<string, int>? _labelNameCounts;
 
         public Guid? BoardId { get; } = boardId;
+        private bool _isBoardArchivedInProposal;
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        public Result ValidateOperationAfterPlannedBoardArchive(ProposalOperationDto operation, JsonElement parameters)
+        {
+            if (!_isBoardArchivedInProposal || IsBoardUnarchiveOperation(operation, parameters))
+                return Result.Success();
+
+            return Result.Failure(
+                ErrorCodes.InvalidOperation,
+                "Cannot apply an operation after archiving the proposal board. Restore the board before making further changes.");
+        }
+
+        public void ApplyPlannedBoardArchiveState(ProposalOperationDto operation, JsonElement parameters)
+        {
+            if (!operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase) ||
+                !operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase) ||
+                !OperationParameterParser.TryGetOptionalBoolean(parameters, "isArchived", out var isArchivedProvided, out var isArchived, out _) ||
+                !isArchivedProvided)
+            {
+                return;
+            }
+
+            _isBoardArchivedInProposal = isArchived;
+        }
+
+        private static bool IsBoardUnarchiveOperation(ProposalOperationDto operation, JsonElement parameters) =>
+            operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase) &&
+            operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase) &&
+            OperationParameterParser.TryGetOptionalBoolean(parameters, "isArchived", out var isArchivedProvided, out var isArchived, out _) &&
+            isArchivedProvided &&
+            !isArchived;
 
         public async Task<Result> ValidateNewCardIdAsync(Guid cardId, CancellationToken cancellationToken)
         {

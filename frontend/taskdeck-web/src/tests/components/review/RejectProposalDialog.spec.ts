@@ -35,6 +35,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     correlationId: 'corr-1',
     operations: [],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   } as Proposal
 }

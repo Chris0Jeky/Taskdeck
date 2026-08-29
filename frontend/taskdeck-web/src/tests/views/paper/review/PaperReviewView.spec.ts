@@ -4,13 +4,16 @@ import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import { REVIEW_QUEUE_REFRESH_MS } from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
+  refreshWorkloadCounts: vi.fn(),
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
+  approveProposals: vi.fn(),
   rejectProposal: vi.fn(),
   deferProposal: vi.fn(),
   executeProposal: vi.fn(),
@@ -39,6 +42,7 @@ vi.mock('../../../../api/automationApi', () => ({
     getProposals: mocks.getProposals,
     getProposal: mocks.getProposal,
     approveProposal: mocks.approveProposal,
+    approveProposals: mocks.approveProposals,
     rejectProposal: mocks.rejectProposal,
     deferProposal: mocks.deferProposal,
     executeProposal: mocks.executeProposal,
@@ -87,6 +91,10 @@ vi.mock('../../../../store/toastStore', () => ({
 
 vi.mock('../../../../store/sessionStore', () => ({
   useSessionStore: () => mocks.sessionState,
+}))
+
+vi.mock('../../../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ refreshWorkloadCounts: mocks.refreshWorkloadCounts }),
 }))
 
 vi.mock('../../../../api/proposalRevisionsApi', () => ({
@@ -157,6 +165,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }
@@ -171,6 +180,12 @@ async function mountView(
   options: { attachTo?: boolean } = {},
 ) {
   mocks.getProposals.mockResolvedValueOnce(proposals)
+  // The Review surface re-reads its queue on a bounded poll while it is open
+  // (#2194), so a `...Once` fixture alone would leave any timer-advancing test
+  // facing a drained mock and an empty queue. A real server keeps answering
+  // with the same list, so the default answers it too. Per-test `...Once`
+  // overrides still take precedence -- the Once queue drains first.
+  mocks.getProposals.mockResolvedValue(proposals)
   mocks.getBoards.mockResolvedValueOnce(boards)
   mocks.getColumns.mockResolvedValue(columns)
   const router = createRouter({
@@ -279,6 +294,115 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').exists()).toBe(true)
     // Active proposal title surfaces in the main column header.
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('dark mode')
+  })
+
+  it('batch-selects only eligible rows, confirms explicitly, and stops at Approved', async () => {
+    const proposals = [
+      makeProposal({
+        id: 'batch-1',
+        summary: 'First batch proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-1', actionType: 'create', targetType: 'card' }],
+      }),
+      makeProposal({
+        id: 'batch-2',
+        summary: 'Second batch proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-2', actionType: 'create', targetType: 'card' }],
+      }),
+      makeProposal({ id: 'batch-medium', summary: 'Medium proposal', riskLevel: 'Medium' }),
+    ]
+    const wrapper = await mountView(proposals, '/workspace/review', [], [], { attachTo: true })
+
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="queue-batch-select-batch-medium"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="queue-batch-select-batch-1"]').trigger('change')
+    await wrapper.get('[data-testid="queue-batch-select-batch-2"]').trigger('change')
+    await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="batch-approve-dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="batch-approve-not-applied"]')?.textContent)
+      .toContain('Nothing is applied to a board')
+    expect(mocks.approveProposals).not.toHaveBeenCalled()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+    mocks.approveProposals.mockResolvedValueOnce({ approvedIds: ['batch-2', 'batch-1'] })
+    mocks.getProposals.mockResolvedValueOnce(
+      proposals.map((proposal) =>
+        proposal.id === 'batch-1' || proposal.id === 'batch-2'
+          ? { ...proposal, status: 'Approved' as const }
+          : proposal,
+      ),
+    )
+    ;(document.body.querySelector('[data-testid="batch-approve-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mocks.approveProposals).toHaveBeenCalledOnce()
+    expect(mocks.approveProposals).toHaveBeenCalledWith([
+      {
+        id: 'batch-1',
+        expectedProposalUpdatedAt: proposals[0]!.updatedAt,
+        expectedLatestRevisionId: proposals[0]!.latestRevisionId,
+      },
+      {
+        id: 'batch-2',
+        expectedProposalUpdatedAt: proposals[1]!.updatedAt,
+        expectedLatestRevisionId: proposals[1]!.latestRevisionId,
+      },
+    ])
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="decision-apply"]').attributes('data-apply-phase')).toBe('execute')
+    expect(wrapper.text()).not.toContain('APPLIED · READ-ONLY')
+  })
+
+  it('keeps secondary evidence collapsed per proposal without changing selection or queue focus', async () => {
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'proposal-first', summary: 'First proposal' }),
+        makeProposal({ id: 'proposal-second', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-proposal-first',
+      [],
+      [],
+      { attachTo: true },
+    )
+
+    const activeRow = wrapper.findAll('.paper-review-q').find((row) => row.text().includes('First proposal'))
+    expect(activeRow?.attributes('aria-pressed')).toBe('true')
+
+    for (const testId of [
+      'paper-review-confidence-disclosure',
+      'paper-review-provenance-disclosure',
+      'paper-review-similar-past-disclosure',
+    ]) {
+      const button = wrapper.get(`[data-testid="${testId}"]`)
+      expect(button.attributes('aria-expanded')).toBe('false')
+      await button.trigger('click')
+      expect(button.attributes('aria-expanded')).toBe('true')
+    }
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+    expect(activeRow?.attributes('aria-pressed')).toBe('true')
+    expect((wrapper.vm as unknown as { $route: { hash: string } }).$route.hash).toBe(
+      '#proposal-proposal-first',
+    )
+
+    const secondRow = wrapper.findAll('.paper-review-q').find((row) => row.text().includes('Second proposal'))
+    expect(secondRow).toBeDefined()
+    ;(secondRow!.element as HTMLButtonElement).focus()
+    await secondRow!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(secondRow!.attributes('aria-pressed')).toBe('true')
+    expect(document.activeElement).toBe(secondRow!.element)
+    for (const testId of [
+      'paper-review-confidence-disclosure',
+      'paper-review-provenance-disclosure',
+      'paper-review-similar-past-disclosure',
+    ]) {
+      expect(wrapper.get(`[data-testid="${testId}"]`).attributes('aria-expanded')).toBe('false')
+    }
   })
 
   it('uses historical change copy for applied records without changing pending copy', async () => {
@@ -1550,6 +1674,7 @@ describe('PaperReviewView', () => {
     mocks.reportBadSuggestion.mockResolvedValueOnce(undefined)
     const wrapper = await mountView([makeProposal({ id: 'proposal-001', summary: 'Report me' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -1566,6 +1691,7 @@ describe('PaperReviewView', () => {
     mocks.reportBadSuggestion.mockRejectedValueOnce(new Error('feedback boom'))
     const wrapper = await mountView([makeProposal({ id: 'report-err', summary: 'Report error' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -1583,6 +1709,7 @@ describe('PaperReviewView', () => {
     )
     const wrapper = await mountView([makeProposal({ id: 'proposal-001' })])
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -2504,6 +2631,94 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('announces the awaiting count in a polite live region (#2194)', async () => {
+    const wrapper = await mountView([makeProposal({ id: 'live-1', status: 'PendingReview' })])
+    const live = wrapper.find('[data-testid="paper-review-queue-live"]')
+    expect(live.exists()).toBe(true)
+    expect(live.attributes('role')).toBe('status')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(live.text()).toContain('1 proposal awaiting review')
+    wrapper.unmount()
+  })
+
+  it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'gone-1' })])
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // Clearing the queue silently would swap a permission failure for a fresh
+      // "Nothing waiting. Good." -- the exact false negative #2194 is about.
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('Nothing waiting')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.refreshWorkloadCounts.mockClear()
+
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'badge-1', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // The sidebar badge reads a home-summary workload count that AppShell
+      // fetches once at sign-in; nothing on Review touched it, so it froze at
+      // its mount-time value and survived every decision made here.
+      expect(mocks.refreshWorkloadCounts).toHaveBeenCalled()
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('surfaces a proposal created while Review stays open, and stops reading on unmount (#2194)', async () => {
+    // The defect: with Review open, a proposal created server-side stayed
+    // invisible for 115 s behind "Nothing waiting. Good." while the API already
+    // reported it pending. Only setInterval and Date are faked so flushPromises
+    // (setTimeout-based) keeps working.
+    // `clearInterval` must be faked alongside `setInterval`: the real one cannot
+    // cancel a fake handle, and the unmount half of this test asserts exactly
+    // that cancellation.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      expect(wrapper.text()).toContain('Nothing waiting')
+
+      // Ask AI runs on a capture elsewhere; the queue now has one pending item.
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'late-1', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // No navigation happened -- the queue caught up on its own.
+      expect(wrapper.text()).not.toContain('Nothing waiting')
+
+      // Leaving the surface must end the reads.
+      const callsWhileOpen = mocks.getProposals.mock.calls.length
+      wrapper.unmount()
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS * 3)
+      await flushPromises()
+      expect(mocks.getProposals.mock.calls.length).toBe(callsWhileOpen)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-derives an open live pane to the stored presentation when the expiry clock passes (#1397 LOW-5)', async () => {
     // Open the live diff on a pending proposal that expires in 30s, then tick
     // the 60s review clock past its expiresAt: the pane must flip to the stored
@@ -3199,6 +3414,44 @@ describe('PaperReviewView', () => {
     // The collapse introduced an await between the click and the dialog. Two
     // things that used to be impossible now are: focus is elsewhere when the
     // dialog mounts, and the reviewer can move the queue underneath it.
+
+    it('preserves focus on another connected control when a delayed approval completes', async () => {
+      let resolveApprove!: (proposal: Proposal) => void
+      mocks.approveProposal.mockImplementationOnce(
+        () =>
+          new Promise<Proposal>((resolve) => {
+            resolveApprove = resolve
+          }),
+      )
+      const wrapper = await mountView(
+        [makeProposal({ id: 'focus-owner' })],
+        '/workspace/review',
+        [],
+        [],
+        { attachTo: true },
+      )
+
+      await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      const technicalDetails = wrapper.get(
+        '[data-testid="paper-review-technical-details"] summary',
+      ).element as HTMLElement
+      technicalDetails.focus()
+      expect(document.activeElement).toBe(technicalDetails)
+
+      resolveApprove(makeProposal({ id: 'focus-owner', status: 'Approved' }))
+      await flushPromises()
+      await nextTick()
+
+      expect(
+        wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'),
+      ).toBe('approved')
+      expect(technicalDetails.isConnected).toBe(true)
+      expect(document.activeElement).toBe(technicalDetails)
+
+      wrapper.unmount()
+    })
 
     it('returns focus to the rail when the explicitly requested Apply dialog is dismissed', async () => {
       // NOTE ON FIDELITY. jsdom does NOT implement the HTML rule that a focused

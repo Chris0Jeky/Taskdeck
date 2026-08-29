@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
+import { formatShortcut } from '../../../utils/keyboardShortcuts'
 
 describe('PaperHLBtn', () => {
   it('renders the label prop', () => {
@@ -30,6 +31,12 @@ describe('PaperHLBtn', () => {
     const wrapper = mount(PaperHLBtn, { props: { label: 'Apply', kbd: '⏎' } })
     expect(wrapper.find('.phlbtn-divider').exists()).toBe(true)
     expect(wrapper.find('kbd.pkbd').text()).toBe('⏎')
+  })
+
+  it('normalizes a legacy command hint at the shared button boundary', () => {
+    const wrapper = mount(PaperHLBtn, { props: { label: 'Capture', kbd: '⌘;' } })
+
+    expect(wrapper.find('kbd.pkbd').text()).toBe(formatShortcut('mod+;'))
   })
 
   it('does not render a divider when no kbd is supplied', () => {

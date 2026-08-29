@@ -40,10 +40,19 @@ function findBodyButton(text: string): HTMLButtonElement | undefined {
   ) as HTMLButtonElement | undefined
 }
 
+function findScopeCheckbox(scope: string): HTMLInputElement {
+  const checkbox = document.body.querySelector<HTMLInputElement>(
+    `input[name="api-key-scope"][value="${scope}"]`,
+  )
+  if (!checkbox) throw new Error(`Scope checkbox not found: ${scope}`)
+  return checkbox
+}
+
 const activeKey = {
   id: 'key-1',
   keyPrefix: 'tdsk_abc',
   name: 'CI Pipeline',
+  scopes: ['read', 'manage'],
   createdAt: '2025-06-01T10:00:00Z',
   expiresAt: null,
   revokedAt: null,
@@ -55,6 +64,7 @@ const revokedKey = {
   id: 'key-2',
   keyPrefix: 'tdsk_xyz',
   name: 'Old Key',
+  scopes: ['read', 'propose', 'manage'],
   createdAt: '2025-01-01T00:00:00Z',
   expiresAt: null,
   revokedAt: '2025-03-01T00:00:00Z',
@@ -66,6 +76,7 @@ const expiredKey = {
   id: 'key-3',
   keyPrefix: 'tdsk_exp',
   name: 'Expired Key',
+  scopes: ['propose'],
   createdAt: '2024-01-01T00:00:00Z',
   expiresAt: '2024-06-01T00:00:00Z',
   revokedAt: null,
@@ -169,6 +180,8 @@ describe('ApiKeySettingsView', () => {
     expect(bodyText()).toContain('tdsk_abc...')
     expect(bodyText()).toContain('tdsk_xyz...')
     expect(bodyText()).toContain('tdsk_exp...')
+    expect(bodyText()).toContain('Read, Manage')
+    expect(bodyText()).toContain('Read, Propose, Manage')
   })
 
   it('shows expired key with Expired badge and expiry date, not Revoked', async () => {
@@ -204,6 +217,7 @@ describe('ApiKeySettingsView', () => {
         key: 'tdsk_secret_plaintext_value',
         keyPrefix: 'tdsk_sec',
         name: 'New Key',
+        scopes: ['read', 'manage'],
         createdAt: '2025-06-10T00:00:00Z',
         expiresAt: null,
       })
@@ -228,22 +242,37 @@ describe('ApiKeySettingsView', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
       await wrapper.vm.$nextTick()
 
-      // Click Create Key in the dialog
+      const scopeCheckboxes = document.body.querySelectorAll<HTMLInputElement>(
+        'input[name="api-key-scope"]',
+      )
+      expect(scopeCheckboxes).toHaveLength(3)
+      expect(Array.from(scopeCheckboxes).every(checkbox => !checkbox.checked)).toBe(true)
+
       const submitBtn = findBodyButton('Create Key')
       expect(submitBtn).toBeDefined()
+      expect(submitBtn!.disabled).toBe(true)
+
+      findScopeCheckbox('read').click()
+      await wrapper.vm.$nextTick()
+      findScopeCheckbox('manage').click()
+      await wrapper.vm.$nextTick()
+      expect(submitBtn!.disabled).toBe(false)
+
+      // Click Create Key in the dialog
       submitBtn!.click()
       await wrapper.vm.$nextTick()
       await waitForUi()
 
-      expect(mocks.createKey).toHaveBeenCalledWith('New Key')
+      expect(mocks.createKey).toHaveBeenCalledWith('New Key', ['read', 'manage'])
 
       // The plaintext key should be shown
       expect(bodyText()).toContain('tdsk_secret_plaintext_value')
       expect(bodyText()).toContain('Copy this key now')
       expect(bodyText()).toContain('will not be shown again')
+      expect(bodyText()).toContain('Permissions: Read, Manage')
     })
 
-    it('disables submit when name is empty', async () => {
+    it('disables submit until a name and at least one permission are selected', async () => {
       mocks.listKeys.mockResolvedValue([activeKey])
 
       wrapper = mount(ApiKeySettingsView, { attachTo: document.body })
@@ -263,6 +292,16 @@ describe('ApiKeySettingsView', () => {
       const submitBtn = dialogButtons[dialogButtons.length - 1]
       expect(submitBtn).toBeDefined()
       expect(submitBtn!.disabled).toBe(true)
+
+      const input = document.querySelector('#api-key-name') as HTMLInputElement
+      input.value = 'Scoped Key'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await wrapper.vm.$nextTick()
+      expect(submitBtn!.disabled).toBe(true)
+
+      findScopeCheckbox('propose').click()
+      await wrapper.vm.$nextTick()
+      expect(submitBtn!.disabled).toBe(false)
     })
 
     it('shows error when create API call fails', async () => {
@@ -282,6 +321,7 @@ describe('ApiKeySettingsView', () => {
       const input = document.querySelector('#api-key-name') as HTMLInputElement
       input.value = 'Test Key'
       input.dispatchEvent(new Event('input', { bubbles: true }))
+      findScopeCheckbox('read').click()
       await wrapper.vm.$nextTick()
 
       // Submit
@@ -318,6 +358,7 @@ describe('ApiKeySettingsView', () => {
       const input = document.querySelector('#api-key-name') as HTMLInputElement
       input.value = 'In-Flight Key'
       input.dispatchEvent(new Event('input', { bubbles: true }))
+      findScopeCheckbox('manage').click()
       await wrapper.vm.$nextTick()
 
       // Click Create Key to start the in-flight request
@@ -343,6 +384,7 @@ describe('ApiKeySettingsView', () => {
         key: 'tdsk_inflight_value',
         keyPrefix: 'tdsk_inf',
         name: 'In-Flight Key',
+        scopes: ['manage'],
         createdAt: '2025-06-10T00:00:00Z',
         expiresAt: null,
       })

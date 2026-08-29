@@ -95,6 +95,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         }
 
         return await _dbSet
+            .Include(proposal => proposal.Operations)
             .Where(proposal => uniqueIds.Contains(proposal.Id))
             .ToListAsync(cancellationToken);
     }
@@ -302,13 +303,35 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return string.Equals(storedTargetId, requestedTargetId, StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
+    public async Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        return await _dbSet
+
+        var expired = _dbSet
+            .Where(p => p.Status == ProposalStatus.PendingReview && p.ExpiresAt < now);
+
+        // Expiry is a decision write, so ADR-0063 / #2168 apply: a proposal on an extant ARCHIVED
+        // board must not be touched by the automatic lanes (#2197). Same predicate shape as
+        // GetActiveByUserIdAsync and CountPendingReviewByUserIdAsync — AutomationProposal has no
+        // Board navigation, so the extant-and-archived test is an explicit subquery, and board-less
+        // or dangling-board rows stay expirable rather than being swept up by it.
+        var expirable = await expired
+            .Where(p =>
+                !p.BoardId.HasValue ||
+                !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
             .Include(p => p.Operations)
-            .Where(p => p.Status == ProposalStatus.PendingReview && p.ExpiresAt < now)
             .ToListAsync(cancellationToken);
+
+        // Counted with the complementary predicate rather than by subtracting from a total, so the
+        // withheld figure is never inferred from two reads that could disagree. It is a count only
+        // and is used solely for an operator log line.
+        var skippedArchivedBoardCount = await expired
+            .Where(p =>
+                p.BoardId.HasValue &&
+                _context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
+            .CountAsync(cancellationToken);
+
+        return new ExpiredProposalSweep(expirable, skippedArchivedBoardCount);
     }
 
     private static readonly ProposalStatus[] TerminalStatuses =

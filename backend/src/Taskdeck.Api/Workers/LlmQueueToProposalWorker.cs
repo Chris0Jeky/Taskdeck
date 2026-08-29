@@ -548,9 +548,19 @@ public class LlmQueueToProposalWorker : BackgroundService
                         triageResult.Value.Model,
                         CaptureRequestContract.MaxModelLength));
 
+                // A degraded run still produced a reviewable proposal, so the item completes; the
+                // notice records WHICH engine produced it so the fallback is not silent (#2192).
                 item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
-                item.MarkAsCompleted();
+                item.MarkAsCompleted(triageResult.Value.DegradedNotice);
                 await unitOfWork.SaveChangesAsync(ct);
+
+                if (triageResult.Value.DegradedNotice is { } captureDegradedNotice)
+                {
+                    _logger.LogWarning(
+                        "Capture item {ItemId} completed on the deterministic fallback: {DegradedNotice}",
+                        item.Id,
+                        captureDegradedNotice);
+                }
 
                 // A null ProposalId is the "triaged, nothing to propose" verdict (only reachable
                 // here for legacy transcript-typed rows whose LLM leg ran): Completed without a

@@ -20,6 +20,7 @@ export default {
   queueRail: {
     eyebrow: 'Cola · {awaiting} en espera · {stale} estancadas',
     eyebrowScoped: 'Cola · {awaiting} en espera en este tablero · {stale} estancadas',
+    liveAnnounce: '{count} propuesta en espera de revisión. | {count} propuestas en espera de revisión.',
     filters: {
       label: 'Filtros de la cola',
     },
@@ -39,6 +40,25 @@ export default {
       heading: 'Esta semana',
       applyRateLabel: 'Tasa de aplicación',
       applyRateEmpty: 'Aún sin decisiones',
+    },
+  },
+
+  batchApprove: {
+    selectLabel: 'Seleccionar {title} para aprobación por lotes',
+    request: 'Revisar {count} aprobación seleccionada | Revisar {count} aprobaciones seleccionadas',
+    requestLabel: 'Abrir la confirmación para {count} propuesta seleccionada | Abrir la confirmación para {count} propuestas seleccionadas',
+    limitReached: 'Un lote puede contener como máximo {count} propuestas.',
+    selectionChanged: 'La selección cambió porque una o más propuestas ya no son aptas. Revísala de nuevo.',
+    receiptMismatch: 'Taskdeck no pudo confirmar el lote completo. Revisa la cola antes de volver a intentarlo.',
+    approved: 'Se aprobó {count} propuesta; no se aplicó. | Se aprobaron {count} propuestas; no se aplicaron.',
+    failed: 'No se pudieron aprobar las propuestas seleccionadas.',
+    dialog: {
+      title: '¿Aprobar las propuestas seleccionadas?',
+      description: 'Confirmar la aprobación de {count} propuesta | Confirmar la aprobación de {count} propuestas',
+      body: 'Taskdeck volverá a comprobar la {count} propuesta y aprobará el lote completo o ninguna. | Taskdeck volverá a comprobar las {count} propuestas y aprobará el lote completo o ninguna.',
+      notApplied: 'Esto solo registra la aprobación. No se aplica nada a ningún tablero.',
+      cancel: 'Seguir revisando',
+      confirm: 'Aprobar {count} propuesta | Aprobar {count} propuestas',
     },
   },
 
@@ -223,6 +243,10 @@ export default {
     title: 'Procedencia',
     sub: 'Qué se leyó · qué no · qué se dedujo',
     empty: 'Todavía no hay procedencia para esta propuesta.',
+    details: {
+      show: 'Mostrar detalles de procedencia',
+      hide: 'Ocultar detalles de procedencia',
+    },
     footnote: {
       deterministic:
         'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck.',
@@ -316,6 +340,10 @@ export default {
     heading: 'Autor',
     confidenceHeading: 'Fuente de confianza',
     modelReportedHeading: 'Confianza por elemento declarada por el modelo',
+    details: {
+      show: 'Mostrar detalles de confianza',
+      hide: 'Ocultar detalles de confianza',
+    },
     nameFallback: 'Propuesta',
     name: '{actor} · propuesta de {source}',
     modelConfidence: 'promedio declarado por el modelo {value}',
@@ -337,6 +365,10 @@ export default {
   similarPast: {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
+    details: {
+      show: 'Mostrar decisiones parecidas',
+      hide: 'Ocultar decisiones parecidas',
+    },
     verdict: {
       applied: 'APLICADA',
       rejected: 'RECHAZADA',
@@ -436,6 +468,10 @@ export default {
     title: 'Nada pendiente. Bien.',
     body: 'Cuando el asistente tenga algo que proponer aparecerá aquí para revisarlo.',
     loading: 'Cargando las propuestas…',
+    accessRevoked: {
+      title: 'Esta cola de revisión ya no está disponible para ti.',
+      body: 'Tu acceso a estos tableros cambió, así que la cola se vació y dejó de actualizarse. Vuelve a cargar la página o elige un tablero al que todavía tengas acceso.',
+    },
     scoped: {
       title: 'No hay propuestas en {scope}.',
       body: 'Esta lista de revisión está limitada al tablero activo. Muestra todos los tableros para restaurar la cola completa.',

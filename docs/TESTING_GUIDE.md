@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-26
+Last Updated: 2026-08-29
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -184,11 +184,14 @@ Explorer/SmartScreen acceptance remain unverified.
   16 locale-catalog tests, typecheck, scoped lint, production build, and diff hygiene on the same
   base. Neither has an open PR or hosted exact-head gate. The applied-detail slice has not run the
   full frontend suite, Playwright/native-button keyboard journey, live backend, or packaged desktop.
-- **Final-main release seam still owed:** after the prepared slices are dispositioned, run one
-  synthetic desktop capture -> approved receipt -> explicit Apply -> exactly-one-card board journey,
-  then dispatch a blank-tag no-publish Windows candidate from that same exact main and verify the
-  untouched inner ZIP plus skipped release creation. Use the downloaded candidate for the packaged
-  manual journey. No post-`55dbf6e14` candidate or packaged journey is claimed here.
+- **Final-main release seam — run for v0.2.0 (2026-08-29):** on the exact tag head `48c05e1dc`, a
+  blank-tag no-publish Windows candidate (run 33233342037) was dispatched and verified (untouched
+  inner ZIP, skipped release creation, 0.2.x in-zip quick start), and the downloaded candidate ran
+  the isolated headless packaged journey — register -> board with one card -> board-scoped capture
+  -> Mock triage -> approved receipt with the board unchanged -> explicit Apply -> board 1 -> 2 cards
+  — with the zip hash unchanged; after publication the released zip was re-verified (hash vs
+  sidecar, provenance, `/health/live` = `0.2.0`, GHCR tags). The same seam is owed again for the
+  next tag.
 - `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
   hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
   exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
@@ -1419,9 +1422,11 @@ Manual validation recommended: send "What cards are in my Backlog?" via chat wit
 Tracking issue: `#652` (Phase 1 of `#648`)
 
 New test coverage:
-- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, phantom-user fallback, multi-user board scoping
+- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, fail-closed identity resolution, multi-user board scoping
 
-Manual validation recommended: configure `mcp.example.json` in Claude Code / Cursor and ask "What boards do I have?" to verify resource delivery.
+Manual validation recommended: follow [MCP Server — From source](MCP_SERVER.md#from-source) in
+Claude Code or Cursor and ask "What boards do I have?" to verify resource delivery against the
+intended source database and identity.
 
 ## GDPR Data Portability Coverage (PR #666, delivered 2026-04-01)
 
@@ -2453,7 +2458,7 @@ Planned quality expectations when implementation starts:
   - Includes LLM tool-calling orchestrator coverage (multi-turn loop, timeout, round limits) and read tool schema generation
   - Includes GDPR data export service (user-scoped completeness, versioned payload) and account deletion service (re-auth, confirmation phrase, PII anonymization)
   - Includes board metrics service coverage (aggregation, date range, label grouping)
-  - Includes MCP board resource coverage (listing, phantom-user fallback, multi-user scoping)
+  - Includes MCP board resource coverage (listing, fail-closed identity resolution, multi-user scoping)
   - Includes integrations registry service coverage (connector CRUD, enable/disable lifecycle, event logging)
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`

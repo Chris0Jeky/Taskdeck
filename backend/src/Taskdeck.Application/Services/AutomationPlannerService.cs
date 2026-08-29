@@ -443,18 +443,18 @@ public class AutomationPlannerService : IAutomationPlannerService
                 operations
             );
 
-            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
-            if (!result.IsSuccess)
-                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
-
-            // Validate permissions
             // Proposal creation is a mutation lane: the requester must be write-capable on the
-            // board the proposal targets (#1836).
+            // board the proposal targets (#1433, #1836). Validate before persisting so a
+            // denied request cannot leave an unauthorized proposal in PendingReview.
             var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
             if (!permissionResult.IsSuccess)
             {
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
             }
+
+            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
+            if (!result.IsSuccess)
+                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
             return Result.Success(result.Value);
         }
@@ -577,15 +577,16 @@ public class AutomationPlannerService : IAutomationPlannerService
                 allOperations
             );
 
-            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
-            if (!result.IsSuccess)
-                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
-
             // Proposal creation is a mutation lane: the requester must be write-capable on the
-            // board the proposal targets (#1836).
+            // board the proposal targets (#1433, #1836). Validate before persisting so a
+            // denied request cannot leave an unauthorized proposal in PendingReview.
             var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
             if (!permissionResult.IsSuccess)
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+
+            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
+            if (!result.IsSuccess)
+                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
             return Result.Success(result.Value);
         }

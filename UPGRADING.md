@@ -23,7 +23,7 @@ packaged Windows install also generates secrets in `appsettings.local.json`; cop
 
 | How you run Taskdeck | Database file |
 | --- | --- |
-| Supported Windows 0.1.x release | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
+| Supported Windows release (0.1.x / 0.2.x) | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
 | Source `dev-up` launcher | `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db` on Windows; `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` on Linux/macOS |
 | Raw developer `dotnet run` | A relative path resolves from that command's working directory; use `dev-up` for the stable source path above |
 | Explicit connection string | Whatever path `ConnectionStrings:DefaultConnection` points at |
@@ -114,11 +114,44 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## Unreleased — after v0.1.2
+## Unreleased — after v0.2.0
 
-**BREAKING: none.** These notes cover hosts tracking `main` past the v0.1.2 tag. This heading is
-renamed to the release version when the next version ships; v0.1.2 itself contained no schema
-change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
+**BREAKING: none.** These notes cover hosts tracking `main` past the v0.2.0 tag (the v0.3 lane merged
+into `main` on 2026-08-29). This heading is renamed to the release version when the next version
+ships; nothing below is in the published v0.2.0 artifacts.
+
+- **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
+  migration makes `ProvenanceFields.Confidence` nullable and adds the required integer
+  `ConfidenceSource` column. Existing rows keep their stored numeric value but receive source `0`
+  (`NotReported`), so an upgrade does not relabel historical confidence as model-reported evidence.
+- **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
+  integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
+  then makes the column required without a database default. Existing integrations therefore retain
+  their prior MCP access after upgrade. Current v0.3 integration builds require every new API, UI,
+  and CLI key to select one or more of `read`, `propose`, and `manage`; omitted, empty, or unknown
+  selections are rejected instead of defaulting to Full. Existing backfilled keys remain Full until
+  they are replaced with least-privilege keys.
+- **Behavior change, no schema change: a capture's `errorMessage` can now be non-null on a
+  *successful* capture.** Previously only a `Failed` capture carried one. When transcript triage
+  attempts its LLM leg and cannot deliver — kill switch, an unavailable, misconfigured, or degraded
+  provider, exhausted quota, or unusable model output — the capture now completes as
+  `Completed`/`Triaged` **and** carries a degradation notice naming the outcome, e.g.
+  `LLM triage unavailable (ProviderDegraded); using deterministic extractor.` The status is
+  unchanged and no retry is consumed; the field is simply no longer exclusive to failures. It is
+  exposed wherever the capture is: the capture API (`CaptureItemDto` / `CaptureItemSummaryDto`) and
+  the MCP `CaptureResources` surface. Anything that treats a non-null `errorMessage` as "this
+  capture failed" needs to key on the status instead.
+- **No migration action required.** Both migrations are applied automatically on startup after
+  the automatic [pre-migration snapshot](#automatic-pre-migration-backups); take the manual copy from
+  the [General upgrade procedure](#general-upgrade-procedure) as usual.
+
+## v0.2.0 — 2026-08-29
+
+**BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
+v0.1.1 → v0.1.2 needed no entry of its own; everything below applies when moving from any v0.1.x to
+v0.2.0. **Skipping from v0.1.0:** the retired Gemini provider migration in the
+[v0.1.1 notes](#v011--2026-08-21) still applies — a host that still sets `Llm:Provider=Gemini` or any
+`Llm:Gemini` value fails startup with migration guidance until that selector is replaced.
 
 - **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
   required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
@@ -144,8 +177,8 @@ change, so upgrading v0.1.1 → v0.1.2 needed no entry of its own.
   **BREAKING: none.** Again a single in-place statement with no table rebuild; existing boards take
   the `0` default. Nothing reads the value — it exists so a card write always marks its board row
   modified, which keeps the token check below deterministic instead of clock-dependent.
-- **No action required.** Both migrations are applied automatically on startup like every other one —
-  steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
+- **No migration action required.** Both migrations are applied automatically on startup like
+  every other one — steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
   [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
   snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
   what the upgrade spends its time on. Take the manual copy in step 3 as usual; the automatic
@@ -192,9 +225,8 @@ $taskdeckV011 = Join-Path $env:USERPROFILE 'Desktop\taskdeck-v0.1.1-win-x64\Task
 
 `Env:` changes above apply only to that PowerShell process and its children; the persistent user
 variables and their values remain untouched. Close the PowerShell window to discard the temporary
-environment. Do not paste keys into a terminal transcript or issue. The preserved v0.1.2 draft
-would tolerate those inert child names after an explicit supported selector, but that behavior is
-not yet published.
+environment. Do not paste keys into a terminal transcript or issue. v0.1.2 and later tolerate
+those inert child names after an explicit supported selector.
 See the [v0.1.1 Windows startup incident checkpoint](docs/platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
 for the sanitized diagnosis, attempted paths, current workaround, and exact implementation resume point.
 

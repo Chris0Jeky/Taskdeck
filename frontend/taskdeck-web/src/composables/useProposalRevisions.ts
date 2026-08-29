@@ -8,7 +8,17 @@ import { useToastStore } from '../store/toastStore'
 import { getErrorDisplay } from './useErrorMapper'
 import type { Proposal as ApiProposal } from '../types/automation'
 
-export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
+export function useProposalRevisions(
+  activeProposal: Ref<ApiProposal | null>,
+  /**
+   * `onRevisionSaved` fires the instant a save is persisted and accepted. The
+   * review queue uses it to invalidate reads that started before the save: a
+   * queue GET in flight at that moment still carries the pre-revision summary,
+   * operations and latestRevisionId, and writing it would silently undo the
+   * saved edit on screen (#2194 review round).
+   */
+  options?: { onRevisionSaved?: () => void },
+) {
   const toast = useToastStore()
 
   const editing = ref(false)
@@ -91,6 +101,11 @@ export function useProposalRevisions(activeProposal: Ref<ApiProposal | null>) {
       // Invalidate any in-flight revision load so a pre-save (stale, empty) list
       // can't overwrite this save's state when it resolves after the save.
       loadGeneration += 1
+      // Same hazard, different list: a review-queue read that predates this save
+      // would restore the pre-revision proposal. Called synchronously here, in
+      // the same continuation as the POST, so no queue answer can slip between
+      // the save landing and the invalidation.
+      options?.onRevisionSaved?.()
       latestRevision.value = revision
       revisionCount.value += 1
       revisionsLoaded.value = true

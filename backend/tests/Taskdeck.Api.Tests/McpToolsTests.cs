@@ -893,6 +893,58 @@ public class McpToolsTests : IDisposable
             "pending proposals should not be dismissible");
     }
 
+    [Fact]
+    public async Task DismissProposal_ArchivedBoard_ReturnsExactRootError_AndKeepsDecision()
+    {
+        const string expectedMessage =
+            "Cannot modify proposals on an archived board. Restore the board before changing its decision history.";
+        Guid proposalId;
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var (user, boardId, colId) = await SetupBoardAsync(scope);
+            var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+            var writeTools = new WriteTools(
+                proposalService,
+                new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
+                scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+                scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
+            var createJson = await writeTools.CreateCard(
+                boardId.ToString(),
+                "Archived MCP decision",
+                colId.ToString());
+            using (var createDocument = JsonDocument.Parse(createJson))
+            {
+                proposalId = createDocument.RootElement.GetProperty("proposalId").GetGuid();
+            }
+
+            var rejectResult = await proposalService.RejectProposalAsync(
+                proposalId,
+                user.Id,
+                new UpdateProposalStatusDto("Prepared for MCP archive guard"));
+            rejectResult.IsSuccess.Should().BeTrue();
+
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var board = await unitOfWork.Boards.GetByIdAsync(boardId);
+            board.Should().NotBeNull();
+            board!.Archive();
+            await unitOfWork.SaveChangesAsync();
+
+            var proposalTools = new ProposalTools(
+                proposalService,
+                new McpBoardResourcesTests.FixedUserContextProvider(user.Id));
+            var json = await proposalTools.DismissProposal(proposalId.ToString());
+
+            using var document = JsonDocument.Parse(json);
+            document.RootElement.GetProperty("error").GetString().Should().Be(expectedMessage);
+        }
+
+        using var verifyScope = _serviceProvider.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await verifyDb.AutomationProposals.AsNoTracking().SingleAsync(proposal => proposal.Id == proposalId))
+            .Status.Should().Be(ProposalStatus.Rejected);
+    }
+
     // ── Write tools review-first compliance test ─────────────────────────────
 
     [Fact]

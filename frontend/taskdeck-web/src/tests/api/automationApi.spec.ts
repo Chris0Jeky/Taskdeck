@@ -23,6 +23,34 @@ describe('automationApi', () => {
     expect(http.get).toHaveBeenCalledWith('/automation/proposals?status=PendingReview&limit=25')
   })
 
+  // #2194 added an optional request config for the background review-queue poll.
+  // These two cases pin BOTH halves of that contract: the config reaches the
+  // client when supplied, and the call shape is untouched when it is not. The
+  // second is what the assertion above already guarded -- forwarding `undefined`
+  // unconditionally changed every caller's arity and turned this suite red.
+  it('forwards the request config when one is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+    const controller = new AbortController()
+
+    await automationApi.getProposals(
+      { limit: 200 },
+      { skipRetry: true, signal: controller.signal },
+    )
+
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals?limit=200', {
+      skipRetry: true,
+      signal: controller.signal,
+    })
+  })
+
+  it('omits the config argument entirely when none is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+    await automationApi.getProposals()
+
+    expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals'])
+  })
+
   it('sends idempotency key when executing proposal', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'p1' } })
 
@@ -41,6 +69,35 @@ describe('automationApi', () => {
     await automationApi.rejectProposal('p1', null)
 
     expect(http.post).toHaveBeenCalledWith('/automation/proposals/p1/reject', { reason: null })
+  })
+
+  it('posts the exact approve-only batch and returns its explicit receipt', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { approvedIds: ['p-2', 'p-1'] } })
+    const proposals = [
+      {
+        id: 'p-2',
+        expectedProposalUpdatedAt: '2026-08-28T11:59:00.000Z',
+        expectedLatestRevisionId: 'r-2',
+      },
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: '2026-08-28T11:58:00.000Z',
+        expectedLatestRevisionId: null,
+      },
+    ]
+
+    const result = await automationApi.approveProposals(proposals)
+
+    expect(http.post).toHaveBeenCalledOnce()
+    expect(http.post).toHaveBeenCalledWith('/automation/proposals/approve', {
+      proposals,
+    })
+    expect(result.approvedIds).toEqual(['p-2', 'p-1'])
+    expect(http.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/execute'),
+      expect.anything(),
+      expect.anything(),
+    )
   })
 
   // #1462: the backend carries ApprovedRevisionId on every REST proposal payload, but no frontend type
@@ -73,6 +130,11 @@ describe('automationApi', () => {
   it('declares approvedRevisionId as a required, nullable string on Proposal', () => {
     expectTypeOf<Proposal['approvedRevisionId']>().toEqualTypeOf<string | null>()
     expectTypeOf<Proposal>().toHaveProperty('approvedRevisionId')
+  })
+
+  it('declares latestRevisionId as a required, nullable pending snapshot on Proposal', () => {
+    expectTypeOf<Proposal['latestRevisionId']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Proposal>().toHaveProperty('latestRevisionId')
   })
 
   it('preserves approvedRevisionId on listed proposals', async () => {

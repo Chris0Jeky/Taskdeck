@@ -35,6 +35,10 @@ public class ApiKeyConfiguration : IEntityTypeConfiguration<ApiKey>
         builder.Property(k => k.RevokedAt);
         builder.Property(k => k.LastUsedAt);
 
+        builder.Property(k => k.Scopes)
+            .HasConversion<int>()
+            .IsRequired();
+
         builder.Property(k => k.CreatedAt)
             .IsRequired();
 

@@ -1,6 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import PaperShortcutsOverlay from '../../../components/paper/PaperShortcutsOverlay.vue'
+import appShellSource from '../../../components/shell/AppShell.vue?raw'
+import reviewKeymapSource from '../../../composables/useReviewKeymap.ts?raw'
+import boardViewSource from '../../../views/BoardView.vue?raw'
+import {
+  APP_SHELL_SHORTCUT_BINDINGS,
+  formatShortcut,
+  PAPER_SHORTCUT_GROUPS,
+  SHORTCUT_HANDLER_CONTRACTS,
+  type ShortcutHandlerOwner,
+} from '../../../utils/keyboardShortcuts'
+
+const HANDLER_SOURCES: Record<ShortcutHandlerOwner, string> = {
+  'app-shell': appShellSource,
+  'review-keymap': reviewKeymapSource,
+  'board-keymap': boardViewSource,
+}
 
 function teleportContent(): HTMLElement {
   return document.body
@@ -38,8 +54,31 @@ describe('PaperShortcutsOverlay', () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
     const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement
 
-    expect(root.textContent).toContain('Ctrl/Cmd+Shift+C')
+    expect(root.textContent).toContain(formatShortcut('mod+shift+c'))
     expect(root.textContent).toContain('Quick capture')
+  })
+
+  it('renders every ledger row from the shared implemented-handler registry', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const expectedRows = PAPER_SHORTCUT_GROUPS.flatMap((group) => group.rows)
+    const displayedIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+
+    expect(displayedIds).toEqual(expectedRows.map((row) => row.id))
+    for (const row of expectedRows) {
+      expect(SHORTCUT_HANDLER_CONTRACTS[row.handlerOwner].status).toBe('implemented')
+      expect(HANDLER_SOURCES[row.handlerOwner]).toBeTruthy()
+      if (row.handlerOwner !== 'app-shell') {
+        expect(HANDLER_SOURCES[row.handlerOwner]).toContain(row.handlerEvidence)
+      }
+    }
+
+    const appShellIds = new Set(APP_SHELL_SHORTCUT_BINDINGS.map((binding) => binding.id))
+    expect(expectedRows.filter((row) => row.handlerOwner === 'app-shell').every(
+      (row) => appShellIds.has(row.id),
+    )).toBe(true)
+    expect(appShellSource).toContain('APP_SHELL_SHORTCUT_BINDINGS.find')
   })
 
   it('documents the implemented Paper Board navigation and movement commands', () => {
@@ -54,7 +93,7 @@ describe('PaperShortcutsOverlay', () => {
     expect(rows).toEqual(expect.arrayContaining([
       { key: 'J / Down', label: 'Next card' },
       { key: 'K / Up', label: 'Previous card' },
-      { key: 'H / Left', label: 'Previous column' },
+      { key: 'Left', label: 'Previous column' },
       { key: 'L / Right', label: 'Next column' },
       { key: 'Enter', label: 'Open card' },
       { key: 'Alt+Left', label: 'Move card to previous column' },
@@ -71,6 +110,14 @@ describe('PaperShortcutsOverlay', () => {
 
     expect(root.textContent).not.toContain('Undo last apply')
     expect(root.textContent).not.toContain('⌘Z')
+  })
+
+  it('does not claim a keyboard settings page exists', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement
+
+    expect(root.textContent).not.toContain('Settings → Keyboard')
+    expect(root.textContent).not.toContain('remappable')
   })
 
   it('does not handle ? because AppShell owns the toggle', async () => {

@@ -54,6 +54,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       affectedEntities: [],
     },
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }

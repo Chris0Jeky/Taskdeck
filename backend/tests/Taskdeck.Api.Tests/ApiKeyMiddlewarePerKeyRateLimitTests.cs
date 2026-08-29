@@ -13,7 +13,9 @@ using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Mcp;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -117,6 +119,8 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
 
         nextCalled.Should().BeTrue("an under-quota valid key must pass through to the MCP endpoint");
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK, "the terminal delegate left the default status");
+        context.Items[HttpUserContextProvider.ScopesItemKey].Should().Be(ApiKeyScope.Full);
+        context.User.FindFirst(ApiKeyMiddleware.ScopesClaimType)?.Value.Should().Be("7");
         // The owner's active state is resolved in the SAME ApiKeys query (#1404 fold): the admitted
         // request issues exactly one SELECT touching both tables and NO separate standalone Users SELECT,
         // then the last-used UPDATE runs on the happy path.
@@ -133,6 +137,77 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
         _interceptor.Captured.Should().Contain(
             sql => IsApiKeysUpdate(sql),
             "an admitted request records its last-used timestamp");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8)]
+    public async Task InvalidPersistedScopeMask_Returns401_BeforePerKeyChargeOrUsageWrite(
+        int persistedMask)
+    {
+        await using var db = await CreateSeededContextAsync();
+        const string plaintext = "tdsk_perkey_invalidscope_000000000000000";
+        var (_, apiKeyId) = await SeedUserAndKeyAsync(db, plaintext);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE ApiKeys SET Scopes = {persistedMask} WHERE Id = {apiKeyId}");
+
+        using var limiter = new McpPerApiKeyRateLimiter(new RateLimitPolicySettings(5, 60));
+        var nextCalled = false;
+        var middleware = new ApiKeyMiddleware(
+            _ => { nextCalled = true; return Task.CompletedTask; },
+            NullLogger<ApiKeyMiddleware>.Instance);
+        var context = CreateMcpContext(plaintext, limiter);
+        _interceptor.Clear();
+
+        await middleware.InvokeAsync(context, db);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        nextCalled.Should().BeFalse();
+        context.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey).Should().BeTrue();
+        context.Items.ContainsKey(ApiKeyMiddleware.ApiKeyIdItemKey).Should().BeFalse();
+        context.Items.ContainsKey(HttpUserContextProvider.UserIdItemKey).Should().BeFalse();
+        context.Items.ContainsKey(HttpUserContextProvider.ScopesItemKey).Should().BeFalse();
+        _interceptor.Captured.Should().ContainSingle(sql => IsSelect(sql));
+        _interceptor.Captured.Should().NotContain(sql => IsApiKeysUpdate(sql));
+    }
+
+    [Fact]
+    public async Task DownstreamAuthorizationDenial_ChargesPerKeyAndUsage_NotAuthFailureBudget()
+    {
+        await using var db = await CreateSeededContextAsync();
+        const string plaintext = "tdsk_perkey_scope_denial_0000000000000000";
+        var (_, apiKeyId) = await SeedUserAndKeyAsync(db, plaintext, ApiKeyScope.Read);
+
+        using var limiter = new McpPerApiKeyRateLimiter(new RateLimitPolicySettings(1, 60));
+        var calls = 0;
+        var middleware = new ApiKeyMiddleware(
+            context =>
+            {
+                calls++;
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return Task.CompletedTask;
+            },
+            NullLogger<ApiKeyMiddleware>.Instance);
+
+        var denied = CreateMcpContext(plaintext, limiter);
+        await middleware.InvokeAsync(denied, db);
+
+        denied.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        denied.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey).Should().BeFalse(
+            "insufficient scope is authorization failure, not authentication failure");
+        denied.Items[HttpUserContextProvider.ScopesItemKey].Should().Be(ApiKeyScope.Read);
+        denied.User.FindFirst(ApiKeyMiddleware.ScopesClaimType)?.Value.Should().Be("1");
+        calls.Should().Be(1);
+        (await db.ApiKeys.AsNoTracking().SingleAsync(key => key.Id == apiKeyId))
+            .LastUsedAt.Should().NotBeNull("authorized authentication precedes downstream scope denial");
+
+        var overQuota = CreateMcpContext(plaintext, limiter);
+        await middleware.InvokeAsync(overQuota, db);
+
+        overQuota.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests,
+            "the denied request still consumed the valid key's per-key permit");
+        overQuota.Items.ContainsKey(ApiKeyMiddleware.AuthenticationFailedItemKey).Should().BeFalse();
+        calls.Should().Be(1, "the over-quota request is rejected before downstream authorization");
     }
 
     [Fact]
@@ -348,11 +423,17 @@ public sealed class ApiKeyMiddlewarePerKeyRateLimitTests : IDisposable
 
     private static async Task<(Guid userId, Guid apiKeyId)> SeedUserAndKeyAsync(
         TaskdeckDbContext db,
-        string plaintextKey)
+        string plaintextKey,
+        ApiKeyScope scopes = ApiKeyScope.Full)
     {
         var user = new User("perkey-user-" + Guid.NewGuid().ToString("N")[..8], $"{Guid.NewGuid():N}@example.com", "hash");
         db.Users.Add(user);
-        var apiKey = new ApiKey(user.Id, ApiKeyService.HashKey(plaintextKey), plaintextKey[..8], "Per-key test");
+        var apiKey = new ApiKey(
+            user.Id,
+            ApiKeyService.HashKey(plaintextKey),
+            plaintextKey[..8],
+            "Per-key test",
+            scopes);
         db.ApiKeys.Add(apiKey);
         await db.SaveChangesAsync();
         return (user.Id, apiKey.Id);

@@ -158,11 +158,43 @@ public class TranscriptTriageWorkerTests
         await InvokeProcessBatchAsync(worker, CancellationToken.None);
 
         item.Status.Should().Be(RequestStatus.Completed);
+        item.ErrorMessage.Should().BeNull();
         triageService.CallCount.Should().Be(1);
         triageService.LastCaptureItemId.Should().Be(item.Id);
         triageService.LastUserId.Should().Be(item.UserId);
         triageService.LastBoardId.Should().Be(boardId);
         triageService.LastTranscriptId.Should().Be(item.TranscriptId);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_DegradedTriage_CompletesButRecordsTheDegradedNoticeOnTheCapture()
+    {
+        // #2192: a live provider request that failed (nonexistent model / non-2xx) still yields a
+        // deterministic proposal. The item must complete WITH the degradation recorded, so the
+        // fallback is visible rather than silent — and without burning a retry.
+        var item = CreateTranscriptTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) => Result.Success(new CaptureTriageProposalResultDto(
+                captureItemId,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                1,
+                CaptureTriageOutputContract.PromptVersionV1,
+                CaptureTriageService.TriageProviderName,
+                CaptureTriageService.TriageModelName,
+                "LLM triage unavailable (ProviderDegraded); using deterministic extractor. Live provider request failed."))
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        item.RetryCount.Should().Be(0);
+        item.ErrorMessage.Should()
+            .Be("LLM triage unavailable (ProviderDegraded); using deterministic extractor. Live provider request failed.");
     }
 
     [Fact]

@@ -356,11 +356,13 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
 
 ## K. MCP Server Validation (MCP-01/MCP-02, `#652`/`#653`)
 
-Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
+Prerequisite: follow [MCP Server — From source](MCP_SERVER.md#from-source) to run the web app once,
+create the intended local user, and configure stdio with the same absolute project path, database,
+and identity. The root `mcp.example.json` is for the packaged executable, not a source checkout.
 
-1. Start API with `--mcp` flag: `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp`
+1. Start the source API with the `--mcp` flag through that client configuration.
    - Expected: process starts in MCP stdio host mode (no HTTP listener).
-2. Configure `mcp.example.json` in Claude Code or Cursor as the MCP client config.
+2. Confirm the client entry uses the exact JSON shape from the linked source instructions.
 3. From the MCP client, request `taskdeck://boards` resource.
    - Expected: JSON listing of boards with id, name, columnCount, cardCount, isArchived, updatedAt fields.
 4. Verify board listing matches the user's boards (scoped by `StdioUserContextProvider` identity).
@@ -1169,7 +1171,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 ### Z19. MCP HTTP Transport and API Key CLI (PR #819 — merged 2026-04-12)
 
-1. [ ] Verify `taskdeck api-key create --name "test"` generates a key with `tdsk_` prefix.
+1. [ ] Verify `taskdeck api-key create --name "test" --scopes read,propose` generates a key with `tdsk_` prefix and the returned scopes are exactly `read, propose` (omitting `--scopes` now exits with a usage error — keys never default to Full).
    - Expected: key displayed once, starts with `tdsk_`, stored hashed.
 2. [ ] Verify `taskdeck api-key list` shows created keys with masked values.
    - Expected: list shows key name, created date, last-used date; value is masked.

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
@@ -38,6 +39,13 @@ public class ApiKeysController : AuthenticatedControllerBase
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(new ApiErrorResponse(ErrorCodes.ValidationError, "Name is required"));
 
+        if (!ApiKeyScopeRules.TryParseNames(request.Scopes, out var scopes))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Scopes must include at least one of: read, propose, manage"));
+        }
+
         TimeSpan? expiresIn = request.ExpiresInDays.HasValue
             ? TimeSpan.FromDays(request.ExpiresInDays.Value)
             : null;
@@ -45,13 +53,14 @@ public class ApiKeysController : AuthenticatedControllerBase
         try
         {
             var (plaintextKey, entity) = await _apiKeyService.CreateKeyAsync(
-                userId, request.Name, expiresIn, cancellationToken);
+                userId, request.Name, scopes, expiresIn, cancellationToken);
 
             return StatusCode(StatusCodes.Status201Created, new CreateApiKeyResponse(
                 entity.Id,
                 plaintextKey,
                 entity.KeyPrefix_,
                 entity.Name,
+                ApiKeyScopeRules.ToNames(entity.Scopes),
                 entity.CreatedAt,
                 entity.ExpiresAt));
         }
@@ -75,6 +84,7 @@ public class ApiKeysController : AuthenticatedControllerBase
             k.Id,
             k.KeyPrefix_,
             k.Name,
+            ApiKeyScopeRules.ToNames(k.Scopes),
             k.CreatedAt,
             k.ExpiresAt,
             k.RevokedAt,
@@ -115,13 +125,17 @@ public class ApiKeysController : AuthenticatedControllerBase
 
 // ── Request / Response contracts ──────────────────────────────────────────────
 
-public sealed record CreateApiKeyRequest(string Name, int? ExpiresInDays = null);
+public sealed record CreateApiKeyRequest(
+    string Name,
+    IReadOnlyList<string>? Scopes = null,
+    int? ExpiresInDays = null);
 
 public sealed record CreateApiKeyResponse(
     Guid Id,
     string Key,
     string KeyPrefix,
     string Name,
+    IReadOnlyList<string> Scopes,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ExpiresAt);
 
@@ -129,6 +143,7 @@ public sealed record ApiKeyListItem(
     Guid Id,
     string KeyPrefix,
     string Name,
+    IReadOnlyList<string> Scopes,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ExpiresAt,
     DateTimeOffset? RevokedAt,

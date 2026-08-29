@@ -27,6 +27,16 @@ public interface IAutomationPolicyEngine
     Task<Result> ValidateBoardAccessAsync(Guid requesterUserId, Guid? boardId, BoardAccessBar accessBar, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Rejects proposal decision writes for extant archived boards, then marks every tracked active
+    /// board as participating in the caller's next save. Missing and null board references are left
+    /// to the caller's existing validation contract. The batch shape validates every board before
+    /// arming any marker so a mixed-board decision remains atomic.
+    /// </summary>
+    Task<Result> GuardProposalDecisionWritesAsync(
+        IEnumerable<Guid?> boardIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Composes <see cref="ValidateBoardAccessAsync"/> (requester + board access at
     /// <paramref name="accessBar"/>) with the per-operation contract validator. The access gate
     /// runs for EVERY operation list, empty

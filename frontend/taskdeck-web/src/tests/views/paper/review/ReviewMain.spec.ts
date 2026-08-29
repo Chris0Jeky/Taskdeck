@@ -125,6 +125,7 @@ describe('ReviewMain', () => {
   it('forwards provenance report events with the active proposal id', async () => {
     const wrapper = mountMain()
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -196,6 +197,8 @@ describe('ReviewMain', () => {
       'moves focus to the %s receipt at its original decision locus',
       async (decisionReceipt) => {
         const wrapper = mountMain({}, { attachTo: true })
+        document.body.focus()
+        expect(document.activeElement).toBe(document.body)
 
         await wrapper.setProps({ decisionReceipt })
         await wrapper.vm.$nextTick()
@@ -210,6 +213,8 @@ describe('ReviewMain', () => {
 
     it('moves focus to the remaining explicit Apply control after approval', async () => {
       const wrapper = mountMain({}, { applyPhase: 'execute', attachTo: true })
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
 
       await wrapper.setProps({ decisionReceipt: 'approved' })
       await wrapper.vm.$nextTick()

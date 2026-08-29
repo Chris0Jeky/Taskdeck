@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
+import { formatShortcut } from '../../../utils/keyboardShortcuts'
 
 /**
  * PaperCaptureNib — variant A of the Paper Inbox capture surface.
@@ -76,7 +77,7 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
 
 <template>
   <div class="paper-nib">
-    <div class="paper-nib__eyebrow tk-eyebrow">Quick capture · ⌘;</div>
+    <div class="paper-nib__eyebrow tk-eyebrow">Quick capture · {{ formatShortcut('mod+;') }}</div>
 
     <div v-if="bleeding" class="paper-nib__bleed" data-testid="paper-nib-bleed">
       <!-- TODO(PAPER-07/PAPER-10): wire ink bleed once #1010 merges. -->

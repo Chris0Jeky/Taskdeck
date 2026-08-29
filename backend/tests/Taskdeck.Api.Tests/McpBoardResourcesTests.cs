@@ -9,6 +9,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure;
 using Taskdeck.Infrastructure.Mcp;
 using Taskdeck.Infrastructure.Persistence;
@@ -74,132 +75,183 @@ public class McpBoardResourcesTests : IDisposable
             new FixedUserContextProvider(userId));
     }
 
+    private static async Task<User> AddUserAsync(
+        IServiceScope scope,
+        string username,
+        bool isActive = true)
+    {
+        var user = new User(username, $"{username}@example.com", "Password1!");
+        if (!isActive)
+            user.Deactivate();
+
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        await uow.Users.AddAsync(user);
+        await uow.SaveChangesAsync();
+        return user;
+    }
+
+    private static IConfiguration CreateStdioConfiguration(string configuredUserId)
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["McpServer:DefaultUserId"] = configuredUserId
+            })
+            .Build();
+    }
+
+    private static StdioUserContextProvider CreateStdioProvider(
+        IServiceScope scope,
+        IConfiguration configuration)
+    {
+        return new StdioUserContextProvider(
+            configuration,
+            scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>(),
+            NullLogger<StdioUserContextProvider>.Instance);
+    }
+
     // ── StdioUserContextProvider tests ────────────────────────────────────────
 
     [Fact]
-    public async Task StdioUserContextProvider_WhenConfiguredUserId_ReturnsThatId()
+    public async Task StdioUserContextProvider_WhenConfiguredUserIsActive_ReturnsThatId()
     {
         using var scope = _serviceProvider.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var configuredUser = await AddUserAsync(scope, "alice");
+        await AddUserAsync(scope, "other-user");
+        var provider = CreateStdioProvider(
+            scope,
+            CreateStdioConfiguration(configuredUser.Id.ToString()));
 
-        var user = new User("alice", "alice@example.com", "Password1!");
-        await uow.Users.AddAsync(user);
-        await uow.SaveChangesAsync();
-
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["McpServer:DefaultUserId"] = user.Id.ToString()
-            })
-            .Build();
-
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
-
-        (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
-        (await provider.GetUserIdAsync()).Should().Be(user.Id);
+        (await provider.GetCurrentUserIdAsync()).Should().Be(configuredUser.Id);
+        (await provider.GetUserIdAsync()).Should().Be(configuredUser.Id);
+        (await provider.GetCurrentContextAsync()).Should().Be(
+            new McpUserContext(configuredUser.Id, ApiKeyScope.Full));
     }
 
     [Fact]
-    public async Task StdioUserContextProvider_WhenNoConfiguredId_FallsBackToFirstUser()
+    public async Task StdioUserContextProvider_WhenConfiguredUserDoesNotExist_ThrowsWithoutFallback()
     {
         using var scope = _serviceProvider.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var otherUser = await AddUserAsync(scope, "other-user");
+        var provider = CreateStdioProvider(
+            scope,
+            CreateStdioConfiguration(Guid.NewGuid().ToString()));
 
-        var user = new User("bob", "bob@example.com", "Password1!");
-        await uow.Users.AddAsync(user);
-        await uow.SaveChangesAsync();
+        var act = () => provider.GetCurrentUserIdAsync();
 
-        var config = new ConfigurationBuilder().Build();
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.WithMessage("*does not identify an active local user*");
+        exception.Which.Message.Should().NotContain(otherUser.Id.ToString());
+    }
 
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+    [Fact]
+    public async Task StdioUserContextProvider_WhenConfiguredUserIsInactive_ThrowsWithoutFallback()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var inactiveUser = await AddUserAsync(scope, "inactive-user", isActive: false);
+        var otherUser = await AddUserAsync(scope, "other-user");
+        var provider = CreateStdioProvider(
+            scope,
+            CreateStdioConfiguration(inactiveUser.Id.ToString()));
 
-        (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
+        var act = () => provider.GetCurrentUserIdAsync();
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.WithMessage("*does not identify an active local user*");
+        exception.Which.Message.Should().NotContain(otherUser.Id.ToString());
     }
 
     [Fact]
     public async Task StdioUserContextProvider_WhenNoUsersAndNoConfig_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-        var config = new ConfigurationBuilder().Build();
-
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+        var provider = CreateStdioProvider(scope, new ConfigurationBuilder().Build());
 
         var act = () => provider.GetCurrentUserIdAsync();
         await act.Should().ThrowAsync<InvalidOperationException>()
-           .WithMessage("*no users found*");
+            .WithMessage("*no active local users are available*create or reactivate a user*");
     }
 
     [Fact]
-    public async Task StdioUserContextProvider_WhenConfiguredIdIsEmpty_FallsBackToDb()
+    public void StdioUserContextProvider_WhenConfiguredIdIsEmpty_ThrowsActionableError()
     {
         using var scope = _serviceProvider.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var act = () => CreateStdioProvider(scope, CreateStdioConfiguration(string.Empty));
 
-        var user = new User("grace", "grace@example.com", "Password1!");
-        await uow.Users.AddAsync(user);
-        await uow.SaveChangesAsync();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*DefaultUserId must be a non-empty GUID*exactly one active local user*");
+    }
 
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["McpServer:DefaultUserId"] = Guid.Empty.ToString()
-            })
-            .Build();
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public void StdioUserContextProvider_WhenConfiguredIdIsMalformed_ThrowsActionableError(
+        string configuredUserId)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var act = () => CreateStdioProvider(
+            scope,
+            CreateStdioConfiguration(configuredUserId));
 
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*DefaultUserId must be a non-empty GUID*exactly one active local user*");
+    }
+
+    [Fact]
+    public async Task StdioUserContextProvider_WhenExactlyOneActiveUserAndNoConfig_ReturnsThatId()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var user = await AddUserAsync(scope, "sole-user");
+        var provider = CreateStdioProvider(scope, new ConfigurationBuilder().Build());
 
         (await provider.GetCurrentUserIdAsync()).Should().Be(user.Id);
     }
 
     [Fact]
-    public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistInDb_FallsBackToFirstUser()
+    public async Task StdioUserContextProvider_WhenMultipleActiveUsersAndNoConfig_Throws()
     {
         using var scope = _serviceProvider.CreateScope();
-        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var firstUser = await AddUserAsync(scope, "first-user");
+        var secondUser = await AddUserAsync(scope, "second-user");
+        var provider = CreateStdioProvider(scope, new ConfigurationBuilder().Build());
 
-        var realUser = new User("hank", "hank@example.com", "Password1!");
-        await uow.Users.AddAsync(realUser);
-        await uow.SaveChangesAsync();
+        var act = () => provider.GetCurrentUserIdAsync();
 
-        var phantomId = Guid.NewGuid();
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["McpServer:DefaultUserId"] = phantomId.ToString()
-            })
-            .Build();
-
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
-
-        var resolved = await provider.GetCurrentUserIdAsync();
-        resolved.Should().Be(realUser.Id, "phantom user ID should not be used; should fall back to first DB user");
-        resolved.Should().NotBe(phantomId);
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.WithMessage("*multiple active local users*Configure McpServer:DefaultUserId*");
+        exception.Which.Message.Should().NotContain(firstUser.Id.ToString());
+        exception.Which.Message.Should().NotContain(secondUser.Id.ToString());
     }
 
     [Fact]
-    public async Task StdioUserContextProvider_WhenConfiguredIdDoesNotExistAndNoUsers_Throws()
+    public async Task StdioUserContextProvider_WhenOneActiveAndOneInactiveUserAndNoConfig_ReturnsActiveId()
     {
         using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        await AddUserAsync(scope, "inactive-user", isActive: false);
+        var activeUser = await AddUserAsync(scope, "active-user");
+        var provider = CreateStdioProvider(scope, new ConfigurationBuilder().Build());
 
-        var phantomId = Guid.NewGuid();
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["McpServer:DefaultUserId"] = phantomId.ToString()
-            })
-            .Build();
+        (await provider.GetCurrentUserIdAsync()).Should().Be(activeUser.Id);
+    }
 
-        var provider = new StdioUserContextProvider(config, dbContext, NullLogger<StdioUserContextProvider>.Instance);
+    [Fact]
+    public async Task StdioUserContextProvider_WhenResolutionFails_DoesNotCacheFailure()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var laterUser = new User("later-user", "later-user@example.com", "Password1!");
+        var provider = CreateStdioProvider(
+            scope,
+            CreateStdioConfiguration(laterUser.Id.ToString()));
 
         var act = () => provider.GetCurrentUserIdAsync();
         await act.Should().ThrowAsync<InvalidOperationException>()
-           .WithMessage("*no users found*");
+            .WithMessage("*does not identify an active local user*");
+
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        await uow.Users.AddAsync(laterUser);
+        await uow.SaveChangesAsync();
+
+        (await provider.GetCurrentUserIdAsync()).Should().Be(laterUser.Id);
     }
 
     // ── BoardResources.ListBoards tests ──────────────────────────────────────
@@ -527,6 +579,8 @@ public class McpBoardResourcesTests : IDisposable
     {
         private readonly Guid _userId;
         public FixedUserContextProvider(Guid userId) => _userId = userId;
+        public Task<McpUserContext> GetCurrentContextAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new McpUserContext(_userId, ApiKeyScope.Full));
         public Task<Guid> GetCurrentUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult(_userId);
         public Task<Guid?> GetUserIdAsync(CancellationToken cancellationToken = default) => Task.FromResult<Guid?>(_userId);
     }

@@ -8,6 +8,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 import PaperIcon from './PaperIcon.vue'
 import PaperKbd from './PaperKbd.vue'
 import PaperStatusPill from './PaperStatusPill.vue'
@@ -18,8 +19,8 @@ import PaperStatusPill from './PaperStatusPill.vue'
  * Mirrors the JSX in `design_handoff_taskdeck_paper/paper/components.jsx`
  * (`TopBar`).  Builds breadcrumb segments from `route.matched`, looking for
  * `route.meta.breadcrumb` first and otherwise humanizing the route name.  The
- * ⌘K trigger emits `palette:open` so the parent shell can wire it into the
- * existing command-palette composable.
+ * The platform-aware command-palette trigger emits `palette:open` so the parent
+ * shell can wire it into the existing command-palette composable.
  *
  * Right-hand controls (issue 1932 — all three used to render enabled and do
  * nothing).  NB: write issue numbers WITHOUT the leading hash in this
@@ -124,10 +125,7 @@ const activeWorkspaceMode = computed<WorkspaceMode>(() =>
 
 const currentModeMeta = computed(() => workspaceModeMeta[activeWorkspaceMode.value])
 
-const commandModifierLabel = computed(() => {
-  if (typeof navigator === 'undefined') return 'Ctrl'
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? '⌘' : 'Ctrl'
-})
+const commandPaletteShortcut = computed(() => formatShortcut('mod+k'))
 
 const accountDisplayName = computed(() => {
   const name = session.username?.trim()
@@ -322,8 +320,7 @@ function handleWorkspaceModeChange(event: Event) {
       <PaperIcon name="search" />
       <span class="paper-topbar__palette-label">Go anywhere &middot; capture &middot; ask</span>
       <span class="paper-topbar__palette-spacer" />
-      <PaperKbd>{{ commandModifierLabel }}</PaperKbd>
-      <PaperKbd>K</PaperKbd>
+      <PaperKbd>{{ commandPaletteShortcut }}</PaperKbd>
     </button>
 
     <PaperStatusPill kind="live" class="paper-topbar__status">SYNCED &middot; LOCAL-FIRST</PaperStatusPill>

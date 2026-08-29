@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -13,6 +14,8 @@ public class AutomationProposalService : IAutomationProposalService
 {
     private const string CaptureTriageActionType = "create";
     private const string CaptureTriageTargetType = "card";
+    private const int MaxBatchApprovalCount = 500;
+    private static readonly TimeSpan BatchApprovalFreshnessWindow = TimeSpan.FromHours(24);
 
     private static readonly HashSet<string> KnownActionVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -39,16 +42,21 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly INotificationService _notificationService;
     private readonly IProposalProvenanceRepository? _provenanceRepository;
     private readonly IAutomationPolicyEngine _policyEngine;
+    private readonly ILogger<AutomationProposalService>? _logger;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
         INotificationService? notificationService = null,
         IProposalProvenanceRepository? provenanceRepository = null,
-        IAutomationPolicyEngine? policyEngine = null)
+        IAutomationPolicyEngine? policyEngine = null,
+        ILogger<AutomationProposalService>? logger = null)
     {
         _unitOfWork = unitOfWork;
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _provenanceRepository = provenanceRepository;
+        // Optional, like AccountDeletionService's: direct construction in tests and the DI-less
+        // fallback paths keep working, and the archived-board skip line is simply not emitted.
+        _logger = logger;
         // Fall back to a plain engine over the same unit of work when DI does not supply one
         // (direct construction in tests). The engine is stateless apart from _unitOfWork, so
         // the fallback runs the identical read-safe permission gates the injected one does.
@@ -487,6 +495,13 @@ public class AutomationProposalService : IAutomationProposalService
                 }
             }
 
+            if (proposal.Status == ProposalStatus.PendingReview && !proposal.IsExpired)
+            {
+                var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+                if (!decisionGuard.IsSuccess)
+                    return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+
             proposal.Approve(decidedByUserId, approvedRevisionId);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -503,6 +518,308 @@ public class AutomationProposalService : IAutomationProposalService
         {
             return Result.Failure<ProposalDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    public async Task<Result<BatchApproveProposalsResultDto>> ApproveProposalsAsync(
+        IReadOnlyList<BatchApproveProposalSelectionDto> selections,
+        Guid decidedByUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (decidedByUserId == Guid.Empty)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "DecidedByUserId cannot be empty");
+        }
+
+        if (selections is null || selections.Count == 0)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "At least one proposal ID is required");
+        }
+
+        if (selections.Count > MaxBatchApprovalCount)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                $"Cannot approve more than {MaxBatchApprovalCount} proposals at once");
+        }
+
+        if (selections.Any(selection =>
+                selection.Id == Guid.Empty || selection.ExpectedProposalUpdatedAt == default))
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "Proposal IDs and expected update timestamps are required");
+        }
+
+        if (selections.Select(selection => selection.Id).Distinct().Count() != selections.Count)
+        {
+            return Result.Failure<BatchApproveProposalsResultDto>(
+                ErrorCodes.ValidationError,
+                "Proposal IDs must be unique");
+        }
+
+        var transactionStarted = false;
+        try
+        {
+            var ids = selections.Select(selection => selection.Id).ToList();
+            var loaded = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
+            var proposalsById = loaded.ToDictionary(proposal => proposal.Id);
+            var missingId = ids.FirstOrDefault(id => !proposalsById.ContainsKey(id));
+            if (missingId != Guid.Empty)
+            {
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    ErrorCodes.NotFound,
+                    $"Proposal with ID {missingId} not found");
+            }
+
+            // Preserve the reviewer's explicit order in both deterministic validation and the
+            // returned receipt. Repository order is provider-dependent and is not a decision order.
+            var proposals = ids.Select(id => proposalsById[id]).ToList();
+            foreach (var proposal in proposals)
+            {
+                if (proposal.RequestedByUserId != decidedByUserId)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.Forbidden,
+                        "Batch approval is limited to your own proposals");
+                }
+
+                if (proposal.Status != ProposalStatus.PendingReview)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Cannot batch approve proposal {proposal.Id} in status {proposal.Status}");
+                }
+            }
+
+            var revisionsResult = await GetBatchApprovalRevisionsAsync(proposals, cancellationToken);
+            if (!revisionsResult.IsSuccess)
+            {
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    revisionsResult.ErrorCode,
+                    revisionsResult.ErrorMessage);
+            }
+
+            var revisions = revisionsResult.Value;
+            for (var index = 0; index < proposals.Count; index++)
+            {
+                var proposal = proposals[index];
+                var selection = selections[index];
+                var latestRevisionId = revisions.TryGetValue(proposal.Id, out var latestRevision)
+                    ? latestRevision.Id
+                    : (Guid?)null;
+
+                if (proposal.UpdatedAt != selection.ExpectedProposalUpdatedAt ||
+                    latestRevisionId != selection.ExpectedLatestRevisionId)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.Conflict,
+                        $"Proposal {proposal.Id} changed after selection; refresh and review the complete batch again");
+                }
+            }
+
+            var now = DateTimeOffset.UtcNow;
+
+            // Preflight the COMPLETE set before any domain transition or board guard marker is
+            // advanced. One failure therefore leaves every proposal PendingReview.
+            foreach (var proposal in proposals)
+            {
+                revisions.TryGetValue(proposal.Id, out var latestRevision);
+                var effectiveOperations = ResolveEffectiveGateOperations(proposal, latestRevision);
+                if (!effectiveOperations.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        effectiveOperations.ErrorCode,
+                        effectiveOperations.ErrorMessage);
+                }
+
+                var structureValidation = ProposalOperationStructureValidator.Validate(effectiveOperations.Value);
+                if (!structureValidation.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        structureValidation.ErrorCode,
+                        structureValidation.ErrorMessage);
+                }
+
+                // Preserve the single-approve gate order: malformed effective content is reported
+                // before expiry, then live permission/contract checks run only for a structurally
+                // valid, current proposal.
+                if (now.UtcDateTime > proposal.ExpiresAt)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Cannot batch approve expired proposal {proposal.Id}");
+                }
+
+                if (now - proposal.CreatedAt >= BatchApprovalFreshnessWindow)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is stale and must be reviewed individually");
+                }
+
+                if (proposal.DeferredUntil is DateTime deferredUntil && deferredUntil > now.UtcDateTime)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is deferred and is not eligible for batch approval");
+                }
+
+                if (proposal.RiskLevel != RiskLevel.Low)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not Low risk and must be reviewed individually");
+                }
+
+                // A revision can replace the effective operation set without rewriting the
+                // proposal's stored risk snapshot. Re-classify the exact operations being
+                // approved so a formerly-Low proposal cannot drift into Medium-or-higher batch
+                // eligibility (for example, six create-card operations).
+                if (_policyEngine.ClassifyRisk(effectiveOperations.Value) != RiskLevel.Low)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not Low risk and must be reviewed individually");
+                }
+
+                if (effectiveOperations.Value.Any(operation =>
+                        !string.Equals(operation.ActionType, CaptureTriageActionType, StringComparison.OrdinalIgnoreCase) ||
+                        !string.Equals(operation.TargetType, CaptureTriageTargetType, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        ErrorCodes.InvalidOperation,
+                        $"Proposal {proposal.Id} is not create-card-only and must be reviewed individually");
+                }
+
+                var permissionValidation = await _policyEngine.ValidatePermissionsAsync(
+                    decidedByUserId,
+                    proposal.BoardId,
+                    effectiveOperations.Value,
+                    BoardAccessBar.Write,
+                    cancellationToken);
+                if (!permissionValidation.IsSuccess)
+                {
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        permissionValidation.ErrorCode,
+                        permissionValidation.ErrorMessage);
+                }
+
+            }
+
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionStarted = true;
+
+            // One marker per distinct board makes an archive/update that wins after the preflight
+            // collide with this same atomic save. Boardless proposals need no marker.
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                proposals.Select(proposal => proposal.BoardId),
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                transactionStarted = false;
+                return Result.Failure<BatchApproveProposalsResultDto>(
+                    decisionGuard.ErrorCode,
+                    decisionGuard.ErrorMessage);
+            }
+
+            for (var index = 0; index < proposals.Count; index++)
+            {
+                proposals[index].Approve(
+                    decidedByUserId,
+                    selections[index].ExpectedLatestRevisionId);
+            }
+
+            // Queue the same per-proposal outcome notification as single approve before the one
+            // save, so notification rows and every Approved transition share the atomic commit.
+            foreach (var proposal in proposals)
+            {
+                var notifyResult = await PublishProposalOutcomeNotificationAsync(
+                    proposal,
+                    "approved",
+                    cancellationToken);
+                if (!notifyResult.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    transactionStarted = false;
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        notifyResult.ErrorCode,
+                        notifyResult.ErrorMessage);
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            transactionStarted = false;
+
+            return Result.Success(new BatchApproveProposalsResultDto(ids));
+        }
+        catch (DomainException ex)
+        {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+
+            return Result.Failure<BatchApproveProposalsResultDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            if (transactionStarted)
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the latest revision for every pending batch candidate with two bounded reads. A
+    /// winning metadata row whose payload disappears is rejected rather than silently falling back
+    /// to the original operations: the reviewer selected the effective revision, not that fallback.
+    /// </summary>
+    private async Task<Result<IReadOnlyDictionary<Guid, ProposalRevision>>> GetBatchApprovalRevisionsAsync(
+        IReadOnlyCollection<AutomationProposal> proposals,
+        CancellationToken cancellationToken)
+    {
+        var refs = await _unitOfWork.ProposalRevisions.GetRefsByProposalIdsAsync(
+            proposals.Select(proposal => proposal.Id),
+            cancellationToken);
+        var refsByProposal = refs
+            .GroupBy(revision => revision.ProposalId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<ProposalRevisionRef>)group.ToList());
+
+        var winners = new Dictionary<Guid, ProposalRevisionRef>();
+        foreach (var proposal in proposals)
+        {
+            if (!refsByProposal.TryGetValue(proposal.Id, out var proposalRefs))
+                continue;
+
+            if (SelectEffectiveRevisionRef(proposal, proposalRefs) is ProposalRevisionRef winner)
+                winners[proposal.Id] = winner;
+        }
+
+        if (winners.Count == 0)
+            return Result.Success<IReadOnlyDictionary<Guid, ProposalRevision>>(new Dictionary<Guid, ProposalRevision>());
+
+        var revisions = await _unitOfWork.ProposalRevisions.GetByIdsAsync(
+            winners.Values.Select(winner => winner.Id),
+            cancellationToken);
+        var revisionsById = revisions.ToDictionary(revision => revision.Id);
+        var result = new Dictionary<Guid, ProposalRevision>();
+        foreach (var (proposalId, winner) in winners)
+        {
+            if (!revisionsById.TryGetValue(winner.Id, out var revision) || revision.ProposalId != proposalId)
+            {
+                return Result.Failure<IReadOnlyDictionary<Guid, ProposalRevision>>(
+                    ErrorCodes.InvalidOperation,
+                    $"Effective revision for proposal {proposalId} is no longer available; refresh and review again");
+            }
+
+            result[proposalId] = revision;
+        }
+
+        return Result.Success<IReadOnlyDictionary<Guid, ProposalRevision>>(result);
     }
 
     /// <summary>
@@ -768,7 +1085,12 @@ public class AutomationProposalService : IAutomationProposalService
         AutomationProposal proposal,
         ProposalRevision? effectiveRevision)
     {
-        var dto = MapToDto(proposal);
+        var dto = MapToDto(proposal) with
+        {
+            LatestRevisionId = proposal.Status == ProposalStatus.PendingReview
+                ? effectiveRevision?.Id
+                : null
+        };
 
         if (effectiveRevision is null)
             return dto;
@@ -804,6 +1126,10 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             proposal.Reject(decidedByUserId, dto.Reason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -829,13 +1155,17 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             proposal.Defer(duration);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             // Defer is a self-initiated timing control, not a decision: deliberately no
             // ProposalOutcome (outcomes are terminal-decision telemetry) and no notification
             // (a snooze the reviewer initiated is noise, not news).
-            return Result.Success(MapToDto(proposal));
+            return await BuildEffectiveProposalDtoAsync(proposal, cancellationToken);
         }
         catch (DomainException ex)
         {
@@ -854,6 +1184,10 @@ public class AutomationProposalService : IAutomationProposalService
             var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
+
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
             proposal.MarkAsApplied();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -878,6 +1212,10 @@ public class AutomationProposalService : IAutomationProposalService
             if (proposal == null)
                 return Result.Failure<ProposalDto>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+            var decisionGuard = await GuardProposalDecisionWriteAsync(proposal.BoardId, cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             proposal.MarkAsFailed(failureReason);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -897,7 +1235,22 @@ public class AutomationProposalService : IAutomationProposalService
     {
         try
         {
-            var expiredProposals = await _unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
+            // Partitioned by the query: proposals on an extant archived board are withheld, never
+            // expired, never notified about (ADR-0063 / #2168, defect #2197). Both loops below read
+            // the SAME Expirable list, so a withheld proposal cannot pick up an "expired"
+            // notification without having been expired.
+            var sweep = await _unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
+            var expiredProposals = sweep.Expirable;
+
+            if (sweep.SkippedArchivedBoardCount > 0)
+            {
+                // Count only — no id, summary, or board name — so this stays non-secret.
+                _logger?.LogInformation(
+                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                        + "restore the board to let them expire.",
+                    sweep.SkippedArchivedBoardCount);
+            }
+
             int count = 0;
 
             foreach (var proposal in expiredProposals)
@@ -1137,6 +1490,7 @@ public class AutomationProposalService : IAutomationProposalService
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
+        var cardStates = new Dictionary<Guid, CardDiffState>();
         var labelNames = new Dictionary<Guid, string>();
 
         if (boardId.HasValue)
@@ -1149,7 +1503,10 @@ public class AutomationProposalService : IAutomationProposalService
 
                 var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var card in cards)
+                {
                     cardTitles[card.Id] = card.Title;
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason);
+                }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
                 foreach (var label in labels)
@@ -1161,9 +1518,14 @@ public class AutomationProposalService : IAutomationProposalService
             }
         }
 
-        return string.Join(
-            Environment.NewLine,
-            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles, labelNames)));
+        var descriptions = new List<string>(orderedOperations.Count);
+        foreach (var operation in orderedOperations)
+        {
+            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            ApplyPreviewCardArchiveState(operation, cardStates);
+        }
+
+        return string.Join(Environment.NewLine, descriptions);
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -1173,29 +1535,36 @@ public class AutomationProposalService : IAutomationProposalService
 
         try
         {
-            var proposals = await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken);
-            int dismissed = 0;
+            var proposals = (await _unitOfWork.AutomationProposals.GetByIdsAsync(ids, cancellationToken))
+                .ToList();
+            var dismissibleProposals = proposals
+                .Where(proposal => proposal.CanBeDismissed)
+                .ToList();
 
-            foreach (var proposal in proposals)
-            {
-                if (proposal.CanBeDismissed)
-                {
-                    proposal.Dismiss();
-                    dismissed++;
-                }
-                // Skip proposals not in a dismissible state
-            }
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                dismissibleProposals.Select(proposal => proposal.BoardId),
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<int>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
 
-            if (dismissed > 0)
+            foreach (var proposal in dismissibleProposals)
+                proposal.Dismiss();
+
+            if (dismissibleProposals.Count > 0)
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result.Success(dismissed);
+            return Result.Success(dismissibleProposals.Count);
         }
         catch (DomainException ex)
         {
             return Result.Failure<int>(ex.ErrorCode, ex.Message);
         }
     }
+
+    private Task<Result> GuardProposalDecisionWriteAsync(
+        Guid? boardId,
+        CancellationToken cancellationToken) =>
+        _policyEngine.GuardProposalDecisionWritesAsync(new[] { boardId }, cancellationToken);
 
     private static ProposalDto MapToDto(AutomationProposal proposal)
     {
@@ -1418,6 +1787,24 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+
+    private static void ApplyPreviewCardArchiveState(
+        DiffOperationView operation,
+        IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            !operation.ActionType.Equals("archive", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
+            ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
+        if (cardId.HasValue)
+            cardStates[cardId.Value] = new CardDiffState(true, OperationHandlerRegistry.ArchiveCardBlockReason);
+    }
+
     /// <summary>
     /// Produces a human-readable diff line for a single operation, resolving
     /// card IDs to titles and column IDs to names where possible.
@@ -1426,6 +1813,7 @@ public class AutomationProposalService : IAutomationProposalService
         DiffOperationView operation,
         IReadOnlyDictionary<Guid, string> columnNames,
         IReadOnlyDictionary<Guid, string> cardTitles,
+        IReadOnlyDictionary<Guid, CardDiffState> cardStates,
         IReadOnlyDictionary<Guid, string> labelNames)
     {
         var verb = HumanizeActionVerb(operation.ActionType);
@@ -1468,6 +1856,23 @@ public class AutomationProposalService : IAutomationProposalService
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
             var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        if (isCardTarget && string.Equals(operation.ActionType, "archive", StringComparison.OrdinalIgnoreCase))
+        {
+            var archiveCardId = ExtractGuidParameter(operation.Parameters, "cardId")
+                ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
+            var cardDisplay = namedTarget is not null
+                ? $"\"{namedTarget}\""
+                : archiveCardId?.ToString() ?? "(unspecified)";
+
+            if (archiveCardId.HasValue && cardStates.TryGetValue(archiveCardId.Value, out var cardState))
+            {
+                var previousReason = cardState.BlockReason is null ? "none" : $"\"{cardState.BlockReason}\"";
+                return $"{operation.Sequence}. Archive card {cardDisplay}; Blocked: {cardState.IsBlocked.ToString().ToLowerInvariant()} -> true; Block reason: {previousReason} -> \"{OperationHandlerRegistry.ArchiveCardBlockReason}\"";
+            }
+
+            return $"{operation.Sequence}. Archive card {cardDisplay}; Blocked: (current state unavailable) -> true; Block reason: (current value unavailable) -> \"{OperationHandlerRegistry.ArchiveCardBlockReason}\"";
         }
 
         if (string.Equals(operation.TargetType, "column", StringComparison.OrdinalIgnoreCase) &&

@@ -8,6 +8,7 @@
  */
 
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
@@ -116,6 +117,44 @@ test(PAPER_ENUM_TEST_TITLE, async ({
   ).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Conflicts & warnings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /History/ })).toBeVisible()
+
+  const confidenceDisclosure = page.getByTestId('paper-review-confidence-disclosure')
+  const provenanceDisclosure = page.getByTestId('paper-review-provenance-disclosure')
+  const similarPastDisclosure = page.getByTestId('paper-review-similar-past-disclosure')
+  await expect(confidenceDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('paper-review-confidence-details')).toBeHidden()
+  await expect(page.getByTestId('paper-review-provenance-details')).toBeHidden()
+  await expect(page.getByTestId('paper-review-similar-past-details')).toBeHidden()
+
+  await confidenceDisclosure.focus()
+  await confidenceDisclosure.press('Enter')
+  await expect(confidenceDisclosure).toBeFocused()
+  await expect(confidenceDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-confidence-details')).toBeVisible()
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'false')
+
+  await provenanceDisclosure.focus()
+  await provenanceDisclosure.press('Space')
+  await expect(provenanceDisclosure).toBeFocused()
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-provenance-details')).toBeVisible()
+  await expect(page.getByText('View full read-set')).toBeVisible()
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'false')
+
+  await similarPastDisclosure.click()
+  await expect(similarPastDisclosure).toBeFocused()
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-similar-past-details')).toBeVisible()
+
+  const axeResults = await new AxeBuilder({ page })
+    .include('.paper-review-author')
+    .include('.paper-review-prov')
+    .include('.paper-review-past')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(axeResults.violations).toHaveLength(0)
 
   const [conflictsResponse, historyResponse, sideEffectsResponse] = await Promise.all([
     conflictsResponsePromise,

@@ -251,6 +251,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Scopes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 

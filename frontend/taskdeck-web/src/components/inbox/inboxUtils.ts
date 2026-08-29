@@ -122,3 +122,73 @@ export function triageButtonLabel(
 
   return 'Start Triage'
 }
+
+/**
+ * Capture statuses that mean the triage RUN COMPLETED (#2202).
+ *
+ * The backend's `RequestStatus.Completed` is not a capture status the client
+ * ever sees: `CaptureStatusPolicy.MapFromQueueStatus` splits it three ways —
+ * `Converted` when the proposal was applied, `ProposalCreated` when one was
+ * linked, `Triaged` when triage completed with nothing to propose. All three
+ * are successful endings, and they are the only statuses a degradation notice
+ * may ride.
+ *
+ * This is deliberately a positive allowlist rather than `status !== Failed`.
+ * `ErrorMessage` has two writers on the entity: `MarkAsCompleted(notice)` (the
+ * degradation notice) and `MarkAsFailed(message)` (a real failure). `Cancel()`
+ * clears neither, and it accepts a Failed request — so a failed capture that
+ * was then ignored surfaces as `Ignored` STILL CARRYING ITS FAILURE TEXT. Under
+ * a "not Failed" rule that failure would render as a friendly degradation
+ * notice on an ignored row, which is the same class of dishonesty this issue
+ * exists to remove.
+ */
+const TRIAGE_COMPLETED_STATUSES: readonly CaptureStatusValue[] = [
+  'Triaged',
+  2,
+  'ProposalCreated',
+  3,
+  'Converted',
+  4,
+]
+
+/**
+ * The server-authored degradation notice for a capture whose triage SUCCEEDED
+ * on the deterministic extractor after its LLM leg could not deliver (#2192 /
+ * #2203), or `null` when there is nothing to say.
+ *
+ * The text is returned verbatim: it is server-authored, already redacted, and
+ * bounded, and the frontend must present it rather than re-parse it for
+ * structure (#2202). Nothing from local configuration is ever appended.
+ */
+export function triageDegradedNotice(
+  item: { status?: CaptureStatusValue; errorMessage?: string | null } | null | undefined,
+): string | null {
+  if (!item || item.status === undefined) return null
+  if (!TRIAGE_COMPLETED_STATUSES.includes(item.status)) return null
+
+  const notice = item.errorMessage?.trim()
+  return notice ? notice : null
+}
+
+/**
+ * The `inbox.degraded.review*` catalog key whose guidance is true for THIS
+ * capture's status (PR #2224 review).
+ *
+ * One sentence cannot cover the three statuses the notice rides. "Read it
+ * closely before you apply it" is impossible on `Triaged` — triage completed
+ * with nothing to propose, so there is no proposal to read or apply — and
+ * stale on `Converted`, where the proposal was applied to the board already.
+ * Only `ProposalCreated` has something pending review.
+ *
+ * Callers reach this only when `triageDegradedNotice` returned a notice, which
+ * already restricts the status to the allowlist above; the `ProposalCreated`
+ * key is the fallback purely so the return type stays total.
+ */
+export function triageDegradedReviewKey(
+  item: { status?: CaptureStatusValue } | null | undefined,
+): string {
+  const status = item?.status
+  if (status === 'Triaged' || status === 2) return 'inbox.degraded.reviewTriaged'
+  if (status === 'Converted' || status === 4) return 'inbox.degraded.reviewConverted'
+  return 'inbox.degraded.reviewProposal'
+}

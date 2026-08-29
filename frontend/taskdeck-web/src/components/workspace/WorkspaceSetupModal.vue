@@ -133,70 +133,73 @@ watch(
     @keydown.escape="closeModal"
   >
     <div class="td-setup-modal">
-      <header class="td-setup-modal__header">
-        <div>
-          <p class="td-setup-modal__eyebrow">First Useful Board</p>
-          <h2>Start from a board you can use today</h2>
-          <p class="td-setup-modal__subtitle">
-            Name the board, pick the shape you want, then move straight into capture and review.
-          </p>
-        </div>
-        <button class="td-btn td-btn--ghost" @click="closeModal">Close</button>
-      </header>
+      <form class="td-setup-modal__form" @submit.prevent="submitSetup">
+        <header class="td-setup-modal__header">
+          <div>
+            <p class="td-setup-modal__eyebrow">First Useful Board</p>
+            <h2>Start from a board you can use today</h2>
+            <p class="td-setup-modal__subtitle">
+              Name the board, pick the shape you want, then move straight into capture and review.
+            </p>
+          </div>
+          <button type="button" class="td-btn td-btn--ghost" @click="closeModal">Close</button>
+        </header>
 
-      <div class="td-setup-modal__body">
-        <label class="td-field">
-          <span class="td-field__label">Board name</span>
-          <input
-            v-model="boardName"
-            class="td-input"
-            type="text"
-            maxlength="100"
-            placeholder="For example: Product Sprint"
-          />
-        </label>
-
-        <fieldset class="td-setup-modal__options">
-          <legend class="td-field__label">Setup shape</legend>
-          <label
-            v-for="option in workspaceSetupOptions"
-            :key="option.id"
-            :class="[
-              'td-setup-option',
-              selectedSetupId === option.id ? 'td-setup-option--selected' : '',
-            ]"
-          >
+        <div class="td-setup-modal__body">
+          <label class="td-field">
+            <span class="td-field__label">Board name</span>
             <input
-              v-model="selectedSetupId"
-              class="td-setup-option__radio"
-              type="radio"
-              name="workspace-setup-option"
-              :value="option.id"
+              v-model="boardName"
+              class="td-input"
+              type="text"
+              maxlength="100"
+              placeholder="For example: Product Sprint"
+              @keydown.enter.prevent="submitSetup"
             />
-            <div class="td-setup-option__content">
-              <span class="td-setup-option__title">{{ option.title }}</span>
-              <span class="td-setup-option__summary">{{ option.summary }}</span>
-              <span class="td-setup-option__helper">{{ option.helper }}</span>
-            </div>
           </label>
-        </fieldset>
 
-        <div v-if="selectedSetup" class="td-setup-modal__note">
-          <strong>Next step:</strong>
-          {{ selectedSetup.starterPackId ? 'The board will open with a starter workflow applied.' : 'The board will open blank so you can shape it yourself.' }}
+          <fieldset class="td-setup-modal__options">
+            <legend class="td-field__label">Setup shape</legend>
+            <label
+              v-for="option in workspaceSetupOptions"
+              :key="option.id"
+              :class="[
+                'td-setup-option',
+                selectedSetupId === option.id ? 'td-setup-option--selected' : '',
+              ]"
+            >
+              <input
+                v-model="selectedSetupId"
+                class="td-setup-option__radio"
+                type="radio"
+                name="workspace-setup-option"
+                :value="option.id"
+              />
+              <div class="td-setup-option__content">
+                <span class="td-setup-option__title">{{ option.title }}</span>
+                <span class="td-setup-option__summary">{{ option.summary }}</span>
+                <span class="td-setup-option__helper">{{ option.helper }}</span>
+              </div>
+            </label>
+          </fieldset>
+
+          <div v-if="selectedSetup" class="td-setup-modal__note">
+            <strong>Next step:</strong>
+            {{ selectedSetup.starterPackId ? 'The board will open with a starter workflow applied.' : 'The board will open blank so you can shape it yourself.' }}
+          </div>
+
+          <div v-if="setupError" class="td-alert td-alert--error" role="alert">
+            {{ setupError }}
+          </div>
         </div>
 
-        <div v-if="setupError" class="td-alert td-alert--error" role="alert">
-          {{ setupError }}
-        </div>
-      </div>
-
-      <footer class="td-setup-modal__footer">
-        <button class="td-btn td-btn--secondary" @click="closeModal" :disabled="submitting">Cancel</button>
-        <button class="td-btn td-btn--primary" @click="submitSetup" :disabled="!canSubmit">
-          {{ submitting ? 'Creating...' : 'Create Board' }}
-        </button>
-      </footer>
+        <footer class="td-setup-modal__footer">
+          <button type="button" class="td-btn td-btn--secondary" @click="closeModal" :disabled="submitting">Cancel</button>
+          <button type="submit" class="td-btn td-btn--primary" :disabled="!canSubmit">
+            {{ submitting ? 'Creating...' : 'Create Board' }}
+          </button>
+        </footer>
+      </form>
     </div>
   </div>
 </template>
@@ -224,6 +227,13 @@ watch(
   flex-direction: column;
   gap: var(--td-space-4);
   padding: var(--td-space-5);
+}
+
+.td-setup-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-4);
+  min-height: 0;
 }
 
 .td-setup-modal__header {

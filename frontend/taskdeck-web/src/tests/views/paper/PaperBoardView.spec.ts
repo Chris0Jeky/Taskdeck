@@ -234,6 +234,30 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('.paper-board-view__title').text()).toBe('Product Backlog')
   })
 
+  it('keeps board capture and review actions clickable without advertising dead letter keys', async () => {
+    const wrapper = mountView()
+    const buttons = wrapper.findAll('button')
+    const capture = buttons.find((button) => button.text().includes('Capture here'))
+    const review = buttons.find((button) => button.text().includes('Review'))
+
+    expect(capture).toBeDefined()
+    expect(review).toBeDefined()
+    expect(capture?.find('kbd').exists()).toBe(false)
+    expect(review?.find('kbd').exists()).toBe(false)
+
+    await capture?.trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
+      query: { boardId: 'board-1' },
+    })
+
+    await review?.trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-1' },
+    })
+  })
+
   it('does not fetch board data itself because the wrapping BoardView owns loading', () => {
     mountView()
     expect(mockBoardStore.fetchBoard).not.toHaveBeenCalled()

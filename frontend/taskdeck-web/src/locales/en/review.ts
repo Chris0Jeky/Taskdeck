@@ -51,6 +51,7 @@ export default {
   queueRail: {
     eyebrow: 'Queue · {awaiting} awaiting · {stale} stale',
     eyebrowScoped: 'Queue · {awaiting} awaiting in this board · {stale} stale',
+    liveAnnounce: '{count} proposal awaiting review. | {count} proposals awaiting review.',
     filters: {
       label: 'Queue filters',
     },
@@ -72,6 +73,25 @@ export default {
       // emphasis in the template, so this label must not end with punctuation.
       applyRateLabel: 'Apply rate',
       applyRateEmpty: 'No decisions yet',
+    },
+  },
+
+  batchApprove: {
+    selectLabel: 'Select {title} for batch approval',
+    request: 'Review {count} selected approval | Review {count} selected approvals',
+    requestLabel: 'Open confirmation for {count} selected proposal | Open confirmation for {count} selected proposals',
+    limitReached: 'A batch can contain at most {count} proposals.',
+    selectionChanged: 'The selection changed because one or more proposals are no longer eligible. Review the selection again.',
+    receiptMismatch: 'Taskdeck could not confirm the complete batch. Review the queue before trying again.',
+    approved: 'Approved {count} proposal — not applied. | Approved {count} proposals — not applied.',
+    failed: 'The selected proposals could not be approved.',
+    dialog: {
+      title: 'Approve selected proposals?',
+      description: 'Confirm approval for {count} proposal | Confirm approval for {count} proposals',
+      body: 'Taskdeck will re-check all {count} proposal and approve the whole set or none of it. | Taskdeck will re-check all {count} proposals and approve the whole set or none of it.',
+      notApplied: 'This records approval only. Nothing is applied to a board.',
+      cancel: 'Keep reviewing',
+      confirm: 'Approve {count} proposal | Approve {count} proposals',
     },
   },
 
@@ -275,6 +295,10 @@ export default {
     title: 'Provenance',
     sub: "What was read · what wasn't · what was inferred",
     empty: 'Provenance not available for this proposal yet.',
+    details: {
+      show: 'Show provenance details',
+      hide: 'Hide provenance details',
+    },
     // One sentence per recorded engine, selected by `views/paper/review/provenanceActor.ts`
     // from the proposal's own provenance. There is deliberately NO unconditional variant:
     // the surface says nothing when the record is absent or incoherent (GH-1963). `{label}`
@@ -378,6 +402,10 @@ export default {
     heading: 'Author',
     confidenceHeading: 'Confidence source',
     modelReportedHeading: 'Model-reported item confidence',
+    details: {
+      show: 'Show confidence details',
+      hide: 'Hide confidence details',
+    },
     nameFallback: 'Proposal',
     // `{source}` is the lowercased backend source type (`chat`, `queue`, …).
     name: '{actor} · {source} proposal',
@@ -400,6 +428,10 @@ export default {
   similarPast: {
     heading: 'Similar past decisions',
     empty: 'No comparable past decisions.',
+    details: {
+      show: 'Show similar decisions',
+      hide: 'Hide similar decisions',
+    },
     verdict: {
       applied: 'APPLIED',
       rejected: 'REJECTED',
@@ -522,6 +554,10 @@ export default {
     title: 'Nothing waiting. Good.',
     body: 'When the assistant has something to propose it will appear here for review.',
     loading: 'Loading proposals…',
+    accessRevoked: {
+      title: 'This review queue is no longer available to you.',
+      body: 'Your access to these boards changed, so the queue was cleared and has stopped updating. Reload or pick a board you can still reach.',
+    },
     scoped: {
       title: 'No proposals in {scope}.',
       body: 'This review list is limited to the active board. Show all boards to restore the full queue.',

@@ -13,16 +13,24 @@ const breakdown: ConfidenceBreakdown = {
 
 function mountRightRail() {
   return mount(ReviewRightRail, {
+    attachTo: document.body,
     props: {
       authorName: 'Taskdeck',
-      authorMeta: 'automation',
+      authorMeta: '0.96 model-reported average',
       proposedDate: '2026-08-22',
       proposedTime: '18:00',
       proposedNum: '001',
       whyNowBody: 'Created from Inbox capture triage.',
-      breakdown,
-      similarPast: [],
-      similarPastApplyRate: { applied: 0, total: 0, ratio: 0 },
+      breakdown: { ...breakdown, note: 'Reported by the model for the proposed operation.' },
+      similarPast: [
+        {
+          serial: '#PAST',
+          title: 'A prior comparable decision',
+          verdict: 'applied',
+          date: '2026-08-20',
+        },
+      ],
+      similarPastApplyRate: { applied: 1, total: 1, ratio: 1 },
     },
     global: {
       stubs: {
@@ -64,5 +72,48 @@ describe('ReviewWhyNow', () => {
     expect(whyNow.findAll('a')).toHaveLength(0)
     expect(whyNow.findAll('button')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('Tune heuristics')
+    wrapper.unmount()
+  })
+
+  it('keeps author identity visible while confidence and similar decisions start independently collapsed', async () => {
+    const wrapper = mountRightRail()
+    const confidenceButton = wrapper.get('[data-testid="paper-review-confidence-disclosure"]')
+    const confidenceDetails = wrapper.get('[data-testid="paper-review-confidence-details"]')
+    const similarButton = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+    const similarDetails = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+    expect(wrapper.get('.paper-review-author__name').text()).toBe('Taskdeck')
+    expect(wrapper.get('.paper-review-author__meta').text()).toContain('model-reported')
+    expect(confidenceButton.element.tagName).toBe('BUTTON')
+    expect(confidenceButton.attributes('type')).toBe('button')
+    expect(confidenceButton.attributes('aria-expanded')).toBe('false')
+    expect(confidenceButton.attributes('aria-controls')).toBe(confidenceDetails.attributes('id'))
+    expect(confidenceDetails.attributes('aria-labelledby')).toBe(confidenceButton.attributes('id'))
+    expect(confidenceDetails.isVisible()).toBe(false)
+    expect(similarButton.attributes('aria-expanded')).toBe('false')
+    expect(similarButton.attributes('aria-controls')).toBe(similarDetails.attributes('id'))
+    expect(similarDetails.attributes('aria-labelledby')).toBe(similarButton.attributes('id'))
+    expect(similarDetails.isVisible()).toBe(false)
+
+    ;(confidenceButton.element as HTMLButtonElement).focus()
+    await confidenceButton.trigger('click')
+
+    expect(confidenceButton.attributes('aria-expanded')).toBe('true')
+    expect(confidenceButton.text()).toContain('Hide confidence details')
+    expect(confidenceDetails.isVisible()).toBe(true)
+    expect(confidenceDetails.text()).toContain('Reported by the model')
+    expect(document.activeElement).toBe(confidenceButton.element)
+    expect(similarButton.attributes('aria-expanded')).toBe('false')
+
+    ;(similarButton.element as HTMLButtonElement).focus()
+    await similarButton.trigger('click')
+
+    expect(similarButton.attributes('aria-expanded')).toBe('true')
+    expect(similarDetails.isVisible()).toBe(true)
+    expect(similarDetails.text()).toContain('A prior comparable decision')
+    expect(document.activeElement).toBe(similarButton.element)
+    expect(confidenceButton.attributes('aria-expanded')).toBe('true')
+
+    wrapper.unmount()
   })
 })

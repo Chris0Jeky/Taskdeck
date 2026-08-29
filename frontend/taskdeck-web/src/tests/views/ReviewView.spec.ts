@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
 import ReviewView from '../../views/ReviewView.vue'
+import { REVIEW_QUEUE_REFRESH_MS } from '../../composables/useReviewProposals'
 import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
 
 const vueHelpers = vi.hoisted(async () => {
@@ -39,6 +40,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   }
 })
 
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ refreshWorkloadCounts: mocks.refreshWorkloadCounts }),
+}))
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -52,6 +57,7 @@ function createDeferred<T>() {
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
+  refreshWorkloadCounts: vi.fn(),
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
   rejectProposal: vi.fn(),
@@ -167,6 +173,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
       ],
     },
     approvedRevisionId: null,
+    latestRevisionId: null,
   }
 
   const hasPresentationOverride = 'presentation' in overrides
@@ -279,6 +286,62 @@ describe('ReviewView', () => {
     })
 
     window.prompt = originalPrompt
+  })
+
+  // #2194 review round: the Legacy skin had ZERO coverage of the queue-refresh
+  // wiring, so a regression there would have been silent.
+  it('re-reads the queue while Legacy Review stays open, and stops on unmount (#2194)', async () => {
+    // clearInterval must be faked with setInterval, or the real one cannot
+    // cancel a fake handle and the unmount half of this test cannot fail.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const { wrapper } = await mountAt('/workspace/review')
+
+      mocks.getProposals.mockResolvedValue([
+        buildProposal({ id: 'late-1', summary: 'Arrived while open' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toContain('Arrived while open')
+
+      const callsWhileOpen = mocks.getProposals.mock.calls.length
+      wrapper.unmount()
+      mountedWrapper = null
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS * 3)
+      await flushPromises()
+      expect(mocks.getProposals.mock.calls.length).toBe(callsWhileOpen)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes the shell Review badge when the Legacy queue changes (#2194)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const { wrapper } = await mountAt('/workspace/review')
+      // The route-entry load is deliberately NOT a badge read: AppShell already
+      // fetched that summary.
+      mocks.refreshWorkloadCounts.mockClear()
+
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'late-2' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(mocks.refreshWorkloadCounts).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces the awaiting count in a polite live region (#2194)', async () => {
+    const { wrapper } = await mountAt('/workspace/review')
+    const live = wrapper.find('[data-testid="review-queue-live"]')
+    expect(live.exists()).toBe(true)
+    expect(live.attributes('role')).toBe('status')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(live.text()).toContain('0 proposals awaiting review')
   })
 
   it('shows guided empty-state actions when there are no proposals', async () => {

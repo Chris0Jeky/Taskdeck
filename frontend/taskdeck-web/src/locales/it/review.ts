@@ -21,6 +21,7 @@ export default {
   queueRail: {
     eyebrow: 'Coda · {awaiting} in attesa · {stale} ferme',
     eyebrowScoped: 'Coda · {awaiting} in attesa in questa bacheca · {stale} ferme',
+    liveAnnounce: '{count} proposta in attesa di revisione. | {count} proposte in attesa di revisione.',
     filters: {
       label: 'Filtri della coda',
     },
@@ -40,6 +41,25 @@ export default {
       heading: 'Questa settimana',
       applyRateLabel: 'Tasso di applicazione',
       applyRateEmpty: 'Ancora nessuna decisione',
+    },
+  },
+
+  batchApprove: {
+    selectLabel: 'Seleziona {title} per l’approvazione in blocco',
+    request: 'Rivedi {count} approvazione selezionata | Rivedi {count} approvazioni selezionate',
+    requestLabel: 'Apri la conferma per {count} proposta selezionata | Apri la conferma per {count} proposte selezionate',
+    limitReached: 'Un blocco può contenere al massimo {count} proposte.',
+    selectionChanged: 'La selezione è cambiata perché una o più proposte non sono più idonee. Rivedila di nuovo.',
+    receiptMismatch: 'Taskdeck non ha potuto confermare il blocco completo. Controlla la coda prima di riprovare.',
+    approved: 'Approvata {count} proposta, non applicata. | Approvate {count} proposte, non applicate.',
+    failed: 'Non è stato possibile approvare le proposte selezionate.',
+    dialog: {
+      title: 'Approvare le proposte selezionate?',
+      description: 'Conferma l’approvazione di {count} proposta | Conferma l’approvazione di {count} proposte',
+      body: 'Taskdeck ricontrollerà la {count} proposta e approverà l’intero blocco oppure nessuna. | Taskdeck ricontrollerà tutte le {count} proposte e approverà l’intero blocco oppure nessuna.',
+      notApplied: 'Registra solo l’approvazione. Nulla viene applicato a una bacheca.',
+      cancel: 'Continua la revisione',
+      confirm: 'Approva {count} proposta | Approva {count} proposte',
     },
   },
 
@@ -224,6 +244,10 @@ export default {
     title: 'Provenienza',
     sub: 'Cosa è stato letto · cosa no · cosa è stato dedotto',
     empty: 'Provenienza non ancora disponibile per questa proposta.',
+    details: {
+      show: 'Mostra i dettagli della provenienza',
+      hide: 'Nascondi i dettagli della provenienza',
+    },
     footnote: {
       deterministic:
         'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck.',
@@ -317,6 +341,10 @@ export default {
     heading: 'Autore',
     confidenceHeading: 'Fonte della confidenza',
     modelReportedHeading: 'Confidenza per elemento dichiarata dal modello',
+    details: {
+      show: 'Mostra i dettagli della confidenza',
+      hide: 'Nascondi i dettagli della confidenza',
+    },
     nameFallback: 'Proposta',
     name: '{actor} · proposta da {source}',
     modelConfidence: 'media dichiarata dal modello {value}',
@@ -338,6 +366,10 @@ export default {
   similarPast: {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
+    details: {
+      show: 'Mostra decisioni simili',
+      hide: 'Nascondi decisioni simili',
+    },
     verdict: {
       applied: 'APPLICATA',
       rejected: 'RIFIUTATA',
@@ -438,6 +470,10 @@ export default {
     title: 'Niente in attesa. Bene.',
     body: 'Quando l’assistente avrà qualcosa da proporre comparirà qui per la revisione.',
     loading: 'Caricamento delle proposte…',
+    accessRevoked: {
+      title: 'Questa coda di revisione non è più disponibile per te.',
+      body: 'Il tuo accesso a queste bacheche è cambiato, quindi la coda è stata svuotata e non si aggiorna più. Ricarica la pagina o scegli una bacheca a cui hai ancora accesso.',
+    },
     scoped: {
       title: 'Nessuna proposta in {scope}.',
       body: 'Questo elenco di revisione è limitato alla bacheca attiva. Mostra tutte le bacheche per ripristinare la coda completa.',
