@@ -1518,9 +1518,14 @@ public class AutomationProposalService : IAutomationProposalService
             }
         }
 
-        return string.Join(
-            Environment.NewLine,
-            orderedOperations.Select(o => DescribeOperationReadable(o, columnNames, cardTitles, cardStates, labelNames)));
+        var descriptions = new List<string>(orderedOperations.Count);
+        foreach (var operation in orderedOperations)
+        {
+            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            ApplyPreviewCardArchiveState(operation, cardStates);
+        }
+
+        return string.Join(Environment.NewLine, descriptions);
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
@@ -1783,6 +1788,22 @@ public class AutomationProposalService : IAutomationProposalService
         string Parameters);
 
     private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+
+    private static void ApplyPreviewCardArchiveState(
+        DiffOperationView operation,
+        IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            !operation.ActionType.Equals("archive", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var cardId = ExtractGuidParameter(operation.Parameters, "cardId")
+            ?? (Guid.TryParse(operation.TargetId, out var parsedTargetId) ? parsedTargetId : (Guid?)null);
+        if (cardId.HasValue)
+            cardStates[cardId.Value] = new CardDiffState(true, OperationHandlerRegistry.ArchiveCardBlockReason);
+    }
 
     /// <summary>
     /// Produces a human-readable diff line for a single operation, resolving
