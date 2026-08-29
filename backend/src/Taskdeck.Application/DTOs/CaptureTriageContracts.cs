@@ -70,6 +70,13 @@ public static class CaptureTriageOutputContract
     /// invent a year — the shipped 2026-08-29 acceptance run returned 2023-09-01 for "Monday 1
     /// September" — and a format-only check let it through onto a card. The window is deliberately
     /// wide: it exists to catch a fabricated year, not to second-guess a distant real deadline.
+    /// <para>
+    /// INFO - the window is asymmetric on purpose, and does not contradict the prompt. The prompt
+    /// resolves a PARTIAL date forward only ("1 September" means the next one). This window judges
+    /// an ALREADY-QUALIFIED date, which may legitimately sit in the past when a transcript restates
+    /// an overdue or historical deadline, so it tolerates two years back. See
+    /// <c>LlmCaptureTriagePrompt.BuildSystemPrompt</c>.
+    /// </para>
     /// </summary>
     public const int MaxDueDateYearsBeforeReference = 2;
 

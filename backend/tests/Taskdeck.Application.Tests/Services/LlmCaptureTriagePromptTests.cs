@@ -41,16 +41,16 @@ public class LlmCaptureTriagePromptTests
     }
 
     [Fact]
-    public void BuildSystemPrompt_ShouldRenderTheSameLengthForEveryReferenceDate()
+    public void ReferenceDatePlaceholder_ShouldBeExactlyAsLongAsTheDateThatReplacesIt()
     {
-        // The token/size estimate the extraction leg reserves quota against is taken from one
-        // rendered prompt, so the placeholder must be exactly as long as a rendered date.
-        var shortest = LlmCaptureTriagePrompt.BuildSystemPrompt(new DateOnly(2026, 1, 1));
-        var later = LlmCaptureTriagePrompt.BuildSystemPrompt(new DateOnly(2031, 12, 31));
+        // The extraction leg reserves quota against ONE rendered prompt, so the placeholder has to
+        // be the same length as a rendered date or that estimate drifts. Comparing two rendered
+        // prompts cannot prove this - both substitute a same-length string whatever it is - so
+        // assert the substitution itself against a real formatted date.
+        var rendered = new DateOnly(2026, 8, 29).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-        later.Length.Should().Be(shortest.Length);
-        LlmCaptureTriagePrompt.ReferenceDatePlaceholder.Length.Should().Be(
-            CaptureTriageOutputContract.DueDateHintLength);
+        rendered.Length.Should().Be(LlmCaptureTriagePrompt.ReferenceDatePlaceholder.Length);
+        rendered.Length.Should().Be(CaptureTriageOutputContract.DueDateHintLength);
     }
 
     [Fact]
@@ -61,6 +61,10 @@ public class LlmCaptureTriagePromptTests
         prompt.Should().Contain("reference date");
         prompt.Should().Contain("on or after the reference date");
         prompt.Should().Contain("Never guess or invent a year");
+        // A weekday name that disagrees with the resolved date must not drag the year forward:
+        // 2026-09-01 is a Tuesday, and the first Monday 1 September is 2031 - outside the window.
+        prompt.Should().Contain("A weekday name is not part of the date");
+        prompt.Should().NotContain("for example \"Monday 1 September\"");
         prompt.Should().Contain(
             $"more than {CaptureTriageOutputContract.MaxDueDateYearsBeforeReference} years before");
         prompt.Should().Contain(

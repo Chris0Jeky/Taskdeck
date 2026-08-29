@@ -60,7 +60,8 @@ public static class LlmCaptureTriagePrompt
         - "type": exactly one of "action", "decision", or "question". Use "action" for a commitment or next step, "decision" for a decision worth recording, and "question" for an unresolved question that needs follow-up.
         - "assigneeHint": the explicitly named person responsible, or null when the transcript does not identify one. It is only a hint: never infer a Taskdeck user ID.
         - "dueDateHint": a calendar date in YYYY-MM-DD form, or null.
-          - When the transcript states a day and month with no year (for example "Monday 1 September"), resolve it to the first such date on or after the reference date {REF_DATE}. Never guess or invent a year.
+          - When the transcript states a day and month with no year (for example "1 September"), resolve it to the first such date on or after the reference date {REF_DATE}. Never guess or invent a year.
+          - A weekday name is not part of the date. If the speaker says "Monday 1 September" and the resolved date is not a Monday, ignore the weekday: the day and the month decide.
           - Do not calculate relative dates such as "next Friday" or "in two weeks": return null for those.
           - Return null whenever you cannot pin the item to one exact calendar day.
           - Never emit a date more than 2 years before or more than 5 years after the reference date; return null instead.
@@ -90,8 +91,18 @@ public static class LlmCaptureTriagePrompt
 
     /// <summary>
     /// Renders the extraction prompt for one capture day (#2193). Without a reference date the
-    /// model has no year to resolve "Monday 1 September" against, and a shipped run silently
-    /// produced 2023-09-01 for a transcript spoken in August 2026.
+    /// model has no year to resolve "1 September" against, and a shipped run silently produced
+    /// 2023-09-01 for a transcript spoken in August 2026.
+    /// <para>
+    /// INFO - the asymmetry is deliberate. The prompt resolves a partial date FORWARD ONLY (the
+    /// first matching day on or after the reference date), because a speaker naming a bare day and
+    /// month in a meeting means the next one. The contract window behind it still accepts a
+    /// fully-qualified date up to
+    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsBeforeReference"/> years in the past,
+    /// because a transcript may legitimately restate an overdue or historical deadline that the
+    /// speaker did qualify with a year. Forward-only resolution and a backward-tolerant window are
+    /// answering two different questions and are not in conflict.
+    /// </para>
     /// </summary>
     public static string BuildSystemPrompt(DateOnly referenceDate) =>
         SystemPromptTemplate.Replace(
