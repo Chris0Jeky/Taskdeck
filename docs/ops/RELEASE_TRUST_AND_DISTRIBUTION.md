@@ -51,6 +51,16 @@ The trusted Windows lane must keep this order:
 7. Run clean-machine acceptance and public-instruction verification.
 8. Recheck the tag and publish without rebuilding or repacking.
 
+Release candidates carry release-candidate labels. A tag with a semver prerelease segment (`v0.3.0-rc.1`) is created and
+published as a GitHub **prerelease**, so it never takes the `Latest` badge that `README.md` and the packaged Windows quick
+start send users to, and it never moves the floating GHCR tags (`latest` and `<major>.<minor>`) off the last stable release:
+a candidate publishes only its own full version ref. An unsigned RC must be recognisable as a candidate from the release page
+and from a version-less `docker pull` alone, not only from its release notes. The rule originates in the programme spike's
+[2-4 September 2026 release-candidate window](../spikes/TASKDECK_RELEASE_TRUST_DISTRIBUTION_AND_CLOUD_PROGRAMME.md#2-4-september-2026-v03-release-candidate-opportunity)
+("otherwise unsigned RC explicitly labelled as such"). It is enforced in `.github/workflows/release-desktop.yml` and
+`.github/workflows/release-container.yml`; the desktop half is pinned by the Release Workflow Contract job
+(`scripts/ci/release-desktop-dispatch.test.mjs`). [#2217](https://github.com/Chris0Jeky/Taskdeck/issues/2217)
+
 The signing job must be unreachable from pull requests, forks, untrusted branches, and ordinary CI. Provider-held or
 hardware-protected key custody is preferred; no signing key, PFX file/password, token, private account evidence, or recovery
 material belongs in the repository, issue tracker, artifacts, or logs.

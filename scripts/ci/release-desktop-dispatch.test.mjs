@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309/#2217
 // =============================================================================
 //
 // Two classes of check:
@@ -577,4 +577,71 @@ test('packaging steps consume the resolved tag through the environment', () => {
   const job = jobBlock('build-backend')
   assert.match(job, /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/)
   assert.doesNotMatch(job, /steps\.version\.outputs\.tag/, 'the removed per-job tag step must not come back')
+})
+
+// -----------------------------------------------------------------------------
+// 8. Workflow structure — release candidates publish as prereleases (#2217)
+//
+// GitHub shows the most recent non-draft, non-prerelease release at
+// /releases/latest, which README and the packaged Windows quick start point
+// users at. A tag carrying a semver prerelease segment must therefore be
+// labelled a prerelease when the draft is created AND in the edit that
+// publishes it; a stable tag must keep exactly the calls it made before.
+// -----------------------------------------------------------------------------
+
+test('resolve-source publishes a prerelease decision read off the validated tag', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(
+    job,
+    /prerelease: \$\{\{ steps\.resolve\.outputs\.prerelease \}\}/,
+    'the decision is a job output, so downstream jobs cannot re-derive their own',
+  )
+  assert.match(
+    job,
+    /case "\$\{tag\}" in\n\s+\*-\*\) prerelease="true" ;;\n\s+\*\)\s+prerelease="false" ;;\n\s+esac/,
+    'the decision is derived from the resolved tag, never from the raw dispatch input',
+  )
+  assert.match(job, /printf 'prerelease=%s\\n' "\$\{prerelease\}"/, 'the decision reaches GITHUB_OUTPUT')
+
+  // Read off the tag only AFTER the final grammar re-validation: a string that
+  // never cleared validate-release-tag.sh must not decide publish semantics.
+  const validateAt = job.lastIndexOf('validate-release-tag.sh "${tag}"')
+  const decideAt = job.indexOf('case "${tag}" in')
+  assert.ok(validateAt !== -1 && decideAt !== -1)
+  assert.ok(validateAt < decideAt, 'the tag is re-validated before the prerelease decision is taken')
+})
+
+test('the draft is created with the prerelease flag when the tag carries one', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh release create "\$\{RELEASE_TAG\}" \\\n\s+--draft \\\n\s+"\$\{prerelease_flag\[@\]\}"/,
+    'creation carries the prerelease branch',
+  )
+  assert.match(
+    job,
+    /prerelease_flag=\(\)\n\s+if \[ "\$\{RELEASE_PRERELEASE\}" = "true" \]; then\n\s+prerelease_flag=\(--prerelease\)\n\s+fi\n\s+gh release create/,
+    'the branch is set immediately before the call it guards',
+  )
+})
+
+test('the publish flip carries the prerelease flag in the same edit', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh release edit "\$\{RELEASE_TAG\}" --draft=false "\$\{prerelease_flag\[@\]\}"/,
+    'draft=false and prerelease=true travel in ONE edit, so an RC is never briefly a full release',
+  )
+  assert.match(
+    job,
+    /prerelease_flag=\(\)\n\s+if \[ "\$\{RELEASE_PRERELEASE\}" = "true" \]; then\n\s+prerelease_flag=\(--prerelease\)\n\s+fi\n\s+gh release edit/,
+    'the publish step decides for itself, which also re-flags an adopted draft',
+  )
+
+  const bindings = job.match(/RELEASE_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.prerelease \}\}/g) ?? []
+  assert.equal(
+    bindings.length,
+    2,
+    'the create and publish steps each read the decision from resolve-source through the environment',
+  )
 })
