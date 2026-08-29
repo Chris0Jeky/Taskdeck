@@ -364,6 +364,19 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(mockRouter.push).toHaveBeenCalledWith(path)
   })
 
+  it('navigates Home with the bare h binding while the board route is active', async () => {
+    // The board owns Left for previous-column navigation; `h` belongs to the
+    // workspace shell even here, and the capture-phase listener is what makes
+    // that unambiguous (#2008).
+    mockRoute.path = '/boards/board-1'
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/home')
+  })
+
   it('navigates to Today through the G T chord', async () => {
     mountedWrapper = mountShell()
 

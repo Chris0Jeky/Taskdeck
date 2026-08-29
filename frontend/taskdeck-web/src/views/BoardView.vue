@@ -361,7 +361,10 @@ useKeyboardShortcuts([
   { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard, enabled: boardShortcutsEnabled },
   { key: 'k', description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
   { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
-  { key: 'h', description: 'Previous column', action: selectPreviousColumn, enabled: boardShortcutsEnabled },
+  // `h` is deliberately NOT bound here. AppShell owns the workspace-level
+  // `H` -> Home binding in the capture phase and calls stopImmediatePropagation,
+  // so a board-local `h` could never run; binding it advertised a key that
+  // silently navigated away instead. The ledger advertises Left, not H.
   { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn, enabled: boardShortcutsEnabled },
   { key: 'l', description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },
   { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },

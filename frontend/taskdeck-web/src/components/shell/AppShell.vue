@@ -180,8 +180,9 @@ function strokeMatches(event: KeyboardEvent, stroke: ShortcutStroke): boolean {
 
 function consumeShortcut(event: KeyboardEvent) {
   event.preventDefault()
-  // AppShell owns the workspace-level keys. Capture-phase handling keeps a
-  // board-local `H` listener from also moving selection before Home navigation.
+  // AppShell owns the workspace-level keys. Capture-phase handling means a
+  // component-local listener for the same key can never also run, which is why
+  // BoardView binds Left (not `h`) for previous-column navigation.
   event.stopImmediatePropagation()
 }
 

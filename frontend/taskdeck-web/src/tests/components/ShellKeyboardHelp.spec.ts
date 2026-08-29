@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShellKeyboardHelp from '../../components/shell/ShellKeyboardHelp.vue'
+import { PAPER_SHORTCUT_GROUPS } from '../../utils/keyboardShortcuts'
 
 function mountHelp(visible: boolean) {
   return mount(ShellKeyboardHelp, {
@@ -11,6 +12,14 @@ function mountHelp(visible: boolean) {
 
 function bodyText() {
   return document.body.textContent ?? ''
+}
+
+function renderedRows() {
+  return Array.from(document.body.querySelectorAll('.td-shortcut-row')).map((row) => ({
+    id: row.getAttribute('data-shortcut-id'),
+    key: row.querySelector('kbd')?.textContent?.trim(),
+    label: row.querySelector('span')?.textContent?.trim(),
+  }))
 }
 
 describe('ShellKeyboardHelp', () => {
@@ -27,36 +36,59 @@ describe('ShellKeyboardHelp', () => {
     wrapper.unmount()
   })
 
-  it('displays all shortcut sections (Global, Board Navigation, Editor)', () => {
+  it('displays the shared ledger groups plus the help section', () => {
     const wrapper = mountHelp(true)
     const text = bodyText()
-    expect(text).toContain('Global')
-    expect(text).toContain('Board Navigation')
-    expect(text).toContain('Editor')
+    for (const group of PAPER_SHORTCUT_GROUPS) {
+      expect(text).toContain(group.title)
+    }
+    expect(text).toContain('Help')
     wrapper.unmount()
   })
 
-  it('displays key global shortcuts', () => {
+  it('stays in agreement with the Paper overlay by rendering every ledger row', () => {
     const wrapper = mountHelp(true)
-    const text = bodyText()
-    expect(text).toContain('Ctrl+K')
-    expect(text).toContain('Command palette')
-    expect(text).toContain('Ctrl+Shift+C')
-    expect(text).toContain('Quick capture modal')
-    expect(text).toContain('Escape')
-    expect(text).toContain('Close top surface')
+    const ledgerIds = PAPER_SHORTCUT_GROUPS.flatMap((group) => group.rows.map((row) => row.id))
+    const renderedIds = renderedRows().map((row) => row.id)
+
+    expect(renderedIds).toEqual([...ledgerIds, 'keyboard-help', 'escape'])
     wrapper.unmount()
   })
 
-  it('displays board navigation shortcuts', () => {
+  it('renders modifier notation through formatShortcut rather than a hardcoded literal', () => {
+    const wrapper = mountHelp(true)
+    const rows = renderedRows()
+
+    // jsdom reports a non-Apple platform, so `mod` formats as Ctrl here. The
+    // point of the assertion is that the value comes from the shared formatter
+    // (the template holds no `Ctrl+` literal), which is what makes Apple
+    // platforms render the Command glyph instead.
+    expect(rows).toContainEqual({ id: 'command-palette', key: 'Ctrl+K', label: 'Command palette (anywhere)' })
+    expect(rows).toContainEqual({ id: 'quick-capture', key: 'Ctrl+Shift+C', label: 'Quick capture (anywhere)' })
+    expect(bodyText()).toContain('Close top surface')
+    wrapper.unmount()
+  })
+
+  it('advertises Left, not H, for previous column', () => {
+    const wrapper = mountHelp(true)
+    const rows = renderedRows()
+
+    expect(rows).toContainEqual({ id: 'board-previous-column', key: 'Left', label: 'Previous column' })
+    expect(rows.filter((row) => row.label === 'Previous column')).toHaveLength(1)
+    // `H` is the workspace Home binding now, and the map must say so.
+    expect(rows).toContainEqual({ id: 'workspace-home', key: 'H', label: 'Home (workspace)' })
+    wrapper.unmount()
+  })
+
+  it('drops the rows no runtime implements', () => {
     const wrapper = mountHelp(true)
     const text = bodyText()
-    expect(text).toContain('h / Left')
-    expect(text).toContain('Previous column')
-    expect(text).toContain('j / Down')
-    expect(text).toContain('Next card')
-    expect(text).toContain('Enter')
-    expect(text).toContain('Open card')
+
+    expect(text).not.toContain('Editor')
+    expect(text).not.toContain('Save section')
+    expect(text).not.toContain('Save and close')
+    expect(text).not.toContain('Jump to title')
+    expect(text).not.toContain('New column')
     wrapper.unmount()
   })
 
