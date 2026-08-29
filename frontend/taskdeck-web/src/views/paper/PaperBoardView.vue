@@ -57,6 +57,8 @@ const emit = defineEmits<{
    * intentionally absent while a column is collapsed.
    */
   (event: 'collapsed-columns-change', columnIds: string[]): void
+  /** Keeps BoardView's logical lane selection aligned with a focused lane control. */
+  (event: 'column-select', columnId: string): void
 }>()
 
 const route = useRoute()
@@ -830,6 +832,7 @@ async function addStarterColumns() {
             :composer-busy="composerBusy"
             :composer-error="composerError"
             @capture="openCapture"
+            @select="emit('column-select', column.id)"
             @toggle-collapse="toggleColumnCollapse"
             @edit="openColumnSettings"
             @move="moveColumn"

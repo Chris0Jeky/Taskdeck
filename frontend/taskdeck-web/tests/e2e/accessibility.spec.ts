@@ -76,6 +76,30 @@ test('Paper Review view has no WCAG 2.1 AA violations', async ({ page }) => {
   await expectNoAxeViolations(page, 'PaperReviewView')
 })
 
+test('Paper Board narrow columns preserve a visible lane identity row', async ({ page, request }) => {
+  const seed = `narrow-${Date.now()}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Paper Narrow Header',
+    description: 'Paper board narrow-header geometry regression',
+    columnNamePrefix: 'Long backlog lane',
+  })
+
+  await page.goto(`/workspace/boards/${boardId}`)
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await page.getByTestId('paper-board-width-select').selectOption('narrow')
+
+  const column = page.locator('[data-column-id]').first()
+  const heading = column.locator('.paper-board-column__heading')
+  const controls = column.locator('.paper-board-column__meta')
+  const headingBox = await heading.boundingBox()
+  const controlsBox = await controls.boundingBox()
+
+  await expect(column.getByRole('heading', { name: `Long backlog lane ${seed}` }))
+    .toBeVisible()
+  expect(headingBox?.width).toBeGreaterThan(100)
+  expect(controlsBox?.y).toBeGreaterThanOrEqual((headingBox?.y ?? 0) + (headingBox?.height ?? 0) - 1)
+})
+
 test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request }) => {
   const seed = `a11y-board-${Date.now()}`
   const boardId = await createBoardWithColumn(request, auth, seed, {

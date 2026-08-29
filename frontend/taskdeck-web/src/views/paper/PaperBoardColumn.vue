@@ -64,6 +64,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: 'capture', column: Column): void
+  (event: 'select', column: Column): void
   (event: 'toggle-collapse', column: Column): void
   (event: 'edit', column: Column): void
   (event: 'move', column: Column, direction: 'left' | 'right'): void
@@ -111,7 +112,12 @@ function onEdit() {
 }
 
 function onToggleCollapse() {
+  emit('select', props.column)
   emit('toggle-collapse', props.column)
+}
+
+function onSelect() {
+  emit('select', props.column)
 }
 
 function onMoveLeft() {
@@ -203,6 +209,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
           :data-testid="`paper-column-collapse-${column.id}`"
           @keydown.enter.stop
           @keydown.space.stop
+          @focus="onSelect"
           @click="onToggleCollapse"
         >
           <PaperIcon
@@ -311,6 +318,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
 
 <style scoped>
 .paper-board-column {
+  container-type: inline-size;
   flex: 0 0 280px;
   width: 280px;
   display: flex;
@@ -347,6 +355,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
 
 .paper-board-column__heading {
   display: flex;
+  flex: 1 1 auto;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
@@ -452,6 +461,25 @@ function onCardDragOver(card: Card, e: DragEvent) {
 
 .paper-board-column__content[hidden] {
   display: none;
+}
+
+@container (max-width: 250px) {
+  .paper-board-column__header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .paper-board-column__heading {
+    flex-basis: 100%;
+    min-width: 100%;
+    width: 100%;
+  }
+
+  .paper-board-column__meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    width: 100%;
+  }
 }
 
 .paper-board-column__empty {

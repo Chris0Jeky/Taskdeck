@@ -127,6 +127,7 @@ const {
 
 const {
   selectedCardId,
+  selectedColumnIndex,
   selectNextCard,
   selectPreviousCard,
   selectNextColumn,
@@ -153,6 +154,14 @@ function handlePaperCollapsedColumnsChange(columnIds: string[]) {
   if (selectedCard && paperCollapsedColumnIds.value.has(selectedCard.columnId)) {
     selectedCardId.value = null
   }
+}
+
+function handlePaperColumnSelect(columnId: string) {
+  const columnIndex = sortedColumns.value.findIndex((column) => column.id === columnId)
+  if (columnIndex < 0) return
+
+  selectedColumnIndex.value = columnIndex
+  selectedCardId.value = null
 }
 
 watch(
@@ -414,6 +423,7 @@ useKeyboardShortcuts([
     v-if="paperOn"
     :selected-card-id="selectedCardId"
     @collapsed-columns-change="handlePaperCollapsedColumnsChange"
+    @column-select="handlePaperColumnSelect"
     @dialog-open-change="paperDialogOpen = $event"
   />
   <div v-else class="min-h-screen bg-surface">

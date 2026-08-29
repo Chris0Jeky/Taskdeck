@@ -36,19 +36,40 @@ export function useBoardKeyboardNav(
     return allCardsForColumn(columnId)
   }
 
-  function focusIsWithinBoardCard(): boolean {
+  function focusIsWithinBoardSelectionContext(): boolean {
     const active = document.activeElement
-    return active instanceof Element && active.closest('[data-card-id]') !== null
+    return active instanceof Element && active.closest(
+      '[data-card-id], [data-action="expand-column"], [data-action="collapse-column"]',
+    ) !== null
   }
 
-  async function focusCollapsedColumnExpandControl() {
+  async function focusSelectionTarget() {
     await nextTick()
     const currentColumn = sortedColumns.value[selectedColumnIndex.value]
-    if (!currentColumn || !isColumnNavigable || isColumnNavigable(currentColumn.id)) return
+    if (!currentColumn) return
 
     const columnElement = document.querySelector(
       `[data-column-id="${currentColumn.id}"]`,
     ) as HTMLElement | null
+
+    if (!isColumnNavigable || isColumnNavigable(currentColumn.id)) {
+      if (selectedCardId.value) {
+        const cardElement = document.querySelector(
+          `[data-card-id="${selectedCardId.value}"]`,
+        ) as HTMLElement | null
+        if (cardElement) {
+          cardElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+          cardActivator(cardElement).focus()
+          return
+        }
+      }
+
+      columnElement
+        ?.querySelector<HTMLElement>('[data-action="collapse-column"]')
+        ?.focus()
+      return
+    }
+
     columnElement
       ?.querySelector<HTMLElement>('[data-action="expand-column"]')
       ?.focus()
@@ -57,26 +78,24 @@ export function useBoardKeyboardNav(
   /**
    * Roving focus for selection movement: when a board selection shortcut
    * (J/K/H/L or plain arrows) changes the selected card while DOM focus sits
-   * inside a card (e.g. on its `data-action="open-card"` activator), focus
-   * follows the new selection so the focused card and the visible selection
-   * highlight can never disagree. When the destination column is intentionally
-   * non-navigable, focus moves to its expand control instead. When focus is
-   * elsewhere (body, composer, modal), selection movement leaves focus untouched.
+   * inside the board's selection context (a card opener or lane collapse
+   * control), focus follows the logical selection. A selected card targets its
+   * opener; collapsed and empty expanded lanes target their expand/collapse
+   * control. When focus is elsewhere (body, composer, modal), selection
+   * movement leaves focus untouched.
    */
   function withFocusFollowingSelection(applySelection: () => void) {
-    const focusWasWithinCard = focusIsWithinBoardCard()
+    const focusWasWithinSelectionContext = focusIsWithinBoardSelectionContext()
     const previousCardId = selectedCardId.value
+    const previousColumnIndex = selectedColumnIndex.value
     applySelection()
-    if (!focusWasWithinCard) return
+    if (!focusWasWithinSelectionContext) return
+    if (
+      selectedCardId.value === previousCardId &&
+      selectedColumnIndex.value === previousColumnIndex
+    ) return
 
-    if (selectedCardId.value !== null && selectedCardId.value !== previousCardId) {
-      void focusSelectedCard()
-      return
-    }
-
-    if (selectedCardId.value === null) {
-      void focusCollapsedColumnExpandControl()
-    }
+    void focusSelectionTarget()
   }
 
   function selectNextCard() {
@@ -284,7 +303,7 @@ export function useBoardKeyboardNav(
     try {
       await boardStore.moveCard(boardId(), card.id, targetColumn.id, targetPosition)
       selectedColumnIndex.value = targetColIndex
-      await focusSelectedCard()
+      await focusSelectionTarget()
     } catch {
       // moveCard already surfaces toast errors via the store
     }

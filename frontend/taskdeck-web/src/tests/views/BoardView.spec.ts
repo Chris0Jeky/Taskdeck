@@ -339,7 +339,9 @@ describe('BoardView', () => {
     action('j', 'Next card')?.()
     action('k', 'Previous card')?.()
     action('l', 'Next column')?.()
-    action('h', 'Previous column')?.()
+    await nextTick()
+    action('ArrowLeft', 'Previous column')?.()
+    await nextTick()
     action('Enter', 'Open selected card')?.()
     await nextTick()
     expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
@@ -353,6 +355,34 @@ describe('BoardView', () => {
       .toBe('true')
     expect(wrapper.find('[data-testid="paper-card-composer"]').exists()).toBe(true)
     expect(document.activeElement).toBe(wrapper.get('[data-action="add-card-input"]').element)
+  })
+
+  it('routes board shortcuts to the lane whose collapse control receives focus', async () => {
+    usePaperThemeStore().setMode('paper')
+    const secondColumn = {
+      ...mockBoardStore.currentBoard.columns[0]!,
+      id: 'column-2',
+      name: 'Done',
+      position: 1,
+    }
+    mockBoardStore.currentBoard = {
+      ...mockBoardStore.currentBoard,
+      columns: [mockBoardStore.currentBoard.columns[0]!, secondColumn],
+    }
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    await wrapper.get('[data-testid="paper-column-collapse-column-2"]').trigger('focus')
+    const shortcuts = vi.mocked(useKeyboardShortcuts).mock.calls.at(-1)?.[0] ?? []
+    shortcuts.find((shortcut) => shortcut.key === 'n' && shortcut.description === 'New card in current column')
+      ?.action()
+    await new Promise((resolve) => window.setTimeout(resolve, 10))
+    await nextTick()
+
+    const secondLane = wrapper.get('[data-column-id="column-2"]')
+    expect(secondLane.find('[data-testid="paper-card-composer"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(secondLane.get('[data-action="add-card-input"]').element)
   })
 
   it('clears a keyboard selection when realtime replacement moves its card into a collapsed lane', async () => {

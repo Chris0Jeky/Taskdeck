@@ -534,6 +534,14 @@ describe('PaperBoardView', () => {
     expect(JSON.parse(window.localStorage.getItem('td.paper.board-collapsed-columns.v1')!))
       .toEqual(['col-backlog'])
     expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([['col-backlog']])
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-backlog'])
+  })
+
+  it('selects a lane as soon as its collapse control receives focus', async () => {
+    const wrapper = mountView()
+    await wrapper.get('[data-testid="paper-column-collapse-col-today"]').trigger('focus')
+
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-today'])
   })
 
   it('hydrates only known string column IDs and ignores malformed or unknown entries', async () => {
