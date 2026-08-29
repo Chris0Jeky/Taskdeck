@@ -33,6 +33,8 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 
 Both formerly saved heads are shipped: `origin/issue-1949/directive-attribute-tokenization` (`d89bd7cc3`) became `#2072`, and `origin/issue-1967/applied-read-only-detail` (`010021a745`) became `#2073`. Do not publish either again. v0.1.2 subsequently shipped; refresh live state before using this historical list.
 
+**Restamp 2026-08-29 (added in the lane→main merge):** v0.2.0 shipped (tag `48c05e1dcd3cc8d3072ba60f0e89258d25ac4422`, Release published); `integration/v0.3.0` merged into `main` via PR #2196; the continuation below is the 2026-08-28 record — refresh live state before acting.
+
 **Current continuation (2026-08-28 closeout):** `integration/v0.3.0` is saved after last product merge `778a9f8470197cf2f92231813eac743e804f03e9`; `main` remains `927236bd0304e9dfae59a7116394e4fcb7b0ec07`. No remote `v0.2.0` tag or GitHub release exists. Milestone `v0.3 — Open Beta + Accountable Agents` has 20 open and 1 closed issue. Parked PR `#2165` is the only open PR targeting integration. Refresh all of these live before acting; this is a restart pointer, not current proof.
 
 **Continuation order:**

@@ -114,6 +114,27 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
+## Unreleased — after v0.2.0
+
+**BREAKING: none.** These notes cover hosts tracking `main` past the v0.2.0 tag (the v0.3 lane merged
+into `main` on 2026-08-29). This heading is renamed to the release version when the next version
+ships; nothing below is in the published v0.2.0 artifacts.
+
+- **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
+  migration makes `ProvenanceFields.Confidence` nullable and adds the required integer
+  `ConfidenceSource` column. Existing rows keep their stored numeric value but receive source `0`
+  (`NotReported`), so an upgrade does not relabel historical confidence as model-reported evidence.
+- **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
+  integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
+  then makes the column required without a database default. Existing integrations therefore retain
+  their prior MCP access after upgrade. Current v0.3 integration builds require every new API, UI,
+  and CLI key to select one or more of `read`, `propose`, and `manage`; omitted, empty, or unknown
+  selections are rejected instead of defaulting to Full. Existing backfilled keys remain Full until
+  they are replaced with least-privilege keys.
+- **No migration action required.** Both migrations are applied automatically on startup after
+  the automatic [pre-migration snapshot](#automatic-pre-migration-backups); take the manual copy from
+  the [General upgrade procedure](#general-upgrade-procedure) as usual.
+
 ## v0.2.0 — 2026-08-29
 
 **BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
@@ -146,18 +167,7 @@ v0.2.0. **Skipping from v0.1.0:** the retired Gemini provider migration in the
   **BREAKING: none.** Again a single in-place statement with no table rebuild; existing boards take
   the `0` default. Nothing reads the value — it exists so a card write always marks its board row
   modified, which keeps the token check below deterministic instead of clock-dependent.
-- **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
-  migration makes `ProvenanceFields.Confidence` nullable and adds the required integer
-  `ConfidenceSource` column. Existing rows keep their stored numeric value but receive source `0`
-  (`NotReported`), so an upgrade does not relabel historical confidence as model-reported evidence.
-- **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
-  integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
-  then makes the column required without a database default. Existing integrations therefore retain
-  their prior MCP access after upgrade. Current v0.3 integration builds require every new API, UI,
-  and CLI key to select one or more of `read`, `propose`, and `manage`; omitted, empty, or unknown
-  selections are rejected instead of defaulting to Full. Existing backfilled keys remain Full until
-  they are replaced with least-privilege keys.
-- **No migration action required.** All four migrations are applied automatically on startup like
+- **No migration action required.** Both migrations are applied automatically on startup like
   every other one — steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
   [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
   snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
