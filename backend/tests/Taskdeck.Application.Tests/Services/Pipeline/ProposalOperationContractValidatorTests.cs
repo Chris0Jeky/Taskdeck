@@ -124,6 +124,30 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_ShouldRejectCardArchiveAfterEarlierBoardArchive()
+    {
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "File release notes");
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        cards.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        var operations = new[]
+        {
+            CreateOperation(1, "archive", card.Id, new { cardId = card.Id }),
+            CreateOperation(0, "update", boardId, new { boardId, isArchived = true }, targetType: "board")
+        };
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, operations);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Be(
+            "Cannot apply an operation after archiving the proposal board. Restore the board before making further changes.");
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldRejectDuplicateCreateCardTargetIds()
     {
         var boardId = Guid.NewGuid();

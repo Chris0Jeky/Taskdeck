@@ -2521,6 +2521,40 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
+    public async Task GetProposalDiffAsync_ShouldRejectCardArchiveAfterEarlierBoardArchive()
+    {
+        var proposalId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "File release notes");
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Archive board then card",
+            RiskLevel.High,
+            Guid.NewGuid().ToString(),
+            boardId);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "update", "board",
+            System.Text.Json.JsonSerializer.Serialize(new { boardId, isArchived = true }),
+            Guid.NewGuid().ToString(), targetId: boardId.ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "archive", "card",
+            System.Text.Json.JsonSerializer.Serialize(new { cardId = card.Id }),
+            Guid.NewGuid().ToString(), targetId: card.Id.ToString()));
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposalId, default)).ReturnsAsync(proposal);
+        var cardRepoMock = new Mock<ICardRepository>();
+        cardRepoMock.Setup(repository => repository.GetByIdAsync(card.Id, default)).ReturnsAsync(card);
+        _unitOfWorkMock.Setup(unitOfWork => unitOfWork.Cards).Returns(cardRepoMock.Object);
+
+        var result = await _service.GetProposalDiffAsync(proposalId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Be(
+            "Cannot apply an operation after archiving the proposal board. Restore the board before making further changes.");
+    }
+
+    [Fact]
     public async Task GetProposalDiffAsync_ShouldDiscloseCanonicalCreateColumnEffects()
     {
         // The approval preview must disclose every field execution passes to
