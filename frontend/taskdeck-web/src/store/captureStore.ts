@@ -438,6 +438,40 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * Reconcile cached DETAILS against the list snapshot just fetched (#2202,
+   * PR #2224 review).
+   *
+   * `batchTriage` enqueues and then re-reads the LIST. The per-item detail
+   * cache is untouched by that read, so a capture whose triage had already
+   * finished still rendered from its pre-batch `New`/`Triaging` detail — and
+   * with it, no `errorMessage`, so the degradation notice was absent on the
+   * open Legacy panel until the user refreshed by hand.
+   *
+   * Deliberately NOT a poll: this reconciles only against the snapshot in
+   * hand, so an item that reaches a terminal status AFTER that list fetch is
+   * still served by the existing refresh paths. A failing follow-up GET is
+   * swallowed for the same reason the single-item path swallows its own — the
+   * batch write already succeeded and must not be reported as failed.
+   */
+  async function refreshTerminalDetails(itemIds: string[]): Promise<void> {
+    const stale = itemIds.filter((id) => {
+      const detail = detailById.value[id]
+      if (!detail) return false
+      const summary = items.value.find((item) => item.id === id)
+      if (!summary || !isTriageTerminalStatus(summary.status)) return false
+      return summary.status !== detail.status
+    })
+
+    await Promise.all(
+      stale.map((id) =>
+        fetchDetail(id, { forceRefresh: true, showToast: false, recordError: false }).catch(
+          () => undefined,
+        ),
+      ),
+    )
+  }
+
   const batchBusy = ref(false)
   const batchError = ref<string | null>(null)
 
@@ -465,6 +499,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
       // Refresh list to pick up status changes
       await fetchItems()
+      await refreshTerminalDetails(itemIds)
       notifyTriageCountChanged()
 
       return result

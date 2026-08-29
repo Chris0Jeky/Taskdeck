@@ -1322,4 +1322,104 @@ describe('captureStore', () => {
 
     expect(store.actionBusyItemId).toBeNull()
   })
+
+  // ── Batch triage: cached-detail reconciliation (#2202, PR #2224 review) ──
+  //
+  // `batchTriage` re-read the LIST only, so an open Legacy detail kept its
+  // pre-batch status — and with it no `errorMessage`, so the degradation
+  // notice stayed invisible until a manual refresh.
+
+  function degradedDetail(status: string, errorMessage: string | null) {
+    return {
+      id: 'c-deg',
+      userId: 'u1',
+      boardId: null,
+      status,
+      source: 'TranscriptPaste',
+      textExcerpt: 'standup at nine',
+      rawText: 'standup at nine',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      errorMessage,
+      provenance: null,
+    } as never
+  }
+
+  const DEGRADED_NOTICE =
+    'LLM triage unavailable (ProviderDegraded); using deterministic extractor.'
+
+  it('refetches a cached detail whose list row reached a terminal status', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+    expect(store.detailById['c-deg'].status).toBe('Triaging')
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+    ])
+    vi.mocked(captureApi.getItem).mockResolvedValue(
+      degradedDetail('ProposalCreated', DEGRADED_NOTICE),
+    )
+
+    await store.batchTriage(['c-deg'], 'triage')
+
+    // The cached detail now carries what the notice renders from.
+    expect(store.detailById['c-deg'].status).toBe('ProposalCreated')
+    expect(store.detailById['c-deg'].errorMessage).toBe(DEGRADED_NOTICE)
+  })
+
+  it('does not refetch a detail whose list row is still mid-flight (no polling)', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+    const callsAfterPrime = vi.mocked(captureApi.getItem).mock.calls.length
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'Triaging',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: null, disposition: null } as never,
+    ])
+
+    await store.batchTriage(['c-deg'], 'triage')
+
+    expect(vi.mocked(captureApi.getItem).mock.calls.length).toBe(callsAfterPrime)
+  })
+
+  it('keeps a successful batch successful when the detail refetch fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+    ])
+    vi.mocked(captureApi.getItem).mockRejectedValue(new Error('detail-refresh-failed'))
+    toastMocks.error.mockClear()
+
+    await expect(store.batchTriage(['c-deg'], 'triage')).resolves.toMatchObject({ succeeded: 1 })
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
 })

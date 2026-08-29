@@ -54,6 +54,36 @@ export default {
       none: 'Not recorded',
     },
   },
+  // Degraded-triage notice (#2202; backend half #2192 / #2203). A capture whose
+  // LLM leg could not deliver still COMPLETES on the deterministic extractor,
+  // so this is a caution on a success and never a failure — it must not borrow
+  // the Failed styling or the `alert` role. `reason` interpolates the server's
+  // own notice VERBATIM: it is server-authored, redacted and bounded upstream,
+  // and nothing from local configuration is ever appended to it.
+  //
+  // PROVENANCE IS NOT ASSERTED (PR #2224 review). One of the server's own
+  // notices — `CaptureTriageService.ResolveReuseDegradedNotice`, the crash
+  // recovery path — deliberately reports that the reused proposal may have come
+  // from EITHER the model or the deterministic extractor. So `label` and `lead`
+  // may not state which engine authored the result; they say only that a model
+  // reading could not be confirmed, and every mention of the deterministic
+  // extractor below is conditional. Distinguishing the two would need a
+  // machine-readable degradation kind from the backend (#2212), not string
+  // matching on the server sentence, which the frontend never parses.
+  //
+  // The review guidance is STATUS-SPECIFIC (PR #2224 review): the notice rides
+  // three statuses, and "read it before you apply it" is impossible on
+  // `Triaged` (no proposal exists) and stale on `Converted` (already applied).
+  // `triageDegradedReviewKey` in `inboxUtils.ts` picks the variant.
+  degraded: {
+    label: 'Triaged without a confirmed model reading',
+    lead: 'Taskdeck cannot confirm that the model produced this result. The server reported the triage this way:',
+    reason: 'Reported: {reason}',
+    reviewProposal: 'If the deterministic offline extractor produced this proposal, it is a text-pattern guess rather than a model reading, and it carries no evidence links. Read it closely before you apply it.',
+    reviewTriaged: 'Triage finished without proposing anything. That may be the deterministic offline extractor recognising no pattern rather than there being nothing to do, so read the capture yourself.',
+    reviewConverted: 'This capture has already been applied to a board. Check the resulting board changes against the capture text, because the result may not have come from a model reading.',
+    action: 'If the model was meant to run, check the LLM provider settings.',
+  },
   capture: {
     errorLead: 'Capture not saved. Your draft is still here.',
     errorDetail: 'Details: {reason}',
