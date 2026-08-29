@@ -105,12 +105,109 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         // rather than serving the stale tracked entity with the old ExpiresAt value.
         db.ChangeTracker.Clear();
 
-        var results = (await repo.GetExpiredAsync()).ToList();
+        var results = (await repo.GetExpiredAsync()).Expirable.ToList();
 
         results.Should().Contain(p => p.Id == expired.Id);
         results.Should().NotContain(p => p.Id == notExpired.Id);
         results.Should().NotContain(p => p.Id == approvedExpired.Id,
             "GetExpiredAsync only returns PendingReview proposals; a decided (Approved) one is never re-expired");
+    }
+
+    [Fact]
+    public async Task GetExpiredAsync_ShouldWithholdArchivedBoardProposals_AndCountThem()
+    {
+        // #2197: expiry is a decision write, and ADR-0063 / #2168 make archived-board decision
+        // history read-only. The interactive lanes were guarded; the two automatic ones were not,
+        // so the housekeeping worker silently expired pending proposals on archived boards. The
+        // guard now lives in this query, which is the single choke point both automatic lanes read.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-arch-expiry-user", "ap-arch-expiry@example.com", "hash");
+        db.Users.Add(user);
+
+        var archivedBoard = new Board("Archived board", ownerId: user.Id);
+        archivedBoard.Archive();
+        var activeBoard = new Board("Active board", ownerId: user.Id);
+        db.Boards.AddRange(archivedBoard, activeBoard);
+
+        // Identical in every respect except which board they belong to.
+        var onArchivedBoard = NewExpiredPending(user.Id, "Archived-board proposal", archivedBoard.Id);
+        var onActiveBoard = NewExpiredPending(user.Id, "Active-board proposal", activeBoard.Id);
+
+        // Board-less and dangling-board rows must stay expirable: only a POSITIVELY identified
+        // extant archived board withholds, matching GetActiveByUserIdAsync's predicate. Without
+        // these two, a predicate that withheld everything with a BoardId would still pass.
+        var boardless = NewExpiredPending(user.Id, "Board-less proposal", boardId: null);
+        var danglingBoard = NewExpiredPending(user.Id, "Dangling-board proposal", Guid.NewGuid());
+
+        db.AutomationProposals.AddRange(onArchivedBoard, onActiveBoard, boardless, danglingBoard);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var sweep = await repo.GetExpiredAsync();
+        var expirableIds = sweep.Expirable.Select(p => p.Id).ToList();
+
+        expirableIds.Should().NotContain(
+            onArchivedBoard.Id,
+            "a pending proposal on an archived board must not be handed to any expiry path (#2197)");
+        expirableIds.Should().Contain(
+            onActiveBoard.Id,
+            "its sibling on an active board must still expire normally");
+        expirableIds.Should().Contain(boardless.Id, "a board-less proposal has no archive state to respect");
+        expirableIds.Should().Contain(danglingBoard.Id, "a proposal whose board row is gone is not archived history");
+
+        sweep.SkippedArchivedBoardCount.Should().BeGreaterThanOrEqualTo(
+            1,
+            "the withheld proposal is reported as a count so the sweep can say what it declined to touch");
+    }
+
+    [Fact]
+    public async Task GetExpiredAsync_ShouldExpireFormerlyArchivedProposal_AfterBoardIsRestored()
+    {
+        // The withheld proposals are deferred, not dropped: restoring the board makes them eligible
+        // again, which is the same "restore before you can change it" contract ADR-0063 gives the
+        // interactive lanes. Without this, "withhold" would be indistinguishable from "lose".
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<IAutomationProposalRepository>();
+
+        var user = new User("ap-restore-expiry-user", "ap-restore-expiry@example.com", "hash");
+        db.Users.Add(user);
+
+        var board = new Board("Board archived then restored", ownerId: user.Id);
+        board.Archive();
+        db.Boards.Add(board);
+
+        var proposal = NewExpiredPending(user.Id, "Waits for the board to come back", board.Id);
+        db.AutomationProposals.Add(proposal);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        (await repo.GetExpiredAsync()).Expirable.Select(p => p.Id)
+            .Should().NotContain(proposal.Id, "the board is archived at this point");
+
+        var tracked = await db.Boards.SingleAsync(b => b.Id == board.Id);
+        tracked.Unarchive();
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        (await repo.GetExpiredAsync()).Expirable.Select(p => p.Id)
+            .Should().Contain(proposal.Id, "restoring the board makes the proposal expirable again");
+    }
+
+    /// <summary>
+    /// An expired <c>PendingReview</c> proposal on <paramref name="boardId"/> — the exact row shape
+    /// the automatic expiry lanes select.
+    /// </summary>
+    private static AutomationProposal NewExpiredPending(Guid userId, string summary, Guid? boardId)
+    {
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue, userId, summary, RiskLevel.Low,
+            $"corr-{Guid.NewGuid():N}", boardId, expiryMinutes: 1);
+        SetExpiresAt(proposal, DateTime.UtcNow.AddDays(-1));
+        return proposal;
     }
 
     [Fact]
@@ -830,7 +927,7 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         // Clear the change tracker so the subsequent query materializes fresh rows from the database.
         db.ChangeTracker.Clear();
 
-        var results = (await repo.GetExpiredAsync()).ToList();
+        var results = (await repo.GetExpiredAsync()).Expirable.ToList();
 
         results.Should().NotContain(p => p.Id == unexpired.Id, "ExpiresAt is 30 minutes in the future");
         results.Should().Contain(p => p.Id == expired.Id, "ExpiresAt is 30 minutes in the past");

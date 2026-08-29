@@ -77,6 +77,169 @@ public class ProposalHousekeepingWorkerTests
         proposal.DeferredUntil.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldNotExpireWithheldProposals_AndShouldLogTheArchivedBoardSkip()
+    {
+        // #2197: the sweep hands the worker only what it may touch. Proposals on an archived board
+        // arrive as a COUNT, never as entities, so the worker cannot expire one even by accident —
+        // and it says how many it declined rather than letting them vanish silently.
+        var expirable = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Active-board proposal expires normally",
+            RiskLevel.Low,
+            "proposal-housekeeping-active-board",
+            expiryMinutes: 1);
+        SetExpiresAt(expirable, DateTime.UtcNow.AddMinutes(-5));
+
+        var repository = new FakeAutomationProposalRepository([expirable])
+        {
+            SkippedArchivedBoardCount = 2
+        };
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        expirable.Status.Should().Be(
+            ProposalStatus.Expired,
+            "the active-board sibling must still expire — the guard must not stall the whole sweep");
+
+        var skipEntry = logger.Entries.Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Information && entry.Message.Contains("Skipped expiring"))
+            .Subject;
+        skipEntry.Message.Should().Contain("2");
+        skipEntry.Message.Should().Contain("board is archived");
+        // Non-secret: a count and a remediation hint, never an id, summary, or board name.
+        skipEntry.Message.Should().NotContain(expirable.Id.ToString());
+    }
+
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldNotLogTheArchivedBoardSkip_WhenNothingWasWithheld()
+    {
+        // The line is an exception report, not a per-cycle heartbeat: a worker that logged it every
+        // minute on a healthy install would train operators to ignore it.
+        var expirable = new AutomationProposal(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Nothing withheld this cycle",
+            RiskLevel.Low,
+            "proposal-housekeeping-no-skip",
+            expiryMinutes: 1);
+        SetExpiresAt(expirable, DateTime.UtcNow.AddMinutes(-5));
+
+        var repository = new FakeAutomationProposalRepository([expirable]);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        logger.Entries.Should().NotContain(entry => entry.Message.Contains("Skipped expiring"));
+    }
+
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldLogTheArchivedBoardSkipOnce_WhenTheCountIsUnchangedAcrossSweeps()
+    {
+        // The sweep runs every 60s and a withheld proposal stays PendingReview until its board is
+        // restored, so an unconditional log emitted ~1,440 identical lines a day for one archived
+        // board. The steady state must be Debug; only a CHANGE earns an Information line.
+        var repository = new FakeAutomationProposalRepository([])
+        {
+            SkippedArchivedBoardCount = 2
+        };
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Information && entry.Message.Contains("Skipped expiring"),
+            "two sweeps reporting the same withheld count must not repeat the Information line");
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Debug && entry.Message.Contains("Still skipping"),
+            "the unchanged steady state is still recorded, just at Debug");
+    }
+
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldLogAgain_WhenTheArchivedBoardCountChanges()
+    {
+        // The counterpart to the test above: suppression must be keyed on the VALUE, not on
+        // "already logged once", or a growing archived backlog would go unreported.
+        var repository = new FakeAutomationProposalRepository([])
+        {
+            SkippedArchivedBoardCount = 2
+        };
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        repository.SkippedArchivedBoardCount = 5;
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        var informational = logger.Entries
+            .Where(entry => entry.Level == LogLevel.Information && entry.Message.Contains("Skipped expiring"))
+            .ToList();
+        informational.Should().HaveCount(2);
+        informational[0].Message.Should().Contain("2");
+        informational[1].Message.Should().Contain("5");
+    }
+
+    [Fact]
+    public async Task ExpireStaleProposalsAsync_ShouldReportRecovery_WhenTheArchivedBoardCountReturnsToZero()
+    {
+        // An operator who saw the skip line needs to see it clear; otherwise the only way to learn
+        // the backlog is gone is the absence of a line that was already suppressed.
+        var repository = new FakeAutomationProposalRepository([])
+        {
+            SkippedArchivedBoardCount = 3
+        };
+        var unitOfWork = new FakeUnitOfWork(repository);
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
+        var worker = new ProposalHousekeepingWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerSettings(),
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        repository.SkippedArchivedBoardCount = 0;
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+        await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
+
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Message.Contains("No stale proposals are being withheld"),
+            "the recovery is announced once, not on every later clean sweep");
+    }
+
     private static ServiceProvider BuildServiceProvider(IUnitOfWork unitOfWork)
     {
         var services = new ServiceCollection();
@@ -232,13 +395,22 @@ public class ProposalHousekeepingWorkerTests
             throw new NotSupportedException();
         }
 
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
+        public Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default)
         {
             // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync
             // above) so a non-PendingReview proposal still reaches the worker's Expire() catch path.
-            return Task.FromResult<IEnumerable<AutomationProposal>>(
-                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
+            // The archived-board partition is the real repository's job (#2197); this fake holds no
+            // boards, so it reports nothing withheld unless a test overrides SkippedArchivedBoardCount.
+            return Task.FromResult(new ExpiredProposalSweep(
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList(),
+                SkippedArchivedBoardCount));
         }
+
+        /// <summary>
+        /// Lets a test drive the worker's "withheld" log line without a database, and change it
+        /// between sweeps to exercise the transition-only logging.
+        /// </summary>
+        public int SkippedArchivedBoardCount { get; set; }
 
         public Task<IReadOnlyList<AutomationProposal>> GetTerminalByActionTypeAsync(string actionType, Guid? boardId, Guid userId, int limit = 100, CancellationToken cancellationToken = default)
         {
