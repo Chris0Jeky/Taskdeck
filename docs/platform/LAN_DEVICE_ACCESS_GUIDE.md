@@ -217,15 +217,24 @@ portrait, at a width under the 640 px mobile breakpoint.
    and **Delete** buttons are fully visible and tappable, and that the sheet does not extend under the
    keyboard. If the keyboard closes when the dialog opens because focus moved, record that — then
    re-open the keyboard if the browser allows and re-check.
-4. **`TdDialog` with the keyboard genuinely up.** Go to Review, open a proposal, tap **Reject**, and
+4. **Seed a reviewable proposal (skip only if this instance already has one).** The next step needs a
+   proposal sitting in Review, and Path A's packaged release starts on a **fresh data root** where
+   Review is empty — an empty Review makes step 5 unrunnable, not passing. Easiest on the host
+   desktop before you pick the phone up: create a board, add a capture in the Paper composer
+   (a couple of sentences naming an action is enough), then in the Inbox select that board and press
+   **Ask AI** — the control stays disabled until a board is selected. Wait for triage to produce the
+   proposal and confirm it is listed in Review. Do **not** approve or execute it; step 5 needs it
+   pending so **Reject** is available. If you are pointing at a data root that already holds a
+   pending proposal, use that one and skip this step.
+5. **`TdDialog` with the keyboard genuinely up.** Go to Review, open a proposal, tap **Reject**, and
    tap into the reason textarea. Within the review flow this is the dialog that contains a text field, so it is the case where a
    `TdDialog` is certainly rendered with the keyboard open (the API-keys settings dialog also has an
    input, but it is outside the `#1821` scope). Confirm the
    dialog's footer (Cancel / Reject) stays reachable and that the body scrolls inside the dialog if
    the content is taller than the visual viewport.
-5. **Keyboard-down regression.** Dismiss the keyboard while a dialog is still open. The sheet must
+6. **Keyboard-down regression.** Dismiss the keyboard while a dialog is still open. The sheet must
    snap back to the full-height mobile sheet with no leftover gap or offset at the bottom.
-6. **Record the result** on `#1821`: browser/OS versions, `'visualViewport' in window`, pass/fail per
+7. **Record the result** on `#1821`: browser/OS versions, `'visualViewport' in window`, pass/fail per
    step, and screenshots. Tick the `#1821` line in `OUTSTANDING_TASKS.md` only once BOTH the `true`
    and the `false` (`100dvh` fallback) passes are recorded. The two Nightly
    `mobile-safari` scenarios that have been red since 2026-08-24 (`#2180`) are emulated-geometry
@@ -242,6 +251,8 @@ Remove-NetFirewallRule -DisplayName 'Taskdeck LAN test 5173' -ErrorAction Silent
 Remove-Item Env:ASPNETCORE_URLS -ErrorAction SilentlyContinue
 Remove-Item Env:ASPNETCORE_ENVIRONMENT -ErrorAction SilentlyContinue
 Remove-Item Env:Cors__DevelopmentAllowedOrigins__0 -ErrorAction SilentlyContinue
+Remove-Item Env:Cors__DevelopmentAllowedOrigins -ErrorAction SilentlyContinue   # the comma-separated form, if you used it instead
+Remove-Item Env:TASKDECK_DEV_HOST -ErrorAction SilentlyContinue                 # only if you set it instead of `--host`
 Remove-Item Env:VITE_API_BASE_URL -ErrorAction SilentlyContinue
 ```
 
