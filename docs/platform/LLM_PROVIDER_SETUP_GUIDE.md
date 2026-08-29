@@ -151,7 +151,7 @@ development/demo path, not a supported live provider: `OllamaLlmProvider.StreamA
 requests one complete response (`stream: false`) and then emits it word-by-word, so a
 "streamed" Ollama reply is a replay of a finished completion, not live generation
 progress. True `stream: true` token streaming is deferred until there is user demand
-(tracked under `#1142`). `OpenAI` remains the supported live provider (ADR-0055).
+(the row lives in `OUTSTANDING_TASKS.md` §C; the ruling is recorded on `#1142`). `OpenAI` remains the supported live provider (ADR-0055).
 
 ## OpenAI-Compatible Providers (OpenRouter, Groq, DeepSeek)
 

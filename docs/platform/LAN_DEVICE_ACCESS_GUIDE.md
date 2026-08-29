@@ -148,8 +148,10 @@ working tree.
 
    `--host` with no value binds `0.0.0.0` (equivalently `$env:TASKDECK_DEV_HOST = '0.0.0.0'`). The dev
    launcher picks 5173, falling back to 4173 then 5001, and uses `strictPort`, so it fails rather than
-   silently moving. **Read the port it prints** and make the CORS origin and the firewall rule match
-   it. If the frontend does not pick up the environment variable, write
+   silently moving. **Read the port it prints.** If it is not 5173, the API in Terminal 1 already
+   built its CORS origin list at startup with `:5173` and cannot pick up a new value — stop it and
+   restart Terminal 1 with `Cors__DevelopmentAllowedOrigins__0` set to the port Vite chose (or
+   start Vite first and the API second), and open that port in the firewall step instead. If the frontend does not pick up the environment variable, write
    `frontend/taskdeck-web/.env.local` with `VITE_API_BASE_URL=http://<HOST_IP>:5000/api` instead (it
    is gitignored — delete it in teardown).
 
@@ -202,8 +204,11 @@ confirmation, and confirm the footer actions stay reachable — including a brow
 portrait, at a width under the 640 px mobile breakpoint.
 
 1. **Record the environment.** In the phone browser's console or via a scratch page, evaluate
-   `'visualViewport' in window` and note `true`/`false` along with the OS and browser versions. Do
-   the pass at least once with `true` (e.g. iOS Safari) and, if you can find one, once with `false`.
+   `'visualViewport' in window` and note `true`/`false` along with the OS and browser versions. Both
+   passes are required by `#1821`: once with `true` (e.g. iOS Safari) **and** once with `false` — a
+   browser without `visualViewport` exercises the `@supports (height: 100dvh)` fallback. If no such
+   device is available, the `#1821` box stays open (record the `true` pass and the missing case on the
+   issue); agree a real-browser fallback procedure there rather than treating the check as complete.
 2. **Card modal, keyboard up.** Open a board, open a card (the `Edit Card` modal), tap into the title
    or description field so the keyboard is up. Confirm the footer actions **Save Changes**, **Cancel**
    and **Delete Card** are all fully on screen and tappable above the keyboard.
@@ -213,14 +218,16 @@ portrait, at a width under the 640 px mobile breakpoint.
    keyboard. If the keyboard closes when the dialog opens because focus moved, record that — then
    re-open the keyboard if the browser allows and re-check.
 4. **`TdDialog` with the keyboard genuinely up.** Go to Review, open a proposal, tap **Reject**, and
-   tap into the reason textarea. This is the only dialog in the product that contains a text field, so
-   it is the one case where a `TdDialog` is certainly rendered with the keyboard open. Confirm the
+   tap into the reason textarea. Within the review flow this is the dialog that contains a text field, so it is the case where a
+   `TdDialog` is certainly rendered with the keyboard open (the API-keys settings dialog also has an
+   input, but it is outside the `#1821` scope). Confirm the
    dialog's footer (Cancel / Reject) stays reachable and that the body scrolls inside the dialog if
    the content is taller than the visual viewport.
 5. **Keyboard-down regression.** Dismiss the keyboard while a dialog is still open. The sheet must
    snap back to the full-height mobile sheet with no leftover gap or offset at the bottom.
 6. **Record the result** on `#1821`: browser/OS versions, `'visualViewport' in window`, pass/fail per
-   step, and screenshots. Only then tick the `#1821` line in `OUTSTANDING_TASKS.md`. The two Nightly
+   step, and screenshots. Tick the `#1821` line in `OUTSTANDING_TASKS.md` only once BOTH the `true`
+   and the `false` (`100dvh` fallback) passes are recorded. The two Nightly
    `mobile-safari` scenarios that have been red since 2026-08-24 (`#2180`) are emulated-geometry
    assertions — a real-phone pass does not turn that matrix green and does not close them.
 
@@ -230,7 +237,7 @@ portrait, at a width under the 640 px mobile breakpoint.
 # 1. Stop Taskdeck with Ctrl+C in its window (packaged: wait for "Taskdeck stopped.").
 # 2. Remove the firewall rules (admin PowerShell):
 Remove-NetFirewallRule -DisplayName 'Taskdeck LAN test 5000'
-Remove-NetFirewallRule -DisplayName 'Taskdeck LAN test 5173'   # only if created
+Remove-NetFirewallRule -DisplayName 'Taskdeck LAN test 5173' -ErrorAction SilentlyContinue   # only if created
 # 3. Clear the process-scoped overrides (or just close those terminals):
 Remove-Item Env:ASPNETCORE_URLS -ErrorAction SilentlyContinue
 Remove-Item Env:ASPNETCORE_ENVIRONMENT -ErrorAction SilentlyContinue
@@ -249,8 +256,12 @@ Restarted normally, Taskdeck returns to loopback-only.
 - **Use `http://0.0.0.0:<port>` literally in `ASPNETCORE_URLS` for the packaged app.** `http://+:5000`
   and `http://*:5000` are not parseable as absolute URIs, and a LAN-IP-only value such as
   `http://192.168.50.100:5000` contains no loopback or wildcard address — the packaged app's
-  user-facing-URL resolver throws and the process exits with `TASKDECK_DESKTOP_FATAL`. If you must
-  name a specific IP, add a loopback URL alongside it:
+  user-facing-URL resolver throws **inside the `ApplicationStarted` callback, where the host swallows
+  the exception**: the packaged app prints no ready line and no `TASKDECK_DESKTOP_FATAL`, opens no
+  browser, **and keeps listening on the address you gave it** (verified against `Program.cs:542-550`
+  and a minimal repro of the host behaviour, not on the shipped binary). If that happens you still
+  have an exposed listener: press `Ctrl+C` in its window and confirm nothing is bound before
+  moving on. If you must name a specific IP, add a loopback URL alongside it:
   `http://192.168.50.100:5000;http://127.0.0.1:5000`.
 - **`ASPNETCORE_URLS` disables the packaged free-port fallback.** With it set, a busy port is a
   startup failure, not an automatic move to another port.
