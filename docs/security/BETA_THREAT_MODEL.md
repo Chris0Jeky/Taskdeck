@@ -77,6 +77,7 @@ unverified.
 
 | Threat | Current control | Status |
 | --- | --- | --- |
+| The **direct origin bypasses the perimeter entirely** | None in-product. The baseline compose stack publishes the proxy as `"${TASKDECK_PROXY_PORT:-8080}:8080"` (`deploy/docker-compose.yml:108-109`) — a bare host port with no interface prefix, so Docker binds it on **all** host interfaces — and the tunnel guide's `deploy/.env` sets `TASKDECK_PROXY_PORT=8080` (`SELF_HOST_TUNNEL_GUIDE.md:25`; `deploy/.env.example:6`). Cloudflare Access policy and Tailscale ACLs govern only traffic arriving *through* the tunnel; anyone who can reach the host on that port — LAN neighbour, co-tenant, a cloud VM with an open security group — gets the unfiltered app, `/health/ready` included | **open** — the tunnel is **not** a boundary for the origin itself. Bind the publish to loopback or firewall the port (§6.2) |
 | Anyone who finds the tunnel URL reaches login / health / SignalR | Operator-side identity perimeter (Cloudflare Access, or a Tailscale tailnet with an ACL); Funnel and quick tunnels explicitly rejected for the private instance | **partial** — the control is *operator procedure*, not enforced by Taskdeck (`SELF_HOST_TUNNEL_GUIDE.md:55-81`) |
 | The perimeter provider itself reads the traffic — **Cloudflare route** | None. The documented invocation is `cloudflared tunnel --url http://localhost:8080` (`SELF_HOST_TUNNEL_GUIDE.md:70`): Cloudflare terminates the public TLS session at its edge and re-originates over **plaintext HTTP** to the local port, so Cloudflare can observe request and response bodies, the submitted password and the `Authorization` bearer JWT | **accepted residual** — inherent to the deployment choice, not a defect; see B13 |
 | The perimeter provider is an availability and policy dependency — **Cloudflare route** | None in-product | **accepted residual** — the Cloudflare account, the Access application's policy and Cloudflare's own uptime all gate reachability; account takeover or a policy edit is an authentication bypass, and the operator gets no in-product signal that either happened |
@@ -84,6 +85,7 @@ unverified.
 | Credential stuffing / brute force | Fixed-window `AuthPerIp`, production default **20 permits / 60 s** (`backend/src/Taskdeck.Api/appsettings.json:87-90`; `CONFIGURATION_REFERENCE.md:531`) — 120/60 s is the **Development** override (`appsettings.Development.json:64-67`); MCP has a separate authentication-failure budget and pre-auth concurrency cap (`:541-543`) | **partial** — behind a reverse proxy, `AuthPerIp` can collapse users into one bucket (`Api/Extensions/PipelineConfiguration.cs:57`) |
 | Plaintext traffic on the LAN posture | None in-product; login works over plain HTTP and the JWT rides it | **partial (documented)** — `LAN_DEVICE_ACCESS_GUIDE.md:295`; teardown is the mitigation |
 | Volumetric abuse / DoS | Rate limits only; one SQLite file, no per-account resource isolation | **partial** |
+| Unauthenticated readiness probe is an unthrottled work amplifier | None. `HealthController.ReadyCheck` is `[AllowAnonymous]` with **no** `[EnableRateLimiting]` attribute (`backend/src/Taskdeck.Api/Controllers/HealthController.cs:75-77`) and does real work per request — an EF `CanConnectAsync` against SQLite (`:82-86`) plus two pending-queue counts (`:113-115`) — so any anonymous caller who reaches the origin can drive DB and queue queries at request rate. It also discloses queue depth, worker staleness and circuit-breaker state anonymously (the comment at `:56-59` records this) | **open (availability residual)** — the mitigation is perimeter-side: tunnel or firewall the origin so `/health/ready` is not on the public perimeter (§6.2), and point container/orchestrator probes at the loopback bind rather than a published port |
 
 ### B2 — registration and the account boundary
 
@@ -91,7 +93,7 @@ unverified.
 | --- | --- | --- |
 | Untrusted registrant creates an account on an exposed instance | `Open` / `InviteOnly` / `Closed` enforced in `RegistrationPolicyService.CheckNewUserEligibilityAsync` and `AuthorizeNewUserAsync` (`:33-80`), called from `AuthenticationService.cs:108,121,214,227`; `UsersController.CreateUser` refuses outside `Open` (`:78`) | **shipped**, but the **shipped default is `Open`** (`RegistrationSettings.cs:15`) |
 | Invite replay, or a third account after the perimeter is set | Invite codes are hashed, one-time and expiring; the bootstrap slot is claimed even in `Open` so a later mode switch cannot reopen it (`RegistrationPolicyService.cs:63-74`) | **shipped** |
-| Password compromise | BCrypt at library defaults (`Application/Services/IPasswordHasher.cs:12`) | **shipped** — work factor not tuned or measured (*unverified*) |
+| Password compromise | BCrypt at library defaults (`Application/Services/IPasswordHasher.cs:12`) | **partial** — the work factor is not tuned or measured (*unverified*), and **there is no server-side password-strength enforcement at all**. The six-character minimum is a client-side form check in `frontend/taskdeck-web/src/views/RegisterView.vue:62-63`; `CreateUserDto.Password` carries no validation attribute (`Application/DTOs/UserDtos.cs:15-20`) and `AuthenticationService.RegisterAsync` validates only username and email presence before hashing whatever arrived (`:96-116`), so a direct `POST /api/auth/register` accepts a one-character password. BCrypt is the only protection — see residual 14 |
 | Account enumeration via login timing | None. `LoginAsync` returns `AuthenticationFailed` immediately when `ResolveLoginCandidatesAsync` yields no candidate (`AuthenticationService.cs:46-48`), so an **absent** identifier never pays the BCrypt verify cost while a present one does — a measurable timing difference between the two. Only the fixed-window `AuthPerIp` limit slows the probe | **accepted residual** — an earlier draft credited a login-side BCrypt precheck here; the precheck at `AuthenticationService.cs:106` is `RegisterAsync`'s invite-eligibility check (deliberately run before hashing), not a login control |
 | MFA secret theft from a copied database | TOTP seed stored as plain Base32 (`Domain/Entities/MfaCredential.cs:20-22`); recovery codes *are* BCrypt-hashed (`MfaService.cs:75`) | **open — `#1653`** MFA TOTP seeds unencrypted at rest |
 | MFA not enforced | `MfaPolicy:EnableMfaSetup` defaults `false` and MFA is never forced (`CONFIGURATION_REFERENCE.md:270-271`) | **partial by design** |
@@ -104,7 +106,7 @@ unverified.
 | Attacker registers a provider account with a victim's email to seize the account | **Explicitly prevented.** `ExternalLoginAsync` never auto-links by email; an unlinked external login always creates a *new* account, and a colliding email is rewritten to `{provider}-{providerUserId}@external.taskdeck.local` (`AuthenticationService.cs:207-210,242-245`) | **shipped** |
 | External login bypasses the registration perimeter | The same `RegistrationPolicyService` eligibility and authorization checks run for a new external account (`AuthenticationService.cs:214-235`); already-linked accounts sign in unaffected | **shipped** |
 | GitHub withholds the user's email | A synthetic `{providerUserId}@users.noreply.github.com` address is stored (`Api/Controllers/AuthController.cs:313-315`) | **shipped** — but that address is not a deliverable contact and must not be treated as a verified one |
-| Client secret disclosure | Configuration/environment custody only; the same rules as `Jwt:SecretKey` apply (`CONFIGURATION_REFERENCE.md:241,260`) | **partial** — a leaked client secret is an account-minting capability, and rotation is an IdP-side act with no in-product prompt |
+| Client secret disclosure | Configuration/environment custody only; the same rules as `Jwt:SecretKey` apply (`CONFIGURATION_REFERENCE.md:241,260`) | **partial** — an earlier draft of this row called a leaked client secret an *account-minting* capability. That is wrong, and the correction matters: the callback still requires a provider-validated principal. `GitHubCallback` calls `HttpContext.AuthenticateAsync("GitHub")` and returns `401` unless the handler succeeds, then takes every identity claim from that principal rather than from the request (`Api/Controllers/AuthController.cs:228-249`) — so holding the secret does not let an attacker assert an arbitrary provider identity. What it does confer is **Taskdeck's identity in the OAuth exchange**: the holder can perform the code-for-token exchange as this application, and can stand up a consent screen the real provider will honour — phishing and redirect/`returnUrl` abuse aimed at intercepting a legitimate user's authorization code. Rotation is an IdP-side act with no in-product prompt |
 
 ### B3 — user to user
 
@@ -145,7 +147,7 @@ unverified.
 | --- | --- | --- |
 | Error reports carry user content to Sentry | Off by default — `Sentry:Enabled` **and** a non-empty DSN are both required (`Api/Extensions/SentryRegistration.cs:28,33-40`); the egress registry declares `*.ingest.sentry.io` as "Error reports with stack traces and request metadata", `MetadataOnly` (`Application/Services/EgressRegistry.cs:183-188`) | **partial** — that classification is a *declaration*, not a scrubber. Exception messages and request context can still carry board or capture strings, and nothing in the pipeline proves otherwise; treat enabling Sentry as consenting to content egress |
 | Traces and metrics reach an operator-named OTLP collector | Off unless `Observability:OtlpEndpoint` parses as an absolute URI, then gRPC to that endpoint only (`Api/Extensions/ObservabilityRegistration.cs:42-48,67-73`) | **partial** — span and metric attributes are operational rather than content, but the endpoint is unvetted and **not** seeded in the egress registry, so it is undeclared egress |
-| A third-party analytics script runs in the app origin | Consent-gated and HTTPS-only: the script is injected only after telemetry consent and a valid `https` `scriptUrl`, and is removed if consent is withdrawn (`frontend/taskdeck-web/src/composables/useAnalyticsScript.ts:41-44,57-58,74-88`); the backend settings are off by default (`Application/Services/AnalyticsSettings.cs:8-29`) | **partial** — consent does not contain the script: anything running in the app origin can read the JWT in `localStorage` (B7). Self-host the Plausible/Umami instance, or leave analytics off |
+| A third-party analytics script runs in the app origin | Consent-gated and HTTPS-only: the script is injected only after telemetry consent and a valid `https` `scriptUrl`, and and the `<script>` element is removed if consent is withdrawn (`frontend/taskdeck-web/src/composables/useAnalyticsScript.ts:41-44,57-58,74-88`). **Withdrawal stops future loads; it does not stop the script already running.** `removeScript` detaches the DOM element by id and nothing else (`:163-168`, and the component-scoped twin at `:91-96`), so any listener, timer, global or in-flight beacon the vendor script already installed keeps running — **a page reload is required** before withdrawal takes effect; the backend settings are off by default (`Application/Services/AnalyticsSettings.cs:8-29`) | **partial** — consent does not contain the script: anything running in the app origin can read the JWT in `localStorage` (B7). Self-host the Plausible/Umami instance, or leave analytics off |
 | The operator cannot enumerate where data goes | The egress registry is the single declaration point (`Application/Services/EgressRegistry.cs:159-204`) | **partial** — it seeds `*.ingest.sentry.io` and `*.plausible.io` but covers neither an OTLP collector nor a self-hosted Plausible/Umami host, which is the configuration this document recommends |
 
 ### B7 — local machine
@@ -162,7 +164,7 @@ unverified.
 
 | Threat | Current control | Status |
 | --- | --- | --- |
-| A registered endpoint is used to reach the host's own network (SSRF) | `OutboundWebhookEndpointGuard` blocks private/loopback/link-local addresses, `.local` / `.internal` / `.home.arpa` / `.localhost` / `.localtest.me` suffixes, cloud-metadata hosts and `nip.io`-class dynamic-DNS rebinding roots, resolving the host and rejecting when no address survives (`Application/Services/OutboundWebhookEndpointGuard.cs:9-43,45,71`); `OutboundWebhookConnectCallback` re-pins the connect target and the handler sets `UseProxy = false` (`docs/STATUS.md:264`) | **shipped** — `Connectors:AllowLocalhostEndpoints` (`OutboundWebhookSecuritySettings.cs:5`) deliberately re-opens loopback; keep it off outside development |
+| A registered endpoint is used to reach the host's own network (SSRF) | `OutboundWebhookEndpointGuard` blocks private/loopback/link-local addresses, `.local` / `.internal` / `.home.arpa` / `.localhost` / `.localtest.me` suffixes, cloud-metadata hosts and `nip.io`-class dynamic-DNS rebinding roots, resolving the host and rejecting when no address survives (`Application/Services/OutboundWebhookEndpointGuard.cs:9-43,45,71`); `OutboundWebhookConnectCallback` re-pins the connect target and the handler sets `UseProxy = false` (`docs/STATUS.md:264`) | **shipped** — with one configurable hole. The bound key is **`OutboundWebhooks:Security:AllowLocalhostEndpoints`**, not the `Connectors:…` name an earlier draft gave: `WorkerRegistration` binds `configuration.GetSection("OutboundWebhooks:Security")` onto `OutboundWebhookSecuritySettings` (`Api/Extensions/WorkerRegistration.cs:18-19`; `Application/Services/OutboundWebhookSecuritySettings.cs:5`). Its default differs by environment: when the key is **absent**, Development is forced to `true` (`WorkerRegistration.cs:20-23`) while every other environment takes the `bool` default `false`. No shipped `appsettings*.json` sets it, so Production and Staging are closed by default and Development re-opens loopback implicitly. Set it explicitly to `false` anywhere the instance is reachable |
 | Board **event metadata** leaves the instance to a caller-chosen URL | The envelope carries identifiers only — delivery ID, event type, board ID, entity type, operation, entity ID, timestamp — and **no card title, description or comment text** (`Application/Services/OutboundWebhookService.cs:185-194`). Non-localhost endpoints **must** be `https` (`:227-246`); subscriptions are board-scoped and revocable, with secret rotation (`OutboundWebhooksController.cs:140`) | **partial** — narrower than card content, but not harmless: the receiver learns which boards exist, their entity IDs, and a precise timeline of activity, and those IDs are the join keys for anyone who also holds an export or an API key. The destination is the *operator's own* choice, so this is disclosure, not prevention |
 | Delivery payloads readable from a copied database | None — `OutboundWebhookDelivery.Payload` is stored as plaintext beside the plaintext `SigningSecret` (`OutboundWebhookSubscription.cs:16`). The payload is event metadata rather than card text (`OutboundWebhookService.cs:185-194`), so a file-copy attacker gains a board-activity timeline, not card content | **accepted residual** — same root cause as `#1653`: no database-level encryption. The plaintext `SigningSecret` is the sharper half of this row |
 | A stolen signing secret lets an attacker forge deliveries to the receiver | HMAC signing (`OutboundWebhookSignature.cs`); the secret is plaintext at rest and readable by anyone holding the SQLite file | **partial** — rotate via the endpoint above after any file exposure |
@@ -191,7 +193,11 @@ unverified.
 5. **Quota is bounded, not exact** (`#1435`); worst-case overshoot is roughly one call's real usage
    beyond the estimate per boundary crossing.
 6. **Availability is unprotected beyond rate limits** — one SQLite file, no per-account resource
-   caps, no isolation between accounts.
+   caps, no isolation between accounts. The sharpest instance is `GET /health/ready`:
+   `[AllowAnonymous]` with no rate-limiting policy attached
+   (`Api/Controllers/HealthController.cs:75-77`), performing a DB connectivity check and two queue
+   counts on every request (`:82-86,113-115`). The mitigation is perimeter-side only — tunnel or
+   firewall the origin and keep `/health/ready` off the public perimeter (§6.2).
 7. **Artefacts are unsigned**, with no SBOM or attestation; users must verify a SHA-256 by hand and
    click through a SmartScreen warning. **The GHCR image is worse off than the file artefacts** — it
    has no checksum sidecar at all, and `latest` currently follows prereleases (`#2217`). Pin by
@@ -211,6 +217,13 @@ unverified.
 13. **Client-side robustness gaps can lose user work** — a 401 hard-navigation destroys an
     in-progress capture draft (`#2142`) and the Review poll lacks a per-poll deadline (`#2214`).
     Not confidentiality defects, but trust defects in a beta.
+14. **There is no server-side password-strength enforcement.** The six-character minimum lives only
+    in the registration form (`RegisterView.vue:62-63`); the API hashes whatever it is handed
+    (`AuthenticationService.RegisterAsync:96-116`). BCrypt at library defaults is the only thing
+    between a weak password and an offline cracker holding the SQLite file.
+15. **Withdrawing analytics consent does not tear down the loaded script** — it removes the
+    `<script>` element only (`useAnalyticsScript.ts:163-168`); listeners, timers and globals the
+    vendor script already installed run until the page is reloaded.
 
 ## 6. Operator guidance — minimum safe posture for a self-hosted beta
 
@@ -224,11 +237,27 @@ unverified.
    Register yourself with that invite (the registration claims the bootstrap slot), mint one invite
    per person, then switch to `Closed` and recreate the container. Verify that a fresh
    `POST /api/auth/register` is refused (`SELF_HOST_TUNNEL_GUIDE.md:87-106`).
-2. **Perimeter.** Never expose the origin behind only an unlisted URL. Use a named Cloudflare tunnel
-   fronted by a Cloudflare Access application, or `tailscale serve` inside an ACL-scoped tailnet —
-   **never** Tailscale Funnel and never a quick tunnel beyond a minutes-long smoke test. Verify from
-   an identity outside the policy that the login page is unreachable
-   (`SELF_HOST_TUNNEL_GUIDE.md:53-81`).
+2. **Perimeter — and bind the origin to loopback.** Never expose the origin behind only an unlisted
+   URL. Use a named Cloudflare tunnel fronted by a Cloudflare Access application, or
+   `tailscale serve` inside an ACL-scoped tailnet — **never** Tailscale Funnel and never a quick
+   tunnel beyond a minutes-long smoke test. Verify from an identity outside the policy that the
+   login page is unreachable (`SELF_HOST_TUNNEL_GUIDE.md:53-81`).
+
+   **That is not sufficient on its own.** Neither an Access policy nor a tailnet ACL protects the
+   direct origin: `deploy/docker-compose.yml:108-109` publishes `"${TASKDECK_PROXY_PORT:-8080}:8080"`,
+   a bare port Docker binds on every host interface, and the guide's `deploy/.env` sets
+   `TASKDECK_PROXY_PORT=8080` (`SELF_HOST_TUNNEL_GUIDE.md:25`). Close it by one of:
+   - set **`TASKDECK_PROXY_PORT=127.0.0.1:8080`** in `deploy/.env`. Compose interpolates the variable
+     into the whole left-hand side of the mapping, so this yields `"127.0.0.1:8080:8080"` — the
+     host-IP form of the short syntax — and the tunnel, which connects to `http://localhost:8080`,
+     still reaches it. Confirm with `docker compose -f deploy/docker-compose.yml --profile baseline ps`
+     that the published address reads `127.0.0.1:8080` and not `0.0.0.0:8080`;
+   - or edit the `ports:` line in `deploy/docker-compose.yml` to `"127.0.0.1:8080:8080"` directly, if
+     you would rather not depend on that interpolation;
+   - or leave the publish as it is and firewall the port to loopback at the host.
+
+   Do this before the tunnel goes up, and re-verify after any compose or `.env` change. It is also
+   what keeps the unthrottled anonymous `/health/ready` probe (B1) off the public perimeter.
 3. **LAN access is testing-only.** Trusted network, firewall rule scoped and removed in teardown
    (`LAN_DEVICE_ACCESS_GUIDE.md:23`, `:251-273`).
 4. **Key custody.** Supply `Connectors:EncryptionKey` and `Jwt:SecretKey` from the environment or a
@@ -239,11 +268,21 @@ unverified.
    rows sit in the `-wal` sidecar and a plain `cp` of `taskdeck.db` yields an incomplete or corrupt
    snapshot (`SELF_HOST_TUNNEL_GUIDE.md:201-208`). Take an **application-consistent** backup by one
    of two routes:
-   - the SQLite online-backup API via `scripts/backup.sh`, which uses `sqlite3 .backup` and is safe
-     against an active writer (`scripts/backup.sh:1-7`). It defaults to `~/.taskdeck/taskdeck.db`, so
-     pass `--db-path` explicitly; for the Docker stack the guide's throwaway-container invocation
-     (`SELF_HOST_TUNNEL_GUIDE.md:210-218`) is the supported form, because the production image ships
-     neither the script nor `sqlite3` (`#1772`);
+   - the SQLite online-backup API via `scripts/backup.sh` — **but `sqlite3` must be installed on
+     whatever host runs the script.** The online-backup route is conditional: `if command -v sqlite3`
+     (`scripts/backup.sh:137`). When `sqlite3` is missing the script does **not** stop; it warns and
+     falls back to a sequential raw `cp` of the main database file followed by a separate `cp` of the
+     `-wal` sidecar (`:144-151`) — two copies taken at different instants, with no lock and no
+     checkpoint. **Treat that fallback as not writer-safe**; its output is unusable for a live
+     database. It also skips the integrity check, which is itself `sqlite3`-gated (`:160`).
+     So **verify each run's output names the online-backup route**: a good run prints
+     `Method: sqlite3 hot backup (safe with active writers)` (`:143`) followed by `Integrity: ok`
+     (`:167`). A run that prints `WARNING: sqlite3 not found. Falling back to cp.` (`:145`) is a
+     **failed** backup — discard it, and either install `sqlite3` or take the stop-the-container
+     route below. The script defaults to `~/.taskdeck/taskdeck.db`, so pass `--db-path` explicitly;
+     for the Docker stack the guide's throwaway-container invocation
+     (`SELF_HOST_TUNNEL_GUIDE.md:209-218`) is the supported form precisely because it `apk add`s
+     `sqlite` first — the production image ships neither the script nor `sqlite3` (`#1772`);
    - or **stop the container first**, then copy `taskdeck.db` *together with* its `-wal` and `-shm`
      sidecars, and restore all of them together.
 
