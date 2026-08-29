@@ -140,8 +140,7 @@ Shipped now:
 
 Shipped releases and the active roadmap:
 
-- **v0.1.0 "First Light" (2026-08-19), v0.1.1 (2026-08-21), and v0.1.2 (2026-08-25):** shipped; the latest release is the Honest Windows Beta with the Windows startup correction and its bounded trust-fix tranche;
-- **v0.2 Coherent Context-to-Action Loop:** final target 2026-09-01; bounded capture, board-context, contrast, core-loop, and release-closure work;
+- **v0.1.0 "First Light" (2026-08-19), v0.1.1 (2026-08-21), v0.1.2 (2026-08-25), and v0.2.0 "Coherent Context-to-Action Loop" (2026-08-29):** shipped; the latest release carries the live-verified transcript triage engine with evidence-linked spans, explicit capture dispositions, the board inspector, and archived-board card-write protection — still an unsigned Windows x64 portable ZIP;
 - **v0.3 Open Beta + Accountable Agents:** RC target 2026-09-04; final target 2026-09-08 or 2026-09-09; packaged MCP, feedback, accountable-agent, and trusted-collaboration proof.
 
 Direction lives in [docs/strategy/PRODUCT_DIRECTION.md](docs/strategy/PRODUCT_DIRECTION.md); the execution plan is [docs/REVIVAL_PLAN.md](docs/REVIVAL_PLAN.md). Taskdeck is not claiming a hosted service or a stable v1 API today.
