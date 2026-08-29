@@ -203,7 +203,9 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
 
         using var createResponse = await jwtClient.PostAsJsonAsync(
             "/api/apikeys",
-            new CreateApiKeyRequest("SPA fallback MCP key"));
+            new CreateApiKeyRequest(
+                "SPA fallback MCP key",
+                ["read", "propose", "manage"]));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -234,7 +236,9 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
 
         using var createResponse = await jwtClient.PostAsJsonAsync(
             "/api/apikeys",
-            new CreateApiKeyRequest("SPA fallback MCP verb key"));
+            new CreateApiKeyRequest(
+                "SPA fallback MCP verb key",
+                ["read", "propose", "manage"]));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();

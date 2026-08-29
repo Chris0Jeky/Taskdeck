@@ -193,6 +193,96 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Approves an explicit set of fresh Low-risk create-card proposals as one decision. The
+    /// operation is all-or-none and stops at Approved; applying remains a separate user action.
+    /// </summary>
+    [HttpPost("approve")]
+    public async Task<IActionResult> ApproveProposals(
+        [FromBody] ApproveProposalsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var decidedByUserId, out var errorResult))
+            return errorResult!;
+
+        if (request.Proposals is null || request.Proposals.Count == 0)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "At least one proposal ID is required"));
+        }
+
+        if (request.Proposals.Count > MaxProposalListLimit)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                $"Cannot approve more than {MaxProposalListLimit} proposals at once"));
+        }
+
+        if (request.Proposals.Any(proposal =>
+                proposal.Id == Guid.Empty || proposal.ExpectedProposalUpdatedAt == default))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal IDs and expected update timestamps are required"));
+        }
+
+        if (request.Proposals.Select(proposal => proposal.Id).Distinct().Count() != request.Proposals.Count)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal IDs must be unique"));
+        }
+
+        // Resolve every requested proposal before entering the all-or-none service. A board
+        // collaborator may single-approve through the existing route, but the batch surface is
+        // deliberately limited to the reviewer's own proposals so a broad selection cannot make
+        // decisions on another author's behalf.
+        var boardIds = new HashSet<Guid>();
+        foreach (var selection in request.Proposals)
+        {
+            var proposalId = selection.Id;
+            var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
+            if (!proposalResult.IsSuccess)
+                return proposalResult.ToErrorActionResult();
+
+            if (proposalResult.Value.RequestedByUserId != decidedByUserId)
+            {
+                return Result.Failure(
+                    ErrorCodes.Forbidden,
+                    "Batch approval is limited to your own proposals").ToErrorActionResult();
+            }
+
+            if (proposalResult.Value.BoardId is Guid boardId)
+                boardIds.Add(boardId);
+        }
+
+        // One batched ACL lookup authorizes every distinct board. The application service repeats
+        // the effective-operation permission check authoritatively, after revision resolution.
+        var writableBoardIds = await _authorizationService.GetWritableBoardIdsAsync(
+            decidedByUserId,
+            boardIds,
+            cancellationToken);
+        if (!writableBoardIds.IsSuccess)
+            return writableBoardIds.ToErrorActionResult();
+
+        if (writableBoardIds.Value.Count != boardIds.Count)
+        {
+            return Result.Failure(
+                ErrorCodes.Forbidden,
+                "You do not have permission to modify every board in this batch").ToErrorActionResult();
+        }
+
+        var result = await _proposalService.ApproveProposalsAsync(
+            request.Proposals.Select(proposal => new BatchApproveProposalSelectionDto(
+                proposal.Id,
+                proposal.ExpectedProposalUpdatedAt,
+                proposal.ExpectedLatestRevisionId)).ToList(),
+            decidedByUserId,
+            cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Rejects a pending automation proposal.
     /// </summary>
     [HttpPost("{id}/reject")]
@@ -449,7 +539,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Gets the multi-component confidence breakdown for a proposal.
+    /// Gets source-labelled confidence recorded with proposal provenance. Deterministic and
+    /// unreported paths return no numeric confidence.
     /// </summary>
     [HttpGet("{id}/confidence")]
     public async Task<IActionResult> GetProposalConfidence(Guid id, CancellationToken cancellationToken = default)

@@ -15,6 +15,7 @@ using Taskdeck.Api.Middleware;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Tests.Support;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
@@ -31,6 +32,8 @@ namespace Taskdeck.Api.Tests;
 /// </summary>
 public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFactory>
 {
+    private static readonly IReadOnlyList<string> FullScopes = ["read", "propose", "manage"];
+
     private readonly TestWebApplicationFactory _factory;
 
     public McpHttpTransportApiKeyTests(TestWebApplicationFactory factory)
@@ -46,7 +49,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-create");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Test Key"));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Test Key", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
@@ -55,6 +60,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         result.Key.Length.Should().Be(ApiKey.RawKeyLength);
         result.KeyPrefix.Should().Be(result.Key[..8]);
         result.Name.Should().Be("Test Key");
+        result.Scopes.Should().Equal(FullScopes);
         result.ExpiresAt.Should().BeNull();
     }
 
@@ -64,7 +70,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-expiry");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Expiring Key", 30));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Expiring Key", FullScopes, 30));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
@@ -79,7 +87,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-noname");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(""));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -91,9 +101,13 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(client, "apikey-list");
 
         // Create two keys
-        var r1 = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Key 1"));
+        var r1 = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Key 1", FullScopes));
         r1.StatusCode.Should().Be(HttpStatusCode.Created);
-        var r2 = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Key 2"));
+        var r2 = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Key 2", FullScopes));
         r2.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var listResponse = await client.GetAsync("/api/apikeys");
@@ -115,7 +129,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-revoke");
 
-        var createResponse = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Revoke Me"));
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Revoke Me", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         var revokeResponse = await client.DeleteAsync($"/api/apikeys/{created!.Id}");
@@ -136,7 +152,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikey-double-revoke");
 
-        var createResponse = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Double Revoke"));
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Double Revoke", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         await client.DeleteAsync($"/api/apikeys/{created!.Id}");
@@ -150,7 +168,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var client1 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client1, "apikey-owner");
 
-        var createResponse = await client1.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Owner Key"));
+        var createResponse = await client1.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Owner Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         // Different user tries to revoke
@@ -213,7 +233,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-revoked");
 
         // Create and revoke a key
-        var createResponse = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Revoked Key"));
+        var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Revoked Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         await jwtClient.DeleteAsync($"/api/apikeys/{created!.Id}");
 
@@ -232,7 +254,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-expired");
         using var createResponse = await jwtClient.PostAsJsonAsync(
             "/api/apikeys",
-            new CreateApiKeyRequest("Expired Key", 1));
+            new CreateApiKeyRequest("Expired Key", FullScopes, 1));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
 
@@ -259,7 +281,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         var jwtClient = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-valid");
 
-        var createResponse = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("Valid MCP Key"));
+        var createResponse = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("Valid MCP Key", FullScopes));
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
         // Use the key on MCP endpoint - even though we send a bad body,
@@ -339,6 +363,221 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
 
         boardsForA.Should().Contain(boardA.Name).And.NotContain(boardB.Name);
         boardsForB.Should().Contain(boardB.Name).And.NotContain(boardA.Name);
+    }
+
+    [Theory]
+    [InlineData("read", "get_board_summary,get_proposal_status,list_proposals,search_cards", true)]
+    [InlineData("propose", "archive_card,create_card,create_column,move_card,update_card", false)]
+    [InlineData("manage", "create_capture,dismiss_proposal", false)]
+    [InlineData("read,manage", "create_capture,dismiss_proposal,get_board_summary,get_proposal_status,list_proposals,search_cards", true)]
+    [InlineData("read,propose,manage", "archive_card,create_capture,create_card,create_column,dismiss_proposal,get_board_summary,get_proposal_status,list_proposals,move_card,search_cards,update_card", true)]
+    public async Task McpEndpoint_Discovery_ReturnsOnlyIndependentlyGrantedCapabilities(
+        string scopeCsv,
+        string expectedToolCsv,
+        bool hasRead)
+    {
+        var scopeNames = scopeCsv.Split(',');
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(
+            jwtClient,
+            $"mcp-discovery-{scopeCsv.Replace(',', '-')}");
+        var apiKey = await CreateApiKeyAsync(jwtClient, "Discovery Key", scopeNames);
+
+        using var mcpClient = CreateMcpClient(apiKey);
+        var sessionId = await InitializeMcpSessionAsync(mcpClient);
+
+        using var tools = await SendMcpRequestAsync(mcpClient, sessionId, new
+        {
+            jsonrpc = "2.0",
+            id = 2,
+            method = "tools/list",
+            @params = new { }
+        });
+        var toolNames = tools.RootElement.GetProperty("result").GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .OrderBy(name => name, StringComparer.Ordinal);
+        toolNames.Should().Equal(
+            expectedToolCsv.Split(',').OrderBy(name => name, StringComparer.Ordinal));
+
+        using var resources = await SendMcpRequestAsync(mcpClient, sessionId, new
+        {
+            jsonrpc = "2.0",
+            id = 3,
+            method = "resources/list",
+            @params = new { }
+        });
+        resources.RootElement.GetProperty("result").GetProperty("resources")
+            .GetArrayLength().Should().Be(hasRead ? 3 : 0);
+
+        using var templates = await SendMcpRequestAsync(mcpClient, sessionId, new
+        {
+            jsonrpc = "2.0",
+            id = 4,
+            method = "resources/templates/list",
+            @params = new { }
+        });
+        templates.RootElement.GetProperty("result").GetProperty("resourceTemplates")
+            .GetArrayLength().Should().Be(hasRead ? 6 : 0);
+    }
+
+    [Fact]
+    public async Task McpEndpoint_ScopeDenial_IsGenericBeforeLookup_AndDoesNotMutate()
+    {
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-scope-denial");
+        var readKey = await CreateApiKeyAsync(jwtClient, "Read Key", ["read"]);
+        var manageKey = await CreateApiKeyAsync(jwtClient, "Manage Key", ["manage"]);
+        var fullKey = await CreateApiKeyAsync(jwtClient, "Full Key", FullScopes);
+        Guid ownerId;
+        int capturesBefore;
+        int proposalsBefore;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            ownerId = await db.ApiKeys
+                .Where(key => key.KeyHash == ApiKeyService.HashKey(readKey))
+                .Select(key => key.UserId)
+                .SingleAsync();
+            capturesBefore = await db.LlmRequests.CountAsync(item => item.UserId == ownerId);
+            proposalsBefore = await db.AutomationProposals
+                .CountAsync(proposal => proposal.RequestedByUserId == ownerId);
+        }
+
+        using var readClient = CreateMcpClient(readKey);
+        var readSession = await InitializeMcpSessionAsync(readClient);
+        using var deniedKnownTool = await CallToolAsync(
+            readClient,
+            readSession,
+            10,
+            "create_capture",
+            new { text = "synthetic denied capture" });
+        using var deniedUnknownTool = await CallToolAsync(
+            readClient,
+            readSession,
+            11,
+            "not_a_taskdeck_tool",
+            new { });
+
+        var knownToolFailure = GetMcpOutcomePayload(deniedKnownTool);
+        knownToolFailure.Should().Contain("Access denied for this MCP operation.");
+        NormalizeRequestedTarget(GetMcpOutcomePayload(deniedUnknownTool), "not_a_taskdeck_tool")
+            .Should().Be(NormalizeRequestedTarget(knownToolFailure, "create_capture"),
+            "scope denial must not reveal whether a tool name exists");
+
+        using var fullClient = CreateMcpClient(fullKey);
+        var fullSession = await InitializeMcpSessionAsync(fullClient);
+        using var deniedUnclassifiedTool = await CallToolAsync(
+            fullClient,
+            fullSession,
+            14,
+            "not_a_taskdeck_tool",
+            new { });
+        NormalizeRequestedTarget(
+                GetMcpOutcomePayload(deniedUnclassifiedTool),
+                "not_a_taskdeck_tool")
+            .Should().Be(NormalizeRequestedTarget(knownToolFailure, "create_capture"),
+                "Full means every known bit, not permission for an unclassified future tool");
+
+        using var manageClient = CreateMcpClient(manageKey);
+        var manageSession = await InitializeMcpSessionAsync(manageClient);
+        using var deniedKnownResource = await ReadResourceAsync(
+            manageClient,
+            manageSession,
+            12,
+            "taskdeck://captures");
+        using var deniedUnknownResource = await ReadResourceAsync(
+            manageClient,
+            manageSession,
+            13,
+            "taskdeck://does-not-exist");
+
+        var knownResourceFailure = GetMcpOutcomePayload(deniedKnownResource);
+        knownResourceFailure.Should().Contain("Access denied for this MCP operation.");
+        NormalizeRequestedTarget(
+                GetMcpOutcomePayload(deniedUnknownResource),
+                "taskdeck://does-not-exist")
+            .Should().Be(
+                NormalizeRequestedTarget(knownResourceFailure, "taskdeck://captures"),
+            "scope denial must run before resource lookup");
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await verifyDb.LlmRequests.CountAsync(item => item.UserId == ownerId))
+            .Should().Be(capturesBefore, "a denied create_capture call must not mutate Inbox");
+        (await verifyDb.AutomationProposals
+            .CountAsync(proposal => proposal.RequestedByUserId == ownerId))
+            .Should().Be(proposalsBefore, "scope denial must not produce a proposal");
+    }
+
+    [Fact]
+    public async Task McpEndpoint_ReadProposeAndManage_AreIndependentlyInvocable()
+    {
+        using var jwtClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-scope-invoke");
+        var board = await ApiTestHarness.CreateBoardAsync(jwtClient, "Scoped MCP board");
+        using var columnResponse = await jwtClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Scoped backlog", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var readKey = await CreateApiKeyAsync(jwtClient, "Read Invoke Key", ["read"]);
+        var proposeKey = await CreateApiKeyAsync(jwtClient, "Propose Invoke Key", ["propose"]);
+        var manageKey = await CreateApiKeyAsync(jwtClient, "Manage Invoke Key", ["manage"]);
+
+        Guid ownerId;
+        int cardsBefore;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            ownerId = await db.ApiKeys
+                .Where(key => key.KeyHash == ApiKeyService.HashKey(readKey))
+                .Select(key => key.UserId)
+                .SingleAsync();
+            cardsBefore = await db.Cards.CountAsync(card => card.BoardId == board.Id);
+        }
+
+        using var readClient = CreateMcpClient(readKey);
+        var readSession = await InitializeMcpSessionAsync(readClient);
+        using var readResult = await CallToolAsync(
+            readClient,
+            readSession,
+            20,
+            "get_board_summary",
+            new { board_id = board.Id.ToString() });
+        var readPayload = GetMcpOutcomePayload(readResult);
+        readPayload.Should().Contain(board.Name).And.NotContain("Access denied");
+
+        using var proposeClient = CreateMcpClient(proposeKey);
+        var proposeSession = await InitializeMcpSessionAsync(proposeClient);
+        using var proposeResult = await CallToolAsync(
+            proposeClient,
+            proposeSession,
+            21,
+            "create_card",
+            new { board_id = board.Id.ToString(), title = "Synthetic scoped proposal" });
+        var proposePayload = GetMcpOutcomePayload(proposeResult);
+        proposePayload.Should().Contain("proposalId").And.NotContain("Access denied");
+
+        using var manageClient = CreateMcpClient(manageKey);
+        var manageSession = await InitializeMcpSessionAsync(manageClient);
+        using var manageResult = await CallToolAsync(
+            manageClient,
+            manageSession,
+            22,
+            "create_capture",
+            new { text = "Synthetic scoped capture" });
+        var managePayload = GetMcpOutcomePayload(manageResult);
+        managePayload.Should().Contain("captureId").And.NotContain("Access denied");
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await verifyDb.AutomationProposals.CountAsync(proposal =>
+                proposal.RequestedByUserId == ownerId && proposal.BoardId == board.Id))
+            .Should().Be(1, "Propose creates one reviewable proposal");
+        (await verifyDb.Cards.CountAsync(card => card.BoardId == board.Id))
+            .Should().Be(cardsBefore, "Propose must not directly mutate board state");
+        (await verifyDb.LlmRequests.CountAsync(item => item.UserId == ownerId))
+            .Should().Be(1, "Manage create_capture writes exactly one Inbox item");
     }
 
     [Fact]
@@ -469,7 +708,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         using var jwtClient = factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(jwtClient, "mcp-stale-owner");
         using var createResponse = await jwtClient.PostAsJsonAsync(
-            "/api/apikeys", new CreateApiKeyRequest("Stale Owner Key"));
+            "/api/apikeys", new CreateApiKeyRequest("Stale Owner Key", FullScopes));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -664,11 +903,15 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     {
         var client1 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client1, "apikey-iso-a");
-        await client1.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("User A Key"));
+        await client1.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("User A Key", FullScopes));
 
         var client2 = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client2, "apikey-iso-b");
-        await client2.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("User B Key"));
+        await client2.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("User B Key", FullScopes));
 
         var listA = await (await client1.GetAsync("/api/apikeys")).Content.ReadFromJsonAsync<ListApiKeysResponse>();
         var listB = await (await client2.GetAsync("/api/apikeys")).Content.ReadFromJsonAsync<ListApiKeysResponse>();
@@ -677,9 +920,14 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         listB!.Keys.Should().NotContain(k => k.Name == "User A Key");
     }
 
-    private async Task<string> CreateApiKeyAsync(HttpClient jwtClient, string name)
+    private async Task<string> CreateApiKeyAsync(
+        HttpClient jwtClient,
+        string name,
+        IReadOnlyList<string>? scopes = null)
     {
-        using var response = await jwtClient.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(name));
+        using var response = await jwtClient.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest(name, scopes ?? FullScopes));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -695,17 +943,7 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
 
     private static async Task<string> ReadBoardsResourceAsync(HttpClient client)
     {
-        using var initializeResponse = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
-        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue();
-        var sessionId = sessionValues!.Single();
-
-        using var initializedResponse = await PostMcpAsync(client, "/mcp", new
-        {
-            jsonrpc = "2.0",
-            method = "notifications/initialized"
-        }, sessionId);
-        initializedResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var sessionId = await InitializeMcpSessionAsync(client);
 
         using var resourceResponse = await PostMcpAsync(client, "/mcp", new
         {
@@ -717,6 +955,74 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
         resourceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         return await resourceResponse.Content.ReadAsStringAsync();
     }
+
+    private static async Task<string> InitializeMcpSessionAsync(HttpClient client)
+    {
+        using var initializeResponse = await PostMcpAsync(client, "/mcp", CreateInitializeRequest(1));
+        initializeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        initializeResponse.Headers.TryGetValues("Mcp-Session-Id", out var sessionValues).Should().BeTrue();
+        var sessionId = sessionValues!.Single();
+
+        using var initializedResponse = await PostMcpAsync(client, "/mcp", new
+        {
+            jsonrpc = "2.0",
+            method = "notifications/initialized"
+        }, sessionId);
+        initializedResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        return sessionId;
+    }
+
+    private static Task<JsonDocument> CallToolAsync(
+        HttpClient client,
+        string sessionId,
+        int id,
+        string name,
+        object arguments)
+    {
+        return SendMcpRequestAsync(client, sessionId, new
+        {
+            jsonrpc = "2.0",
+            id,
+            method = "tools/call",
+            @params = new { name, arguments }
+        });
+    }
+
+    private static Task<JsonDocument> ReadResourceAsync(
+        HttpClient client,
+        string sessionId,
+        int id,
+        string uri)
+    {
+        return SendMcpRequestAsync(client, sessionId, new
+        {
+            jsonrpc = "2.0",
+            id,
+            method = "resources/read",
+            @params = new { uri }
+        });
+    }
+
+    private static async Task<JsonDocument> SendMcpRequestAsync(
+        HttpClient client,
+        string sessionId,
+        object payload)
+    {
+        using var response = await PostMcpAsync(client, "/mcp", payload, sessionId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return JsonDocument.Parse(ExtractMcpJson(await response.Content.ReadAsStringAsync()));
+    }
+
+    private static string GetMcpOutcomePayload(JsonDocument document)
+    {
+        var root = document.RootElement;
+        return root.TryGetProperty("error", out var error)
+            ? error.GetRawText()
+            : root.GetProperty("result").GetRawText();
+    }
+
+    private static string NormalizeRequestedTarget(string payload, string target) =>
+        payload.Replace(target, "<requested-target>", StringComparison.Ordinal);
 
     private static string ExtractMcpJson(string responseBody)
     {
@@ -811,7 +1117,9 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
     {
         var client = _factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("No Auth Key"));
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("No Auth Key", FullScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }

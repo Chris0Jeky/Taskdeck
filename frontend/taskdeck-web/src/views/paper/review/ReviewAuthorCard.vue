@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import PaperStamp from '../../../components/paper/PaperStamp.vue'
 import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSelectors'
 
@@ -17,6 +18,10 @@ defineProps<{
   proposedNum: string
   breakdown: ConfidenceBreakdown
 }>()
+
+const confidenceDetailsExpanded = ref(false)
+const confidenceDetailsId = 'paper-review-confidence-details'
+const confidenceDisclosureId = 'paper-review-confidence-disclosure'
 
 function barColor(value: number): string {
   if (value > 0.8) return 'var(--applied)'
@@ -40,31 +45,71 @@ function barColor(value: number): string {
       <span class="paper-review-author__bullet" aria-hidden="true">✦</span>
       <div>
         <div class="paper-review-author__name">{{ authorName }}</div>
-        <div class="tk-meta paper-review-author__meta">{{ authorMeta }}</div>
+        <div v-if="authorMeta" class="tk-meta paper-review-author__meta">{{ authorMeta }}</div>
       </div>
     </div>
-    <hr class="hr-soft paper-review-author__rule" />
-    <div class="tk-eyebrow paper-review-author__bd-heading">
-      {{ $t('review.author.breakdownHeading') }}
-    </div>
-    <div
-      v-for="component in breakdown.components"
-      :key="component.key"
-      class="paper-review-author__bar"
+    <button
+      :id="confidenceDisclosureId"
+      type="button"
+      class="paper-review-author__disclosure"
+      data-testid="paper-review-confidence-disclosure"
+      :aria-controls="confidenceDetailsId"
+      :aria-expanded="confidenceDetailsExpanded"
+      @click="confidenceDetailsExpanded = !confidenceDetailsExpanded"
     >
-      <span class="paper-review-author__bar-key">{{ component.key }}</span>
-      <div class="paper-review-author__bar-track">
-        <div
-          class="paper-review-author__bar-fill"
-          :style="{ width: `${Math.min(1, Math.max(0, component.value)) * 100}%`, background: barColor(component.value) }"
-        />
-      </div>
-      <span class="tk-serial paper-review-author__bar-value">{{ component.value.toFixed(2) }}</span>
-    </div>
-    <template v-if="breakdown.note">
+      <span>{{
+        confidenceDetailsExpanded
+          ? $t('review.author.details.hide')
+          : $t('review.author.details.show')
+      }}</span>
+      <span aria-hidden="true">{{ confidenceDetailsExpanded ? '−' : '+' }}</span>
+    </button>
+    <div
+      v-show="confidenceDetailsExpanded"
+      :id="confidenceDetailsId"
+      class="paper-review-author__details"
+      data-testid="paper-review-confidence-details"
+      role="region"
+      :aria-labelledby="confidenceDisclosureId"
+    >
       <hr class="hr-soft paper-review-author__rule" />
-      <p class="tk-meta paper-review-author__note">{{ breakdown.note }}</p>
-    </template>
+      <div class="tk-eyebrow paper-review-author__bd-heading">
+        {{
+          breakdown.source === 'model-reported'
+            ? $t('review.author.modelReportedHeading')
+            : $t('review.author.confidenceHeading')
+        }}
+      </div>
+      <p
+        v-if="breakdown.components.length === 0"
+        class="paper-review-author__empty tk-meta"
+        data-testid="paper-review-author-confidence-source"
+      >
+        {{
+          breakdown.source === 'deterministic'
+            ? $t('review.author.deterministic')
+            : $t('review.author.notReported')
+        }}
+      </p>
+      <div
+        v-for="component in breakdown.components"
+        :key="component.key"
+        class="paper-review-author__bar"
+      >
+        <span class="paper-review-author__bar-key">{{ component.key }}</span>
+        <div class="paper-review-author__bar-track">
+          <div
+            class="paper-review-author__bar-fill"
+            :style="{ width: `${Math.min(1, Math.max(0, component.value)) * 100}%`, background: barColor(component.value) }"
+          />
+        </div>
+        <span class="tk-serial paper-review-author__bar-value">{{ component.value.toFixed(2) }}</span>
+      </div>
+      <template v-if="breakdown.note">
+        <hr class="hr-soft paper-review-author__rule" />
+        <p class="tk-meta paper-review-author__note">{{ breakdown.note }}</p>
+      </template>
+    </div>
   </section>
 </template>
 
@@ -99,6 +144,29 @@ function barColor(value: number): string {
 }
 .paper-review-author__meta {
   font-size: 10px;
+}
+.paper-review-author__disclosure {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 10px;
+  padding: 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--ember);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.paper-review-author__disclosure:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 3px;
 }
 .paper-review-author__rule {
   margin: 10px 0;
@@ -135,5 +203,9 @@ function barColor(value: number): string {
   margin: 0;
   font-size: 10.5px;
   line-height: 1.5;
+}
+.paper-review-author__empty {
+  margin: 6px 0 0;
+  line-height: 1.45;
 }
 </style>

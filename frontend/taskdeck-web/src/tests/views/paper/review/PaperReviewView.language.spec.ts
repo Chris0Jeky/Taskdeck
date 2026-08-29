@@ -157,6 +157,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }
@@ -190,8 +191,9 @@ describe('PaperReviewView — language', () => {
       overall: 0.84,
       components: [],
       note: null,
-      threshold: 0.7,
-      meetsThreshold: true,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
     })
     i18n.global.locale.value = DEFAULT_LOCALE
   })
@@ -227,6 +229,15 @@ describe('PaperReviewView — language', () => {
     )
     expect(wrapper.find('[data-testid="paper-review-right-rail"]').text()).toContain(
       'Decidi con i tasti',
+    )
+    expect(wrapper.get('[data-testid="paper-review-confidence-disclosure"]').text()).toContain(
+      'Mostra i dettagli della confidenza',
+    )
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').text()).toContain(
+      'Mostra i dettagli della provenienza',
+    )
+    expect(wrapper.get('[data-testid="paper-review-similar-past-disclosure"]').text()).toContain(
+      'Mostra decisioni simili',
     )
     expect(wrapper.find('[data-testid="paper-review-key-hint"]').text()).toBe(
       'PREMI ⏎ PER APPROVARE · ⌫ PER RIFIUTARE',
@@ -276,36 +287,32 @@ describe('PaperReviewView — language', () => {
     )
   })
 
-  it('re-translates the confidence component label produced before the switch', async () => {
-    // The `Reversibility` wire key is relabelled from the catalogs. Every other
-    // test here fetches `components: []`, so this is the only case that renders
-    // the relabel at all — and it asserts the label follows a locale switch that
-    // happens AFTER the deep-review fetch resolved (#1857).
+  it('keeps exact model-reported operation labels stable across locale switches', async () => {
     mocks.getConfidence.mockResolvedValue({
       overall: 0.84,
-      // A server-supplied key rides along: it must stay verbatim in every locale.
       components: [
-        { key: 'Reversibility', value: 0.92 },
-        { key: 'Evidence density', value: 0.4 },
+        { key: 'Operation 1: create card', value: 0.92 },
+        { key: 'Operation 2: update card', value: 0.4 },
       ],
       note: null,
-      threshold: 0.7,
-      meetsThreshold: true,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
     })
 
     const wrapper = await mountView([makeProposal()])
     const barKeys = () =>
       wrapper.findAll('.paper-review-author__bar-key').map((n) => n.text())
 
-    expect(barKeys()).toEqual(['Operation safety', 'Evidence density'])
+    expect(barKeys()).toEqual(['Operation 1: create card', 'Operation 2: update card'])
 
     i18n.global.locale.value = 'it'
     await flushPromises()
-    expect(barKeys()).toEqual(['Sicurezza delle operazioni', 'Evidence density'])
+    expect(barKeys()).toEqual(['Operation 1: create card', 'Operation 2: update card'])
 
     i18n.global.locale.value = 'es'
     await flushPromises()
-    expect(barKeys()).toEqual(['Seguridad de las operaciones', 'Evidence density'])
+    expect(barKeys()).toEqual(['Operation 1: create card', 'Operation 2: update card'])
   })
 
   it('never leaks a raw key path into the rendered surface', async () => {

@@ -70,6 +70,35 @@ function footnoteText(over?: ProvenanceMetadata | null): string {
 const OFFLINE_CLAIMS = ['offline', 'sin conexión', 'no ai provider', 'nessun provider ai', 'ningún proveedor de ia']
 
 describe('ReviewProvenance footnote', () => {
+  it('starts collapsed behind a linked native control and keeps focus when expanded', async () => {
+    const wrapper = mount(ReviewProvenance, {
+      attachTo: document.body,
+      props: { rows, proposalId: 'proposal-001', metadata: LIVE_PROVIDER },
+    })
+    const button = wrapper.get('[data-testid="paper-review-provenance-disclosure"]')
+    const details = wrapper.get('[data-testid="paper-review-provenance-details"]')
+
+    expect(wrapper.get('.paper-review-prov__title').text()).toBe('Provenance')
+    expect(button.element.tagName).toBe('BUTTON')
+    expect(button.attributes('type')).toBe('button')
+    expect(button.attributes('aria-expanded')).toBe('false')
+    expect(button.attributes('aria-controls')).toBe(details.attributes('id'))
+    expect(details.attributes('aria-labelledby')).toBe(button.attributes('id'))
+    expect(details.isVisible()).toBe(false)
+
+    ;(button.element as HTMLButtonElement).focus()
+    await button.trigger('click')
+
+    expect(button.attributes('aria-expanded')).toBe('true')
+    expect(button.text()).toContain('Hide provenance details')
+    expect(details.isVisible()).toBe(true)
+    expect(details.text()).toContain('Captured inbox note')
+    expect(details.text()).toContain('View full read-set')
+    expect(document.activeElement).toBe(button.element)
+
+    wrapper.unmount()
+  })
+
   it.each([
     ['deterministic capture triage', DETERMINISTIC, 'deterministic-extractor/capture-triage-v1'],
     ['a live LLM provider', LIVE_PROVIDER, 'OpenAI/gpt-4o-mini'],
@@ -165,7 +194,8 @@ describe('ReviewProvenance footnote', () => {
   ])('says nothing rather than guessing for %s', (_case, recorded) => {
     const wrapper = render(recorded as ProvenanceMetadata | null)
     expect(wrapper.find('[data-testid="paper-review-provenance-footnote"]').exists()).toBe(false)
-    // The read-set affordance is not part of the claim and must survive the silence.
+    // The read-set affordance is not part of the claim and must survive inside
+    // the disclosure even when the actor sentence fails closed to silence.
     expect(wrapper.text()).toContain('View full read-set')
   })
 

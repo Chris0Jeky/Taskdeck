@@ -9,12 +9,14 @@ import type { RecentlyAppliedRow } from './review/ReviewRecentApplied.vue'
 import ReviewMain from './review/ReviewMain.vue'
 import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
+import BatchApproveDialog from '../../components/review/BatchApproveDialog.vue'
 import RejectProposalDialog from '../../components/review/RejectProposalDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
 import { useReviewCadence } from '../../composables/useReviewCadence'
 import { useReviewActions } from '../../composables/useReviewActions'
+import { useBatchApproveProposals } from '../../composables/useBatchApproveProposals'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
@@ -163,6 +165,20 @@ const {
   handleDismissProposal,
   handleDismissApplied,
 } = useReviewActions(proposals, ownedDismissableIds, loadProposals, isProposalExpired)
+
+const currentUserId = computed<string | null>(() => session.userId ?? null)
+const {
+  eligibleIds: batchEligibleIds,
+  selectedCount: batchSelectedCount,
+  confirmationOpen: batchConfirmationOpen,
+  busy: batchApproveBusy,
+  clearSelection: clearBatchSelection,
+  isSelected: isBatchSelected,
+  toggleSelection: toggleBatchSelection,
+  requestConfirmation: requestBatchApproval,
+  cancelConfirmation: cancelBatchApproval,
+  confirmApproval: confirmBatchApproval,
+} = useBatchApproveProposals(proposals, currentUserId, nowMs, loadProposals)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -478,9 +494,14 @@ const {
 
 watch(isArchivedHistory, (readOnly) => {
   if (!readOnly) return
+  clearBatchSelection()
   cancelExecuteProposal()
   cancelRejectProposal()
   cancelRevisionEditing()
+})
+
+watch(activeBoardFilter, () => {
+  clearBatchSelection()
 })
 
 const revisionBadge = computed(() =>
@@ -560,6 +581,8 @@ const queueItems = computed<QueueRailItem[]>(() =>
       reach: summariseReach(p),
       mine: !!session.userId && p.requestedByUserId === session.userId,
       stale,
+      batchEligible: !isArchivedHistory.value && batchEligibleIds.value.has(p.id),
+      batchSelected: isBatchSelected(p.id),
     }
   }),
 )
@@ -815,13 +838,15 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
-  // Only the confidence score is real wire data. Latency and token counts are
-  // not yet surfaced by the backend, so we do not fabricate them here. #1136
   const c = selectors.confidenceBreakdown.value
-  // Defensive: the type says overall is always a number, but guard against a
-  // malformed/NaN value so toFixed can never throw on the deep-review surface.
-  if (!c || !Number.isFinite(c.overall)) return ''
-  return t('review.author.confidence', { value: c.overall.toFixed(2) })
+  if (c.overall === null || !Number.isFinite(c.overall)) return ''
+  if (c.source === 'model-reported') {
+    return t('review.author.modelConfidence', { value: c.overall.toFixed(2) })
+  }
+  if (c.source === 'derived') {
+    return t('review.author.derivedConfidence', { value: c.overall.toFixed(2) })
+  }
+  return ''
 })
 
 const authorName = computed(() => {
@@ -859,6 +884,8 @@ const busy = computed(
     proposalActionBusyId.value !== null ||
     revisionBusy.value ||
     bulkDismissBusy.value ||
+    batchApproveBusy.value ||
+    batchConfirmationOpen.value ||
     applyGuardBusy.value,
 )
 
@@ -1525,6 +1552,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearBatchSelection()
   stopClock()
   collaboration.stop()
 })
@@ -1541,6 +1569,7 @@ function returnToReview() {
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
+  clearBatchSelection()
   // A receipt is authoritative until the reviewer explicitly selects another
   // proposal. In particular, a filter must not rewrite a deep link to a
   // fallback row after the linked proposal has just been decided. #1940
@@ -1570,6 +1599,11 @@ function onQueueFilterChange(filter: QueueFilter) {
     }
   }
 }
+
+async function onClearBoardScope() {
+  clearBatchSelection()
+  await clearBoardFilter()
+}
 </script>
 
 <template>
@@ -1586,14 +1620,17 @@ function onQueueFilterChange(filter: QueueFilter) {
       :scope-label="boardScopeLabel"
       :scope-clear-label="$t('review.scope.clear')"
       :dismissable-count="bulkDismissableCount"
+      :batch-selected-count="batchSelectedCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
       :author-partition-available="authorPartitionAvailable"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
+      @toggle-batch="toggleBatchSelection"
+      @request-batch-approval="requestBatchApproval"
       @file-away-all="onFileAwayBulk"
-      @clear-scope="clearBoardFilter"
+      @clear-scope="onClearBoardScope"
     />
 
     <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
@@ -1605,6 +1642,7 @@ function onQueueFilterChange(filter: QueueFilter) {
         {{ revisionBadge }}
       </div>
       <ReviewMain
+        :key="activeProposal.id"
         :serial="headerSerial"
         :meta="headerMeta"
         :title-parts="titleParts"
@@ -1816,6 +1854,7 @@ function onQueueFilterChange(filter: QueueFilter) {
 
     <ReviewRightRail
       v-if="activeProposal"
+      :key="activeProposal.id"
       :author-name="authorName"
       :author-meta="authorMeta"
       :proposed-date="proposedDate"
@@ -1851,6 +1890,14 @@ function onQueueFilterChange(filter: QueueFilter) {
       :requires-reason="rejectRequiresReason"
       @confirm="onConfirmReject"
       @cancel="cancelRejectProposal"
+    />
+
+    <BatchApproveDialog
+      :open="batchConfirmationOpen"
+      :count="batchSelectedCount"
+      :busy="batchApproveBusy"
+      @confirm="confirmBatchApproval"
+      @cancel="cancelBatchApproval"
     />
   </div>
 </template>

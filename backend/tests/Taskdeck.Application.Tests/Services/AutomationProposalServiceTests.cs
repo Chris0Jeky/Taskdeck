@@ -21,6 +21,7 @@ public class AutomationProposalServiceTests
     private readonly Mock<IProposalRevisionRepository> _revisionRepoMock;
     private readonly Mock<IUserRepository> _userRepoMock;
     private readonly Mock<IBoardRepository> _boardRepoMock;
+    private readonly Mock<IColumnRepository> _columnRepoMock;
     private readonly Mock<IBoardAccessRepository> _boardAccessRepoMock;
     private readonly AutomationProposalService _service;
 
@@ -40,12 +41,14 @@ public class AutomationProposalServiceTests
         _revisionRepoMock = new Mock<IProposalRevisionRepository>();
         _userRepoMock = new Mock<IUserRepository>();
         _boardRepoMock = new Mock<IBoardRepository>();
+        _columnRepoMock = new Mock<IColumnRepository>();
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
 
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_proposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.ProposalRevisions).Returns(_revisionRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Users).Returns(_userRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
+        _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.BoardAccesses).Returns(_boardAccessRepoMock.Object);
         // Default: no saved revision, so GetProposalDiffAsync uses the original path.
         // The revision-aware test overrides this per-proposal.
@@ -97,6 +100,9 @@ public class AutomationProposalServiceTests
         _boardRepoMock
             .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(TestDataBuilder.CreateBoard());
+        _boardRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { TestDataBuilder.CreateBoard() });
         _boardAccessRepoMock
             .Setup(r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -150,6 +156,14 @@ public class AutomationProposalServiceTests
             .SetValue(proposal, expiresAt);
     }
 
+    private static void SetCreatedAt(AutomationProposal proposal, DateTimeOffset createdAt)
+    {
+        typeof(AutomationProposal).GetProperty(
+            nameof(AutomationProposal.CreatedAt),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(proposal, createdAt);
+    }
+
     // DecidedAt is stamped to UtcNow by Reject/Approve; force it to a fixed value so the rejected
     // freeze tests can place revisions deterministically on either side of the decision cutoff.
     private static void SetDecidedAt(AutomationProposal proposal, DateTime decidedAt)
@@ -198,7 +212,7 @@ public class AutomationProposalServiceTests
     }
 
     [Fact]
-    public async Task CreateProposalAsync_ShouldPersistBaselineProvenance()
+    public async Task CreateProposalAsync_ShouldPersistBaselineProvenanceWithoutInventedConfidence()
     {
         // Arrange
         var operations = new List<CreateProposalOperationDto>
@@ -241,6 +255,73 @@ public class AutomationProposalServiceTests
         capturedProvenance.Fields.Should().Contain(f =>
             f.FieldName == "Operation 1: create card" &&
             f.Kind == ProvenanceKind.Inferred);
+        capturedProvenance.Fields.Should().OnlyContain(field =>
+            field.Confidence == null &&
+            field.ConfidenceSource == ProvenanceConfidenceSource.NotReported);
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldPersistExactTrustedModelConfidencePerOperation()
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured tasks",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations:
+            [
+                new(0, "create", "card", "{\"title\":\"One\"}", "key1"),
+                new(1, "create", "card", "{\"title\":\"Two\"}", "key2")
+            ])
+        {
+            TrustedConfidence = new TrustedProposalConfidenceInput(
+                ProvenanceConfidenceSource.ModelReported,
+                [new(0, 0.81), new(1, 0.63)])
+        };
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal proposal, CancellationToken _) => proposal);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((provenance, _) => captured = provenance)
+            .ReturnsAsync((ProposalProvenance provenance, CancellationToken _) => provenance);
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        captured!.Fields.Where(field => field.FieldName.StartsWith("Operation "))
+            .Select(field => (field.Confidence, field.ConfidenceSource))
+            .Should().Equal(
+                ((double?)0.81, ProvenanceConfidenceSource.ModelReported),
+                ((double?)0.63, ProvenanceConfidenceSource.ModelReported));
+        captured.Fields.Single(field => field.FieldName == "Summary").Confidence.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldRejectDeterministicConfidenceWithNumericDecoration()
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: [new(0, "create", "card", "{\"title\":\"One\"}", "key1")])
+        {
+            TrustedConfidence = new TrustedProposalConfidenceInput(
+                ProvenanceConfidenceSource.Deterministic,
+                [new(0, 0.8)])
+        };
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("cannot carry numeric values");
+        _proposalRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<AutomationProposal>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
@@ -1096,6 +1177,491 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    #endregion
+
+    #region ApproveProposalsAsync Tests
+
+    [Fact]
+    public async Task ApproveProposalsAsync_ApprovesCompleteSetOnce_AndReturnsRequestedOrder()
+    {
+        var requesterId = Guid.NewGuid();
+        var firstBoard = TestDataBuilder.CreateBoard("First");
+        var secondBoard = TestDataBuilder.CreateBoard("Second");
+        var first = BuildBatchApprovalProposal(requesterId, firstBoard);
+        var second = BuildBatchApprovalProposal(requesterId, secondBoard);
+        ConfigureBatch([first, second], [firstBoard, secondBoard]);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(second), Select(first)],
+            requesterId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ApprovedIds.Should().Equal(second.Id, first.Id);
+        first.Status.Should().Be(ProposalStatus.Approved);
+        second.Status.Should().Be(ProposalStatus.Approved);
+        first.ApprovedRevisionId.Should().BeNull();
+        second.ApprovedRevisionId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _notificationServiceMock.Verify(
+            n => n.PublishAsync(
+                It.Is<CreateNotificationRequestDto>(request =>
+                    request.UserId == requesterId && request.Type == NotificationType.ProposalOutcome),
+                default),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_PinsExactlyTheSubmittedLatestRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var proposal = BuildBatchApprovalProposal(requesterId, board);
+        var revision = BuildLowBatchRevision(proposal, board, 1, "Selected revision");
+        ConfigureBatch([proposal], [board]);
+        SeedRevisions(proposal.Id, revision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(proposal, revision.Id)],
+            requesterId);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.Status.Should().Be(ProposalStatus.Approved);
+        proposal.ApprovedRevisionId.Should().Be(revision.Id);
+        result.Value.ApprovedIds.Should().Equal(proposal.Id);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsAllWhenStillLowRevisionReplacesSelectedRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        var revised = BuildBatchApprovalProposal(requesterId, board);
+        var selectedRevision = BuildLowBatchRevision(revised, board, 1, "R1");
+        var replacementRevision = BuildLowBatchRevision(revised, board, 2, "R2");
+        ConfigureBatch([companion, revised], [board]);
+        SeedRevisions(revised.Id, selectedRevision, replacementRevision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(revised, selectedRevision.Id)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        companion.ApprovedRevisionId.Should().BeNull();
+        revised.ApprovedRevisionId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _notificationServiceMock.Verify(
+            n => n.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsAllWhenOriginalSelectionGainsRevision()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        var revised = BuildBatchApprovalProposal(requesterId, board);
+        var newRevision = BuildLowBatchRevision(revised, board, 1, "New revision");
+        ConfigureBatch([companion, revised], [board]);
+        SeedRevisions(revised.Id, newRevision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(revised, expectedLatestRevisionId: null)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("over-limit")]
+    [InlineData("empty-id")]
+    public async Task ApproveProposalsAsync_RejectsInvalidExactSetBeforeReads(string invalidShape)
+    {
+        var id = Guid.NewGuid();
+        IReadOnlyList<BatchApproveProposalSelectionDto> proposals = invalidShape switch
+        {
+            "empty" => Array.Empty<BatchApproveProposalSelectionDto>(),
+            "duplicate" => new[] { Select(id), Select(id) },
+            "over-limit" => Enumerable.Range(0, 501).Select(_ => Select(Guid.NewGuid())).ToList(),
+            "empty-id" => new[] { Select(Guid.Empty) },
+            _ => throw new InvalidOperationException("Unknown test shape")
+        };
+
+        var result = await _service.ApproveProposalsAsync(proposals, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        _proposalRepoMock.Verify(
+            repository => repository.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsMixedRiskWithoutTransitioningAnyProposal()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var valid = BuildBatchApprovalProposal(requesterId, board);
+        var columnId = board.Columns.Single().Id;
+        var ineligible = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Medium risk",
+            RiskLevel.Medium,
+            Guid.NewGuid().ToString(),
+            board.Id);
+        ineligible.AddOperation(new AutomationProposalOperation(
+            ineligible.Id,
+            0,
+            "create",
+            "card",
+            System.Text.Json.JsonSerializer.Serialize(new { title = "Medium", boardId = board.Id, columnId }),
+            Guid.NewGuid().ToString()));
+        ConfigureBatch([valid, ineligible], [board]);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(valid), Select(ineligible)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        valid.Status.Should().Be(ProposalStatus.PendingReview);
+        ineligible.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _notificationServiceMock.Verify(
+            n => n.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsEffectiveRevisionThatReclassifiesAboveLow()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var proposal = BuildBatchApprovalProposal(requesterId, board);
+        ConfigureBatch([proposal], [board]);
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = Enumerable.Range(0, 6).Select(sequence => new
+            {
+                sequence,
+                actionType = "create",
+                targetType = "card",
+                targetId = (string?)null,
+                parameters = System.Text.Json.JsonSerializer.Serialize(new { title = $"Task {sequence}", boardId = board.Id }),
+                idempotencyKey = Guid.NewGuid().ToString()
+            })
+        });
+        var revision = new ProposalRevision(proposal.Id, 1, requesterId, revisedPayload, "Expanded scope");
+        SeedRevisions(proposal.Id, revision);
+
+        var result = await _service.ApproveProposalsAsync([Select(proposal, revision.Id)], requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+        result.ErrorMessage.Should().Contain("not Low risk");
+        proposal.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.ApprovedRevisionId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsStaleProposalAtInclusiveBoundary()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var fresh = BuildBatchApprovalProposal(requesterId, board);
+        var stale = BuildBatchApprovalProposal(requesterId, board);
+        SetCreatedAt(stale, DateTimeOffset.UtcNow.AddHours(-24).AddSeconds(-1));
+        ConfigureBatch([fresh, stale], [board]);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(fresh), Select(stale)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("stale");
+        fresh.Status.Should().Be(ProposalStatus.PendingReview);
+        stale.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("already-approved")]
+    [InlineData("expired")]
+    [InlineData("deferred")]
+    [InlineData("not-create-card")]
+    public async Task ApproveProposalsAsync_RejectsAnyIneligibleMemberBeforeTransitioningCompanion(
+        string ineligibleShape)
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        AutomationProposal ineligible;
+        if (ineligibleShape == "not-create-card")
+        {
+            ineligible = new AutomationProposal(
+                ProposalSourceType.Chat,
+                requesterId,
+                "Update card",
+                RiskLevel.Low,
+                Guid.NewGuid().ToString(),
+                board.Id);
+            ineligible.AddOperation(new AutomationProposalOperation(
+                ineligible.Id,
+                0,
+                "update",
+                "card",
+                "{\"title\":\"Changed\"}",
+                Guid.NewGuid().ToString()));
+        }
+        else
+        {
+            ineligible = BuildBatchApprovalProposal(requesterId, board);
+        }
+
+        switch (ineligibleShape)
+        {
+            case "already-approved":
+                ineligible.Approve(requesterId);
+                break;
+            case "expired":
+                SetExpiresAt(ineligible, DateTime.UtcNow.AddMinutes(-1));
+                break;
+            case "deferred":
+                ineligible.Defer(TimeSpan.FromMinutes(30));
+                break;
+        }
+        ConfigureBatch([companion, ineligible], [board]);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(ineligible)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsInvalidEffectiveRevisionBeforeAnyTransition()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var companion = BuildBatchApprovalProposal(requesterId, board);
+        var revised = BuildBatchApprovalProposal(requesterId, board);
+        ConfigureBatch([companion, revised], [board]);
+        var invalidRevision = new ProposalRevision(
+            revised.Id,
+            1,
+            requesterId,
+            "{not-json",
+            "Invalid payload");
+        SeedRevisions(revised.Id, invalidRevision);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(companion), Select(revised, invalidRevision.Id)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        companion.Status.Should().Be(ProposalStatus.PendingReview);
+        revised.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsCrossUserAndMissingInputsWithoutPersisting()
+    {
+        var requesterId = Guid.NewGuid();
+        var otherUserId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var own = BuildBatchApprovalProposal(requesterId, board);
+        var other = BuildBatchApprovalProposal(otherUserId, board);
+        ConfigureBatch([own, other], [board]);
+
+        var crossUser = await _service.ApproveProposalsAsync(
+            [Select(own), Select(other)],
+            requesterId);
+        var missingId = Guid.NewGuid();
+        var missing = await _service.ApproveProposalsAsync(
+            [Select(own), Select(missingId)],
+            requesterId);
+
+        crossUser.IsSuccess.Should().BeFalse();
+        crossUser.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        missing.IsSuccess.Should().BeFalse();
+        missing.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        own.Status.Should().Be(ProposalStatus.PendingReview);
+        other.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RejectsArchivedBoardBeforeTransitions()
+    {
+        var requesterId = Guid.NewGuid();
+        var archivedBoard = TestDataBuilder.CreateBoard();
+        var first = BuildBatchApprovalProposal(requesterId, archivedBoard);
+        var second = BuildBatchApprovalProposal(requesterId, archivedBoard);
+        archivedBoard.Archive();
+        ConfigureBatch([first, second], [archivedBoard]);
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(first), Select(second)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        first.Status.Should().Be(ProposalStatus.PendingReview);
+        second.Status.Should().Be(ProposalStatus.PendingReview);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveProposalsAsync_RollsBackCompleteSetWhenNotificationStagingFails()
+    {
+        var requesterId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var first = BuildBatchApprovalProposal(requesterId, board);
+        var second = BuildBatchApprovalProposal(requesterId, board);
+        ConfigureBatch([first, second], [board]);
+        var notificationCalls = 0;
+        _notificationServiceMock
+            .Setup(n => n.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ++notificationCalls == 1
+                ? Result.Success(true)
+                : Result.Failure<bool>(ErrorCodes.InvalidOperation, "Notification staging failed"));
+
+        var result = await _service.ApproveProposalsAsync(
+            [Select(first), Select(second)],
+            requesterId);
+
+        result.IsSuccess.Should().BeFalse();
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private void ConfigureBatch(
+        IReadOnlyList<AutomationProposal> proposals,
+        IReadOnlyList<Board> boards)
+    {
+        _proposalRepoMock
+            .Setup(repository => repository.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> ids, CancellationToken _) =>
+            {
+                var requested = ids.ToHashSet();
+                return proposals.Where(proposal => requested.Contains(proposal.Id)).ToList();
+            });
+        _boardRepoMock
+            .Setup(repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => boards.FirstOrDefault(board => board.Id == id));
+        _boardRepoMock
+            .Setup(repository => repository.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IEnumerable<Guid> ids, CancellationToken _) =>
+            {
+                var requested = ids.ToHashSet();
+                return boards.Where(board => requested.Contains(board.Id)).ToList();
+            });
+        var columns = boards.SelectMany(board => board.Columns).ToList();
+        _columnRepoMock
+            .Setup(repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => columns.FirstOrDefault(column => column.Id == id));
+    }
+
+    private static BatchApproveProposalSelectionDto Select(
+        AutomationProposal proposal,
+        Guid? expectedLatestRevisionId = null) =>
+        new(proposal.Id, proposal.UpdatedAt, expectedLatestRevisionId);
+
+    private static BatchApproveProposalSelectionDto Select(
+        Guid proposalId,
+        Guid? expectedLatestRevisionId = null) =>
+        new(proposalId, DateTimeOffset.UtcNow, expectedLatestRevisionId);
+
+    private static AutomationProposal BuildBatchApprovalProposal(Guid requesterId, Board board)
+    {
+        var column = board.Columns.FirstOrDefault();
+        if (column is null)
+        {
+            column = TestDataBuilder.CreateColumn(board.Id, "To do");
+            board.AddColumn(column);
+        }
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            requesterId,
+            "Create card",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            board.Id);
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id,
+            0,
+            "create",
+            "card",
+            System.Text.Json.JsonSerializer.Serialize(new { title = "Task", boardId = board.Id, columnId = column.Id }),
+            Guid.NewGuid().ToString()));
+        return proposal;
+    }
+
+    private static ProposalRevision BuildLowBatchRevision(
+        AutomationProposal proposal,
+        Board board,
+        int revisionNumber,
+        string title)
+    {
+        var column = board.Columns.Single();
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "create",
+                    targetType = "card",
+                    targetId = (string?)null,
+                    parameters = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        title,
+                        boardId = board.Id,
+                        columnId = column.Id
+                    }),
+                    idempotencyKey = Guid.NewGuid().ToString("N")
+                }
+            }
+        });
+        return new ProposalRevision(
+            proposal.Id,
+            revisionNumber,
+            proposal.RequestedByUserId,
+            payload,
+            title);
     }
 
     #endregion
@@ -3706,6 +4272,9 @@ public class AutomationProposalServiceTests
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var listed = result.Value.Should().ContainSingle().Which;
+        listed.LatestRevisionId.Should().Be(
+            revision.Id,
+            "the pending review snapshot must identify the exact effective revision displayed");
         listed.Operations.Should().HaveCount(2,
             "the list must expose the revised operation set, not the single original operation");
         listed.Operations.Select(o => o.Parameters).Should()

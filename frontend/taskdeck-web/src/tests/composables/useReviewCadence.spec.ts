@@ -40,6 +40,7 @@ function makeProposal(overrides: Partial<ApiProposal> = {}): ApiProposal {
     correlationId: 'c-1',
     operations: [],
     approvedRevisionId: null,
+    latestRevisionId: null,
     ...overrides,
   }
 }

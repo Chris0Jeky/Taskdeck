@@ -42,6 +42,25 @@ export default {
     },
   },
 
+  batchApprove: {
+    selectLabel: 'Seleccionar {title} para aprobación por lotes',
+    request: 'Revisar {count} aprobación seleccionada | Revisar {count} aprobaciones seleccionadas',
+    requestLabel: 'Abrir la confirmación para {count} propuesta seleccionada | Abrir la confirmación para {count} propuestas seleccionadas',
+    limitReached: 'Un lote puede contener como máximo {count} propuestas.',
+    selectionChanged: 'La selección cambió porque una o más propuestas ya no son aptas. Revísala de nuevo.',
+    receiptMismatch: 'Taskdeck no pudo confirmar el lote completo. Revisa la cola antes de volver a intentarlo.',
+    approved: 'Se aprobó {count} propuesta; no se aplicó. | Se aprobaron {count} propuestas; no se aplicaron.',
+    failed: 'No se pudieron aprobar las propuestas seleccionadas.',
+    dialog: {
+      title: '¿Aprobar las propuestas seleccionadas?',
+      description: 'Confirmar la aprobación de {count} propuesta | Confirmar la aprobación de {count} propuestas',
+      body: 'Taskdeck volverá a comprobar la {count} propuesta y aprobará el lote completo o ninguna. | Taskdeck volverá a comprobar las {count} propuestas y aprobará el lote completo o ninguna.',
+      notApplied: 'Esto solo registra la aprobación. No se aplica nada a ningún tablero.',
+      cancel: 'Seguir revisando',
+      confirm: 'Aprobar {count} propuesta | Aprobar {count} propuestas',
+    },
+  },
+
   scope: {
     board: 'Tablero: {board}',
     clear: 'Mostrar todos los tableros',
@@ -111,10 +130,13 @@ export default {
     ledeFallback:
       'En espera de decisión. Revisa el cambio, la procedencia y los efectos secundarios antes de aplicar.',
     dial: {
-      caption: 'CONF',
-      above: 'Por encima de tu umbral de aplicación',
-      below: 'Por debajo de tu umbral de aplicación',
-      threshold: '(fijado {value} · Ajustes)',
+      modelCaption: 'MODELO',
+      derivedCaption: 'DERIVADA',
+      modelReported: 'Promedio declarado por elemento',
+      derived: 'Promedio de verificación',
+      deterministic: 'DETERMINISTA',
+      notReported: 'NO DECLARADA',
+      noModelNumber: 'Sin valor de confianza del modelo',
     },
     approvedBanner: {
       title: 'Aprobada — todavía no aplicada al tablero.',
@@ -220,6 +242,10 @@ export default {
     title: 'Procedencia',
     sub: 'Qué se leyó · qué no · qué se dedujo',
     empty: 'Todavía no hay procedencia para esta propuesta.',
+    details: {
+      show: 'Mostrar detalles de procedencia',
+      hide: 'Ocultar detalles de procedencia',
+    },
     footnote: {
       deterministic:
         'Procedencia registrada: {label} — esta propuesta la generó el extractor determinista sin conexión de Taskdeck.',
@@ -311,16 +337,21 @@ export default {
 
   author: {
     heading: 'Autor',
-    breakdownHeading: 'Desglose de la confianza',
+    confidenceHeading: 'Fuente de confianza',
+    modelReportedHeading: 'Confianza por elemento declarada por el modelo',
+    details: {
+      show: 'Mostrar detalles de confianza',
+      hide: 'Ocultar detalles de confianza',
+    },
     nameFallback: 'Propuesta',
     name: '{actor} · propuesta de {source}',
-    confidence: '{value} de confianza',
+    modelConfidence: 'promedio declarado por el modelo {value}',
+    derivedConfidence: 'promedio derivado {value}',
+    deterministic: 'Extracción determinista · sin confianza del modelo',
+    notReported: 'No se declaró confianza del modelo',
     actor: {
       assistant: 'Asistente',
       capture: 'Captura',
-    },
-    component: {
-      operationSafety: 'Seguridad de las operaciones',
     },
   },
 
@@ -333,6 +364,10 @@ export default {
   similarPast: {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
+    details: {
+      show: 'Mostrar decisiones parecidas',
+      hide: 'Ocultar decisiones parecidas',
+    },
     verdict: {
       applied: 'APLICADA',
       rejected: 'RECHAZADA',

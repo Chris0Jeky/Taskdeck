@@ -43,6 +43,25 @@ export default {
     },
   },
 
+  batchApprove: {
+    selectLabel: 'Seleziona {title} per l’approvazione in blocco',
+    request: 'Rivedi {count} approvazione selezionata | Rivedi {count} approvazioni selezionate',
+    requestLabel: 'Apri la conferma per {count} proposta selezionata | Apri la conferma per {count} proposte selezionate',
+    limitReached: 'Un blocco può contenere al massimo {count} proposte.',
+    selectionChanged: 'La selezione è cambiata perché una o più proposte non sono più idonee. Rivedila di nuovo.',
+    receiptMismatch: 'Taskdeck non ha potuto confermare il blocco completo. Controlla la coda prima di riprovare.',
+    approved: 'Approvata {count} proposta, non applicata. | Approvate {count} proposte, non applicate.',
+    failed: 'Non è stato possibile approvare le proposte selezionate.',
+    dialog: {
+      title: 'Approvare le proposte selezionate?',
+      description: 'Conferma l’approvazione di {count} proposta | Conferma l’approvazione di {count} proposte',
+      body: 'Taskdeck ricontrollerà la {count} proposta e approverà l’intero blocco oppure nessuna. | Taskdeck ricontrollerà tutte le {count} proposte e approverà l’intero blocco oppure nessuna.',
+      notApplied: 'Registra solo l’approvazione. Nulla viene applicato a una bacheca.',
+      cancel: 'Continua la revisione',
+      confirm: 'Approva {count} proposta | Approva {count} proposte',
+    },
+  },
+
   scope: {
     board: 'Bacheca: {board}',
     clear: 'Mostra tutte le bacheche',
@@ -112,10 +131,13 @@ export default {
     ledeFallback:
       'In attesa di decisione. Rivedi la modifica, la provenienza e gli effetti collaterali qui sotto prima di applicare.',
     dial: {
-      caption: 'CONF',
-      above: 'Sopra la tua soglia di applicazione',
-      below: 'Sotto la tua soglia di applicazione',
-      threshold: '(impostata {value} · Impostazioni)',
+      modelCaption: 'MODELLO',
+      derivedCaption: 'DERIVATA',
+      modelReported: 'Media dichiarata per elemento',
+      derived: 'Media della verifica',
+      deterministic: 'DETERMINISTICA',
+      notReported: 'NON DICHIARATA',
+      noModelNumber: 'Nessun valore di confidenza del modello',
     },
     approvedBanner: {
       title: 'Approvata — non ancora applicata alla bacheca.',
@@ -221,6 +243,10 @@ export default {
     title: 'Provenienza',
     sub: 'Cosa è stato letto · cosa no · cosa è stato dedotto',
     empty: 'Provenienza non ancora disponibile per questa proposta.',
+    details: {
+      show: 'Mostra i dettagli della provenienza',
+      hide: 'Nascondi i dettagli della provenienza',
+    },
     footnote: {
       deterministic:
         'Provenienza registrata: {label} — questa proposta è stata prodotta dall’estrattore deterministico offline di Taskdeck.',
@@ -312,16 +338,21 @@ export default {
 
   author: {
     heading: 'Autore',
-    breakdownHeading: 'Dettaglio della confidenza',
+    confidenceHeading: 'Fonte della confidenza',
+    modelReportedHeading: 'Confidenza per elemento dichiarata dal modello',
+    details: {
+      show: 'Mostra i dettagli della confidenza',
+      hide: 'Nascondi i dettagli della confidenza',
+    },
     nameFallback: 'Proposta',
     name: '{actor} · proposta da {source}',
-    confidence: '{value} di confidenza',
+    modelConfidence: 'media dichiarata dal modello {value}',
+    derivedConfidence: 'media derivata {value}',
+    deterministic: 'Estrazione deterministica · nessuna confidenza del modello',
+    notReported: 'Nessuna confidenza del modello dichiarata',
     actor: {
       assistant: 'Assistente',
       capture: 'Cattura',
-    },
-    component: {
-      operationSafety: 'Sicurezza delle operazioni',
     },
   },
 
@@ -334,6 +365,10 @@ export default {
   similarPast: {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
+    details: {
+      show: 'Mostra decisioni simili',
+      hide: 'Nascondi decisioni simili',
+    },
     verdict: {
       applied: 'APPLICATA',
       rejected: 'RIFIUTATA',

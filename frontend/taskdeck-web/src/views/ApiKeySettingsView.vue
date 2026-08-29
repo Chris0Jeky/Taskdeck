@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { apiKeysApi } from '../api/apiKeysApi'
-import type { ApiKeyListItem, CreateApiKeyResponse } from '../api/apiKeysApi'
+import type {
+  ApiKeyListItem,
+  ApiKeyScopeName,
+  CreateApiKeyResponse,
+} from '../api/apiKeysApi'
 import TdButton from '../components/ui/TdButton.vue'
 import TdDialog from '../components/ui/TdDialog.vue'
 import TdInput from '../components/ui/TdInput.vue'
@@ -19,6 +23,7 @@ const loadError = ref<string | null>(null)
 // ── Create dialog state ──
 const showCreateDialog = ref(false)
 const newKeyName = ref('')
+const newKeyScopes = ref<ApiKeyScopeName[]>([])
 const creating = ref(false)
 const createError = ref<string | null>(null)
 const createdKey = ref<CreateApiKeyResponse | null>(null)
@@ -34,6 +39,31 @@ const keyToRevoke = ref<ApiKeyListItem | null>(null)
 const activeKeys = computed(() => keys.value.filter(k => k.isActive))
 const revokedKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt !== null))
 const expiredKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt === null))
+const canCreateKey = computed(
+  () => newKeyName.value.trim().length > 0 && newKeyScopes.value.length > 0,
+)
+
+const scopeOptions: ReadonlyArray<{
+  value: ApiKeyScopeName
+  label: string
+  description: string
+}> = [
+  {
+    value: 'read',
+    label: 'Read',
+    description: 'Search and inspect boards, cards, proposals, and MCP resources.',
+  },
+  {
+    value: 'propose',
+    label: 'Propose',
+    description: 'Create reviewable board-change proposals. This does not grant approval.',
+  },
+  {
+    value: 'manage',
+    label: 'Manage',
+    description: 'Capture Inbox items and dismiss completed proposals.',
+  },
+]
 
 async function loadKeys() {
   loading.value = true
@@ -49,6 +79,7 @@ async function loadKeys() {
 
 function openCreateDialog() {
   newKeyName.value = ''
+  newKeyScopes.value = []
   createError.value = null
   createdKey.value = null
   keyCopied.value = false
@@ -69,10 +100,17 @@ async function handleCreateKey() {
     createError.value = 'Key name is required.'
     return
   }
+  if (newKeyScopes.value.length === 0) {
+    createError.value = 'Select at least one permission.'
+    return
+  }
   creating.value = true
   createError.value = null
   try {
-    createdKey.value = await apiKeysApi.createKey(newKeyName.value.trim())
+    createdKey.value = await apiKeysApi.createKey(
+      newKeyName.value.trim(),
+      [...newKeyScopes.value],
+    )
   } catch (e: unknown) {
     createError.value = getErrorDisplay(e, 'Failed to create API key.').message
   } finally {
@@ -137,6 +175,12 @@ function formatDate(dateString: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatScopes(scopes: readonly ApiKeyScopeName[]): string {
+  return scopes
+    .map(scope => scopeOptions.find(option => option.value === scope)?.label ?? scope)
+    .join(', ')
 }
 
 onMounted(loadKeys)
@@ -220,6 +264,10 @@ onMounted(loadKeys)
                 <span class="paper-api-keys__meta-label">Last used:</span>
                 {{ formatDate(key.lastUsedAt) }}
               </span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
+              </span>
               <span v-if="key.expiresAt" class="paper-api-keys__meta">
                 <span class="paper-api-keys__meta-label">Expires:</span>
                 {{ formatDate(key.expiresAt) }}
@@ -261,6 +309,10 @@ onMounted(loadKeys)
                 <span class="paper-api-keys__meta-label">Expired:</span>
                 {{ formatDate(key.expiresAt) }}
               </span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
+              </span>
             </div>
           </div>
         </div>
@@ -287,6 +339,10 @@ onMounted(loadKeys)
               <span class="paper-api-keys__meta">
                 <span class="paper-api-keys__meta-label">Revoked:</span>
                 {{ formatDate(key.revokedAt) }}
+              </span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
               </span>
             </div>
           </div>
@@ -323,6 +379,9 @@ onMounted(loadKeys)
               {{ keyCopied ? 'Copied' : 'Copy' }}
             </TdButton>
           </div>
+          <p class="paper-api-keys__created-scopes">
+            Permissions: {{ formatScopes(createdKey.scopes) }}
+          </p>
         </div>
       </template>
 
@@ -342,6 +401,28 @@ onMounted(loadKeys)
           />
           <span class="paper-api-keys__hint">A descriptive name to identify this key later.</span>
         </div>
+
+        <fieldset class="paper-api-keys__scope-fieldset" :disabled="creating">
+          <legend class="paper-api-keys__label">Permissions</legend>
+          <span class="paper-api-keys__hint">Select at least one permission for this key.</span>
+          <label
+            v-for="scope in scopeOptions"
+            :key="scope.value"
+            class="paper-api-keys__scope-option"
+          >
+            <input
+              v-model="newKeyScopes"
+              class="paper-api-keys__scope-checkbox"
+              type="checkbox"
+              name="api-key-scope"
+              :value="scope.value"
+            >
+            <span>
+              <span class="paper-api-keys__scope-name">{{ scope.label }}</span>
+              <span class="paper-api-keys__scope-description">{{ scope.description }}</span>
+            </span>
+          </label>
+        </fieldset>
       </template>
 
       <template #footer>
@@ -355,7 +436,7 @@ onMounted(loadKeys)
           <TdButton
             variant="primary"
             :loading="creating"
-            :disabled="!newKeyName.trim()"
+            :disabled="!canCreateKey"
             @click="handleCreateKey"
           >
             Create Key
@@ -592,6 +673,12 @@ onMounted(loadKeys)
   user-select: all;
 }
 
+.paper-api-keys__created-scopes {
+  margin: 0;
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
+}
+
 /* ── Form helpers ── */
 
 .paper-api-keys__form-group {
@@ -610,6 +697,59 @@ onMounted(loadKeys)
 
 .paper-api-keys__hint {
   font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+}
+
+.paper-api-keys__scope-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.paper-api-keys__scope-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-2, 8px);
+  padding: var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper-card, #fbf7ee);
+  cursor: pointer;
+}
+
+.paper-api-keys__scope-option:has(.paper-api-keys__scope-checkbox:checked) {
+  border-color: var(--ember, #a34b2b);
+}
+
+.paper-api-keys__scope-option:has(.paper-api-keys__scope-checkbox:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.paper-api-keys__scope-checkbox {
+  margin-top: 2px;
+  accent-color: var(--ember, #a34b2b);
+}
+
+.paper-api-keys__scope-name,
+.paper-api-keys__scope-description {
+  display: block;
+}
+
+.paper-api-keys__scope-name {
+  font-size: var(--t-sm, 12px);
+  font-weight: 600;
+  color: var(--ink, #1a1814);
+}
+
+.paper-api-keys__scope-description {
+  margin-top: var(--s-1, 4px);
+  font-size: var(--t-xs, 10.5px);
+  line-height: 1.45;
   color: var(--mute, #635c4e);
 }
 

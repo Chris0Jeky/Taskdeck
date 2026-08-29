@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309
 // =============================================================================
 //
 // Two classes of check:
@@ -26,7 +26,11 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
+const readmePath = fileURLToPath(new URL('../../README.md', import.meta.url))
 const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
+const mcpGuidePath = fileURLToPath(new URL('../../docs/MCP_SERVER.md', import.meta.url))
+const mcpDesktopExamplePath = fileURLToPath(new URL('../../mcp.example.json', import.meta.url))
+const mcpDockerExamplePath = fileURLToPath(new URL('../../mcp-docker.example.json', import.meta.url))
 const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
 const materialSymbolsLicensePath = fileURLToPath(
   new URL('../../LICENSES/Apache-2.0-material-symbols-font-200.txt', import.meta.url),
@@ -35,7 +39,11 @@ const materialSymbolsLicensePath = fileURLToPath(
 // break every structural assertion for a reason that has nothing to do with the
 // workflow's content.
 const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
+const readme = readFileSync(readmePath, 'utf8').replace(/\r\n/g, '\n')
 const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
+const mcpGuide = readFileSync(mcpGuidePath, 'utf8').replace(/\r\n/g, '\n')
+const mcpDesktopExample = JSON.parse(readFileSync(mcpDesktopExamplePath, 'utf8'))
+const mcpDockerExample = JSON.parse(readFileSync(mcpDockerExamplePath, 'utf8'))
 const archiveHarness = readFileSync(archiveHarnessPath, 'utf8').replace(/\r\n/g, '\n')
 const materialSymbolsLicense = readFileSync(materialSymbolsLicensePath, 'utf8').replace(/\r\n/g, '\n')
 
@@ -346,6 +354,20 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
     /cmp -s docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
     'the archive copy must be byte-identical to the reviewed source guide',
   )
+  for (const [source, destination] of [
+    ['docs/MCP_SERVER.md', 'MCP_SERVER.md'],
+    ['mcp.example.json', 'mcp.example.json'],
+    ['mcp-docker.example.json', 'mcp-docker.example.json'],
+  ]) {
+    assert.ok(
+      job.includes(`cp ${source} "\${stage}/${destination}"`),
+      `the archive does not stage ${source}`,
+    )
+    assert.ok(
+      job.includes(`cmp -s ${source} "\${stage}/${destination}"`),
+      `the archived ${destination} is not byte-checked against its reviewed source`,
+    )
+  }
   assert.match(
     job,
     /cp LICENSES\/Apache-2\.0-material-symbols-font-200\.txt[\s\\]+"\$\{stage\}\/LICENSES\/Apache-2\.0-material-symbols-font-200\.txt"/,
@@ -361,6 +383,9 @@ test('the Windows archive stages the reviewed quick start and enforces its conte
     'Taskdeck.Api.exe',
     'appsettings.json',
     'QUICK_START.md',
+    'MCP_SERVER.md',
+    'mcp.example.json',
+    'mcp-docker.example.json',
     'wwwroot/index.html',
     'LICENSE',
     'RELICENSING.md',
@@ -407,6 +432,68 @@ test('the archive quick start pins the Windows, lifecycle, data, and OpenAI trut
   assert.match(quickStart, /SmartScreen[\s\S]*SHA-256/i)
   assert.match(quickStart, /Do not use `setx`/i)
   assert.doesNotMatch(quickStart, /(?:log in|sign in)[^\n]*demo123/i)
+  assert.match(quickStart, /MCP_SERVER\.md[\s\S]*mcp\.example\.json[\s\S]*mcp-docker\.example\.json/)
+  assert.match(quickStart, /external-client or full[\s\S]*agent-proposes\/human-applies demo/i)
+})
+
+test('the packaged MCP examples each define one exact stdio launch path', () => {
+  assert.deepEqual(Object.keys(mcpDesktopExample.mcpServers), ['taskdeck'])
+  assert.deepEqual(mcpDesktopExample.mcpServers.taskdeck, {
+    type: 'stdio',
+    command: 'C:\\REPLACE_WITH_YOUR_TASKDECK_FOLDER\\Taskdeck.Api.exe',
+    args: ['--mcp'],
+  })
+
+  assert.deepEqual(Object.keys(mcpDockerExample.mcpServers), ['taskdeck'])
+  const docker = mcpDockerExample.mcpServers.taskdeck
+  assert.equal(docker.type, 'stdio')
+  assert.equal(docker.command, 'docker')
+  assert.deepEqual(docker.args.slice(0, 6), [
+    'run',
+    '--rm',
+    '-i',
+    '--no-healthcheck',
+    '--user',
+    '1001:1001',
+  ])
+  assert.deepEqual(docker.args.slice(-4), [
+    'ghcr.io/chris0jeky/taskdeck:REPLACE_WITH_RELEASE_VERSION',
+    'dotnet',
+    'Taskdeck.Api.dll',
+    '--mcp',
+  ])
+  assert.ok(docker.args.includes('source=taskdeck-data,target=/app/data'))
+})
+
+test('the MCP guide covers all shipped launch paths without claiming deferred proof', () => {
+  for (const required of [
+    'Packaged Windows desktop',
+    'Released Docker image',
+    'From source',
+    'Claude Code',
+    'Claude Desktop',
+    'Cursor',
+    'McpServer__DefaultUserId',
+    'docker run --rm -i --no-healthcheck',
+    '--user 1001:1001',
+    'dotnet Taskdeck.Api.dll --mcp',
+    'result.serverInfo',
+    'stdout',
+  ]) {
+    assert.ok(mcpGuide.includes(required), `MCP guide is missing ${required}`)
+  }
+
+  assert.match(mcpGuide, /not a Claude Code, Claude Desktop, or[\s\S]*Cursor end-to-end test/i)
+  assert.match(
+    mcpGuide,
+    /New HTTP API keys require at least one explicit[\s\S]*`read`[\s\S]*`propose`[\s\S]*`manage`/i,
+  )
+  assert.match(mcpGuide, /does not claim runtime tool-hash approval/i)
+  assert.doesNotMatch(mcpGuide, /IMAGE --mcp` is a valid invocation/i)
+  assert.match(
+    readme,
+    /docker run --rm -i --no-healthcheck --user 1001:1001 \.\.\. IMAGE dotnet Taskdeck\.Api\.dll --mcp/,
+  )
 })
 
 // -----------------------------------------------------------------------------

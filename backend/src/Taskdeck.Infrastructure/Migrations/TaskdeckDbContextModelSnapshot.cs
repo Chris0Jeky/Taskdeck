@@ -251,6 +251,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Scopes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -2036,8 +2039,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
-                    b.Property<double>("Confidence")
+                    b.Property<double?>("Confidence")
                         .HasColumnType("REAL");
+
+                    b.Property<int>("ConfidenceSource")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");

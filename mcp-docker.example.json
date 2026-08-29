@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "taskdeck": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--no-healthcheck",
+        "--user",
+        "1001:1001",
+        "--env-file",
+        "C:\\REPLACE_WITH_YOUR_TASKDECK_FOLDER\\taskdeck-mcp.env",
+        "--mount",
+        "source=taskdeck-data,target=/app/data",
+        "ghcr.io/chris0jeky/taskdeck:REPLACE_WITH_RELEASE_VERSION",
+        "dotnet",
+        "Taskdeck.Api.dll",
+        "--mcp"
+      ]
+    }
+  }
+}

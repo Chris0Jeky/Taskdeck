@@ -16,6 +16,9 @@ export interface QueueRailItem {
   /** "mine" if the proposal belongs to the current user. */
   mine: boolean
   stale: boolean
+  /** Batch selection is deliberately narrower than ordinary single-review actionability. */
+  batchEligible?: boolean
+  batchSelected?: boolean
 }
 
 export type QueueFilter = 'all' | 'mine' | 'stale'
@@ -30,6 +33,8 @@ const props = withDefaults(
     scopeClearLabel?: string
     /** Caller-owned settled proposals on this board; ≥1 reveals the bulk file-away action. */
     dismissableCount?: number
+    /** Eligible proposals selected for the approve-only confirmation. */
+    batchSelectedCount?: number
     /** Disables the bulk file-away action while any review action is in flight. */
     busy?: boolean
     recentlyApplied: RecentlyAppliedRow[]
@@ -58,6 +63,7 @@ const props = withDefaults(
   }>(),
   {
     dismissableCount: 0,
+    batchSelectedCount: 0,
     busy: false,
     authorPartitionAvailable: true,
   },
@@ -67,6 +73,8 @@ const emit = defineEmits<{
   (event: 'select', id: string): void
   (event: 'filter-change', filter: QueueFilter): void
   (event: 'file-away-all'): void
+  (event: 'toggle-batch', id: string): void
+  (event: 'request-batch-approval'): void
   (event: 'clear-scope'): void
 }>()
 
@@ -177,6 +185,15 @@ function onFilterPillClick(key: QueueFilter) {
         {{ $t('review.queueRail.riskNote') }}
       </p>
       <button
+        v-if="batchSelectedCount > 0"
+        type="button"
+        class="paper-review-rail__batch-approve"
+        data-testid="queue-batch-approve"
+        :disabled="busy"
+        :aria-label="$t('review.batchApprove.requestLabel', { count: batchSelectedCount }, batchSelectedCount)"
+        @click="emit('request-batch-approval')"
+      >{{ $t('review.batchApprove.request', { count: batchSelectedCount }, batchSelectedCount) }}</button>
+      <button
         v-if="dismissableCount >= 1"
         type="button"
         class="paper-review-rail__file-away"
@@ -191,19 +208,37 @@ function onFilterPillClick(key: QueueFilter) {
       {{ $t('review.queueRail.empty') }}
     </div>
 
-    <ReviewQueueItem
+    <div
       v-for="item in visible"
       :key="item.id"
-      :serial="item.serial"
-      :title="item.title"
-      :who="item.who"
-      :confidence="item.confidence"
-      :age="item.age"
-      :reach="item.reach"
-      :active="item.id === activeId"
-      :stale="item.stale"
-      @select="emit('select', item.id)"
-    />
+      class="paper-review-rail__queue-row"
+      :class="{ 'paper-review-rail__queue-row--selectable': item.batchEligible }"
+    >
+      <label
+        v-if="item.batchEligible"
+        class="paper-review-rail__batch-selector"
+      >
+        <input
+          type="checkbox"
+          :checked="item.batchSelected"
+          :disabled="busy"
+          :aria-label="$t('review.batchApprove.selectLabel', { title: item.title })"
+          :data-testid="`queue-batch-select-${item.id}`"
+          @change="emit('toggle-batch', item.id)"
+        />
+      </label>
+      <ReviewQueueItem
+        :serial="item.serial"
+        :title="item.title"
+        :who="item.who"
+        :confidence="item.confidence"
+        :age="item.age"
+        :reach="item.reach"
+        :active="item.id === activeId"
+        :stale="item.stale"
+        @select="emit('select', item.id)"
+      />
+    </div>
 
     <ReviewRecentApplied
       :rows="recentlyApplied"
@@ -281,6 +316,51 @@ function onFilterPillClick(key: QueueFilter) {
   color: var(--mute);
   cursor: pointer;
   text-align: left;
+}
+.paper-review-rail__batch-approve {
+  margin-top: 10px;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  padding: 7px 8px;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  text-align: left;
+}
+.paper-review-rail__batch-approve:hover:not(:disabled) {
+  opacity: 0.88;
+}
+.paper-review-rail__batch-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.paper-review-rail__queue-row {
+  position: relative;
+}
+.paper-review-rail__queue-row--selectable {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: stretch;
+}
+.paper-review-rail__batch-selector {
+  display: grid;
+  place-items: start center;
+  padding-top: 18px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+.paper-review-rail__batch-selector input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--ink);
+}
+.paper-review-rail__batch-selector:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
 }
 .paper-review-rail__file-away:hover:not(:disabled) {
   color: var(--ink);

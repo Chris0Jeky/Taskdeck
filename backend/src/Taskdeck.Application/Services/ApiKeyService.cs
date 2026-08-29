@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -29,9 +30,12 @@ public class ApiKeyService
     public async Task<(string PlaintextKey, ApiKey Entity)> CreateKeyAsync(
         Guid userId,
         string name,
+        ApiKeyScope scopes,
         TimeSpan? expiresIn = null,
         CancellationToken cancellationToken = default)
     {
+        ApiKeyScopeRules.EnsureValid(scopes);
+
         // Verify user exists
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
         if (user is null)
@@ -45,7 +49,7 @@ public class ApiKeyService
             ? DateTimeOffset.UtcNow.Add(expiresIn.Value)
             : null;
 
-        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, expiresAt);
+        var apiKey = new ApiKey(userId, keyHash, keyPrefix, name, scopes, expiresAt);
 
         await _unitOfWork.ApiKeys.AddAsync(apiKey, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

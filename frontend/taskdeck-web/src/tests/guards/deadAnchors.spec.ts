@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler-dom'
 
 /**
  * Dead-affordance source guard.
@@ -18,18 +19,17 @@ import { describe, expect, it } from 'vitest'
  *  - `href="javascript:void(0)"` and `href=""` — not detected.
  *  - Runtime-assembled hrefs and dynamic event names are out of reach: this
  *    guard reads SFC source, not Vue's rendered event table.
- *  - Button action hidden behind `v-on="{ click: fn }"`, `@[dynamicEvent]`, or
- *    a runtime-bound `:type` is not inferred. Those forms are reported by the
- *    synthetic canaries to make the boundary explicit.
+ *  - Button action hidden behind a runtime-bound `:type` is not inferred.
+ *    Dynamic event arguments and `v-on` object syntax are parsed by the
+ *    compiler-backed guard below, but remain unproven action evidence.
  *  - A static `draggable="true"` is treated as native drag activation; the
  *    guard cannot prove which ancestor receives the drag event.
  *  - Component tags (for example `<PaperHLBtn>`) are not compiler-expanded;
  *    this guard only checks their explicit role/action source shape. Their
  *    rendered root still needs component tests for the final DOM contract.
- *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are not read as
- *    click bindings, so a tag using one of those AND a bare `#` href would be
- *    reported. No such tag exists today; if one appears, teach CLICK_BINDING
- *    about it rather than deleting the finding.
+ *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are reported
+ *    on native controls by the compiler-backed guard below. No such tag exists
+ *    today; do not delete that finding without proving the runtime event.
  *  - An href assembled at runtime (`:href="somethingThatReturnsHash"`) is out
  *    of reach: only SFC source text is read.
  *  - An expression that concatenates onto the literal (`:href="'#' + id"`)
@@ -59,7 +59,7 @@ const VUE_SOURCES = import.meta.glob('../../**/*.vue', {
 }) as Record<string, string>
 
 /** Opening `<a …>` tags. Quoted attribute values are consumed whole so a `>` inside one cannot end the tag early. */
-const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
+const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/gi
 
 /**
  * Each href attribute on a tag: the optional binding prefix, then the quoted
@@ -68,7 +68,7 @@ const ANCHOR_TAG = /<a(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
  * backreference to its own opening quote, so a bound expression may contain the
  * other quote style (`:href="dead ?? '#'"`).
  */
-const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/g
+const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/gi
 
 /** A bare `#` string literal — `'#'`, `"#"`, `` `#` `` — nothing after the hash. `'#section'` does not match. */
 const BARE_HASH_LITERAL = /(['"`])#\1/
@@ -176,6 +176,9 @@ const BUTTON_SPECIMEN_MARKER =
 const OPENING_ATTRIBUTE =
   /([@A-Za-z_][\w:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
 
+/** Native controls for which a dynamic listener can change actionability. */
+const COMPILER_ACTIONABLE_TAGS = new Set(['a', 'button'])
+
 /**
  * Only markup is scanned. `<script>` and `<style>` blocks and HTML comments are
  * dropped first so that PROSE about a dead anchor — the doc comment in
@@ -219,6 +222,93 @@ function directiveOnlyMarkup(tag: string): string {
   }
 
   return directives.join(' ')
+}
+
+/**
+ * Find dynamic/object `v-on` bindings on native controls using Vue's parser.
+ *
+ * The compiler exposes dynamic event arguments as `arg.isStatic === false`
+ * and object syntax as a directive with no `arg`. Both are intentionally
+ * reported rather than treated as a proven click handler: source text cannot
+ * establish which runtime event an unknown argument or object key provides.
+ */
+function findCompilerDynamicListenerTags(source: string): string[] {
+  const compilerErrors: unknown[] = []
+  const root = baseParse(markupOnly(source), {
+    ...parserOptions,
+    onError: (error) => compilerErrors.push(error),
+  })
+
+  if (compilerErrors.length > 0) {
+    throw new Error(`Vue template parse failed with ${compilerErrors.length} error(s)`)
+  }
+
+  const findings: string[] = []
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') return
+    const candidate = node as {
+      type?: unknown
+      tag?: unknown
+      tagType?: unknown
+      props?: unknown
+      children?: unknown
+      branches?: unknown
+      loc?: { source?: unknown }
+    }
+
+    if (
+      candidate.type === NodeTypes.ELEMENT &&
+      candidate.tagType === ElementTypes.ELEMENT &&
+      typeof candidate.tag === 'string'
+    ) {
+      const hasDynamicListener = Array.isArray(candidate.props) && candidate.props.some((prop) => {
+        if (!prop || typeof prop !== 'object') return false
+        const directive = prop as {
+          type?: unknown
+          name?: unknown
+          arg?: { isStatic?: unknown }
+        }
+        return (
+          directive.type === NodeTypes.DIRECTIVE &&
+          directive.name === 'on' &&
+          (!directive.arg || directive.arg.isStatic === false)
+        )
+      })
+
+      const hasStaticNativeNavigationHref =
+        candidate.tag.toLowerCase() === 'a' &&
+        Array.isArray(candidate.props) &&
+        candidate.props.some((prop) => {
+          if (!prop || typeof prop !== 'object') return false
+          const attribute = prop as {
+            type?: unknown
+            name?: unknown
+            value?: { content?: unknown }
+          }
+          if (attribute.type !== NodeTypes.ATTRIBUTE || attribute.name !== 'href') return false
+          const value = typeof attribute.value?.content === 'string' ? attribute.value.content.trim() : ''
+          return value.length > 0 && value !== '#' && !/^javascript:/i.test(value)
+        })
+
+      if (
+        hasDynamicListener &&
+        COMPILER_ACTIONABLE_TAGS.has(candidate.tag.toLowerCase()) &&
+        !hasStaticNativeNavigationHref
+      ) {
+        findings.push(typeof candidate.loc?.source === 'string' ? candidate.loc.source : candidate.tag)
+      }
+    }
+
+    if (Array.isArray(candidate.children)) {
+      for (const child of candidate.children) visit(child)
+    }
+    if (Array.isArray(candidate.branches)) {
+      for (const branch of candidate.branches) visit(branch)
+    }
+  }
+
+  visit(root)
+  return findings
 }
 
 /** Opening anchor tags in `source` whose href is the bare `#` and which bind no click. */
@@ -403,6 +493,8 @@ const DEAD_ANCHOR_FIXTURE = `<template><a :href="tuneHref ?? '#'" class="tune">T
 
 /** The GH-1932 avatar shape: a labelled generic element with no focus or action semantics. */
 const DEAD_ARIA_LABEL_FIXTURE = `<template><div class="paper-topbar__avatar" aria-label="Profile: D">D</div></template>`
+const COMPILER_DYNAMIC_LISTENER_FIXTURE =
+  '<template><button @[eventName]="run">Dynamic</button><button v-on="{ click: run }">Object</button></template>'
 
 describe('dead affordances', () => {
   const vueFiles = Object.keys(VUE_SOURCES)
@@ -422,11 +514,16 @@ describe('dead affordances', () => {
     expect(findDeadAnchors('<template><a href="#">Tune heuristics</a></template>')).toEqual([
       '<a href="#">',
     ])
+    expect(findDeadAnchors('<template><A HREF="#">Uppercase HTML</A></template>')).toEqual([
+      '<A HREF="#">',
+    ])
     expect(findDeadAnchors(`<template><a href='#'>Single quoted</a></template>`)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a :href="'#'" class="x">Dead</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a :HREF="'#'">Mixed-case shorthand</a></template>`)).toHaveLength(1)
     // The GH-1941 shape: a bound href whose expression falls back to the bare `#`.
     expect(findDeadAnchors(DEAD_ANCHOR_FIXTURE)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a v-bind:href="dead || '#'">Dead</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a V-BIND:HREF="dead || '#'">Mixed-case longhand</a></template>`)).toHaveLength(1)
     expect(findDeadAnchors(`<template><a :href='dead ?? "#"'>Dead</a></template>`)).toHaveLength(1)
     // A multi-line tag is still one tag.
     expect(findDeadAnchors('<template>\n<a\n  href="#"\n  class="x"\n>Dead</a>\n</template>')).toHaveLength(1)
@@ -434,6 +531,7 @@ describe('dead affordances', () => {
 
   it('does not flag anchors that are bound, real, or only talked about', () => {
     expect(findDeadAnchors('<template><a href="#" @click.prevent="open">Live</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="#" @click.prevent="open">Live</A></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#" v-on:click="open">Live</a></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#" @click.stop>Only propagation</a></template>')).toHaveLength(1)
     // The GH-1941 shape, but wired up.
@@ -442,15 +540,19 @@ describe('dead affordances', () => {
     ).toEqual([])
     // Real in-page fragment targets are not placeholders.
     expect(findDeadAnchors('<template><a href="#details">In-page</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="#details">In-page</A></template>')).toEqual([])
     expect(findDeadAnchors('<template><a href="#td-main-content">Skip link</a></template>')).toEqual([])
     expect(findDeadAnchors(`<template><a :href="'#details'">Bound in-page</a></template>`)).toEqual([])
+    expect(findDeadAnchors(`<template><a V-BIND:HREF="'#details'">Bound in-page</a></template>`)).toEqual([])
     expect(findDeadAnchors('<template><a href="/workspace/home">Real route</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><A HREF="/workspace/home">Real route</A></template>')).toEqual([])
     // Sibling elements whose names start with "a" are not anchors.
     expect(findDeadAnchors('<template><aside href="#">Not an anchor</aside></template>')).toEqual([])
     // An attribute merely ENDING in "href" is not an href.
     expect(findDeadAnchors('<template><a :capture-href="\'#\'" href="/x">Not an href</a></template>')).toEqual([])
     // Prose explaining a removed dead anchor is prose, not a dead anchor.
     expect(findDeadAnchors('<script>/* was <a href="#">x</a> */</script><template><p>ok</p></template>')).toEqual([])
+    expect(findDeadAnchors('<script>/* was <A HREF="#">x</A> */</script><template><p>ok</p></template>')).toEqual([])
     expect(findDeadAnchors('<template><!-- was <a href="#">x</a> --><p>ok</p></template>')).toEqual([])
   })
 
@@ -499,12 +601,41 @@ describe('dead affordances', () => {
   })
 
   it('documents source-only limits for dynamic Vue bindings', () => {
-    // These require template compilation/runtime knowledge and are deliberately
-    // not guessed by a regex guard. A future guard can add compiler-backed
-    // coverage without weakening this source-level rule.
+    // Dynamic listeners remain unproven for the source-level action guard;
+    // compiler-backed coverage below reports their exact AST shape.
     expect(findDeadButtons('<template><button @[eventName]="run">Dynamic event</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button v-on="{ click: run }">Object event</button></template>')).toHaveLength(1)
     expect(findDeadButtons('<template><button :type="buttonType">Dynamic type</button></template>')).toHaveLength(1)
+  })
+
+  it('detects dynamic and object listeners through the Vue compiler AST', () => {
+    expect(findCompilerDynamicListenerTags(COMPILER_DYNAMIC_LISTENER_FIXTURE)).toHaveLength(2)
+    expect(findCompilerDynamicListenerTags('<template><button @click="run">Static</button></template>')).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags('<template><a href="#" @[eventName]="run">Placeholder</a></template>'),
+    ).toHaveLength(1)
+    expect(findCompilerDynamicListenerTags('<template><Button v-on="listeners">Component</Button></template>')).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags('<template><a href="/settings" v-on="listeners">Real navigation</a></template>'),
+    ).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags(
+        `<template><button data-note='@[eventName]="run"'>Inert note</button></template>`,
+      ),
+    ).toEqual([])
+    expect(
+      findCompilerDynamicListenerTags(
+        '<template><div v-if="ready"><button @[eventName]="run">Nested dynamic</button></div></template>',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('parses valid HTML void elements with DOM compiler semantics', () => {
+    expect(
+      findCompilerDynamicListenerTags(
+        '<template><input aria-label="Search"><button @[eventName]="run">Dynamic</button></template>',
+      ),
+    ).toEqual(['<button @[eventName]="run">Dynamic</button>'])
   })
 
   it('detects interactive aria labels that are not native or keyboard actionable', () => {
@@ -567,6 +698,19 @@ describe('dead affordances', () => {
 
     for (const [file, source] of Object.entries(VUE_SOURCES)) {
       for (const tag of findDeadButtons(source)) {
+        offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('never ships native controls with unproven compiler-expanded listeners', () => {
+    const offenders: string[] = []
+
+    expect(vueFiles.length).toBeGreaterThan(50)
+    for (const [file, source] of Object.entries(VUE_SOURCES)) {
+      for (const tag of findCompilerDynamicListenerTags(source)) {
         offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
       }
     }

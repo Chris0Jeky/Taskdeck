@@ -95,6 +95,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         }
 
         return await _dbSet
+            .Include(proposal => proposal.Operations)
             .Where(proposal => uniqueIds.Contains(proposal.Id))
             .ToListAsync(cancellationToken);
     }

@@ -21,16 +21,15 @@ public class ProposalRevisionService : IProposalRevisionService
     public Task<Result<ProposalRevisionDto>> CreateRevisionAsync(
         CreateProposalRevisionDto dto,
         CancellationToken cancellationToken = default) =>
-        CreateRevisionCoreAsync(dto, guardPendingCommit: false, cancellationToken);
+        CreateRevisionCoreAsync(dto, cancellationToken);
 
     public Task<Result<ProposalRevisionDto>> CreateRevisionWithPendingCommitGuardAsync(
         CreateProposalRevisionDto dto,
         CancellationToken cancellationToken = default) =>
-        CreateRevisionCoreAsync(dto, guardPendingCommit: true, cancellationToken);
+        CreateRevisionCoreAsync(dto, cancellationToken);
 
     private async Task<Result<ProposalRevisionDto>> CreateRevisionCoreAsync(
         CreateProposalRevisionDto dto,
-        bool guardPendingCommit,
         CancellationToken cancellationToken)
     {
         try
@@ -66,6 +65,12 @@ public class ProposalRevisionService : IProposalRevisionService
             var nextRevisionNumber = await _unitOfWork.ProposalRevisions
                 .GetNextRevisionNumberAsync(dto.ProposalId, cancellationToken);
 
+            var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
+                new[] { proposal.BoardId },
+                cancellationToken);
+            if (!decisionGuard.IsSuccess)
+                return Result.Failure<ProposalRevisionDto>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+
             var revision = new ProposalRevision(
                 dto.ProposalId,
                 nextRevisionNumber,
@@ -73,8 +78,10 @@ public class ProposalRevisionService : IProposalRevisionService
                 dto.RevisedPayload,
                 dto.Reason);
 
-            if (guardPendingCommit)
-                proposal.GuardPendingRevisionCommit();
+            // Every accepted revision changes the effective content a reviewer is deciding on.
+            // Advance the proposal's EF concurrency token in the same save so an approval that
+            // already compared an older revision snapshot conflicts instead of pinning stale input.
+            proposal.GuardPendingRevisionCommit();
 
             await _unitOfWork.ProposalRevisions.AddAsync(revision, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

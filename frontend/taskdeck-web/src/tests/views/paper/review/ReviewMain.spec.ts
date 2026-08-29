@@ -53,9 +53,11 @@ function mountMain(
     history?: HistoryRow[]
     applyPhase?: 'approve' | 'execute'
     dismissable?: boolean
+    attachTo?: boolean
   } = {},
 ) {
   return mount(ReviewMain, {
+    attachTo: deepReview.attachTo ? document.body : undefined,
     props: {
       serial: '#2026-04-25-014',
       meta: '11:42 PT · awaiting decision',
@@ -68,10 +70,11 @@ function mountMain(
       decisionSummary: '3 ops · explicit review · atomic apply',
       busy: false,
       confidence: {
-        overall: confidence.overall ?? 0.84,
+        overall: confidence.overall === undefined ? 0.84 : confidence.overall,
         components: confidence.components ?? [],
-        threshold: confidence.threshold ?? 0.7,
+        threshold: null,
         note: confidence.note,
+        source: confidence.source ?? 'model-reported',
       },
       before,
       after,
@@ -122,6 +125,7 @@ describe('ReviewMain', () => {
   it('forwards provenance report events with the active proposal id', async () => {
     const wrapper = mountMain()
 
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await wrapper.get('.paper-review-prov__more').trigger('click')
     await wrapper.vm.$nextTick()
     const reportButton = document.body.querySelector('.prov-drawer__action--report') as HTMLButtonElement
@@ -130,14 +134,20 @@ describe('ReviewMain', () => {
     expect(wrapper.emitted('report')).toEqual([['proposal-001']])
   })
 
-  it('shows "Above your apply threshold" when confidence >= threshold', () => {
-    const wrapper = mountMain({ overall: 0.9, threshold: 0.7 })
-    expect(wrapper.text()).toContain('Above your apply threshold')
+  it('labels the numeric dial as model-reported without apply-threshold language', () => {
+    const wrapper = mountMain({ overall: 0.9, source: 'model-reported' })
+    expect(wrapper.text()).toContain('Reported item average')
+    expect(wrapper.text()).not.toContain('apply threshold')
   })
 
-  it('shows "Below your apply threshold" when confidence < threshold', () => {
-    const wrapper = mountMain({ overall: 0.4, threshold: 0.7 })
-    expect(wrapper.text()).toContain('Below your apply threshold')
+  it('shows deterministic provenance without inventing a confidence number', () => {
+    const wrapper = mountMain({ overall: null, source: 'deterministic' })
+
+    expect(wrapper.find('[data-testid="paper-review-confidence-dial"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-confidence-source"]').text()).toContain(
+      'DETERMINISTIC',
+    )
+    expect(wrapper.text()).toContain('No model confidence number')
   })
 
   // --- #1818: approved-but-not-executed must read differently from pending ---
@@ -179,6 +189,39 @@ describe('ReviewMain', () => {
         'PRESS ⌫ TO FILE AWAY',
       )
       expect(wrapper.text()).toContain('SETTLED')
+    })
+  })
+
+  describe('decision receipt focus', () => {
+    it.each(['applied', 'rejected', 'deferred'] as const)(
+      'moves focus to the %s receipt at its original decision locus',
+      async (decisionReceipt) => {
+        const wrapper = mountMain({}, { attachTo: true })
+        document.body.focus()
+        expect(document.activeElement).toBe(document.body)
+
+        await wrapper.setProps({ decisionReceipt })
+        await wrapper.vm.$nextTick()
+
+        expect(document.activeElement).toBe(
+          wrapper.get('[data-testid="paper-review-decision-receipt"]').element,
+        )
+
+        wrapper.unmount()
+      },
+    )
+
+    it('moves focus to the remaining explicit Apply control after approval', async () => {
+      const wrapper = mountMain({}, { applyPhase: 'execute', attachTo: true })
+      document.body.focus()
+      expect(document.activeElement).toBe(document.body)
+
+      await wrapper.setProps({ decisionReceipt: 'approved' })
+      await wrapper.vm.$nextTick()
+
+      expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
+
+      wrapper.unmount()
     })
   })
 

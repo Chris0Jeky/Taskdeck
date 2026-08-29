@@ -60,6 +60,18 @@ Taskdeck's safe path is:
 
 Approval alone does not change the board. Applying still requires the separate confirmation dialog.
 
+### Optional: connect an MCP client
+
+The release ZIP includes `MCP_SERVER.md`, `mcp.example.json`, and
+`mcp-docker.example.json`. After registering the intended local user, open `MCP_SERVER.md` and follow
+the packaged Windows instructions for Claude Code, Claude Desktop, or Cursor. The desktop example
+must point to the absolute path of this extracted `Taskdeck.Api.exe` and starts it with `--mcp`.
+
+MCP board-changing tools create proposals for Review; they cannot approve or Apply their own
+proposals. The automated release gate proves the extracted executable completes protocol
+initialization without contaminating stdout, but it is not an external-client or full
+agent-proposes/human-applies demo.
+
 ## 4. Stop safely
 
 Return to the Taskdeck console and press **Ctrl+C**. Wait for both messages before closing the window:

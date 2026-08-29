@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.DTOs;
 
@@ -53,7 +55,26 @@ public record ProposalDto(
     /// doing so would reintroduce the N+1 that boundary existed to avoid.
     /// </summary>
     public Guid? ApprovedRevisionId { get; init; }
+
+    /// <summary>
+    /// The effective/latest saved revision for a pending proposal. This is a review concurrency
+    /// snapshot, not an approval pin; non-pending proposals expose null and use
+    /// <see cref="ApprovedRevisionId"/> for the separate approve-time contract.
+    /// </summary>
+    public Guid? LatestRevisionId { get; init; }
 }
+
+/// <summary>
+/// Result of an all-or-none batch approval. Every listed proposal has moved to
+/// <see cref="ProposalStatus.Approved"/>; none has been executed or applied.
+/// </summary>
+public sealed record BatchApproveProposalsResultDto(IReadOnlyList<Guid> ApprovedIds);
+
+/// <summary>The exact pending proposal and revision snapshot selected for batch approval.</summary>
+public sealed record BatchApproveProposalSelectionDto(
+    Guid Id,
+    DateTimeOffset ExpectedProposalUpdatedAt,
+    Guid? ExpectedLatestRevisionId);
 
 public record ProposalPresentationDto(
     string PlainSummary,
@@ -102,7 +123,16 @@ public record CreateProposalDto(
     List<CreateProposalOperationDto>? Operations = null,
     string? ProvenanceModelId = null,
     int ProvenanceTotalTokens = 0
-);
+)
+{
+    /// <summary>
+    /// Trusted application-side confidence metadata. This property is deliberately excluded from
+    /// the HTTP contract: callers cannot label their own proposal confidence as model-reported.
+    /// Capture triage sets it only after schema-v2 validation or deterministic fallback selection.
+    /// </summary>
+    [JsonIgnore]
+    public TrustedProposalConfidenceInput? TrustedConfidence { get; init; }
+}
 
 public record CreateProposalOperationDto(
     int Sequence,
@@ -123,6 +153,16 @@ public sealed record TranscriptEvidenceLinkInput(
     Guid TranscriptId,
     int? SpanStart = null,
     int? SpanEnd = null);
+
+/// <summary>Trusted per-operation confidence metadata supplied by an application pipeline.</summary>
+public sealed record TrustedProposalConfidenceInput(
+    ProvenanceConfidenceSource Source,
+    IReadOnlyList<ProposalOperationConfidenceInput> Operations);
+
+/// <summary>Confidence for one proposal operation, keyed by the persisted operation sequence.</summary>
+public sealed record ProposalOperationConfidenceInput(
+    int OperationSequence,
+    double? Value);
 
 public record UpdateProposalStatusDto(
     string? Reason = null
