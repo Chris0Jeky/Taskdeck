@@ -1965,7 +1965,7 @@ public class AutomationProposalServiceTests
 
         // Simulate that these are expired (repository would return expired ones)
         _proposalRepoMock.Setup(r => r.GetExpiredAsync(default))
-            .ReturnsAsync(new[] { proposal1, proposal2 });
+            .ReturnsAsync(new ExpiredProposalSweep(new[] { proposal1, proposal2 }, 0));
 
         // Act
         var result = await _service.ExpireProposalsAsync();
@@ -1981,7 +1981,7 @@ public class AutomationProposalServiceTests
     {
         // Arrange
         _proposalRepoMock.Setup(r => r.GetExpiredAsync(default))
-            .ReturnsAsync(Array.Empty<AutomationProposal>());
+            .ReturnsAsync(ExpiredProposalSweep.Empty);
 
         // Act
         var result = await _service.ExpireProposalsAsync();
