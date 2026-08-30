@@ -432,6 +432,9 @@ export function usePaperReviewSelectors(
       const captureRequest: Promise<CaptureItem | null> = captureReference
         ? captureApi.getItem(captureReference, { signal })
         : Promise.resolve(null)
+      // Attach rejection handling immediately, but do not let this optional lookup hold
+      // the six core review responses behind the HTTP client's retry window.
+      const captureSettlement = Promise.allSettled([captureRequest])
 
       const results = await Promise.allSettled([
         proposalDeepReviewApi.getProvenance(proposalId, { signal }),
@@ -440,14 +443,13 @@ export function usePaperReviewSelectors(
         proposalDeepReviewApi.getConflicts(proposalId, { signal }),
         proposalDeepReviewApi.getHistory(proposalId, { signal }),
         proposalDeepReviewApi.getSimilarPast(proposalId, { signal }),
-        captureRequest,
       ])
 
       if (generation !== fetchGeneration) return
 
       isLoading.value = false
 
-      const [prov, conf, side, confl, hist, sim, capture] = results
+      const [prov, conf, side, confl, hist, sim] = results
 
       provenanceData.value =
         prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
@@ -459,11 +461,6 @@ export function usePaperReviewSelectors(
         conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
       confidenceData.value = mappedConfidence
 
-      provenanceMetadataData.value =
-        captureReference && capture.status === 'fulfilled' && capture.value
-          ? mapProvenanceMetadata(capture.value, proposalId, captureReference, mappedConfidence)
-          : null
-
       sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
 
       conflictsData.value =
@@ -473,6 +470,14 @@ export function usePaperReviewSelectors(
 
       similarPastData.value =
         sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
+
+      const capture = (await captureSettlement)[0]
+      if (generation !== fetchGeneration || !capture) return
+
+      provenanceMetadataData.value =
+        captureReference && capture.status === 'fulfilled' && capture.value
+          ? mapProvenanceMetadata(capture.value, proposalId, captureReference, mappedConfidence)
+          : null
     },
     { immediate: true },
   )

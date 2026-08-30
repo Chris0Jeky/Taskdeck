@@ -582,6 +582,62 @@ describe('usePaperReviewSelectors', () => {
     expect(hasStale).toBe(false)
   })
 
+  it('commits fresh core review data while optional capture metadata is still pending', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance)
+      .mockResolvedValueOnce([{ icon: '📄', key: 'stale', value: 'old', weight: 'Primary' }])
+      .mockResolvedValueOnce([{ icon: '✦', key: 'fresh', value: 'new', weight: 'Primary' }])
+
+    let resolveCapture: (capture: CaptureItem) => void
+    vi.mocked(captureApi.getItem).mockImplementation(
+      () => new Promise<CaptureItem>((resolve) => { resolveCapture = resolve }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await vi.waitFor(() => {
+      expect(selectors.provenance.value[0]?.key).toBe('stale')
+    })
+
+    proposal.value = makeProposal({
+      id: 'p-2',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-2',
+    })
+
+    await vi.waitFor(() => {
+      expect(captureApi.getItem).toHaveBeenCalledWith(
+        'capture-2',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+      expect(selectors.provenance.value[0]?.key).toBe('fresh')
+      expect(selectors.loading.value).toBe(false)
+    })
+    expect(selectors.provenanceMetadata.value).toBeNull()
+
+    proposal.value = makeProposal({ id: 'p-3', sourceType: 'Manual' })
+    await vi.waitFor(() => {
+      expect(selectors.provenance.value).toEqual([])
+    })
+
+    resolveCapture!(
+      captureDetail(
+        {
+          captureItemId: 'capture-2',
+          proposalId: 'p-2',
+          provider: 'OpenAI',
+          model: 'gpt-4o-mini',
+          promptVersion: 'llm-triage.v2',
+        },
+        { id: 'capture-2' },
+      ),
+    )
+    await nextTick()
+    await nextTick()
+    expect(selectors.provenanceMetadata.value).toBeNull()
+  })
+
   it('maps confidence note from null to undefined', async () => {
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
@@ -612,6 +668,12 @@ describe('usePaperReviewSelectors', () => {
       capturedSignal = opts?.signal
       return pending
     })
+    let resolveCapture: (capture: CaptureItem) => void
+    let captureSignal: AbortSignal | undefined
+    vi.mocked(captureApi.getItem).mockImplementation((_id, opts) => {
+      captureSignal = opts?.signal
+      return new Promise<CaptureItem>((resolve) => { resolveCapture = resolve })
+    })
     vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
       overall: 0.5,
       components: [],
@@ -635,25 +697,37 @@ describe('usePaperReviewSelectors', () => {
     const scope = effectScope()
     let selectors!: ReturnType<typeof usePaperReviewSelectors>
     scope.run(() => {
-      const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+      const proposal = ref<ApiProposal | null>(makeProposal({
+        id: 'p-1',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-1',
+      }))
       const activeProposal = computed(() => proposal.value)
       selectors = usePaperReviewSelectors(activeProposal)
     })
 
     await nextTick()
     expect(capturedSignal?.aborted).toBe(false)
+    expect(captureSignal?.aborted).toBe(false)
 
     // Tear the scope down while the provenance request is still in flight.
     scope.stop()
     expect(capturedSignal?.aborted).toBe(true)
+    expect(captureSignal?.aborted).toBe(true)
 
     // Resolve the previously in-flight request after disposal; the generation
     // guard must prevent any reactive write-back.
     resolveProvenance!([{ icon: '📄', key: 'late', value: 'v', weight: 'primary' }] as never[])
+    resolveCapture!(captureDetail({
+      provider: 'OpenAI',
+      model: 'gpt-4o-mini',
+      promptVersion: 'llm-triage.v2',
+    }))
     await nextTick()
     await nextTick()
 
     expect(selectors.provenance.value.some((r) => r.key === 'late')).toBe(false)
+    expect(selectors.provenanceMetadata.value).toBeNull()
     expect(selectors.loading.value).toBe(true)
   })
 
