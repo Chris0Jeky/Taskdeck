@@ -133,13 +133,23 @@ export function validatePolicy(policy) {
   return errors;
 }
 
-/** Trust classification. T0 is the control plane itself and is never assigned to a change. */
+/**
+ * Trust classification. T0 is the control plane itself and is never assigned to a change.
+ * Both the PR author (`actorLogin` / `authorAssociation`) and the account that pushed the
+ * current revision (`senderLogin`, when known) must be trusted: a `synchronize` event carries
+ * the original author's association even when someone else pushed the new head.
+ */
 export function classifyTrust(input, controlPathsChanged, policy) {
   if (input.eventName === 'push' && String(input.ref ?? '').startsWith('refs/tags/')) return 'T4';
   if (input.isFork === true) return 'T3';
   const login = String(input.actorLogin ?? '');
   if (input.actorType === 'Bot' || /\[bot\]$/i.test(login) || login.length === 0) return 'T3';
   if (!policy.trustedAssociations.includes(String(input.authorAssociation ?? ''))) return 'T3';
+  const sender = String(input.senderLogin ?? '');
+  if (sender.length > 0 && sender !== login) {
+    const ownerLogin = String(input.repositoryOwnerLogin ?? '');
+    if (input.senderType === 'Bot' || /\[bot\]$/i.test(sender) || sender !== ownerLogin) return 'T3';
+  }
   if (controlPathsChanged.length > 0) return 'T2';
   return 'T1';
 }
@@ -279,6 +289,7 @@ export function buildPlan(input, policy, digest) {
       type: input.actorType ?? null,
       association: input.authorAssociation ?? null,
       isFork: input.isFork === true,
+      sender: input.senderLogin ?? null,
     },
     labels,
     trust,
@@ -333,7 +344,12 @@ export function errorPlan(input, policy, digest, error) {
   };
 }
 
-export function validatePlan(plan) {
+/**
+ * Structural validation of a plan receipt. When the digest-matched policy is supplied, the
+ * selected + skipped lanes must be exactly the policy's lanes, each once — an empty or partial
+ * receipt is invalid rather than "nothing to verify".
+ */
+export function validatePlan(plan, policy = null) {
   const errors = [];
   if (!plan || typeof plan !== 'object') return ['plan must be an object'];
   if (plan.schemaVersion !== PLAN_SCHEMA_VERSION) errors.push(`schemaVersion must be ${PLAN_SCHEMA_VERSION}`);
@@ -356,6 +372,21 @@ export function validatePlan(plan) {
     if (!entry || !isNonEmptyString(entry.lane) || !isNonEmptyString(entry.checkName)) errors.push(`skipped[${index}] needs lane and checkName`);
     if (!entry || !isNonEmptyString(entry.reason)) errors.push(`skipped[${index}].reason is required`);
   });
+  if (policy && policy.lanes && typeof policy.lanes === 'object') {
+    const expected = Object.keys(policy.lanes).sort();
+    const seen = [...(Array.isArray(plan.selected) ? plan.selected : []), ...(Array.isArray(plan.skipped) ? plan.skipped : [])]
+      .map((entry) => (entry && entry.lane ? String(entry.lane) : ''))
+      .filter(Boolean)
+      .sort();
+    if (seen.length !== new Set(seen).size) errors.push('a lane appears more than once across selected and skipped');
+    if (JSON.stringify([...new Set(seen)]) !== JSON.stringify(expected)) errors.push(`selected + skipped must cover every policy lane exactly once (expected ${expected.length}, saw ${new Set(seen).size})`);
+    for (const entry of Array.isArray(plan.selected) ? plan.selected : []) {
+      const lane = entry && policy.lanes[entry.lane];
+      if (lane && entry.checkName !== lane.checkName) errors.push(`selected lane ${entry.lane} names check "${entry.checkName}" but the policy says "${lane.checkName}"`);
+    }
+  } else if (Array.isArray(plan.selected) && plan.selected.length === 0) {
+    errors.push('a plan must select at least one lane');
+  }
   if (plan.trust !== 'T1' && plan.executionMode && plan.executionMode.effective !== 'hosted') errors.push('a non-T1 plan must execute hosted');
   if (plan.risk === 'R4' && plan.executionMode && plan.executionMode.effective !== 'hosted') errors.push('an R4 plan must execute hosted');
   if (Array.isArray(plan.selected) && plan.executionMode && plan.executionMode.effective === 'hosted' && plan.selected.some((entry) => entry && entry.hosted === false)) errors.push('a hosted plan must not select a self-hosted runner');
@@ -376,7 +407,7 @@ export function evaluateGate(plan, context) {
   if (!plan) {
     failures.push({ code: 'plan-missing', detail: 'no plan receipt was produced' });
   } else {
-    const planErrors = validatePlan(plan);
+    const planErrors = validatePlan(plan, context.policy ?? null);
     if (planErrors.length > 0) failures.push({ code: 'plan-invalid', detail: planErrors.join('; ') });
     if (plan.plannerError) failures.push({ code: 'planner-error', detail: `${plan.plannerError.name}: ${plan.plannerError.message}` });
     if (context.planJobResult && context.planJobResult !== 'success') failures.push({ code: 'plan-job-failed', detail: `plan job result: ${context.planJobResult}` });
@@ -388,7 +419,8 @@ export function evaluateGate(plan, context) {
         const result = context.results[entry.checkName];
         if (!result) failures.push({ code: 'selected-evidence-missing', detail: entry.checkName });
         else if (result.conclusion !== 'success') failures.push({ code: 'selected-not-success', detail: `${entry.checkName}: ${result.conclusion}` });
-        else if (result.headSha && plan.headSha && result.headSha !== plan.headSha) failures.push({ code: 'evidence-wrong-sha', detail: `${entry.checkName}: ${result.headSha}` });
+        else if (!isNonEmptyString(result.headSha)) failures.push({ code: 'evidence-sha-missing', detail: `${entry.checkName}: evidence carries no head SHA` });
+        else if (result.headSha !== plan.headSha) failures.push({ code: 'evidence-wrong-sha', detail: `${entry.checkName}: ${result.headSha}` });
       }
     } else {
       notes.push('no job evidence supplied — shadow phase evaluates the plan receipt only');

@@ -50,13 +50,23 @@ function main() {
       plan = null;
     }
   }
-  const expectedPolicyDigest = args.policy && existsSync(args.policy) ? policyDigest(readFileSync(args.policy, 'utf8')) : null;
+  const policyText = args.policy && existsSync(args.policy) ? readFileSync(args.policy, 'utf8') : null;
+  const expectedPolicyDigest = policyText ? policyDigest(policyText) : null;
+  let policy = null;
+  if (policyText) {
+    try {
+      policy = JSON.parse(policyText);
+    } catch (error) {
+      console.error(`policy unreadable: ${error}`);
+    }
+  }
   const results = args.results && existsSync(args.results) ? JSON.parse(readFileSync(args.results, 'utf8')) : null;
   const verdict = evaluateGate(plan, {
     mode: args.mode,
     expectedHeadSha: args.expectedHead || null,
     expectedBaseSha: args.expectedBase || null,
     expectedPolicyDigest,
+    policy,
     planJobResult: args.planJobResult || null,
     results,
   });

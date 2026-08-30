@@ -250,6 +250,55 @@ test('the gate distinguishes shadow (report) from enforce (block) for job eviden
   assert.ok(evaluateGate(plan, { mode: 'enforce', results: wrongSha }).failures.some((failure) => failure.code === 'evidence-wrong-sha'));
 });
 
+test('evidence without a head SHA fails in enforce mode', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  const results = Object.fromEntries(plan.selected.map((entry) => [entry.checkName, { conclusion: 'success' }]));
+  const verdict = evaluateGate(plan, { mode: 'enforce', results });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.failures.every((failure) => failure.code === 'evidence-sha-missing'));
+});
+
+test('a receipt whose lanes do not partition the policy is invalid when the policy is known', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  assert.deepEqual(validatePlan(plan, policy), []);
+  const hollow = { ...plan, selected: [], skipped: [] };
+  assert.ok(validatePlan(hollow, policy).some((error) => error.includes('exactly once')));
+  assert.ok(validatePlan(hollow).some((error) => error.includes('at least one lane')));
+  const renamed = { ...plan, selected: plan.selected.map((entry, index) => (index === 0 ? { ...entry, checkName: 'Something Else' } : entry)) };
+  assert.ok(validatePlan(renamed, policy).some((error) => error.includes('names check')));
+  const duplicated = { ...plan, skipped: [...plan.skipped, plan.skipped[0]] };
+  assert.ok(validatePlan(duplicated, policy).some((error) => error.includes('more than once')));
+  assert.equal(evaluateGate(hollow, { mode: 'enforce', policy, results: {} }).ok, false);
+  assert.equal(evaluateGate(hollow, { mode: 'shadow', policy }).ok, false, 'a hollow receipt is a planner defect even in shadow');
+});
+
+test('a revision pushed by someone other than the trusted author is T3', () => {
+  const pushedByBot = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'dependabot[bot]', senderType: 'Bot', repositoryOwnerLogin: 'Chris0Jeky', executionMode: 'hybrid' }), policy, digest);
+  assert.equal(pushedByBot.trust, 'T3');
+  assert.equal(pushedByBot.executionMode.effective, 'hosted');
+  const pushedByStranger = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'someone-else', senderType: 'User', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
+  assert.equal(pushedByStranger.trust, 'T3');
+  const pushedByOwner = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'Chris0Jeky', senderType: 'User', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
+  assert.equal(pushedByOwner.trust, 'T1');
+  assert.equal(pushedByOwner.actor.sender, 'Chris0Jeky');
+});
+
+test('auth, executor-pipeline and infrastructure MCP files are R3 (Codex P1 gaps)', () => {
+  for (const path of ['backend/src/Taskdeck.Application/Services/MfaService.cs', 'backend/src/Taskdeck.Application/Services/JwtSettings.cs', 'backend/src/Taskdeck.Application/Services/IPasswordHasher.cs', 'backend/src/Taskdeck.Api/Middleware/TokenValidationMiddleware.cs', 'backend/src/Taskdeck.Application/DTOs/OidcDtos.cs']) {
+    const plan = buildPlan(ownerInput([path]), policy, digest);
+    assert.equal(plan.risk, 'R3', path);
+    assert.ok(plan.groups.some((group) => group.id === 'auth-security'), path);
+  }
+  for (const path of ['backend/src/Taskdeck.Application/Services/Pipeline/OperationHandlerRegistry.cs', 'backend/src/Taskdeck.Application/Services/Pipeline/ExecutionAuditRecorder.cs', 'backend/src/Taskdeck.Application/Services/AutomationPolicyEngine.cs']) {
+    const plan = buildPlan(ownerInput([path]), policy, digest);
+    assert.equal(plan.risk, 'R3', path);
+    assert.ok(laneIds(plan).includes('e2e-smoke'), path);
+  }
+  const mcp = buildPlan(ownerInput(['backend/src/Taskdeck.Infrastructure/Mcp/StdioUserContextProvider.cs']), policy, digest);
+  assert.equal(mcp.risk, 'R3');
+  assert.ok(laneIds(mcp).includes('api-integration-windows'));
+});
+
 test('a plan that claims a self-hosted runner for a non-T1 or R4 change is invalid', () => {
   const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
   const tampered = { ...plan, trust: 'T3', executionMode: { ...plan.executionMode, effective: 'hybrid' } };
@@ -272,8 +321,10 @@ test('inputFromEvent reads pull_request payloads without content and detects for
       labels: [{ name: 'ci:full' }],
     },
   };
-  const input = inputFromEvent(event, 'pull_request_target', { changedFiles: ['docs/x.md'], changedFilesAvailable: true });
+  const input = inputFromEvent({ ...event, sender: { login: 'someone', type: 'User' } }, 'pull_request_target', { changedFiles: ['docs/x.md'], changedFilesAvailable: true });
   assert.equal(input.isFork, true);
+  assert.equal(input.senderLogin, 'someone');
+  assert.equal(input.repositoryOwnerLogin, 'Chris0Jeky');
   assert.equal(input.isDraft, true);
   assert.equal(input.pullRequestNumber, 7);
   assert.deepEqual(input.labels, ['ci:full']);
