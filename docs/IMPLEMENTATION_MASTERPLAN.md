@@ -69,6 +69,30 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-08-30, engineering-review bundle reconciliation)
+
+- **Evidence, not authority.** The external security/quality/performance/payment-gating bundle at
+  source commit `221aa88c8` was validated and re-measured against live head `ca93903c8`, then
+  reconciled rather than imported. The dated evidence, patch caveats, all 20 brief dispositions, and
+  corrected entitlement boundary are in
+  `docs/analysis/2026-08-30-engineering-review/`; tracker `#2349` owns the primer.
+- **Release safety.** Confirmed PWA cross-session API replay is the sole new v0.3 blocker
+  (`#2350`, Priority I). Existing hosted-session owner `#1644` and cross-surface safe unexpected
+  errors `#2351` are v0.4 security work; standard HTTP 500 responses are already sanitized, so
+  the latter targets persisted, batch, MCP, CLI, and other non-standard surfaces.
+- **Existing owners win.** Database transfer maps to `#1166`/`#2238`, connector envelope rotation
+  to `#1134`, hotspot extraction to `#2236`, performance evidence to `#2237`, frontend test
+  typechecking to `#1607`, and impact-based CI to `#2324` plus its children. User-data export
+  already has a streaming path; no competing issue was seeded.
+- **Later horizons remain bounded.** Formatting and staged .NET analyzer ratchets are `#2352`
+  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned and
+  blocked by `#2012`, retention evidence, the subject model, and rights review. No bundle-only
+  work was manufactured for v0.6/v0.7, and v0.4 hosted open beta remains non-commercial.
+- **Queue/governance.** The bounded owner-requested intake created exactly five `Pending` records
+  (`#2349`-`#2353`) and promoted none to `Now`/`Next`. A complete ProjectV2 Apply/post-audit
+  scanned 2,325/2,325 items, wrote 32 Priority corrections across the concurrently changing
+  project, and finished at zero drift.
+
 ## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
 
 The maintainer directed that the repository **goes private for the v0.3.0 release** and that CI must
