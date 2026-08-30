@@ -36,6 +36,7 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - edited
       - labeled
       - unlabeled
 
@@ -84,6 +85,17 @@ jobs:
           # The planner escalates when the listed count differs from the payload's changed_files
           # (the files endpoint caps at 3,000 entries) — see --changed-files-expected below.
 
+      - name: Resolve the head commit identities (author + committer logins; metadata only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" \
+            --jq '[.author.login, .committer.login] | map(select(. != null)) | unique | join(",")' \
+            > artifacts/head-actors.txt
+          printf 'head identities: %s\n' "$(cat artifacts/head-actors.txt)"
+
       - name: Resolve the merge tree (git objects only; nothing is executed)
         continue-on-error: true
         env:
@@ -106,7 +118,7 @@ jobs:
           EXPECTED_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
-          plan_args=()
+          plan_args=(--head-actors "$(cat artifacts/head-actors.txt)")
           if [ -s artifacts/merge-tree-sha.txt ]; then
             plan_args+=(--merge-tree-sha "$(cat artifacts/merge-tree-sha.txt)")
           fi
@@ -158,16 +170,19 @@ jobs:
 
       - name: Evaluate (mode follows ci/policy.v1.json; in shadow only planner/plan defects are red)
         env:
+          GH_TOKEN: ${{ github.token }}
           PLAN_RESULT: ${{ needs.plan.result }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
           EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
+          head_actors="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD}" --jq '[.author.login, .committer.login] | map(select(. != null)) | unique | join(",")' || true)"
           node scripts/ci/smart-ci/evaluate-gate.mjs \
             --plan artifacts/ci-plan.json \
             --policy ci/policy.v1.json \
             --event "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
+            --head-actors "$head_actors" \
             --expected-head "$EXPECTED_HEAD" \
             --expected-base "$EXPECTED_BASE" \
             --plan-job-result "$PLAN_RESULT" \

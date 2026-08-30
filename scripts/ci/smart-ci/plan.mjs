@@ -16,7 +16,7 @@ import { dirname } from 'node:path';
 import { buildPlan, errorPlan, policyDigest, renderPlanSummary } from './lib/plan.mjs';
 
 function parseArgs(argv) {
-  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, changedFilesExpected: null, notes: [], executionMode: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
+  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, changedFilesExpected: null, headActors: null, headActorsKnown: false, notes: [], executionMode: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => argv[++index];
@@ -28,6 +28,7 @@ function parseArgs(argv) {
       case '--execution-mode': args.executionMode = next(); break;
       case '--merge-tree-sha': args.mergeTreeSha = next(); break;
       case '--changed-files-expected': args.changedFilesExpected = Number(next()); break;
+      case '--head-actors': args.headActors = next().split(',').map((value) => value.trim()).filter(Boolean); args.headActorsKnown = true; break;
       case '--note': args.notes.push(next()); break;
       case '--out': args.out = next(); break;
       case '--summary': args.summary = next(); break;
@@ -69,10 +70,14 @@ export function inputFromEvent(event, eventName, options = {}) {
     authorAssociation: null,
     senderLogin: event && event.sender ? event.sender.login ?? null : null,
     senderType: event && event.sender ? event.sender.type ?? null : null,
+    eventAction: event && typeof event.action === 'string' ? event.action : null,
+    headActors: Array.isArray(options.headActors) ? options.headActors : [],
+    headActorsKnown: options.headActorsKnown === true,
     repositoryOwnerLogin: ownerLogin,
     isFork: false,
     labels: [],
     changedFiles: options.changedFiles ?? [],
+    changedFileRows: Number.isInteger(options.changedFileRows) ? options.changedFileRows : null,
     changedFilesAvailable: options.changedFilesAvailable === true,
     changedFilesExpected: Number.isInteger(options.changedFilesExpected) ? options.changedFilesExpected : (event && event.pull_request && Number.isInteger(event.pull_request.changed_files) ? event.pull_request.changed_files : null),
     notes: Array.isArray(options.notes) ? options.notes : [],
@@ -104,12 +109,18 @@ export function inputFromEvent(event, eventName, options = {}) {
   return input;
 }
 
-/** Parse a changed-file list: one path per line, or TSV `status<TAB>path<TAB>previous_path`. */
+/**
+ * Parse a changed-file list: one path per line, or TSV `status<TAB>path<TAB>previous_path`.
+ * Returns every path for risk matching plus the number of rows (one per API entry, so a
+ * rename counts once when compared with the payload's `changed_files`).
+ */
 export function parseChangedFiles(text) {
   const paths = [];
+  let rows = 0;
   for (const rawLine of String(text).split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
+    rows += 1;
     const parts = line.split('\t');
     if (parts.length >= 2) {
       if (parts[1]) paths.push(parts[1]);
@@ -118,6 +129,7 @@ export function parseChangedFiles(text) {
       paths.push(parts[0]);
     }
   }
+  paths.rows = rows;
   return paths;
 }
 
@@ -133,14 +145,16 @@ function main() {
     policy = JSON.parse(policyText);
     const event = args.event ? JSON.parse(readFileSync(args.event, 'utf8')) : null;
     let changedFiles = [];
+    let changedFileRows = null;
     let changedFilesAvailable = false;
     if (args.changedFiles && existsSync(args.changedFiles)) {
       changedFiles = parseChangedFiles(readFileSync(args.changedFiles, 'utf8'));
+      changedFileRows = changedFiles.rows;
       changedFilesAvailable = true;
     }
     const notes = [...args.notes];
     if (!args.mergeTreeSha) notes.push('merge-tree-unavailable');
-    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, notes, executionMode: args.executionMode, mergeTreeSha: args.mergeTreeSha });
+    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles: [...changedFiles], changedFileRows, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, headActors: args.headActors, headActorsKnown: args.headActorsKnown, notes, executionMode: args.executionMode, mergeTreeSha: args.mergeTreeSha });
     if (!event) {
       // Local what-if: an explicit actor is the operator; default to a trusted owner preview.
       input.actorLogin = 'local';

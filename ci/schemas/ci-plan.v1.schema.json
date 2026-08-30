@@ -5,7 +5,7 @@
   "description": "Documentation schema for artifacts/ci-plan.json. Executable validation: scripts/ci/smart-ci/lib/plan.mjs validatePlan(). Content-free: paths, SHAs, logins, labels, lane ids and reasons only.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "policyId", "policyDigest", "mode", "event", "baseSha", "headSha", "actor", "labels", "trust", "risk", "executionMode", "escalated", "escalationReasons", "changedFiles", "groups", "unmappedPaths", "controlPathsChanged", "selected", "skipped", "plannerError"],
+  "required": ["schemaVersion", "policyId", "policyDigest", "mode", "event", "baseSha", "headSha", "actor", "labels", "trust", "risk", "executionMode", "escalated", "escalationReasons", "changedFiles", "groups", "unmappedPaths", "controlPathsChanged", "selected", "skipped", "notes", "plannerError"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "policyId": { "type": ["string", "null"] },
@@ -30,12 +30,14 @@
     "actor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["login", "type", "association", "isFork"],
+      "required": ["login", "type", "association", "isFork", "sender", "headActors"],
       "properties": {
         "login": { "type": ["string", "null"] },
         "type": { "type": ["string", "null"] },
         "association": { "type": ["string", "null"] },
-        "isFork": { "type": "boolean" }
+        "isFork": { "type": "boolean" },
+        "sender": { "type": ["string", "null"], "description": "event.sender login — the pusher on revision events, the label/edit actor otherwise" },
+        "headActors": { "type": "array", "items": { "type": "string" }, "description": "author + committer logins of the head commit; every one must be trusted" }
       }
     },
     "labels": { "type": "array", "items": { "type": "string" } },
@@ -71,6 +73,7 @@
     },
     "unmappedPaths": { "type": "array", "items": { "type": "string" } },
     "controlPathsChanged": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "array", "items": { "type": "string" }, "description": "non-fatal observations such as merge-tree-unavailable" },
     "selected": {
       "type": "array",
       "items": {

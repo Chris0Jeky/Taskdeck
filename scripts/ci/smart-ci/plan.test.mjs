@@ -277,14 +277,55 @@ test('a receipt whose lanes do not partition the policy is invalid when the poli
 });
 
 test('a revision pushed by someone other than the trusted author is T3', () => {
-  const pushedByBot = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'dependabot[bot]', senderType: 'Bot', repositoryOwnerLogin: 'Chris0Jeky', executionMode: 'hybrid' }), policy, digest);
+  const pushedByBot = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'dependabot[bot]', senderType: 'Bot', eventAction: 'synchronize', repositoryOwnerLogin: 'Chris0Jeky', executionMode: 'hybrid' }), policy, digest);
   assert.equal(pushedByBot.trust, 'T3');
   assert.equal(pushedByBot.executionMode.effective, 'hosted');
-  const pushedByStranger = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'someone-else', senderType: 'User', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
+  const pushedByStranger = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'someone-else', senderType: 'User', eventAction: 'synchronize', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
   assert.equal(pushedByStranger.trust, 'T3');
-  const pushedByOwner = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'Chris0Jeky', senderType: 'User', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
+  const pushedByOwner = buildPlan(ownerInput(['docs/x.md'], { senderLogin: 'Chris0Jeky', senderType: 'User', eventAction: 'synchronize', repositoryOwnerLogin: 'Chris0Jeky' }), policy, digest);
   assert.equal(pushedByOwner.trust, 'T1');
   assert.equal(pushedByOwner.actor.sender, 'Chris0Jeky');
+});
+
+test('head commit identities bind trust to the code; label events cannot upgrade a stranger-pushed head', () => {
+  const base = { repositoryOwnerLogin: 'Chris0Jeky', executionMode: 'hybrid' };
+  const strangerHead = buildPlan(ownerInput(['docs/x.md'], { ...base, headActors: ['someone-else'], headActorsKnown: true, senderLogin: 'Chris0Jeky', senderType: 'User', eventAction: 'labeled' }), policy, digest);
+  assert.equal(strangerHead.trust, 'T3', 'an owner label must not re-trust a head someone else authored');
+  assert.equal(strangerHead.executionMode.effective, 'hosted');
+  const botCommitter = buildPlan(ownerInput(['docs/x.md'], { ...base, headActors: ['Chris0Jeky', 'dependabot[bot]'], headActorsKnown: true }), policy, digest);
+  assert.equal(botCommitter.trust, 'T3');
+  const unknownIdentity = buildPlan(ownerInput(['docs/x.md'], { ...base, headActors: [], headActorsKnown: true }), policy, digest);
+  assert.equal(unknownIdentity.trust, 'T3', 'a head commit with no linked GitHub identity is untrusted');
+  const webFlow = buildPlan(ownerInput(['docs/x.md'], { ...base, headActors: ['Chris0Jeky', 'web-flow'], headActorsKnown: true }), policy, digest);
+  assert.equal(webFlow.trust, 'T1');
+  assert.deepEqual(webFlow.actor.headActors, ['Chris0Jeky', 'web-flow']);
+  const labelActorIgnored = buildPlan(ownerInput(['docs/x.md'], { ...base, headActors: ['Chris0Jeky'], headActorsKnown: true, senderLogin: 'someone-else', senderType: 'User', eventAction: 'labeled' }), policy, digest);
+  assert.equal(labelActorIgnored.trust, 'T1', 'a label applied by a collaborator does not taint an owner-authored head');
+});
+
+test('the policy can switch self-hosted execution off for a trust class', () => {
+  const noSelfHosted = JSON.parse(policyText);
+  noSelfHosted.trustClasses.T1.selfHostedAllowed = false;
+  const plan = buildPlan(ownerInput(['backend/src/Taskdeck.Application/Services/X.cs'], { executionMode: 'hybrid' }), noSelfHosted, digest);
+  assert.equal(plan.trust, 'T1');
+  assert.equal(plan.executionMode.effective, 'hosted');
+  assert.ok(plan.executionMode.reasons.includes('policy:T1.selfHostedAllowed=false'));
+  assert.ok(plan.selected.every((entry) => entry.hosted === true));
+});
+
+test('enforce mode with no evidence map is a failure, never a pass', () => {
+  const plan = { ...buildPlan(ownerInput(['docs/x.md']), policy, digest), mode: 'enforce' };
+  const verdict = evaluateGate(plan, { mode: 'enforce' });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.failures.some((failure) => failure.code === 'evidence-unavailable'));
+});
+
+test('a rename counts once against the payload changed_files (rows, not expanded paths)', () => {
+  const parsed = parseChangedFiles('renamed\tdocs/new.md\tdocs/old.md\nmodified\tdocs/a.md\t\n');
+  assert.deepEqual([...parsed], ['docs/new.md', 'docs/old.md', 'docs/a.md']);
+  assert.equal(parsed.rows, 2);
+  const plan = buildPlan(ownerInput([...parsed], { changedFileRows: parsed.rows, changedFilesExpected: 2 }), policy, digest);
+  assert.equal(plan.escalated, false);
 });
 
 test('auth, executor-pipeline and infrastructure MCP files are R3 (Codex P1 gaps)', () => {

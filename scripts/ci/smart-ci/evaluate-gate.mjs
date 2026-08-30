@@ -15,7 +15,7 @@ import { evaluateGate, policyDigest, renderGateSummary } from './lib/plan.mjs';
 import { inputFromEvent } from './plan.mjs';
 
 function parseArgs(argv) {
-  const args = { plan: 'artifacts/ci-plan.json', policy: null, mode: null, event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, expectedHead: null, expectedBase: null, planJobResult: null, results: null, receipt: null, summary: null };
+  const args = { plan: 'artifacts/ci-plan.json', policy: null, mode: null, event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, headActors: null, headActorsKnown: false, expectedHead: null, expectedBase: null, planJobResult: null, results: null, receipt: null, summary: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => argv[++index];
@@ -25,6 +25,7 @@ function parseArgs(argv) {
       case '--mode': args.mode = next(); break;
       case '--event': args.event = next(); break;
       case '--event-name': args.eventName = next(); break;
+      case '--head-actors': args.headActors = next().split(',').map((value) => value.trim()).filter(Boolean); args.headActorsKnown = true; break;
       case '--expected-head': args.expectedHead = next(); break;
       case '--expected-base': args.expectedBase = next(); break;
       case '--plan-job-result': args.planJobResult = next(); break;
@@ -67,7 +68,7 @@ function main() {
   let eventInput = null;
   if (args.event && existsSync(args.event)) {
     try {
-      eventInput = inputFromEvent(JSON.parse(readFileSync(args.event, 'utf8')), args.eventName, {});
+      eventInput = inputFromEvent(JSON.parse(readFileSync(args.event, 'utf8')), args.eventName, { headActors: args.headActors, headActorsKnown: args.headActorsKnown });
     } catch (error) {
       console.error(`event payload unreadable: ${error}`);
     }
@@ -105,8 +106,8 @@ function main() {
       risk: plan ? plan.risk : null,
       trust: plan ? plan.trust : null,
       escalated: plan ? plan.escalated : null,
-      selected: plan ? plan.selected.map((entry) => ({ lane: entry.lane, checkName: entry.checkName, runnerClass: entry.runnerClass, hosted: entry.hosted })) : [],
-      skipped: plan ? plan.skipped.map((entry) => ({ lane: entry.lane, checkName: entry.checkName, reason: entry.reason })) : [],
+      selected: plan && Array.isArray(plan.selected) ? plan.selected.filter(Boolean).map((entry) => ({ lane: entry.lane ?? null, checkName: entry.checkName ?? null, runnerClass: entry.runnerClass ?? null, hosted: entry.hosted === true })) : [],
+      skipped: plan && Array.isArray(plan.skipped) ? plan.skipped.filter(Boolean).map((entry) => ({ lane: entry.lane ?? null, checkName: entry.checkName ?? null, reason: entry.reason ?? null })) : [],
       generatedAtUtc: new Date().toISOString(),
     };
     writeFileSync(args.receipt, `${JSON.stringify(receipt, null, 2)}\n`);

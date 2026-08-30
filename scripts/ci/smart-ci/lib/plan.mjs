@@ -146,11 +146,19 @@ export function validatePolicy(policy) {
   return errors;
 }
 
+/** GitHub's own committer identity on web merges/edits; it never pushes untrusted code by itself. */
+const GITHUB_SYSTEM_LOGINS = new Set(['web-flow']);
+
+/** Event actions on which `event.sender` is the account that produced the current head. */
+const REVISION_ACTIONS = new Set(['opened', 'synchronize', 'reopened']);
+
 /**
  * Trust classification. T0 is the control plane itself and is never assigned to a change.
- * Both the PR author (`actorLogin` / `authorAssociation`) and the account that pushed the
- * current revision (`senderLogin`, when known) must be trusted: a `synchronize` event carries
- * the original author's association even when someone else pushed the new head.
+ * The PR author (`actorLogin` / `authorAssociation`), every identity on the head commit
+ * (`headActors`: author + committer logins of the head SHA), and — on revision-producing
+ * events only — the event sender must all be trusted. Label/edit events carry the label
+ * actor as `sender`, so they can never upgrade the trust of an unchanged head: the head
+ * commit identities are what bind trust to the code, and an unknown identity is untrusted.
  */
 export function classifyTrust(input, controlPathsChanged, policy) {
   if (input.eventName === 'push' && String(input.ref ?? '').startsWith('refs/tags/')) return 'T4';
@@ -158,11 +166,17 @@ export function classifyTrust(input, controlPathsChanged, policy) {
   const login = String(input.actorLogin ?? '');
   if (input.actorType === 'Bot' || /\[bot\]$/i.test(login) || login.length === 0) return 'T3';
   if (!policy.trustedAssociations.includes(String(input.authorAssociation ?? ''))) return 'T3';
-  const sender = String(input.senderLogin ?? '');
-  if (sender.length > 0 && sender !== login) {
-    const ownerLogin = String(input.repositoryOwnerLogin ?? '');
-    if (input.senderType === 'Bot' || /\[bot\]$/i.test(sender) || sender !== ownerLogin) return 'T3';
+  const ownerLogin = String(input.repositoryOwnerLogin ?? '');
+  const trustedLogins = new Set([login, ownerLogin].filter((value) => value.length > 0));
+  const isUntrustedIdentity = (identity, type = null) => type === 'Bot' || /\[bot\]$/i.test(identity) || !trustedLogins.has(identity);
+  if (Array.isArray(input.headActors)) {
+    const actors = input.headActors.map((value) => String(value ?? '')).filter((value) => value.length > 0 && !GITHUB_SYSTEM_LOGINS.has(value));
+    if (input.headActorsKnown === true && actors.length === 0) return 'T3';
+    for (const actor of actors) if (isUntrustedIdentity(actor)) return 'T3';
   }
+  const sender = String(input.senderLogin ?? '');
+  const action = String(input.eventAction ?? '');
+  if (sender.length > 0 && (REVISION_ACTIONS.has(action) || action.length === 0) && isUntrustedIdentity(sender, input.senderType)) return 'T3';
   if (controlPathsChanged.length > 0) return 'T2';
   return 'T1';
 }
@@ -219,7 +233,8 @@ export function buildPlan(input, policy, digest) {
 
   const escalationReasons = [];
   if (input.changedFilesAvailable !== true) escalationReasons.push('changed-files-unavailable');
-  if (Number.isInteger(input.changedFilesExpected) && input.changedFilesExpected >= 0 && input.changedFilesExpected !== (input.changedFiles ?? []).length) escalationReasons.push('changed-files-truncated');
+  const listedRows = Number.isInteger(input.changedFileRows) ? input.changedFileRows : (input.changedFiles ?? []).length;
+  if (Number.isInteger(input.changedFilesExpected) && input.changedFilesExpected >= 0 && input.changedFilesExpected !== listedRows) escalationReasons.push('changed-files-truncated');
   if (!isNonEmptyString(input.baseSha) || !isNonEmptyString(input.headSha)) escalationReasons.push('base-or-head-sha-missing');
   if (unmapped.length > 0) escalationReasons.push('unmapped-path');
   if (controlPathsChanged.length > 0) escalationReasons.push('control-path-change');
@@ -259,6 +274,7 @@ export function buildPlan(input, policy, digest) {
   const hostedForcedReasons = [];
   if (forceHosted) hostedForcedReasons.push('label:force-hosted');
   if (trust !== 'T1') hostedForcedReasons.push(`trust:${trust}`);
+  if (!policy.trustClasses[trust] || policy.trustClasses[trust].selfHostedAllowed !== true) hostedForcedReasons.push(`policy:${trust}.selfHostedAllowed=false`);
   if (risk === 'R4') hostedForcedReasons.push('risk:R4');
   if (escalationReasons.length > 0) hostedForcedReasons.push('escalated');
   const hostedForced = hostedForcedReasons.length > 0;
@@ -308,6 +324,7 @@ export function buildPlan(input, policy, digest) {
       association: input.authorAssociation ?? null,
       isFork: input.isFork === true,
       sender: input.senderLogin ?? null,
+      headActors: Array.isArray(input.headActors) ? uniqueSorted(input.headActors.map(String).filter(Boolean)) : [],
     },
     labels,
     trust,
@@ -341,7 +358,7 @@ export function errorPlan(input, policy, digest, error) {
     headSha: input.headSha ?? null,
     mergeSha: input.mergeSha ?? null,
     mergeTreeSha: input.mergeTreeSha ?? null,
-    actor: { login: input.actorLogin ?? null, type: input.actorType ?? null, association: input.authorAssociation ?? null, isFork: input.isFork === true },
+    actor: { login: input.actorLogin ?? null, type: input.actorType ?? null, association: input.authorAssociation ?? null, isFork: input.isFork === true, sender: input.senderLogin ?? null, headActors: Array.isArray(input.headActors) ? uniqueSorted(input.headActors.map(String).filter(Boolean)) : [] },
     labels: uniqueSorted((input.labels ?? []).map(String)),
     trust: 'T3',
     risk: 'R4',
@@ -456,6 +473,8 @@ export function evaluateGate(plan, context) {
         else if (!isNonEmptyString(result.headSha)) failures.push({ code: 'evidence-sha-missing', detail: `${entry.checkName}: evidence carries no head SHA` });
         else if (result.headSha !== plan.headSha) failures.push({ code: 'evidence-wrong-sha', detail: `${entry.checkName}: ${result.headSha}` });
       }
+    } else if (mode === 'enforce') {
+      failures.push({ code: 'evidence-unavailable', detail: 'enforce mode requires a job-evidence map for every selected lane; none was supplied' });
     } else {
       notes.push('no job evidence supplied — shadow phase evaluates the plan receipt only');
     }
