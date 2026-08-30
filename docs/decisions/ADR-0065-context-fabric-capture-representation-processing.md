@@ -1,14 +1,16 @@
 # ADR-0065: Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing
 
-- **Status**: Accepted (under delegation, 2026-08-30). The maintainer widened the pass mid-session
-  ("continue working on this part, go as far as you can … I'll leave this to you. I want you to pave
-  the way to (possibly even) v1.0"), so the nine acceptance conditions below were **ruled by the
-  agent pass under that explicit delegation** and recorded, with reasons, on tracker CF-00
-  (`#2254`). Every ruling is revisable by the maintainer at any time; a reply on CF-00 overturns it.
-  Shipped behaviour is unchanged until each CF slice lands behind its own tests: the queue-wrapper
-  capture model (ADR-0005), the transcript lane (ADR-0045), the generalist wave (ADR-0046), and
-  review-first automation (ADR-0003 / GP-06 / ADR-0056) remain fully operative, and the delegated
-  authority slice (§Decision 9) keeps its own separate gate.
+- **Status**: Accepted (confirmed 2026-08-30 with amendments). The maintainer widened the pass
+  mid-session ("continue working on this part, go as far as you can … I'll leave this to you. I want
+  you to pave the way to (possibly even) v1.0"), so the nine acceptance conditions below were first
+  **ruled by the agent pass under that explicit delegation** and recorded, with reasons, on tracker
+  CF-00 (`#2254`). Later the same day the maintainer had the scaffold audited externally and directed
+  the audit's implementation; the resulting confirmation — rulings 1, 3, 5, 7, 8 as ruled; 2, 4, 6, 9
+  with the amendments in §*Amendments (2026-08-30)* — is recorded on `#2254` as the maintainer's
+  reply. Shipped behaviour is unchanged until each CF slice lands behind its own tests: the
+  queue-wrapper capture model (ADR-0005), the transcript lane (ADR-0045), the generalist wave
+  (ADR-0046), and review-first automation (ADR-0003 / GP-06 / ADR-0056) remain fully operative, and
+  the delegated authority slice (§Decision 9) keeps its own separate gate.
 - **Date**: 2026-08-30
 - **Deciders**: Chris0Jeky (maintainer)
 - **Source**: the maintainer's 2026-08-30 *Context Fabric* planning pack (an external LLM planning
@@ -100,12 +102,27 @@ architecture doctrine, not a launch claim; public copy names the optimised paths
 
 ### 1. Capture becomes a durable aggregate
 
-A `Capture` is the user-owned Inbox object: owner, server and optional client timestamps, origin
-adapter, producer kind, intent mode, optional explicit context hint, retention policy, lifecycle
-state, optional user title/note. A capture may hold several immutable `SourceAsset`s (a sentence
-plus a screenshot; a voice note plus a link). A capture succeeds as soon as its sources are durably
-stored; transcription, OCR, semantic extraction, and context resolution may all fail without
-invalidating it.
+A `Capture` is the user-owned Inbox object: owner, optional producing principal, server and optional
+client timestamps, origin adapter, producer kind, requested and effective intent, optional explicit
+context hint, retention policy, three orthogonal state axes, optional user title/note. A capture holds
+one or more immutable **`SourceAsset`s** — the general source model between `Capture` and
+`Representation` (amended 2026-08-30): each asset has its own modality, media type, content hash, byte
+size and storage kind (inline text · blob reference · external reference · legacy artefact), so a
+sentence plus a screenshot, a voice note plus a link, or a structured integration event are one
+capture with several inputs, and routing operates per asset. Typed and pasted text is an inline
+asset stored verbatim — never a field on the processing job and never the capture's note; the shipped
+`SourceArtefact` / `ArtefactBlob` pair is adapted behind the model as the legacy-artefact storage kind,
+not replaced. A capture succeeds as soon as its sources are durably stored; transcription, OCR,
+semantic extraction, and context resolution may all fail without invalidating it.
+
+Capture state is **three axes, not one enum** (amended 2026-08-30): the user's *disposition*
+(Active · Kept · Archived — the only axis a person sets; Archived is terminal and erases no outcome),
+a *processing summary* projected from job and run records (Idle · Processing · Partial · Ready ·
+Failed — `Partial` exists so one failed image leg never fails a text-plus-screenshot capture), and an
+*action state* projected from planning records (Unplanned · NeedsInput · NeedsReview · Acted). The
+one-line timeline the UI shows (*Received → Preparing → Understood → Needs input / Needs review →
+Acted*, with *Kept*, *Failed*, *Archived* as resting states) is a projection over those axes, never the
+only persisted truth.
 
 Migration is **ID-preserving**: `Capture.Id` = the `LlmRequest.Id` of the row it is backfilled from,
 so `SourceArtefact.CreatedFromCaptureId`, `Transcript.CreatedFromCaptureId`,
@@ -115,12 +132,20 @@ retained only as a provider-call/legacy queue record. This supersedes ADR-0005 w
 
 ### 2. Input dimensions are separate fields
 
-Persist independently: **modality** (`Text | Audio | Image | Document | Structured`), **origin
-adapter** (web composer, share target, browser/VS Code extension, MCP, import, integration),
-**producer** (`Human | Agent | Integration | Import`), and **intent** (`Remember | Organize | Act |
-Auto`). `CaptureSource` remains as a derived compatibility field for existing API clients and is
-not extended as the routing model. `Remember` maps onto the shipped `Kept` disposition (a capture
-that is preserved and never triaged); `Act` is today's proposal-requested path.
+Persist independently: **modality** (`Text | Audio | Image | Document | Structured`) — per
+`SourceAsset`, with the capture's `PrimaryModality` only a summary of its first asset for lists and
+compatibility readers; **origin adapter** (web composer, share target, browser/VS Code extension, MCP,
+import, integration); **producer** (`Human | Agent | Integration` — an import is a transport, not a
+principal, so there is no `Import` producer; amended 2026-08-30) with `ProducedByPrincipalId` naming
+the agent profile, connector or service account when the producer is not the owner (`UserId` stays the
+owner; ownership and production are different questions); and **intent** as a *requested* value
+(`Remember | Organize | Act | Auto`) plus an *effective* value that is never `Auto` — `Auto` is an
+instruction to infer, and the inference is recorded against the run that made it
+(`IntentResolvedByRunId`). `CaptureSource` survives as `LegacySourceSnapshot`, a compatibility
+snapshot taken at intake for the queue-row contract (persisted, not derived, so a mirrored row reads
+back exactly what its queue row said; native captures take it from `CaptureSourceMapping`), and is
+not extended as the routing model. `Remember` maps onto the shipped `Kept` disposition (a capture that
+is preserved and never triaged); `Act` is today's proposal-requested path.
 
 ### 3. Derived content is an explicit, immutable Representation
 
@@ -130,7 +155,14 @@ processor/model/configuration identity, schema version, content hash, language, 
 warnings) with **typed payload tables**, not one JSON blob. The shipped `Transcript` becomes the
 transcript payload and `ArtefactExtraction` the text payload behind an `IRepresentationStore`
 façade; no destructive migration is required. Transcript segments gain optional start/end
-milliseconds and char spans *additively*; the line-indexed shape stays valid.
+milliseconds and char spans *additively*; the line-indexed shape stays valid. The façade contract is a
+**draft until CF-06's first implementation proves its invariants** (amended 2026-08-30): every
+representation has exactly one parent (a source asset or a representation); every retained legacy
+`Transcript` / `ArtefactExtraction` gets a header and every legacy source without a capture gets a
+backfilled `Capture` (ownership is always known), so a null `CaptureId` is a migration-window state,
+never the target model; supersession is a forward link and nothing is rewritten; quality state
+(`Provisional | Final | Verified | Superseded`) is per representation; typed payload ownership is by
+kind; the façade is read-only during the migration window.
 
 ### 4. One evidence vocabulary: EvidenceAnchor
 
@@ -212,6 +244,14 @@ Local ML (transcription, alignment, diarisation, OCR) runs in **supervised sidec
 *Taskdeck Worker Protocol v1* (JSON-RPC over stdio: `processor.run`, `processor.progress`, typed
 result/error envelopes, per-process session secret, spool-directory inputs, protocol-only stdout,
 content-free stderr, deadlines and output caps, network denial for local-only manifests). The
+protocol is **v1-alpha** (amended 2026-08-30): a run takes typed multiple inputs (source assets,
+representations, a bounded context snapshot) and returns typed output families — representation,
+candidate batch, diagnostic — so `semantic.extract` can return candidates and OCR can return regions
+without pretending everything is text; manifests declare output schemas per capability; sidecars and
+remote processors may declare only externalizable capabilities (`context.resolve`, `change.plan`,
+`change.verify`, authority evaluation and execution stay in-process because they need live domain
+state and policy); and the contract is not called fixed until PdfPig through the ADR-0048 worker and
+WhisperX through the sidecar path both pass conformance. The
 memory-capped extraction worker process of ADR-0048 (`#1429`) is the first host of that protocol,
 so the sidecar supervisor is proven on PdfPig before any Python/CUDA process. Hosted CPU/GPU workers
 may later deploy behind the same contracts; no microservice split now.
@@ -225,7 +265,14 @@ SQLite. Audio raises the per-artefact cap by configuration (a 45-minute meeting 
 ~21 MB against today's 10 MB default) and carries an explicit retention policy (keep; keep until
 transcript verified; N days; delete after processing) whose evidence-playback trade-off the UI
 states. Content-addressed deduplication, streaming reads/writes, quotas, and backup-size reporting
-are part of the abstraction, not later extras.
+are part of the abstraction, not later extras. The contract has **reference semantics** (amended
+2026-08-30): a blob object is content-addressed per owner and held by references (one per source
+asset, artefact or retention holder); deleting an asset releases its reference, and the bytes go only
+when the last reference does, inside the caller's transaction — never "delete by hash". Quota is
+reserved for a declared expected size before the stream is read; the media type belongs to the asset,
+not the bytes; stream ownership is explicit; and because the shipped `ArtefactBlob.Content` is a
+`byte[]`, CF-23 must implement genuine streaming (SQLite incremental BLOB I/O, bounded chunk rows, or a
+controlled spool-then-store step) rather than wrap an array.
 
 ### 12. Boardless capture and understanding are mandatory
 
@@ -270,7 +317,9 @@ serves chat (`#2004`). Targets are boards until ADR-0060 stage 4 introduces Proj
 
 - **Processing profile** — egress class, approved providers/regions, local device use, quality vs
   latency, budgets, diarisation/alignment/OCR escalation, retention, language and project
-  vocabulary. Presets: *Private*, *Balanced*, *Controlled*, *Expert*.
+  vocabulary. Presets: *Private*, *Balanced*, *Strict*, *Expert* (*Strict* was *Controlled* until
+  2026-08-30; renamed so no processing preset can be confused with the *Control* presentation
+  profile — the three vocabularies stay visibly separate).
 - **Authority profile** — exactly ADR-0057's presets (*Observe · Suggest · Assist · Operate ·
   Autonomous · Custom*) and safeguards; no parallel vocabulary is introduced.
 - **Presentation profile** — *Flow* (receipts only), *Guided* (what was understood, where it goes,
@@ -364,8 +413,10 @@ chains.
 
 ## Acceptance conditions
 
-Ruled under the maintainer's 2026-08-30 delegation and recorded with reasons on tracker CF-00
-(`#2254`): (1) *Context Fabric* internal, public wedge line as in §Decision; (2) the
+**Confirmed by the maintainer on 2026-08-30** (reply on `#2254`, relayed through the external audit the
+maintainer directed this pass to implement): rulings 1, 3, 5, 7, 8 as ruled; 2, 4, 6, 9 with the
+amendments in §*Amendments (2026-08-30)* below. First ruled under the maintainer's 2026-08-30
+delegation and recorded with reasons on tracker CF-00 (`#2254`): (1) *Context Fabric* internal, public wedge line as in §Decision; (2) the
 behaviour-preserving foundation slices 1–3 and the storage seam join v0.4 beside the hosted beta,
 together with the Worker Protocol host (CF-04, slice 5) that the already-scheduled ADR-0048 worker
 `#1429` needs — the one v0.4 item that is not behaviour-preserving; the payoff wave is v0.5; (3) candidates
@@ -390,8 +441,68 @@ as originally posed:
 8. the ADR-0046 relationship — amended in place (decisions 4 and 5) versus partially superseded;
 9. the presentation-profile reconciliation with workspace modes (`#1972`).
 
+## Amendments (2026-08-30)
+
+The maintainer had the scaffold (PR `#2280`) audited externally the day it merged and directed the
+audit's implementation. The audit as received and its disposition are in
+`docs/analysis/2026-08-30-context-fabric/EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` and
+`AUDIT_RECONCILIATION.md`; the code landed as the reconciliation pass on
+`issue-2254/context-fabric-reconciliation`, behaviour-preserving (`ContextFabric:DualWriteCaptures`
+still off; every new table empty on an unchanged install). What the amendments change in this record:
+
+1. **`SourceAsset` is real before `Representation`** (§Decision 1). The general source model between
+   `Capture` and `Representation` is scaffolded — typed and pasted text is an immutable inline asset;
+   `SourceArtefact` adapts behind it. CF-01 owns the foundation.
+2. **Three state axes replace the lifecycle enum** (§Decision 1). User disposition, processing
+   summary (a projection from jobs) and action state (a projection from planning records); the
+   timeline is a projection. `CaptureLifecycleState` is deleted.
+3. **Producer principal and requested vs effective intent** (§Decision 2). `Import` is retired as a
+   producer kind; `ProducedByPrincipalId` sits beside the owner; `Auto` is a requested intent that a
+   run resolves; `LegacySource` is the compatibility snapshot `LegacySourceSnapshot`;
+   `PrimaryModality` is a list summary — routing runs per asset.
+4. **Worker Protocol is v1-alpha** (§Decision 10). Typed multiple inputs, typed output families,
+   per-capability manifest contracts, the externalizable-capability boundary, and a draft status until
+   PdfPig and WhisperX both pass conformance.
+5. **`IBlobStore` has reference semantics** (§Decision 11). Objects held by references, deletion on
+   the last release, quota reserved before reading, media type on the asset, genuine streaming
+   required of CF-23.
+6. **`IRepresentationStore` is a draft with settled invariants** (§Decision 3), including a
+   migration-window nullable `CaptureId` whose target is a backfilled `Capture` for every retained
+   legacy source, and per-representation quality state.
+7. **One canonical intake.** `CaptureIntakeService` is the single writer of the aggregate; the
+   `POST /api/llm-queue` enqueue path no longer bypasses dual-write.
+8. **The plan graph is topologically valid.** First vertical: reconciliation → CF-01 (Capture +
+   SourceAsset) → {CF-02, CF-03, CF-23} → {CF-04, CF-06, CF-12} → {CF-05, CF-07} → CF-14 and/or CF-13
+   → CF-16 → existing proposal/review/apply. CF-24 splits into CF-24A `#2319` (corpus + benchmark command,
+   v0.5, before CF-13/CF-15) and CF-24B (`#2277`, runtime metrics + dashboard, v0.6). CF-14 uses
+   explicit per-run configuration (a minimal `ProcessingPolicySnapshot` from CF-03), not CF-10's
+   profiles. CF-16 delivers a reusable `useVoiceRecording` + `VoiceCapturePanel` that CF-20 hosts.
+   CF-04, CF-08 and CF-20 stay umbrellas and split into one-PR children before `Now` admission.
+9. **v0.4 runs under four internal gates** (ruling 2 amended): A Fabric persistence · B processor
+   containment · C trusted hosted instance · D public hosted beta — public registration last;
+   milestone membership alone makes no child a release blocker. **v0.5's gate** adds one speech route
+   genuinely accessible to an ordinary user (CF-13 one-click / downloaded-on-enable / bundled, or a
+   consented managed route); the manually configured WhisperX environment is a dogfooding route.
+10. **Ruling 4 amended** to the reference model above; **ruling 6 amended**: the ≥50 / ≥90% /
+    zero-reversal figures are provisional orientation numbers, and CF-22 stays blocked — stretch,
+    never a release blocker — on a risk-based shadow-and-canary report (target-board accuracy,
+    permission/ownership accuracy, unchanged-acceptance rate, false-action rate, correct no-action
+    rate, compensation/undo reliability, zero cross-user/cross-board violations, shadow-policy results
+    before any real auto-execution, an initial daily operation ceiling, an immediate kill switch) and
+    the maintainer's explicit go; **ruling 9 amended**: retiring the *Agent* workspace-mode selector
+    (byte-identical to Workbench, `#1972`) retires nothing else — Agents, Runs, agent attribution and
+    agent capabilities stay; the processing preset *Controlled* becomes *Strict* so the three policy
+    vocabularies (Flow/Guided/Control · Private/Balanced/Strict/Expert ·
+    Observe/Suggest/Assist/Operate/Autonomous/Custom) stay visibly separate.
+
+Declined: renaming `UserId` to `OwnerPrincipalId` (every owned entity uses `UserId`;
+`ProducedByPrincipalId` carries the distinction); opening the umbrella children before admission.
+
 ## References
 
+- `docs/analysis/2026-08-30-context-fabric/EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` and
+  `AUDIT_RECONCILIATION.md` — the external audit of PR `#2280` and its disposition (the amendments
+  above)
 - `docs/analysis/2026-08-30-context-fabric/RECONCILIATION.md` — pack-versus-repository
   verification, the re-think, the release-ladder options, and the issue map
 - `docs/analysis/2026-08-30-context-fabric/TASKDECK_CONTEXT_FABRIC_BLUEPRINT.md` — the pack's

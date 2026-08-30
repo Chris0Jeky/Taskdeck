@@ -116,13 +116,23 @@ to a later release applies every intervening migration in one startup.
 
 ## Unreleased — after v0.3.0-rc.1 (Context Fabric scaffold)
 
-**BREAKING: none.** The first Context Fabric slice (ADR-0065) adds one **empty** table, `Captures`,
-through migration `20260830034447_AddCaptureAggregate`. The pre-migration snapshot runs as usual and
-the copy is small. Nothing reads or writes the table unless the new `ContextFabric:DualWriteCaptures`
-setting is set to `true` (default `false`); with the default, every capture, inbox, proposal and
-transcript behaviour is unchanged. Downgrading after this migration means dropping the table (the
-migration's `Down` does exactly that) — lossless while the setting was never enabled; if you did enable
-it, export first, because the mirrored rows go with the table.
+**BREAKING: none.** The first Context Fabric slice (ADR-0065) adds three **empty** tables —
+`Captures`, `SourceAssets` and `SourceAssetTextPayloads` — through two migrations,
+`20260830034447_AddCaptureAggregate` and `20260830141427_ReconcileContextFabricScaffold`. The second
+reshapes the still-empty `Captures` table after the 2026-08-30 audit reconciliation: three state
+columns (`Disposition`, `ProcessingSummary`, `ActionState`) replace the single `Lifecycle` column,
+the producer and intent columns are renamed and extended (`Producer` → `ProducerKind` plus
+`ProducedByPrincipalId`; `Intent` → `RequestedIntent` plus `EffectiveIntent` and
+`IntentResolvedByRunId`; `LegacySource` → `LegacySourceSnapshot`), and it creates the two source-asset
+tables. Any rows that do exist are carried across by explicit SQL. The pre-migration snapshot runs as
+usual and the copy is small. Nothing reads or writes these tables unless the new
+`ContextFabric:DualWriteCaptures` setting is set to `true` (default `false`); with the default, every
+capture, inbox, proposal and transcript behaviour is unchanged. Downgrading after these migrations
+means dropping the tables (each migration's `Down` does exactly that, and the reconciliation `Down` is
+tested) — lossless while the setting was never enabled; if you did enable it, export first, because
+the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricScaffold` also folds the
+three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
+tables are empty, but a reason to export before downgrading if you ever turned the setting on.
 
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 

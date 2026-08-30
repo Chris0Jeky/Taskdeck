@@ -423,7 +423,7 @@ section is absent from `appsettings.json`.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, `CaptureService.CreateAsync` mirrors every new capture into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the table stays empty. | No |
+| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, every new capture is mirrored into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. The mirror is written by the canonical `CaptureIntakeService` — the single writer of the durable aggregate — from **both** capture creation paths: `CaptureService.CreateAsync` and the `POST /api/llm-queue` enqueue path (`LlmQueueService.AddToQueueAsync`, which previously bypassed the dual-write). The capture text is stored beside the mirror as an inline `SourceAsset` (verbatim, in the same unit of work). Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the tables stay empty (`Captures`, `SourceAssets`, `SourceAssetTextPayloads`). | No |
 
 ## Workers
 
