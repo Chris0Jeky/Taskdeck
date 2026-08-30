@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import TdDialog from '../ui/TdDialog.vue'
 import type { BatchExecuteReceiptRow } from '../../composables/useBatchExecuteProposals'
 
@@ -26,7 +26,63 @@ const appliedCount = computed(() => props.receipts.filter((r) => r.outcome === '
 const skippedCount = computed(() => props.receipts.filter((r) => r.outcome === 'Skipped').length)
 const failedCount = computed(() => props.receipts.filter((r) => r.outcome === 'Failed').length)
 
+const dialogAnchor = ref<HTMLElement | null>(null)
 const doneButton = ref<HTMLButtonElement | null>(null)
+let dialogEl: HTMLElement | null = null
+let enterKeyHeld = false
+
+function eventBelongsTo(button: HTMLButtonElement | null, event: KeyboardEvent): boolean {
+  return event.target instanceof Node && button?.contains(event.target) === true
+}
+
+function consumeEnter(event: KeyboardEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onConfirmKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing) return
+  // The first deliberate press may confirm. A repeat from that same physical
+  // press must not submit again while the async result is still in flight.
+  if (enterKeyHeld || event.repeat) {
+    consumeEnter(event)
+    return
+  }
+  enterKeyHeld = true
+}
+
+function onDialogKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing) return
+  if (eventBelongsTo(doneButton.value, event) && (enterKeyHeld || event.repeat)) {
+    // Confirm is replaced by focused Done when receipts arrive. Keep the held
+    // key from activating that new button until the browser sends a real keyup.
+    consumeEnter(event)
+  }
+}
+
+function onDialogKeyup(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.isComposing) enterKeyHeld = false
+}
+
+function detachDialogKeyListeners() {
+  dialogEl?.removeEventListener('keydown', onDialogKeydown)
+  dialogEl?.removeEventListener('keyup', onDialogKeyup)
+  dialogEl = null
+  enterKeyHeld = false
+}
+
+// The status node exists in both dialog phases, so its closest dialog remains
+// stable while Confirm is replaced by the receipt view and Done button.
+watch(dialogAnchor, (anchor) => {
+  detachDialogKeyListeners()
+  if (!anchor) return
+  dialogEl = anchor.closest<HTMLElement>('.td-dialog')
+  if (!dialogEl) return
+  dialogEl.addEventListener('keydown', onDialogKeydown)
+  dialogEl.addEventListener('keyup', onDialogKeyup)
+})
+
+onUnmounted(detachDialogKeyListeners)
 
 // The confirmation button is removed when the async result arrives. Restore
 // focus only for that real phase transition; later prop refreshes must not
@@ -55,6 +111,7 @@ watch(
     @close="emit('close')"
   >
     <p
+      ref="dialogAnchor"
       class="tk-meta batch-execute-receipt-summary"
       :class="{ 'batch-execute-receipt-summary--empty': !showingReceipts }"
       role="status"
@@ -115,6 +172,7 @@ watch(
         class="td-btn td-btn--primary td-btn--sm"
         data-testid="batch-execute-confirm"
         :disabled="busy || count === 0"
+        @keydown.enter="onConfirmKeydown"
         @click="emit('confirm')"
       >
         {{ $t('review.batchExecute.dialog.confirm', { count }, count) }}

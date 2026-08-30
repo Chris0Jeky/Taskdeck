@@ -147,6 +147,90 @@ describe('BatchExecuteDialog', () => {
     expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
   })
 
+  it('keeps receipts open while Enter remains held and rearms Done only after keyup', async () => {
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+
+    confirm.focus()
+    const confirmKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(confirm.dispatchEvent(confirmKeydown)).toBe(true)
+    confirm.click()
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    expect(document.activeElement).toBe(done)
+
+    const repeatedKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(repeatedKeydown)).toBe(false)
+    expect(repeatedKeydown.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    // The held-state guard is primary: even an environment that does not mark
+    // a subsequent keydown as `repeat` must not dismiss before the real keyup.
+    const stillHeldKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(stillHeldKeydown)).toBe(false)
+    expect(stillHeldKeydown.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    done.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }))
+    const freshKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(freshKeydown)).toBe(true)
+    expect(freshKeydown.defaultPrevented).toBe(false)
+
+    // happy-dom does not synthesize native button activation from keydown; the
+    // browser regression below proves that final link in a real engine.
+    done.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('keeps pointer Done and Escape available while Enter is held', async () => {
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    confirm.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+
+    ;(document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(2)
+  })
+
   it('closes from the receipt view through its own done action', async () => {
     const wrapper = mountDialog({
       receipts: [
