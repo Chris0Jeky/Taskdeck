@@ -69,6 +69,25 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
+
+The maintainer directed that the repository **goes private for the v0.3.0 release** and that CI must
+work on a **personal GitHub Pro account** first (no Team/Enterprise). The 2026-08-30 Smart CI pack
+was archived as received (`docs/analysis/2026-08-30-smart-ci/`), reconciled against the live estate
+(`RECONCILIATION.md`), and turned into ADR-0066 plus the CI-NN wave: tracker CI-00 `#2324` with nine
+delegated rulings (personal-account mode; base-ref `pull_request_target` control plane; one stable
+`Smart CI / Required Gate` + branch-current; hosted-by-default execution mode; Linux semantic baseline +
+Windows compatibility contract; tree-SHA landed verifier; shadow-first selection; change-driven nightly;
+storage first) and children CI-01..CI-15 `#2325`–`#2339`. **Measured baseline** (`docs/ci/CI_BASELINE.md`):
+17-job required runs with a 24.7-minute p50 critical path costing ~126 allowance minutes each under
+private accounting (Windows = 70%), a projected ~99,000 allowance minutes/month against the 3,000
+allowance (341 of the 1,205 required runs in the window were full `push: main` re-runs), **372.1 GB of unexpired artifacts** (359 GB exported container images) against 1 GB, and a
+cache at its 10 GiB cap. Roadmap impact: CI-01/02/03/04/05/07/08/09/11/13 join **v0.3** (the cutover
+CI-13 is a maintainer human gate and a v0.3.0 release condition), CI-06/10/12/15 join v0.4, CI-14 (the
+organization control plane) is a deferred decision. Scaffolding is behaviour-preserving: shadow planner,
+observation-mode gate, measurement tool, action-pin inventory, runner broker skeleton — no job selection,
+visibility, billing, branch-protection, runner or secret changes. Human actions: `OUTSTANDING_TASKS.md` §J.
+
 ## Delivery update (2026-08-30, batch-execute trust boundary)
 
 - **The frontend confirmation boundary is fail-closed (`#2283`, PR `#2286`, merge `c1945329b`).** Paper Review captures the exact capped proposal membership, approved-revision pins, receipt titles, and canonical board/history scope presented for confirmation; synchronous pre-click drift invalidation plus a click-boundary recheck prevent an unseen replacement from entering the request. Post-click refreshes cannot rewrite the captured payload or receipt labels. Exact-head focused/full frontend checks, typecheck, build, scoped lint, two fresh-context reviews, and hosted Required CI including E2E Smoke passed.
@@ -88,7 +107,7 @@ behaviour.
 ## Closeout checkpoint (2026-08-28, v0.3 integration wave)
 
 - **The bounded wave is integrated and closed at last product merge `778a9f847`.** History-preserving merges delivered the Windows launcher substrate repair (`#2177`), explicit MCP key capabilities (`#2174`), operator-doc truth sync (`#2178`), and delayed Paper Review focus ownership (`#2179`). The focus slice passed 139 focused Review tests, typecheck, scoped ESLint, exact-head review, and hosted Required CI; hosted E2E smoke is not dedicated browser/screen-reader proof, and public-release, external-client, or human acceptance is not claimed.
-- **The unfinished next `#1940` slice is durable but intentionally unpublished.** `origin/issue-1940/provenance-shortcut@c9135fef3` contains a single test-only checkpoint commit and has no PR. A future worker should recreate an isolated worktree from that head, install locked frontend dependencies, prove the regression red, and implement only the controlled provenance-disclosure event/state seam before focused Review/keymap verification.
+- **The saved `#1940` Provenance-shortcut slice is no longer an unpublished checkpoint.** PR `#2323` replayed the test-first commit, proved it red, implemented the controlled disclosure seam, and merged with history preserved as `221aa88c8`. The advertised `P` key now toggles the active proposal's Provenance disclosure while manual activation, proposal reset, independent disclosure state, and decision/receipt semantics remain intact. `#1940` stays open in v0.3 for its wider acceptance criteria and the recorded modal-focus and off-screen-feedback residuals.
 - **The remaining work has bounded entry conditions.** `#1309` has a LOW validator candidate for `result.protocolVersion` and terminal-newline enforcement, but LF-only versus LF/CRLF must be pinned first. `#1307` remains owner-decision gated; `#1992`'s last open decision was ruled on 2026-08-30 (v0.3 RC deck q-10 A, ADR-0064: machine paths are exact lowercase, variants fail closed); `#1949` has no acceptance-ready next contract; `#2090` is Blocked behind parked PR `#2165`, with its recovery worktree preserved.
 - **Promotion remains gated** *(superseded 2026-08-29: v0.2.0 shipped at `48c05e1dc` and the maintainer authorized the lane merge in-session; `integration/v0.3.0` merged into `main` via PR `#2196` — the text that follows is the 2026-08-28 record).* At closeout, `main` is `927236bd0`; no remote `v0.2.0` tag or GitHub release exists; the v0.3 milestone has 20 open and 1 closed issue; and `#2165` is the only open PR targeting integration. Merge `integration/v0.3.0` to `main` only after the v0.2 release and the v0.3 completion audit.
 

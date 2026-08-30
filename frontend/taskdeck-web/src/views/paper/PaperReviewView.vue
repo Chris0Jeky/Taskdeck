@@ -1137,6 +1137,7 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
 
 // The rail's primary control, whichever it currently is: the decision button,
@@ -1448,7 +1449,7 @@ async function onConfirmReject(reason: string) {
 }
 
 function onToggleProvenance() {
-  toast.info(t('review.toast.provenanceToggleUnwired'))
+  reviewMainRef.value?.toggleProvenance()
 }
 
 // #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
@@ -1866,6 +1867,7 @@ async function onClearBoardScope() {
         {{ revisionBadge }}
       </div>
       <ReviewMain
+        ref="reviewMainRef"
         :key="activeProposal.id"
         :serial="headerSerial"
         :meta="headerMeta"

@@ -140,6 +140,7 @@ jobs:
           name: release-security-artifacts
           path: /tmp/release-security
           if-no-files-found: ignore
+          retention-days: 90
 
   sbom-provenance:
     name: SBOM and Release Provenance
@@ -151,3 +152,7 @@ jobs:
   container-images:
     name: Container Image Artifacts
     uses: ./.github/workflows/reusable-container-images.yml
+    with:
+      # Pinned to today's effective default on purpose (see ci-release.yml; CI-10 #2334 owns release retention).
+      artifact-name: container-image-artifacts-release-security
+      artifact-retention-days: 90

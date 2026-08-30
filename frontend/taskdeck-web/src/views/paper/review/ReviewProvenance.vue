@@ -17,15 +17,29 @@ const props = withDefaults(defineProps<{
    * displays the original, server-recorded producer metadata.
    */
   suppressProducerFootnote?: boolean
-}>(), { readOnly: false, suppressProducerFootnote: false })
+  /** Controlled disclosure state for the Paper Review shortcut seam. */
+  detailsExpanded?: boolean
+}>(), { readOnly: false, suppressProducerFootnote: false, detailsExpanded: undefined })
 
 const emit = defineEmits<{
   report: [proposalId: string]
+  'update:detailsExpanded': [expanded: boolean]
 }>()
 
 const empty = computed(() => props.rows.length === 0)
 const drawerOpen = ref(false)
-const detailsExpanded = ref(false)
+const internalDetailsExpanded = ref(false)
+const detailsExpanded = computed({
+  get: () => props.detailsExpanded ?? internalDetailsExpanded.value,
+  set: (expanded: boolean) => {
+    internalDetailsExpanded.value = expanded
+    emit('update:detailsExpanded', expanded)
+  },
+})
+
+function toggleDetails() {
+  detailsExpanded.value = !detailsExpanded.value
+}
 const detailsId = 'paper-review-provenance-details'
 const disclosureId = 'paper-review-provenance-disclosure'
 
@@ -81,7 +95,7 @@ function tone(weight: ProvenanceWeight): string {
       data-testid="paper-review-provenance-disclosure"
       :aria-controls="detailsId"
       :aria-expanded="detailsExpanded"
-      @click="detailsExpanded = !detailsExpanded"
+      @click="toggleDetails"
     >
       <span>{{
         detailsExpanded
@@ -96,6 +110,7 @@ function tone(weight: ProvenanceWeight): string {
       data-testid="paper-review-provenance-details"
       role="region"
       :aria-labelledby="disclosureId"
+      :hidden="!detailsExpanded"
     >
       <div class="card paper-review-prov__card">
         <div v-if="empty" class="paper-review-prov__empty tk-meta">

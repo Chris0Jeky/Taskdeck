@@ -159,3 +159,4 @@ frontend/*/reports/mutation/
 /audit_prs.sh
 /audit_prs_*.tsv
 /filesAndResources/taskdeck_context_fabric_pack
+/filesAndResources/taskdeck_smart_ci_pack

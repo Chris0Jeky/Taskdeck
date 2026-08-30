@@ -13,11 +13,16 @@
 #     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
 #     ├── reusable-frontend-unit.yml           dev launcher + lint + typecheck + build + unit tests (Ubuntu + Windows)
 #     ├── reusable-paper-color-audit.yml       PAPER-12 hex-literal regression gate (#1008)
-#     ├── reusable-container-images.yml        compose validation + image build + artifact export
+#     ├── reusable-container-images.yml        compose validation + image build (tar export/upload only for nightly/release callers, CI-09)
 #     ├── reusable-gitleaks.yml                secret detection (PR scan, fail-on-detect) (#1132)
 #     ├── reusable-dependency-security-signals.yml  vulnerable-dependency gate (high+, enforced) (#1132)
 #     ├── reusable-sast-scanning.yml           Semgrep SAST gate (enforced) (#1132)
 #     └── reusable-e2e-smoke.yml               Playwright smoke (depends on all above)
+#
+#   smart-ci-shadow.yml      Smart CI control plane in OBSERVATION mode (ADR-0066, CI-02 #2326)
+#     ├── Smart CI / Plan                     base-ref planner on pull_request_target (read-only, no head code)
+#     └── Smart CI / Required Gate            stable context; shadow until CI-03 #2327 registers it — changes NO job selection here
+#   smart-ci-self-test.yml   Smart CI / Planner Self-Test — head-side planner/gate/pin tests on pull_request (R4 control lane)
 #
 #   ci-extended.yml          optional PR lane (label/path/manual dispatch)
 #     ├── actionlint workflow lint
@@ -159,6 +164,9 @@ jobs:
   container-images:
     name: Container Images
     uses: ./.github/workflows/reusable-container-images.yml
+    with:
+      # CI-09 #2333: the image tars have no PR consumer; the build + compose validation is the evidence.
+      upload-artifacts: false
 
   # ── Security gate (#1132): secret/dependency/SAST scans in the required PR lane ──
   # Previously these ran only in label-gated ci-extended / nightly / release lanes, so a PR

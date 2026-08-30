@@ -2,13 +2,33 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-29
+Last Updated: 2026-08-30
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-30 Smart CI Fabric checks (ADR-0066, shadow phase)
+
+The CI redesign that lets the repository go private for v0.3.0 on a personal GitHub Pro account
+(`docs/ci/SMART_CI.md`, tracker CI-00 `#2324`). Everything in this section is behaviour-preserving:
+nothing changes which `ci-required.yml` jobs run until the recall report and the maintainer's gate
+registration (CI-02 `#2326`, CI-03 `#2327`).
+
+| Purpose | Command | Expected |
+| --- | --- | --- |
+| Measurement helpers (pure aggregation over API payload shapes) | `node --test scripts/ci/smart-ci/measure-ci-estate.test.mjs` | 9 passed |
+| Measure the estate (read-only; `gh auth token` or `GH_TOKEN`) | `node scripts/ci/smart-ci/measure-ci-estate.mjs --since 2026-07-31 --until 2026-08-30 --sample 30 --out-dir docs/ci/baselines` | writes `ci-estate-<until>.json` + `.md`; ~4 min (the artifact listing is ~320 pages) |
+| Planner / gate fixtures (CI-02 scaffold) | `node --test scripts/ci/smart-ci/*.test.mjs` | all green; an unmapped path or planner error must escalate to the full plan |
+
+Baseline recorded 2026-08-30 (`docs/ci/CI_BASELINE.md`): a green required run has 17 jobs, a
+**24.7-minute p50 critical path** and costs **~126 allowance minutes** under private-repository
+accounting (Windows carries 88 of them); **372.1 GB of unexpired artifacts** sit on the repository
+(359 GB exported container images at the default 90-day retention) against a 1 GB Pro allowance;
+the Actions cache is at its 10 GiB cap. Run the measurement again after every topology change and
+append, never overwrite, the ledger.
 
 ## 2026-08-22 correction: ordinary inherited Windows profile
 
@@ -188,6 +208,13 @@ Explorer/SmartScreen acceptance remain unverified.
   Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
   including full E2E, completed successfully. The browser checks prove the explicit receipt -> Apply
   transition; they do not close the progressive-disclosure, All/Mine, focus, or lifecycle residuals.
+- `#1940`/PR `#2323`: the saved Provenance-shortcut regression first failed red (1 failed / 134
+  skipped) on the obsolete toast-only behavior. The final controlled disclosure seam passed five
+  focused Review/keymap/provenance files (227/227), typecheck, production build, zero-warning scoped
+  ESLint, and diff hygiene. The hosted rollup completed 21 successes / 11 declared skips, including
+  Windows/Linux Frontend, Windows/Linux API, and E2E Smoke. No dedicated browser or screen-reader
+  journey targeted this shortcut; modal-drawer focus ownership and off-screen/live-announced state
+  feedback remain MEDIUM follow-ups on `#1940`.
 - **Prepared but unshipped checkpoints:** `origin/issue-1949/directive-attribute-tokenization`
   (`d89bd7cc3`) passed 13 guard tests, typecheck, scoped lint, and diff hygiene after rebasing onto
   `55dbf6e14`. `origin/issue-1967/applied-read-only-detail` (`010021a745`) passed 186 focused tests,
@@ -2303,7 +2330,7 @@ Required workflow: `.github/workflows/ci-required.yml`
     static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
   - Validates compose rendering
   - Builds backend/frontend container images
-  - Exports compressed image artifacts plus SHA256 checksums
+  - Exports compressed image artifacts plus SHA256 checksums only when the caller opts in (`upload-artifacts`, retention per caller — nightly 7 days, release 90; the required PR lane exports nothing since CI-09 `#2333`)
 - `e2e-smoke`
   - Playwright smoke + automation/ops + fixture bootstrap flow
   - Ubuntu only

@@ -1,0 +1,44 @@
+# =============================================================================
+# Smart CI — head-side self-tests (ADR-0066, CI-02 #2326).
+#
+# Runs on `pull_request` against the PR head: the planner, gate and action-pin
+# inventory tests plus the pin report. This is the R4 hosted-control lane for
+# control-path changes. It is deliberately a SEPARATE workflow from
+# smart-ci-shadow.yml so that no `pull_request` run ever creates a job named
+# `Smart CI / Required Gate` (a skipped job of that name would count as a
+# successful required check for branch protection).
+# =============================================================================
+
+name: Smart CI Self-Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smart-ci-self-test-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  self-test:
+    name: Smart CI / Planner Self-Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.13.1
+
+      - name: Planner, gate and pin-inventory self-tests
+        run: node --test scripts/ci/smart-ci/*.test.mjs
+
+      - name: External action pin inventory (report only until CI-11 completes the migration)
+        run: node scripts/ci/smart-ci/action-pins.mjs --markdown "$GITHUB_STEP_SUMMARY"
