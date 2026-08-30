@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import TdDialog from '../ui/TdDialog.vue'
 import type { BatchExecuteReceiptRow } from '../../composables/useBatchExecuteProposals'
 
@@ -25,6 +25,21 @@ const showingReceipts = computed(() => props.receipts.length > 0)
 const appliedCount = computed(() => props.receipts.filter((r) => r.outcome === 'Applied').length)
 const skippedCount = computed(() => props.receipts.filter((r) => r.outcome === 'Skipped').length)
 const failedCount = computed(() => props.receipts.filter((r) => r.outcome === 'Failed').length)
+
+const doneButton = ref<HTMLButtonElement | null>(null)
+
+// The confirmation button is removed when the async result arrives. Restore
+// focus only for that real phase transition; later prop refreshes must not
+// interrupt the reviewer or repeat an already-consumed receipt announcement.
+watch(
+  () => props.receipts.length,
+  async (receiptCount, previousReceiptCount) => {
+    if (previousReceiptCount !== 0 || receiptCount === 0) return
+    await nextTick()
+    doneButton.value?.focus()
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>
@@ -47,7 +62,13 @@ const failedCount = computed(() => props.receipts.filter((r) => r.outcome === 'F
     </div>
 
     <div v-else data-testid="batch-execute-receipts">
-      <p class="tk-meta" data-testid="batch-execute-receipt-summary">
+      <p
+        class="tk-meta"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="batch-execute-receipt-summary"
+      >
         {{ $t('review.batchExecute.dialog.receiptSummary', {
           applied: appliedCount,
           skipped: skippedCount,
@@ -98,6 +119,7 @@ const failedCount = computed(() => props.receipts.filter((r) => r.outcome === 'F
       </button>
       <button
         v-else
+        ref="doneButton"
         type="button"
         class="td-btn td-btn--primary td-btn--sm"
         data-testid="batch-execute-done"

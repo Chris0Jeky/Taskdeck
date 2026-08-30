@@ -94,6 +94,46 @@ describe('BatchExecuteDialog', () => {
       .toContain('Applied 1')
   })
 
+  it('moves focus to Done and keeps Tab contained when confirmation receives receipts', async () => {
+    const wrapper = mountDialog({ count: 2 })
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    const backgroundSentinel = document.createElement('button')
+    backgroundSentinel.type = 'button'
+    backgroundSentinel.dataset.testid = 'background-sentinel'
+    document.body.append(backgroundSentinel)
+
+    confirm.focus()
+    confirm.click()
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    const summary = document.body.querySelector('[data-testid="batch-execute-receipt-summary"]') as HTMLElement
+    expect(document.activeElement).toBe(done)
+    expect(summary.getAttribute('role')).toBe('status')
+    expect(summary.getAttribute('aria-live')).toBe('polite')
+    expect(summary.getAttribute('aria-atomic')).toBe('true')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+
+    done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(done)
+    expect(document.activeElement).not.toBe(backgroundSentinel)
+
+    done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(done)
+    expect(document.activeElement).not.toBe(backgroundSentinel)
+
+    const summaryText = summary.textContent
+    await wrapper.setProps({ busy: true, count: 99 })
+    expect(document.body.querySelector('[data-testid="batch-execute-receipt-summary"]')?.textContent)
+      .toBe(summaryText)
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+  })
+
   it('closes from the receipt view through its own done action', async () => {
     const wrapper = mountDialog({
       receipts: [
