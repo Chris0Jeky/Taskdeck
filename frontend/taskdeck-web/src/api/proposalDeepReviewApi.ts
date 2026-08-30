@@ -1,10 +1,33 @@
 import http from './http'
 
+/**
+ * Opaque evidence-link metadata attached to a provenance row. `sourceType` is
+ * `'Transcript'` when `sourceId` is a transcript id readable through
+ * `transcriptsApi`; span bounds are character offsets into that transcript's
+ * LF-normalized text.
+ */
+export interface ProvenanceEvidenceLinkDto {
+  sourceType: string
+  sourceId: string
+  label: string | null
+  spanStart: number | null
+  spanEnd: number | null
+  /**
+   * Server-computed from the caller's claims: true only when this caller can actually open
+   * the source through its read endpoint. Provenance is board-authorized while transcript
+   * read stays owner-only, so a board collaborator gets `false` here and must not be offered
+   * a deep link that can only 404. Absent on responses predating the flag — treat as false.
+   */
+  viewable?: boolean
+}
+
 export interface ProvenanceRowDto {
   icon: string
   key: string
   value: string
   weight: string
+  /** Absent on responses predating the typed evidence-link contract. */
+  evidenceLinks?: ProvenanceEvidenceLinkDto[] | null
 }
 
 export interface ConfidenceComponentDto {
@@ -13,11 +36,14 @@ export interface ConfidenceComponentDto {
 }
 
 export interface ConfidenceBreakdownDto {
-  overall: number
+  overall: number | null
   components: ConfidenceComponentDto[]
   note: string | null
-  threshold: number
-  meetsThreshold: boolean
+  /** Nullable compatibility field; confidence never controls apply eligibility. */
+  threshold: null
+  /** Nullable compatibility field; confidence never controls apply eligibility. */
+  meetsThreshold: null
+  source: 'model-reported' | 'deterministic' | 'derived' | 'not-reported'
 }
 
 export interface SideEffectRowDto {

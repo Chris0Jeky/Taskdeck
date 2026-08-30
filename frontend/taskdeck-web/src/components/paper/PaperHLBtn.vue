@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 import PaperKbd from './PaperKbd.vue'
 
 /**
  * PaperHLBtn — hairline button with optional leading icon and trailing
  * keyboard hint.  Wraps `.pbtn` plus an optional variant class.  The kbd
  * hint is rendered via `<PaperKbd>` and separated from the label with a
- * 1px vertical divider so wide keys (`space`, `⌘K`) don't crowd the text.
+ * 1px vertical divider so wide keys (`space`, platform modifiers) don't crowd
+ * the text.
  *
  * The label may be passed as the `label` prop or via the default slot.
  * `:active { transform: translateY(1px) }` is supplied by the token CSS.
@@ -40,6 +42,8 @@ const classes = computed(() => {
   return base
 })
 
+const displayedKbd = computed(() => props.kbd ? formatShortcut(props.kbd) : '')
+
 function onClick(e: MouseEvent) {
   if (props.disabled) return
   emit('click', e)
@@ -60,7 +64,7 @@ function onClick(e: MouseEvent) {
     </span>
     <template v-if="kbd">
       <span class="phlbtn-divider" aria-hidden="true" />
-      <PaperKbd>{{ kbd }}</PaperKbd>
+      <PaperKbd>{{ displayedKbd }}</PaperKbd>
     </template>
   </button>
 </template>

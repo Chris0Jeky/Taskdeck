@@ -1,0 +1,42 @@
+<Project>
+
+  <!--
+    Product version stamping (#1804).
+
+    The release workflows inject the tag-derived version explicitly:
+      dotnet publish ... /p:Version=<tag, leading "v" and "+<build>" stripped>
+    (.github/workflows/release-desktop.yml and deploy/Dockerfile.production's
+    TASKDECK_VERSION build arg, fed by .github/workflows/release-container.yml).
+    Build metadata is stripped because ProductVersion.Normalize drops it before
+    reporting; stamping it would make the reported value un-comparable with what
+    was injected.
+
+    Any build that does NOT inject one — a developer machine, ordinary CI, a
+    local `docker build` — falls back to a deliberately implausible 0.0.0-dev so
+    an unstamped binary is recognisable instead of silently reporting a
+    believable number. `Taskdeck.Application.Common.ProductVersion` reads the
+    resulting AssemblyInformationalVersion at runtime and surfaces it on
+    /health/live, /health/ready, and the CLI version command.
+
+    A Release Desktop REHEARSAL dispatch is not an un-injected build: since
+    #1795 `resolve-source` always yields a tag, so a rehearsal stamps that job's
+    generated `0.0.0-dryrun` rather than this fallback. The fallback still covers
+    every non-release build, including a rehearsal container build.
+
+    This file sits at backend/ so every project in Taskdeck.sln — src and tests
+    alike — is stamped from one place. Keep it in sync with the COPY line for it
+    in deploy/Dockerfile.production, which needs it present before restore.
+  -->
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <Product>Taskdeck</Product>
+    <Company>Taskdeck</Company>
+    <!--
+      Keep AssemblyInformationalVersion exactly equal to $(Version). Without this
+      the SDK appends "+<SourceRevisionId>" whenever a build sets one, which would
+      make the reported version drift from the release tag it was cut from.
+    -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

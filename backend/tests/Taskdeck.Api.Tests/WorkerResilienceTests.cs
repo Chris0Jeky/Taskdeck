@@ -467,6 +467,10 @@ public class WorkerResilienceTests
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<bool> TryClaimProcessingAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
@@ -590,6 +594,10 @@ public class WorkerResilienceTests
             => Task.FromResult(_pending.FirstOrDefault(i => i.Status == RequestStatus.Pending));
         public Task<bool> TryClaimProcessingCaptureAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
         public Task<bool> TryClaimProcessingTranscriptAsync(Guid requestId, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
 
@@ -667,6 +675,12 @@ public class WorkerResilienceTests
                 captureItemId, Guid.NewGuid(), Guid.NewGuid(), 1, "v1", "mock", "mock-model");
             return Task.FromResult(Result.Success(result));
         }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId, Guid userId, Guid? boardId,
+            Guid transcriptId, CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
     }
 
     private sealed class FakeAutomationProposalRepository : IAutomationProposalRepository
@@ -685,13 +699,15 @@ public class WorkerResilienceTests
             => Task.FromResult<IEnumerable<AutomationProposal>>(
                 _proposals.Take(limit).ToList());
 
-        public Task<IEnumerable<AutomationProposal>> GetExpiredAsync(
+        public Task<ExpiredProposalSweep> GetExpiredAsync(
             CancellationToken cancellationToken = default)
             // Mirror the real query's ExpiresAt filter; intentionally ignore status (like GetByStatusAsync
             // above) so a non-PendingReview proposal still reaches the worker's Expire() catch path, which is
-            // exactly what the housekeeping resilience tests exercise.
-            => Task.FromResult<IEnumerable<AutomationProposal>>(
-                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList());
+            // exactly what the housekeeping resilience tests exercise. No archived-board withholding here:
+            // this fake holds no boards, so every candidate is expirable (#2197).
+            => Task.FromResult(new ExpiredProposalSweep(
+                _proposals.Where(p => p.ExpiresAt < DateTime.UtcNow).ToList(),
+                SkippedArchivedBoardCount: 0));
 
         public Task<AutomationProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
             => Task.FromResult(_proposals.SingleOrDefault(p => p.Id == id));
@@ -715,6 +731,8 @@ public class WorkerResilienceTests
         public Task<IEnumerable<AutomationProposal>> GetByBoardIdAsync(Guid boardId, int limit = 100, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(Guid userId, int limit = 100, ProposalStatus? status = null, RiskLevel? riskLevel = null, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
         public Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

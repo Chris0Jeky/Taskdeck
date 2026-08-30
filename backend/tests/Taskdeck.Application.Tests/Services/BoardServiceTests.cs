@@ -425,6 +425,26 @@ public class BoardServiceTests
     }
 
     [Fact]
+    public async Task DeleteBoardAsync_ShouldReturnConflict_WhenConcurrentArchiveWins()
+    {
+        // Arrange
+        var board = TestDataBuilder.CreateBoard();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ReturnsAsync(board);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default))
+            .ThrowsAsync(new DomainException(
+                ErrorCodes.Conflict,
+                "Record was updated by another session. Refresh and retry your action."));
+
+        // Act
+        var result = await _service.DeleteBoardAsync(board.Id);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+    }
+
+    [Fact]
     public async Task DeleteBoardAsync_ShouldReturnNotFound_WhenBoardDoesNotExist()
     {
         // Arrange
@@ -460,6 +480,113 @@ public class BoardServiceTests
         _boardRepoMock.Verify(r => r.DeleteAsync(It.IsAny<Board>(), default), Times.Never);
         // But Archive was called
         board.IsArchived.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region BoardDto.CanWrite Tests (#1836 item 1)
+
+    /// <summary>
+    /// Builds a BoardService wired to an authorization mock, with the board repository
+    /// primed to return <paramref name="boards"/> as the caller's readable page.
+    /// </summary>
+    private BoardService CreateServiceWithAuthorization(
+        Mock<IAuthorizationService> authorizationMock,
+        params Board[] boards)
+    {
+        var boardIds = boards.Select(b => b.Id).ToList();
+
+        _boardRepoMock.Setup(r => r.SearchIdsAsync(null, false, default))
+            .ReturnsAsync(boardIds);
+        _boardRepoMock.Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(boards);
+
+        authorizationMock
+            .Setup(a => a.GetReadableBoardIdsAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(boardIds.ToHashSet()));
+
+        return new BoardService(_unitOfWorkMock.Object, authorizationMock.Object);
+    }
+
+    [Fact]
+    public async Task ListBoardsPaginatedAsync_ShouldStampCanWrite_ForTheCallingUser()
+    {
+        // Arrange
+        var actingUserId = Guid.NewGuid();
+        var writable = new Board("Writable", "desc", actingUserId);
+        var readOnly = new Board("Read only", "desc", Guid.NewGuid());
+        var authorizationMock = new Mock<IAuthorizationService>();
+        authorizationMock
+            .Setup(a => a.GetWritableBoardIdsAsync(actingUserId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { writable.Id }));
+        var service = CreateServiceWithAuthorization(authorizationMock, writable, readOnly);
+
+        // Act
+        var result = await service.ListBoardsPaginatedAsync(actingUserId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Single(b => b.Id == writable.Id).CanWrite.Should().BeTrue();
+        result.Value.Items.Single(b => b.Id == readOnly.Id).CanWrite.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ListBoardsPaginatedAsync_ShouldResolveWriteCapability_WithOneBatchedLookupForThePage()
+    {
+        // The N+1 guard: five boards on the page must still cost ONE write-capability
+        // lookup, and never the per-board CanWriteBoardAsync.
+        var actingUserId = Guid.NewGuid();
+        var boards = Enumerable.Range(0, 5)
+            .Select(i => new Board($"Board {i}", "desc", actingUserId))
+            .ToArray();
+        var authorizationMock = new Mock<IAuthorizationService>();
+        authorizationMock
+            .Setup(a => a.GetWritableBoardIdsAsync(actingUserId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(boards.Select(b => b.Id).ToHashSet()));
+        var service = CreateServiceWithAuthorization(authorizationMock, boards);
+
+        var result = await service.ListBoardsPaginatedAsync(actingUserId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().HaveCount(5);
+        result.Value.Items.Should().OnlyContain(b => b.CanWrite);
+        authorizationMock.Verify(
+            a => a.GetWritableBoardIdsAsync(actingUserId, It.IsAny<IEnumerable<Guid>>(), default),
+            Times.Once);
+        authorizationMock.Verify(
+            a => a.CanWriteBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ListBoardsPaginatedAsync_ShouldFail_WhenWriteCapabilityLookupFails()
+    {
+        // A failed capability lookup must not silently degrade to "everything is writable".
+        var actingUserId = Guid.NewGuid();
+        var board = new Board("Board", "desc", actingUserId);
+        var authorizationMock = new Mock<IAuthorizationService>();
+        authorizationMock
+            .Setup(a => a.GetWritableBoardIdsAsync(actingUserId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.ValidationError, "boom"));
+        var service = CreateServiceWithAuthorization(authorizationMock, board);
+
+        var result = await service.ListBoardsPaginatedAsync(actingUserId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task CreateBoardAsync_ShouldStampCanWriteTrue_ForTheCreatingOwner()
+    {
+        var dto = new CreateBoardDto("Owned Board", null);
+        _boardRepoMock.Setup(r => r.AddAsync(It.IsAny<Board>(), default))
+            .ReturnsAsync((Board b, CancellationToken ct) => b);
+
+        var result = await _service.CreateBoardAsync(dto, Guid.NewGuid());
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.CanWrite.Should().BeTrue();
     }
 
     #endregion

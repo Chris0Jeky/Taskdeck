@@ -81,11 +81,19 @@ Planned, not shipped:
 
 ## If You Want A Richer First Run
 
-From `frontend/taskdeck-web`:
+From the repository root, run the seeded launcher for your shell:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
 
 ```bash
-npm run demo:seed
+./scripts/dev-up.sh --seed
 ```
+
+Continue only after `Stack is up.`, then use the printed frontend URL. If a launcher-owned stack is
+already running, stop it with `-Stop` / `--stop` and rerun the seeded launcher; do not seed through
+the lower-level bare demo command.
 
 Use the seeded workspace when:
 

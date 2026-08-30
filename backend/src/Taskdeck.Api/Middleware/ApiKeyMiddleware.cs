@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -7,6 +8,7 @@ using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.RateLimiting;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Mcp;
 using Taskdeck.Infrastructure.Persistence;
@@ -32,6 +34,9 @@ public sealed class ApiKeyMiddleware
     /// middleware (e.g. TokenValidationMiddleware) can distinguish API-key principals from JWT ones.
     /// </summary>
     public const string AuthenticationType = "ApiKey";
+
+    /// <summary>Claim carrying the middleware-validated persisted scope mask into MCP routing.</summary>
+    public const string ScopesClaimType = "taskdeck:mcp:api-key-scopes";
 
     /// <summary>
     /// Context item containing the validated API key ID for per-key rate-limit partitioning.
@@ -106,6 +111,7 @@ public sealed class ApiKeyMiddleware
             {
                 Id = k.Id,
                 UserId = k.UserId,
+                Scopes = k.Scopes,
                 ExpiresAt = k.ExpiresAt,
                 RevokedAt = k.RevokedAt,
                 // The owner's flag when the row exists; null when it is absent. The null branch is
@@ -163,6 +169,19 @@ public sealed class ApiKeyMiddleware
             return;
         }
 
+        // A persisted scope mask is authentication evidence, not client input. Reject missing,
+        // empty, or forward-unknown values before assigning the opaque key partition or charging
+        // the per-key budget. This follows the same failed-authentication path as an unusable key:
+        // no downstream identity, no last-used write, and the pre-auth failure marker is set.
+        if (!ApiKeyScopeRules.IsValid(authRecord.Scopes))
+        {
+            _logger.LogWarning(
+                "MCP API key authentication failed: invalid persisted scope mask (id: {KeyId})",
+                authRecord.Id);
+            await WriteErrorResponse(context, StatusCodes.Status401Unauthorized, "Invalid API key.");
+            return;
+        }
+
         // Enforce the per-key request budget (McpPerApiKey) at the EARLIEST point the key identity is
         // confirmed usable — right after the key row is resolved and BOTH the key and its owner are
         // confirmed active, and BEFORE the last-used write below (#1384). The owner check is folded into
@@ -195,9 +214,10 @@ public sealed class ApiKeyMiddleware
             }
         }
 
-        // Set the authenticated user ID for HttpUserContextProvider. The API key ID item was set
-        // above, before the per-key budget check.
+        // Set the authenticated user ID and validated capability mask for HttpUserContextProvider.
+        // The API key ID item was set above, before the per-key budget check.
         context.Items[HttpUserContextProvider.UserIdItemKey] = authRecord.UserId;
+        context.Items[HttpUserContextProvider.ScopesItemKey] = authRecord.Scopes;
 
         // Establish an authenticated principal so the global authorization FallbackPolicy
         // (RequireAuthenticatedUser, #1132 AC4) is satisfied for valid-key MCP requests — a valid
@@ -207,7 +227,13 @@ public sealed class ApiKeyMiddleware
         // reads the "Bearer tdsk_..." header and fails to validate it as a JWT, returning a null
         // Principal that AuthenticationMiddleware does not assign over context.User, so this survives.
         context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            new[] { new Claim(ClaimTypes.NameIdentifier, authRecord.UserId.ToString()) },
+            new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, authRecord.UserId.ToString()),
+                new Claim(
+                    ScopesClaimType,
+                    ((int)authRecord.Scopes).ToString(CultureInfo.InvariantCulture))
+            },
             authenticationType: AuthenticationType));
 
         // Update last-used timestamp before continuing the pipeline. This is a non-critical usage
@@ -272,6 +298,7 @@ public sealed class ApiKeyMiddleware
     {
         public Guid Id { get; init; }
         public Guid UserId { get; init; }
+        public ApiKeyScope Scopes { get; init; }
         public DateTimeOffset? ExpiresAt { get; init; }
         public DateTimeOffset? RevokedAt { get; init; }
         public bool? OwnerIsActive { get; init; }

@@ -12,7 +12,7 @@ namespace Taskdeck.Domain.Entities;
 /// </summary>
 public sealed class Transcript : Entity
 {
-    public const int MaxTextLength = 102_400;
+    public const int MaxTextLength = 200_000;
     public const int MaxSegmentCount = 5_000;
     public const int MaxSegmentsJsonLength = 1_048_576;
 

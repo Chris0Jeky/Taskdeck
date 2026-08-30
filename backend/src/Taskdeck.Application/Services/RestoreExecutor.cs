@@ -129,6 +129,11 @@ public class RestoreExecutor
             var newColumn = new Column(targetBoardId, resolvedName, newPosition, snapshot.WipLimit);
             await _unitOfWork.Columns.AddAsync(newColumn, cancellationToken);
 
+            // Same archive-race guard as the card restore below: RestorePlanner's archived-target check
+            // covers every non-board restore, so the column path takes the identical conditional board
+            // update rather than leaving the same check-then-act window open on one half of that check.
+            board.RecordCardMutation();
+
             return Result.Success(new RestoreResult(
                 true,
                 newColumn.Id,
@@ -212,6 +217,17 @@ public class RestoreExecutor
             }
 
             await _unitOfWork.Cards.AddAsync(newCard, cancellationToken);
+
+            // Join the target board's concurrency-token predicate without advancing it. RestorePlanner
+            // rejected an already-archived target, but that check ran before this card was built, so an
+            // archive committing in between would otherwise be accepted. Recording the card mutation
+            // marks the board modified, so EF issues a conditional UPDATE against the token read
+            // during planning; a racing archive
+            // advanced it, and the single SaveChanges in ArchiveRecoveryService.RestoreArchiveItemAsync
+            // then fails as DomainException(Conflict). Because the card insert, this stale board update,
+            // and ArchiveItem.MarkAsRestored share that one SaveChanges, a rejected restore also leaves
+            // the archive item still restorable rather than consumed.
+            board.RecordCardMutation();
 
             return Result.Success(new RestoreResult(
                 true,

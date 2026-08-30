@@ -4,22 +4,48 @@ public enum LlmProviderKind
 {
     Mock = 0,
     OpenAi = 1,
-    Gemini = 2,
-    Ollama = 3
+    Ollama = 3,
+    OpenAiCompatible = 4
 }
 
-public sealed record LlmProviderDecision(LlmProviderKind ProviderKind, string Reason);
+/// <summary>
+/// The resolved provider and why. <paramref name="MockDiversionReason"/> is non-null ONLY when the
+/// operator asked for a live provider and the request was diverted to the mock (#2192 review);
+/// mock-by-choice leaves it null. It is a deliberately coarse, non-secret sentence — the precise
+/// cause, which can embed a configured BaseUrl, stays in <paramref name="Reason"/> for the startup
+/// log and must not be published on a capture.
+/// </summary>
+public sealed record LlmProviderDecision(
+    LlmProviderKind ProviderKind,
+    string Reason,
+    string? MockDiversionReason = null);
 
 public static class LlmProviderSelectionPolicy
 {
+    public const string RetiredGeminiProviderMessage =
+        "Gemini provider support was removed from Taskdeck. Set Llm:Provider (or Llm__Provider) " +
+        "to OpenAi, OpenAiCompatible, Ollama, or Mock, and remove the retired Gemini settings section under Llm.";
+
+    private static readonly HashSet<string> ForbiddenCompatibleHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Host", "Connection", "Transfer-Encoding", "Cookie", "Cookie2", "Keep-Alive",
+        "TE", "Trailer", "Upgrade", "Via", "Forwarded", "Content-Length", "HTTP2-Settings"
+    };
+
     public static LlmProviderDecision Evaluate(LlmProviderSettings settings, string? environmentName)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+        ThrowIfRetiredProvider(settings.Provider);
+
         var requestedProvider = ResolveRequestedProviderKind(settings.Provider);
         if (!requestedProvider.HasValue)
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Provider mode '{settings.Provider}' resolves to mock.");
+                $"Provider mode '{settings.Provider}' resolves to mock.",
+                settings.EnableLiveProviders
+                    ? "The configured provider selector is not recognized."
+                    : null);
         }
 
         if (requestedProvider.Value == LlmProviderKind.Mock)
@@ -40,7 +66,8 @@ public static class LlmProviderSelectionPolicy
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                "Live providers are disabled for development-like environments.");
+                "Live providers are disabled for development-like environments.",
+                "Live providers are not permitted in this environment.");
         }
 
         // In development with AllowLiveProvidersInDevelopment, permit localhost endpoints
@@ -54,7 +81,8 @@ public static class LlmProviderSelectionPolicy
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
-                    $"OpenAI configuration is invalid: {validationError}");
+                    $"OpenAI configuration is invalid: {validationError}",
+                "The configured live provider failed startup validation.");
             }
 
             return new LlmProviderDecision(
@@ -62,18 +90,19 @@ public static class LlmProviderSelectionPolicy
                 "OpenAI provider selected.");
         }
 
-        if (requestedProvider.Value == LlmProviderKind.Gemini)
+        if (requestedProvider.Value == LlmProviderKind.OpenAiCompatible)
         {
-            if (!TryValidateGeminiSettings(settings, out var geminiValidationError, allowDevelopmentLocalhostEndpoints))
+            if (!TryValidateOpenAiCompatibleSettings(settings, out var compatibleValidationError, allowDevelopmentLocalhostEndpoints))
             {
                 return new LlmProviderDecision(
                     LlmProviderKind.Mock,
-                    $"Gemini configuration is invalid: {geminiValidationError}");
+                    $"OpenAI-compatible configuration is invalid: {compatibleValidationError}",
+                "The configured live provider failed startup validation.");
             }
 
             return new LlmProviderDecision(
-                LlmProviderKind.Gemini,
-                "Gemini provider selected.");
+                LlmProviderKind.OpenAiCompatible,
+                "OpenAI-compatible provider selected.");
         }
 
         var allowOllamaLocalhostEndpoints =
@@ -84,13 +113,31 @@ public static class LlmProviderSelectionPolicy
         {
             return new LlmProviderDecision(
                 LlmProviderKind.Mock,
-                $"Ollama configuration is invalid: {ollamaValidationError}");
+                $"Ollama configuration is invalid: {ollamaValidationError}",
+            "The configured live provider failed startup validation.");
         }
 
         return new LlmProviderDecision(
             LlmProviderKind.Ollama,
             "Ollama provider selected.");
     }
+
+    public static void ThrowIfRetiredProvider(string? provider)
+    {
+        if (provider?.Trim().Equals("Gemini", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.ProviderSelector,
+                RetiredGeminiProviderMessage);
+        }
+    }
+
+    internal static bool IsExplicitlySupportedProvider(
+        string? provider,
+        bool hasHigherPrecedenceProviderSelection)
+        => hasHigherPrecedenceProviderSelection
+            && !string.IsNullOrWhiteSpace(provider)
+            && ResolveRequestedProviderKind(provider).HasValue;
 
     public static bool TryValidateOpenAiSettings(
         LlmProviderSettings settings,
@@ -144,52 +191,133 @@ public static class LlmProviderSelectionPolicy
         return true;
     }
 
-    public static bool TryValidateGeminiSettings(
+    public static bool TryValidateOpenAiCompatibleSettings(
         LlmProviderSettings settings,
         out string error,
         bool allowLocalhostEndpoints = false)
     {
-        if (settings.Gemini is null)
+        if (settings.OpenAiCompatible is null)
         {
-            error = "Gemini settings are required.";
+            error = "OpenAI-compatible settings are required.";
             return false;
         }
 
-        var gemini = settings.Gemini;
-
-        if (string.IsNullOrWhiteSpace(gemini.ApiKey))
+        var compatible = settings.OpenAiCompatible;
+        if (string.IsNullOrWhiteSpace(compatible.ApiKey))
         {
             error = "ApiKey is required.";
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(gemini.Model))
+        if (compatible.ApiKey.Contains('\r') || compatible.ApiKey.Contains('\n'))
+        {
+            error = "ApiKey must not contain line breaks.";
+            return false;
+        }
+
+        try
+        {
+            _ = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", compatible.ApiKey.Trim());
+        }
+        catch (FormatException)
+        {
+            error = "ApiKey cannot be serialized as a Bearer credential.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(compatible.Model))
         {
             error = "Model is required.";
             return false;
         }
 
-        if (!Uri.TryCreate(gemini.BaseUrl, UriKind.Absolute, out var baseUri) ||
+        if (!Uri.TryCreate(compatible.BaseUrl, UriKind.Absolute, out var baseUri) ||
             (baseUri.Scheme != Uri.UriSchemeHttps && baseUri.Scheme != Uri.UriSchemeHttp))
         {
             error = "BaseUrl must be an absolute HTTP(S) URI.";
             return false;
         }
 
-        // SSRF protection: block private IP ranges, cloud metadata endpoints, and internal hostnames.
-        // In development with AllowLiveProvidersInDevelopment, localhost is permitted for local
-        // LLM gateways (Ollama, LM Studio, etc.).
-        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(gemini.BaseUrl, allowLocalhostEndpoints);
+        if (!string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !string.IsNullOrEmpty(baseUri.UserInfo))
+        {
+            error = "BaseUrl must not contain user information, a query, or a fragment.";
+            return false;
+        }
+
+        var ssrfResult = SsrfProtectionService.ValidateLlmProviderUrl(compatible.BaseUrl, allowLocalhostEndpoints);
         if (!ssrfResult.IsAllowed)
         {
             error = $"BaseUrl blocked by SSRF protection: {ssrfResult.ErrorMessage}";
             return false;
         }
 
-        if (gemini.TimeoutSeconds <= 0)
+        if (Uri.CheckHostName(baseUri.Host) != UriHostNameType.Dns)
         {
-            error = "TimeoutSeconds must be greater than zero.";
+            error = "BaseUrl host must be a DNS name so it can be disclosed and enforced by the egress registry.";
             return false;
+        }
+
+        if (compatible.TimeoutSeconds is < 1 or > 300)
+        {
+            error = "TimeoutSeconds must be between 1 and 300.";
+            return false;
+        }
+
+        if (compatible.MaxResponseBytes is < 1024 or > 4_194_304 ||
+            compatible.MaxSseLineBytes is < 256 or > 262_144 ||
+            compatible.MaxSseEventBytes is < 512 or > 524_288 ||
+            compatible.MaxSseEventBytes > compatible.MaxResponseBytes)
+        {
+            error = "OpenAI-compatible response budgets are invalid or inconsistent.";
+            return false;
+        }
+
+        if (compatible.ExtraHeaders is null)
+        {
+            error = "ExtraHeaders must be a header map when configured.";
+            return false;
+        }
+
+        foreach (var (name, value) in compatible.ExtraHeaders)
+        {
+            if (string.IsNullOrWhiteSpace(name) ||
+                name.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authenticate", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("cookie", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("X-Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("Api-Key", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Auth-Token", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Proxy-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Forwarded-", StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("X-Taskdeck-", StringComparison.OrdinalIgnoreCase) ||
+                ForbiddenCompatibleHeaders.Contains(name))
+            {
+                error = $"ExtraHeaders contains dangerous or reserved request header '{name}'.";
+                return false;
+            }
+
+            if (value is null || value.Contains('\r') || value.Contains('\n'))
+            {
+                error = "ExtraHeaders values must not contain line breaks.";
+                return false;
+            }
+
+            // Use the framework's request-header parser so malformed and
+            // content-only/restricted names select the deterministic Mock
+            // provider instead of throwing when the client constructs a request.
+            using var headerProbe = new HttpRequestMessage();
+            try
+            {
+                headerProbe.Headers.Add(name, value);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+            {
+                error = $"ExtraHeaders contains an invalid or restricted request header '{name}'.";
+                return false;
+            }
         }
 
         error = string.Empty;
@@ -258,9 +386,9 @@ public static class LlmProviderSelectionPolicy
             return LlmProviderKind.OpenAi;
         }
 
-        if (normalized.Equals("Gemini", StringComparison.OrdinalIgnoreCase))
+        if (normalized.Equals("OpenAICompatible", StringComparison.OrdinalIgnoreCase))
         {
-            return LlmProviderKind.Gemini;
+            return LlmProviderKind.OpenAiCompatible;
         }
 
         if (normalized.Equals("Mock", StringComparison.OrdinalIgnoreCase))

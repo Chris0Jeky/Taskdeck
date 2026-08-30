@@ -1,22 +1,27 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
+import { TdDateField } from '../../../components/ui'
+import type { Board } from '../../../types/board'
 
 /**
  * PaperCaptureComposer — variant B of the Paper Inbox capture surface.
  *
  * A multi-line ledger composer sitting on a paper-card with a metadata
- * sidebar (board picker, label multi-select, optional due date, attachment
- * drop zone).  Cmd/Ctrl+Enter submits.  Attachments are surfaced via an
- * `attachments-changed` event; we don't upload them yet — the parent can
- * decide what to do once the upload pipeline lands.
+ * sidebar (board picker, label multi-select, optional due date). Cmd/Ctrl+Enter submits.
+ * Attachments remain visibly unavailable until a persistence lane exists.
  */
 const props = defineProps<{
   /** Optional board id to default the picker to. */
   defaultBoardId?: string | null
   submitting?: boolean
+  /** A composer capture failed and its inspectable receipt is mounted. */
+  invalid?: boolean
+  /** DOM id of the failure receipt to associate via `aria-describedby`. */
+  errorId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -26,24 +31,50 @@ const emit = defineEmits<{
     labels: string[]
     dueAt: string | null
   }): void
-  (event: 'attachments-changed', files: File[]): void
 }>()
 
 const boardStore = useBoardStore()
+const { t } = useI18n()
 
 const body = ref('')
 const boardId = ref<string | null>(props.defaultBoardId ?? null)
 const labelInput = ref('')
 const labels = ref<string[]>([])
 const dueAt = ref<string>('')
-const attachments = ref<File[]>([])
 
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const dropActive = ref(false)
 
 const inputsDisabled = computed(() => !!props.submitting)
-const canSubmit = computed(() => body.value.trim().length > 0 && !props.submitting)
+
+/**
+ * Write capability comes from the server (`BoardDto.CanWrite`, #1836). Choosing
+ * a read-only board here produces a capture that 403s the moment it is accepted
+ * for triage, so such boards are DISABLED and annotated "view-only" rather than
+ * hidden — no silent filtering, no reachable 403 from the picker.
+ *
+ * Only an explicit `false` gates; a payload without the field behaves as before.
+ */
+function isBoardWritable(board: Board): boolean {
+  return board.canWrite !== false
+}
+
+function boardOptionLabel(board: Board): string {
+  return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
+}
+
+const hasReadOnlyBoard = computed(() => boardStore.boards.some((board) => !isBoardWritable(board)))
+
+const selectedBoardIsWritable = computed(() => {
+  if (!boardId.value) return true
+  const selected = boardStore.boards.find((board) => board.id === boardId.value)
+  // An id outside the loaded list is left alone: the server stays the authority,
+  // and this gate exists to stop a KNOWN read-only selection.
+  return selected ? isBoardWritable(selected) : true
+})
+
+const canSubmit = computed(
+  () => body.value.trim().length > 0 && !props.submitting && selectedBoardIsWritable.value,
+)
 
 watch(
   () => props.defaultBoardId,
@@ -85,34 +116,6 @@ function removeLabel(label: string) {
   labels.value = labels.value.filter((l) => l !== label)
 }
 
-function onFilesChosen(event: Event) {
-  if (inputsDisabled.value) return
-  const files = (event.target as HTMLInputElement).files
-  if (!files) return
-  appendFiles(Array.from(files))
-}
-
-function onDrop(event: DragEvent) {
-  dropActive.value = false
-  if (inputsDisabled.value) return
-  const files = event.dataTransfer?.files
-  if (!files) return
-  appendFiles(Array.from(files))
-}
-
-function appendFiles(next: File[]) {
-  if (inputsDisabled.value) return
-  if (next.length === 0) return
-  attachments.value = [...attachments.value, ...next]
-  emit('attachments-changed', attachments.value)
-}
-
-function removeAttachment(file: File) {
-  if (inputsDisabled.value) return
-  attachments.value = attachments.value.filter((f) => f !== file)
-  emit('attachments-changed', attachments.value)
-}
-
 function submit() {
   if (!canSubmit.value) return
   emit('submit', {
@@ -127,8 +130,33 @@ function resetDraft() {
   body.value = ''
   labels.value = []
   dueAt.value = ''
-  attachments.value = []
-  emit('attachments-changed', attachments.value)
+}
+
+/**
+ * The draft as it stands, for the parent to persist across a 401 redirect
+ * (GH-2142). Returns the RAW body, not the trimmed submit payload: what the
+ * user gets back must be what they were looking at.
+ */
+function snapshotDraft() {
+  return {
+    text: body.value,
+    boardId: boardId.value,
+    labels: [...labels.value],
+    dueAt: dueAt.value || null,
+  }
+}
+
+/** Put a previously stashed draft back into the composer (GH-2142). */
+function restoreDraft(draft: {
+  text: string
+  boardId?: string | null
+  labels?: string[]
+  dueAt?: string | null
+}) {
+  body.value = draft.text
+  boardId.value = draft.boardId ?? null
+  labels.value = [...(draft.labels ?? [])]
+  dueAt.value = draft.dueAt ?? ''
 }
 
 onMounted(async () => {
@@ -145,7 +173,7 @@ onMounted(async () => {
   bodyRef.value?.focus()
 })
 
-defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
+defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, restoreDraft })
 </script>
 
 <template>
@@ -167,54 +195,15 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             aria-label="Capture body"
             placeholder="The thought, in plain language…"
             :disabled="inputsDisabled"
+            :aria-invalid="invalid ? 'true' : undefined"
+            :aria-describedby="errorId ?? undefined"
             @keydown="onBodyKeydown"
           />
         </label>
 
-        <!-- Attachments / drop zone — hairline only.  Real upload pipeline lands later. -->
-        <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drop zone trigger handled via the explicit Browse button below; the surrounding region is visual chrome -->
-        <div
-          class="paper-composer__drop"
-          :class="{ 'paper-composer__drop--active': dropActive }"
-          data-testid="paper-composer-drop"
-          @dragenter.prevent="dropActive = true"
-          @dragover.prevent="dropActive = true"
-          @dragleave.prevent="dropActive = false"
-          @drop.prevent="onDrop"
-        >
-          <span class="tk-meta">Drop files here, or</span>
-          <button
-            type="button"
-            class="paper-composer__file-trigger"
-            :disabled="inputsDisabled"
-            @click="fileInputRef?.click()"
-          >
-            Browse
-          </button>
-          <input
-            ref="fileInputRef"
-            type="file"
-            multiple
-            class="paper-composer__file-input"
-            aria-label="Attach files"
-            :disabled="inputsDisabled"
-            @change="onFilesChosen"
-          />
-        </div>
-
-        <ul v-if="attachments.length > 0" class="paper-composer__attachments">
-          <li v-for="file in attachments" :key="file.name + ':' + file.size">
-            <span class="paper-composer__attachment-name">{{ file.name }}</span>
-            <button
-              type="button"
-              class="paper-composer__attachment-remove"
-              :disabled="inputsDisabled"
-              @click="removeAttachment(file)"
-            >
-              Remove
-            </button>
-          </li>
-        </ul>
+        <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
+          Attachments are not saved with captures yet.
+        </p>
       </div>
 
       <aside class="paper-composer__aside">
@@ -227,10 +216,19 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
             :disabled="inputsDisabled"
           >
             <option :value="null">No board · land in inbox</option>
-            <option v-for="board in boardStore.boards" :key="board.id" :value="board.id">
-              {{ board.name }}
+            <option
+              v-for="board in boardStore.boards"
+              :key="board.id"
+              :value="board.id"
+              :disabled="!isBoardWritable(board)"
+              :data-writable="isBoardWritable(board)"
+            >
+              {{ boardOptionLabel(board) }}
             </option>
           </select>
+          <span v-if="hasReadOnlyBoard" class="tk-meta" data-testid="composer-view-only-hint">
+            {{ t('inbox.boardPicker.viewOnlyHint') }}
+          </span>
         </label>
 
         <label class="paper-composer__label">
@@ -261,10 +259,9 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
 
         <label class="paper-composer__label">
           <span class="tk-eyebrow">Due (optional)</span>
-          <input
+          <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
-            type="date"
             aria-label="Due date"
             :disabled="inputsDisabled"
           />
@@ -277,7 +274,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
         Captures land in <span class="tk-ink-italic">Inbox</span>. Linking to a board creates a proposal, not a card.
       </span>
       <span class="paper-composer__spacer" />
-      <PaperHLBtn label="Capture" kbd="⌘⏎" variant="ember" :disabled="!canSubmit" @click="submit" />
+      <PaperHLBtn label="Capture" kbd="mod+enter" variant="ember" :disabled="!canSubmit" @click="submit" />
     </footer>
   </section>
 </template>
@@ -365,48 +362,6 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft })
   background: var(--paper);
   color: var(--mute);
 }
-.paper-composer__drop--active {
-  border-color: var(--ember);
-  color: var(--ember-ink, var(--ember));
-}
-.paper-composer__file-trigger {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink);
-  background: transparent;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  border-bottom: 1px solid var(--line);
-}
-.paper-composer__file-input {
-  display: none;
-}
-.paper-composer__attachments {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.paper-composer__attachments li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-2);
-}
-.paper-composer__attachment-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.paper-composer__attachment-remove,
 .paper-composer__label-remove {
   background: transparent;
   border: 0;

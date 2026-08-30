@@ -2,6 +2,19 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/*
+ * Import only the fixed light face. The package stylesheet also owns an
+ * unlayered 24px class rule, which outranks our Tailwind layers and erases
+ * both the 20px baseline and smaller per-call-site sizes.
+ */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 200;
+  font-display: block;
+  src: url('@material-symbols/font-200/material-symbols-outlined.woff2') format('woff2');
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -47,8 +60,21 @@
 
   /* Material Symbols baseline */
   .material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+    font-family: 'Material Symbols Outlined';
+    font-weight: 200;
+    font-style: normal;
     font-size: 20px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'liga';
   }
 }
 
@@ -198,6 +224,58 @@
     background: var(--td-color-error-light);
     color: var(--td-color-ember);
     border-color: rgba(255, 77, 77, 0.2);
+  }
+
+  /* ── Notification accent stripe (#1817) ──
+     Replaces the `border-l-4 border-l-<tailwind-hue>` pair that
+     `composables/useNotificationGrouping.ts` used to emit, so the five stripes
+     follow the active skin instead of the Tailwind palette.  The composable
+     still owns the type → stripe mapping; only the colour moves into tokens
+     (`--td-notify-*`, Obsidian defaults at `:root`, Paper values in
+     `paper-legacy-bridge.css`).
+
+     Kept to ONE class per colour (specificity 0,1,0), exactly like the
+     utilities it replaces, so `NotificationInboxView`'s scoped card rules —
+     which declare borders per side and leave the left edge undeclared — still
+     let the stripe through. */
+  .td-notify-stripe {
+    border-left-width: 4px;
+    border-left-style: solid;
+  }
+  .td-notify-stripe--proposal { border-left-color: var(--td-notify-proposal); }
+  .td-notify-stripe--mention { border-left-color: var(--td-notify-mention); }
+  .td-notify-stripe--board-change { border-left-color: var(--td-notify-board-change); }
+  .td-notify-stripe--assignment { border-left-color: var(--td-notify-assignment); }
+  .td-notify-stripe--system { border-left-color: var(--td-notify-system); }
+
+  /* ── Notification type badge (#1842) ──
+     Replaces the `bg-<hue>-100 text-<hue>-800 dark:...` utility quartet that
+     `typeBadgeClass` used to emit, for the same reason the stripes moved: raw
+     Tailwind palette hues do not follow the active skin.  The badge span in
+     `NotificationInboxView` keeps its own layout utilities (`inline-flex`,
+     padding, `rounded`, `text-xs`); only colour comes from here.
+
+     One class per type (specificity 0,1,0), matching the utilities it
+     replaces. */
+  .td-notify-badge--proposal {
+    background-color: var(--td-notify-proposal-bg);
+    color: var(--td-notify-proposal-fg);
+  }
+  .td-notify-badge--mention {
+    background-color: var(--td-notify-mention-bg);
+    color: var(--td-notify-mention-fg);
+  }
+  .td-notify-badge--board-change {
+    background-color: var(--td-notify-board-change-bg);
+    color: var(--td-notify-board-change-fg);
+  }
+  .td-notify-badge--assignment {
+    background-color: var(--td-notify-assignment-bg);
+    color: var(--td-notify-assignment-fg);
+  }
+  .td-notify-badge--system {
+    background-color: var(--td-notify-system-bg);
+    color: var(--td-notify-system-fg);
   }
 
   /* ── Virtual-scroll layout helpers (SEC-29: replaces inline :style bindings) ── */

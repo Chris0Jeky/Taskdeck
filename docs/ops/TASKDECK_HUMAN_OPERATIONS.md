@@ -1,9 +1,15 @@
 # Taskdeck - Human Operations Document (What YOU should do by hand)
 
-This document captures the parts that are either:
-- not safe to delegate to an LLM (secrets, irreversible repo settings),
-- require product judgement (policies, UX decisions),
-- require manual verification (human-level UI correctness, security sanity).
+Last Updated: 2026-08-19
+
+This document captures the irreducibly human parts of operating Taskdeck:
+- secrets and irreversible repository or production settings,
+- legal, release, or product decisions whose acceptance belongs to the maintainer,
+- real-world dogfooding and milestone verification that cannot be established by synthetic agent evidence.
+
+It is not an ordinary-PR merge gate. Within the declared T3 authority, agents may merge after the
+exact-head proving checks and canonical review-and-ship gate pass; no owner click, self-review, or
+repeat human test run is required unless a separately scoped human decision below actually applies.
 
 Use it alongside the Codex execution plan.
 
@@ -11,15 +17,15 @@ Use it alongside the Codex execution plan.
 
 ## How to use this (repeatable workflow)
 
-1) For each delivery unit Codex completes:
-   - Review diff like a PR (even if solo)
-   - Run the required checks locally once
-   - Do the manual break-it sanity checklist (below)
-   - Merge only when CI is green and docs are updated
+1) At a named human checkpoint (for example a release, legal decision, or real dogfooding milestone):
+   - Review the evidence and only the diffs relevant to that decision
+   - Perform the requested real-world or settings-level verification
+   - Record the decision or observed result in the owning issue/runbook
+   - Do not repeat agent proving checks merely to make an otherwise eligible ordinary PR wait
 
 2) Keep WIP low:
-   - One major branch at a time
-   - Prefer small merges over long-lived branches
+   - Respect the four-`Now` / eight-`Next` issue caps
+   - Keep one writer per isolated checkout and prefer small merges over long-lived branches
 
 3) Enforce thesis alignment before moving work to `Now`:
    - Does this slice reduce maintenance overhead/capture friction?
@@ -33,23 +39,44 @@ Use it alongside the Codex execution plan.
 ## A1) GitHub repo settings (branch protections + required checks)
 Codex cannot reliably configure GitHub repository settings unless you explicitly delegate admin access, and it's risky.
 
-Do in GitHub UI:
-- Protect `main`:
-  - require PR reviews (even 1 self-review is fine)
-  - require status checks to pass:
-    - docs-governance
-    - backend-architecture
-    - backend-unit (ubuntu/windows)
-    - api-integration (ubuntu/windows)
-    - frontend-unit (ubuntu/windows)
-    - e2e-smoke
-  - require up-to-date branches before merge (optional)
+**As configured on `main` (verified 2026-08-19, `#1173`; see also ADR-0052 and `docs/STATUS.md`).**
+This is a record of live state, not a wish list — change it only after re-reading the live
+protection settings.
+- Classic branch protection is enabled: `required_approving_review_count: 0` (no PR approval and no
+  CODEOWNERS/owner click), `enforce_admins: false`, force-push and deletion disabled.
+  `CODEOWNERS` is advisory review routing only; the absence of a requested owner is not merge
+  eligibility.
+- There is no aggregate required-check context — `ci-required` itself is **not** a required context.
+  The required contexts are exactly these three PR-head check-run names (the security scans):
+  - `Dependency Security / Dependency Security Signals`
+  - `SAST Scan / SAST Scan (Semgrep)`
+  - `Secret Scan / Gitleaks Scan`
+- Of those three, only `Secret Scan` actually enforces its findings: under ADR-0035 phased
+  enforcement, `dependency-security` and `sast-scan` run with `enforce-findings: false`, so they
+  report advisory findings and still pass (tracked in `#1175` / `#1174`). They remain required
+  contexts, so they must complete successfully — but a finding alone does not block a merge.
+- CodeQL default setup is currently **disabled** (turned off 2026-08-19 after its checks hung).
+  No CodeQL context may be listed as required or expected until re-enablement lands; that is
+  tracked in `#1819`.
+- Every other `ci-required.yml` lane (Docs Governance, Backend Architecture, Backend Unit, API
+  Integration, Migration Validation, Frontend Unit, Paper Color Audit, Container Images, E2E Smoke)
+  still runs on every PR and is read before merge — those lanes are simply not enforced by branch
+  protection. Exact-head green `ci-required.yml` remains the repository evidence gate under the
+  canonical review-and-ship pipeline; protection is a floor, not the gate.
+- `DCO (advisory)` was removed from `ci-required.yml` by explicit maintainer decision on 2026-08-23.
+  `Signed-off-by:` trailers are optional and are not merge evidence. The former verifier assets are
+  dormant under `scripts/ci/`; `#2019` tracks a possible restoration and does not authorize it.
+- If you ever add a lane to the required list, use the exact PR-head check-run name including any
+  matrix suffix (for example `Backend Unit / Backend Unit (windows-latest)`), and update this
+  section in the same change.
+- Require up-to-date branches before merge only if desired; it does not replace the exact-head CI,
+  canonical review-pipeline, or seam-specific evidence requirements.
 
 ## A2) GitHub Project / Execution Board setup
 Create a Project (or use Issues):
 - Status values: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`
 - Views: `Pending`, `Now`, `Next`, `Blocked`, `Review`, `Done`, `No Status`, `WIP Audit`
-- WIP: cap Now/In Progress to 1 major item
+- WIP: cap issue items at 4 in `Now` and 8 in `Next`; `Now` requires complete dependencies and `Next` may be sequenced behind a named `Now` item
 - Labels: `bug`, `security`, `hardening`, `backend`, `frontend`, `ux`, `testing`, `docs`, `refactor`, `tech-debt`, `starter-packs`, `llm`, `feature`, `automation`, `worker`, `performance`
 - Configure workflows (must be ON):
   - `Auto-add to project` for `Chris0Jeky/Taskdeck` issues + pull requests
@@ -60,6 +87,7 @@ Create a Project (or use Issues):
   - `Pull request merged` -> set `Status=Done`
 
 See `docs/GITHUB_PROJECT_AUTOMATION.md` for the canonical setup and verification checklist.
+Before promoting an issue, confirm its single Priority label matches the Project `Priority` field. Correct parity before setting `Now` or `Next`; do not infer a priority or owner approval.
 
 ## A3) Secrets: GitHub PAT and environment variables (for GitHub MCP)
 You must create and manage tokens:

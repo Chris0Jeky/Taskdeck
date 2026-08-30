@@ -33,6 +33,7 @@ defineProps<{
   after: ChangeAfterCard[]
   fields: FieldDiff[]
   subTitle: string
+  applied?: boolean
 }>()
 </script>
 
@@ -40,13 +41,15 @@ defineProps<{
   <section class="paper-review-change">
     <header class="paper-review-change__header">
       <span class="tk-serial paper-review-change__serial">§ I</span>
-      <h3 class="tk-h3 paper-review-change__title">The change</h3>
+      <h3 class="tk-h3 paper-review-change__title">{{ $t('review.change.title') }}</h3>
       <span class="tk-meta paper-review-change__sub">{{ subTitle }}</span>
     </header>
     <div class="card paper-review-change__card">
       <div class="paper-review-change__grid">
         <div class="paper-review-change__col paper-review-change__col--before">
-          <div class="tk-eyebrow paper-review-change__eyebrow">Before · today</div>
+          <div class="tk-eyebrow paper-review-change__eyebrow">
+            {{ $t(applied ? 'review.change.beforeEyebrowApplied' : 'review.change.beforeEyebrow') }}
+          </div>
           <article class="card paper-review-change__before">
             <div class="tk-serial">{{ before.serial }}</div>
             <h4 class="paper-review-change__before-title">{{ before.title }}</h4>
@@ -56,7 +59,7 @@ defineProps<{
         </div>
         <div class="paper-review-change__col paper-review-change__col--after">
           <div class="tk-eyebrow paper-review-change__eyebrow paper-review-change__eyebrow--after">
-            After · on apply
+            {{ $t(applied ? 'review.change.afterEyebrowApplied' : 'review.change.afterEyebrow') }}
           </div>
           <div class="paper-review-change__after-stack">
             <article
@@ -71,12 +74,12 @@ defineProps<{
                   <span
                     v-if="card.status === 'new'"
                     class="paper-review-change__after-tag paper-review-change__after-tag--new"
-                  > · new</span>
+                  > {{ $t('review.change.tag.new') }}</span>
                 </span>
                 <span
                   v-if="card.status === 'kept'"
                   class="tk-serial paper-review-change__after-tag paper-review-change__after-tag--kept"
-                >· kept</span>
+                >{{ $t('review.change.tag.kept') }}</span>
               </div>
               <h5 class="paper-review-change__after-title">{{ card.title }}</h5>
               <p class="paper-review-change__after-body">{{ card.body }}</p>
@@ -85,7 +88,9 @@ defineProps<{
         </div>
       </div>
       <div class="paper-review-change__fields">
-        <div class="tk-eyebrow paper-review-change__fields-heading">Per-field changes</div>
+        <div class="tk-eyebrow paper-review-change__fields-heading">
+          {{ $t('review.change.fieldsHeading') }}
+        </div>
         <div class="paper-review-change__fields-grid">
           <template v-for="field in fields" :key="field.key">
             <div class="tk-eyebrow">{{ field.key }}</div>
@@ -147,6 +152,19 @@ defineProps<{
 }
 .paper-review-change__eyebrow--after {
   color: var(--ember);
+}
+/* GH-1943 — the two panes must read as the same kind of container.
+ *
+ * Measured cause: the Before article carried only the bare `.card` token
+ * (background + 1px border, and NO padding), while every After article adds
+ * `padding: 12px` and a 2px left rule. Side by side that reads as two
+ * different boxes: the Before text sat flush against its border. Same
+ * geometry now; only the accent tone differs, because "before" is today's
+ * state (neutral) and "after" is the proposed change (ember/applied). */
+.paper-review-change__before {
+  padding: 12px;
+  background: var(--paper-card);
+  border-left: 2px solid var(--line);
 }
 .paper-review-change__before-title {
   margin: 4px 0;

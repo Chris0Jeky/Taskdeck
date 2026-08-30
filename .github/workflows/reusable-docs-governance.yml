@@ -24,6 +24,14 @@ jobs:
         shell: powershell
         run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/git/Test-New-CodexIssueWorktree.ps1
 
+      - name: Validate read-only inventory command contract
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -SelfTest
+
+      - name: Validate checkout fingerprint guard
+        shell: powershell
+        run: powershell -NoLogo -NoProfile -NonInteractive -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1
+
   docs-governance:
     name: Docs Governance
     runs-on: ubuntu-latest
@@ -69,4 +77,6 @@ jobs:
         run: node scripts/check-golden-principles.mjs
 
       - name: Validate GitHub operations governance invariants
-        run: node scripts/check-github-ops-governance.mjs
+        run: |
+          node --test scripts/check-github-ops-governance.test.mjs
+          node scripts/check-github-ops-governance.mjs

@@ -8,6 +8,23 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class CaptureRequestContractTests
 {
+    public static IEnumerable<object[]> InvalidCaptureLabels()
+    {
+        yield return [new[] { "" }, "empty values"];
+        yield return
+        [
+            new[] { new string('l', CaptureRequestContract.MaxLabelNameLength + 1) },
+            $"cannot exceed {CaptureRequestContract.MaxLabelNameLength}"
+        ];
+        yield return
+        [
+            Enumerable.Range(0, CaptureRequestContract.MaxLabelCount + 1)
+                .Select(index => $"label-{index}")
+                .ToArray(),
+            $"more than {CaptureRequestContract.MaxLabelCount}"
+        ];
+    }
+
     [Fact]
     public void ParsePayload_ShouldTreatPlainTextAsCapturePayload()
     {
@@ -50,6 +67,71 @@ public class CaptureRequestContractTests
         result.Value.Source.Should().Be(CaptureSource.Paste);
         result.Value.Text.Should().Be("capture text");
         result.Value.TitleHint.Should().Be("Inbox");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldKeepNewMetadataOptionalForOlderPayloads()
+    {
+        const string olderPayload = """
+                                    {
+                                      "version": 1,
+                                      "source": "typed",
+                                      "text": "legacy capture"
+                                    }
+                                    """;
+
+        var parsedOlderPayload = CaptureRequestContract.ParsePayload(olderPayload);
+
+        parsedOlderPayload.IsSuccess.Should().BeTrue();
+        parsedOlderPayload.Value.DueDate.Should().BeNull();
+        parsedOlderPayload.Value.Labels.Should().BeNull();
+
+        var serialized = CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "new capture",
+            DueDate: new DateOnly(2026, 8, 23),
+            Labels: ["shopping"]));
+        var roundTripped = CaptureRequestContract.ParseStoredPayload(serialized);
+
+        roundTripped.DueDate.Should().Be(new DateOnly(2026, 8, 23));
+        roundTripped.Labels.Should().Equal("shopping");
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidCaptureLabels))]
+    public void ValidatePayload_ShouldRejectInvalidLabels(string[] labels, string expectedMessage)
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "bounded capture",
+            Labels: labels);
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain(expectedMessage);
+    }
+
+    [Fact]
+    public void ValidatePayload_ShouldAcceptLabelsAtAggregateBoundary()
+    {
+        var labels = Enumerable.Range(0, CaptureRequestContract.MaxLabelCount)
+            .Select(index => index.ToString().PadLeft(CaptureRequestContract.MaxLabelNameLength, 'l'))
+            .ToArray();
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            "bounded capture",
+            Labels: labels);
+
+        var result = CaptureRequestContract.ValidatePayload(payload);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Labels.Should().HaveCount(CaptureRequestContract.MaxLabelCount);
+        result.Value.Labels.Should().OnlyContain(label => label.Length == CaptureRequestContract.MaxLabelNameLength);
     }
 
     [Fact]
@@ -98,6 +180,34 @@ public class CaptureRequestContractTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
         result.ErrorMessage.Should().Contain("must not include actor identity field");
+    }
+
+    [Fact]
+    public void ParsePayload_ShouldRejectClientSuppliedDispositionButReadStoredReceipt()
+    {
+        var userId = Guid.NewGuid();
+        var payload = $$"""
+                        {
+                          "version": 1,
+                          "text": "capture text",
+                          "disposition": {
+                            "kind": "kept",
+                            "at": "2026-08-26T12:00:00Z",
+                            "byUserId": "{{userId}}"
+                          }
+                        }
+                        """;
+
+        var untrusted = CaptureRequestContract.ParsePayload(payload);
+        var stored = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: true);
+
+        untrusted.IsSuccess.Should().BeFalse();
+        untrusted.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        untrusted.ErrorMessage.Should().Contain("server disposition");
+        stored.IsSuccess.Should().BeTrue();
+        stored.Value.Disposition.Should().NotBeNull();
+        stored.Value.Disposition!.Kind.Should().Be(CaptureDisposition.Kept);
+        stored.Value.Disposition.ByUserId.Should().Be(userId);
     }
 
     [Fact]

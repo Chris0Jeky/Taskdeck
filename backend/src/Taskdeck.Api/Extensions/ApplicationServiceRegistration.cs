@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Realtime;
@@ -55,6 +56,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationProposalService, AutomationProposalService>();
         services.AddScoped<IProposalConflictDetector, ProposalConflictDetector>();
         services.AddScoped<IProvenanceQueryService, ProvenanceQueryService>();
+        services.AddScoped<ITranscriptQueryService, TranscriptQueryService>();
         services.AddScoped<IConfidenceBreakdownService, ConfidenceBreakdownService>();
         services.AddScoped<ICardHistoryService, CardHistoryService>();
         services.AddScoped<ISideEffectAnalyzer, SideEffectAnalyzer>();
@@ -64,9 +66,14 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
+        services.AddScoped<IBatchProposalExecutionService, BatchProposalExecutionService>();
         services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
         services.AddScoped<IOpsCliService, OpsCliService>();
         services.AddScoped<IBoardContextBuilder, BoardContextBuilder>();
+        // #2233: an empty notice unless the packaged desktop host already registered a populated
+        // one before this call. TryAdd keeps that startup instance authoritative and guarantees
+        // ChatService can always resolve the parameter in every host, including tests and MCP.
+        services.TryAddSingleton<RetiredLlmProviderConfigurationNotice>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ILogQueryService, LogQueryService>();
         services.AddScoped<ICadenceService>(sp =>

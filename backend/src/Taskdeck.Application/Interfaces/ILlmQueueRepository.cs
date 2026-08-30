@@ -5,6 +5,11 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface ILlmQueueRepository : IRepository<LlmRequest>
 {
+    /// <summary>
+    /// Returns historical total capture progress plus active Inbox workload counts. Active counts
+    /// exclude captures kept for later and captures whose effective extant board is archived;
+    /// boardless/dangling records remain visible. <c>TotalCaptures</c> deliberately retains history.
+    /// </summary>
     Task<(int TotalCaptures, int NewCount, int FailedCount, int TriagingCount, int TriagedCount)> GetCaptureSummaryByUserAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
@@ -112,9 +117,41 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
     Task<IEnumerable<LlmRequest>> GetByUserAndStatusAsync(Guid userId, RequestStatus status, CancellationToken cancellationToken = default);
     Task<Dictionary<RequestStatus, int>> GetStatusCountsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<LlmRequest?> GetNextPendingAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims a Processing plain capture request (request type
+    /// <c>inbox.capture.*</c>, excluding transcript captures) for the capture worker lane using
+    /// optimistic concurrency: stamps UpdatedAt only if the row still has the expected UpdatedAt.
+    /// Returns true if the claim succeeded. On success, implementations must refresh any in-memory
+    /// instance of the request they hold so callers observe the persisted claim timestamp.
+    /// </summary>
     Task<bool> TryClaimProcessingCaptureAsync(
         Guid requestId,
         DateTimeOffset expectedUpdatedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically records a capture disposition when its queue status and update stamp still match.
+    /// This keeps disposition choices mutually exclusive with a concurrent triage enqueue.
+    /// </summary>
+    Task<bool> TrySetCaptureDispositionAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        RequestStatus targetStatus,
+        string payload,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically moves an eligible capture into the triage worker lane while stamping its target
+    /// board and proposal-requested receipt.
+    /// </summary>
+    Task<bool> TryEnqueueCaptureTriageAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        string payload,
+        Guid boardId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref, nextTick, defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -134,6 +134,10 @@ function mountComposable(optionOverrides: Partial<UseCardModalOptions> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('useCardModal', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
@@ -163,6 +167,15 @@ describe('useCardModal', () => {
       expect(result.dueDate.value).toBe('2025-12-31')
       expect(result.isBlocked.value).toBe(false)
       expect(result.blockReason.value).toBe('')
+    })
+
+    it('keeps the UTC calendar key in the date input west of UTC', async () => {
+      vi.stubEnv('TZ', 'America/Los_Angeles')
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ dueDate: '2026-08-23T00:00:00.000Z' })
+      await nextTick()
+
+      expect(ctx.result.dueDate.value).toBe('2026-08-23')
     })
 
     it('uses empty string when card description is null', async () => {
@@ -326,7 +339,7 @@ describe('useCardModal', () => {
       ctx.cardRef.value = makeCard({ dueDate: '2025-12-31T00:00:00Z' })
       await nextTick()
 
-      expect(ctx.result.formattedDueDate.value).toContain('2025')
+      expect(ctx.result.formattedDueDate.value).toBe('December 31, 2025')
     })
   })
 
@@ -584,7 +597,7 @@ describe('useCardModal', () => {
       )
     })
 
-    it('sends ISO dueDate when dueDate is set', async () => {
+    it('sends midnight UTC when a calendar due date is set', async () => {
       const ctx = mountComposable()
       ctx.isOpenRef.value = true
       await nextTick()
@@ -594,7 +607,7 @@ describe('useCardModal', () => {
       await ctx.result.handleSave()
 
       const call = mockBoardStore.updateCard.mock.calls[0]!
-      expect(call[2].dueDate).toContain('2026-06-01')
+      expect(call[2].dueDate).toBe('2026-06-01T00:00:00.000Z')
     })
 
     it('sends isBlocked delta and blockReason when blocked', async () => {
@@ -896,16 +909,16 @@ describe('useCardModal', () => {
   })
 
   describe('handleDeleteComment', () => {
-    it('deletes the comment when user confirms', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
-
+    it('opens an in-app confirmation before deleting the comment', async () => {
       const ctx = mountComposable()
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
 
-      expect(mockBoardStore.deleteCardComment).toHaveBeenCalledWith('board-1', 'card-1', 'c-1')
+      expect(ctx.result.commentPendingDeletion.value).toEqual(comment)
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(true)
+      expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
     })
 
     it('does nothing when user is not the author', async () => {
@@ -918,20 +931,20 @@ describe('useCardModal', () => {
       expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
     })
 
-    it('does nothing when user cancels confirmation', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(false)
-
+    it('clears the pending comment when confirmation is cancelled', async () => {
       const ctx = mountComposable()
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
+      ctx.result.handleCommentDeleteCancel()
 
       expect(mockBoardStore.deleteCardComment).not.toHaveBeenCalled()
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(false)
+      expect(ctx.result.commentPendingDeletion.value).toBeNull()
     })
 
     it('handles deleteCardComment failure gracefully', async () => {
-      vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
       mockBoardStore.deleteCardComment.mockRejectedValue(new Error('fail'))
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
@@ -939,9 +952,11 @@ describe('useCardModal', () => {
       await nextTick()
 
       const comment = makeComment({ id: 'c-1', authorUserId: 'user-1' })
-      await ctx.result.handleDeleteComment(comment)
+      ctx.result.handleDeleteComment(comment)
+      await ctx.result.handleCommentDeleteConfirm()
 
       expect(consoleSpy).toHaveBeenCalledWith('Failed to delete comment:', expect.any(Error))
+      expect(ctx.result.showCommentDeleteConfirm.value).toBe(true)
       consoleSpy.mockRestore()
     })
   })

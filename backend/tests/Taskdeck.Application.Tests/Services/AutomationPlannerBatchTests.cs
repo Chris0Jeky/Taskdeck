@@ -72,7 +72,7 @@ public class AutomationPlannerBatchTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(CreateExpectedProposal(userId, boardId)));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
     }
 
@@ -130,6 +130,39 @@ public class AutomationPlannerBatchTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldNotCreateProposal_WhenPermissionValidationFails()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        SetupMocksForSuccess(userId, boardId);
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(
+                userId,
+                boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
+                default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "No access"));
+
+        var result = await _service.ParseBatchInstructionAsync(
+            new List<string> { "create card 'Test'" },
+            userId,
+            boardId);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be("No access");
+        _policyEngineMock.Verify(e => e.ValidatePermissionsAsync(
+            userId,
+            boardId,
+            It.IsAny<IEnumerable<ProposalOperationDto>>(),
+            BoardAccessBar.Write,
+            default), Times.Once);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default),
+            Times.Never);
     }
 
     #endregion
@@ -267,7 +300,7 @@ public class AutomationPlannerBatchTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(CreateExpectedProposal(userId, boardId)));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         var instructions = new List<string>

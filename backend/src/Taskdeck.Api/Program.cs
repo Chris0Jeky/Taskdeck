@@ -60,15 +60,19 @@ if (args.Contains("--mcp"))
         }
 
         var mcpHttpBuilder = WebApplication.CreateBuilder(args);
+        var mcpHttpLocalConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(
+            mcpHttpBuilder.Environment.IsProduction(),
+            FirstRunBootstrapper.IsHeadlessEnvironment());
 
         // Load appsettings.local.json for locally-generated secrets via the SAME hardened path the web
-        // API uses: AddLocalConfigFile quarantines a corrupt file (optional:true only suppresses a
-        // MISSING file, not a malformed one -- an MCP-only launch must self-heal, not crash), repairs
-        // the file's permissions (#1241 forward remediation for installs upgraded from a pre-#1241
-        // build that only ever launch in MCP mode), resolves the ABSOLUTE exe-adjacent path (MCP
-        // servers are often launched from an arbitrary working directory), and inserts the source
+        // API uses: AddLocalConfigFile validates or securely quarantines a corrupt file (optional:true only
+        // suppresses a MISSING file, not a malformed one), repairs the file's permissions (#1241 forward
+        // remediation for installs upgraded from a pre-#1241
+        // build that only ever launch in MCP mode), resolves the same absolute durable/compatibility path
+        // policy as the web host (MCP servers often launch from an arbitrary working directory), and inserts
+        // that source
         // BEFORE the env-var sources so operator-supplied environment config keeps priority.
-        mcpHttpBuilder.AddLocalConfigFile();
+        mcpHttpBuilder.AddLocalConfigFile(mcpHttpLocalConfigPath);
 
         // The standalone server is local-only by default. Replace the repository-wide wildcard
         // host setting with loopback hosts unless an operator supplied an exact allowlist.
@@ -125,9 +129,25 @@ if (args.Contains("--mcp"))
         // MCP telemetry (operation logger, etc.).
         mcpHttpBuilder.Services.AddMcpTelemetry();
 
+        // CORS services with NO policies registered at all -- deliberately not AddTaskdeckCors (#1602).
+        // MapTaskdeckMcpEndpoint stamps the endpoint with DisableCorsAttribute, which is ICorsMetadata,
+        // and ASP.NET Core's EndpointMiddleware refuses to execute an endpoint carrying CORS metadata
+        // unless the CORS middleware ran first -- so without this pair (AddCors here, UseCors below) the
+        // standalone host threw InvalidOperationException and returned a bare 500 on EVERY authenticated
+        // request. Registering the services with an empty policy map satisfies that contract and adds no
+        // cross-origin capability: there is no default policy to resolve, so CorsMiddleware never emits
+        // an Access-Control-* header, and the endpoint's DisableCorsAttribute suppresses CORS handling
+        // for it regardless. Browser-origin MCP clients stay unsupported here by construction.
+        mcpHttpBuilder.Services.AddCors();
+
         // MCP server: HTTP transport + all resources and tools.
+        // Stateless is pinned explicitly rather than left to the library default:
+        // ModelContextProtocol 2.0.0 flipped that default from false to true, which drops
+        // Mcp-Session-Id, standalone SSE GET/DELETE, and server-to-client requests. Taskdeck's
+        // session-bound contract depends on those, so keep it false until a deliberate,
+        // ADR-recorded decision says otherwise.
         mcpHttpBuilder.Services.AddMcpServer()
-            .WithHttpTransport()
+            .WithHttpTransport(options => options.Stateless = false)
             .AddMcpResourcesAndTools();
 
         var mcpHttpApp = mcpHttpBuilder.Build();
@@ -138,12 +158,15 @@ if (args.Contains("--mcp"))
         Program.OnStandaloneMcpHttpAppBuilt?.Invoke(mcpHttpApp);
 
         // Apply EF Core migrations before starting, serialized across processes via a
-        // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164).
+        // cross-process file lock so the MCP HTTP host does not race the API/CLI (#1164), with a
+        // fail-closed pre-migration snapshot of the SQLite file when migrations are pending (#1803).
         using (var scope = mcpHttpApp.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
             var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-            Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
+            var backupSettings = scope.ServiceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<Taskdeck.Application.Services.DatabaseBackupSettings>>().Value;
+            Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
         }
 
         // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
@@ -161,6 +184,33 @@ if (args.Contains("--mcp"))
 
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
+
+        // Fail-closed machine-path spelling (#1992, ADR-0064), the identical rule the co-hosted
+        // pipeline enforces. This host builds its own pipeline rather than calling
+        // ConfigureTaskdeckPipeline, so without this line /MCP answered 401 without a key and 200
+        // WITH one — the real endpoint, reached by a spelling the reverse proxy and the service
+        // worker both refuse to route. There is no SPA fallback here to leak, but one URL must not
+        // mean two different things depending on which host is serving it.
+        //
+        // Ahead of ApiKeyMiddleware so a variant is rejected before a key parse, the failure budget
+        // or the per-key budget, and so the answer is 404 rather than "authenticate for this".
+        //
+        // Ahead of UseCors for the same reason it precedes CORS in the co-hosted pipeline: routing
+        // is case-insensitive, so OPTIONS /MCP carrying an Origin and Access-Control-Request-Method
+        // selects the REAL MCP endpoint, and .NET 8's CorsMiddleware short-circuits a preflight for
+        // a selected endpoint with 204 -- a success a browser reads as "this endpoint exists", on a
+        // spelling that answers 404 everywhere else. Nothing here needs CORS to have run first: the
+        // endpoint's DisableCorsAttribute is consulted by EndpointMiddleware when it executes the
+        // endpoint, which is further down the pipeline than both of these.
+        Taskdeck.Api.Extensions.PipelineConfiguration.UseMachinePathCanonicalGuard(mcpHttpApp);
+
+        // CORS middleware with no named policy: required so EndpointMiddleware will execute the MCP
+        // endpoint, which carries DisableCorsAttribute (ICorsMetadata) -- see AddCors above (#1602).
+        // Deny-by-default: no policy is registered, so this emits no Access-Control-* headers and
+        // grants no cross-origin access; it exists purely to satisfy the endpoint's metadata contract.
+        // Positioned to mirror the co-hosted pipeline (correlation ID -> machine-path guard -> CORS),
+        // and after the auto-inserted UseRouting so an endpoint is selected when it runs.
+        mcpHttpApp.UseCors();
 
         // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
         // Runs before ApiKeyMiddleware so it captures all requests including those
@@ -197,21 +247,44 @@ if (args.Contains("--mcp"))
     // ── MCP stdio mode ──────────────────────────────────────────────────────
     // This path intentionally skips JWT, CORS, SignalR, rate limiting, and the
     // HTTP pipeline — none of those are meaningful over a local stdio connection.
-    // Quarantine a corrupt persisted secrets file, then repair its permissions, before loading it
-    // (#1241) -- mirroring AddLocalConfigFile on the web path (optional:true only suppresses a MISSING
-    // file, not a malformed one, so an un-quarantined corrupt file would crash every stdio launch).
-    // Load it by the same ABSOLUTE path: stdio MCP servers are typically launched by an MCP client from
-    // the client's own working directory, so a relative "appsettings.local.json" could miss the
-    // exe-adjacent file FirstRunBootstrapper writes -- and the repair must target the file being loaded.
+    // Prepare the persisted secrets file before loading it (#1241/#1242), mirroring AddLocalConfigFile on
+    // the web path. Production validates and fails closed on corrupt durable evidence; compatibility hosts
+    // retain secure quarantine behavior (optional:true suppresses only a MISSING file, not malformed JSON).
+    // Load it by the same ABSOLUTE path policy: stdio MCP servers are typically launched by an MCP client
+    // from the client's own working directory, so a relative file could miss the durable desktop config
+    // (or the executable-local compatibility config) being repaired.
     // Env-var precedence is preserved by the AddEnvironmentVariables() re-add AFTER the file source.
-    FirstRunBootstrapper.QuarantineCorruptLocalConfig();
-    FirstRunBootstrapper.RestrictExistingLocalConfigFile();
-    var mcpHost = Host.CreateDefaultBuilder(args)
-        .ConfigureAppConfiguration((_, config) =>
+    var mcpStdioEnvironmentOverride = FirstRunBootstrapper.ResolveMcpStdioEnvironmentOverride(
+        Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+    var mcpStdioHostBuilder = Host.CreateDefaultBuilder(args);
+    if (mcpStdioEnvironmentOverride is not null)
+    {
+        // Apply before Build so the Generic Host environment, default appsettings.{Environment}.json source,
+        // explicit source below, and local-config path policy all use one authoritative name.
+        mcpStdioHostBuilder.UseEnvironment(mcpStdioEnvironmentOverride);
+    }
+
+    string? mcpStdioLocalConfigPath = null;
+    var mcpHost = mcpStdioHostBuilder
+        .ConfigureAppConfiguration((context, config) =>
         {
+            var environmentName = context.HostingEnvironment.EnvironmentName;
+            var isProduction = string.Equals(
+                environmentName,
+                Environments.Production,
+                StringComparison.OrdinalIgnoreCase);
+            var isHeadless = FirstRunBootstrapper.IsHeadlessEnvironment();
+            mcpStdioLocalConfigPath ??= FirstRunBootstrapper.ResolveLocalConfigPath(
+                isProduction,
+                isHeadless);
+            FirstRunBootstrapper.PrepareLocalConfigFile(
+                mcpStdioLocalConfigPath,
+                FirstRunBootstrapper.LegacyLocalConfigPath,
+                requireOwnerOnly: isProduction && !isHeadless);
             config.AddJsonFile("appsettings.json", optional: true);
-            config.AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
-            config.AddJsonFile(FirstRunBootstrapper.LocalConfigPath, optional: true);
+            config.AddJsonFile($"appsettings.{environmentName}.json", optional: true);
+            config.AddJsonFile(mcpStdioLocalConfigPath, optional: true);
             config.AddEnvironmentVariables();
         })
         .ConfigureLogging(logging =>
@@ -243,13 +316,16 @@ if (args.Contains("--mcp"))
         .Build();
 
     // Apply EF Core migrations before starting the MCP host (mirrors web mode behaviour),
-    // serialized across processes via a cross-process file lock (#1164). In stdio mode logs
-    // go to stderr, so the logger never corrupts the stdout JSON-RPC stream.
+    // serialized across processes via a cross-process file lock (#1164), with a fail-closed
+    // pre-migration snapshot of the SQLite file when migrations are pending (#1803). In stdio
+    // mode logs go to stderr, so the logger never corrupts the stdout JSON-RPC stream.
     using (var scope = mcpHost.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<Taskdeck.Infrastructure.Persistence.TaskdeckDbContext>();
         var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, migrationLogger);
+        var backupSettings = scope.ServiceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<Taskdeck.Application.Services.DatabaseBackupSettings>>().Value;
+        Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
     }
 
     await mcpHost.RunAsync();
@@ -257,25 +333,79 @@ if (args.Contains("--mcp"))
 }
 // ── End MCP modes ───────────────────────────────────────────────────────────
 
-var builder = WebApplication.CreateBuilder(args);
+DesktopRuntime.InstallPackagedFatalHandler();
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteStarting();
+}
+
+try
+{
+var builder = DesktopRuntime.CreateWebApplicationBuilder(args);
+
+// #2233: a Windows profile that once ran a Gemini-era Taskdeck keeps its user-scope retired
+// provider variables forever, and the packaged double-click inherits them. Drop those
+// retired names before any reader sees them so the packaged app still starts on its default
+// provider. Only environment sources are filtered — retired settings the user wrote into
+// Taskdeck's own appsettings files remain fatal — and only in the packaged desktop host, so the
+// container / dotnet run / CI fail-closed contract is untouched.
+var retiredProviderNotice = new RetiredLlmProviderConfigurationNotice();
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    RetiredProviderEnvironmentConfiguration.IgnoreInheritedRetiredProviderConfiguration(
+        builder.Configuration,
+        retiredProviderNotice);
+    if (retiredProviderNotice.IgnoredEnvironmentConfiguration)
+    {
+        DesktopRuntime.WriteRetiredProviderConfigurationIgnored();
+    }
+}
+
+builder.Services.AddSingleton(retiredProviderNotice);
+DesktopRuntime.ConfigurePackagedListenUrl(builder);
+var bootstrapHeadless = DesktopRuntime.IsBootstrapHeadlessEnvironment(DesktopRuntime.IsPackagedDesktop);
+var localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(
+    builder.Environment.IsProduction(),
+    bootstrapHeadless);
+
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteDataLocation(Path.GetDirectoryName(localConfigPath)!);
+}
 
 // Taskdeck is a local-first app — the Windows EventLog provider added by
 // CreateBuilder() causes ObjectDisposedException crashes in background
 // workers when it is disposed before EF Core finishes logging.
 builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.AddDebug();
+if (!DesktopRuntime.IsPackagedDesktop)
+{
+    builder.Logging.AddConsole();
+    builder.Logging.AddDebug();
+}
 
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
-builder.AddLocalConfigFile();
-using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+builder.AddLocalConfigFile(localConfigPath, bootstrapHeadless);
+using (var bootstrapLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var bootstrapLogger = bootstrapLoggerFactory.CreateLogger("FirstRun");
-    builder.RunFirstRunChecks(bootstrapLogger);
+    Action<BootstrapIdentityLifecycle>? bootstrapIdentityObserver = DesktopRuntime.IsPackagedDesktop
+        ? DesktopRuntime.WriteBootstrapIdentity
+        : null;
+    builder.RunFirstRunChecks(
+        bootstrapLogger,
+        localConfigPath,
+        bootstrapHeadless,
+        bootstrapIdentityObserver);
     // Hard-fail if a placeholder JWT secret reaches Production (cloud containers).
-    builder.ValidateProductionSecrets(bootstrapLogger);
+    builder.ValidateProductionSecrets(bootstrapLogger, localConfigPath);
 }
 // -----------------------------------------------------------------------------
 
@@ -283,7 +413,13 @@ using (var bootstrapLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
 builder.Services.AddControllers();
 
 // SignalR with optional Redis backplane (see ADR-0023)
-using (var signalRLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+using (var signalRLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var signalRLogger = signalRLoggerFactory.CreateLogger("SignalR");
     builder.Services.AddTaskdeckSignalR(builder.Configuration, signalRLogger);
@@ -304,7 +440,7 @@ builder.Services.AddSwaggerGen(options =>
         },
         License = new OpenApiLicense
         {
-            Name = "MIT"
+            Name = "GPL-3.0-only"
         }
     });
 
@@ -359,7 +495,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Add Application Services
 builder.Services.AddApplicationServices();
 
-// Add LLM providers (quota, kill switch, OpenAI/Gemini/Mock selection)
+// Add LLM providers (quota, kill switch, OpenAI/compatible/Ollama/Mock selection)
 builder.Services.AddLlmProviders(builder.Configuration);
 
 // Add IUserContext for claim-based identity
@@ -370,8 +506,10 @@ builder.Services.AddScoped<Taskdeck.Application.Interfaces.IUserContext, Taskdec
 // The HttpUserContextProvider resolves user identity from the API key set by ApiKeyMiddleware.
 builder.Services.AddScoped<IUserContextProvider, Taskdeck.Infrastructure.Mcp.HttpUserContextProvider>();
 builder.Services.AddMcpTelemetry();
+// Stateless is pinned explicitly — see the standalone MCP host above for why the
+// ModelContextProtocol 2.0.0 default flip must not be inherited silently.
 builder.Services.AddMcpServer()
-    .WithHttpTransport()
+    .WithHttpTransport(options => options.Stateless = false)
     .AddMcpResourcesAndTools();
 
 // Add JWT Authentication (with optional GitHub OAuth and OIDC providers, circuit-breaker-protected backchannel)
@@ -407,7 +545,13 @@ builder.Services.AddTaskdeckWorkers(builder.Configuration, builder.Environment);
 
 // Add CORS (bootstrap logger threaded in so the fail-closed warning is structured + filterable,
 // matching the AddTaskdeckSignalR pattern above).
-using (var corsLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole()))
+using (var corsLoggerFactory = LoggerFactory.Create(lb =>
+{
+    if (!DesktopRuntime.IsPackagedDesktop)
+    {
+        lb.AddConsole();
+    }
+}))
 {
     var corsLogger = corsLoggerFactory.CreateLogger("Cors");
     builder.Services.AddTaskdeckCors(builder.Configuration, builder.Environment.IsDevelopment(), corsLogger);
@@ -441,18 +585,40 @@ appLifetime.ApplicationStarted.Register(() =>
 
     var server = app.Services.GetRequiredService<IServer>();
     var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-    var browserUrl = addresses?.FirstOrDefault(u => u.Contains("://localhost"))
-        ?? addresses?.FirstOrDefault()
-        ?? $"http://localhost:{firstRunSettings.Port}";
+    var browserUrl = DesktopRuntime.IsPackagedDesktop
+        ? DesktopRuntime.ResolveUserFacingUrl(addresses)
+        : addresses?.FirstOrDefault(u => u.Contains("://localhost"))
+            ?? addresses?.FirstOrDefault()
+            ?? $"http://localhost:{firstRunSettings.Port}";
 
     startupLogger.LogInformation("Taskdeck API is running at {Url}", browserUrl);
     startupLogger.LogInformation("Swagger UI available at {SwaggerUrl}", $"{browserUrl}/swagger");
 
-    fr.TryOpenBrowser(browserUrl);
+    if (DesktopRuntime.IsPackagedDesktop)
+    {
+        _ = fr.ReportPackagedReadyAndOpenBrowserAsync(browserUrl, appLifetime.ApplicationStopping);
+    }
+    else
+    {
+        fr.TryOpenBrowser(browserUrl);
+    }
 });
+
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    appLifetime.ApplicationStopping.Register(DesktopRuntime.WriteStopping);
+    appLifetime.ApplicationStopped.Register(DesktopRuntime.WriteStopped);
+}
 
 app.Run();
 return 0;
+}
+catch (Exception ex) when (DesktopRuntime.IsPackagedDesktop)
+{
+    DesktopRuntime.WriteFatalStartup(ex);
+    DesktopRuntime.WaitForFailureAcknowledgement();
+    return 1;
+}
 
 public partial class Program
 {

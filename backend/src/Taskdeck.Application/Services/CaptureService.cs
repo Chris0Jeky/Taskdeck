@@ -15,13 +15,32 @@ public class CaptureService : ICaptureService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
+    private readonly ICaptureStore? _captureStore;
+    private readonly ContextFabricSettings _contextFabricSettings;
 
     public CaptureService(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService)
+        : this(unitOfWork, authorizationService, captureStore: null, contextFabricSettings: null)
+    {
+    }
+
+    /// <summary>
+    /// The container-resolved constructor. <paramref name="captureStore"/> receives the ID-preserving
+    /// mirror of every new capture while <see cref="ContextFabricSettings.DualWriteCaptures"/> is on
+    /// (ADR-0065 §Decision 1, CF-01 #2255); with the default settings, or without a store, the service
+    /// behaves exactly as before.
+    /// </summary>
+    public CaptureService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService authorizationService,
+        ICaptureStore? captureStore,
+        ContextFabricSettings? contextFabricSettings)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _captureStore = captureStore;
+        _contextFabricSettings = contextFabricSettings ?? new ContextFabricSettings();
     }
 
     public async Task<Result<CaptureItemDto>> CreateAsync(
@@ -58,7 +77,9 @@ public class CaptureService : ICaptureService
                 dto.Text,
                 null,
                 dto.TitleHint,
-                dto.ExternalRef);
+                dto.ExternalRef,
+                DueDate: dto.DueDate,
+                Labels: dto.Labels);
 
             var request = new LlmRequest(
                 userId,
@@ -75,6 +96,29 @@ public class CaptureService : ICaptureService
             request.UpdatePayload(CaptureRequestContract.SerializePayload(attributedPayload));
 
             await _unitOfWork.LlmQueue.AddAsync(request, cancellationToken);
+
+            if (_contextFabricSettings.DualWriteCaptures && _captureStore is not null)
+            {
+                // ADR-0065 §Decision 1 / CF-01 (#2255): mirror the new capture into the durable
+                // Capture aggregate under the queue row's own id, so the later backfill and the Inbox
+                // read switch are ID-preserving. Staged into the same unit of work as the queue row:
+                // both rows commit together or not at all. The queue row stays the source of truth
+                // for Inbox reads until CF-01 flips the read path. The producer dimension comes from
+                // CaptureSourceMapping (an Import source is an Import producer, an integration source
+                // an Integration producer); this seam does not know the principal kind beyond that,
+                // so it never overrides the mapping.
+                var mirror = Capture.FromQueueRequest(
+                    request.Id,
+                    userId,
+                    sourceResult.Value,
+                    dto.BoardId,
+                    payload.ClientCreatedAt,
+                    dto.TitleHint,
+                    intent: CaptureIntentMode.Organize,
+                    capturedAtServer: request.CreatedAt);
+                await _captureStore.AddAsync(mirror, cancellationToken);
+            }
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             return Result.Success(MapToDetailDto(request, attributedPayload));
@@ -135,6 +179,7 @@ public class CaptureService : ICaptureService
             if (batch.Count > 0)
             {
                 var appliedProposalLookup = await LoadAppliedProposalLookupAsync(batch, cancellationToken);
+                var resolvedBatch = new List<(LlmRequest Item, CapturePayloadV1 Payload, Guid? EffectiveBoardId)>(batch.Count);
                 foreach (var candidate in batch)
                 {
                     var item = candidate.Item;
@@ -146,7 +191,46 @@ public class CaptureService : ICaptureService
                         GetAppliedProposal(appliedProposalLookup, candidate.Payload),
                         allowFallbackLookup: false);
 
+                    resolvedBatch.Add((item, effectivePayload, effectiveBoardId));
+                }
+
+                // The unscoped Inbox is the active-work view. Resolve provenance before this lookup so
+                // a legacy null-board capture converted onto an archived board is hidden alongside a
+                // capture whose raw BoardId points there. Board-filtered reads are the explicit history
+                // path and deliberately retain archived artifacts. Load the page's boards in one batch,
+                // then let the outer paging loop continue until the requested active limit is filled.
+                var archivedBoardIds = new HashSet<Guid>();
+                if (!filter.BoardId.HasValue)
+                {
+                    var effectiveBoardIds = resolvedBatch
+                        .Where(candidate => candidate.EffectiveBoardId.HasValue)
+                        .Select(candidate => candidate.EffectiveBoardId!.Value)
+                        .Distinct()
+                        .ToList();
+                    if (effectiveBoardIds.Count > 0)
+                    {
+                        var effectiveBoards = await _unitOfWork.Boards.GetByIdsAsync(effectiveBoardIds, cancellationToken);
+                        archivedBoardIds = effectiveBoards
+                            .Where(board => board.IsArchived)
+                            .Select(board => board.Id)
+                            .ToHashSet();
+                    }
+                }
+
+                foreach (var candidate in resolvedBatch)
+                {
+                    var item = candidate.Item;
+                    var effectivePayload = candidate.Payload;
+                    var effectiveBoardId = candidate.EffectiveBoardId;
+
                     if (filter.BoardId.HasValue && effectiveBoardId != filter.BoardId.Value)
+                    {
+                        continue;
+                    }
+
+                    if (!filter.BoardId.HasValue &&
+                        effectiveBoardId.HasValue &&
+                        archivedBoardIds.Contains(effectiveBoardId.Value))
                     {
                         continue;
                     }
@@ -204,6 +288,18 @@ public class CaptureService : ICaptureService
         return Result.Success(MapToDetailDto(item, effectivePayload, effectiveBoardId));
     }
 
+    public Task<Result<CaptureItemDto>> KeepAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => SetDispositionAsync(userId, itemId, CaptureDisposition.Kept, cancellationToken);
+
+    public Task<Result<CaptureItemDto>> ArchiveAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+        => SetDispositionAsync(userId, itemId, CaptureDisposition.Archived, cancellationToken);
+
     public Task<Result> IgnoreAsync(
         Guid userId,
         Guid itemId,
@@ -220,13 +316,34 @@ public class CaptureService : ICaptureService
         return CancelInternalAsync(userId, itemId, cancellationToken);
     }
 
-    public async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+    public Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
         Guid userId,
         Guid itemId,
+        Guid? targetBoardId = null,
         CancellationToken cancellationToken = default)
+        => EnqueueTriageAsync(userId, itemId, targetBoardId, boardAccessCache: null, cancellationToken);
+
+    /// <param name="boardAccessCache">
+    /// Optional per-call-group memo of board authorization outcomes, keyed by board id. Supplied by
+    /// <see cref="BatchTriageAsync"/> so a batch spends one <c>CanWriteBoardAsync</c> lookup per
+    /// DISTINCT board instead of one per item (#1836): that lookup is a board fetch plus a
+    /// membership read, so a 50-item batch on one board previously paid 50 of each. Board
+    /// membership cannot change within a single batch call, so the memo is behaviour-identical;
+    /// failure outcomes are memoized too, for the same reason. Null on the single-item path, which
+    /// keeps its original one-lookup-per-call shape.
+    /// </param>
+    private async Task<Result<CaptureTriageEnqueueResultDto>> EnqueueTriageAsync(
+        Guid userId,
+        Guid itemId,
+        Guid? targetBoardId,
+        Dictionary<Guid, Result>? boardAccessCache,
+        CancellationToken cancellationToken)
     {
         if (userId == Guid.Empty)
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        if (targetBoardId.HasValue && targetBoardId.Value == Guid.Empty)
+            return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.ValidationError, "BoardId cannot be empty");
 
         var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
         if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
@@ -236,7 +353,7 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
         var payload = ParsePayload(item);
-        var (effectivePayload, _, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
+        var (effectivePayload, effectiveBoardId, persistedBackfill) = await ResolveAppliedConversionProvenanceAsync(
             item,
             payload,
             persistChanges: true,
@@ -249,6 +366,8 @@ public class CaptureService : ICaptureService
         var currentStatus = ResolveCaptureStatus(item, effectivePayload);
         if (currentStatus == CaptureStatus.Triaging)
         {
+            // Already in flight — the board was resolved on the first accept. Stay idempotent so a
+            // double-click can't turn a live triage into a spurious validation error.
             return Result.Success(new CaptureTriageEnqueueResultDto(
                 item.Id,
                 CaptureStatus.Triaging,
@@ -269,15 +388,77 @@ public class CaptureService : ICaptureService
                 $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
         }
 
+        // A capture with no board can never be triaged into a proposal — a proposal targets a board
+        // (CaptureTriageService enforces this at the worker). Home quick-capture lands board-less, so
+        // resolve the target board now that the item is otherwise transition-eligible: link a
+        // caller-supplied board, then reject synchronously with a 400 instead of queueing a doomed
+        // async job that dead-ends at a bare FAILED badge with no reason (#1764).
+        if (!effectiveBoardId.HasValue && targetBoardId.HasValue)
+        {
+            // Gate the link on write access, not read (#1794): the board is only being attached so a
+            // proposal can be queued against it, so the same bar applies as to an already-linked board.
+            var linkPermission = await EnsureBoardProposalAccessAsync(userId, targetBoardId.Value, boardAccessCache);
+            if (!linkPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(linkPermission.ErrorCode, linkPermission.ErrorMessage);
+
+            effectiveBoardId = targetBoardId;
+        }
+        else if (effectiveBoardId.HasValue)
+        {
+            // Same gate for a capture that already carries its board: the read-only injection vector
+            // is reachable through capture-with-board + accept, not only through the backfill body.
+            var boardPermission = await EnsureBoardProposalAccessAsync(userId, effectiveBoardId.Value, boardAccessCache);
+            if (!boardPermission.IsSuccess)
+                return Result.Failure<CaptureTriageEnqueueResultDto>(boardPermission.ErrorCode, boardPermission.ErrorMessage);
+        }
+
+        if (!effectiveBoardId.HasValue)
+        {
+            return Result.Failure<CaptureTriageEnqueueResultDto>(
+                ErrorCodes.ValidationError,
+                "Choose a board before accepting this capture. Triage turns a capture into a board proposal, so it needs a target board.");
+        }
+
         try
         {
+            var expectedStatus = item.Status;
+            var expectedUpdatedAt = item.UpdatedAt;
+            if (!item.BoardId.HasValue)
+            {
+                item.BackfillBoard(effectiveBoardId.Value);
+            }
             if (item.Status == RequestStatus.Failed)
             {
                 item.ResetForRetry();
             }
 
+            if (effectivePayload.Disposition?.Kind != CaptureDisposition.ProposalRequested)
+            {
+                effectivePayload = effectivePayload with
+                {
+                    Disposition = new CaptureDispositionV1(
+                        CaptureDisposition.ProposalRequested,
+                        DateTimeOffset.UtcNow,
+                        userId,
+                        effectiveBoardId)
+                };
+            }
+
+            item.UpdatePayload(CaptureRequestContract.SerializePayload(effectivePayload));
             item.MarkAsProcessing();
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            var enqueued = await _unitOfWork.LlmQueue.TryEnqueueCaptureTriageAsync(
+                item.Id,
+                expectedStatus,
+                expectedUpdatedAt,
+                item.Payload,
+                effectiveBoardId.Value,
+                cancellationToken);
+            if (!enqueued)
+            {
+                return Result.Failure<CaptureTriageEnqueueResultDto>(
+                    ErrorCodes.Conflict,
+                    "Capture item changed while triage was being requested");
+            }
 
             return Result.Success(new CaptureTriageEnqueueResultDto(
                 item.Id,
@@ -289,6 +470,40 @@ public class CaptureService : ICaptureService
             return Result.Failure<CaptureTriageEnqueueResultDto>(ErrorCodes.Conflict, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Board-targeted triage generates an automation proposal into the target board's review queue,
+    /// so it requires write-capable membership on that board — the roles
+    /// <see cref="BoardAccess.CanWrite"/> admits (Owner, Admin, Editor), plus the board owner. A
+    /// Viewer can read the board but must not be able to inject proposals into a queue only
+    /// approvers can clear (#1794). Approval and execution authorization are unchanged: write access
+    /// buys the right to <em>suggest</em>; every board mutation still needs an explicit approve and
+    /// execute by an approver.
+    /// </summary>
+    private async Task<Result> EnsureBoardProposalAccessAsync(
+        Guid userId,
+        Guid boardId,
+        Dictionary<Guid, Result>? boardAccessCache = null)
+    {
+        if (boardAccessCache is not null && boardAccessCache.TryGetValue(boardId, out var memoized))
+            return memoized;
+
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        var outcome = !permission.IsSuccess
+            ? Result.Failure(permission.ErrorCode, permission.ErrorMessage)
+            : permission.Value
+                ? Result.Success()
+                : Result.Failure(ErrorCodes.Forbidden, BoardProposalAccessDeniedMessage);
+
+        if (boardAccessCache is not null)
+            boardAccessCache[boardId] = outcome;
+
+        return outcome;
+    }
+
+    private const string BoardProposalAccessDeniedMessage =
+        "You do not have permission to modify this board. Triaging a capture into a board queues an " +
+        "automation proposal there, which requires write access to that board.";
 
     private static readonly HashSet<string> ValidBatchActions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -328,13 +543,18 @@ public class CaptureService : ICaptureService
 
         var results = new List<BatchTriageItemResultDto>(request.Items.Count);
 
+        // One board-authorization lookup per DISTINCT board for the whole batch, not one per item
+        // (#1836). Shared across every triage item below; see the boardAccessCache parameter on
+        // EnqueueTriageAsync for why memoizing inside a single batch is behaviour-identical.
+        var boardAccessCache = new Dictionary<Guid, Result>();
+
         foreach (var itemAction in request.Items)
         {
             try
             {
                 var actionResult = itemAction.Action.ToLowerInvariant() switch
                 {
-                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, cancellationToken),
+                    "triage" => await ExecuteBatchItemTriageAsync(userId, itemAction.ItemId, boardAccessCache, cancellationToken),
                     "ignore" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     "cancel" => await CancelInternalAsync(userId, itemAction.ItemId, cancellationToken),
                     _ => Result.Failure(ErrorCodes.ValidationError, $"Unknown action: {itemAction.Action}")
@@ -369,9 +589,10 @@ public class CaptureService : ICaptureService
     private async Task<Result> ExecuteBatchItemTriageAsync(
         Guid userId,
         Guid itemId,
+        Dictionary<Guid, Result> boardAccessCache,
         CancellationToken cancellationToken)
     {
-        var triageResult = await EnqueueTriageAsync(userId, itemId, cancellationToken);
+        var triageResult = await EnqueueTriageAsync(userId, itemId, targetBoardId: null, boardAccessCache, cancellationToken);
         return triageResult.IsSuccess
             ? Result.Success()
             : Result.Failure(triageResult.ErrorCode, triageResult.ErrorMessage);
@@ -400,11 +621,17 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
+        if (item.TranscriptId.HasValue)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                "Capture text cannot be edited after its transcript is linked");
+        }
+
         var currentPayload = ParsePayload(item);
         var currentStatus = ResolveCaptureStatus(item, currentPayload);
 
-        if (currentStatus != CaptureStatus.New && currentStatus != CaptureStatus.Failed &&
-            currentStatus != CaptureStatus.Triaged)
+        if (!CanEditSuggestion(item, currentStatus))
         {
             return Result.Failure<CaptureItemDto>(ErrorCodes.Conflict,
                 $"Capture item in status {currentStatus} cannot be edited");
@@ -424,7 +651,20 @@ public class CaptureService : ICaptureService
             currentPayload.ClientCreatedAt,
             dto.TitleHint ?? currentPayload.TitleHint,
             currentPayload.ExternalRef,
-            currentPayload.Provenance);
+            currentPayload.Provenance,
+            DueDate: dto.Metadata == null ? currentPayload.DueDate : dto.Metadata.DueDate,
+            Labels: dto.Metadata == null
+                ? currentPayload.Labels
+                : dto.Metadata.Labels ?? Array.Empty<string>(),
+            Disposition: currentPayload.Disposition);
+
+        var payloadValidation = CaptureRequestContract.ValidatePayload(updatedPayload);
+        if (!payloadValidation.IsSuccess)
+        {
+            return Result.Failure<CaptureItemDto>(
+                payloadValidation.ErrorCode,
+                payloadValidation.ErrorMessage);
+        }
 
         item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -462,6 +702,92 @@ public class CaptureService : ICaptureService
         }
     }
 
+    private async Task<Result<CaptureItemDto>> SetDispositionAsync(
+        Guid userId,
+        Guid itemId,
+        CaptureDisposition disposition,
+        CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureItemDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+
+        if (item.UserId != userId)
+            return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
+
+        var payload = ParsePayload(item);
+        var status = ResolveCaptureStatus(item, payload);
+
+        if (payload.Disposition?.Kind == disposition &&
+            (status is CaptureStatus.New or CaptureStatus.Failed ||
+             disposition == CaptureDisposition.Archived && status == CaptureStatus.Ignored))
+        {
+            return Result.Success(MapToDetailDto(item, payload));
+        }
+
+        if (status is not CaptureStatus.New and not CaptureStatus.Failed)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                $"Capture item cannot be {disposition.ToString().ToLowerInvariant()} from {status}");
+        }
+
+        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+            ProposalSourceType.Queue,
+            item.Id.ToString(),
+            cancellationToken);
+        if (existingProposal?.Status is ProposalStatus.PendingReview or ProposalStatus.Approved or ProposalStatus.Applied)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                "Capture item already has a proposal in review or applied work");
+        }
+
+        try
+        {
+            var expectedStatus = item.Status;
+            var expectedUpdatedAt = item.UpdatedAt;
+            var updatedPayload = payload with
+            {
+                Disposition = new CaptureDispositionV1(
+                    disposition,
+                    DateTimeOffset.UtcNow,
+                    userId,
+                    item.BoardId)
+            };
+            var targetStatus = disposition == CaptureDisposition.Archived
+                ? RequestStatus.Cancelled
+                : item.Status;
+            if (disposition == CaptureDisposition.Archived)
+            {
+                item.Cancel();
+            }
+            item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
+            var updated = await _unitOfWork.LlmQueue.TrySetCaptureDispositionAsync(
+                item.Id,
+                expectedStatus,
+                expectedUpdatedAt,
+                targetStatus,
+                item.Payload,
+                cancellationToken);
+            if (!updated)
+            {
+                return Result.Failure<CaptureItemDto>(
+                    ErrorCodes.Conflict,
+                    "Capture item changed while its disposition was being recorded");
+            }
+
+            return Result.Success(MapToDetailDto(item, updatedPayload));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<CaptureItemDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
     private static Result<CaptureSource> ResolveSource(string? source)
     {
         if (string.IsNullOrWhiteSpace(source))
@@ -490,7 +816,9 @@ public class CaptureService : ICaptureService
             payload.Source,
             excerpt,
             item.CreatedAt,
-            item.ProcessedAt);
+            item.ProcessedAt,
+            item.ErrorMessage,
+            payload.Disposition);
     }
 
     private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
@@ -510,8 +838,19 @@ public class CaptureService : ICaptureService
             item.ProcessedAt,
             item.RetryCount,
             item.ErrorMessage,
-            payload.Provenance);
+            payload.Provenance,
+            CanEditSuggestion(item, status),
+            new CaptureSuggestionMetadataDto(
+                payload.DueDate,
+                payload.Labels ?? Array.Empty<string>()),
+            payload.Disposition);
     }
+
+    private static bool CanEditSuggestion(LlmRequest item, CaptureStatus status) =>
+        !item.TranscriptId.HasValue && IsSuggestionEditableStatus(status);
+
+    private static bool IsSuggestionEditableStatus(CaptureStatus status) =>
+        status is CaptureStatus.New or CaptureStatus.Failed or CaptureStatus.Triaged;
 
     private async Task<IReadOnlyDictionary<Guid, AutomationProposal>> LoadAppliedProposalLookupAsync(
         IReadOnlyList<(LlmRequest Item, CapturePayloadV1 Payload)> captureItems,
@@ -561,12 +900,22 @@ public class CaptureService : ICaptureService
         AutomationProposal? preloadedProposal = null,
         bool allowFallbackLookup = true)
     {
+        // Server-stamped provenance is the authoritative legacy fallback when the raw request's
+        // BoardId was never backfilled. Prefer the raw FK when both exist; a client cannot inject
+        // this attribution because capture contract parsing rejects client-supplied provenance.
+        var storedEffectiveBoardId = CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+            item.Id,
+            item.UserId,
+            item.BoardId,
+            payload.Provenance?.BoardId,
+            payload.Provenance?.ProposalId,
+            payload.Provenance?.ConvertedAt);
         var proposalId = payload.Provenance?.ProposalId;
         if (!proposalId.HasValue ||
             proposalId.Value == Guid.Empty ||
             payload.Provenance?.ConvertedAt is not null)
         {
-            return (payload, item.BoardId, false);
+            return (payload, storedEffectiveBoardId, false);
         }
 
         var proposal = preloadedProposal;
@@ -575,22 +924,31 @@ public class CaptureService : ICaptureService
             proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(proposalId.Value, cancellationToken);
         }
 
-        if (proposal == null ||
-            proposal.Status != ProposalStatus.Applied ||
-            proposal.SourceType != ProposalSourceType.Queue ||
-            !string.Equals(proposal.SourceReferenceId, item.Id.ToString(), StringComparison.OrdinalIgnoreCase) ||
-            proposal.RequestedByUserId != item.UserId)
+        if (!CaptureEffectiveBoardPolicy.IsValidatedAppliedProposal(
+                item.Id,
+                item.UserId,
+                proposalId,
+                payload.Provenance?.ConvertedAt,
+                proposal))
         {
-            return (payload, item.BoardId, false);
+            return (payload, storedEffectiveBoardId, false);
         }
 
-        var resolvedBoardId = item.BoardId ?? proposal.BoardId;
+        var validatedProposal = proposal!;
+        var resolvedBoardId = CaptureEffectiveBoardPolicy.ResolveEffectiveBoardId(
+            item.Id,
+            item.UserId,
+            item.BoardId,
+            payload.Provenance?.BoardId,
+            proposalId,
+            payload.Provenance?.ConvertedAt,
+            validatedProposal);
         var convertedPayload = CaptureRequestContract.WithProvenance(
             payload,
             item.Id,
-            proposalId: proposal.Id,
+            proposalId: validatedProposal.Id,
             boardId: resolvedBoardId,
-            convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(proposal.AppliedAt));
+            convertedAt: CaptureConversionTimestamp.ResolveConvertedAt(validatedProposal.AppliedAt));
 
         if (!persistChanges)
         {
@@ -608,14 +966,7 @@ public class CaptureService : ICaptureService
 
     private static CapturePayloadV1 ParsePayload(LlmRequest item)
     {
-        var payloadResult = CaptureRequestContract.ParsePayload(item.Payload, allowServerAttributionFields: true);
-        if (payloadResult.IsSuccess)
-            return payloadResult.Value;
-
-        return new CapturePayloadV1(
-            CaptureRequestContract.CurrentSchemaVersion,
-            CaptureSource.Typed,
-            item.Payload);
+        return CaptureRequestContract.ParseStoredPayload(item.Payload);
     }
 
     private static CaptureStatus ResolveCaptureStatus(LlmRequest item, CapturePayloadV1 payload)

@@ -3,7 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { workspaceApi } from '../api/workspaceApi'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import type { CalendarCard, CalendarData } from '../types/workspace'
+import {
+  calendarDateKeyToUtcDate,
+  formatCalendarDate,
+  localCalendarDateKey,
+  toCalendarDateKey,
+} from '../utils/dueDates'
 
 const router = useRouter()
 
@@ -12,7 +19,7 @@ const error = ref<string | null>(null)
 const calendarData = ref<CalendarData | null>(null)
 
 /** Current view month (first day of month in UTC). */
-const viewDate = ref(startOfMonth(new Date()))
+const viewDate = ref(startOfMonth(calendarDateKeyToUtcDate(localCalendarDateKey()) ?? new Date()))
 
 /** Active view mode: 'calendar' for monthly grid, 'timeline' for linear list. */
 const viewMode = ref<'calendar' | 'timeline'>('calendar')
@@ -37,7 +44,7 @@ function navigateMonth(delta: number) {
 }
 
 function goToToday() {
-  viewDate.value = startOfMonth(new Date())
+  viewDate.value = startOfMonth(calendarDateKeyToUtcDate(localCalendarDateKey()) ?? new Date())
 }
 
 async function fetchCalendar() {
@@ -63,7 +70,8 @@ const cardsByDate = computed<Record<string, CalendarCard[]>>(() => {
 
   const groups: Record<string, CalendarCard[]> = {}
   for (const card of calendarData.value.cards) {
-    const dateKey = card.dueDate.slice(0, 10) // YYYY-MM-DD
+    const dateKey = toCalendarDateKey(card.dueDate)
+    if (!dateKey) continue
     if (!groups[dateKey]) {
       groups[dateKey] = []
     }
@@ -84,8 +92,7 @@ const calendarWeeks = computed(() => {
   const gridStart = new Date(Date.UTC(year, month, 1 - startDow))
 
   const weeks: { date: Date; dateKey: string; isCurrentMonth: boolean; isToday: boolean }[][] = []
-  const today = new Date()
-  const todayKey = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`
+  const todayKey = localCalendarDateKey()
 
   let cursor = new Date(gridStart)
   while (cursor <= lastDay || weeks.length === 0 || weeks[weeks.length - 1].length < 7) {
@@ -114,7 +121,7 @@ const calendarWeeks = computed(() => {
 const timelineCards = computed(() => {
   if (!calendarData.value) return []
   return [...calendarData.value.cards].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+    (a, b) => (toCalendarDateKey(a.dueDate) ?? '').localeCompare(toCalendarDateKey(b.dueDate) ?? ''),
   )
 })
 
@@ -124,17 +131,17 @@ const timelineGroups = computed(() => {
   let currentKey = ''
 
   for (const card of timelineCards.value) {
-    const dateKey = card.dueDate.slice(0, 10)
+    const dateKey = toCalendarDateKey(card.dueDate)
+    if (!dateKey) continue
     if (dateKey !== currentKey) {
       currentKey = dateKey
       groups.push({
         dateKey,
-        dateLabel: new Date(dateKey + 'T00:00:00Z').toLocaleDateString('en-US', {
+        dateLabel: formatCalendarDate(dateKey, {
           weekday: 'short',
           month: 'short',
           day: 'numeric',
-          timeZone: 'UTC',
-        }),
+        }, 'en-US'),
         cards: [],
       })
     }
@@ -145,11 +152,10 @@ const timelineGroups = computed(() => {
 })
 
 function formatDueDate(value: string): string {
-  return new Date(value).toLocaleDateString('en-US', {
+  return formatCalendarDate(value, {
     month: 'short',
     day: 'numeric',
-    timeZone: 'UTC',
-  })
+  }, 'en-US')
 }
 
 function openBoard(boardId: string) {
@@ -157,8 +163,8 @@ function openBoard(boardId: string) {
 }
 
 function cardStatusClass(card: CalendarCard): string {
-  if (card.isOverdue) return 'td-cal-card--overdue'
-  if (card.isBlocked) return 'td-cal-card--blocked'
+  if (card.isOverdue) return 'paper-cal-card--overdue'
+  if (card.isBlocked) return 'paper-cal-card--blocked'
   return ''
 }
 
@@ -174,30 +180,30 @@ watch(viewDate, fetchCalendar)
 </script>
 
 <template>
-  <div class="td-calendar" role="region" aria-label="Calendar planning view">
-    <header class="td-calendar__hero td-panel">
-      <div class="td-calendar__hero-copy">
-        <span class="td-calendar__eyebrow" aria-hidden="true">Planning</span>
-        <h1 class="td-page-title">Calendar</h1>
-        <p class="td-calendar__subtitle">
+  <div class="paper-calendar" role="region" aria-label="Calendar planning view">
+    <header class="paper-calendar__panel paper-calendar__hero">
+      <div class="paper-calendar__hero-copy">
+        <span class="tk-eyebrow paper-calendar__eyebrow" aria-hidden="true">Planning</span>
+        <h1 class="tk-h1 paper-calendar__title">Calendar</h1>
+        <p class="tk-lede paper-calendar__subtitle">
           See due-date-backed work across all boards in a single view. Spot overdue items, plan ahead, and jump to any card's board context.
         </p>
       </div>
-      <div class="td-calendar__hero-actions">
-        <button
-          class="td-btn td-btn--secondary"
-          :class="{ 'td-btn--active': viewMode === 'calendar' }"
+      <div class="paper-calendar__hero-actions">
+        <PaperHLBtn
+          class="paper-calendar__mode-btn"
+          :class="{ 'paper-calendar__mode-btn--active': viewMode === 'calendar' }"
           @click="viewMode = 'calendar'"
         >
           Grid
-        </button>
-        <button
-          class="td-btn td-btn--secondary"
-          :class="{ 'td-btn--active': viewMode === 'timeline' }"
+        </PaperHLBtn>
+        <PaperHLBtn
+          class="paper-calendar__mode-btn"
+          :class="{ 'paper-calendar__mode-btn--active': viewMode === 'timeline' }"
           @click="viewMode = 'timeline'"
         >
           Timeline
-        </button>
+        </PaperHLBtn>
       </div>
     </header>
 
@@ -208,28 +214,30 @@ watch(viewDate, fetchCalendar)
     />
 
     <!-- Month navigation -->
-    <div class="td-calendar__nav td-panel">
-      <button
-        class="td-btn td-btn--ghost"
+    <div class="paper-calendar__panel paper-calendar__nav">
+      <PaperHLBtn
+        class="paper-calendar__nav-btn"
+        variant="ghost"
         aria-label="Previous month"
         @click="navigateMonth(-1)"
       >
         &larr;
-      </button>
-      <span class="td-calendar__month-label">{{ monthLabel }}</span>
-      <button
-        class="td-btn td-btn--ghost"
+      </PaperHLBtn>
+      <span class="paper-calendar__month-label">{{ monthLabel }}</span>
+      <PaperHLBtn
+        class="paper-calendar__nav-btn"
+        variant="ghost"
         aria-label="Next month"
         @click="navigateMonth(1)"
       >
         &rarr;
-      </button>
-      <button class="td-btn td-btn--ghost td-calendar__today-btn" @click="goToToday">
+      </PaperHLBtn>
+      <PaperHLBtn class="paper-calendar__today-btn" variant="ghost" @click="goToToday">
         Today
-      </button>
+      </PaperHLBtn>
       <span
         v-if="calendarData"
-        class="td-calendar__card-count"
+        class="paper-calendar__card-count"
         aria-live="polite"
       >
         {{ calendarData.totalCards }} card{{ calendarData.totalCards === 1 ? '' : 's' }} this month
@@ -237,36 +245,36 @@ watch(viewDate, fetchCalendar)
     </div>
 
     <!-- Loading state -->
-    <div v-if="loading" class="td-panel td-calendar__placeholder" aria-live="polite">
+    <div v-if="loading" class="paper-calendar__panel paper-calendar__placeholder" aria-live="polite">
       Loading calendar data...
     </div>
 
     <!-- Error state -->
-    <div v-else-if="error" class="td-alert td-alert--error" role="alert">
+    <div v-else-if="error" class="paper-calendar__alert" role="alert">
       {{ error }}
-      <button class="td-btn td-btn--ghost td-btn--sm" @click="fetchCalendar">Retry</button>
+      <PaperHLBtn class="paper-calendar__retry" variant="ghost" @click="fetchCalendar">Retry</PaperHLBtn>
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="calendarData && calendarData.totalCards === 0"
-      class="td-panel td-calendar__empty"
+      class="paper-calendar__panel paper-calendar__empty"
       role="status"
     >
-      <p class="td-calendar__empty-title">No due dates this month</p>
-      <p class="td-calendar__empty-desc">
+      <p class="paper-calendar__empty-title">No due dates this month</p>
+      <p class="paper-calendar__empty-desc">
         Cards with due dates will appear here. Set due dates on your board cards to see them in the calendar.
       </p>
     </div>
 
     <!-- Calendar grid view -->
     <template v-else-if="calendarData && viewMode === 'calendar'">
-      <div class="td-calendar__grid" role="grid" aria-label="Calendar grid">
-        <div class="td-calendar__weekdays" role="row">
+      <div class="paper-calendar__grid" role="grid" aria-label="Calendar grid">
+        <div class="paper-calendar__weekdays" role="row">
           <div
             v-for="day in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']"
             :key="day"
-            class="td-calendar__weekday"
+            class="paper-calendar__weekday"
             role="columnheader"
           >
             {{ day }}
@@ -275,36 +283,36 @@ watch(viewDate, fetchCalendar)
         <div
           v-for="(week, wi) in calendarWeeks"
           :key="wi"
-          class="td-calendar__week"
+          class="paper-calendar__week"
           role="row"
         >
           <div
             v-for="day in week"
             :key="day.dateKey"
-            class="td-calendar__day"
+            class="paper-calendar__day"
             :class="{
-              'td-calendar__day--other-month': !day.isCurrentMonth,
-              'td-calendar__day--today': day.isToday,
-              'td-calendar__day--has-cards': (cardsByDate[day.dateKey]?.length ?? 0) > 0,
+              'paper-calendar__day--other-month': !day.isCurrentMonth,
+              'paper-calendar__day--today': day.isToday,
+              'paper-calendar__day--has-cards': (cardsByDate[day.dateKey]?.length ?? 0) > 0,
             }"
             role="gridcell"
             :aria-label="`${day.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}, ${cardsByDate[day.dateKey]?.length ?? 0} cards`"
           >
-            <span class="td-calendar__day-number">{{ day.date.getUTCDate() }}</span>
-            <div v-if="cardsByDate[day.dateKey]" class="td-calendar__day-cards">
+            <span class="paper-calendar__day-number">{{ day.date.getUTCDate() }}</span>
+            <div v-if="cardsByDate[day.dateKey]" class="paper-calendar__day-cards">
               <button
                 v-for="card in cardsByDate[day.dateKey].slice(0, 3)"
                 :key="card.cardId"
-                class="td-cal-card"
+                class="paper-cal-card"
                 :class="cardStatusClass(card)"
                 :title="`${card.title} - ${card.boardName} / ${card.columnName} (${cardStatusLabel(card)})`"
                 @click="openBoard(card.boardId)"
               >
-                <span class="td-cal-card__title">{{ card.title }}</span>
+                <span class="paper-cal-card__title">{{ card.title }}</span>
               </button>
               <span
                 v-if="cardsByDate[day.dateKey].length > 3"
-                class="td-calendar__more"
+                class="paper-calendar__more"
               >
                 +{{ cardsByDate[day.dateKey].length - 3 }} more
               </span>
@@ -316,48 +324,48 @@ watch(viewDate, fetchCalendar)
 
     <!-- Timeline view -->
     <template v-else-if="calendarData && viewMode === 'timeline'">
-      <div class="td-calendar__timeline" role="list" aria-label="Timeline">
+      <div class="paper-calendar__timeline" role="list" aria-label="Timeline">
         <div
           v-for="group in timelineGroups"
           :key="group.dateKey"
-          class="td-timeline-group"
+          class="paper-timeline-group"
         >
-          <div class="td-timeline-group__header">
-            <span class="td-timeline-group__date">{{ group.dateLabel }}</span>
-            <span class="td-timeline-group__count">{{ group.cards.length }} card{{ group.cards.length === 1 ? '' : 's' }}</span>
+          <div class="paper-timeline-group__header">
+            <span class="paper-timeline-group__date">{{ group.dateLabel }}</span>
+            <span class="paper-timeline-group__count">{{ group.cards.length }} card{{ group.cards.length === 1 ? '' : 's' }}</span>
           </div>
-          <ul class="td-timeline-group__cards">
+          <ul class="paper-timeline-group__cards">
             <li
               v-for="card in group.cards"
               :key="card.cardId"
-              class="td-timeline-card-wrapper"
+              class="paper-timeline-card-wrapper"
             >
               <button
-                class="td-timeline-card td-panel"
+                class="paper-timeline-card"
                 :class="cardStatusClass(card)"
                 @click="openBoard(card.boardId)"
               >
-              <div class="td-timeline-card__header">
-                <span class="td-timeline-card__title">{{ card.title }}</span>
+              <div class="paper-timeline-card__header">
+                <span class="paper-timeline-card__title">{{ card.title }}</span>
                 <span
-                  class="td-timeline-card__status"
+                  class="paper-timeline-card__status"
                   :class="{
-                    'td-timeline-card__status--overdue': card.isOverdue,
-                    'td-timeline-card__status--blocked': card.isBlocked,
+                    'paper-timeline-card__status--overdue': card.isOverdue,
+                    'paper-timeline-card__status--blocked': card.isBlocked,
                   }"
                 >
                   {{ cardStatusLabel(card) }}
                 </span>
               </div>
-              <div class="td-timeline-card__meta">
-                <span class="td-timeline-card__board">{{ card.boardName }}</span>
-                <span class="td-timeline-card__separator" aria-hidden="true">/</span>
-                <span class="td-timeline-card__column">{{ card.columnName }}</span>
-                <span class="td-timeline-card__due">Due {{ formatDueDate(card.dueDate) }}</span>
+              <div class="paper-timeline-card__meta">
+                <span class="paper-timeline-card__board">{{ card.boardName }}</span>
+                <span class="paper-timeline-card__separator" aria-hidden="true">/</span>
+                <span class="paper-timeline-card__column">{{ card.columnName }}</span>
+                <span class="paper-timeline-card__due">Due {{ formatDueDate(card.dueDate) }}</span>
               </div>
               <p
                 v-if="card.blockReason"
-                class="td-timeline-card__block-reason"
+                class="paper-timeline-card__block-reason"
               >
                 Blocked: {{ card.blockReason }}
               </p>
@@ -366,9 +374,9 @@ watch(viewDate, fetchCalendar)
           </ul>
         </div>
 
-        <div v-if="timelineGroups.length === 0" class="td-panel td-calendar__empty" role="status">
-          <p class="td-calendar__empty-title">No due dates this month</p>
-          <p class="td-calendar__empty-desc">
+        <div v-if="timelineGroups.length === 0" class="paper-calendar__panel paper-calendar__empty" role="status">
+          <p class="paper-calendar__empty-title">No due dates this month</p>
+          <p class="paper-calendar__empty-desc">
             Cards with due dates will appear here.
           </p>
         </div>
@@ -378,371 +386,436 @@ watch(viewDate, fetchCalendar)
 </template>
 
 <style scoped>
-.td-calendar {
+/* ── Paper & Graphite — CalendarView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   The tokens live under `.paper` / `.paper-night` (the canonical shell), so the
+   var() fallbacks keep this surface legible if it is ever rendered outside the
+   Paper shell (Legacy/Obsidian "off" mode).
+
+   Status colors map onto the Paper semantic family: on-track -> --applied,
+   overdue -> --overdue, blocked -> --ember. */
+
+.paper-calendar {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-5);
-  padding: var(--td-space-8);
+  gap: var(--s-5, 20px);
+  padding: var(--s-8, 32px);
   max-width: 1200px;
   margin: 0 auto;
+  font-family: var(--sans, system-ui, sans-serif);
+  /* See MetricsView: paint the Paper substrate wherever --ink is set, so
+     Legacy ("off") mode does not render near-black ink on the Obsidian
+     --td-surface-base. No-op under .paper/.paper-night. */
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
 
-.td-calendar__hero {
+/* ── Panels ── */
+
+.paper-calendar__panel {
+  padding: var(--s-4, 16px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+/* ── Hero ── */
+
+.paper-calendar__hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--td-space-5);
+  gap: var(--s-5, 20px);
 }
 
-.td-calendar__hero-copy {
+.paper-calendar__hero-copy {
   flex: 1;
   min-width: 280px;
 }
 
-.td-calendar__eyebrow {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-xs);
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--td-color-ember);
+.paper-calendar__eyebrow {
+  color: var(--mute, #635c4e);
 }
 
-.td-calendar__subtitle {
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
-  margin-top: var(--td-space-2);
+.paper-calendar__title {
+  margin: var(--s-1, 4px) 0 0;
+  font-size: var(--t-h2, 32px);
 }
 
-.td-calendar__hero-actions {
+.paper-calendar__subtitle {
+  margin: var(--s-2, 8px) 0 0;
+  color: var(--ink-2, #3a352d);
+}
+
+.paper-calendar__hero-actions {
   display: flex;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
+  flex-shrink: 0;
 }
 
-.td-btn--active {
-  background: var(--td-color-ember-dim);
-  color: var(--td-color-ember);
-  border-color: var(--td-color-ember);
+/* Compound selector so this beats the global `.paper .pbtn` rule (0,2,0)
+   regardless of stylesheet injection order. */
+.paper-calendar__mode-btn.paper-calendar__mode-btn--active {
+  background: var(--ember-tint, #f0d9c8);
+  border-color: var(--ember, #a8421f);
+  color: var(--ember-ink, #6e2810);
 }
 
-/* Month navigation */
-.td-calendar__nav {
+/* ── Month navigation ── */
+
+.paper-calendar__nav {
   display: flex;
   align-items: center;
-  gap: var(--td-space-4);
-  padding: var(--td-space-4) var(--td-space-5);
+  gap: var(--s-4, 16px);
+  padding: var(--s-4, 16px) var(--s-5, 20px);
 }
 
-.td-calendar__month-label {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-lg);
-  font-weight: 700;
-  color: var(--td-text-primary);
+.paper-calendar__month-label {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-lg, 18px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
   min-width: 180px;
   text-align: center;
 }
 
-.td-calendar__today-btn {
+.paper-calendar__today-btn {
   margin-left: auto;
 }
 
-.td-calendar__card-count {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-tertiary);
+.paper-calendar__card-count {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  letter-spacing: 0.04em;
+  color: var(--mute, #635c4e);
 }
 
-/* Loading & empty states */
-.td-calendar__placeholder {
-  padding: var(--td-space-10);
+/* ── Loading / error / empty states ── */
+
+.paper-calendar__placeholder {
+  padding: var(--s-10, 40px);
   text-align: center;
-  color: var(--td-text-tertiary);
+  color: var(--mute, #635c4e);
 }
 
-.td-calendar__empty {
-  padding: var(--td-space-10);
+.paper-calendar__alert {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3, 12px);
+  padding: var(--s-4, 16px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--overdue, #8c4a26);
+  background: var(--overdue-tint, #ecd9c4);
+  color: var(--ember-ink, #6e2810);
+  font-size: var(--t-md, 13.5px);
+}
+
+.paper-calendar__empty {
+  padding: var(--s-10, 40px);
   text-align: center;
 }
 
-.td-calendar__empty-title {
-  font-size: var(--td-font-lg);
-  font-weight: 700;
-  color: var(--td-text-primary);
-  margin-bottom: var(--td-space-3);
+.paper-calendar__empty-title {
+  margin: 0 0 var(--s-3, 12px);
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-lg, 18px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-calendar__empty-desc {
-  color: var(--td-text-secondary);
-  font-size: var(--td-font-sm);
+.paper-calendar__empty-desc {
+  margin: 0;
+  color: var(--ink-2, #3a352d);
+  font-size: var(--t-md, 13.5px);
 }
 
-/* Calendar grid */
-.td-calendar__grid {
-  background: var(--td-surface-container);
-  border-radius: var(--td-radius-lg);
+/* ── Calendar grid ── */
+
+.paper-calendar__grid {
+  background: var(--paper-card, #fbf7ee);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-3, 6px);
   overflow: hidden;
-  box-shadow: var(--td-shadow-sm);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
 }
 
-.td-calendar__weekdays {
+.paper-calendar__weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: var(--td-surface-container-high);
+  background: var(--paper-2, #ebe5d8);
 }
 
-.td-calendar__weekday {
-  padding: var(--td-space-3) var(--td-space-2);
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-xs);
-  font-weight: 700;
+.paper-calendar__weekday {
+  padding: var(--s-3, 12px) var(--s-2, 8px);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--td-text-tertiary);
+  letter-spacing: 0.22em;
+  color: var(--mute, #635c4e);
   text-align: center;
 }
 
-.td-calendar__week {
+.paper-calendar__week {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  border-top: 1px solid var(--td-border-ghost);
+  border-top: 1px solid var(--line, #d8d0bf);
 }
 
-.td-calendar__day {
+.paper-calendar__day {
   min-height: 100px;
-  padding: var(--td-space-2);
-  border-right: 1px solid var(--td-border-ghost);
+  padding: var(--s-2, 8px);
+  border-right: 1px solid var(--line-soft, #e3dcc9);
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-1);
+  gap: var(--s-1, 4px);
 }
 
-.td-calendar__day:last-child {
+.paper-calendar__day:last-child {
   border-right: none;
 }
 
-.td-calendar__day--other-month {
+.paper-calendar__day--other-month {
   opacity: 0.35;
 }
 
-.td-calendar__day--today {
-  background: var(--td-color-ember-dim);
+.paper-calendar__day--today {
+  background: var(--ember-tint, #f0d9c8);
 }
 
-.td-calendar__day--today .td-calendar__day-number {
-  color: var(--td-color-ember);
+.paper-calendar__day--today .paper-calendar__day-number {
+  color: var(--ember, #a8421f);
   font-weight: 700;
 }
 
-.td-calendar__day-number {
-  font-size: var(--td-font-sm);
-  font-weight: 600;
-  color: var(--td-text-secondary);
-  padding: var(--td-space-1);
+.paper-calendar__day-number {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+  font-weight: 500;
+  color: var(--ink-2, #3a352d);
+  padding: var(--s-1, 4px);
 }
 
-.td-calendar__day-cards {
+.paper-calendar__day-cards {
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
 }
 
-.td-cal-card {
+.paper-cal-card {
   display: block;
   width: 100%;
-  padding: var(--td-space-1) var(--td-space-2);
-  border-radius: var(--td-radius-sm);
-  background: var(--td-surface-container-high);
+  padding: var(--s-1, 4px) var(--s-2, 8px);
+  border-radius: var(--r-1, 2px);
+  background: var(--paper-2, #ebe5d8);
   border: none;
-  border-left: 3px solid var(--td-color-success);
+  border-left: 3px solid var(--applied, #4a6b3f);
   cursor: pointer;
   text-align: left;
-  transition: background var(--td-transition-fast);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
   font-family: inherit;
 }
 
-.td-cal-card:hover {
-  background: var(--td-surface-bright);
+.paper-cal-card:hover {
+  background: var(--paper, #f3eee5);
 }
 
-.td-cal-card:focus-visible {
-  box-shadow: var(--td-focus-ring);
+.paper-cal-card:focus-visible {
   outline: none;
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
-.td-cal-card--overdue {
-  border-left-color: var(--td-color-error);
+.paper-cal-card--overdue {
+  border-left-color: var(--overdue, #8c4a26);
 }
 
-.td-cal-card--blocked {
-  border-left-color: var(--td-color-warning);
+.paper-cal-card--blocked {
+  border-left-color: var(--ember, #a8421f);
 }
 
-.td-cal-card__title {
-  font-size: var(--td-font-xs);
-  color: var(--td-text-primary);
+.paper-cal-card__title {
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ink, #1a1814);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   display: block;
 }
 
-.td-calendar__more {
-  font-size: var(--td-font-xs);
-  color: var(--td-text-tertiary);
-  padding: 0 var(--td-space-2);
+.paper-calendar__more {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+  padding: 0 var(--s-2, 8px);
 }
 
-/* Timeline view */
-.td-calendar__timeline {
+/* ── Timeline view ── */
+
+.paper-calendar__timeline {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-5);
+  gap: var(--s-5, 20px);
 }
 
-.td-timeline-group {
+.paper-timeline-group {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
 }
 
-.td-timeline-group__header {
+.paper-timeline-group__header {
   display: flex;
   align-items: center;
-  gap: var(--td-space-4);
-  padding: var(--td-space-3) 0;
-  border-bottom: 1px solid var(--td-border-ghost);
+  gap: var(--s-4, 16px);
+  padding: var(--s-3, 12px) 0;
+  border-bottom: 1px solid var(--line, #d8d0bf);
 }
 
-.td-timeline-group__date {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-base);
-  font-weight: 700;
-  color: var(--td-text-primary);
+.paper-timeline-group__date {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-bd, 15px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-timeline-group__count {
-  font-size: var(--td-font-xs);
-  color: var(--td-text-tertiary);
+.paper-timeline-group__count {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  letter-spacing: 0.04em;
+  color: var(--mute, #635c4e);
 }
 
-.td-timeline-group__cards {
+.paper-timeline-group__cards {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-.td-timeline-card-wrapper {
+.paper-timeline-card-wrapper {
   display: contents;
 }
 
-.td-timeline-card {
+.paper-timeline-card {
   display: block;
   width: 100%;
-  padding: var(--td-space-4) var(--td-space-5);
-  border: none;
-  border-left: 4px solid var(--td-color-success);
+  padding: var(--s-4, 16px) var(--s-5, 20px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-left: 4px solid var(--applied, #4a6b3f);
+  border-radius: var(--r-3, 6px);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  transition: background var(--td-transition-fast);
+  transition: background var(--d-quick, 140ms) var(--ease-paper, ease);
 }
 
-.td-timeline-card:hover {
-  background: var(--td-surface-bright);
+.paper-timeline-card:hover {
+  background: var(--paper-2, #ebe5d8);
 }
 
-.td-timeline-card:focus-visible {
-  box-shadow: var(--td-focus-ring);
+.paper-timeline-card:focus-visible {
   outline: none;
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
-.td-timeline-card.td-cal-card--overdue {
-  border-left-color: var(--td-color-error);
+.paper-timeline-card.paper-cal-card--overdue {
+  border-left-color: var(--overdue, #8c4a26);
 }
 
-.td-timeline-card.td-cal-card--blocked {
-  border-left-color: var(--td-color-warning);
+.paper-timeline-card.paper-cal-card--blocked {
+  border-left-color: var(--ember, #a8421f);
 }
 
-.td-timeline-card__header {
+.paper-timeline-card__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--td-space-4);
+  gap: var(--s-4, 16px);
 }
 
-.td-timeline-card__title {
-  font-size: var(--td-font-base);
+.paper-timeline-card__title {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-bd, 15px);
+  font-weight: 500;
+  color: var(--ink-deep, #0a0908);
+}
+
+.paper-timeline-card__status {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 9.5px;
   font-weight: 600;
-  color: var(--td-text-primary);
-}
-
-.td-timeline-card__status {
-  font-family: 'Space Grotesk', system-ui, sans-serif;
-  font-size: var(--td-font-xs);
-  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: var(--td-space-1) var(--td-space-3);
-  border-radius: var(--td-radius-sm);
-  background: var(--td-color-success-light);
-  color: var(--td-color-success);
+  letter-spacing: 0.22em;
+  padding: 3px 8px 2px;
+  border: 1px solid currentColor;
+  border-radius: var(--r-1, 2px);
+  background: var(--applied-tint, #d8e0ce);
+  color: var(--applied, #4a6b3f);
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.td-timeline-card__status--overdue {
-  background: var(--td-color-error-light);
-  color: var(--td-color-error);
+.paper-timeline-card__status--overdue {
+  background: var(--overdue-tint, #ecd9c4);
+  color: var(--overdue, #8c4a26);
 }
 
-.td-timeline-card__status--blocked {
-  background: var(--td-color-warning-light);
-  color: var(--td-color-warning);
+.paper-timeline-card__status--blocked {
+  background: var(--ember-tint, #f0d9c8);
+  color: var(--ember, #a8421f);
 }
 
-.td-timeline-card__meta {
+.paper-timeline-card__meta {
   display: flex;
   align-items: center;
-  gap: var(--td-space-2);
-  margin-top: var(--td-space-2);
-  font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
+  gap: var(--s-2, 8px);
+  margin-top: var(--s-2, 8px);
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
 }
 
-.td-timeline-card__separator {
-  color: var(--td-text-tertiary);
+.paper-timeline-card__separator {
+  color: var(--whisper, #c2bba8);
 }
 
-.td-timeline-card__due {
+.paper-timeline-card__due {
   margin-left: auto;
-  color: var(--td-text-tertiary);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  letter-spacing: 0.04em;
+  color: var(--mute, #635c4e);
 }
 
-.td-timeline-card__block-reason {
-  margin-top: var(--td-space-2);
-  font-size: var(--td-font-xs);
-  color: var(--td-color-warning);
+.paper-timeline-card__block-reason {
+  margin: var(--s-2, 8px) 0 0;
+  font-size: var(--t-xs, 10.5px);
+  color: var(--ember, #a8421f);
 }
 
-/* Responsive */
+/* ── Responsive ── */
+
 @media (max-width: 768px) {
-  .td-calendar {
-    padding: var(--td-space-4);
+  .paper-calendar {
+    padding: var(--s-4, 16px);
   }
 
-  .td-calendar__day {
+  .paper-calendar__day {
     min-height: 60px;
-    padding: var(--td-space-1);
+    padding: var(--s-1, 4px);
   }
 
-  .td-cal-card__title {
-    font-size: 0.5625rem;
+  .paper-cal-card__title {
+    font-size: 9px;
   }
 
-  .td-calendar__day-cards {
+  .paper-calendar__day-cards {
     max-height: 40px;
     overflow: hidden;
   }

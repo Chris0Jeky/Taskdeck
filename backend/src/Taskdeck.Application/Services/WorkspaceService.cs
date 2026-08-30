@@ -91,6 +91,7 @@ public class WorkspaceService : IWorkspaceService
 
     public async Task<Result<WorkspaceTodayDto>> GetTodayAsync(
         Guid userId,
+        DateOnly? localDate = null,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
@@ -122,18 +123,18 @@ public class WorkspaceService : IWorkspaceService
             hasBoard: accessibleBoards.Count > 0,
             cancellationToken);
         var boardsById = accessibleBoards.ToDictionary(board => board.Id);
-        var referenceTime = DateTimeOffset.UtcNow;
+        var referenceDate = localDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var overdueCards = BuildTodayCards(
             agendaCards,
             boardsById,
-            card => ResolveDueBucket(card.DueDate, referenceTime) == TodayDueBucket.Overdue,
+            card => ResolveDueBucket(card.DueDate, referenceDate) == TodayDueBucket.Overdue,
             cards => cards
                 .OrderBy(card => card.DueDate)
                 .ThenByDescending(card => card.UpdatedAt));
         var dueTodayCards = BuildTodayCards(
             agendaCards,
             boardsById,
-            card => ResolveDueBucket(card.DueDate, referenceTime) == TodayDueBucket.DueToday,
+            card => ResolveDueBucket(card.DueDate, referenceDate) == TodayDueBucket.DueToday,
             cards => cards
                 .OrderBy(card => card.DueDate)
                 .ThenByDescending(card => card.UpdatedAt));
@@ -175,6 +176,21 @@ public class WorkspaceService : IWorkspaceService
                         recentBoard.Name,
                         recentBoard.Description,
                         recentBoard.UpdatedAt))));
+    }
+
+    public async Task<Result<WorkspaceCollaborationDto>> GetCollaborationAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<WorkspaceCollaborationDto>(ErrorCodes.ValidationError, "User ID cannot be empty");
+
+        var distinctMembers = await _unitOfWork.Boards.CountCollaborationMembersAsync(userId, cancellationToken);
+
+        // A user with no boards still counts as one member of their own workspace, so the
+        // contract never reports fewer than one member and "solo" always means exactly one.
+        var memberCount = Math.Max(1, distinctMembers);
+        return Result.Success(new WorkspaceCollaborationDto(memberCount, memberCount > 1));
     }
 
     public async Task<Result<WorkspacePreferenceDto>> GetPreferencesAsync(
@@ -260,6 +276,7 @@ public class WorkspaceService : IWorkspaceService
         Guid userId,
         DateTimeOffset from,
         DateTimeOffset to,
+        DateOnly? localDate = null,
         CancellationToken cancellationToken = default)
     {
         if (userId == Guid.Empty)
@@ -291,7 +308,7 @@ public class WorkspaceService : IWorkspaceService
                 cancellationToken))
             .ToList();
 
-        var referenceTime = DateTimeOffset.UtcNow;
+        var referenceDate = localDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
         var calendarCards = cards
             .Select(c => new WorkspaceCalendarCardDto(
@@ -304,7 +321,7 @@ public class WorkspaceService : IWorkspaceService
                 c.DueDate!.Value,
                 c.IsBlocked,
                 c.BlockReason,
-                ResolveDueBucket(c.DueDate, referenceTime) == TodayDueBucket.Overdue,
+                ResolveDueBucket(c.DueDate, referenceDate) == TodayDueBucket.Overdue,
                 c.UpdatedAt))
             .ToList();
 
@@ -468,22 +485,21 @@ public class WorkspaceService : IWorkspaceService
             .ToList();
     }
 
-    private static TodayDueBucket? ResolveDueBucket(DateTimeOffset? dueDate, DateTimeOffset referenceTime)
+    private static TodayDueBucket? ResolveDueBucket(DateTimeOffset? dueDate, DateOnly referenceDate)
     {
         if (!dueDate.HasValue)
         {
             return null;
         }
 
-        var localToday = referenceTime.ToOffset(dueDate.Value.Offset).Date;
-        var dueDateOnly = dueDate.Value.Date;
+        var dueDateKey = DateOnly.FromDateTime(dueDate.Value.UtcDateTime);
 
-        if (dueDateOnly < localToday)
+        if (dueDateKey < referenceDate)
         {
             return TodayDueBucket.Overdue;
         }
 
-        if (dueDateOnly == localToday)
+        if (dueDateKey == referenceDate)
         {
             return TodayDueBucket.DueToday;
         }

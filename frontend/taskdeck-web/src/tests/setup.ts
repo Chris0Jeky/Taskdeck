@@ -1,5 +1,16 @@
 import { beforeAll, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { config } from '@vue/test-utils'
+import { i18n, DEFAULT_LOCALE, SUPPORTED_LOCALES, ensureLocaleMessages } from '../i18n'
+
+// Install the i18n plugin globally for every mounted component (ADR-0054).
+// Without it, any SFC using `$t` / `useI18n()` throws on mount and every spec
+// that mounts an extracted surface would need its own plugin wiring.
+//
+// The locale stays at `en`, which is BOTH the production default and the source
+// catalog — so specs asserting literal English copy keep asserting exactly what
+// a default-locale user sees. They are not weakened by the extraction.
+config.global.plugins = [...(config.global.plugins ?? []), i18n]
 
 // Decision retained 2026-07-14 for #1274: keep the global unit-suite Legacy pin while core
 // browser journeys move to Paper. The focused component suite intentionally asserts frozen
@@ -17,10 +28,20 @@ beforeEach(() => {
   } catch {
     // environments without localStorage — ignore
   }
+  // A spec that switches locale must not leak it into the next spec: the i18n
+  // instance is module-scoped and shared across the whole file's tests.
+  i18n.global.locale.value = DEFAULT_LOCALE
 })
 
 // Create a fresh Pinia instance before all tests
-beforeAll(() => {
+beforeAll(async () => {
+  // In production the it/es catalogs are code-split and fetched on first use
+  // (#1858). Specs predate that and flip `i18n.global.locale` directly, then
+  // assert translated copy synchronously — so preload every catalog here and
+  // keep those assertions meaningful. The lazy path itself is covered by
+  // `src/tests/i18n/lazyLocales.spec.ts`.
+  await Promise.all(SUPPORTED_LOCALES.map((locale) => ensureLocaleMessages(locale)))
+
   setActivePinia(createPinia())
 
   // happy-dom does not implement window.confirm/alert/prompt; define stubs so

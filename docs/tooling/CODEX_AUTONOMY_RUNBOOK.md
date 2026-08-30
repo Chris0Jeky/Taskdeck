@@ -1,6 +1,6 @@
 # Codex Autonomy Runbook
 
-Last Updated: 2026-08-01
+Last Updated: 2026-08-19
 
 Scope: How Codex should execute high-autonomy Taskdeck work such as "take care of as many issues as possible", "check the PRs", "run the canonical review pipeline", "fix failing CI", or "reconcile docs after a batch".
 
@@ -63,6 +63,77 @@ Batch override does not remove discipline:
 - each PR links its issue
 - project priority/status fields must be reconciled before handoff
 
+## Read-only inventory entry point
+
+Delegated shell-backed Git and GitHub inventory must use the repository wrapper:
+
+```powershell
+& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @(
+  "gh", "pr", "list", "--state", "open", "--json", "number,headRefOid,statusCheckRollup"
+)
+```
+
+The wrapper accepts only allowlisted read operations and rejects GitHub-mutation argv. It also pins
+the launched process environment and restores every variable it changed afterwards: a Git launch
+gets `GIT_OPTIONAL_LOCKS=0`, `GIT_PAGER=cat`, `PAGER=cat`, and `GIT_TERMINAL_PROMPT=0` on top of the
+transport neutralization below; a `gh` launch gets `GH_PROMPT_DISABLED=true`, `GH_PAGER=cat`, and
+`GH_NO_UPDATE_NOTIFIER=1`. The Git transport neutralization applies to Git launches only. Use
+`-ValidateOnly` to inspect a constructed command without launching it and `-SelfTest` after changing
+the contract. A purpose-built connector with an intrinsically read-only operation may still be used
+directly.
+
+Git argv is accepted by an exact per-subcommand option allowlist, not a denylist. Git expands any
+unambiguous long-option abbreviation before it executes anything (`git status --shor` runs
+`--short`, and `--upl=<program>` reaches `--upload-pack`), so an option token is accepted only when
+it matches a listed name character-for-character. Long options that take a value must use the
+attached `--name=value` form, short options that take a value must be a lone `-x` token followed by
+its value, and every character of a short cluster must itself be allowlisted. An unlisted or
+abbreviated option is refused rather than passed through, so widening the lane means adding the
+exact option name to that subcommand's list and re-running `-SelfTest`.
+
+A short value flag consumes the next token, so that token must not itself start with `-`: the
+wrapper refuses `-x -anything` rather than waving an unvalidated option through as a value. Git
+options whose argument is *optional* are read only in the attached form, so Git would parse such a
+token as a real option — this is why `git diff -U` is not a value flag at all (`--unified=<n>` is
+the allowlisted spelling) and why no short value flag may be added for an optional-argument option.
+For the same read-boundary reason `git grep --no-index` is unlisted: it drops the index boundary
+and reads untracked and gitignored working-tree files such as `.env.local`. `git worktree` accepts
+the single action `list`, validated as that exact token: a case variant such as `LIST` is refused
+by the wrapper rather than forwarded for Git to reject after a process has already been launched.
+
+Argument *content* is policed separately from argument *shape*. No argument may contain a NUL byte,
+and the literal shell control tokens (`&`, `&&`, `|`, `||`, `;`, `>`, `>>`, `<`, `<<`, `2>`, `2>>`)
+are refused as whole argv elements even though the wrapper never runs a shell — that denial is
+deliberately wider than the launch path strictly needs and is kept as a cheap belt-and-braces rule.
+CR/LF is refused the same way, with one carve-out: a newline is permitted inside the *value* of a
+`gh api` field flag (`-f`, `-F`, `--field`, `--raw-field`), so a multi-line GraphQL document can be
+passed as written. The carve-out is proven positionally from argv — the command must be `gh api`
+(`graphql` included) and the token must be that field flag's own value argument — never from the
+token's shape, and a field flag that is itself another flag's value does not open it. The attached
+`--field=name=value` spelling is not covered, so pass a multi-line query as a separate `-f` value
+argument. Because the child process is launched through argv with no shell, a control character
+inside one field value cannot splice a second command; NUL stays refused everywhere, field values
+included, and a control token in any other argument stays refused.
+
+`ls-remote` is the only remote-touching subcommand. It requires an explicit lowercase `https://`
+repository URL as its first operand: a bare remote name, `ssh://`, `git://`, `file://`, an `ext::`
+helper, or `user@host:path` is refused before any process is launched, because those resolve
+through configuration into an external transport. Every launched Git process additionally pins
+`-c core.fsmonitor=false -c diff.external= -c core.sshCommand= -c protocol.allow=never
+-c protocol.https.allow=always` (command-line `-c` outranks repository, user, and
+`GIT_CONFIG_PARAMETERS` configuration, so an `insteadOf` rewrite cannot reintroduce another
+transport) and clears `GIT_SSH`, `GIT_SSH_COMMAND`,
+`GIT_SSH_VARIANT`, `GIT_PROXY_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_ALLOW_PROTOCOL`,
+`GIT_PROTOCOL_FROM_USER`, `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_SYSTEM`, `GIT_EXEC_PATH`, and `GIT_EXTERNAL_DIFF`. `GIT_CONFIG_GLOBAL` and
+`GIT_CONFIG_SYSTEM` substitute whole configuration files and `GIT_EXEC_PATH` relocates the
+directory Git resolves its subcommand binaries from, so they are cleared alongside the transport
+variables. The validated URL is passed after `--end-of-options`.
+
+This is an opt-in routed entry point, not a Taskdeck command-deny hook. The coordinator keeps direct
+`git` and `gh` access for its separately authorized mutation lane and must not claim that the wrapper
+governs a command that bypasses it.
+
 ## Worktree Protocol
 
 Create Codex issue worktrees from the main checkout:
@@ -90,6 +161,15 @@ external authentication boundary; a same-user process can still replace bytes be
 check. An independently reviewed, hash-pinned launcher would be required to close that bootstrap
 gap. The selected base must carry the exact reviewed guard and initializer blob identities. Older or
 divergent commits/tags are rejected before target-path or worktree-registration creation. The helper
+also disables interactive Git credential prompts and bounds each text or blob Git process to 45
+seconds by default. A timeout terminates and boundedly reaps the helper-launched process tree before
+failing; cleanup or stream-drain failure is reported distinctly. On Windows, the captured root PID
+and start time are rechecked before `taskkill /T`; same-user process replacement remains outside this
+self-check's authentication boundary. Use `-GitCommandTimeoutSeconds` only for a controlled test or
+an explicitly measured exceptional environment. SSH transports may still own a separate console
+prompt, but cannot exceed that deadline. A worktree-add timeout after registration enters the same
+exact-identity, full-inventory, plain-removal cleanup path; unverifiable or dirty partial state is
+preserved and named instead of force-removed.
 atomically reserves and revalidates its final target under the approved root; after creation it
 compares the target guard and initializer bytes with the reviewed raw blobs before printing a handoff.
 `-WhatIf` resolves local bases and
@@ -176,7 +256,8 @@ First PowerShell commands (copy the complete block printed by the helper):
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not revert edits made by others. Keep scope to the issue acceptance criteria.
-Make small present-tense signed-off commits with git commit -s --no-gpg-sign. Do not use --no-verify.
+Make small present-tense commits with git commit --no-gpg-sign. DCO trailers are optional while
+enforcement is paused; do not repair history to add one. Do not use --no-verify.
 Add tests for behavior changes. Run targeted checks first.
 Open a PR with Closes #NNN, test evidence, docs impact, and risks.
 Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
@@ -212,7 +293,7 @@ For each PR:
 5. Push and monitor updated CI.
 6. Comment with the fix and verification.
 
-For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. If it conflicts, preserve both branches' intended behavior, stage the resolution, finish with `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`, and re-run tests for both touched areas.
+For conflicts, prefer merge over rebase when reconciliation stalls. Replace `BRANCH_NAME` with the source ref in `git merge --no-gpg-sign BRANCH_NAME`. If it conflicts, preserve both branches' intended behavior, stage the resolution, finish with `git commit --no-gpg-sign --no-edit` instead of `git merge --continue`, and re-run tests for both touched areas.
 
 ## Deferrals And Follow-Ups
 

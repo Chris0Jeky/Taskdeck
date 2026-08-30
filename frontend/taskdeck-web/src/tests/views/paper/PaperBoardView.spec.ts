@@ -9,6 +9,8 @@ import type { ViewportMode } from '../../../composables/useViewportMode'
 const routerMock = { push: vi.fn() }
 const routeMock = reactive({ params: { id: 'board-1' } })
 const mockViewportMode = ref<ViewportMode>('desktop')
+let routeLeaveGuard: (() => boolean | Promise<boolean>) | null = null
+let routeUpdateGuard: (() => boolean | Promise<boolean>) | null = null
 
 function makeColumn(partial: Partial<Column> = {}): Column {
   return {
@@ -72,8 +74,15 @@ const cardsByColumn = new Map<string, Card[]>([
 
 const allCards = [...cardsByColumn.values()].flat()
 
+const emptyBoard: BoardDetail = {
+  ...board,
+  id: 'board-1',
+  name: 'Fresh Board',
+  columns: [],
+}
+
 const mockBoardStore = reactive({
-  currentBoard: board,
+  currentBoard: board as BoardDetail | null,
   currentBoardCards: allCards,
   cardsByColumn,
   currentBoardLabels: [],
@@ -82,11 +91,18 @@ const mockBoardStore = reactive({
   fetchBoard: vi.fn(async () => {}),
   moveCard: vi.fn(async () => {}),
   reorderColumns: vi.fn(async () => {}),
+  createColumn: vi.fn(async (_boardId: string, dto: { name: string }) => makeColumn({ id: `col-${dto.name}`, name: dto.name })),
 })
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
   useRouter: () => routerMock,
+  onBeforeRouteLeave: (guard: () => boolean | Promise<boolean>) => {
+    routeLeaveGuard = guard
+  },
+  onBeforeRouteUpdate: (guard: () => boolean | Promise<boolean>) => {
+    routeUpdateGuard = guard
+  },
 }))
 
 vi.mock('../../../store/boardStore', () => ({
@@ -97,20 +113,35 @@ vi.mock('../../../composables/useViewportMode', () => ({
   useViewportMode: () => ({ mode: mockViewportMode }),
 }))
 
+const mountedViews: ReturnType<typeof mount>[] = []
+
 function mountView(props: Record<string, unknown> = {}) {
-  return mount(PaperBoardView, {
+  const wrapper = mount(PaperBoardView, {
     attachTo: document.body,
     props,
     global: {
       stubs: {
         CardModal: {
-          props: ['card', 'isOpen', 'labels'],
-          template: '<div v-if="isOpen" data-testid="paper-card-modal">{{ card.title }}</div>',
+          name: 'CardModal',
+          props: ['card', 'isOpen', 'labels', 'presentation'],
+          emits: ['dirty-change'],
+          template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
+        },
+        TdDialog: {
+          props: ['open', 'title', 'description'],
+          emits: ['close'],
+          template: '<div v-if="open" role="dialog"><slot /><slot name="footer" /></div>',
         },
       },
     },
   })
+  mountedViews.push(wrapper)
+  return wrapper
 }
+
+afterEach(() => {
+  for (const wrapper of mountedViews.splice(0)) wrapper.unmount()
+})
 
 function makeDragEvent(type: string): DragEvent {
   const event = new Event(type, { bubbles: true, cancelable: true }) as unknown as DragEvent
@@ -126,11 +157,19 @@ describe('PaperBoardView', () => {
     routerMock.push.mockClear()
     mockBoardStore.fetchBoard.mockClear()
     mockBoardStore.moveCard.mockClear()
+    mockBoardStore.createColumn.mockClear()
+    mockBoardStore.currentBoard = board
     mockBoardStore.currentBoardCards = allCards
     mockBoardStore.cardsByColumn = cardsByColumn
     mockBoardStore.error = null
     mockBoardStore.loading = false
     mockViewportMode.value = 'desktop'
+    routeMock.params.id = 'board-1'
+    routeLeaveGuard = null
+    routeUpdateGuard = null
+    window.localStorage.removeItem('td.paper.board-density.v1')
+    window.localStorage.removeItem('td.paper.board-column-width.v1')
+    window.localStorage.removeItem('td.paper.board-collapsed-columns.v1')
   })
 
   afterEach(() => {
@@ -195,6 +234,30 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('.paper-board-view__title').text()).toBe('Product Backlog')
   })
 
+  it('keeps board capture and review actions clickable without advertising dead letter keys', async () => {
+    const wrapper = mountView()
+    const buttons = wrapper.findAll('button')
+    const capture = buttons.find((button) => button.text().includes('Capture here'))
+    const review = buttons.find((button) => button.text().includes('Review'))
+
+    expect(capture).toBeDefined()
+    expect(review).toBeDefined()
+    expect(capture?.find('kbd').exists()).toBe(false)
+    expect(review?.find('kbd').exists()).toBe(false)
+
+    await capture?.trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'workspace-inbox',
+      query: { boardId: 'board-1' },
+    })
+
+    await review?.trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { boardId: 'board-1' },
+    })
+  })
+
   it('does not fetch board data itself because the wrapping BoardView owns loading', () => {
     mountView()
     expect(mockBoardStore.fetchBoard).not.toHaveBeenCalled()
@@ -215,6 +278,329 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="paper-card-modal"]').text()).toContain('A')
+  })
+
+  it('requires explicit confirmation before switching away from a dirty inspector', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![1])
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('B')
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  it('guards dirty route navigation until discard or cancel is chosen', async () => {
+    const wrapper = mountView()
+    const firstColumn = wrapper.findAllComponents(PaperBoardColumn)[0]!
+    firstColumn.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const cancelledNavigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await expect(cancelledNavigation).resolves.toBe(false)
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+
+    const allowedNavigation = routeLeaveGuard!()
+    await nextTick()
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await expect(allowedNavigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('guards reused board-route changes while the inspector is dirty', async () => {
+    const wrapper = mountView()
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit(
+      'card-click',
+      cardsByColumn.get('col-backlog')![0],
+    )
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const navigation = routeUpdateGuard!()
+    await nextTick()
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('requests the browser unload confirmation only for a dirty inspector', async () => {
+    const wrapper = mountView()
+    const cleanUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(cleanUnload)
+    expect(cleanUnload.defaultPrevented).toBe(false)
+
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit(
+      'card-click',
+      cardsByColumn.get('col-backlog')![0],
+    )
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+
+    const dirtyUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(dirtyUnload)
+    expect(dirtyUnload.defaultPrevented).toBe(true)
+  })
+
+  it('uses a board-preserving inspector on desktop and keeps the modal fallback on tablet', async () => {
+    const wrapper = mountView()
+    wrapper.findAllComponents(PaperBoardColumn)[0]?.vm.$emit('card-click', cardsByColumn.get('col-backlog')![0])
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').attributes('data-presentation')).toBe('inspector')
+    expect(wrapper.find('[data-testid="paper-board-lanes"]').exists()).toBe(true)
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-card-modal"]').attributes('data-presentation')).toBe('modal')
+  })
+
+  it('toggles and persists compact board density through a keyboard-accessible button', async () => {
+    const wrapper = mountView()
+    const toggle = wrapper.get('[data-testid="paper-board-density-toggle"]')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('comfortable')
+
+    await toggle.trigger('keydown', { key: 'Enter' })
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+    expect(window.localStorage.getItem('td.paper.board-density.v1')).toBe('compact')
+  })
+
+  it('restores the persisted compact density when the board mounts', async () => {
+    window.localStorage.setItem('td.paper.board-density.v1', 'compact')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+  })
+
+  it('changes and persists named column-width presets through a labelled native select', async () => {
+    const wrapper = mountView()
+    const control = wrapper.get('[data-testid="paper-board-width-control"]')
+    const select = wrapper.get('[data-testid="paper-board-width-select"]')
+    const firstColumn = wrapper.get('.paper-board-column').element as HTMLElement
+
+    expect(control.element.tagName).toBe('LABEL')
+    expect(select.element.tagName).toBe('SELECT')
+    expect(select.attributes('aria-label')).toBe('Column width')
+    expect(select.findAll('option').map((option) => option.text())).toEqual(['Narrow', 'Standard', 'Wide'])
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('standard')
+    expect(firstColumn.style.width).toBe('280px')
+
+    const bubbledKeydown = vi.fn()
+    window.addEventListener('keydown', bubbledKeydown)
+    const selectArrow = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    })
+    select.element.dispatchEvent(selectArrow)
+    window.removeEventListener('keydown', bubbledKeydown)
+    expect(bubbledKeydown).not.toHaveBeenCalled()
+    expect(selectArrow.defaultPrevented).toBe(false)
+
+    await select.setValue('narrow')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('narrow')
+    expect(firstColumn.style.width).toBe('240px')
+    expect(window.localStorage.getItem('td.paper.board-column-width.v1')).toBe('narrow')
+
+    await select.setValue('wide')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('wide')
+    expect(firstColumn.style.width).toBe('340px')
+    expect(window.localStorage.getItem('td.paper.board-column-width.v1')).toBe('wide')
+
+    mockBoardStore.currentBoard = { ...board, updatedAt: new Date().toISOString() }
+    await nextTick()
+    expect((wrapper.get('.paper-board-column').element as HTMLElement).style.width).toBe('340px')
+  })
+
+  it('restores a column-width preference after the board unmounts and remounts', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-board-width-select"]').setValue('wide')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+
+    expect(reloaded.get('[data-testid="paper-board-width-select"]').element)
+      .toHaveProperty('value', 'wide')
+    expect(reloaded.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('wide')
+    expect((reloaded.get('.paper-board-column').element as HTMLElement).style.width).toBe('340px')
+  })
+
+  it('falls back to the standard column width for invalid stored values', async () => {
+    window.localStorage.setItem('td.paper.board-column-width.v1', 'stretch-to-fit')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="paper-board-width-select"]').element)
+      .toHaveProperty('value', 'standard')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-column-width')).toBe('standard')
+    expect((wrapper.get('.paper-board-column').element as HTMLElement).style.width).toBe('280px')
+  })
+
+  it('uses presets on desktop while retaining tablet snap sizing and phone stacking width', async () => {
+    window.localStorage.setItem('td.paper.board-column-width.v1', 'wide')
+    const wrapper = mountView()
+    await nextTick()
+
+    const columnWidth = () => (wrapper.get('.paper-board-column').element as HTMLElement).style.width
+    const lanes = () => wrapper.get('[data-testid="paper-board-lanes"]')
+    expect(columnWidth()).toBe('340px')
+    expect(lanes().classes()).not.toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+    expect(columnWidth()).toBe('280px')
+    expect(lanes().classes()).toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'phone'
+    await nextTick()
+    expect(columnWidth()).toBe('100%')
+    expect(lanes().classes()).not.toContain('paper-board-view__lanes--snap')
+
+    mockViewportMode.value = 'desktop'
+    await nextTick()
+    expect(columnWidth()).toBe('340px')
+  })
+
+  it('collapses a column with a localized native toggle while retaining header identity and focus', async () => {
+    const wrapper = mountView()
+    const column = wrapper.get('[data-column-id="col-backlog"]')
+    const toggle = column.get('[data-testid="paper-column-collapse-col-backlog"]')
+    const contentId = toggle.attributes('aria-controls')
+
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('aria-label')).toBe('Collapse column Backlog')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(contentId).toBe('paper-board-column-content-col-backlog')
+    expect(column.get(`#${contentId}`).attributes('hidden')).toBeUndefined()
+    expect(column.find('[data-card-id="card-1"]').exists()).toBe(true)
+
+    ;(toggle.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(toggle.element)
+
+    const globalShortcutListener = vi.fn()
+    window.addEventListener('keydown', globalShortcutListener)
+    for (const key of ['h', 'l', 'j', 'k', 'n', 'Escape']) {
+      toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    }
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }))
+    expect(globalShortcutListener).toHaveBeenCalledTimes(6)
+    window.removeEventListener('keydown', globalShortcutListener)
+
+    await toggle.trigger('click')
+    await nextTick()
+
+    expect(document.activeElement).toBe(toggle.element)
+    expect(toggle.attributes('aria-label')).toBe('Expand column Backlog')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(column.get(`#${contentId}`).attributes('hidden')).toBe('')
+    expect(column.classes()).toContain('paper-board-column--collapsed')
+    expect(column.find('[data-card-id="card-1"]').exists()).toBe(false)
+    expect(column.find('[data-testid="paper-column-cards"]').exists()).toBe(false)
+    expect(column.get('.paper-board-column__name').text()).toBe('Backlog')
+    expect(column.get('.paper-board-column__count').text()).toBe('3/2')
+    expect(JSON.parse(window.localStorage.getItem('td.paper.board-collapsed-columns.v1')!))
+      .toEqual(['col-backlog'])
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([['col-backlog']])
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-backlog'])
+  })
+
+  it('selects a lane as soon as its collapse control receives focus', async () => {
+    const wrapper = mountView()
+    await wrapper.get('[data-testid="paper-column-collapse-col-today"]').trigger('focus')
+
+    expect(wrapper.emitted('column-select')?.at(-1)).toEqual(['col-today'])
+  })
+
+  it('hydrates only known string column IDs and ignores malformed or unknown entries', async () => {
+    window.localStorage.setItem(
+      'td.paper.board-collapsed-columns.v1',
+      JSON.stringify(['missing-column', 42, null, 'col-progress']),
+    )
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-column-id="col-progress"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('false')
+    expect(wrapper.find('[data-column-id="missing-column"]').exists()).toBe(false)
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([['col-progress']])
+  })
+
+  it.each([
+    'not-json',
+    JSON.stringify({ columnId: 'col-backlog' }),
+    JSON.stringify('col-backlog'),
+  ])('defaults every column to expanded for invalid stored collapse JSON: %s', async (stored) => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', stored)
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.findAll('.paper-board-column--collapsed')).toHaveLength(0)
+    expect(wrapper.emitted('collapsed-columns-change')?.at(-1)).toEqual([[]])
+  })
+
+  it('restores collapse by stable ID across remount, reorder, and realtime object replacement', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-column-collapse-col-backlog"]').trigger('click')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+    expect(reloaded.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('true')
+
+    const replacementColumns = [
+      { ...columns[2]!, position: 0, updatedAt: new Date().toISOString() },
+      { ...columns[0]!, position: 1, name: 'Backlog refreshed', updatedAt: new Date().toISOString() },
+      { ...columns[1]!, position: 2, updatedAt: new Date().toISOString() },
+      { ...columns[3]!, position: 3, updatedAt: new Date().toISOString() },
+      makeColumn({ id: 'col-new', name: 'New lane', position: 4 }),
+    ]
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: replacementColumns,
+      updatedAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(reloaded.findAllComponents(PaperBoardColumn).map((item) => item.props('column').id))
+      .toEqual(['col-progress', 'col-backlog', 'col-today', 'col-done', 'col-new'])
+    expect(reloaded.get('[data-column-id="col-backlog"]').attributes('data-collapsed')).toBe('true')
+    expect(reloaded.get('[data-column-id="col-backlog"] .paper-board-column__name').text())
+      .toBe('Backlog refreshed')
+    expect(reloaded.get('[data-column-id="col-new"]').attributes('data-collapsed')).toBe('false')
   })
 
   it('blocks paper card drags that do not start from the card handle', async () => {
@@ -240,17 +626,20 @@ describe('PaperBoardView', () => {
     expect(dragStart.defaultPrevented).toBe(false)
   })
 
-  it('highlights the target lane while a paper card is dragged over it and moves on drop', async () => {
+  it('keeps a collapsed target lane as a coherent card drop surface', async () => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-today']))
     const wrapper = mountView()
     const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
     handle.element.dispatchEvent(makeDragEvent('dragstart'))
     await nextTick()
 
     const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
+    expect(targetLane.get('[data-column-id="col-today"]').attributes('data-collapsed')).toBe('true')
+    expect(targetLane.find('[data-testid="paper-column-cards"]').exists()).toBe(false)
     targetLane.element.dispatchEvent(makeDragEvent('dragover'))
     await nextTick()
 
-    expect(wrapper.getComponent(PaperBoardColumn).exists()).toBe(true)
+    expect(wrapper.findComponent(PaperBoardColumn).exists()).toBe(true)
     expect(targetLane.classes()).toContain('paper-board-view__lane--drop-target')
 
     targetLane.element.dispatchEvent(makeDragEvent('drop'))
@@ -285,5 +674,167 @@ describe('PaperBoardView', () => {
     const wrapper = mountView()
     const lanes = wrapper.find('[data-testid="paper-board-lanes"]')
     expect(lanes.classes()).not.toContain('paper-board-view__lanes--snap')
+  })
+
+  /*
+   * #2232 regression pin. At phone width the lanes rail stacks
+   * (`flex-direction: column` + `align-items: flex-start`), so the lane wrapper
+   * is a shrink-to-fit cross-axis flex item. `.paper-board-column` carries
+   * `container-type: inline-size`, and inline-size containment removes an
+   * element's intrinsic width contribution — a shrink-to-fit lane therefore
+   * collapsed to padding width and the absolutely positioned
+   * `.paper-board-card__open` button rendered 0px wide, so Playwright could not
+   * click it. jsdom has no layout engine, so these specs pin the DOM contract
+   * that produces the layout: at phone mode every ancestor between the lanes
+   * rail and the card carries a definite `width: 100%`, and no other viewport
+   * mode gets an inline lane width (the desktop lane is `display: contents`).
+   */
+  it('gives the phone-width lane wrapper and column a definite width', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountView()
+    await nextTick()
+
+    const lane = wrapper.get('[data-column-dnd-id="col-backlog"]')
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((lane.get('.paper-board-column').element as HTMLElement).style.width).toBe('100%')
+    expect(lane.find('[data-card-id="card-1"] [data-action="open-card"]').exists()).toBe(true)
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+    expect((lane.element as HTMLElement).style.width).toBe('')
+
+    mockViewportMode.value = 'desktop'
+    await nextTick()
+    expect((lane.element as HTMLElement).style.width).toBe('')
+  })
+
+  it('keeps the phone-width card opener sized once a collapsed lane is expanded again', async () => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-backlog']))
+    mockViewportMode.value = 'phone'
+    const wrapper = mountView()
+    await nextTick()
+
+    const lane = wrapper.get('[data-column-dnd-id="col-backlog"]')
+    const column = lane.get('[data-column-id="col-backlog"]')
+    const toggle = column.get('[data-testid="paper-column-collapse-col-backlog"]')
+
+    expect(column.attributes('data-collapsed')).toBe('true')
+    expect(lane.find('[data-card-id="card-1"] [data-action="open-card"]').exists()).toBe(false)
+    // A collapsed lane still owns a definite width, so expanding cannot land the
+    // opener inside a collapsed ancestor box.
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((column.element as HTMLElement).style.width).toBe('100%')
+
+    await toggle.trigger('click')
+    await nextTick()
+
+    expect(column.attributes('data-collapsed')).toBe('false')
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((column.element as HTMLElement).style.width).toBe('100%')
+    const opener = lane.get('[data-card-id="card-1"] [data-action="open-card"]')
+    expect(opener.attributes('hidden')).toBeUndefined()
+    expect(opener.element.closest('[hidden]')).toBeNull()
+  })
+})
+
+describe('PaperBoardView — empty board (#1765)', () => {
+  beforeEach(() => {
+    routerMock.push.mockClear()
+    mockBoardStore.createColumn.mockClear()
+    mockBoardStore.currentBoard = emptyBoard
+    mockBoardStore.currentBoardCards = []
+    mockBoardStore.cardsByColumn = new Map()
+    mockBoardStore.error = null
+    mockBoardStore.loading = false
+    mockViewportMode.value = 'desktop'
+  })
+
+  afterEach(() => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    document.body.innerHTML = ''
+  })
+
+  it('offers add-column affordances instead of a dead end when the board has no columns', () => {
+    const wrapper = mountView()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-column-name"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-add-column"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-empty-starter-columns"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-lanes"]').exists()).toBe(false)
+  })
+
+  it('disables the add-column submit until a name is typed', async () => {
+    const wrapper = mountView()
+    const submit = wrapper.get('[data-testid="paper-board-empty-add-column"]')
+
+    expect(submit.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('Backlog')
+
+    expect(submit.attributes('disabled')).toBeUndefined()
+  })
+
+  it('creates the first column through boardStore.createColumn and clears the field', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('  Backlog  ')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).toHaveBeenCalledTimes(1)
+    expect(mockBoardStore.createColumn).toHaveBeenCalledWith('board-1', { name: 'Backlog' })
+    expect(
+      (wrapper.get('[data-testid="paper-board-empty-column-name"]').element as HTMLInputElement).value,
+    ).toBe('')
+  })
+
+  it('does not create a column for a whitespace-only name', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('   ')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn).not.toHaveBeenCalled()
+  })
+
+  it('creates the three starter columns in order from one click', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-starter-columns"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.createColumn.mock.calls.map((call) => call[1])).toEqual([
+      { name: 'To Do', position: 0 },
+      { name: 'In Progress', position: 1 },
+      { name: 'Done', position: 2 },
+    ])
+  })
+
+  it('keeps the affordance on screen and surfaces an error when the create fails', async () => {
+    mockBoardStore.createColumn.mockRejectedValueOnce(new Error('boom'))
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('Backlog')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-board-empty-error"]').text()).toContain(
+      'Could not create the column',
+    )
+  })
+
+  it('still shows the board error banner when the board itself failed to load', () => {
+    mockBoardStore.currentBoard = null
+    mockBoardStore.error = 'Board not found'
+
+    const wrapper = mountView()
+
+    expect(wrapper.get('.paper-board-view__error').text()).toBe('Board not found')
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
   })
 })

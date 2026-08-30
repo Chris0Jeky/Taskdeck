@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { todayApi } from '../../api/todayApi'
 import type { CadenceApiResponse, StreakApiResponse, SealStatusApiResponse, TomorrowNoteApiResponse } from '../../api/todayApi'
 import type { TodaySummary } from '../../types/workspace'
@@ -82,6 +83,7 @@ describe('useTodayDossier', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
@@ -224,7 +226,94 @@ describe('useTodayDossier', () => {
     expect(dossier.value.lineForTomorrow).toBe('')
   })
 
+  // --- issue 1983: in-flight is a distinct state from failed ----------------
+
+  it('reports live data as loading until the batch settles, not as unavailable', async () => {
+    // `cadenceAvailable` / `streakAvailable` are false both before and after a
+    // failure, so on their own they cannot tell a panel which one it is. This
+    // is the flag that can.
+    let resolveCadence!: (value: CadenceApiResponse) => void
+    vi.mocked(todayApi.getCadence).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCadence = resolve }),
+    )
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('network'))
+
+    const { dossier, liveDataLoading } = await importAndCreate()
+
+    expect(liveDataLoading.value).toBe(true)
+    expect(dossier.value.cadenceAvailable).toBe(false)
+    expect(dossier.value.streakAvailable).toBe(false)
+
+    resolveCadence(cadenceResponse)
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(false)
+    })
+
+    // Settled: cadence arrived, streak genuinely failed.
+    expect(dossier.value.cadenceAvailable).toBe(true)
+    expect(dossier.value.streakAvailable).toBe(false)
+  })
+
+  it('returns to loading — not to failed — when a local-day rollover refetches', async () => {
+    vi.mocked(todayApi.getCadence)
+      .mockResolvedValueOnce(cadenceResponse)
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { dossier, liveDataLoading } = useTodayDossier({ now: nowRef })
+
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(false)
+    })
+    expect(dossier.value.cadenceAvailable).toBe(true)
+
+    // The rollover clears the live values; without the flag the panels would
+    // read as failed for the whole of the refetch.
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+    await vi.waitFor(() => {
+      expect(liveDataLoading.value).toBe(true)
+    })
+    expect(dossier.value.cadenceAvailable).toBe(false)
+  })
+
+  it('keeps loading when a SUPERSEDED fetch settles while the newer one is in flight', async () => {
+    // The invariant under guard: only the winning generation may clear the
+    // flag. A bare `finally` (or moving the clear above the generation check)
+    // lets the STALE fetch settle last and flash the failed state for the
+    // whole of the new day's fetch — the GH-1983 defect reintroduced.
+    let resolveStaleCadence!: (value: CadenceApiResponse) => void
+    vi.mocked(todayApi.getCadence)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStaleCadence = resolve }))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('network'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { liveDataLoading } = useTodayDossier({ now: nowRef })
+    expect(liveDataLoading.value).toBe(true)
+
+    // Roll the day over while fetch A is still pending: fetch B (never
+    // settling) becomes the winning generation.
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+    await nextTick()
+
+    // NOW the stale fetch settles. It must not clear the flag — its
+    // replacement is still in flight.
+    resolveStaleCadence(cadenceResponse)
+    await flushPromises()
+    expect(liveDataLoading.value).toBe(true)
+  })
+
   it('maps the live Today summary to truthful stats and overdue carry-over cards', async () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
     workspaceMock.todaySummary = {
       workspaceMode: 'guided',
       onboarding: {
@@ -247,7 +336,7 @@ describe('useTodayDossier', () => {
         boardName: 'Client onboarding',
         cardId: 'card-123456789',
         title: 'Confirm engagement letter',
-        dueDate: '2026-01-14T09:00:00Z',
+        dueDate: '2026-01-14T00:00:00Z',
         blockReason: null,
         updatedAt: '2026-01-15T09:00:00Z',
       }],

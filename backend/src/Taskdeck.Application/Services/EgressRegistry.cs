@@ -6,7 +6,6 @@ namespace Taskdeck.Application.Services;
 ///
 /// Seed entries cover:
 /// - OpenAI API (LLM provider)
-/// - Google Gemini API (LLM provider)
 /// - Configured outbound webhook destinations
 /// - Self-hosted analytics (Plausible/Umami)
 /// - Sentry error reporting
@@ -166,13 +165,6 @@ public sealed class EgressRegistry : IEgressRegistry
                 Host: "api.openai.com",
                 PayloadCategory: "LLM prompt with board context and user input",
                 ToolOrAgentName: "OpenAiLlmProvider",
-                Classification: EgressDataClassification.UserContent),
-
-            // Google Gemini LLM provider
-            new EgressEntry(
-                Host: "generativelanguage.googleapis.com",
-                PayloadCategory: "LLM prompt with board context and user input",
-                ToolOrAgentName: "GeminiLlmProvider",
                 Classification: EgressDataClassification.UserContent),
 
             // Ollama local LLM provider (localhost — no data leaves the machine)

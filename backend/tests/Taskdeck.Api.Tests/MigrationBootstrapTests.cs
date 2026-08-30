@@ -30,7 +30,7 @@ public class MigrationBootstrapTests : IDisposable
             $"taskdeck-migration-test-{Guid.NewGuid():N}.db");
 
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
             .Options;
 
         _context = new TaskdeckDbContext(options);
@@ -50,6 +50,23 @@ public class MigrationBootstrapTests : IDisposable
 
         appliedMigrations.Should().NotBeEmpty(
             "the migration chain should produce at least one applied migration");
+    }
+
+    [Fact]
+    public void AddBoardConcurrencyToken_uses_sql_server_native_guid_type_and_default()
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=taskdeck_migration_script;Trusted_Connection=True;")
+            .Options;
+
+        using var sqlServerContext = new TaskdeckDbContext(options);
+        var script = sqlServerContext.GetService<IMigrator>().GenerateScript(
+            fromMigration: "20260816163822_AddTypedTranscriptEvidenceLink",
+            toMigration: "20260826173952_AddBoardConcurrencyToken");
+
+        script.Should().MatchRegex(
+            @"ALTER TABLE \[Boards\] ADD \[ConcurrencyToken\] uniqueidentifier NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
+        script.Should().NotContain("[ConcurrencyToken] TEXT");
     }
 
     [Fact]
@@ -86,6 +103,7 @@ public class MigrationBootstrapTests : IDisposable
 
         _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
         GetUserTables().Should().Contain("Transcripts");
+        GetUserTables().Should().Contain("Captures");
         _context.Database.HasPendingModelChanges().Should().BeFalse();
     }
 
@@ -131,6 +149,103 @@ public class MigrationBootstrapTests : IDisposable
         hasDrift.Should().BeFalse(
             "the EF model should match the last migration snapshot; " +
             "if this fails, run 'dotnet ef migrations add <Name>' to capture the drift");
+    }
+
+    [Fact]
+    public void AddApiKeyScopes_backfills_legacy_keys_and_leaves_no_database_default()
+    {
+        var migrator = _context.GetService<IMigrator>();
+        migrator.Migrate("20260828034240_MakeProvenanceConfidenceHonest");
+        var userId = InsertLegacyUser("legacy-api-key-owner", "legacy-api-key-owner@example.test");
+        var apiKeyId = InsertLegacyApiKey(userId);
+
+        migrator.Migrate();
+
+        _context.ChangeTracker.Clear();
+        var migratedKey = _context.ApiKeys.Single(key => key.Id == apiKeyId);
+        migratedKey.Scopes.Should().Be(ApiKeyScope.Full);
+        ((int)migratedKey.Scopes).Should().Be(7);
+
+        var scopesColumn = GetApiKeyScopesColumn();
+        scopesColumn.NotNull.Should().BeTrue(
+            "new API key rows must always supply an explicit scope mask");
+        scopesColumn.DefaultValue.Should().BeNull(
+            "Full is an upgrade backfill value, not an implicit database default for new keys");
+    }
+
+    [Fact]
+    public void AddTypedTranscriptEvidenceLink_removes_orphaned_transcript_evidence_when_reapplied_after_rollback()
+    {
+        _context.Database.Migrate();
+
+        var user = new User("migration-transcript-owner", "migration-transcript-owner@example.test", "hash");
+        var deletedTranscript = new Transcript(
+            user.Id,
+            CaptureSource.TranscriptPaste,
+            "Transcript evidence is orphaned after rollback.",
+            [new TranscriptSegment(0, 0, "Speaker", 0)]);
+        var retainedTranscript = new Transcript(
+            user.Id,
+            CaptureSource.TranscriptPaste,
+            "Transcript evidence remains parent-backed.",
+            [new TranscriptSegment(0, 0, "Speaker", 0)]);
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Migration transcript evidence",
+            RiskLevel.Low,
+            $"migration-transcript-evidence-{Guid.NewGuid():N}");
+        var provenance = new ProposalProvenance(proposal.Id, proposal.CorrelationId, "test-model");
+        var field = new ProvenanceField("Operation 1: create card", ProvenanceKind.Inferred, 0.9, provenance.Id);
+        var orphanedLink = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            deletedTranscript.Id.ToString("D"),
+            field.Id,
+            label: "Orphaned transcript evidence",
+            spanStart: 0,
+            spanEnd: 10,
+            transcriptId: deletedTranscript.Id);
+        var retainedLink = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            retainedTranscript.Id.ToString("D"),
+            field.Id,
+            label: "Retained transcript evidence",
+            spanStart: 0,
+            spanEnd: 10,
+            transcriptId: retainedTranscript.Id);
+        var unrelatedLink = new ProvenanceEvidenceLink(
+            "InboxCapture",
+            "capture-survives-transcript-cleanup",
+            field.Id,
+            label: "Unrelated evidence");
+        field.AddEvidenceLink(orphanedLink);
+        field.AddEvidenceLink(retainedLink);
+        field.AddEvidenceLink(unrelatedLink);
+        provenance.AddField(field);
+
+        _context.Users.Add(user);
+        _context.Transcripts.AddRange(deletedTranscript, retainedTranscript);
+        _context.AutomationProposals.Add(proposal);
+        _context.ProposalProvenances.Add(provenance);
+        _context.SaveChanges();
+        _context.ChangeTracker.Clear();
+
+        var migrator = _context.GetService<IMigrator>();
+        migrator.Migrate("20260816135723_AddLlmRequestTranscriptLinkage");
+        _context.ChangeTracker.Clear();
+        _context.Transcripts.Remove(_context.Transcripts.Single(transcript => transcript.Id == deletedTranscript.Id));
+        _context.SaveChanges();
+        migrator.Migrate("20260816163822_AddTypedTranscriptEvidenceLink");
+
+        _context.ChangeTracker.Clear();
+        _context.ProvenanceEvidenceLinks.Should().NotContain(candidate => candidate.Id == orphanedLink.Id);
+        var restoredLink = _context.ProvenanceEvidenceLinks.Single(candidate => candidate.Id == retainedLink.Id);
+        restoredLink.SourceType.Should().Be(ProvenanceEvidenceLink.TranscriptSourceType);
+        restoredLink.SourceId.Should().Be(retainedTranscript.Id.ToString("D"));
+        restoredLink.TranscriptId.Should().Be(retainedTranscript.Id);
+        var restoredUnrelatedLink = _context.ProvenanceEvidenceLinks.Single(candidate => candidate.Id == unrelatedLink.Id);
+        restoredUnrelatedLink.SourceType.Should().Be("InboxCapture");
+        restoredUnrelatedLink.TranscriptId.Should().BeNull();
     }
 
     [Fact]
@@ -557,17 +672,64 @@ public class MigrationBootstrapTests : IDisposable
         }
     }
 
-    private void InsertLegacyUser(string username, string email)
+    private Guid InsertLegacyUser(string username, string email)
     {
+        var userId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         _context.Database.ExecuteSqlInterpolated($"""
             INSERT INTO "Users"
                 ("Id", "Username", "Email", "PasswordHash", "DefaultRole", "IsActive",
                  "TokenInvalidatedAt", "MfaEnabled", "CreatedAt", "UpdatedAt")
             VALUES
-                ({Guid.NewGuid()}, {username}, {email}, {"hash"},
+                ({userId}, {username}, {email}, {"hash"},
                  {2}, {true}, {(DateTimeOffset?)null}, {false}, {now}, {now});
             """);
+
+        return userId;
+    }
+
+    private Guid InsertLegacyApiKey(Guid userId)
+    {
+        var apiKeyId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var keyHash = new string('a', 64);
+        _context.Database.ExecuteSqlInterpolated($"""
+            INSERT INTO "ApiKeys"
+                ("Id", "UserId", "KeyHash", "KeyPrefix", "Name", "ExpiresAt", "RevokedAt",
+                 "LastUsedAt", "CreatedAt", "UpdatedAt")
+            VALUES
+                ({apiKeyId}, {userId}, {keyHash}, {"tdsk_leg"}, {"Legacy key"},
+                 {(DateTimeOffset?)null}, {(DateTimeOffset?)null}, {(DateTimeOffset?)null}, {now}, {now});
+            """);
+
+        return apiKeyId;
+    }
+
+    private (bool NotNull, string? DefaultValue) GetApiKeyScopesColumn()
+    {
+        var connection = _context.Database.GetDbConnection();
+        _context.Database.OpenConnection();
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA table_info(\"ApiKeys\")";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetString(1) != "Scopes")
+                    continue;
+
+                return (
+                    NotNull: reader.GetInt32(3) == 1,
+                    DefaultValue: reader.IsDBNull(4) ? null : reader.GetString(4));
+            }
+
+            throw new InvalidOperationException("ApiKeys.Scopes was not present after migration");
+        }
+        finally
+        {
+            _context.Database.CloseConnection();
+        }
     }
 
     public void Dispose()

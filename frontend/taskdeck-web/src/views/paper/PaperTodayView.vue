@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { formatLocalDossierDate, useTodayDossier } from '../../composables/useTodayDossier'
 import { useSessionStore } from '../../store/sessionStore'
 import { useToastStore } from '../../store/toastStore'
@@ -21,18 +22,37 @@ import TodayLineForTomorrow from './today/TodayLineForTomorrow.vue'
  * `useTodayDossier`. Sections without a shipped query render explicit empty
  * states instead of inferred activity.
  *
+ * Three placeholder classes are deliberately worded apart. A panel with NO
+ * query behind it (ledger, decisions, boards — all hardcoded empty in
+ * `useTodayDossier`) says so plainly (issue 1939); a panel whose live query
+ * has not come back yet says it is loading (issue 1983); a panel whose live
+ * query failed says that instead. "Not available yet" blurred the first two
+ * and read as broken, and reporting a failure mid-flight (the cadence and
+ * streak panels did, because `cadenceAvailable`/`streakAvailable` are false
+ * before the request resolves as well as after it fails) read the same way.
+ *
+ * This view owns the seal state machine (idle → confirming → sealing →
+ * sealed); `TodayCover` only renders it. Sealing is irreversible — the domain
+ * entity has `Seal()` and no inverse, and the API exposes only POST/GET
+ * `/today/seal` — so the confirm step is the only chance to back out.
+ *
  * The Obsidian `TodayView` continues to render when paper mode is off; the
  * `TodayView.vue` shell delegates to this component when `paperThemeStore
  * .isOn`.
  */
-const { dossier, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
+const { dossier, liveDataLoading, sealed, sealDay, saveLineForTomorrow } = useTodayDossier()
 const session = useSessionStore()
 const toast = useToastStore()
 const workspace = useWorkspaceStore()
+const { t } = useI18n()
+
+const confirmingSeal = ref(false)
+const sealing = ref(false)
+const lineForTomorrow = ref<{ focus: () => void } | null>(null)
 
 const ledgerSummary = computed(() => dossier.value.ledger.length > 0
   ? `Every meaningful event today · ${dossier.value.ledger.length} entries`
-  : 'Live ledger unavailable')
+  : t('today.empty.ledgerSummary'))
 const carryOverSummary = computed(() => {
   const total = workspace.todaySummary?.summary.overdueCards
   if (total === undefined) return 'Live carry-over unavailable'
@@ -42,33 +62,59 @@ const carryOverSummary = computed(() => {
     ? `Showing ${visible} of ${total} live overdue cards`
     : `${total} live overdue card${total === 1 ? '' : 's'}`
 })
+// The dossier's own local calendar day. It rolls in long-lived sessions, and
+// every piece of day-scoped state has to roll with it.
+const dossierLocalDate = computed(() => formatLocalDossierDate(dossier.value.date))
 const lineForTomorrowStorageKey = computed(() => {
   const userPart = encodeURIComponent(session.userId?.trim() || 'anonymous')
-  const dayPart = formatLocalDossierDate(dossier.value.date)
-  return `td.paper.line-for-tomorrow:${userPart}:${dayPart}`
+  return `td.paper.line-for-tomorrow:${userPart}:${dossierLocalDate.value}`
 })
-const lineForTomorrowSaveDate = computed(() => formatLocalDossierDate(dossier.value.date))
 
-async function onSeal() {
-  const result = await sealDay()
-  if (result.inProgress) {
-    return
+// `useTodayDossier` resets its own seal state across a local-day cross, but the
+// confirm prompt is view-local and must join that reset (GH-1939). A prompt
+// opened at 23:59 warns about today; left open, confirming it at 00:01 would
+// POST the NEW day's date — irreversibly sealing a day the warning never named.
+watch(dossierLocalDate, () => {
+  confirmingSeal.value = false
+})
+
+function onSealRequest() {
+  if (sealed.value || sealing.value) return
+  confirmingSeal.value = true
+}
+
+function onSealCancel() {
+  if (sealing.value) return
+  confirmingSeal.value = false
+}
+
+async function onSealConfirm() {
+  if (sealing.value) return
+  sealing.value = true
+  try {
+    const result = await sealDay()
+    if (result.inProgress) {
+      return
+    }
+    if (!result.sealed) {
+      toast.error(t('today.seal.toastFailed'))
+      return
+    }
+    // `alreadySealed` is no longer reachable from a user click — the CTA is
+    // disabled once sealed — but a concurrent seal on another device still
+    // lands here, and the day is sealed either way.
+    confirmingSeal.value = false
+    toast.success(t('today.seal.toastSealed'))
+  } finally {
+    sealing.value = false
   }
-  if (!result.sealed) {
-    toast.error('Failed to seal the day. Please try again.')
-    return
-  }
-  if (result.alreadySealed) {
-    toast.info('Day is already sealed.')
-    return
-  }
-  toast.success('Day sealed. The dossier is archived.')
 }
 
 function onWriteNote() {
-  // Note-writing surface lives outside this slice; we surface a hint so
-  // the affordance is discoverable.
-  toast.info('Notes will land in tomorrow’s morning briefing.')
+  // "Write a note" is not its own surface: it is the § VII line-for-tomorrow
+  // field. Move the caret there so the affordance names its own destination
+  // instead of describing one in a toast.
+  lineForTomorrow.value?.focus()
 }
 
 async function retryTodaySummary() {
@@ -152,15 +198,18 @@ async function retryTodaySummary() {
       :serial="dossier.serial"
       :cards-moved="dossier.headlineCardsMoved"
       :lede="dossier.lede"
-      :auto-seals-in="dossier.autoSealsIn"
       :sealed="sealed"
-      @seal="onSeal"
+      :confirming-seal="confirmingSeal"
+      :sealing="sealing"
+      @seal-request="onSealRequest"
+      @seal-confirm="onSealConfirm"
+      @seal-cancel="onSealCancel"
       @note="onWriteNote"
     />
 
     <TodayStats v-if="dossier.stats.length > 0" :stats="dossier.stats" />
     <p v-else class="paper-today__empty paper-today__empty--stats" data-empty-state="stats">
-      Today's live totals are unavailable. Inbox and Review remain the source of truth.
+      {{ t('today.empty.stats') }}
     </p>
 
     <section class="paper-today__body">
@@ -172,8 +221,17 @@ async function retryTodaySummary() {
             <span class="tk-meta paper-today__section-sub">When you worked · 24h strip</span>
           </header>
           <TodayCadence v-if="dossier.cadenceAvailable" :cadence="dossier.cadence" />
+          <p
+            v-else-if="liveDataLoading"
+            class="paper-today__empty paper-today__empty--loading"
+            data-loading-state="cadence"
+            role="status"
+            aria-live="polite"
+          >
+            {{ t('today.loading.cadence') }}
+          </p>
           <p v-else class="paper-today__empty" data-empty-state="cadence">
-            Cadence data is unavailable. No work pattern is being inferred.
+            {{ t('today.empty.cadence') }}
           </p>
         </div>
 
@@ -185,7 +243,8 @@ async function retryTodaySummary() {
           </header>
           <TodayLedger v-if="dossier.ledger.length > 0" :entries="dossier.ledger" />
           <p v-else class="paper-today__empty paper-today__empty--inset" data-empty-state="ledger">
-            A live day ledger is not available yet. No events are being invented.
+            <span class="paper-today__not-built" data-not-built>{{ t('today.empty.notBuiltTag') }}</span>
+            {{ t('today.empty.ledger') }}
           </p>
         </div>
 
@@ -197,7 +256,8 @@ async function retryTodaySummary() {
           </header>
           <TodayDecisions v-if="dossier.decisions.length > 0" :decisions="dossier.decisions" />
           <p v-else class="paper-today__empty" data-empty-state="decisions">
-            Today's decisions are not summarized here yet. Open Review for live proposals.
+            <span class="paper-today__not-built" data-not-built>{{ t('today.empty.notBuiltTag') }}</span>
+            {{ t('today.empty.decisions') }}
           </p>
         </div>
       </div>
@@ -211,7 +271,8 @@ async function retryTodaySummary() {
           </header>
           <TodayBoards v-if="dossier.boards.length > 0" :boards="dossier.boards" />
           <p v-else class="paper-today__empty" data-empty-state="boards">
-            Board-touch history is not available yet. Open Boards for live state.
+            <span class="paper-today__not-built" data-not-built>{{ t('today.empty.notBuiltTag') }}</span>
+            {{ t('today.empty.boards') }}
           </p>
         </div>
 
@@ -224,8 +285,8 @@ async function retryTodaySummary() {
           <TodayCarryOver v-if="dossier.carryOver.length > 0" :cards="dossier.carryOver" />
           <p v-else class="paper-today__empty" data-empty-state="carry-over">
             {{ dossier.stats.length > 0
-              ? "No overdue cards in today's live summary."
-              : 'Carry-over data is unavailable. Open Boards for live cards.' }}
+              ? t('today.empty.carryOverNone')
+              : t('today.empty.carryOverUnavailable') }}
           </p>
         </div>
 
@@ -236,8 +297,17 @@ async function retryTodaySummary() {
             <span class="tk-meta paper-today__section-sub">Days in a row · this quarter</span>
           </header>
           <TodayStreak v-if="dossier.streakAvailable" :streak="dossier.streak" />
+          <p
+            v-else-if="liveDataLoading"
+            class="paper-today__empty paper-today__empty--loading"
+            data-loading-state="streak"
+            role="status"
+            aria-live="polite"
+          >
+            {{ t('today.loading.streak') }}
+          </p>
           <p v-else class="paper-today__empty" data-empty-state="streak">
-            Streak data is unavailable. No activity history is being inferred.
+            {{ t('today.empty.streak') }}
           </p>
         </div>
 
@@ -245,12 +315,13 @@ async function retryTodaySummary() {
           <header class="paper-today__section-head">
             <span class="tk-serial paper-today__section-num">§ VII</span>
             <h3 class="tk-h3 paper-today__section-title">A line for tomorrow</h3>
-            <span class="tk-meta paper-today__section-sub">A note your tomorrow-self will see at first open</span>
+            <span class="tk-meta paper-today__section-sub">{{ t('today.note.sectionSub') }}</span>
           </header>
           <TodayLineForTomorrow
+            ref="lineForTomorrow"
             :initial="dossier.lineForTomorrow"
             :storage-key="lineForTomorrowStorageKey"
-            :save-date="lineForTomorrowSaveDate"
+            :save-date="dossierLocalDate"
             :save="saveLineForTomorrow"
             :use-stored-draft="false"
           />
@@ -371,6 +442,27 @@ async function retryTodaySummary() {
 .paper-today__empty--inset {
   margin: 0;
   padding: 18px 22px;
+}
+/* In-flight, not failed — read as pending rather than as a problem. */
+.paper-today__empty--loading {
+  color: var(--faint);
+  font-style: italic;
+}
+/* Scannable marker for a panel with no query behind it, so "empty" is not
+   read as "broken" at a glance (issue 1939). */
+.paper-today__not-built {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  white-space: nowrap;
 }
 
 .paper-today__section-head {

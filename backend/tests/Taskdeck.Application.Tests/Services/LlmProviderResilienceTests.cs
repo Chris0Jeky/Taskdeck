@@ -17,6 +17,34 @@ namespace Taskdeck.Application.Tests.Services;
 /// </summary>
 public class LlmProviderResilienceTests
 {
+    [Fact]
+    public async Task OpenAiCompatible_CompleteAsync_GarbageResponseBody_ReturnsDegradedResult()
+    {
+        var settings = new LlmProviderSettings
+        {
+            EnableLiveProviders = true,
+            Provider = "OpenAICompatible",
+            OpenAiCompatible = new OpenAiCompatibleProviderSettings
+            {
+                ApiKey = "test-compatible-key",
+                BaseUrl = "https://api.example.test/v1",
+                Model = "vendor/model"
+            }
+        };
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("not a compatible completion", Encoding.UTF8, "text/plain")
+        });
+        var provider = new OpenAiCompatibleLlmProvider(
+            new HttpClient(handler), settings, NullLogger<OpenAiCompatibleLlmProvider>.Instance);
+
+        var result = await provider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "create a card")]));
+
+        result.IsDegraded.Should().BeTrue();
+        result.Provider.Should().Be("OpenAICompatible");
+    }
+
     // ── OpenAI: Garbage Response (Invalid JSON Body) ─────────────────
 
     [Fact]
@@ -212,73 +240,6 @@ public class LlmProviderResilienceTests
         result.IsComplete.Should().BeTrue();
     }
 
-    // ── Gemini: Garbage Response ────────────────────────────────────
-
-    [Fact]
-    public async Task Gemini_CompleteAsync_GarbageResponseBody_ReturnsDegradedResult()
-    {
-        var settings = BuildGeminiSettings();
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(
-                    "<error>502 proxy error</error>",
-                    Encoding.UTF8,
-                    "text/xml")
-            });
-        var provider = new GeminiLlmProvider(
-            new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
-
-        var result = await provider.CompleteAsync(new ChatCompletionRequest(
-            [new ChatCompletionMessage("User", "create a task")]));
-
-        result.Should().NotBeNull();
-        result.IsDegraded.Should().BeTrue("garbage Gemini response should be degraded");
-        result.Provider.Should().Be("Gemini");
-    }
-
-    [Fact]
-    public async Task Gemini_CompleteAsync_Returns429RateLimited_ReturnsDegradedResult()
-    {
-        var settings = BuildGeminiSettings();
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage((HttpStatusCode)429)
-            {
-                Content = new StringContent(
-                    """{"error": {"code": 429, "message": "Resource exhausted"}}""",
-                    Encoding.UTF8,
-                    "application/json")
-            });
-        var provider = new GeminiLlmProvider(
-            new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
-
-        var result = await provider.CompleteAsync(new ChatCompletionRequest(
-            [new ChatCompletionMessage("User", "create a card")]));
-
-        result.Should().NotBeNull("429 should not crash");
-        result.IsDegraded.Should().BeTrue("rate-limited Gemini response should be degraded");
-        result.Provider.Should().Be("Gemini");
-    }
-
-    [Fact]
-    public async Task Gemini_CompleteAsync_EmptyResponseBody_ReturnsDegradedResult()
-    {
-        var settings = BuildGeminiSettings();
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("", Encoding.UTF8, "application/json")
-            });
-        var provider = new GeminiLlmProvider(
-            new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
-
-        var result = await provider.CompleteAsync(new ChatCompletionRequest(
-            [new ChatCompletionMessage("User", "hello")]));
-
-        result.Should().NotBeNull();
-        result.IsDegraded.Should().BeTrue();
-    }
-
     // ── OpenAI: Health / Probe with degraded provider ───────────────
 
     [Fact]
@@ -296,26 +257,6 @@ public class LlmProviderResilienceTests
         var health = await provider.ProbeAsync();
 
         health.IsAvailable.Should().BeFalse("probe should detect degraded responses as unhealthy");
-        health.IsProbed.Should().BeTrue();
-    }
-
-    // ── Gemini: Health / Probe with degraded provider ───────────────
-
-    [Fact]
-    public async Task Gemini_ProbeAsync_WhenProviderReturnsGarbage_ReportsUnhealthy()
-    {
-        var settings = BuildGeminiSettings();
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("not json", Encoding.UTF8, "text/plain")
-            });
-        var provider = new GeminiLlmProvider(
-            new HttpClient(handler), settings, NullLogger<GeminiLlmProvider>.Instance);
-
-        var health = await provider.ProbeAsync();
-
-        health.IsAvailable.Should().BeFalse("probe should detect garbage as unhealthy");
         health.IsProbed.Should().BeTrue();
     }
 
@@ -337,19 +278,4 @@ public class LlmProviderResilienceTests
         };
     }
 
-    private static LlmProviderSettings BuildGeminiSettings()
-    {
-        return new LlmProviderSettings
-        {
-            EnableLiveProviders = true,
-            Provider = "Gemini",
-            Gemini = new GeminiProviderSettings
-            {
-                ApiKey = "test-gemini-key",
-                BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                Model = "gemini-2.5-flash",
-                TimeoutSeconds = 30
-            }
-        };
-    }
 }

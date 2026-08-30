@@ -28,7 +28,7 @@ const mockFeatureFlags = {
     newAutomation: true,
     newArchive: true,
   },
-  isEnabled: vi.fn(() => true),
+  isEnabled: vi.fn((_flag: keyof FeatureFlags) => true),
 }
 
 const mockWorkspace = reactive({
@@ -81,15 +81,16 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: false }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
-function mountShell() {
+function mountShell(attachTo?: HTMLElement) {
   return mount(AppShell, {
+    attachTo,
     global: {
       stubs: {
         RouterView: true,
         Teleport: true,
         CaptureModal: {
           template: `
-            <div aria-label="Capture modal">
+            <div role="dialog" aria-modal="true" aria-label="Capture modal">
               <button class="capture-close" @click="$emit('close')">Close</button>
               <button class="capture-created" @click="$emit('created', 'capture-1')">Created</button>
             </div>
@@ -127,7 +128,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.homeLoading = false
     mockWorkspace.preferenceLoading = false
     mockWorkspace.preferencesHydrated = false
-    mockFeatureFlags.isEnabled = vi.fn(() => true)
+    mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => true)
   })
 
   afterEach(() => {
@@ -166,7 +167,7 @@ describe('AppShell workspace navigation and command palette', () => {
 
   it('shows sidebarPrimary items with workbenchBypassesFlag in workbench mode even when flags are off', async () => {
     mockWorkspace.mode = 'workbench'
-    mockFeatureFlags.isEnabled = vi.fn(() => false)
+    mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => false)
     mountedWrapper = mountShell()
     const wrapper = mountedWrapper
     const navHrefs = getRenderedNavHrefs(wrapper)
@@ -347,6 +348,99 @@ describe('AppShell workspace navigation and command palette', () => {
 
     expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
   })
+
+  it.each([
+    ['h', '/workspace/home'],
+    ['t', '/workspace/today'],
+    ['b', '/workspace/boards'],
+    ['i', '/workspace/inbox'],
+    ['r', '/workspace/review'],
+  ])('navigates with the bare %s workspace binding', async (key, path) => {
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith(path)
+  })
+
+  it('navigates Home with the bare h binding while the board route is active', async () => {
+    // The board owns Left for previous-column navigation; `h` belongs to the
+    // workspace shell even here, and the capture-phase listener is what makes
+    // that unambiguous (#2008).
+    mockRoute.path = '/boards/board-1'
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/home')
+  })
+
+  it('navigates to Today through the G T chord', async () => {
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g' }))
+    expect(mockRouter.push).not.toHaveBeenCalled()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))
+    await waitForUi()
+
+    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/today')
+  })
+
+  it('suppresses workspace navigation while a modal owns the keyboard', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'C',
+      ctrlKey: true,
+      shiftKey: true,
+    }))
+    await waitForUi()
+
+    const modalButton = wrapper.get('.capture-close')
+    const modalButtonElement = modalButton.element as HTMLButtonElement
+    modalButtonElement.focus()
+    expect(document.activeElement).toBe(modalButtonElement)
+    mockRouter.push.mockClear()
+
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'h',
+      bubbles: true,
+    }))
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'g',
+      bubbles: true,
+    }))
+    modalButtonElement.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 't',
+      bubbles: true,
+    }))
+    await waitForUi()
+
+    expect(mockRouter.push).not.toHaveBeenCalled()
+  })
+
+  it.each(['input', 'textarea', 'select', 'contenteditable'])(
+    'suppresses bare and chord navigation inside %s targets',
+    async (kind) => {
+      mountedWrapper = mountShell()
+      const target = kind === 'contenteditable'
+        ? document.createElement('div')
+        : document.createElement(kind)
+      if (kind === 'contenteditable') target.setAttribute('contenteditable', 'true')
+      document.body.appendChild(target)
+
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }))
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', bubbles: true }))
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }))
+      await waitForUi()
+
+      expect(mockRouter.push).not.toHaveBeenCalled()
+      target.remove()
+    },
+  )
 
   it('does not fire global shortcuts while the workspace mode select is focused', async () => {
     mountedWrapper = mountShell()

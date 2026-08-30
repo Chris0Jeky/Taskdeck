@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services.Pipeline;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Services.Tools;
@@ -38,21 +39,37 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
 
     public async Task<string> ExecuteAsync(ToolExecutionContext context, JsonElement arguments, CancellationToken ct = default)
     {
-        var name = arguments.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-
-        if (string.IsNullOrWhiteSpace(name))
+        if (arguments.ValueKind != JsonValueKind.Object)
         {
             return JsonSerializer.Serialize(new
             {
-                error = "name is required",
+                error = "arguments must be a JSON object",
+                suggestion = "Provide a name for the new column"
+            }, ToolJsonOptions.Default);
+        }
+
+        if (!OperationParameterParser.TryGetRequiredString(arguments, "name", out var name, out var nameError))
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = !arguments.TryGetProperty("name", out _) ? "name is required" : nameError,
                 suggestion = "Provide a name for the new column"
             }, ToolJsonOptions.Default);
         }
 
         int? position = null;
-        if (arguments.TryGetProperty("position", out var p) && p.ValueKind == JsonValueKind.Number)
+        if (arguments.TryGetProperty("position", out var positionProperty))
         {
-            var rawPosition = p.GetInt32();
+            if (positionProperty.ValueKind != JsonValueKind.Number ||
+                !positionProperty.TryGetInt32(out var rawPosition))
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = "position must be an integer",
+                    suggestion = "Use a non-negative whole number or omit to append at end"
+                }, ToolJsonOptions.Default);
+            }
+
             if (rawPosition < 0)
             {
                 return JsonSerializer.Serialize(new
@@ -64,12 +81,10 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
             position = rawPosition;
         }
 
-        // Check for duplicate column name
-        var columns = await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct);
-        var existing = columns.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (existing != null)
+        var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(context.BoardId, ct)).ToList();
+        // Preserve the chat surface's existing convenience warning. Column names
+        // are not a domain uniqueness invariant, so preview/apply do not repeat it.
+        if (columns.Any(column => string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase)))
         {
             return JsonSerializer.Serialize(new
             {
@@ -78,14 +93,33 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
             }, ToolJsonOptions.Default);
         }
 
-        // If no position specified, append at end
-        var resolvedPosition = position ?? columns.Count();
+        if (!position.HasValue)
+        {
+            var appendPositionResult = ProposalOperationContractValidator.ResolveAppendPosition(columns);
+            if (!appendPositionResult.IsSuccess)
+            {
+                return JsonSerializer.Serialize(new { error = appendPositionResult.ErrorMessage }, ToolJsonOptions.Default);
+            }
+
+            position = appendPositionResult.Value;
+        }
+
+        var contract = new CreateColumnOperationParameters(context.BoardId, name, position.Value, null);
+        var availabilityResult = ProposalOperationContractValidator.ValidateCreateColumnPositionAvailability(columns, contract);
+        if (!availabilityResult.IsSuccess)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = availabilityResult.ErrorMessage,
+                suggestion = "Choose an unoccupied position or omit to append at end"
+            }, ToolJsonOptions.Default);
+        }
 
         var parameters = JsonSerializer.Serialize(new
         {
             boardId = context.BoardId,
             name,
-            position = resolvedPosition
+            position = position.Value
         });
 
         var operations = new List<CreateProposalOperationDto>
@@ -100,7 +134,23 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
 
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
-        var summary = $"Create column '{name}' at position {resolvedPosition}";
+        // The chat tool must not persist a proposal the same preview/apply contract
+        // would reject. This also pins requester existence and board write access.
+        var validationResult = await _policyEngine.ValidatePermissionsAsync(
+            context.UserId,
+            context.BoardId,
+            operationDtos,
+            BoardAccessBar.Write,
+            ct);
+        if (!validationResult.IsSuccess)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = validationResult.ErrorMessage
+            }, ToolJsonOptions.Default);
+        }
+
+        var summary = $"Create column '{name}' at position {position.Value}";
         if (summary.Length > 500) summary = summary[..497] + "...";
 
         var createDto = new CreateProposalDto(

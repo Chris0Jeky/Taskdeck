@@ -8,8 +8,9 @@
  */
 
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
-import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import AxeBuilder from '@axe-core/playwright'
+import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -84,7 +85,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     && /\/api\/capture\/items$/i.test(response.url()))
 
   await captureBody.fill(captureText)
-  await page.getByRole('button', { name: 'Capture' }).click()
+  await page.getByRole('button', { name: /^Capture/ }).click()
   const createCaptureResponse = await createCaptureResponsePromise
   await assertOk(createCaptureResponse, 'create Paper review capture')
   const capturePayload = await createCaptureResponse.json() as { id?: string }
@@ -93,7 +94,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
-  await captureRow.getByRole('button', { name: 'Accept' }).click()
+  await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
 
   const triaged = await waitForProposalCreated(request, auth, captureId!)
   proposalId = triaged.provenance?.proposalId
@@ -109,13 +110,51 @@ test(PAPER_ENUM_TEST_TITLE, async ({
     (response) => response.url().endsWith(`/automation/proposals/${proposalId}/side-effects`),
   )
 
-  await page.getByRole('link', { name: /Review$/ }).click()
+  await page.locator('[data-paper-sidebar] a[href="/workspace/review"]').first().click()
   await expect(page).toHaveURL(/\/workspace\/review$/)
   await expect(
     page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
   ).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'Conflicts & warnings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /History/ })).toBeVisible()
+
+  const confidenceDisclosure = page.getByTestId('paper-review-confidence-disclosure')
+  const provenanceDisclosure = page.getByTestId('paper-review-provenance-disclosure')
+  const similarPastDisclosure = page.getByTestId('paper-review-similar-past-disclosure')
+  await expect(confidenceDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('paper-review-confidence-details')).toBeHidden()
+  await expect(page.getByTestId('paper-review-provenance-details')).toBeHidden()
+  await expect(page.getByTestId('paper-review-similar-past-details')).toBeHidden()
+
+  await confidenceDisclosure.focus()
+  await confidenceDisclosure.press('Enter')
+  await expect(confidenceDisclosure).toBeFocused()
+  await expect(confidenceDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-confidence-details')).toBeVisible()
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'false')
+
+  await provenanceDisclosure.focus()
+  await provenanceDisclosure.press('Space')
+  await expect(provenanceDisclosure).toBeFocused()
+  await expect(provenanceDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-provenance-details')).toBeVisible()
+  await expect(page.getByText('View full read-set')).toBeVisible()
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'false')
+
+  await similarPastDisclosure.click()
+  await expect(similarPastDisclosure).toBeFocused()
+  await expect(similarPastDisclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('paper-review-similar-past-details')).toBeVisible()
+
+  const axeResults = await new AxeBuilder({ page })
+    .include('.paper-review-author')
+    .include('.paper-review-prov')
+    .include('.paper-review-past')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  expect(axeResults.violations).toHaveLength(0)
 
   const [conflictsResponse, historyResponse, sideEffectsResponse] = await Promise.all([
     conflictsResponsePromise,
@@ -240,6 +279,63 @@ test('review view should display multiple pending proposals for the same board',
   await expect(proposalQueueItem(page, proposalId2 as string, cardTitle2)).toBeVisible({ timeout: 15_000 })
 })
 
+test('held Enter on batch confirmation keeps receipts open until keyup', async ({ page, request }) => {
+  test.setTimeout(90_000)
+
+  const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Held Enter Batch',
+    description: 'held Enter batch receipt guard',
+    columnNamePrefix: 'Todo',
+  })
+  const cardTitle = `Held Enter receipt ${seed}`
+  const capture = await createCaptureItem(request, auth, boardId, `- [ ] ${cardTitle}`)
+  await triageCaptureItem(request, auth, capture.id)
+  const triaged = await waitForProposalCreated(request, auth, capture.id)
+  const proposalId = triaged.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
+
+  await assertOk(
+    await request.post(
+      `${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId!)}/approve`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    ),
+    `approve held-Enter proposal ${proposalId}`,
+  )
+
+  await page.goto(`/workspace/review?boardId=${boardId}`)
+  const requestBatch = page.getByTestId('queue-batch-execute')
+  await expect(requestBatch).toBeVisible({ timeout: 15_000 })
+  await requestBatch.click()
+
+  const confirm = page.getByTestId('batch-execute-confirm')
+  await expect(confirm).toBeVisible()
+  await confirm.focus()
+  await expect(confirm).toBeFocused()
+
+  const executeResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith('/automation/proposals/execute'))
+  await page.keyboard.down('Enter')
+  await assertOk(await executeResponse, 'batch execute held-Enter proposal')
+
+  const receipts = page.getByTestId('batch-execute-receipts')
+  const done = page.getByTestId('batch-execute-done')
+  await expect(receipts).toBeVisible()
+  await expect(page.getByTestId('batch-execute-receipt-summary')).toContainText('Applied 1')
+  await expect(done).toBeFocused()
+
+  // A second keydown without keyup is native auto-repeat. It must not activate
+  // the newly focused Done button and discard the only durable receipt record.
+  await page.keyboard.down('Enter')
+  await expect(receipts).toBeVisible()
+  await expect(done).toBeFocused()
+
+  await page.keyboard.up('Enter')
+  await page.keyboard.press('Enter')
+  await expect(receipts).toHaveCount(0)
+})
+
 // --- Applied proposal appears in the Paper filing ledger ---
 
 test('applied proposal should appear in the recently-applied ledger', async ({ page, request }) => {
@@ -272,14 +368,16 @@ test('applied proposal should appear in the recently-applied ledger', async ({ p
     && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
   await page.getByTestId('decision-apply').click()
   await assertOk(await approveResponse, `approve proposal ${proposalId}`)
+  await expect(page.getByTestId('paper-review-decision-receipt')).toHaveAttribute(
+    'data-decision',
+    'approved',
+  )
 
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  // The approved receipt keeps board execution behind a second explicit action.
+  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
   await assertOk(await executeResponse, `execute proposal ${proposalId}`)
   await expect(queueItem).toHaveCount(0)
 

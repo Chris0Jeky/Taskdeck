@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type ShortcutContextModule = typeof import('../../composables/useShortcutContext')
+type ShortcutContext = import('../../composables/useShortcutContext').ShortcutContext
 
 let shortcutContextModule: ShortcutContextModule
 let wrappers: VueWrapper[] = []
@@ -28,7 +29,7 @@ function pressKey(key: string, opts?: { ctrlKey?: boolean; shiftKey?: boolean; a
 }
 
 function mountContext(
-  context: ShortcutContextModule['ShortcutContext'],
+  context: ShortcutContext,
   shortcuts: Array<{
     key: string
     handler: () => void

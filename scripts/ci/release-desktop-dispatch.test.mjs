@@ -1,0 +1,825 @@
+// =============================================================================
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309/#2217/#2234
+// =============================================================================
+//
+// Two classes of check:
+//
+//   1. BEHAVIOURAL — `scripts/ci/validate-release-tag.sh` is executed for real
+//      with injection-shaped and malformed tags. This is the gate that stands
+//      between an attacker-influenced `workflow_dispatch` input and a job that
+//      holds `contents: write`, so it is exercised, not merely inspected.
+//
+//   2. STRUCTURAL — assertions over `.github/workflows/release-desktop.yml`
+//      text that pin the invariants a unit test cannot execute (a live dispatch
+//      is the only thing that runs a workflow). They are deliberately phrased
+//      against the exact strings that would have to change for the hardening to
+//      regress.
+//
+// Run: node --test scripts/ci/release-desktop-dispatch.test.mjs
+// =============================================================================
+
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+// `matchesGlob` is the same minimatch-shaped matcher `actions/download-artifact`
+// applies to its `pattern:` input, so the artifact-name check below is a real
+// glob evaluation rather than a string comparison that cannot see the bug.
+import { matchesGlob } from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const workflowPath = fileURLToPath(new URL('../../.github/workflows/release-desktop.yml', import.meta.url))
+const readmePath = fileURLToPath(new URL('../../README.md', import.meta.url))
+const quickStartPath = fileURLToPath(new URL('../../docs/releases/WINDOWS_QUICK_START.md', import.meta.url))
+const mcpGuidePath = fileURLToPath(new URL('../../docs/MCP_SERVER.md', import.meta.url))
+const mcpDesktopExamplePath = fileURLToPath(new URL('../../mcp.example.json', import.meta.url))
+const mcpDockerExamplePath = fileURLToPath(new URL('../../mcp-docker.example.json', import.meta.url))
+const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
+const releaseConfigPath = fileURLToPath(new URL('../../.github/release.yml', import.meta.url))
+const materialSymbolsLicensePath = fileURLToPath(
+  new URL('../../LICENSES/Apache-2.0-material-symbols-font-200.txt', import.meta.url),
+)
+// Normalised to LF: a Windows checkout with core.autocrlf=true would otherwise
+// break every structural assertion for a reason that has nothing to do with the
+// workflow's content.
+const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n')
+const readme = readFileSync(readmePath, 'utf8').replace(/\r\n/g, '\n')
+const quickStart = readFileSync(quickStartPath, 'utf8').replace(/\r\n/g, '\n')
+const mcpGuide = readFileSync(mcpGuidePath, 'utf8').replace(/\r\n/g, '\n')
+const mcpDesktopExample = JSON.parse(readFileSync(mcpDesktopExamplePath, 'utf8'))
+const mcpDockerExample = JSON.parse(readFileSync(mcpDockerExamplePath, 'utf8'))
+const archiveHarness = readFileSync(archiveHarnessPath, 'utf8').replace(/\r\n/g, '\n')
+const materialSymbolsLicense = readFileSync(materialSymbolsLicensePath, 'utf8').replace(/\r\n/g, '\n')
+
+const bashBin = process.platform === 'win32' ? (process.env.BASH_BIN || 'bash') : 'bash'
+
+function validateTag(...args) {
+  return spawnSync(bashBin, ['scripts/ci/validate-release-tag.sh', ...args], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+}
+
+// -----------------------------------------------------------------------------
+// 1. Tag grammar — accepted shapes
+// -----------------------------------------------------------------------------
+
+const acceptedTags = [
+  'v0.0.0',
+  'v0.1.0',
+  'v1.2.3',
+  'v10.20.30',
+  'v1.2.3-rc.1',
+  'v1.2.3-beta2',
+  'v1.2.3+build.5',
+  'v0.0.0-dryrun+abc1234', // the generated rehearsal version must stay valid
+  'v1.2.3-rc.1+build.5',
+]
+
+for (const tag of acceptedTags) {
+  test(`accepts the release tag ${tag}`, () => {
+    const result = validateTag(tag)
+    assert.equal(result.status, 0, `expected ${tag} to be accepted, stderr: ${result.stderr}`)
+    assert.equal(result.stdout.trim(), tag, 'the validated tag is echoed for the caller to capture')
+  })
+}
+
+// -----------------------------------------------------------------------------
+// 2. Tag grammar — injection-shaped and invalid inputs
+//
+// Each of these, before #1795, would have been assigned via
+// `TAG="${{ inputs.tag }}"` — i.e. spliced into Bash source — and then used in
+// artifact paths, Git refs and `gh release` arguments.
+// -----------------------------------------------------------------------------
+
+const rejectedTags = [
+  ['empty', ''],
+  ['quote break-out', 'v1.0.0"; rm -rf /; #'],
+  ['single-quote break-out', "v1.0.0'; id; '"],
+  ['command substitution', '$(id)'],
+  ['backtick substitution', '`id`'],
+  ['variable expansion', 'v1.0.0$HOME'],
+  ['brace expansion', 'v1.0.0${IFS}x'],
+  ['command chaining', 'v1.0.0 && id'],
+  ['pipe', 'v1.0.0 | id'],
+  ['semicolon', 'v1.0.0;id'],
+  ['newline smuggling', 'v1.0.0\nrm -rf /'],
+  ['embedded space', 'v1.0.0 v2'],
+  ['path traversal', '../../etc/passwd'],
+  ['nested path', 'v1.0.0/../../x'],
+  ['branch ref', 'refs/heads/main'],
+  ['bare branch name', 'main'],
+  ['bare commit sha', '0123456789abcdef0123456789abcdef01234567'],
+  ['leading dash (option injection)', '-rf'],
+  ['redirect', 'v1.0.0>owned'],
+  ['glob', 'v1.0.*'],
+  ['no v prefix', '1.2.3'],
+  ['missing patch', 'v1.2'],
+  ['leading zero major', 'v01.2.3'],
+  ['trailing dot', 'v1.2.3.'],
+  ['non-ascii', 'v1.2.3-ré'],
+  ['too long', `v1.2.3-${'a'.repeat(80)}`],
+]
+
+for (const [label, tag] of rejectedTags) {
+  test(`rejects ${label}`, () => {
+    const result = validateTag(tag)
+    assert.equal(result.status, 1, `expected rejection for ${JSON.stringify(tag)}, stdout: ${result.stdout}`)
+    assert.equal(result.stdout, '', 'a rejected tag must never be echoed as a usable value')
+    assert.match(result.stderr, /::error::/, 'rejection is annotated for the Actions log')
+  })
+}
+
+test('rejects a carriage return without ever emitting a usable tag', () => {
+  // Host-dependent exit code by design: on Linux the value arrives intact and
+  // fails the grammar (exit 1); under MSYS bash on Windows the CR splits the
+  // argument list and the arity guard fires first (exit 2). Both are closed —
+  // what matters is that nothing usable reaches stdout.
+  const result = validateTag('v1.0.0\rid')
+  assert.notEqual(result.status, 0, 'a carriage return must never be accepted')
+  assert.equal(result.stdout, '')
+})
+
+test('rejects a wrong invocation instead of defaulting to an empty tag', () => {
+  const noArgs = validateTag()
+  assert.equal(noArgs.status, 2)
+  assert.match(noArgs.stderr, /usage:/)
+
+  const twoArgs = validateTag('v1.0.0', 'v2.0.0')
+  assert.equal(twoArgs.status, 2)
+})
+
+test('accepts a tag exactly at the length ceiling and rejects one character more', () => {
+  const atLimit = `v1.2.3-${'a'.repeat(64 - 'v1.2.3-'.length)}`
+  assert.equal(atLimit.length, 64)
+  assert.equal(validateTag(atLimit).status, 0)
+  assert.equal(validateTag(`${atLimit}a`).status, 1)
+})
+
+// -----------------------------------------------------------------------------
+// 3. Workflow structure — the untrusted input never becomes shell source
+// -----------------------------------------------------------------------------
+
+test('the dispatch tag input reaches Bash only through a step env var', () => {
+  assert.match(
+    workflow,
+    /^\s+RAW_TAG: \$\{\{ inputs\.tag \}\}$/m,
+    'inputs.tag must be bound to an env var, not spliced into a run block',
+  )
+
+  const inputsTagUses = workflow.match(/\$\{\{ *inputs\.tag[^}]*\}\}/g) ?? []
+  assert.deepEqual(
+    inputsTagUses,
+    ['${{ inputs.tag }}'],
+    'inputs.tag may be referenced exactly once, by the RAW_TAG env binding',
+  )
+
+  assert.doesNotMatch(
+    workflow,
+    /TAG="\$\{\{/,
+    'the pre-#1795 `TAG="${{ inputs.tag || \'\' }}"` assignment must not come back',
+  )
+})
+
+test('the tag is validated by the shared grammar gate before any other use', () => {
+  const resolveJob = jobBlock('resolve-source')
+  const validatorCalls = resolveJob.match(/bash scripts\/ci\/validate-release-tag\.sh/g) ?? []
+  assert.ok(
+    validatorCalls.length >= 3,
+    'the dispatch input, the pushed tag ref and the final tag are each validated',
+  )
+  // The validator must run before the tag is resolved against the GitHub API.
+  assert.ok(
+    resolveJob.indexOf('validate-release-tag.sh') < resolveJob.indexOf('git/ref/tags/'),
+    'grammar validation precedes ref resolution',
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 4. Workflow structure — one resolved commit, verified by every build
+// -----------------------------------------------------------------------------
+
+function jobBlock(name) {
+  const start = workflow.indexOf(`\n  ${name}:\n`)
+  assert.notEqual(start, -1, `job ${name} must exist`)
+  const rest = workflow.slice(start + 1)
+  const next = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/)
+  return next === -1 ? rest : rest.slice(0, next)
+}
+
+function matrixBlock(jobName) {
+  const job = jobBlock(jobName)
+  const start = job.indexOf('\n      matrix:\n')
+  assert.notEqual(start, -1, `job ${jobName} must declare a strategy matrix`)
+  const steps = job.indexOf('\n    steps:\n', start)
+  assert.notEqual(steps, -1, `job ${jobName} matrix must end before its steps`)
+  return job.slice(start, steps)
+}
+
+test('resolve-source publishes the tag, commit and publish decision as job outputs', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(job, /tag: \$\{\{ steps\.resolve\.outputs\.tag \}\}/)
+  assert.match(job, /sha: \$\{\{ steps\.resolve\.outputs\.sha \}\}/)
+  assert.match(job, /publish: \$\{\{ steps\.resolve\.outputs\.publish \}\}/)
+})
+
+test('resolve-source dereferences annotated tags and refuses anything else', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(job, /git\/ref\/tags\/\$\{tag\}/, 'exact tag ref lookup, so a branch cannot pose as a tag')
+  assert.match(job, /git\/tags\/\$\{object_sha\}/, 'annotated tag objects are dereferenced to their commit')
+  assert.match(job, /unsupported object type/, 'any other object type fails closed')
+  assert.match(job, /\^\[0-9a-f\]\{40\}\$/, 'the resolved commit is checked to be a clean 40-hex SHA')
+})
+
+for (const job of ['build-frontend', 'build-backend', 'compose-notes', 'create-release']) {
+  test(`${job} builds from the resolved commit and fails closed on a mismatch`, () => {
+    const block = jobBlock(job)
+    assert.match(
+      block,
+      /ref: \$\{\{ needs\.resolve-source\.outputs\.sha \}\}/,
+      'the checkout is pinned to the resolved release commit',
+    )
+    assert.match(
+      block,
+      /Verify checkout matches the resolved release commit/,
+      'a post-checkout verification step is present',
+    )
+    assert.match(
+      block,
+      /actual_sha="\$\(git rev-parse HEAD\)"/,
+      'the verification reads the real post-checkout HEAD',
+    )
+    assert.match(
+      block,
+      /does not match the resolved release commit[\s\S]{0,200}?exit 1/,
+      'a mismatch exits non-zero rather than warning',
+    )
+  })
+}
+
+test('every checkout refuses to persist Git credentials', () => {
+  const checkouts = workflow.match(/uses: actions\/checkout@[^\n]*\n(?: +[^\n]*\n)*/g) ?? []
+  assert.equal(
+    checkouts.length,
+    5,
+    'resolve-source, build-frontend, build-backend, compose-notes, create-release',
+  )
+  for (const block of checkouts) {
+    assert.match(block, /persist-credentials: false/, `checkout without persist-credentials: false:\n${block}`)
+  }
+})
+
+test('the publish decision comes from resolve-source, not a re-read of the raw input', () => {
+  assert.match(
+    workflow,
+    /if: needs\.resolve-source\.outputs\.publish == 'true'/,
+    'create-release is gated on the validated publish decision',
+  )
+  assert.doesNotMatch(
+    workflow,
+    /if: startsWith\(github\.ref, 'refs\/tags\/'\) \|\| inputs\.tag != ''/,
+    'the pre-#1795 guard, which never saw the grammar check, must not come back',
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 5. Workflow structure — Windows-only 0.1.x release policy (#1878)
+// -----------------------------------------------------------------------------
+
+test('the 0.1.x release matrix and packaging are Windows x64 zip only', () => {
+  const matrix = matrixBlock('build-backend')
+  const job = jobBlock('build-backend')
+  const rids = [...matrix.matchAll(/^\s+- rid:\s*(\S+)[ \t]*$/gm)].map((match) => match[1])
+  const runners = [...matrix.matchAll(/^\s+os:\s*(\S+)[ \t]*$/gm)].map((match) => match[1])
+  const archiveTypes = [...matrix.matchAll(/^\s+archive_ext:\s*(\S+)[ \t]*$/gm)].map(
+    (match) => match[1],
+  )
+
+  assert.deepEqual(rids, ['win-x64'], 'another RID requires an explicit support-policy change')
+  assert.deepEqual(
+    runners,
+    ['windows-latest'],
+    'a non-Windows release runner requires equivalent packaged acceptance evidence',
+  )
+  assert.deepEqual(archiveTypes, ['zip'], 'the supported Windows release archive is a ZIP')
+  assert.doesNotMatch(matrix, /\b(?:linux|osx|macos|ubuntu)\b/i)
+  assert.doesNotMatch(job, /tar\.gz|\btar\s+-czf\b/, 'dead Linux/macOS packaging must stay absent')
+})
+
+test('the desktop package marker is publish-only and the false pre-ZIP proof stays removed', () => {
+  const job = jobBlock('build-backend')
+  assert.match(job, /-p:TaskdeckDesktopPackage=true/)
+  assert.match(jobBlock('build-frontend'), /VITE_API_BASE_URL: \/api/)
+  assert.doesNotMatch(job, /Smoke test published executable/)
+  assert.doesNotMatch(job, /ConnectionStrings__DefaultConnection/)
+  assert.doesNotMatch(job, /Jwt__SecretKey/)
+  assert.doesNotMatch(job, /Connectors__EncryptionKey/)
+  assert.doesNotMatch(job, /FirstRun__AutoOpenBrowser/)
+  assert.doesNotMatch(job, /taskkill \/\/F \/\/IM Taskdeck\.Api\.exe/)
+})
+
+test('the untouched ZIP is checksummed, accepted, and only then uploaded', () => {
+  const job = jobBlock('build-backend')
+  const packageAt = job.indexOf('Package artifact (zip')
+  const checksumAt = job.indexOf('Generate SHA256 checksum')
+  const acceptanceAt = job.indexOf('Test untouched Windows desktop ZIP')
+  const uploadAt = job.indexOf('Upload release artifact')
+
+  assert.ok(packageAt !== -1 && checksumAt !== -1 && acceptanceAt !== -1 && uploadAt !== -1)
+  assert.ok(packageAt < checksumAt, 'the immutable archive exists before its checksum')
+  assert.ok(checksumAt < acceptanceAt, 'acceptance verifies the generated checksum')
+  assert.ok(acceptanceAt < uploadAt, 'only an accepted untouched ZIP can be uploaded')
+  assert.match(job, /Test-WindowsDesktopArchive\.ps1/)
+  assert.match(job, /npx playwright install chromium/)
+  assert.match(job, /TASKDECK_RELEASE_OPENAI_API_KEY: \$\{\{ secrets\.TASKDECK_RELEASE_OPENAI_API_KEY \}\}/)
+  assert.match(job, /-LiveOpenAIIfConfigured/)
+  assert.doesNotMatch(job, /\s-LiveOpenAI(?:\s|$)/)
+})
+
+test('the archive wrapper keeps required and optional hosted modes distinct', () => {
+  assert.match(archiveHarness, /\[switch\]\$LiveOpenAI\b/)
+  assert.match(archiveHarness, /\[switch\]\$LiveOpenAIIfConfigured\b/)
+  assert.match(archiveHarness, /if \(\$LiveOpenAI -and \$LiveOpenAIIfConfigured\)/)
+  assert.match(archiveHarness, /\$arguments \+= "--live-openai"/)
+  assert.match(archiveHarness, /\$arguments \+= "--live-openai-if-configured"/)
+})
+
+test('the Windows archive stages the reviewed quick start and enforces its content contract', () => {
+  const job = jobBlock('build-backend')
+  const stageAt = job.indexOf('Stage Windows archive contents')
+  const verifyAt = job.indexOf('Verify Windows archive content contract')
+  const packageAt = job.indexOf('Package artifact (zip')
+
+  assert.ok(stageAt !== -1 && verifyAt !== -1 && packageAt !== -1)
+  assert.ok(stageAt < verifyAt, 'the archive is staged before its content contract is checked')
+  assert.ok(verifyAt < packageAt, 'only contract-checked files may enter the ZIP')
+  assert.match(
+    job,
+    /cp docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
+  )
+  assert.match(
+    job,
+    /cmp -s docs\/releases\/WINDOWS_QUICK_START\.md "\$\{stage\}\/QUICK_START\.md"/,
+    'the archive copy must be byte-identical to the reviewed source guide',
+  )
+  for (const [source, destination] of [
+    ['docs/MCP_SERVER.md', 'MCP_SERVER.md'],
+    ['mcp.example.json', 'mcp.example.json'],
+    ['mcp-docker.example.json', 'mcp-docker.example.json'],
+  ]) {
+    assert.ok(
+      job.includes(`cp ${source} "\${stage}/${destination}"`),
+      `the archive does not stage ${source}`,
+    )
+    assert.ok(
+      job.includes(`cmp -s ${source} "\${stage}/${destination}"`),
+      `the archived ${destination} is not byte-checked against its reviewed source`,
+    )
+  }
+  assert.match(
+    job,
+    /cp LICENSES\/Apache-2\.0-material-symbols-font-200\.txt[\s\\]+"\$\{stage\}\/LICENSES\/Apache-2\.0-material-symbols-font-200\.txt"/,
+  )
+  assert.match(
+    job,
+    /cmp -s LICENSES\/Apache-2\.0-material-symbols-font-200\.txt "\$MATERIAL_SYMBOLS_LICENSE"/,
+    'the archived third-party licence must be byte-identical to the reviewed source copy',
+  )
+  assert.match(materialSymbolsLicense, /Apache License\s+Version 2\.0, January 2004/)
+
+  for (const required of [
+    'Taskdeck.Api.exe',
+    'appsettings.json',
+    'QUICK_START.md',
+    'MCP_SERVER.md',
+    'mcp.example.json',
+    'mcp-docker.example.json',
+    'wwwroot/index.html',
+    'LICENSE',
+    'RELICENSING.md',
+    'LICENSES/MIT.txt',
+    'LICENSES/Apache-2.0-material-symbols-font-200.txt',
+  ]) {
+    assert.ok(job.includes(`'${required}'`), `workflow does not require ${required}`)
+  }
+
+  for (const forbidden of [
+    'appsettings.Development.json',
+    '*.pdb',
+    '*.xml',
+    'web.config',
+  ]) {
+    assert.ok(job.includes(`-iname '${forbidden}'`), `workflow does not reject ${forbidden}`)
+  }
+  assert.match(job, /forbidden="\$\(find "\$\{stage\}"[\s\S]*?-print\)"/)
+  assert.match(job, /Windows archive contains forbidden development\/build artifacts/)
+})
+
+test('the archive quick start pins the Windows, lifecycle, data, and OpenAI truth', () => {
+  for (const required of [
+    'Windows 10/11 x64',
+    'Taskdeck.Api.exe',
+    'http://127.0.0.1:5000',
+    'Ctrl+C',
+    '%LOCALAPPDATA%\\Taskdeck\\taskdeck.db',
+    '%LOCALAPPDATA%\\Taskdeck\\appsettings.local.json',
+    'Llm__EnableLiveProviders',
+    'Llm__Provider',
+    'Llm__OpenAi__ApiKey',
+    'gpt-5.6-luna',
+    'Verify LLM',
+    'tdsk_',
+  ]) {
+    assert.ok(quickStart.includes(required), `quick start is missing ${required}`)
+  }
+
+  assert.match(quickStart, /does \*\*not\*\* contain a seeded account/i)
+  assert.match(quickStart, /`configured` is not `verified`/i)
+  assert.match(quickStart, /board is unchanged after \*\*Approve\*\*/i)
+  assert.match(quickStart, /\*\*Apply to board\*\*[\s\S]*confirm-Apply/i)
+  assert.match(quickStart, /SmartScreen[\s\S]*SHA-256/i)
+  assert.match(quickStart, /Do not use `setx`/i)
+  assert.doesNotMatch(quickStart, /(?:log in|sign in)[^\n]*demo123/i)
+  assert.match(quickStart, /MCP_SERVER\.md[\s\S]*mcp\.example\.json[\s\S]*mcp-docker\.example\.json/)
+  assert.match(quickStart, /external-client or full[\s\S]*agent-proposes\/human-applies demo/i)
+})
+
+test('the packaged MCP examples each define one exact stdio launch path', () => {
+  assert.deepEqual(Object.keys(mcpDesktopExample.mcpServers), ['taskdeck'])
+  assert.deepEqual(mcpDesktopExample.mcpServers.taskdeck, {
+    type: 'stdio',
+    command: 'C:\\REPLACE_WITH_YOUR_TASKDECK_FOLDER\\Taskdeck.Api.exe',
+    args: ['--mcp'],
+  })
+
+  assert.deepEqual(Object.keys(mcpDockerExample.mcpServers), ['taskdeck'])
+  const docker = mcpDockerExample.mcpServers.taskdeck
+  assert.equal(docker.type, 'stdio')
+  assert.equal(docker.command, 'docker')
+  assert.deepEqual(docker.args.slice(0, 6), [
+    'run',
+    '--rm',
+    '-i',
+    '--no-healthcheck',
+    '--user',
+    '1001:1001',
+  ])
+  assert.deepEqual(docker.args.slice(-4), [
+    'ghcr.io/chris0jeky/taskdeck:REPLACE_WITH_RELEASE_VERSION',
+    'dotnet',
+    'Taskdeck.Api.dll',
+    '--mcp',
+  ])
+  assert.ok(docker.args.includes('source=taskdeck-data,target=/app/data'))
+})
+
+test('the MCP guide covers all shipped launch paths without claiming deferred proof', () => {
+  for (const required of [
+    'Packaged Windows desktop',
+    'Released Docker image',
+    'From source',
+    'Claude Code',
+    'Claude Desktop',
+    'Cursor',
+    'McpServer__DefaultUserId',
+    'docker run --rm -i --no-healthcheck',
+    '--user 1001:1001',
+    'dotnet Taskdeck.Api.dll --mcp',
+    'result.serverInfo',
+    'stdout',
+  ]) {
+    assert.ok(mcpGuide.includes(required), `MCP guide is missing ${required}`)
+  }
+
+  assert.match(mcpGuide, /not a Claude Code, Claude Desktop, or[\s\S]*Cursor end-to-end test/i)
+  assert.match(
+    mcpGuide,
+    /New HTTP API keys require at least one explicit[\s\S]*`read`[\s\S]*`propose`[\s\S]*`manage`/i,
+  )
+  assert.match(mcpGuide, /does not claim runtime tool-hash approval/i)
+  assert.doesNotMatch(mcpGuide, /IMAGE --mcp` is a valid invocation/i)
+  assert.match(
+    readme,
+    /docker run --rm -i --no-healthcheck --user 1001:1001 \.\.\. IMAGE dotnet Taskdeck\.Api\.dll --mcp/,
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 6. Workflow structure — resumable publish (#1806)
+// -----------------------------------------------------------------------------
+
+test('the release is created as a draft, or an existing one is adopted', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /gh release create "\$\{RELEASE_TAG\}" \\\n\s+--draft\b/, 'creation is a draft')
+  assert.match(job, /--verify-tag/, 'the tag must already exist')
+})
+
+test('adoption detects DRAFT releases, which is the whole resumability case', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/releases" --paginate/,
+    'detection reads the release listing, which includes drafts',
+  )
+  assert.match(job, /\.draft \| tostring/, 'the draft flag is read for the log line')
+  assert.doesNotMatch(
+    job,
+    /gh release view "\$\{RELEASE_TAG\}"/,
+    'the releases/tags/{tag}-backed lookup, which does not return drafts, must not come back',
+  )
+  const detectAt = job.indexOf('gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate')
+  const createAt = job.indexOf('gh release create "${RELEASE_TAG}"')
+  assert.ok(detectAt !== -1 && createAt !== -1)
+  assert.ok(detectAt < createAt, 'an existing release is detected before create is attempted')
+})
+
+test('assets are uploaded per file with --clobber and bounded retries', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /gh release upload "\$\{RELEASE_TAG\}" "\$\{asset\}" --clobber/)
+  assert.match(job, /for attempt in 1 2 3; do/, 'uploads retry a bounded number of times')
+  assert.match(job, /Failed to upload[\s\S]{0,200}?exit 1/, 'exhausted retries fail the job')
+  assert.doesNotMatch(
+    job,
+    /gh release create[\s\S]{0,120}release-assets\/\*/,
+    'the all-or-nothing create-with-assets form must not come back',
+  )
+})
+
+test('a non-regular asset is refused before any upload starts', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /if \[ ! -f "\$\{asset\}" \]; then/)
+  assert.match(job, /not a regular file/)
+})
+
+test('the draft is published only after every asset is uploaded', () => {
+  const job = jobBlock('create-release')
+  const uploadAt = job.indexOf('gh release upload')
+  const publishAt = job.indexOf('gh release edit "${RELEASE_TAG}" --draft=false')
+  assert.ok(uploadAt !== -1 && publishAt !== -1)
+  assert.ok(uploadAt < publishAt, 'upload precedes the publish flip')
+})
+
+test('release assets download to release-assets/, never the repo-tracked artifacts/', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /path: release-assets\/$/m)
+  assert.doesNotMatch(job, /^\s+path: artifacts\/?$/m, 'artifacts/ is a tracked repo directory (artifacts/openapi)')
+})
+
+// -----------------------------------------------------------------------------
+// 7. Workflow structure — provenance evidence
+// -----------------------------------------------------------------------------
+
+test('the resolved commit ships as release evidence', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /taskdeck-\$\{RELEASE_TAG\}-provenance\.txt/)
+  assert.match(job, /printf 'commit: %s\\n' "\$\{RELEASE_SHA\}"/)
+  assert.match(
+    job,
+    /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/commits\/\$\{RELEASE_TAG\}"/,
+    'the tag is re-checked against the built commit immediately before publishing',
+  )
+  assert.match(job, /Refusing to publish/, 'a tag moved mid-run fails closed')
+})
+
+test('packaging steps consume the resolved tag through the environment', () => {
+  const job = jobBlock('build-backend')
+  assert.match(job, /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/)
+  assert.doesNotMatch(job, /steps\.version\.outputs\.tag/, 'the removed per-job tag step must not come back')
+})
+
+// -----------------------------------------------------------------------------
+// 8. Workflow structure — release candidates publish as prereleases (#2217)
+//
+// GitHub shows the most recent non-draft, non-prerelease release at
+// /releases/latest, which README and the packaged Windows quick start point
+// users at. A tag carrying a semver prerelease segment must therefore be
+// labelled a prerelease when the draft is created AND in the edit that
+// publishes it; a stable tag must keep exactly the calls it made before.
+// -----------------------------------------------------------------------------
+
+test('resolve-source publishes a prerelease decision read off the validated tag', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(
+    job,
+    /prerelease: \$\{\{ steps\.resolve\.outputs\.prerelease \}\}/,
+    'the decision is a job output, so downstream jobs cannot re-derive their own',
+  )
+  assert.match(
+    job,
+    /case "\$\{tag\}" in\n\s+\*-\*\) prerelease="true" ;;\n\s+\*\)\s+prerelease="false" ;;\n\s+esac/,
+    'the decision is derived from the resolved tag, never from the raw dispatch input',
+  )
+  assert.match(job, /printf 'prerelease=%s\\n' "\$\{prerelease\}"/, 'the decision reaches GITHUB_OUTPUT')
+
+  // Read off the tag only AFTER the final grammar re-validation: a string that
+  // never cleared validate-release-tag.sh must not decide publish semantics.
+  const validateAt = job.lastIndexOf('validate-release-tag.sh "${tag}"')
+  const decideAt = job.indexOf('case "${tag}" in')
+  assert.ok(validateAt !== -1 && decideAt !== -1)
+  assert.ok(validateAt < decideAt, 'the tag is re-validated before the prerelease decision is taken')
+})
+
+test('the draft is created with the prerelease flag when the tag carries one', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh release create "\$\{RELEASE_TAG\}" \\\n\s+--draft \\\n\s+"\$\{prerelease_flag\[@\]\}"/,
+    'creation carries the prerelease branch',
+  )
+  assert.match(
+    job,
+    /prerelease_flag=\(\)\n\s+if \[ "\$\{RELEASE_PRERELEASE\}" = "true" \]; then\n\s+prerelease_flag=\(--prerelease\)\n\s+fi\n\s+gh release create/,
+    'the branch is set immediately before the call it guards',
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 9. Workflow structure — the composed release page (#2234)
+//
+// The page body is rendered by `scripts/ci/compose-release-notes.mjs` (unit
+// tested in `compose-release-notes.test.mjs`) and must reach BOTH the create
+// and the publish call, or the resumable adopt path (#1806) would publish a
+// draft that never received the composed body.
+// -----------------------------------------------------------------------------
+
+test('a dedicated job composes the page body and runs on the rehearsal path too', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /needs: \[resolve-source, build-backend\]/, 'the composer needs the built checksum')
+  assert.doesNotMatch(
+    job,
+    /^\s+if: needs\.resolve-source\.outputs\.publish == 'true'$/m,
+    'a rehearsal dispatch must reach the composer — previewing the page is its whole point',
+  )
+  assert.match(job, /node scripts\/ci\/compose-release-notes\.mjs/, 'the bash calls the tested script')
+})
+
+test('the composer receives the resolved tag, prerelease decision and repo through env', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/)
+  assert.match(job, /RELEASE_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.prerelease \}\}/)
+  assert.match(job, /RELEASE_PUBLISH: \$\{\{ needs\.resolve-source\.outputs\.publish \}\}/)
+  assert.match(job, /--repo "\$\{GITHUB_REPOSITORY\}"/, 'the repo is read from the runner, not hard-coded')
+  assert.doesNotMatch(job, /\$\{\{ *inputs\./, 'the untrusted dispatch input never reaches this job')
+})
+
+test('the composer is fed the checksum, UPGRADING.md and the curated notes for the tag', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /--checksum-file "release-assets\/\$\{asset\}\.sha256"/)
+  assert.match(job, /--upgrading UPGRADING\.md/)
+  assert.match(job, /--notes "docs\/releases\/notes\/\$\{RELEASE_TAG\}\.md"/)
+  assert.match(job, /--out release-notes\.md/)
+  assert.match(
+    job,
+    /asset="taskdeck-\$\{RELEASE_TAG\}-win-x64\.zip"/,
+    'the linked asset name must match the one build-backend packages',
+  )
+})
+
+test('generate-notes is attempted only when a tag actually exists', () => {
+  const job = jobBlock('compose-notes')
+  const guardAt = job.indexOf('if [ "${RELEASE_PUBLISH}" = "true" ]; then')
+  const callAt = job.indexOf('gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes"')
+  const elseAt = job.indexOf('\n          else\n', guardAt)
+  assert.ok(guardAt !== -1 && callAt !== -1 && elseAt !== -1)
+  assert.ok(
+    guardAt < callAt && callAt < elseAt,
+    'the call sits inside the publish branch — a rehearsal has no tag for generate-notes to read',
+  )
+  assert.match(job, /generate_args=\(-f "tag_name=\$\{RELEASE_TAG\}"\)/)
+  assert.match(job, /Rehearsal dispatch: no release tag exists/, 'the rehearsal branch says so in the log')
+})
+
+test('the changelog base is the newest published stable release, with bounded retries', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(
+    job,
+    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 1/,
+    'a prerelease must never become the base of the next stable page',
+  )
+  assert.match(
+    job,
+    /generate_args\+=\(-f "previous_tag_name=\$\{previous_tag\}"\)/,
+    'the base is stated explicitly rather than inferred by GitHub',
+  )
+  assert.match(
+    job,
+    /if \[ -n "\$\{previous_tag\}" \] && \[ "\$\{previous_tag\}" != "\$\{RELEASE_TAG\}" \]; then/,
+    'a first release, and a re-run of an already-published stable tag, omit the field',
+  )
+  assert.match(job, /letting GitHub infer the changelog base/, 'the omission is logged, not silent')
+  assert.match(job, /for attempt in 1 2 3; do/, 'the API call retries a bounded number of times')
+  assert.match(job, /sleep "\$\(\(attempt \* 10\)\)"/, 'the same 10/20s backoff as the asset upload')
+  assert.match(job, /generate-notes failed after 3 attempts[\s\S]{0,120}?exit 1/, 'exhausted retries fail closed')
+})
+
+// The bug this replaces a decorative assertion for: `actions/download-artifact`
+// matches `pattern:` with MINIMATCH, so `release-*` swallows every name that
+// begins `release-` — the original `release-page-notes` included. With
+// merge-multiple the Markdown would have landed in release-assets/ and been
+// published as a stray asset beside the ZIP. A string comparison cannot see
+// that; a real glob match can, so the workflow's OWN values are parsed out and
+// matched here.
+test('the composed-body artifact name cannot be swept into the release asset download', () => {
+  const uploadName = /uses: actions\/upload-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(
+    jobBlock('compose-notes'),
+  )
+  assert.ok(uploadName, 'compose-notes must upload the rendered body as a named artifact')
+  const artifactName = uploadName[1].trim()
+
+  const createRelease = jobBlock('create-release')
+  const assetPattern = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+pattern: ([^\n]+)/.exec(createRelease)
+  assert.ok(assetPattern, 'create-release must download the built assets by pattern')
+  const pattern = assetPattern[1].trim()
+
+  // Self-check: prove the matcher really does what the bug depended on, so a
+  // broken helper cannot make this test pass by always returning false.
+  assert.equal(matchesGlob('release-win-x64', pattern), true, 'the asset artifacts do match the pattern')
+  assert.equal(
+    matchesGlob('release-page-notes', pattern),
+    true,
+    'the original name DID match — this is the defect being pinned',
+  )
+
+  assert.equal(
+    matchesGlob(artifactName, pattern),
+    false,
+    `artifact "${artifactName}" matches the asset download pattern "${pattern}" and would be published as a stray release asset`,
+  )
+
+  // …and it is fetched by exact name, never by a pattern that could widen.
+  const byName = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(createRelease)
+  assert.ok(byName, 'create-release must download the composed body by exact name')
+  assert.equal(byName[1].trim(), artifactName, 'upload and download must name the same artifact')
+})
+
+test('the release body is the composed file on create AND re-asserted on publish', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /needs: \[resolve-source, build-backend, compose-notes\]/)
+  assert.match(
+    job,
+    /name: composed-page-body\n\s+path: release-notes\//,
+    'create-release downloads the composed body by its exact artifact name',
+  )
+  assert.match(
+    job,
+    /--notes-file "release-notes\/release-notes\.md" \\\n\s+--verify-tag/,
+    'the draft is created with the composed body',
+  )
+  assert.match(
+    job,
+    /gh release edit "\$\{RELEASE_TAG\}" --draft=false "\$\{prerelease_flag\[@\]\}" \\\n\s+--notes-file "release-notes\/release-notes\.md"/,
+    'publish re-asserts the body, which is what makes the #1806 adopt path idempotent',
+  )
+  assert.doesNotMatch(
+    job,
+    /--generate-notes/,
+    'the bare GitHub changelog page, with the download buried at the bottom, must not come back',
+  )
+})
+
+test('an empty or button-less composed body fails before publishing', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /if \[ ! -s "\$\{notes\}" \]; then/, 'an empty notes file is refused')
+  assert.match(job, /refusing to publish a bare page/)
+  assert.match(
+    job,
+    /head -n 1 "\$\{notes\}" \| grep -q 'releases\/download\/'/,
+    'the download button must still be the first line of what actually gets published',
+  )
+  const verifyAt = job.indexOf('Verify the composed release notes are usable')
+  const createAt = job.indexOf('gh release create "${RELEASE_TAG}"')
+  assert.ok(verifyAt !== -1 && createAt !== -1)
+  assert.ok(verifyAt < createAt, 'the body is checked before the release is created')
+})
+
+test('the changelog grouping configuration exists and is a catch-all', () => {
+  const config = readFileSync(releaseConfigPath, 'utf8').replace(/\r\n/g, '\n')
+  assert.match(config, /^changelog:$/m)
+  assert.match(config, /^\s+categories:$/m)
+  for (const title of ['Bug fixes', 'Features', 'Documentation', 'Build, CI and packaging', 'Dependencies']) {
+    assert.ok(config.includes(`- title: ${title}`), `.github/release.yml has no "${title}" category`)
+  }
+  assert.match(config, /- "\*"/, 'an unlabelled PR must still appear somewhere')
+})
+
+test('the publish flip carries the prerelease flag in the same edit', () => {
+  const job = jobBlock('create-release')
+  assert.match(
+    job,
+    /gh release edit "\$\{RELEASE_TAG\}" --draft=false "\$\{prerelease_flag\[@\]\}"/,
+    'draft=false and prerelease=true travel in ONE edit, so an RC is never briefly a full release',
+  )
+  assert.match(
+    job,
+    /prerelease_flag=\(\)\n\s+if \[ "\$\{RELEASE_PRERELEASE\}" = "true" \]; then\n\s+prerelease_flag=\(--prerelease\)\n\s+fi\n\s+gh release edit/,
+    'the publish step decides for itself, which also re-flags an adopted draft',
+  )
+
+  const bindings = job.match(/RELEASE_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.prerelease \}\}/g) ?? []
+  assert.equal(
+    bindings.length,
+    2,
+    'the create and publish steps each read the decision from resolve-source through the environment',
+  )
+})

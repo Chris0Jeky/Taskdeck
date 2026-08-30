@@ -151,7 +151,7 @@ public class OllamaLlmProviderTests
     }
 
     // -----------------------------------------------------------------------
-    // LooksLikeTruncatedJson — shared static, same contract as OpenAI/Gemini
+    // LooksLikeTruncatedJson — shared static, same contract as OpenAI
     // -----------------------------------------------------------------------
 
     [Theory]
@@ -756,6 +756,25 @@ public class OllamaLlmProviderTests
         };
     }
 
+    [Fact]
+    public async Task StreamAsync_PropagatesBufferedCompletionDegradationMetadata()
+    {
+        var settings = BuildSettings();
+        settings.Ollama.Model = string.Empty;
+        var provider = new OllamaLlmProvider(
+            new HttpClient(), settings, NullLogger<OllamaLlmProvider>.Instance);
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "hello")],
+                           SystemPrompt: string.Empty)))
+            events.Add(item);
+
+        events[^1].IsComplete.Should().BeTrue();
+        events[^1].IsDegraded.Should().BeTrue();
+        events[^1].DegradedReason.Should().Contain("configuration");
+    }
+
     /// <summary>
     /// Settings used for selection-policy tests. The Ollama BaseUrl defaults to
     /// http://localhost:11434, which requires <c>allowLocalhostEndpoints: true</c>
@@ -773,13 +792,6 @@ public class OllamaLlmProviderTests
                 ApiKey = "test-key",
                 BaseUrl = "https://api.openai.com/v1",
                 Model = "gpt-4o-mini",
-                TimeoutSeconds = 30
-            },
-            Gemini = new GeminiProviderSettings
-            {
-                ApiKey = "test-gemini-key",
-                BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                Model = "gemini-2.5-flash",
                 TimeoutSeconds = 30
             },
             Ollama = new OllamaProviderSettings

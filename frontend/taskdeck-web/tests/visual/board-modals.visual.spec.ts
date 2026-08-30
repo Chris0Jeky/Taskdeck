@@ -27,6 +27,16 @@ test('card modal edit state', async ({ page }) => {
   await sampleCard.getByRole('heading', { name: 'Sample Card', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Edit Card' })).toBeVisible()
 
+  const scrollRegion = page.getByTestId('card-modal-scroll-region')
+  await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
+  const scrollMetrics = await scrollRegion.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }))
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
+  await page.getByRole('button', { name: 'Save Changes' }).scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: 'Save Changes' })).toBeVisible()
+
   await prepareForScreenshot(page)
 
   // Mask the card title input — it reflects the seeded card title which

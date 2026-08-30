@@ -12,6 +12,7 @@ import type {
   TodayAgendaCard,
   WorkspaceOnboarding,
 } from '../types/workspace'
+import { formatCalendarDate } from '../utils/dueDates'
 
 const workspace = useWorkspaceStore()
 const paperTheme = usePaperThemeStore()
@@ -184,7 +185,10 @@ function formatDueDate(value: string | null): string {
     return 'No due date'
   }
 
-  return new Date(value).toLocaleString()
+  return formatCalendarDate(
+    value,
+    { year: 'numeric', month: 'short', day: 'numeric' },
+  ) || 'No due date'
 }
 
 function refreshTodaySummary() {

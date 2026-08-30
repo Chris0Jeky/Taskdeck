@@ -2,9 +2,13 @@
 
 import { access, readFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const errors = []
+
+const expectedParkedStagingGateSha256 = 'e3d1987cd7ffdab2d9f7bafe6ddc7d750be7b6eb421684dd973bef58e820248a'
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',
@@ -140,10 +144,64 @@ async function validateProjectAutomationDocs() {
   }
 }
 
+export function retainsReleaseEventHandling(workflowText) {
+  const normalizedContextReferences = workflowText
+    .toLowerCase()
+    .replace(/\[\s*['"]([a-z0-9_]+)['"]\s*\]/g, '.$1')
+    .replace(/\s*\.\s*/g, '.')
+
+  if (/\bgithub\.event\.release\b/.test(normalizedContextReferences)) {
+    return true
+  }
+
+  const eventNameReference = String.raw`(?:github\s*(?:\.\s*event_name|\[\s*['"]event_name['"]\s*\])|["']?\$(?:\{(?:github_)?event_name\}|(?:github_)?event_name)["']?|["']?\$env:(?:github_)?event_name["']?|%(?:github_)?event_name%)`
+  const releaseLiteral = String.raw`(?:['"]release['"]|\brelease\b)`
+  const comparisonOperator = String.raw`(?:={1,3}|!=|-eq|-ne)`
+  const releaseComparison = new RegExp(
+    `(?:${eventNameReference})\\s*${comparisonOperator}\\s*${releaseLiteral}|${releaseLiteral}\\s*${comparisonOperator}\\s*(?:${eventNameReference})`,
+    'i',
+  )
+
+  return releaseComparison.test(workflowText)
+}
+
+export function hasExpectedParkedStagingGateWorkflow(workflowText) {
+  const normalized = workflowText.replace(/\r\n/g, '\n')
+  const actualSha256 = createHash('sha256').update(normalized, 'utf8').digest('hex')
+  return actualSha256 === expectedParkedStagingGateSha256
+}
+
+export function validateParkedStagingGateWorkflow(workflowText, workflowPath = '.github/workflows/cd-staging-gate.yml') {
+  const workflowErrors = []
+  if (!hasExpectedParkedStagingGateWorkflow(workflowText)) {
+    workflowErrors.push(
+      `${workflowPath} must match the complete reviewed parked-workflow digest`,
+    )
+  }
+
+  if (retainsReleaseEventHandling(workflowText)) {
+    workflowErrors.push(`${workflowPath} retains unreachable release-event handling after becoming manual-only`)
+  }
+
+  return workflowErrors
+}
+
+async function validateParkedStagingGateTriggers() {
+  const workflowPath = '.github/workflows/cd-staging-gate.yml'
+  if (!(await fileExists(workflowPath))) {
+    errors.push(`Missing parked staging workflow: ${workflowPath}`)
+    return
+  }
+
+  const workflowText = await readFile(resolve(workflowPath), 'utf8')
+  errors.push(...validateParkedStagingGateWorkflow(workflowText, workflowPath))
+}
+
 async function main() {
   await validateIssueTemplates()
   await validateIssueTemplateConfig()
   await validateProjectAutomationDocs()
+  await validateParkedStagingGateTriggers()
 
   if (errors.length > 0) {
     console.error('GitHub operations governance check failed:')
@@ -156,7 +214,9 @@ async function main() {
   console.log('GitHub operations governance check passed.')
 }
 
-main().catch((error) => {
-  console.error('GitHub operations governance check crashed:', error)
-  process.exit(1)
-})
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('GitHub operations governance check crashed:', error)
+    process.exit(1)
+  })
+}

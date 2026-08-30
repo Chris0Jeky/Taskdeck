@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/processor-manifest.v1.json",
+  "title": "Taskdeck Processor Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "capabilities", "execution", "locality", "accepts", "resources", "privacy"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$", "maxLength": 120 },
+    "version": { "type": "string", "maxLength": 40 },
+    "displayName": { "type": "string", "maxLength": 120 },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "content.inspect",
+          "text.normalize",
+          "document.extract-text",
+          "image.ocr",
+          "image.describe",
+          "audio.preprocess",
+          "audio.transcribe",
+          "audio.align",
+          "audio.diarize",
+          "semantic.extract",
+          "context.resolve",
+          "change.plan",
+          "change.verify"
+        ]
+      }
+    },
+    "execution": { "enum": ["in-process", "sidecar", "remote"] },
+    "locality": { "enum": ["local", "remote", "hybrid"] },
+    "accepts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "maxLength": 100 }
+    },
+    "languages": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 20 }
+    },
+    "features": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "maxLength": 80 }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "gpu"],
+      "properties": {
+        "cpu": { "type": "boolean" },
+        "gpu": { "enum": ["none", "optional", "required"] },
+        "minVramMb": { "type": "integer", "minimum": 0 },
+        "estimatedRamMb": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["networkRequired"],
+      "properties": {
+        "networkRequired": { "type": "boolean" },
+        "allowedHosts": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 255 }
+        },
+        "dataClasses": {
+          "type": "array",
+          "items": { "enum": ["text", "audio", "image", "document", "metadata"] }
+        },
+        "supportsRegionalRouting": { "type": "boolean" }
+      }
+    },
+    "costModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["free-local", "compute-time", "per-minute", "per-token", "per-page", "custom"] },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "unitPrice": { "type": "number", "minimum": 0 }
+      }
+    },
+    "outputSchemas": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 200 }
+    }
+  }
+}

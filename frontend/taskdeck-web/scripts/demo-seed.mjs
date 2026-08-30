@@ -7,7 +7,7 @@
  * Usage:
  *   cd frontend/taskdeck-web
  *   npm run demo:seed
- *   npm run demo:seed -- --reset    # delete demo boards first
+ *   npm run demo:seed -- --reset    # retire demo boards to tombstones, then recreate them
  *   npm run demo:seed -- --help     # print usage
  *
  * Optional env vars:
@@ -27,6 +27,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { Agent, request as nodeHttpRequest } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -47,6 +48,307 @@ const API_BASE = (
 const NORMALIZED_API_BASE = normalizeBaseUrl(API_BASE, 'http://localhost:5000/api')
 
 const ALLOW_NON_LOCAL_API = parseTrueishEnv(process.env.TASKDECK_DEMO_ALLOW_NON_LOCAL_API)
+const DEV_RUN_ID_HEADER_NAME = 'taskdeck-dev-run-id'
+const EMPTY_GUID_D = '00000000-0000-0000-0000-000000000000'
+const CANONICAL_GUID_D_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+const RUN_BOUND_RESPONSE_DEADLINE_MS = 10_000
+// Three 30s tool rounds can precede a supported 600s Ollama fallback; retain 10s delivery.
+const RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS = 700_000
+
+let activeRunBoundTransport = null
+
+export function createRunBoundApiTransport({
+  apiBaseUrl,
+  expectedRunId,
+  allowNonLocal = false,
+  responseDeadlineMs = RUN_BOUND_RESPONSE_DEADLINE_MS,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout,
+}) {
+  if (
+    typeof expectedRunId !== 'string' ||
+    !CANONICAL_GUID_D_PATTERN.test(expectedRunId) ||
+    expectedRunId === EMPTY_GUID_D
+  ) {
+    throw new Error('TASKDECK_DEV_RUN_ID must be a non-empty canonical lowercase GUID-D value.')
+  }
+  if (allowNonLocal) {
+    throw new Error('Run-bound demo seeding cannot use TASKDECK_DEMO_ALLOW_NON_LOCAL_API.')
+  }
+  if (!Number.isSafeInteger(responseDeadlineMs) || responseDeadlineMs <= 0) {
+    throw new Error('Run-bound demo seeding requires a positive whole-millisecond response deadline.')
+  }
+
+  let parsedApiBase
+  try {
+    parsedApiBase = new URL(apiBaseUrl)
+  } catch (err) {
+    throw new Error(`Invalid run-bound API base URL "${apiBaseUrl}". ${err?.message || err}`, {
+      cause: err,
+    })
+  }
+  if (parsedApiBase.protocol !== 'http:' || !isLocalHostname(parsedApiBase.hostname.toLowerCase())) {
+    throw new Error('Run-bound demo seeding requires a direct loopback http:// API base URL.')
+  }
+
+  const apiOrigin = parsedApiBase.origin
+  const apiPath = parsedApiBase.pathname.replace(/\/+$/, '')
+  const readyUrl = new URL('/health/ready', apiOrigin)
+  let activeRequest = false
+  let closed = false
+  let failedError = null
+  let physicalConnectionCount = 0
+  let refusedConnectionCount = 0
+  let pinnedSocket = null
+  let readinessVerified = false
+  let agent
+
+  const markFailed = (message, cause) => {
+    if (!failedError) {
+      failedError = new Error(message, cause ? { cause } : undefined)
+      agent?.destroy()
+    }
+    return failedError
+  }
+
+  class OneConnectionAgent extends Agent {
+    createConnection(options, callback) {
+      // A replacement listener requires a new TCP connection, so this transport permits only one.
+      if (physicalConnectionCount > 0) {
+        refusedConnectionCount += 1
+        const error = markFailed('Run-bound demo seeding refused to reconnect to the API listener.')
+        queueMicrotask(() => callback(error))
+        return undefined
+      }
+
+      physicalConnectionCount += 1
+      return super.createConnection(options, callback)
+    }
+  }
+
+  agent = new OneConnectionAgent({
+    keepAlive: true,
+    maxSockets: 1,
+    maxTotalSockets: 1,
+    maxFreeSockets: 1,
+  })
+
+  const assertUsable = () => {
+    if (closed) {
+      throw new Error('Run-bound demo seed transport is closed.')
+    }
+    if (failedError) {
+      throw failedError
+    }
+  }
+
+  const observePinnedSocket = (socket) => {
+    if (!pinnedSocket) {
+      pinnedSocket = socket
+      socket.once('error', (err) => {
+        if (!closed) markFailed('Run-bound API socket failed.', err)
+      })
+      socket.once('close', () => {
+        if (!closed) markFailed('Run-bound API socket closed before demo seeding completed.')
+      })
+    }
+  }
+
+  const responseDeadlineFor = (target, method) => {
+    const providerMessagePrefix = `${apiPath}/llm/chat/sessions/`
+    const providerMessageSuffix = '/messages'
+    const sessionId = target.pathname
+      .slice(providerMessagePrefix.length, -providerMessageSuffix.length)
+
+    if (
+      method.toUpperCase() === 'POST' &&
+      target.pathname.startsWith(providerMessagePrefix) &&
+      target.pathname.endsWith(providerMessageSuffix) &&
+      sessionId.length > 0 &&
+      !sessionId.includes('/')
+    ) {
+      return RUN_BOUND_LIVE_PROVIDER_RESPONSE_DEADLINE_MS
+    }
+
+    return responseDeadlineMs
+  }
+
+  const performRequest = async (url, init = {}, { readiness = false } = {}) => {
+    assertUsable()
+    if (activeRequest) {
+      throw markFailed('Concurrent run-bound demo seed requests are not allowed.')
+    }
+
+    const target = new URL(url)
+    if (target.origin !== apiOrigin) {
+      throw markFailed('Run-bound demo seed requests must stay on the verified API origin.')
+    }
+    if (!readiness && !readinessVerified) {
+      throw markFailed('Run-bound API readiness must be verified before demo seed requests.')
+    }
+
+    const method = init.method || 'GET'
+    const requestResponseDeadlineMs = responseDeadlineFor(target, method)
+    const requestBody = init.body === undefined ? null : Buffer.from(String(init.body))
+    const headers = { ...(init.headers || {}) }
+    if (requestBody && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-length')) {
+      headers['Content-Length'] = String(requestBody.byteLength)
+    }
+
+    activeRequest = true
+    try {
+      return await new Promise((resolve, reject) => {
+        let request
+        let settled = false
+        let responseDeadline
+
+        const settle = (error, response) => {
+          if (settled) return
+          settled = true
+          if (responseDeadline !== undefined) {
+            clearTimeoutFn(responseDeadline)
+            responseDeadline = undefined
+          }
+          if (error) reject(error)
+          else resolve(response)
+        }
+
+        const failRequest = (message, cause) => {
+          const error = markFailed(message, cause)
+          if (request && !request.destroyed) request.destroy(error)
+          settle(error)
+        }
+
+        try {
+          request = nodeHttpRequest(
+            target,
+            {
+              agent,
+              method,
+              headers,
+            },
+            (response) => {
+              const chunks = []
+              response.on('data', (chunk) => {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+              })
+              response.once('aborted', () => {
+                failRequest('Run-bound API response was aborted before completion.')
+              })
+              response.once('error', (err) => {
+                failRequest('Run-bound API response failed before completion.', err)
+              })
+              response.once('close', () => {
+                if (!response.complete) {
+                  failRequest('Run-bound API response closed before completion.')
+                }
+              })
+              response.once('end', () => {
+                if (!response.complete || response.aborted) {
+                  failRequest('Run-bound API response was incomplete.')
+                  return
+                }
+                if (failedError) {
+                  settle(failedError)
+                  return
+                }
+
+                const status = response.statusCode || 0
+                const text = Buffer.concat(chunks).toString('utf8')
+                settle(null, {
+                  ok: status >= 200 && status < 300,
+                  status,
+                  rawHeaders: [...response.rawHeaders],
+                  text: async () => text,
+                })
+              })
+            },
+          )
+          responseDeadline = setTimeoutFn(() => {
+            failRequest(`Run-bound API response exceeded the ${requestResponseDeadlineMs}ms deadline.`)
+          }, requestResponseDeadlineMs)
+        } catch (err) {
+          failRequest('Run-bound API request could not be created.', err)
+          return
+        }
+
+        request.once('socket', (socket) => {
+          if (readiness) {
+            observePinnedSocket(socket)
+            if (socket !== pinnedSocket || request.reusedSocket) {
+              failRequest('Run-bound readiness was not assigned its one new API socket.')
+              return
+            }
+          } else if (socket !== pinnedSocket || !request.reusedSocket) {
+            failRequest('Run-bound demo seed request was not assigned the verified API socket.')
+            return
+          }
+
+          if (failedError || socket.destroyed) {
+            failRequest('Run-bound API socket became unusable before request transmission.')
+            return
+          }
+
+          // ClientRequest buffers until end(); validate the assigned socket before releasing bytes.
+          request.end(requestBody || undefined)
+        })
+        request.once('error', (err) => {
+          failRequest('Run-bound API request failed.', err)
+        })
+      })
+    } finally {
+      activeRequest = false
+    }
+  }
+
+  return {
+    async verifyReady() {
+      const response = await performRequest(readyUrl, { method: 'GET' }, { readiness: true })
+      const runIdValues = []
+      for (let index = 0; index < response.rawHeaders.length; index += 2) {
+        if (response.rawHeaders[index].toLowerCase() === DEV_RUN_ID_HEADER_NAME) {
+          runIdValues.push(response.rawHeaders[index + 1])
+        }
+      }
+      if (response.status !== 200 || runIdValues.length !== 1 || runIdValues[0] !== expectedRunId) {
+        throw markFailed('Run-bound API readiness did not return one exact matching development run ID.')
+      }
+      readinessVerified = true
+    },
+    fetch(url, init) {
+      return performRequest(url, init)
+    },
+    assertActive() {
+      assertUsable()
+      if (!readinessVerified || !pinnedSocket || pinnedSocket.destroyed) {
+        throw markFailed('Run-bound API socket was not active after demo seeding.')
+      }
+    },
+    destroy() {
+      if (closed) return
+      closed = true
+      agent.destroy()
+    },
+    get diagnostics() {
+      return { physicalConnectionCount, refusedConnectionCount }
+    },
+  }
+}
+
+export function createRunBoundApiTransportFromEnvironment({
+  environment = process.env,
+  apiBaseUrl = NORMALIZED_API_BASE,
+} = {}) {
+  if (!Object.prototype.hasOwnProperty.call(environment, 'TASKDECK_DEV_RUN_ID')) {
+    return null
+  }
+
+  return createRunBoundApiTransport({
+    apiBaseUrl,
+    expectedRunId: environment.TASKDECK_DEV_RUN_ID,
+    allowNonLocal: parseTrueishEnv(environment.TASKDECK_DEMO_ALLOW_NON_LOCAL_API),
+  })
+}
 
 const DEMO = {
   username: process.env.TASKDECK_DEMO_USERNAME || 'demo',
@@ -63,7 +365,12 @@ const COLLAB = {
 const DEMO_BOARD_SPECS = {
   capture: {
     canonicalName: 'DEMO: Client Onboarding Demo',
-    reusableNames: ['DEMO: Client Onboarding Demo', 'DEMO: Capture Loop', 'DEMO: Capture Loop (Demo)'],
+    reusableNames: [
+      'DEMO: Client Onboarding Demo',
+      'DEMO: Client Onboarding Demo (Chat)',
+      'DEMO: Capture Loop',
+      'DEMO: Capture Loop (Demo)',
+    ],
     description: 'Seeded demo board for review-first client onboarding workflows.',
     isArchived: false,
   },
@@ -86,6 +393,8 @@ const DEMO_BOARD_SPECS = {
     isArchived: true,
   },
 }
+
+const DEMO_RESET_TOMBSTONE_PREFIX = 'RESET: Taskdeck demo board '
 
 const SEEDED_CAPTURE_TEXT = {
   ignored: 'Duplicate onboarding note from a prior client thread (demo).',
@@ -378,11 +687,14 @@ async function http(method, path, { token, body, headers: extraHeaders } = {}) {
     }
   }
 
-  const res = await fetch(url, {
+  const requestInit = {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  }
+  const res = activeRunBoundTransport
+    ? await activeRunBoundTransport.fetch(url, requestInit)
+    : await fetch(url, requestInit)
 
   const text = await res.text()
   const maybeJson = text ? safeJsonParse(text) : null
@@ -437,6 +749,133 @@ function isDemoBoard(board) {
   return typeof board?.name === 'string' && board.name.startsWith('DEMO:')
 }
 
+export function buildDemoResetTombstoneName(boardId) {
+  return `${DEMO_RESET_TOMBSTONE_PREFIX}${boardId}`
+}
+
+function findDemoBoardSpecKey(name) {
+  return Object.entries(DEMO_BOARD_SPECS).find(([, spec]) => spec.reusableNames.includes(name))?.[0] || null
+}
+
+export function planDemoBoardReset(boards) {
+  if (!Array.isArray(boards)) {
+    throw new Error('Clean demo reset requires an unambiguous board list before changing anything.')
+  }
+
+  const candidates = []
+  const tombstones = []
+  const specKeys = new Set()
+  const boardIds = new Set()
+
+  for (const board of boards) {
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    if (!id) continue
+    if (boardIds.has(id)) {
+      throw new Error('Clean demo reset found duplicate board ids; no boards were changed.')
+    }
+    boardIds.add(id)
+  }
+
+  for (const board of boards) {
+    const isCandidate = isDemoBoard(board)
+    const isTombstone =
+      typeof board?.name === 'string' && board.name.startsWith(DEMO_RESET_TOMBSTONE_PREFIX)
+    if (!isCandidate && !isTombstone) continue
+
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    const name = typeof board?.name === 'string' ? board.name : ''
+    if (!id || (isCandidate && (name === 'DEMO:' || typeof board.isArchived !== 'boolean'))) {
+      throw new Error('Clean demo reset found a malformed DEMO:* board candidate; no boards were changed.')
+    }
+    if (isTombstone) {
+      if (name !== buildDemoResetTombstoneName(id) || board.isArchived !== true) {
+        throw new Error(
+          'Clean demo reset found a malformed reserved reset tombstone; no boards were changed.',
+        )
+      }
+      tombstones.push({ id, name, isArchived: true })
+      continue
+    }
+
+    const specKey = findDemoBoardSpecKey(name)
+    if (!specKey || specKeys.has(specKey)) {
+      throw new Error(
+        'Clean demo reset found an unknown, duplicate, or ambiguous DEMO:* board candidate; no boards were changed.',
+      )
+    }
+
+    const tombstoneName = buildDemoResetTombstoneName(id)
+    if (tombstoneName.length > 100) {
+      throw new Error('Clean demo reset cannot form a safe tombstone for a malformed board id; no boards were changed.')
+    }
+
+    specKeys.add(specKey)
+    candidates.push({ id, name, specKey, isArchived: board.isArchived, tombstoneName })
+  }
+
+  return { candidates, tombstones }
+}
+
+export function planDemoBoardsForSeed(boards, { reset = false } = {}) {
+  const resetPlan = reset ? planDemoBoardReset(boards) : null
+  const boardInventory = Array.isArray(boards) ? boards : []
+  const preResetBoardIds = new Set(
+    reset
+      ? boardInventory
+          .map((board) => (typeof board?.id === 'string' ? board.id.trim() : ''))
+          .filter(Boolean)
+      : [],
+  )
+
+  return {
+    reset,
+    demoBoards: boardInventory.filter(isDemoBoard),
+    preResetBoardIds,
+    resetPlan,
+  }
+}
+
+export async function quarantineDemoBoardsForCleanReset(
+  candidates,
+  token,
+  { request = http, onQuarantined = () => {} } = {},
+) {
+  let quarantinedCount = 0
+  for (const board of candidates) {
+    try {
+      await request('PUT', `/boards/${board.id}`, {
+        token,
+        body: {
+          name: board.tombstoneName || buildDemoResetTombstoneName(board.id),
+          isArchived: true,
+        },
+      })
+      quarantinedCount += 1
+      onQuarantined(board)
+    } catch (err) {
+      throw new Error(
+        `Clean demo reset stopped after quarantining ${quarantinedCount} of ${candidates.length} DEMO:* board(s); ` +
+          'no reseed was attempted. The launcher will clean only its owned process tree, so inspect the remaining demo state before retrying.',
+        { cause: err },
+      )
+    }
+  }
+}
+
+function verifyDemoBoardQuarantine(resetPlan, boards) {
+  const freshPlan = planDemoBoardReset(boards)
+  const tombstoneIds = new Set(freshPlan.tombstones.map((board) => board.id))
+  const missingTombstone = resetPlan.candidates.find((board) => !tombstoneIds.has(board.id))
+
+  if (freshPlan.candidates.length || missingTombstone) {
+    throw new Error(
+      'Clean demo reset could not verify the archived tombstone state; no fresh boards or demo artifacts were seeded.',
+    )
+  }
+
+  return freshPlan
+}
+
 function pickReusableBoard(boards, reusableNames) {
   const names = new Set(reusableNames)
   const candidates = (boards || []).filter((b) => names.has(b.name))
@@ -445,24 +884,32 @@ function pickReusableBoard(boards, reusableNames) {
   return candidates.find((b) => !b.isArchived) || candidates[0]
 }
 
-async function ensureDemoBoard(spec, boards, token) {
+async function createDemoBoard(spec, token, request = http) {
+  const created = await request('POST', '/boards', {
+    token,
+    body: {
+      name: spec.canonicalName,
+      description: spec.description,
+    },
+  })
+  const createdId = typeof created?.id === 'string' ? created.id.trim() : ''
+  if (!createdId) {
+    throw new Error('Clean demo reset received a malformed created board; no demo artifacts were seeded.')
+  }
+  if (spec.isArchived) {
+    const archived = await request('PUT', `/boards/${createdId}`, {
+      token,
+      body: { isArchived: true },
+    })
+    return archived || { ...created, isArchived: true }
+  }
+  return created
+}
+
+async function ensureDemoBoard(spec, boards, token, request = http) {
   const existing = pickReusableBoard(boards, spec.reusableNames)
   if (!existing) {
-    const created = await http('POST', '/boards', {
-      token,
-      body: {
-        name: spec.canonicalName,
-        description: spec.description,
-      },
-    })
-    if (spec.isArchived) {
-      await http('PUT', `/boards/${created.id}`, {
-        token,
-        body: { isArchived: true },
-      })
-      return { ...created, isArchived: true }
-    }
-    return created
+    return createDemoBoard(spec, token, request)
   }
 
   const updateBody = {}
@@ -480,11 +927,114 @@ async function ensureDemoBoard(spec, boards, token) {
     return existing
   }
 
-  const updated = await http('PUT', `/boards/${existing.id}`, {
+  const updated = await request('PUT', `/boards/${existing.id}`, {
     token,
     body: updateBody,
   })
   return updated || { ...existing, ...updateBody }
+}
+
+function validateFreshCanonicalDemoBoards(canonicalBoards, preResetBoardIds, boards) {
+  const createdIds = new Set()
+
+  for (const [specKey, spec] of Object.entries(DEMO_BOARD_SPECS)) {
+    const board = canonicalBoards[specKey]
+    const id = typeof board?.id === 'string' ? board.id.trim() : ''
+    if (
+      !id ||
+      preResetBoardIds.has(id) ||
+      createdIds.has(id) ||
+      board.name !== spec.canonicalName ||
+      board.isArchived !== spec.isArchived
+    ) {
+      throw new Error(
+        'Clean demo reset could not verify fresh canonical board creation; no demo artifacts were seeded.',
+      )
+    }
+    createdIds.add(id)
+  }
+
+  const persistedPlan = planDemoBoardReset(boards)
+  if (persistedPlan.candidates.length !== Object.keys(DEMO_BOARD_SPECS).length) {
+    throw new Error(
+      'Clean demo reset could not verify the persisted canonical board set; no demo artifacts were seeded.',
+    )
+  }
+
+  for (const candidate of persistedPlan.candidates) {
+    const expected = canonicalBoards[candidate.specKey]
+    const persisted = boards.find((board) => board.id === candidate.id)
+    const spec = DEMO_BOARD_SPECS[candidate.specKey]
+    if (
+      !expected ||
+      candidate.id !== expected.id ||
+      candidate.name !== spec.canonicalName ||
+      persisted?.isArchived !== spec.isArchived
+    ) {
+      throw new Error(
+        'Clean demo reset could not verify the persisted canonical board set; no demo artifacts were seeded.',
+      )
+    }
+  }
+
+  return persistedPlan
+}
+
+export async function prepareDemoBoardsForSeed(
+  boards,
+  token,
+  {
+    reset = false,
+    boardPlan = planDemoBoardsForSeed(boards, { reset }),
+    request = http,
+    refreshBoards = () => listBoards(token),
+    onQuarantined = () => {},
+  } = {},
+) {
+  let demoBoards = boardPlan.demoBoards
+  const { preResetBoardIds, resetPlan } = boardPlan
+  let canonicalBoards
+
+  if (reset) {
+    await quarantineDemoBoardsForCleanReset(resetPlan.candidates, token, { request, onQuarantined })
+
+    let quarantinedBoards
+    try {
+      quarantinedBoards = await refreshBoards()
+      verifyDemoBoardQuarantine(resetPlan, quarantinedBoards)
+    } catch (err) {
+      throw new Error(
+        'Clean demo reset could not verify the archived tombstone state; no fresh boards or demo artifacts were seeded.',
+        { cause: err },
+      )
+    }
+
+    canonicalBoards = {}
+    for (const [specKey, spec] of Object.entries(DEMO_BOARD_SPECS)) {
+      canonicalBoards[specKey] = await createDemoBoard(spec, token, request)
+    }
+
+    let persistedBoards
+    try {
+      persistedBoards = await refreshBoards()
+      validateFreshCanonicalDemoBoards(canonicalBoards, preResetBoardIds, persistedBoards)
+    } catch (err) {
+      throw new Error(
+        'Clean demo reset could not verify fresh canonical board creation; no demo artifacts were seeded.',
+        { cause: err },
+      )
+    }
+    demoBoards = persistedBoards.filter(isDemoBoard)
+  } else {
+    canonicalBoards = {
+      capture: await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, token, request),
+      content: await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, token, request),
+      blank: await ensureDemoBoard(DEMO_BOARD_SPECS.blank, demoBoards, token, request),
+      archived: await ensureDemoBoard(DEMO_BOARD_SPECS.archived, demoBoards, token, request),
+    }
+  }
+
+  return { ...canonicalBoards, demoBoards, resetPlan }
 }
 
 async function ensureUser({ username, email, password }) {
@@ -943,58 +1493,64 @@ async function ensureOpsSeed(token) {
   }
 }
 
-export async function main({ reset = false } = {}) {
+export async function seedDemo(
+  { reset = false } = {},
+  {
+    ensureUser: ensureSeedUser = ensureUser,
+    listBoards: listSeedBoards = listBoards,
+    prepareBoardsForSeed: prepareSeedBoards = prepareDemoBoardsForSeed,
+  } = {},
+) {
   ensureSafeApiBaseTarget()
 
   console.log(`\nTaskdeck demo seeder -> ${NORMALIZED_API_BASE}`)
-  if (reset) console.log('  --reset: will delete all demo boards before seeding')
+  if (reset) console.log('  --reset: will quarantine documented demo boards and create fresh replacements')
   console.log('----------------------------------------')
 
-  // 1) Ensure demo users exist
-  const demoLogin = await ensureUser(DEMO)
+  // 1) Authenticate the demo owner so its complete board list can be validated.
+  const demoLogin = await ensureSeedUser(DEMO)
   const demoToken = demoLogin.token
   const demoUser = demoLogin.user
 
-  const collabLogin = await ensureUser(COLLAB)
-  const collabToken = collabLogin.token
-  const collabUser = collabLogin.user
-
   console.log(`Demo user:   ${demoUser.username} (${demoUser.email})`)
-  console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
-  // 2) Reuse/create canonical demo boards and archive extra active DEMO boards.
-  let boards = await listBoards(demoToken)
-  let demoBoards = (boards || []).filter(isDemoBoard)
+  // 2) Complete the pure reset inventory plan before collaborator provisioning or product writes.
+  const boards = await listSeedBoards(demoToken)
+  const boardPlan = planDemoBoardsForSeed(boards, { reset })
 
-  if (reset && demoBoards.length) {
-    console.log(`\n--reset: deleting ${demoBoards.length} demo board(s)...`)
-    for (const b of demoBoards) {
-      try {
-        await http('DELETE', `/boards/${b.id}`, { token: demoToken })
-        console.log(`  - deleted ${b.name}`)
-      } catch (err) {
-        if (getHttpStatus(err) === 403) {
-          console.log(`  - skipped ${b.name} (403 Forbidden)`)
-          continue
-        }
-        throw err
-      }
-    }
-    // Re-fetch after deletion
-    boards = await listBoards(demoToken)
-    demoBoards = (boards || []).filter(isDemoBoard)
-    if (demoBoards.length) {
-      console.warn(
-        `  WARNING: ${demoBoards.length} demo board(s) could not be deleted (403). ` +
-        `Re-seed may reuse them instead of starting fresh.`,
-      )
-    }
+  let collabLogin = null
+  if (reset) {
+    collabLogin = await ensureSeedUser(COLLAB)
+    console.log(`Collab user: ${collabLogin.user.username} (${collabLogin.user.email})`)
   }
 
-  const captureBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.capture, demoBoards, demoToken)
-  const contentBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.content, demoBoards, demoToken)
-  const blankBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.blank, demoBoards, demoToken)
-  const archivedBoard = await ensureDemoBoard(DEMO_BOARD_SPECS.archived, demoBoards, demoToken)
+  // 3) Reuse canonical boards normally; protected reset retires them only after both accounts authenticate.
+  const preparedBoards = await prepareSeedBoards(boards, demoToken, {
+    reset,
+    boardPlan,
+    refreshBoards: () => listSeedBoards(demoToken),
+    onQuarantined: (board) => console.log(`  - quarantined ${board.name}`),
+  })
+  const {
+    capture: captureBoard,
+    content: contentBoard,
+    blank: blankBoard,
+    archived: archivedBoard,
+    demoBoards,
+    resetPlan,
+  } = preparedBoards
+
+  if (reset) {
+    console.log(
+      `\n--reset: quarantined ${resetPlan.candidates.length} documented DEMO:* board(s) and verified fresh canonical replacements`,
+    )
+  }
+
+  // Ordinary seeds preserve their existing board-before-collaborator ordering.
+  collabLogin ||= await ensureSeedUser(COLLAB)
+  const collabToken = collabLogin.token
+  const collabUser = collabLogin.user
+  if (!reset) console.log(`Collab user: ${collabUser.username} (${collabUser.email})`)
 
   const canonicalBoardIds = new Set([captureBoard.id, contentBoard.id, blankBoard.id, archivedBoard.id])
   const extraActiveDemoBoards = demoBoards.filter((b) => !b.isArchived && !canonicalBoardIds.has(b.id))
@@ -1020,7 +1576,7 @@ export async function main({ reset = false } = {}) {
   console.log(`- blank board: ${blankBoard.name}`)
   console.log(`- archived board: ${archivedBoard.name}`)
 
-  // 3) Seed: starter packs
+  // 4) Seed: starter packs
   console.log('\nApplying starter packs...')
   await applyStarterPack(captureBoard.id, demoToken, 'board-blueprint-client-onboarding')
   console.log('- capture board: client onboarding blueprint')
@@ -1028,7 +1584,7 @@ export async function main({ reset = false } = {}) {
   await applyStarterPack(contentBoard.id, demoToken, 'board-blueprint-content-calendar')
   console.log('- content board: content calendar blueprint')
 
-  // 4) Seed: board access entry (so Access view is not empty)
+  // 5) Seed: board access entry (so Access view is not empty)
   await ensureCollaboratorEditorAccess(captureBoard.id, demoToken, collabUser.id)
 
   const captureSummaries = await listCaptureSummaries(captureBoard.id, demoToken)
@@ -1055,7 +1611,7 @@ export async function main({ reset = false } = {}) {
     collabUsername: collabUser.username,
   })
 
-  // 5) Seed: Inbox items (ignored + triage)
+  // 6) Seed: Inbox items (ignored + triage)
   console.log('\nCreating Inbox items...')
   await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.ignored, { ignore: true })
   const triageAppliedWithProposal = await ensureCaptureSeed(captureBoard.id, demoToken, SEEDED_CAPTURE_TEXT.triageApplied, {
@@ -1074,7 +1630,7 @@ export async function main({ reset = false } = {}) {
   console.log(`- triage (pending/ACME) proposal: ${triagePendingAcmeWithProposal.provenance.proposalId} (left for review)`)
   console.log(`- triage (pending/Northwind) proposal: ${triagePendingNorthwindWithProposal.provenance.proposalId} (left for review)`)
 
-  // 6) Seed: Queue requests (1 success + 1 failure)
+  // 7) Seed: Queue requests (1 success + 1 failure)
   console.log('\nCreating Automation Queue items...')
   await ensureQueueSeed(captureBoard.id, demoToken, captureBoardCards)
   console.log(
@@ -1082,13 +1638,13 @@ export async function main({ reset = false } = {}) {
       `failure=${seedPlan.queue.hasFailedRequest ? 'reused' : 'created'}`,
   )
 
-  // 7) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
+  // 8) Seed: Chat proposal (temporary board rename -> produces board audit log entries).
   // Restore canonical naming afterwards so final board references stay consistent.
   console.log('\nCreating a Chat session + temporary board rename proposal...')
   await ensureChatSeed(captureBoard.id, demoToken)
   console.log(`- chat seed: ${seedPlan.chat.seededSession ? 'reused existing session' : 'created seeded session'}`)
 
-  // 8) Seed: Mention comment (Notification + audit)
+  // 9) Seed: Mention comment (Notification + audit)
   console.log('\nCreating a mention comment (generates notification)...')
   const seededCommentCard = await ensureSeededComments(captureBoard.id, demoToken, collabToken, demoUser, collabUser)
   if (seededCommentCard) {
@@ -1100,7 +1656,7 @@ export async function main({ reset = false } = {}) {
     console.log('- no cards found on capture board (unexpected)')
   }
 
-  // 9) Seed: Ops command runs (populate Ops -> Logs)
+  // 10) Seed: Ops command runs (populate Ops -> Logs)
   console.log('\nRunning Ops CLI templates (generates Ops logs)...')
   await ensureOpsSeed(demoToken)
   console.log(
@@ -1131,6 +1687,30 @@ export async function main({ reset = false } = {}) {
   console.log('- If queue/proposals look empty, confirm backend setting EnableAutoQueueProcessing=true (Development).')
 }
 
+export async function main(options = {}) {
+  const transport = createRunBoundApiTransportFromEnvironment()
+  if (!transport) {
+    return seedDemo(options)
+  }
+  if (activeRunBoundTransport) {
+    transport.destroy()
+    throw new Error('Concurrent run-bound demo seed runs are not allowed.')
+  }
+
+  activeRunBoundTransport = transport
+  try {
+    await transport.verifyReady()
+    const result = await seedDemo(options)
+    transport.assertActive()
+    return result
+  } finally {
+    if (activeRunBoundTransport === transport) {
+      activeRunBoundTransport = null
+    }
+    transport.destroy()
+  }
+}
+
 const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false
 
 function printUsage() {
@@ -1138,7 +1718,7 @@ function printUsage() {
 Usage: npm run demo:seed [-- [options]]
 
 Options:
-  --reset      Delete all demo boards before seeding (clean start)
+  --reset      Quarantine documented demo boards and create fresh replacements
   --help, -h   Print this usage information and exit
 
 Environment variables:

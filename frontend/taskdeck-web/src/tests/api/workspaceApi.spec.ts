@@ -25,9 +25,18 @@ describe('workspaceApi', () => {
   it('loads today summary', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { summary: { dueTodayCards: 0 } } })
 
-    await workspaceApi.getTodaySummary()
+    await workspaceApi.getTodaySummary('2026-08-23')
 
-    expect(http.get).toHaveBeenCalledWith('/workspace/today')
+    expect(http.get).toHaveBeenCalledWith('/workspace/today?localDate=2026-08-23')
+  })
+
+  it('loads the collaboration membership contract', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { memberCount: 1, hasCollaborators: false } })
+
+    const result = await workspaceApi.getCollaboration()
+
+    expect(http.get).toHaveBeenCalledWith('/workspace/collaboration')
+    expect(result).toEqual({ memberCount: 1, hasCollaborators: false })
   })
 
   it('loads preferences', async () => {
@@ -59,7 +68,7 @@ describe('workspaceApi', () => {
 
     const from = '2026-04-01T00:00:00.000Z'
     const to = '2026-05-01T00:00:00.000Z'
-    await workspaceApi.getCalendar(from, to)
+    await workspaceApi.getCalendar(from, to, '2026-04-05')
 
     expect(http.get).toHaveBeenCalledWith(
       expect.stringContaining('/workspace/calendar?'),
@@ -69,6 +78,9 @@ describe('workspaceApi', () => {
     )
     expect(http.get).toHaveBeenCalledWith(
       expect.stringContaining('to='),
+    )
+    expect(http.get).toHaveBeenCalledWith(
+      expect.stringContaining('localDate=2026-04-05'),
     )
   })
 })

@@ -8,14 +8,20 @@ public sealed class LlmProviderSettings
     public bool AllowLiveProvidersInDevelopment { get; set; }
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(?i)(Mock|OpenAi|Gemini|Ollama)$", ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', 'Gemini', or 'Ollama' (case-insensitive).")]
+    [RegularExpression(
+        "^(?i)(Mock|OpenAi|OpenAiCompatible|Ollama)$",
+        ErrorMessage = "Llm Provider must be 'Mock', 'OpenAi', 'OpenAiCompatible', or 'Ollama' (case-insensitive).")]
     public string Provider { get; set; } = "Mock";
 
     [Required]
     public OpenAiProviderSettings OpenAi { get; set; } = new();
 
-    [Required]
-    public GeminiProviderSettings Gemini { get; set; } = new();
+    /// <summary>
+    /// Settings for an OpenAI chat-completions compatible endpoint such as
+    /// OpenRouter, Groq, or DeepSeek. Unlike <see cref="OpenAi"/>, this has
+    /// no vendor default: callers must select and configure an endpoint.
+    /// </summary>
+    public OpenAiCompatibleProviderSettings OpenAiCompatible { get; set; } = new();
 
     public OllamaProviderSettings Ollama { get; set; } = new();
 }
@@ -37,28 +43,54 @@ public sealed class OpenAiProviderSettings
     public string BaseUrl { get; set; } = "https://api.openai.com/v1";
 
     [Required(AllowEmptyStrings = false)]
-    public string Model { get; set; } = "gpt-4o-mini";
+    public string Model { get; set; } = "gpt-5.6-luna";
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;
 }
 
-public sealed class GeminiProviderSettings
+public sealed class OpenAiCompatibleProviderSettings
 {
+    public const int DefaultMaxResponseBytes = 1_048_576;
+    public const int DefaultMaxSseLineBytes = 65_536;
+    public const int DefaultMaxSseEventBytes = 131_072;
+
     /// <summary>
-    /// API key for Gemini. Only required when the provider is set to "Gemini".
+    /// API key accepted by the configured OpenAI-compatible endpoint.
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
-    [Required(AllowEmptyStrings = false)]
-    [Url]
-    public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
+    /// <summary>
+    /// Required OpenAI-compatible API base URL (for example, https://openrouter.ai/api/v1).
+    /// </summary>
+    public string BaseUrl { get; set; } = string.Empty;
 
-    [Required(AllowEmptyStrings = false)]
-    public string Model { get; set; } = "gemini-2.5-flash";
+    /// <summary>
+    /// Required vendor model identifier.
+    /// </summary>
+    public string Model { get; set; } = string.Empty;
 
     [Range(1, 300, ErrorMessage = "TimeoutSeconds must be between 1 and 300.")]
     public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Maximum UTF-8 bytes accepted from one buffered response or stream.</summary>
+    [Range(1024, 4_194_304)]
+    public int MaxResponseBytes { get; set; } = DefaultMaxResponseBytes;
+
+    /// <summary>Maximum UTF-8 bytes accepted in one SSE line.</summary>
+    [Range(256, 262_144)]
+    public int MaxSseLineBytes { get; set; } = DefaultMaxSseLineBytes;
+
+    /// <summary>Maximum UTF-8 bytes accepted in one assembled SSE event.</summary>
+    [Range(512, 524_288)]
+    public int MaxSseEventBytes { get; set; } = DefaultMaxSseEventBytes;
+
+    /// <summary>
+    /// Optional request headers required by a compatible gateway (for example,
+    /// OpenRouter's HTTP-Referer and X-Title headers). Authorization is always
+    /// derived from <see cref="ApiKey"/> and cannot be supplied here.
+    /// </summary>
+    public Dictionary<string, string> ExtraHeaders { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class OllamaProviderSettings

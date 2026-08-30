@@ -17,12 +17,17 @@ public class ProposalRevisionServiceTests
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
     private readonly Mock<IAutomationProposalRepository> _proposals = new();
     private readonly Mock<IProposalRevisionRepository> _revisions = new();
+    private readonly Mock<IBoardRepository> _boards = new();
     private readonly ProposalRevisionService _service;
 
     public ProposalRevisionServiceTests()
     {
         _unitOfWork.SetupGet(unitOfWork => unitOfWork.AutomationProposals).Returns(_proposals.Object);
         _unitOfWork.SetupGet(unitOfWork => unitOfWork.ProposalRevisions).Returns(_revisions.Object);
+        _unitOfWork.SetupGet(unitOfWork => unitOfWork.Boards).Returns(_boards.Object);
+        _boards
+            .Setup(repo => repo.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { new Board("Active proposal board") });
 
         // Use the real policy engine so the structure invariants (#1281) are exercised end-to-end
         // through the save path; ValidateOperationStructure is pure and never touches the unit of work.
@@ -103,6 +108,7 @@ public class ProposalRevisionServiceTests
     public async Task CreateRevisionAsync_Succeeds_WhenOperationsAreStructurallyValid()
     {
         var proposal = CreatePendingProposal();
+        var originalUpdatedAt = proposal.UpdatedAt;
         _proposals
             .Setup(repo => repo.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(proposal);
@@ -125,7 +131,62 @@ public class ProposalRevisionServiceTests
         var result = await _service.CreateRevisionAsync(dto);
 
         result.IsSuccess.Should().BeTrue();
+        proposal.UpdatedAt.Should().BeAfter(
+            originalUpdatedAt,
+            "every accepted revision must invalidate an already-selected approval snapshot");
         _revisions.Verify(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRevisionWithPendingCommitGuardAsync_AdvancesProposalConcurrencyToken()
+    {
+        var proposal = CreatePendingProposal();
+        var originalUpdatedAt = proposal.UpdatedAt;
+        SetupSuccessfulSave(proposal);
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload((sequence: 0, parameters: "{}")),
+            "Recover interrupted capture metadata");
+
+        var result = await _service.CreateRevisionWithPendingCommitGuardAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        proposal.UpdatedAt.Should().BeAfter(originalUpdatedAt);
+        _unitOfWork.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateRevisionWithPendingCommitGuardAsync_ReturnsConflict_WhenProposalWasDecidedConcurrently()
+    {
+        var proposal = CreatePendingProposal();
+        var dto = new CreateProposalRevisionDto(
+            proposal.Id,
+            Guid.NewGuid(),
+            BuildPayload((sequence: 0, parameters: "{}")),
+            "Recover interrupted capture metadata");
+        _proposals
+            .Setup(repo => repo.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        _revisions
+            .Setup(repo => repo.GetNextRevisionNumberAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1);
+        _revisions
+            .Setup(repo => repo.AddAsync(It.IsAny<ProposalRevision>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalRevision revision, CancellationToken _) => revision);
+        _unitOfWork
+            .Setup(unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DomainException(
+                ErrorCodes.Conflict,
+                "Record was updated by another session. Refresh and retry your action."));
+
+        var result = await _service.CreateRevisionWithPendingCommitGuardAsync(dto);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("another session");
     }
 
     [Fact]

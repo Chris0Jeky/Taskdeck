@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ExportImportView from '../../views/ExportImportView.vue'
+import exportImportSource from '../../views/ExportImportView.vue?raw'
 
 const mocks = vi.hoisted(() => ({
   exportBoardJson: vi.fn(),
@@ -71,6 +72,18 @@ describe('ExportImportView', () => {
     expect(wrapper.text()).toContain('Board ID')
   })
 
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', () => {
+    const wrapper = mount(ExportImportView)
+
+    // Root, tabs, and panels should use the Paper (`paper-portability__*`)
+    // idiom, and none of the legacy Obsidian hooks should survive.
+    expect(wrapper.find('.paper-portability').exists()).toBe(true)
+    expect(wrapper.find('.paper-portability__tabs').exists()).toBe(true)
+    expect(wrapper.find('.paper-portability__panel').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-export-import"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-tab"]').exists()).toBe(false)
+  })
+
   it('switches to import panel when Import tab is clicked', async () => {
     const wrapper = mount(ExportImportView)
 
@@ -120,7 +133,7 @@ describe('ExportImportView', () => {
       await waitForUi()
 
       expect(wrapper.text()).toContain('my-board-id')
-      expect(wrapper.find('pre.td-json-viewer').exists()).toBe(true)
+      expect(wrapper.find('pre.paper-portability__json').exists()).toBe(true)
     })
 
     it('shows Copy and Download buttons after a successful export', async () => {
@@ -131,7 +144,7 @@ describe('ExportImportView', () => {
       await exportBtn!.trigger('click')
       await waitForUi()
 
-      const resultActionBtns = wrapper.findAll('.td-result-actions button')
+      const resultActionBtns = wrapper.findAll('.paper-portability__result-actions button')
       expect(resultActionBtns.some((b) => b.text().includes('Copy'))).toBe(true)
       expect(resultActionBtns.some((b) => b.text().includes('Download'))).toBe(true)
     })
@@ -149,7 +162,7 @@ describe('ExportImportView', () => {
       expect(mocks.errorToast).toHaveBeenCalledWith(
         'Export failed. Check board ID and permissions.',
       )
-      expect(wrapper.find('pre.td-json-viewer').exists()).toBe(false)
+      expect(wrapper.find('pre.paper-portability__json').exists()).toBe(false)
     })
   })
 
@@ -318,5 +331,26 @@ describe('ExportImportView', () => {
       expect(wrapper.find('textarea').exists()).toBe(true)
       expect(wrapper.text()).toContain('Paste board JSON data to import.')
     })
+  })
+})
+
+// ── #1808 review (MEDIUM): Legacy ("off") mode substrate guard ──
+// Paper tokens exist only under `.paper` / `.paper-night` (paper-tokens.css), so
+// in Legacy mode this view's `color: var(--ink, …)` resolves to the near-black
+// literal while AppShell's `.td-content` still paints `--td-surface-base`
+// (#131313) — ~1.05:1 on the hero, and ~3.2:1 / ~2.5:1 on the tab strip. A root
+// that sets the Paper ink MUST therefore also paint the Paper substrate; that is
+// a no-op under `.paper`/`.paper-night`.
+// Source is read through Vite's `?raw` rather than `node:fs` because
+// `tsconfig.vitest.json` deliberately omits the "node" types.
+// #1815 tracks unifying these per-view assertions into one wave-wide spec.
+describe('ExportImportView Legacy-mode substrate', () => {
+  it('paints --paper on the root wherever it sets --ink', () => {
+    const rule = exportImportSource.match(/^\.paper-portability \{([\s\S]*?)\}/m)?.[1]
+    expect(rule, '.paper-portability root rule').toBeTruthy()
+    // Guard the guard: if the ink declaration were dropped or renamed, the
+    // substrate assertion below would otherwise pass vacuously.
+    expect(rule).toMatch(/color:\s*var\(--ink,\s*#[0-9a-fA-F]{3,8}\s*\)/)
+    expect(rule).toMatch(/background:\s*var\(--paper,\s*#[0-9a-fA-F]{3,8}\s*\)/)
   })
 })

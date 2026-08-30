@@ -14,6 +14,14 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
     // reads; completeness-sensitive callers (GDPR data export) pass includeDeferred:true so a
     // snoozed proposal is never silently dropped from the user's complete data set.
     Task<IEnumerable<AutomationProposal>> GetByUserIdAsync(Guid userId, int limit = 100, bool includeDeferred = false, CancellationToken cancellationToken = default);
+    // Active Review read: archived-board proposals are excluded before LIMIT so retained history
+    // cannot under-fill the bounded page. Complete/export and explicit board reads use the methods above.
+    Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(
+        Guid userId,
+        int limit = 100,
+        ProposalStatus? status = null,
+        RiskLevel? riskLevel = null,
+        CancellationToken cancellationToken = default);
     Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetBySourceReferenceAsync(ProposalSourceType sourceType, string referenceId, CancellationToken cancellationToken = default);
     Task<AutomationProposal?> GetByCorrelationIdAsync(string correlationId, CancellationToken cancellationToken = default);
@@ -25,7 +33,11 @@ public interface IAutomationProposalRepository : IRepository<AutomationProposal>
         ProposalSourceType sourceType,
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AutomationProposal>> GetPendingByOperationTargetAsync(string targetType, string targetId, CancellationToken cancellationToken = default);
-    Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default);
+    // Automatic-expiry read. Expired PendingReview rows whose board is archived are withheld from
+    // Expirable and counted instead: expiry is a decision write, and ADR-0063 / #2168 make archived
+    // decision history read-only (#2197). Board-less and dangling-board rows stay expirable, matching
+    // GetActiveByUserIdAsync's predicate. Callers must expire only Expirable.
+    Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets proposals that have at least one operation matching the given action type

@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Taskdeck.Application.Services;
 
 namespace Taskdeck.Infrastructure.Persistence;
 
@@ -35,6 +36,15 @@ namespace Taskdeck.Infrastructure.Persistence;
 /// <see cref="RelationalDatabaseFacadeExtensions.GetPendingMigrations"/> shows nothing remains
 /// pending (the racing winner already applied everything); otherwise the failure propagates.
 /// </para>
+/// <para>
+/// <b>Pre-migration backup (#1803).</b> When migrations are actually pending against an
+/// existing SQLite file, a consistent snapshot of that file is written first via
+/// <see cref="SqlitePreMigrationBackup"/> — inside the lock, before <c>Migrate()</c> opens any
+/// DDL write connection. That backup is <b>fail-closed</b>: if it cannot be written, the
+/// migration does not run and the failure propagates out of startup. Everything else here is
+/// deliberately fail-open (a coordination file is best-effort), but a schema rewrite without a
+/// recovery copy is not a risk this local-first app takes on the user's behalf.
+/// </para>
 /// </summary>
 public static class SerializedMigrator
 {
@@ -54,24 +64,50 @@ public static class SerializedMigrator
     /// (CLI stdout must stay clean JSON; nothing is written to stdout here, but callers may
     /// still prefer to suppress logging).</param>
     public static void Migrate(DbContext context, ILogger? logger = null)
-        => Migrate(context, DefaultLockTimeout, logger);
+        => Migrate(context, DefaultLockTimeout, backupSettings: null, logger);
 
     /// <summary>
     /// Applies migrations for <paramref name="context"/> under a cross-process file lock,
     /// waiting at most <paramref name="lockTimeout"/> to acquire it before proceeding anyway.
     /// </summary>
     public static void Migrate(DbContext context, TimeSpan lockTimeout, ILogger? logger = null)
+        => Migrate(context, lockTimeout, backupSettings: null, logger);
+
+    /// <summary>
+    /// Applies migrations for <paramref name="context"/> under a cross-process file lock, taking
+    /// a pre-migration snapshot of the SQLite file governed by <paramref name="backupSettings"/>.
+    /// This is the overload the hosts use, so the backup honours configuration (#1803).
+    /// </summary>
+    public static void Migrate(
+        DbContext context,
+        DatabaseBackupSettings? backupSettings,
+        ILogger? logger = null)
+        => Migrate(context, DefaultLockTimeout, backupSettings, logger);
+
+    /// <summary>
+    /// Applies migrations for <paramref name="context"/> under a cross-process file lock,
+    /// waiting at most <paramref name="lockTimeout"/> to acquire it before proceeding anyway,
+    /// and taking a pre-migration snapshot governed by <paramref name="backupSettings"/>
+    /// (<c>null</c> means "use the defaults", i.e. backups enabled).
+    /// </summary>
+    public static void Migrate(
+        DbContext context,
+        TimeSpan lockTimeout,
+        DatabaseBackupSettings? backupSettings,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var lockPath = ResolveLockPath(context, logger);
-        if (lockPath is null)
+        var databaseFilePath = ResolveDatabaseFilePath(context, logger);
+        if (databaseFilePath is null)
         {
             // In-memory, non-file, or non-SQLite database: nothing to coordinate across
-            // processes. Apply migrations directly.
+            // processes, and no file to snapshot. Apply migrations directly.
             context.Database.Migrate();
             return;
         }
+
+        var lockPath = databaseFilePath + LockFileSuffix;
 
         FileStream? lockStream = null;
         try
@@ -83,6 +119,7 @@ public static class SerializedMigrator
                 // mutating the schema concurrently. Any Migrate() throw here is a genuine failure
                 // — let it propagate untouched.
                 logger?.LogDebug("SerializedMigrator: acquired migration lock '{LockPath}'.", lockPath);
+                BackupBeforeMigrating(context, databaseFilePath, backupSettings, logger);
                 context.Database.Migrate();
             }
             else
@@ -90,12 +127,79 @@ public static class SerializedMigrator
                 // Fail-open path: we could NOT take the lock (timed out, or the lock file was
                 // uncreatable). A concurrent migrator may still be applying the schema, so this
                 // Migrate() can race it. Guard the throw rather than crash startup.
+                //
+                // The BACKUP is still fail-closed here. A lost coordination file is survivable;
+                // rewriting the schema with no recovery copy is not, and the backup API snapshots
+                // a committed state, so a concurrent migrator does not make the snapshot invalid —
+                // it only makes it slightly older or slightly newer than this process expected.
+                BackupBeforeMigrating(context, databaseFilePath, backupSettings, logger);
                 MigrateWithoutLock(context, logger);
             }
         }
         finally
         {
             lockStream?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Snapshots the SQLite file before any DDL runs, but only when it is worth doing: backups
+    /// enabled, the file already exists (a fresh install has nothing to protect), and migrations
+    /// are genuinely pending (an ordinary boot with an up-to-date schema must not copy the
+    /// database on every start).
+    /// <para>
+    /// If the pending set cannot be read at all, the backup is taken anyway — "I could not tell"
+    /// is treated as "there might be", because the whole point is to be conservative here.
+    /// </para>
+    /// </summary>
+    private static void BackupBeforeMigrating(
+        DbContext context,
+        string databaseFilePath,
+        DatabaseBackupSettings? backupSettings,
+        ILogger? logger)
+    {
+        var settings = backupSettings ?? new DatabaseBackupSettings();
+        if (!settings.Enabled)
+        {
+            logger?.LogDebug(
+                "SerializedMigrator: pre-migration backup is disabled (Database:Backup:Enabled=false); " +
+                "migrating '{DatabasePath}' without a snapshot.",
+                databaseFilePath);
+            return;
+        }
+
+        if (!File.Exists(databaseFilePath))
+        {
+            // First run: Migrate() is about to create the file. There is nothing to lose yet.
+            return;
+        }
+
+        if (!MayHavePendingMigrations(context, logger))
+        {
+            return;
+        }
+
+        SqlitePreMigrationBackup.Create(databaseFilePath, settings, logger);
+    }
+
+    /// <summary>
+    /// Returns <c>false</c> only when EF definitively reports an empty pending set. Any failure
+    /// to read it returns <c>true</c> so the backup is still taken.
+    /// </summary>
+    private static bool MayHavePendingMigrations(DbContext context, ILogger? logger)
+    {
+        try
+        {
+            return context.Database.GetPendingMigrations().Any();
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(
+                ex,
+                "SerializedMigrator: could not determine whether migrations are pending ({Reason}); " +
+                "taking a pre-migration backup anyway.",
+                ex.GetType().Name);
+            return true;
         }
     }
 
@@ -146,11 +250,12 @@ public static class SerializedMigrator
     }
 
     /// <summary>
-    /// Resolves the sidecar lock-file path for the context's SQLite data source, or
-    /// <c>null</c> when no cross-process lock is applicable (non-SQLite provider, in-memory
-    /// database, or a data source that is not a usable file path).
+    /// Resolves the absolute path of the context's SQLite database file, or <c>null</c> when
+    /// there is no such file (non-SQLite provider, in-memory database, or a data source that is
+    /// not a usable file path). The sidecar lock path is this plus
+    /// <see cref="LockFileSuffix"/>, and the pre-migration backup snapshots this file.
     /// </summary>
-    private static string? ResolveLockPath(DbContext context, ILogger? logger)
+    private static string? ResolveDatabaseFilePath(DbContext context, ILogger? logger)
     {
         // Only SQLite file databases need this coordination. A future PostgreSQL runtime
         // (ADR-0023) handles concurrent migrators with server-side locking, and the EF Core
@@ -197,7 +302,7 @@ public static class SerializedMigrator
             // DIFFERENT lock files and are therefore NOT serialized against each other. That
             // residual race is bounded by the WAL + busy_timeout writer fallback and the
             // unlocked-Migrate re-check, and is acceptable for the local-first SQLite scenario.
-            return Path.GetFullPath(filePath) + LockFileSuffix;
+            return Path.GetFullPath(filePath);
         }
         catch (Exception ex) when (
             ex is ArgumentException
@@ -208,7 +313,7 @@ public static class SerializedMigrator
             logger?.LogWarning(
                 ex,
                 "SerializedMigrator: data source '{DataSource}' is not a usable file path; " +
-                "applying migrations without a cross-process lock.",
+                "applying migrations without a cross-process lock and without a pre-migration backup.",
                 dataSource);
             return null;
         }

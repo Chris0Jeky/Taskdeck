@@ -361,6 +361,15 @@ public class LlmQueueToProposalWorker : BackgroundService
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
+        // Shutdown or caller cancellation is not a processing failure. Without this the
+        // planner's rethrow is caught below and converted straight back into an
+        // UnexpectedError, which IsTransientFailure treats as retryable — so the item would be
+        // marked Failed and requeued purely because the host was stopping.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await ReleaseClaimOnShutdownAsync(item);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -377,6 +386,66 @@ public class LlmQueueToProposalWorker : BackgroundService
             outcome = scheduledForRetry ? "failed_retry" : "failed_unhandled";
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+        }
+    }
+
+    /// <summary>
+    /// Returns a claim abandoned by a graceful shutdown to Pending so the stop does not cost the request
+    /// a retry (#1605). Left in Processing, the row is indistinguishable from a crashed attempt: the next
+    /// run's <see cref="RecoverStuckProcessingItemsAsync"/> finds no proposal for it and charges the
+    /// budget (MarkAsFailed, RetryCount++), so enough restarts fail a healthy request permanently at
+    /// MaxRetries — and it waits out the processing lease before retrying either way. Releasing it
+    /// charges nothing and makes it eligible again on the very next tick. A genuine crash never reaches
+    /// this path, so the sweep's retry accounting (the poison-pill guard) is untouched.
+    /// </summary>
+    /// <remarks>
+    /// Non-capture (proposal) lane only. Capture-triage and transcript rows are READ from Processing, so
+    /// Processing already is their queued state and returning one to Pending would drop it back to
+    /// "untriaged in the inbox" — the wrong state, and one no worker drains.
+    /// </remarks>
+    private async Task ReleaseClaimOnShutdownAsync(LlmRequest item)
+    {
+        // The failure path may already have moved the row on (Failed, or Pending/Processing once
+        // HandleFailureWithRetryAsync completed its own interrupted transition); only a still-claimed row
+        // is ours to release.
+        if (item.Status != RequestStatus.Processing)
+        {
+            return;
+        }
+
+        try
+        {
+            // Use a fresh scope so this shutdown cleanup cannot flush proposal or other state tracked
+            // by the planner's scope. Reloading also preserves the domain transition's status guard
+            // without duplicating it in a targeted SQL update.
+            using var scope = _scopeFactory.CreateScope();
+            var shutdownUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(item.Id, CancellationToken.None);
+            if (shutdownItem == null || shutdownItem.Status != RequestStatus.Processing)
+            {
+                return;
+            }
+
+            shutdownItem.ReleaseClaim();
+            // CancellationToken.None: ct is already cancelled, and forwarding it would throw before the
+            // release could commit — leaving exactly the stale-Processing row this exists to avoid. Same
+            // deliberate shutdown-write idiom as AgentRuntime and OutboundWebhookDeliveryWorker's own
+            // ReturnToPending. The fresh scope's DbContext tracks only this cleanup read, so unrelated
+            // proposal state from the planner scope is not included in this flush.
+            await shutdownUnitOfWork.SaveChangesAsync(CancellationToken.None);
+            _logger.LogInformation(
+                "Queue item {ItemId} released back to Pending during shutdown; no retry charged",
+                item.Id);
+        }
+        catch (Exception ex)
+        {
+            // Never let the release write mask the cancellation: log and return so the
+            // OperationCanceledException still propagates and the worker still stops promptly. The row
+            // then simply stays Processing and the recovery sweep handles it as it did before #1605.
+            _logger.LogWarning(
+                "Failed to release queue item {ItemId} during shutdown; it stays Processing for the recovery sweep. {ExceptionSummary}",
+                item.Id,
+                SensitiveDataRedactor.SummarizeException(ex));
         }
     }
 
@@ -479,9 +548,19 @@ public class LlmQueueToProposalWorker : BackgroundService
                         triageResult.Value.Model,
                         CaptureRequestContract.MaxModelLength));
 
+                // A degraded run still produced a reviewable proposal, so the item completes; the
+                // notice records WHICH engine produced it so the fallback is not silent (#2192).
                 item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
-                item.MarkAsCompleted();
+                item.MarkAsCompleted(triageResult.Value.DegradedNotice);
                 await unitOfWork.SaveChangesAsync(ct);
+
+                if (triageResult.Value.DegradedNotice is { } captureDegradedNotice)
+                {
+                    _logger.LogWarning(
+                        "Capture item {ItemId} completed on the deterministic fallback: {DegradedNotice}",
+                        item.Id,
+                        captureDegradedNotice);
+                }
 
                 // A null ProposalId is the "triaged, nothing to propose" verdict (only reachable
                 // here for legacy transcript-typed rows whose LLM leg ran): Completed without a
@@ -507,9 +586,8 @@ public class LlmQueueToProposalWorker : BackgroundService
                 return;
             }
 
-            var retryScheduled = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var retryScheduled = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 triageResult.ErrorCode,
                 triageResult.ErrorMessage ?? "Capture triage failed",
                 ct,
@@ -519,15 +597,25 @@ public class LlmQueueToProposalWorker : BackgroundService
             stopWatch.Stop();
             RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
         }
+        // Same discrimination as the proposal lane. CaptureTriageService already rethrows
+        // caller cancellation rather than returning an outcome, so without this guard the
+        // worker converts that rethrow straight back into a retryable UnexpectedError.
+        // No ReleaseClaimOnShutdownAsync here, deliberately: capture rows are read from
+        // Processing, so an abandoned capture claim is already in its queued state and the next
+        // tick re-claims it with no retry charged. Returning it to Pending would instead mean
+        // "untriaged in the inbox", which no worker drains (see that method's remarks).
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
                 "Unhandled exception triaging capture queue item {ItemId}. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
-            var scheduledForRetry = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var scheduledForRetry = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 ErrorCodes.UnexpectedError,
                 ex.Message,
                 ct,
@@ -626,23 +714,117 @@ public class LlmQueueToProposalWorker : BackgroundService
         }
 
         var backoff = TimeSpan.FromSeconds(GetRetryBackoffSeconds(item.RetryCount));
-        if (backoff > TimeSpan.Zero)
+        try
         {
-            await Task.Delay(backoff, ct);
-        }
+            if (backoff > TimeSpan.Zero)
+            {
+                await Task.Delay(backoff, ct);
+            }
 
-        item.ResetForRetry();
-        if (retryAsProcessing)
-        {
-            item.MarkAsProcessing();
+            ApplyRetryTransition(item, retryAsProcessing);
+            await unitOfWork.SaveChangesAsync(ct);
         }
-        await unitOfWork.SaveChangesAsync(ct);
+        // The Failed row above is ALREADY COMMITTED, so abandoning the requeue here strands it forever
+        // (#1605): the recovery sweep only scans Processing (GetStuckProcessingNonCaptureAsync), and
+        // nothing else re-enqueues a Failed row. Cancellation can land either in the backoff wait or in
+        // the write itself, so both are inside this guard. Finish the transition with
+        // CancellationToken.None -- the retry was already decided and the budget already charged above;
+        // only the waiting is being cut short, and the shutdown must not change the outcome. The
+        // completion below uses a fresh scope so it cannot flush unrelated state from the planner scope.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try
+            {
+                await CompleteRetryTransitionOnShutdownAsync(item.Id, retryAsProcessing);
+                _logger.LogInformation(
+                    "Queue item {ItemId} requeued for retry attempt {RetryCount} during shutdown",
+                    item.Id,
+                    item.RetryCount + 1);
+            }
+            catch (Exception ex)
+            {
+                // Same reasoning as ReleaseClaimOnShutdownAsync: never mask the cancellation. The row is
+                // left Failed, which is the pre-#1605 outcome for this window.
+                _logger.LogWarning(
+                    "Failed to requeue queue item {ItemId} during shutdown; it stays Failed. {ExceptionSummary}",
+                    item.Id,
+                    SensitiveDataRedactor.SummarizeException(ex));
+            }
+
+            throw;
+        }
 
         _logger.LogInformation(
             "Queue item {ItemId} scheduled for retry attempt {RetryCount}",
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    /// <summary>
+    /// Records capture-triage failures in a fresh scope. A failed proposal/revision save can leave
+    /// stale Modified/Added entries in the processing DbContext; reusing it would retry those writes
+    /// and prevent the queue item's failure/retry transition from committing.
+    /// </summary>
+    private async Task<bool> HandleFailureWithRetryInFreshScopeAsync(
+        Guid itemId,
+        string? errorCode,
+        string errorMessage,
+        CancellationToken ct,
+        bool retryAsProcessing)
+    {
+        using var failureScope = _scopeFactory.CreateScope();
+        var failureUnitOfWork = failureScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var failureItem = await failureUnitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (failureItem == null || failureItem.Status != RequestStatus.Processing)
+        {
+            _logger.LogWarning(
+                "Capture queue item {ItemId} could not record triage failure because its current status is {Status}",
+                itemId,
+                failureItem?.Status.ToString() ?? "missing");
+            return false;
+        }
+
+        return await HandleFailureWithRetryAsync(
+            failureUnitOfWork,
+            failureItem,
+            errorCode,
+            errorMessage,
+            ct,
+            retryAsProcessing);
+    }
+
+    private async Task CompleteRetryTransitionOnShutdownAsync(Guid itemId, bool retryAsProcessing)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var shutdownUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(itemId, CancellationToken.None);
+        if (shutdownItem == null)
+        {
+            return;
+        }
+
+        ApplyRetryTransition(shutdownItem, retryAsProcessing);
+        await shutdownUnitOfWork.SaveChangesAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Moves a just-failed request into its retry state: back to Pending, and on to Processing for the
+    /// capture lane, which reads its queue from Processing. Written to be safe to call twice — the
+    /// shutdown path re-runs it after a write that may have already applied the in-memory transition
+    /// before throwing, and ResetForRetry/MarkAsProcessing both throw outside their source status.
+    /// </summary>
+    private static void ApplyRetryTransition(LlmRequest item, bool retryAsProcessing)
+    {
+        if (item.Status == RequestStatus.Failed)
+        {
+            item.ResetForRetry();
+        }
+
+        if (retryAsProcessing && item.Status == RequestStatus.Pending)
+        {
+            item.MarkAsProcessing();
+        }
     }
 
     private bool IsTransientFailure(string? errorCode)

@@ -3,6 +3,7 @@ import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useCaptureStore } from '../../store/captureStore'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { usePerformanceMark } from '../../composables/usePerformanceMark'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 
 // Mirrors CaptureRequestContract.MaxTranscriptTextLength. Keep this client-side guard source-specific:
 // quick captures retain the backend's smaller general-text limit.
@@ -207,7 +208,7 @@ onUnmounted(() => {
 
       <template v-if="captureMode === 'typed'">
         <p class="td-capture-modal__hint">
-          Write or paste anything. Press Ctrl/Cmd+Enter to save.
+          Write or paste anything. Press {{ formatShortcut('mod+enter') }} to save.
           <span v-if="props.boardName">This capture will stay linked to {{ props.boardName }}.</span>
         </p>
 
@@ -477,7 +478,12 @@ onUnmounted(() => {
 
 .td-alert--error {
   background: var(--td-color-error-light);
-  color: var(--td-color-error);
+  /* Paper-first, Legacy fallback (the LoginView/RegisterView pattern). Under
+     Paper this pair resolves to --ember on --ember-tint, which measures
+     4.45:1 — just under AA — so the ember INK rung is used instead (7.8:1
+     light / 9.5:1 night). --ember-ink is undeclared outside the Paper shell,
+     so Legacy still resolves --td-color-error exactly as before. #1817 */
+  color: var(--ember-ink, var(--td-color-error));
 }
 
 /* --- Mobile: full-screen capture --- */

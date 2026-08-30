@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Proposal, ProposalAffectedEntity } from '../../types/automation'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   proposal: Proposal
   operationHeadlines: string[]
   affectedEntities: ProposalAffectedEntity[]
@@ -10,7 +10,15 @@ const props = defineProps<{
   captureHref: string
   proposalHref: string
   shortCorrelationId: string
-}>()
+  /**
+   * Archived-board decision history (#1973). The capture and review links stay
+   * — they are reads that keep the archived scope — but Open Board does not:
+   * `BoardView` / `PaperBoardView` do not gate on `isArchived`, and no service
+   * rejects a write to an archived board, so that control hands the user a
+   * fully editable board from a surface that just told them to restore it first.
+   */
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 defineEmits<{
   (e: 'open-board', boardId: string): void
@@ -160,9 +168,10 @@ const fullCorrelationId = computed(() => props.proposal.correlationId?.trim() ??
               Review Link
             </router-link>
             <button
-              v-if="proposal.boardId"
+              v-if="proposal.boardId && !props.readOnly"
               class="td-review-card__links-dropdown-item"
               role="menuitem"
+              data-testid="review-open-board"
               @mousedown.prevent
               @click="$emit('open-board', proposal.boardId!)"
             >

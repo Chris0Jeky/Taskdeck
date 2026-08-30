@@ -11,8 +11,10 @@ Stable reference material belongs in topical subfolders.
   - Current shipped reality, verified state, current focus, and active constraints.
 - `IMPLEMENTATION_MASTERPLAN.md`
   - Delivery history, the revival direction (free open beta → commercial horizon, ADR-0044), and the priority-labeled backlog map. *(The forward "horizons" / "release framing" / priority tranches are historical pre-pivot framing; the active sequence is `REVIVAL_PLAN.md`.)*
+- `strategy/PRODUCT_DIRECTION.md`
+  - **The canonical current strategy document** (2026-08-23): three-layer product identity (adaptive work OS destination · context-to-action engine · transcripts/notes/captures wedge), trust-model reconciliation (shipped review-first vs the ADR-0057 delegated-authority direction — Accepted 2026-08-24 as direction only, no implementation in force), release-theme ladder, and the open decision surfaces.
 - `REVIVAL_PLAN.md`
-  - The active planning spine (2026-07-10 revival pivot, ADR-0044): positioning, business posture, phased waves with completion conditions, the v0.1 ship gate, the issue map, and the traction checkpoint.
+  - The active execution plan (2026-07-10 revival pivot, ADR-0044; direction now owned by `strategy/PRODUCT_DIRECTION.md`): business posture, phased waves with completion conditions, the v0.1 ship gate, the issue map, and the traction checkpoint.
 - `PROJECT_TRAJECTORY.md`
   - 2026-07-02 whole-project analysis, part 1: what the project genuinely does well, the four pivot goals honestly scored, and the effective remaining path (adversarially verified evidence; closeout wave tracker `#1278`).
 - `COURSE_CORRECTION.md`
@@ -29,6 +31,8 @@ Stable reference material belongs in topical subfolders.
   - Human verification checklist for product, security, and ops flows.
 - `START_HERE.md`
   - Audience-first first-entry product guide.
+- `../UPGRADING.md` (repository root)
+  - Per-version upgrade notes for self-hosters: where the SQLite file lives, "backup = copy this one file", the automatic pre-migration snapshot, and the shipped export surfaces.
 - `USER_MANUAL.md`
   - Manual index for the shipped product shell and chapter map.
 - `GITHUB_PROJECT_AUTOMATION.md`
@@ -45,7 +49,7 @@ Stable reference material belongs in topical subfolders.
 - Regular product user:
   - `START_HERE.md` -> `manual/02_home_and_today.md` -> `manual/03_projects_and_cards.md` -> `manual/08_recipes.md`
 - Maintainer or planner:
-  - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `REVIVAL_PLAN.md` -> `analysis/2026-07-10_revival_assessment.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
+  - `strategy/PRODUCT_DIRECTION.md` -> `STATUS.md` -> `REVIVAL_PLAN.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `TESTING_GUIDE.md`
   - active execution order: the revival **phases** in `REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → checkpoint). *Historical:* the archive-pivot waves (2026-06-13→2026-07-10, superseded by ADR-0044 but retained as the checkpoint fallback), `PROJECT_TRAJECTORY.md`/`COURSE_CORRECTION.md` (2026-07-02 analysis pair), root `taskdeck-12-week-roadmap-v4.md`, tracker `#972`
 - Contributor or agent:
   - `STATUS.md` -> `IMPLEMENTATION_MASTERPLAN.md` -> `GOLDEN_PRINCIPLES.md` -> `ISSUE_EXECUTION_GUIDE.md` -> `MCP_TOOLING_GUIDE.md` -> `../autodoc/AGENT_INDEX.md` -> `agentic/SKILL_REGISTRY.md`
@@ -54,8 +58,17 @@ Stable reference material belongs in topical subfolders.
 
 ## Topical Folders
 
+- `architecture/`
+  - Agent-facing architecture references: `architecture/DATA_MODEL.md` (persisted entities),
+    `architecture/CONTEXT_FABRIC.md` (the ADR-0065 map — shipped vs scaffolded vs planned, capabilities,
+    policy families, slices, proving checks), and `architecture/WORKER_PROTOCOL_V1.md` (the Taskdeck
+    Worker Protocol contract for sidecar and remote processors).
 - `product/`
-  - Product-facing guides, demo playbook, scenario reference, and dogfooding cadence.
+  - Product-facing guides, demo playbook, and scenario reference.
+- `dogfooding/`
+  - The active dogfooding protocol and LOG (the ADR-0044 acceptance test; sprint started
+    2026-08-22, checkpoint floor 2026-09-01 per walkthrough q-8). Supersedes
+    `product/DOGFOODING_GUIDE.md` for cadence truth.
 - `manual/`
   - Shipped manual chapters, future-facing placeholders, and in-app help-to-manual mapping.
 - `ops/`
@@ -79,10 +92,13 @@ Stable reference material belongs in topical subfolders.
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
   - includes `analysis/2026-07-10_revival_assessment.md` — the revive-vs-archive evidence base (7 code-review dimensions with adversarially verified claims + market research) behind ADR-0044 and `REVIVAL_PLAN.md`.
+  - includes `analysis/2026-08-30-context-fabric/` — the maintainer's Context Fabric planning pack as received (blueprint, worker-protocol proof of concept, manifest schema and example, issue seeds, diagram) plus `RECONCILIATION.md`, the pack-versus-repository verification and re-think behind ADR-0065, the CF-NN wave and the release ladder to v1.0.
 - `InReview/`
   - Human or in-review source packs awaiting extraction into canonical docs or issue waves.
 - `archive/`
   - Historical and superseded docs. Non-authoritative by default.
+  - includes `archive/status-history/STATUS_HISTORY_2026-02_to_2026-07.md` — the delivery history
+    rotated out of `STATUS.md` on 2026-08-23 (verbatim, non-authoritative).
 - `WIP/`
   - External or unpromoted working material that has not yet been reconciled.
 - `../autodoc/`

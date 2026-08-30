@@ -80,11 +80,19 @@ Check `Settings` if a page seems missing.
 
 ## How do I get a sample workspace?
 
-From `frontend/taskdeck-web`:
+From the repository root, run the seeded launcher for your shell:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
+```
 
 ```bash
-npm run demo:seed
+./scripts/dev-up.sh --seed
 ```
+
+Continue only after `Stack is up.`, then use the printed frontend URL. If a launcher-owned stack is
+already running, stop it with `-Stop` / `--stop` before rerunning this command. The lower-level bare
+demo command does not prove which Taskdeck listener it will modify.
 
 Use this when you want realistic examples instead of starting from empty state.
 

@@ -74,6 +74,12 @@ function makeRevision(overrides: Partial<ProposalRevision> = {}): ProposalRevisi
   }
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+}
+
 describe('useProposalRevisions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -285,5 +291,178 @@ describe('useProposalRevisions', () => {
 
     expect(revisionCount.value).toBe(2)
     expect(latestRevision.value?.proposalId).toBe('p-2')
+  })
+  // #2215 B -----------------------------------------------------------------
+
+  it('resyncs revision state when a poll brings a newer latestRevisionId for the same proposal (#2215 B)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))
+    const { revisionCount, latestRevision } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+    expect(revisionCount.value).toBe(0)
+
+    // Another reviewer saves a revision; the queue poll replaces the row with a
+    // new `latestRevisionId` and the SAME proposal id. Watching the id alone
+    // left revisionCount at 0 and latestRevision null, so `editablePayload`
+    // kept offering the pre-revision operations.
+    const collaboratorRevision = makeRevision({ id: 'rev-9', revisionNumber: 1 })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([collaboratorRevision])
+    proposal.value = makeProposal({ latestRevisionId: 'rev-9' })
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(1)
+    })
+    expect(latestRevision.value).toEqual(collaboratorRevision)
+  })
+
+  it('does not publish a failed resync as authoritative, and stays silent (#2215 round 1 M-1)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision({ id: 'rev-1' })])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const { revisionCount, revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionsLoaded.value).toBe(true)
+    })
+    expect(revisionCount.value).toBe(1)
+
+    // The resync GET fails. Its catch zeroes revisionCount and nulls
+    // latestRevision; if revisionsLoaded stayed true, PaperReviewView would read
+    // that as "authoritatively no revisions" and short-circuit Apply with a
+    // false zero-op toast, while editablePayload fell back to the raw
+    // pre-revision operations.
+    vi.mocked(proposalRevisionsApi.getRevisions).mockRejectedValue(new Error('network'))
+    proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(revisionsLoaded.value).toBe(false)
+    // And a poll the reviewer never asked for must not raise a toast — the same
+    // silent doctrine refreshProposals holds on the far side of the tick.
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('does not re-read revisions when a poll brings an equivalent proposal (#2215 round 1 M-4)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision({ id: 'rev-1' })])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+
+    // A 15 s tick that changes nothing still replaces the proposal OBJECT, and
+    // the watch getter builds a fresh tuple every evaluation — so without the
+    // key comparison this would re-read the revision list on every tick.
+    proposal.value = makeProposal({ latestRevisionId: 'rev-1' })
+    await nextTick()
+    await flushMicrotasks()
+    proposal.value = makeProposal({ latestRevisionId: 'rev-1' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not resync when a revised proposal is approved (#2215 round 2)', async () => {
+    const revision = makeRevision({ id: 'rev-1' })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([revision])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' }),
+    )
+    const { revisionCount, latestRevision, revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionsLoaded.value).toBe(true)
+    })
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+
+    // rev-1 -> null with the revision pinned into approvedRevisionId. Nothing
+    // moved, so the state stays authoritative and no read is issued.
+    proposal.value = makeProposal({
+      status: 'Approved',
+      latestRevisionId: null,
+      approvedRevisionId: 'rev-1',
+    })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    expect(revisionsLoaded.value).toBe(true)
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value).toEqual(revision)
+  })
+
+  it('treats a stale pre-approval read as the same revision, not a new one (#2215 round 2)', async () => {
+    const revision = makeRevision({ id: 'rev-1' })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([revision])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' }),
+    )
+    const { revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionsLoaded.value).toBe(true)
+    })
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+
+    proposal.value = makeProposal({
+      status: 'Approved',
+      latestRevisionId: null,
+      approvedRevisionId: 'rev-1',
+    })
+    await nextTick()
+    await flushMicrotasks()
+
+    // A queue read issued BEFORE the approval can land after it, restoring the
+    // pending shape with `latestRevisionId: rev-1`. That is the SAME revision
+    // the approval pinned, so it must not read as a collaborator edit. This is
+    // the case the `approvedRevisionId` half of the identity carries: without
+    // it the approved row's identity is null, and this read looks like
+    // null -> rev-1, which IS a genuine move.
+    proposal.value = makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
+  it('does not close an open editor when only the revision moves under it (#2215 B)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))
+    const { editing, startEditing } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+
+    startEditing()
+    expect(editing.value).toBe(true)
+
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision({ id: 'rev-9' })])
+    proposal.value = makeProposal({ latestRevisionId: 'rev-9' })
+    await nextTick()
+    await flushMicrotasks()
+
+    // The resync is a read, not a reset: closing the composer would discard a
+    // half-written edit over a change that happened somewhere else.
+    expect(editing.value).toBe(true)
+  })
+
+  it('still fully resets when the proposal itself changes (#2215 B guard)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision()])
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { editing, revisionCount, startEditing } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(1)
+    })
+    startEditing()
+    expect(editing.value).toBe(true)
+
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    proposal.value = makeProposal({ id: 'p-2', latestRevisionId: 'rev-other' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(editing.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
   })
 })

@@ -4,6 +4,11 @@ import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import type { WorkspaceMode } from '../../types/workspace'
 import { isWorkspaceMode } from '../../types/workspace'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
+
+// Rendered notation follows the viewer's platform (Command glyph on Apple),
+// so the palette hint is never a hardcoded Ctrl literal.
+const commandPaletteKeys = formatShortcut('mod+k')
 
 const emit = defineEmits<{
   'open-command-palette': []
@@ -67,11 +72,11 @@ function handleWorkspaceModeChange(event: Event) {
 
       <button
         class="td-topbar__palette-trigger"
-        aria-label="Open command palette (Ctrl+K)"
+        :aria-label="`Open command palette (${commandPaletteKeys})`"
         @click="emit('open-command-palette')"
       >
         <span class="material-symbols-outlined td-topbar__search-icon">search</span>
-        <span class="td-topbar__search-text">Go anywhere... (Ctrl+K)</span>
+        <span class="td-topbar__search-text">Go anywhere... ({{ commandPaletteKeys }})</span>
       </button>
     </div>
 

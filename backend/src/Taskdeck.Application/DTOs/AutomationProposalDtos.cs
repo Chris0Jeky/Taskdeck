@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Application.DTOs;
 
@@ -53,7 +55,85 @@ public record ProposalDto(
     /// doing so would reintroduce the N+1 that boundary existed to avoid.
     /// </summary>
     public Guid? ApprovedRevisionId { get; init; }
+
+    /// <summary>
+    /// The effective/latest saved revision for a pending proposal. This is a review concurrency
+    /// snapshot, not an approval pin; non-pending proposals expose null and use
+    /// <see cref="ApprovedRevisionId"/> for the separate approve-time contract.
+    /// </summary>
+    public Guid? LatestRevisionId { get; init; }
 }
+
+/// <summary>
+/// Result of an all-or-none batch approval. Every listed proposal has moved to
+/// <see cref="ProposalStatus.Approved"/>; none has been executed or applied.
+/// </summary>
+public sealed record BatchApproveProposalsResultDto(IReadOnlyList<Guid> ApprovedIds);
+
+/// <summary>The exact pending proposal and revision snapshot selected for batch approval.</summary>
+public sealed record BatchApproveProposalSelectionDto(
+    Guid Id,
+    DateTimeOffset ExpectedProposalUpdatedAt,
+    Guid? ExpectedLatestRevisionId);
+
+/// <summary>
+/// One reviewer-selected proposal in a per-proposal batch execute request (#1307, q-14 C).
+/// <para>
+/// <paramref name="ApprovedRevisionId"/> is the caller's echo of the pin the review surface showed
+/// (<see cref="ProposalDto.ApprovedRevisionId"/>). It is a REQUIRED member of the wire contract but a
+/// NULLABLE value: a proposal approved from its original operations legitimately pins nothing, and
+/// <c>null</c> is the only correct echo for it. A mismatch fails that item closed with
+/// a <c>Conflict</c> error code so a proposal whose approved content changed under the reviewer
+/// is never applied on stale consent.
+/// </para>
+/// </summary>
+public sealed record BatchExecuteProposalSelectionDto(
+    Guid ProposalId,
+    Guid? ApprovedRevisionId,
+    string IdempotencyKey);
+
+/// <summary>
+/// Per-proposal outcome of a batch execute. Deliberately three-valued rather than a boolean:
+/// <see cref="Applied"/> is claimed ONLY by the call that performed the board write, so a replay of
+/// the same idempotency keys reports <see cref="Skipped"/> instead of re-claiming an apply that this
+/// call did not do. Both are success outcomes; the whole response is 200 either way.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BatchExecuteOutcome
+{
+    /// <summary>This call executed the proposal and moved it to Applied.</summary>
+    Applied = 0,
+
+    /// <summary>The proposal was already Applied before this call (idempotent replay); nothing was written.</summary>
+    Skipped = 1,
+
+    /// <summary>
+    /// This item failed; <c>ErrorCode</c> carries the reason. Mostly the same code single execute
+    /// would have returned, but NOT always: a proposal the caller cannot see reports
+    /// <c>NotFound</c> here where single execute answers <c>Forbidden</c> (so a batch cannot
+    /// enumerate other people's proposals), and <c>Conflict</c> from the approved-revision echo has
+    /// no single-execute counterpart at all, since that endpoint takes no pin.
+    /// </summary>
+    Failed = 2,
+}
+
+/// <summary>
+/// One item's receipt. <c>AppliedOperations</c> is populated for <see cref="BatchExecuteOutcome.Applied"/>
+/// only: a skipped replay did not count operations on this call, and a failed item applied none.
+/// </summary>
+public sealed record BatchExecuteProposalResultDto(
+    Guid ProposalId,
+    BatchExecuteOutcome Outcome,
+    string? ErrorCode,
+    string? ErrorMessage,
+    int? AppliedOperations);
+
+/// <summary>
+/// Receipt for a per-proposal batch execute. Items are returned in request order. There is no
+/// whole-batch rollback: each proposal executed in its own transaction through the single-execute
+/// code path, so a failure isolates to its own item.
+/// </summary>
+public sealed record BatchExecuteProposalsResultDto(IReadOnlyList<BatchExecuteProposalResultDto> Results);
 
 public record ProposalPresentationDto(
     string PlainSummary,
@@ -102,7 +182,16 @@ public record CreateProposalDto(
     List<CreateProposalOperationDto>? Operations = null,
     string? ProvenanceModelId = null,
     int ProvenanceTotalTokens = 0
-);
+)
+{
+    /// <summary>
+    /// Trusted application-side confidence metadata. This property is deliberately excluded from
+    /// the HTTP contract: callers cannot label their own proposal confidence as model-reported.
+    /// Capture triage sets it only after schema-v2 validation or deterministic fallback selection.
+    /// </summary>
+    [JsonIgnore]
+    public TrustedProposalConfidenceInput? TrustedConfidence { get; init; }
+}
 
 public record CreateProposalOperationDto(
     int Sequence,
@@ -113,6 +202,26 @@ public record CreateProposalOperationDto(
     string? TargetId = null,
     string? ExpectedVersion = null
 );
+
+/// <summary>
+/// Trusted application-side evidence metadata for schema-v2 transcript proposals. This is not an
+/// API request shape: only the transcript triage pipeline supplies it after resolving quote spans.
+/// </summary>
+public sealed record TranscriptEvidenceLinkInput(
+    int OperationSequence,
+    Guid TranscriptId,
+    int? SpanStart = null,
+    int? SpanEnd = null);
+
+/// <summary>Trusted per-operation confidence metadata supplied by an application pipeline.</summary>
+public sealed record TrustedProposalConfidenceInput(
+    ProvenanceConfidenceSource Source,
+    IReadOnlyList<ProposalOperationConfidenceInput> Operations);
+
+/// <summary>Confidence for one proposal operation, keyed by the persisted operation sequence.</summary>
+public sealed record ProposalOperationConfidenceInput(
+    int OperationSequence,
+    double? Value);
 
 public record UpdateProposalStatusDto(
     string? Reason = null

@@ -45,8 +45,17 @@ Workspace modes are display preferences, not permission boundaries.
 
 The reduced sidebar keeps the normal loop prominent:
 
-- core destinations: `Home`, `Today`, `Review`, `Boards`, `Inbox`
+- core destinations, in sidebar order: `Home`, `Today`, `Inbox`, `Review`, `Boards`
 - `Search` / `Ctrl+K` is the complete finder for every currently available route
+
+The order is the loop as you actually walk it -- the two orientation surfaces first, then
+capture (`Inbox`) to review (`Review`) to board (`Boards`). `Inbox` used to sit last even though it
+is the loop's entry point. The same order drives the phone tab bar and the command palette.
+
+That order describes the **Paper** skin, which is the canonical UI (ADR-0038). The frozen Legacy
+shell deliberately keeps its older order -- `Today`, `Review`, `Boards`, `Inbox`, with `Home`
+reachable but not pinned to the sidebar -- because ADR-0038 froze it and reordering it would only
+create a second divergence.
 
 Guided mode keeps designated operator destinations under an explicit `Advanced` disclosure and respects feature flags.
 
@@ -231,7 +240,8 @@ Inbox actions:
 Proposal review:
 
 - happens in `Review`
-- is the primary trust boundary for board mutation
+- is the primary trust boundary for automation-originated board mutation (a signed-in human edits
+  their board directly; the proposal loop governs non-human actors - ADR-0056)
 - should answer what changes, where, and why
 
 Current review model:
@@ -241,7 +251,7 @@ Current review model:
 3. user approves or rejects
 4. user executes explicitly
 
-> Capture triage is deterministic and offline in every mode — it extracts tasks from your text with a fixed rule-based parser and never calls an LLM, even when a live AI provider is configured. Its provenance is recorded as `deterministic-extractor` / `capture-triage-v1`, not the configured provider.
+> Ordinary short-form capture triage is deterministic and offline. Transcript-source triage has a separately gated extraction leg that may send bounded transcript chunks, extraction instructions, and pseudonymous attribution metadata to the configured live provider. If that leg is unavailable or fails, Taskdeck falls back to deterministic extraction. Every resulting proposal still requires review, approval, and explicit execution, and provenance records which path produced it.
 
 ## Daily Rhythm
 
@@ -323,13 +333,20 @@ This user manual is chaptered under `docs/manual`. The primary chapters are:
 
 ## Demo And Testing Workflows
 
-From `frontend/taskdeck-web`:
+From the repository root, `dev-up` starts an identity-bound source stack and seeds a reusable
+baseline workspace:
 
-- `npm run demo:seed` seeds a reusable baseline workspace
-- `npm run demo:run -- --list` lists scenarios
-- `npm run demo:run -- engineering-sprint` runs one scenario
-- `npm run demo:autopilot -- --turns 5 --brain heuristic` simulates activity
-- `npm run demo:director:smoke` runs the deterministic smoke or demo regression path
+- Windows: `.\scripts\dev-up.ps1 -Seed`
+- Linux/macOS: `./scripts/dev-up.sh --seed`
+
+Continue only after `Stack is up.`, and use the API/frontend URLs printed by that invocation. Stop
+an existing launcher-owned stack with `-Stop` / `--stop` before reseeding. Do not use the lower-level
+bare seed or scenario runners as a substitute for this protected path.
+
+From `frontend/taskdeck-web`, `npm run demo:run -- --list` safely lists scenarios without making an
+HTTP request. Use `npm run demo:director:smoke` for the deterministic isolated regression path, or
+the fresh-server director command in [product/DEMO_PLAYBOOK.md](product/DEMO_PLAYBOOK.md) to execute
+a specific scenario.
 
 For direct API walkthroughs:
 

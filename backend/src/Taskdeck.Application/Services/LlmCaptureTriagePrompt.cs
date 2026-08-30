@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Taskdeck.Application.DTOs;
 
@@ -32,8 +33,22 @@ public static class LlmCaptureTriagePrompt
     /// </summary>
     public const string PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2;
 
-    public const string SystemPrompt = """
+    /// <summary>
+    /// Token the reference date replaces in the prompt template. It is exactly as long as a
+    /// rendered <c>yyyy-MM-dd</c> date, so the template and every rendered prompt have the same
+    /// length and a token/size estimate taken from either one is exact.
+    /// </summary>
+    public const string ReferenceDatePlaceholder = "{REF_DATE}";
+
+    /// <summary>
+    /// The unrendered instruction block. Private on purpose: sending it verbatim would ship the
+    /// placeholder to the model, so callers go through <see cref="BuildSystemPrompt"/> or
+    /// <see cref="SystemPrompt"/>.
+    /// </summary>
+    private const string SystemPromptTemplate = """
         You are Taskdeck's transcript triage engine. Extract concrete action items from the transcript in the user message.
+
+        The transcript was captured on {REF_DATE}. That is the reference date, and it is the only date you know: resolve every date you emit against it, and never emit a year the reference date does not justify.
 
         Respond with a single JSON object of this exact shape and nothing else:
         {"tasks":[{"title":"...","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.0,"evidenceQuote":"..."}]}
@@ -44,7 +59,12 @@ public static class LlmCaptureTriagePrompt
         - "title": the action item rephrased as a short imperative instruction (who should do what), at most 180 characters.
         - "type": exactly one of "action", "decision", or "question". Use "action" for a commitment or next step, "decision" for a decision worth recording, and "question" for an unresolved question that needs follow-up.
         - "assigneeHint": the explicitly named person responsible, or null when the transcript does not identify one. It is only a hint: never infer a Taskdeck user ID.
-        - "dueDateHint": an explicitly stated unambiguous calendar date in YYYY-MM-DD form, or null. Do not calculate relative dates such as "next Friday".
+        - "dueDateHint": a calendar date in YYYY-MM-DD form, or null.
+          - When the transcript states a day and month with no year (for example "1 September"), resolve it to the first such date on or after the reference date {REF_DATE}. That first occurrence may fall in the calendar year AFTER the reference date, and when it does that is the correct answer: with a reference date of 2026-12-31, "1 January" resolves to 2027-01-01, never to 2026-01-01. What is forbidden is any year other than that first occurrence: never guess or invent a year.
+          - A weekday name is not part of the date. If the speaker says "Monday 1 September" and the resolved date is not a Monday, ignore the weekday: the day and the month decide.
+          - Do not calculate relative dates such as "next Friday" or "in two weeks": return null for those.
+          - Return null whenever you cannot pin the item to one exact calendar day.
+          - Never emit a date more than 2 years before or more than 5 years after the reference date; return null instead.
         - "confidence": your confidence from 0 through 1 that this item is supported by the evidence quote. It informs later review only and never authorizes a board write.
         - "evidenceQuote": a short VERBATIM quote copied character-for-character from the transcript that justifies the item, at most 280 characters. Never paraphrase, translate, or correct the quote.
         - Ignore greetings, small talk, status recaps, and general discussion that requires no action.
@@ -53,14 +73,76 @@ public static class LlmCaptureTriagePrompt
         """;
 
     /// <summary>
+    /// The server's current UTC calendar day. ADR-0058 makes a due date a calendar day rather than
+    /// an instant, so what the model resolves against is a day, not a timestamp.
+    /// </summary>
+    public static DateOnly CurrentReferenceDate => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    /// <summary>
+    /// The prompt as it is sent when the caller holds no capture day of its own: the template
+    /// rendered against <see cref="CurrentReferenceDate"/>. A capture is triaged within seconds to
+    /// minutes of being created, and the plausibility window enforced by
+    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsBeforeReference"/> /
+    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsAfterReference"/> is years wide, so
+    /// that drift cannot change an outcome. A caller holding the capture's own day should pass it
+    /// to <see cref="BuildSystemPrompt"/> instead.
+    /// </summary>
+    public static string SystemPrompt => BuildSystemPrompt(CurrentReferenceDate);
+
+    /// <summary>
+    /// Renders the extraction prompt for one capture day (#2193). Without a reference date the
+    /// model has no year to resolve "1 September" against, and a shipped run silently produced
+    /// 2023-09-01 for a transcript spoken in August 2026.
+    /// <para>
+    /// INFO - the asymmetry is deliberate. The prompt resolves a partial date FORWARD ONLY (the
+    /// first matching day on or after the reference date), because a speaker naming a bare day and
+    /// month in a meeting means the next one. That first occurrence may land in the following
+    /// calendar year - a 2026-12-31 capture saying "1 January" means 2027-01-01 - so the prompt
+    /// forbids only a year OTHER than the first occurrence, never a year change as such. The
+    /// contract window behind it still accepts a
+    /// fully-qualified date up to
+    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsBeforeReference"/> years in the past,
+    /// because a transcript may legitimately restate an overdue or historical deadline that the
+    /// speaker did qualify with a year. Forward-only resolution and a backward-tolerant window are
+    /// answering two different questions and are not in conflict.
+    /// </para>
+    /// </summary>
+    public static string BuildSystemPrompt(DateOnly referenceDate) =>
+        SystemPromptTemplate.Replace(
+            ReferenceDatePlaceholder,
+            referenceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+
+    /// <summary>
+    /// Parses a schema-v2 LLM completion against the server's current UTC day
+    /// (<see cref="CurrentReferenceDate"/>) and discards the notes. This is the shape the live
+    /// extraction leg uses; see the four-argument overload for the reference date and notes.
+    /// </summary>
+    public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV2> tasks) =>
+        TryParseTasks(content, CurrentReferenceDate, out tasks, out _);
+
+    /// <summary>
     /// Parses a schema-v2 LLM completion while tolerating surrounding prose/fences via brace
     /// matching. It rejects unknown, missing, and wrongly typed fields rather than silently
     /// normalizing untrusted model metadata. An empty-but-present array remains the deliberate
     /// "no action items" verdict; malformed non-empty content instead triggers fallback.
+    /// <para>
+    /// A due-date hint is the one field that is dropped rather than rejected (#2193). It is a hint
+    /// on a reviewable proposal, so an unusable date must not cost the caller every extracted task
+    /// — but it must never reach a card either. A hint that is not a <c>yyyy-MM-dd</c> calendar
+    /// date, or that falls outside the plausibility window around <paramref name="referenceDate"/>,
+    /// is nulled and reported in <paramref name="notes"/> instead of being carried forward.
+    /// </para>
     /// </summary>
-    public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV2> tasks)
+    public static bool TryParseTasks(
+        string? content,
+        DateOnly referenceDate,
+        out List<CaptureTriageTaskV2> tasks,
+        out IReadOnlyList<string> notes)
     {
         tasks = new List<CaptureTriageTaskV2>();
+        var collectedNotes = new List<string>();
+        notes = collectedNotes;
 
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -103,14 +185,25 @@ public static class LlmCaptureTriagePrompt
                     !TryGetRequiredString(item, "evidenceQuote", out var evidenceQuote))
                 {
                     tasks.Clear();
+                    collectedNotes.Clear();
                     return false;
+                }
+
+                var reviewedDueDateHint = CaptureTriageOutputContract.ReviewDueDateHint(
+                    dueDateHint,
+                    tasks.Count + 1,
+                    referenceDate,
+                    out var dueDateNote);
+                if (dueDateNote is not null)
+                {
+                    collectedNotes.Add(dueDateNote);
                 }
 
                 tasks.Add(new CaptureTriageTaskV2(
                     title,
                     type,
                     assigneeHint,
-                    dueDateHint,
+                    reviewedDueDateHint,
                     confidence,
                     evidenceQuote));
             }
@@ -119,6 +212,8 @@ public static class LlmCaptureTriagePrompt
         }
         catch (JsonException)
         {
+            tasks.Clear();
+            collectedNotes.Clear();
             return false;
         }
     }

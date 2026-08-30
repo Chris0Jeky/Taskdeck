@@ -33,7 +33,7 @@ public class McpResourcesTests : IDisposable
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+                    ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(_dbPath),
                     ["Connectors:EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
                 })
                 .Build());
@@ -252,6 +252,21 @@ public class McpResourcesTests : IDisposable
         await uow.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Demotes the requester's BoardAccess row from Editor to Viewer: still a member (can read the
+    /// board), no longer write-capable. This is the state #1836's write mirror must NOT lock out of
+    /// proposal_detail, and the one the #1772 two-person instance makes imminent.
+    /// </summary>
+    private async Task DemoteToViewerAsync(IServiceScope scope, Guid boardId, Guid userId)
+    {
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var access = await uow.BoardAccesses.GetByBoardAndUserAsync(boardId, userId);
+        access.Should().NotBeNull();
+        access!.UpdateRole(UserRole.Viewer, access.GrantedBy);
+        await uow.BoardAccesses.UpdateAsync(access);
+        await uow.SaveChangesAsync();
+    }
+
     [Fact]
     public async Task ProposalResources_GetProposalDetail_NonTerminal_ReturnsLiveGatedDiff()
     {
@@ -356,6 +371,77 @@ public class McpResourcesTests : IDisposable
         var act = () => resources.GetProposalDetail(proposalId.ToString());
         var ex = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
         ex.Message.Should().Contain("does not have access");
+    }
+
+    // ── proposal_detail read bar for Viewers (#1836) ─────────────────────────
+    // #1836 mirrors the API-side write bar onto the policy engine for the MUTATION lanes. These
+    // two tests pin the read lanes at membership: a member DEMOTED to Viewer (not revoked) still
+    // reads the detail of proposals they authored themselves. GetProposalDetail THROWS on a failed
+    // preview result, so a write bar on these paths costs the whole resource, not just the preview
+    // field — which is why the PR #1861 review escalated it and the #1836 ruling was amended.
+
+    [Fact]
+    public async Task ProposalResources_GetProposalDetail_Terminal_ViewerMember_StillReadsStoredPreview()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var userId = await CreateBoardScopedUserAsync(scope, "gate-viewer-term");
+        var (proposalId, boardId) = await CreateBoardScopedProposalAsync(scope, userId);
+        // Decide the proposal while still an Editor, then demote — the realistic sequence.
+        await MakeTerminalWithStoredPreviewAsync(scope, userId, proposalId, "STORED-HISTORICAL-PREVIEW");
+        await DemoteToViewerAsync(scope, boardId, userId);
+
+        var resources = new ProposalResources(
+            scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
+            new McpBoardResourcesTests.FixedUserContextProvider(userId));
+
+        var json = await resources.GetProposalDetail(proposalId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetString().Should().Be("Applied");
+        root.GetProperty("diffPreviewSource").GetString().Should().Be("stored");
+        root.GetProperty("diffPreview").GetString().Should().Be("STORED-HISTORICAL-PREVIEW");
+    }
+
+    [Fact]
+    public async Task ProposalResources_GetProposalDetail_NonTerminal_ViewerMember_StillReadsLiveDiff()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var userId = await CreateBoardScopedUserAsync(scope, "gate-viewer-open");
+        var (proposalId, boardId) = await CreateBoardScopedProposalAsync(scope, userId);
+        await DemoteToViewerAsync(scope, boardId, userId);
+
+        var resources = new ProposalResources(
+            scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
+            new McpBoardResourcesTests.FixedUserContextProvider(userId));
+
+        var json = await resources.GetProposalDetail(proposalId.ToString());
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetString().Should().Be("PendingReview");
+        root.GetProperty("diffPreviewSource").GetString().Should().Be("live");
+        root.GetProperty("diffPreview").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task ApproveProposal_ViewerMember_IsStillRefusedByTheWriteBar()
+    {
+        // The write half over the same demoted-Viewer fixture: read stays open, the mutation lane
+        // does not. Without this, reverting every call site to membership would pass the two tests
+        // above and silently undo #1836.
+        using var scope = _serviceProvider.CreateScope();
+        // Tag stays short: CreateBoardScopedUserAsync appends a 32-char GUID and User caps the
+        // username at 50 characters.
+        var userId = await CreateBoardScopedUserAsync(scope, "gate-vw-appr");
+        var (proposalId, boardId) = await CreateBoardScopedProposalAsync(scope, userId);
+        await DemoteToViewerAsync(scope, boardId, userId);
+
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var approveResult = await proposalService.ApproveProposalAsync(proposalId, userId);
+
+        approveResult.IsSuccess.Should().BeFalse();
+        approveResult.ErrorMessage.Should().Contain("does not have write access");
     }
 
     // ── CaptureResources tests ───────────────────────────────────────────────

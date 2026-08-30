@@ -17,9 +17,24 @@ const mockIntegrationStore = reactive({
   deleteConnector: vi.fn(),
 })
 
+const routerLinkStub = {
+  props: ['to'],
+  template: '<a :data-route-name="to.name"><slot /></a>',
+}
+
 vi.mock('../../store/integrationStore', () => ({
   useIntegrationStore: () => mockIntegrationStore,
 }))
+
+function mountView() {
+  return mount(IntegrationsView, {
+    global: {
+      stubs: {
+        'router-link': routerLinkStub,
+      },
+    },
+  })
+}
 
 describe('IntegrationsView', () => {
   beforeEach(() => {
@@ -31,7 +46,7 @@ describe('IntegrationsView', () => {
   })
 
   it('describes the page as registry management rather than connector ingestion', async () => {
-    const wrapper = mount(IntegrationsView)
+    const wrapper = mountView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('Register and manage connector definitions for future integrations.')
@@ -40,12 +55,12 @@ describe('IntegrationsView', () => {
   })
 
   it('keeps standalone note import and web clip capture distinct from connector registration', async () => {
-    const wrapper = mount(IntegrationsView)
+    const wrapper = mountView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('Connector runtime ingestion is not available yet; use the note import or web clip capture routes for content today.')
-    expect(wrapper.get('.td-int__capture-link').attributes('href')).toBe('/workspace/settings/export-import')
-    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+    expect(wrapper.get('.paper-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.paper-int__capture-link').text()).toContain('Markdown import and web clip capture')
   })
 
   it('keeps standalone content capture actionable when connectors are registered', async () => {
@@ -60,11 +75,11 @@ describe('IntegrationsView', () => {
       updatedAt: '2026-08-02T00:00:00.000Z',
     }]
 
-    const wrapper = mount(IntegrationsView)
+    const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('.td-int__empty').exists()).toBe(false)
-    expect(wrapper.get('.td-int__capture-link').attributes('href')).toBe('/workspace/settings/export-import')
-    expect(wrapper.get('.td-int__capture-link').text()).toContain('Markdown import and web clip capture')
+    expect(wrapper.find('.paper-int__empty').exists()).toBe(false)
+    expect(wrapper.get('.paper-int__capture-link').attributes('data-route-name')).toBe('workspace-settings-export-import')
+    expect(wrapper.get('.paper-int__capture-link').text()).toContain('Markdown import and web clip capture')
   })
 })

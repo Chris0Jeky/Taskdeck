@@ -22,6 +22,7 @@ describe('apiKeysApi', () => {
           id: 'key-1',
           keyPrefix: 'tdsk_abc',
           name: 'CI Key',
+          scopes: ['read', 'manage'],
           createdAt: '2025-01-01T00:00:00Z',
           expiresAt: null,
           revokedAt: null,
@@ -53,15 +54,17 @@ describe('apiKeysApi', () => {
         key: 'tdsk_plaintext123',
         keyPrefix: 'tdsk_pla',
         name: 'My Key',
+        scopes: ['read', 'manage'],
         createdAt: '2025-01-01T00:00:00Z',
         expiresAt: null,
       }
       vi.mocked(http.post).mockResolvedValue({ data: mockResponse })
 
-      const result = await apiKeysApi.createKey('My Key')
+      const result = await apiKeysApi.createKey('My Key', ['read', 'manage'])
 
       expect(http.post).toHaveBeenCalledWith('/apikeys', {
         name: 'My Key',
+        scopes: ['read', 'manage'],
         expiresInDays: null,
       })
       expect(result).toEqual(mockResponse)
@@ -74,17 +77,35 @@ describe('apiKeysApi', () => {
           key: 'tdsk_abc',
           keyPrefix: 'tdsk_abc',
           name: 'Expiring Key',
+          scopes: ['propose'],
           createdAt: '2025-01-01T00:00:00Z',
           expiresAt: '2025-04-01T00:00:00Z',
         },
       })
 
-      await apiKeysApi.createKey('Expiring Key', 90)
+      await apiKeysApi.createKey('Expiring Key', ['propose'], 90)
 
       expect(http.post).toHaveBeenCalledWith('/apikeys', {
         name: 'Expiring Key',
+        scopes: ['propose'],
         expiresInDays: 90,
       })
+    })
+
+    it('rejects an empty scope selection without issuing a request', async () => {
+      await expect(apiKeysApi.createKey('Unsafe Key', [])).rejects.toThrow(
+        'Select at least one known API key scope.',
+      )
+
+      expect(http.post).not.toHaveBeenCalled()
+    })
+
+    it('rejects an unknown scope without issuing a request', async () => {
+      await expect(
+        apiKeysApi.createKey('Unsafe Key', ['full' as never]),
+      ).rejects.toThrow('Select at least one known API key scope.')
+
+      expect(http.post).not.toHaveBeenCalled()
     })
   })
 

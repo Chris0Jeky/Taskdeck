@@ -90,11 +90,19 @@ public class LlmQueueToProposalWorkerTests
         FakeLlmQueueRepository queueRepo,
         FakeAutomationPlannerService? planner = null,
         FakeCaptureTriageService? triageService = null,
-        IAutomationProposalRepository? automationProposals = null)
+        IAutomationProposalRepository? automationProposals = null,
+        FakeUnitOfWork? unitOfWork = null,
+        List<FakeUnitOfWork>? createdUnitOfWorks = null)
     {
         var services = new ServiceCollection();
-        var unitOfWork = new FakeUnitOfWork(queueRepo, automationProposals);
-        services.AddSingleton<IUnitOfWork>(unitOfWork);
+        // Tests that need to observe or drive the writes (which token, cancel between saves) build the
+        // unit of work themselves and pass it in; everyone else gets a fresh scoped fake like production.
+        services.AddScoped<IUnitOfWork>(_ =>
+        {
+            var scopedUnitOfWork = unitOfWork ?? new FakeUnitOfWork(queueRepo, automationProposals);
+            createdUnitOfWorks?.Add(scopedUnitOfWork);
+            return scopedUnitOfWork;
+        });
         services.AddSingleton<IAutomationPlannerService>(planner ?? new FakeAutomationPlannerService());
         services.AddSingleton<ICaptureTriageService>(triageService ?? new FakeCaptureTriageService());
         return services.BuildServiceProvider();
@@ -233,6 +241,134 @@ public class LlmQueueToProposalWorkerTests
         item.Status.Should().Be(RequestStatus.Failed);
     }
 
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneCallerCancellation_PropagatesAndReleasesClaim()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            // Cancel from INSIDE the planner call, never before ProcessBatchAsync: the per-item
+            // Task.Run(body, ct) never invokes its body when ct is already cancelled, which would make
+            // this test vacuous (the worker would never claim the item at all).
+            ResultFactory = _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        // #1605: a graceful shutdown is not a failed attempt. The claim is released so the next tick
+        // picks the item straight back up, instead of the recovery sweep charging a retry for it after
+        // the processing lease expires.
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(0, "a shutdown mid-item must not consume the retry budget");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneCallerCancellation_ReleaseWriteUsesUncancelledToken()
+    {
+        // The release is a DB write on the shutdown path: forwarding the caller's cancelled token would
+        // throw before committing and leave exactly the stale Processing row the release exists to
+        // avoid. Only the token proves that -- the status assertion above passes either way, because a
+        // fake has no separate persisted state to diverge from the in-memory entity.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        unitOfWork.SaveChangesTokens.Should().ContainSingle("the release is the only write on this path");
+        unitOfWork.SaveChangesTokens[0].IsCancellationRequested.Should().BeFalse(
+            "the release must be persisted with CancellationToken.None, not the cancelled caller token");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneShutdownRelease_UsesFreshScopeWithoutFlushingPlannerState()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService();
+        planner.OnParseInstruction = () =>
+        {
+            // ProcessSingleItemAsync owns the last UoW created before the shutdown helper opens its
+            // fresh scope. Model a proposal graph still tracked there when planner cancellation lands.
+            createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+            cts.Cancel();
+        };
+        planner.ResultFactory = _ => throw new OperationCanceledException(cts.Token);
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            planner,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, item processing, and shutdown scopes");
+        var plannerUnitOfWork = createdUnitOfWorks[^2];
+        var shutdownUnitOfWork = createdUnitOfWorks[^1];
+        plannerUnitOfWork.SaveChangesTokens.Should().BeEmpty("the planner scope must not flush on shutdown release");
+        plannerUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse();
+        shutdownUnitOfWork.SaveChangesTokens.Should().ContainSingle(token => !token.IsCancellationRequested);
+        item.Status.Should().Be(RequestStatus.Pending);
+        item.RetryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ItemReleasedByShutdown_IsProcessedOnRestartWithFullRetryBudget()
+    {
+        // End-to-end acceptance (#1605): shut down mid-item, then "restart" (a fresh batch on an
+        // uncancelled token) and confirm the item is drained on that very tick with its budget intact --
+        // no lease wait, no retry charged.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        planner.ResultFactory = null; // the restarted worker's planner succeeds
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        item.RetryCount.Should().Be(0, "the shutdown cost the item nothing");
+    }
+
     #endregion
 
     #region Unhandled exception in planner
@@ -274,6 +410,50 @@ public class LlmQueueToProposalWorkerTests
 
         item.Status.Should().Be(RequestStatus.Completed);
         triageService.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureRetryAfterProposalCrash_ReplaysTheSamePayloadToTheSameProposal()
+    {
+        // The proposal may have committed before the capture provenance/status save crashes. The
+        // worker owns re-claiming the capture; CaptureTriageService owns reconciling that replay to
+        // the one existing proposal. This pins the handoff: no new capture payload is invented and
+        // a second worker pass can complete against the recovered proposal identity.
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var existingProposalId = Guid.NewGuid();
+        var triageRunId = Guid.NewGuid();
+        var attempt = 0;
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (captureItemId, _, _, _, _) =>
+            {
+                attempt++;
+                if (attempt == 1)
+                    throw new InvalidOperationException("proposal persisted before provenance stamp");
+
+                return Result.Success(new CaptureTriageProposalResultDto(
+                    captureItemId,
+                    triageRunId,
+                    existingProposalId,
+                    1,
+                    "triage.v1",
+                    "deterministic-extractor",
+                    "capture-triage-v1"));
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+        item.Status.Should().Be(RequestStatus.Processing, "the interrupted capture is retried in its capture lane");
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        item.Status.Should().Be(RequestStatus.Completed);
+        triageService.CallCount.Should().Be(2);
+        triageService.ReceivedPayloads.Should().HaveCount(2);
+        triageService.ReceivedPayloads[1].Should().Be(triageService.ReceivedPayloads[0]);
     }
 
     #endregion
@@ -318,6 +498,187 @@ public class LlmQueueToProposalWorkerTests
 
         // retryAsProcessing: true means item is reset to Processing, not Pending
         item.Status.Should().Be(RequestStatus.Processing);
+        item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureTriageConflict_RecordsRetryInFreshScope()
+    {
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    ErrorCodes.Conflict,
+                    "Proposal was decided concurrently");
+            }
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            triageService: triageService,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [0]));
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, capture processing, and fresh failure scopes are expected");
+        var processingUnitOfWork = createdUnitOfWorks[^2];
+        var failureUnitOfWork = createdUnitOfWorks[^1];
+        processingUnitOfWork.SaveChangesTokens.Should().BeEmpty();
+        processingUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse();
+        failureUnitOfWork.SaveChangesTokens.Should().HaveCount(2, "the fresh scope commits Failed and then the capture retry transition");
+        item.Status.Should().Be(RequestStatus.Processing);
+        item.RetryCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureLaneCallerCancellation_PropagatesAndLeavesItemProcessing()
+    {
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        using var cts = new CancellationTokenSource();
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        // Discriminating assertion: without the worker cancellation guard, the generic
+        // failure path records a retry before leaving this item in Processing.
+        item.Status.Should().Be(RequestStatus.Processing);
+    }
+
+    #endregion
+
+    #region Shutdown during the retry backoff (#1605)
+
+    [Fact]
+    public async Task ProcessBatch_CancellationDuringRetryBackoff_PersistsTheRequeueInsteadOfStrandingFailed()
+    {
+        // #1605 (second gap): MarkAsFailed is committed BEFORE the backoff wait. If cancellation lands in
+        // that wait, the row is left persisted as Failed -- and the recovery sweep only scans Processing,
+        // so nothing ever picks it up again. The requeue must therefore complete on the shutdown path.
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        using var cts = new CancellationTokenSource();
+        // Cancel from inside the FIRST write (the MarkAsFailed commit) so cancellation lands squarely in
+        // the backoff wait that follows -- deterministic, unlike a timer race, and it keeps the token
+        // uncancelled at Task.Run time so the item is really claimed and processed.
+        unitOfWork.OnSaveChanges = saveNumber =>
+        {
+            if (saveNumber == 1)
+            {
+                cts.Cancel();
+            }
+        };
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        item.Status.Should().Be(RequestStatus.Pending, "the interrupted retry transition is completed, not abandoned mid-way");
+        item.RetryCount.Should().Be(1, "the failure itself was genuine, so it still costs a retry");
+        unitOfWork.SaveChangesTokens.Should().HaveCount(2, "the MarkAsFailed commit and the requeue commit");
+        unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse(
+            "the requeue must be persisted with CancellationToken.None; the caller token is already cancelled");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CaptureLaneCancellationDuringRetryBackoff_RequeuesAsProcessing()
+    {
+        // Same window on the capture lane, where the retry state is Processing (retryAsProcessing: true).
+        // Leaving a capture row Pending would be just as stranded: the capture lane reads Processing.
+        var item = CreateCaptureTriageItem();
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        using var cts = new CancellationTokenSource();
+        unitOfWork.OnSaveChanges = saveNumber =>
+        {
+            if (saveNumber == 1)
+            {
+                cts.Cancel();
+            }
+        };
+        var triageService = new FakeCaptureTriageService
+        {
+            ResultFactory = (_, _, _, _, _) =>
+                Result.Failure<CaptureTriageProposalResultDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        item.Status.Should().Be(RequestStatus.Processing, "the capture lane re-reads its queue from Processing");
+        item.RetryCount.Should().Be(1);
+        unitOfWork.SaveChangesTokens.Should().HaveCount(2);
+        unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneRetryCompletion_UsesFreshScopeWithoutFlushingPlannerState()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var createdUnitOfWorks = new List<FakeUnitOfWork>();
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        planner.OnParseInstruction = () =>
+        {
+            // The first Failed save is intentional and commits the retry charge. Add unrelated state
+            // only after that write, then cancel so the second transition must use a fresh scope.
+            createdUnitOfWorks[^1].OnSaveChanges = saveNumber =>
+            {
+                if (saveNumber == 1)
+                {
+                    createdUnitOfWorks[^1].UnrelatedTrackedState = true;
+                    cts.Cancel();
+                }
+            };
+        };
+        using var sp = BuildServiceProvider(
+            queueRepo,
+            planner,
+            createdUnitOfWorks: createdUnitOfWorks);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        createdUnitOfWorks.Should().HaveCount(4, "recovery, batch read, item processing, and shutdown scopes");
+        var plannerUnitOfWork = createdUnitOfWorks[^2];
+        var shutdownUnitOfWork = createdUnitOfWorks[^1];
+        plannerUnitOfWork.SaveChangesTokens.Should().HaveCount(1, "only the committed Failed transition belongs to the planner scope");
+        plannerUnitOfWork.UnrelatedStateWasSaved.Should().BeFalse("unrelated state was tracked after the first save");
+        shutdownUnitOfWork.SaveChangesTokens.Should().ContainSingle(token => !token.IsCancellationRequested);
+        item.Status.Should().Be(RequestStatus.Pending);
         item.RetryCount.Should().Be(1);
     }
 
@@ -1028,6 +1389,12 @@ public class LlmQueueToProposalWorkerTests
             return Task.FromResult(TryClaimProcessingCaptureResult);
         }
 
+        public Task<bool> TrySetCaptureDispositionAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, RequestStatus targetStatus, string payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<bool> TryEnqueueCaptureTriageAsync(Guid requestId, RequestStatus expectedStatus, DateTimeOffset expectedUpdatedAt, string payload, Guid boardId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
         public bool TryClaimProcessingTranscriptResult { get; set; } = true;
 
         public Task<bool> TryClaimProcessingTranscriptAsync(
@@ -1110,6 +1477,7 @@ public class LlmQueueToProposalWorkerTests
         public int CallCount { get; private set; }
 
         public Func<string, Result<ProposalDto>>? ResultFactory { get; set; }
+        public Action? OnParseInstruction { get; set; }
 
         public Task<Result<ProposalDto>> ParseInstructionAsync(
             string instruction,
@@ -1121,6 +1489,7 @@ public class LlmQueueToProposalWorkerTests
             string? correlationId = null)
         {
             CallCount++;
+            OnParseInstruction?.Invoke();
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(instruction));
@@ -1163,6 +1532,7 @@ public class LlmQueueToProposalWorkerTests
     private sealed class FakeCaptureTriageService : ICaptureTriageService
     {
         public int CallCount { get; private set; }
+        public List<CapturePayloadV1> ReceivedPayloads { get; } = [];
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -1174,6 +1544,7 @@ public class LlmQueueToProposalWorkerTests
             CancellationToken cancellationToken = default)
         {
             CallCount++;
+            ReceivedPayloads.Add(payload);
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));
@@ -1189,6 +1560,15 @@ public class LlmQueueToProposalWorkerTests
                 "mock-model");
             return Task.FromResult(Result.Success(result));
         }
+
+        public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+            Guid captureItemId,
+            Guid userId,
+            Guid? boardId,
+            Guid transcriptId,
+            CapturePayloadV1 payload,
+            CancellationToken cancellationToken = default)
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork
@@ -1238,8 +1618,35 @@ public class LlmQueueToProposalWorkerTests
         public ITomorrowNoteRepository TomorrowNotes => null!;
         public IMcpToolHashRepository McpToolHashes => null!;
 
+        /// <summary>
+        /// Every token the worker passed to <see cref="SaveChangesAsync"/>, in call order. The
+        /// shutdown-path writes (#1605) MUST use an uncancelled token: with the caller's cancelled token
+        /// EF Core throws before committing, which is precisely the stale row those writes exist to
+        /// avoid. Asserting the token is the only way to see that from a fake.
+        /// </summary>
+        public List<CancellationToken> SaveChangesTokens { get; } = [];
+
+        /// <summary>Models unrelated state tracked by the planner scope for shutdown-isolation tests.</summary>
+        public bool UnrelatedTrackedState { get; set; }
+
+        /// <summary>Records whether a SaveChangesAsync flush included that unrelated state.</summary>
+        public bool UnrelatedStateWasSaved { get; private set; }
+
+        /// <summary>Invoked after each SaveChangesAsync is recorded, so a test can cancel between writes.</summary>
+        public Action<int>? OnSaveChanges { get; set; }
+
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
+            SaveChangesTokens.Add(cancellationToken);
+            if (UnrelatedTrackedState)
+            {
+                UnrelatedStateWasSaved = true;
+            }
+
+            // EF Core's SaveChangesAsync throws on an already-cancelled token; model that, or a
+            // shutdown-path write that forwards the cancelled token would silently pass here.
+            cancellationToken.ThrowIfCancellationRequested();
+            OnSaveChanges?.Invoke(SaveChangesTokens.Count);
             return Task.FromResult(0);
         }
 

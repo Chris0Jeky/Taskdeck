@@ -129,6 +129,53 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_UsesUtf16OffsetsForUniqueEvidenceIncludingEmoji()
+    {
+        const string transcript = "😀 Alice: send the report.";
+        const string quote = "Alice: send the report.";
+        SetupCompletion($$"""{"tasks":[{"title":"Send report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"{{quote}}"}]}""");
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.EvidenceSpans.Should().ContainSingle();
+        result.EvidenceSpans![0].Should().Be((3, 3 + quote.Length));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DoesNotLinkOverlappingRepeatedQuote()
+    {
+        const string transcript = "aaa";
+        SetupCompletion("""{"tasks":[{"title":"Inspect text","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"aa"}]}""");
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.EvidenceSpans.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractAsync_DuplicateTitleWithDifferentRangesHasNoStructuredSpan()
+    {
+        const string transcript = "Alpha quote.\nBeta quote.";
+        SetupCompletion(V2Completion(
+            ("Review item", "Alpha quote."),
+            ("review item", "Beta quote.")));
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(transcript));
+
+        result.Succeeded.Should().BeTrue();
+        result.Output!.Tasks.Should().ContainSingle();
+        result.EvidenceSpans.Should().ContainSingle().Which.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldTolerateCodeFences_WhenJsonUsesTheExactV2Shape()
     {
         SetupCompletion("""
@@ -449,6 +496,99 @@ public class LlmCaptureTriageExtractorTests
             Times.Never);
     }
 
+    // -----------------------------------------------------------------------------------------
+    // #2192 review round 2: the map-chunk budget decline reports InvalidOutput, which the caller
+    // records as "LLM triage unavailable". That is only honest when a live leg was possible. On a
+    // deliberately offline deployment a merely long transcript must not manufacture a degradation.
+    // -----------------------------------------------------------------------------------------
+
+    /// <summary>Two newlines - the paragraph break the chunker splits on.</summary>
+    private static readonly string ChunkSeparator = new string((char)10, 2);
+
+    /// <summary>A transcript that needs more map chunks than the configured budget allows.</summary>
+    private string OverBudgetTranscript()
+    {
+        _settings.MaxInputTokensPerChunk = 64;
+        _settings.ChunkOverlapTokens = 0;
+        _settings.MaxChunkCount = 1;
+        return string.Join(ChunkSeparator, Enumerable.Repeat(
+            "Alice: This transcript requires more than one bounded map chunk.",
+            8));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_OverBudgetTranscript_ShouldReportDisabled_WhenTriageIsSwitchedOff()
+    {
+        var transcript = OverBudgetTranscript();
+        _settings.Enabled = false;
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        // Disabled, not InvalidOutput: no LLM was ever going to run, so there is no degradation to
+        // report and CaptureTriageService stays silent.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Disabled);
+        _providerMock.Verify(p => p.GetHealthAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_OverBudgetTranscript_ShouldReportProviderIsMock_WhenTheMockIsTheDeliberateConfiguration()
+    {
+        var transcript = OverBudgetTranscript();
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            providerDecision: new LlmProviderDecision(LlmProviderKind.Mock, "Mock provider selected."));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderIsMock);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_OverBudgetTranscript_ShouldStillReportProviderUnavailable_WhenAMockWasSubstitutedForALiveProvider()
+    {
+        var transcript = OverBudgetTranscript();
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            providerDecision: new LlmProviderDecision(
+                LlmProviderKind.Mock,
+                "OpenAI configuration is invalid: ApiKey is required.",
+                "The configured live provider failed startup validation."));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        // A live provider WAS requested here, so a long transcript must not hide the real problem.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderUnavailable);
+        result.Detail.Should().Be("The configured live provider failed startup validation.");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_OverBudgetTranscript_ShouldStillReportKillSwitch_WhenTriageIsSuppressed()
+    {
+        var transcript = OverBudgetTranscript();
+        _killSwitchMock
+            .Setup(k => k.IsKilledAsync(LlmSurface.CaptureTriage, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(transcript));
+
+        // The kill switch is a genuine degradation, so it keeps its own outcome and its notice.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.KillSwitchActive);
+    }
+
     [Fact]
     public async Task ExtractAsync_ShouldReturnDisabled_WithoutTouchingProviderOrGuardrails()
     {
@@ -490,6 +630,72 @@ public class LlmCaptureTriageExtractorTests
         // chat output can never satisfy the triage contract, so the call is skipped entirely.
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderIsMock);
         _providerMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // #2192 review, HIGH: the mock is reached two ways. Mock BY CHOICE is an ordinary offline
+    // setup. Mock by DIVERSION — the operator asked for a live provider and selection rejected it
+    // — is a broken live deployment, and reporting it as ProviderIsMock made the capture-triage
+    // fallback silent for exactly the misconfiguration #2192 was filed about.
+    // -----------------------------------------------------------------------------------------
+
+    [Theory]
+    // Live requested, but the OpenAI settings fail validation (missing key, bad BaseUrl,
+    // disallowed localhost) — LlmProviderSelectionPolicy diverts to the mock.
+    [InlineData("The configured live provider failed startup validation.")]
+    // Live requested and enabled, but the environment policy declines it.
+    [InlineData("Live providers are not permitted in this environment.")]
+    // Live enabled, but the provider selector is not a recognized value.
+    [InlineData("The configured provider selector is not recognized.")]
+    public async Task ExtractAsync_ShouldReportProviderUnavailable_WhenAMockWasSubstitutedForARequestedLiveProvider(
+        string diversionReason)
+    {
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            providerDecision: new LlmProviderDecision(
+                LlmProviderKind.Mock,
+                "Reason for the startup log, which may embed the configured BaseUrl.",
+                diversionReason));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        // Unavailable, not "mock" — this deployment asked for a model and is not getting one, so
+        // CaptureTriageService records the degradation on the capture instead of staying silent.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderUnavailable);
+        result.Detail.Should().Be(diversionReason);
+
+        // The coarse reason is published; the precise one (which can embed a configured BaseUrl)
+        // stays in the startup log.
+        result.Detail.Should().NotContain("BaseUrl");
+        _providerMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldStayQuiet_WhenTheMockIsTheDeliberateConfiguration()
+    {
+        _providerMock
+            .Setup(p => p.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", IsMock: true));
+        var extractor = new LlmCaptureTriageExtractor(
+            _providerMock.Object,
+            _settings,
+            _killSwitchMock.Object,
+            _quotaMock.Object,
+            // A decision with no diversion reason: the mock is what was asked for.
+            providerDecision: new LlmProviderDecision(LlmProviderKind.Mock, "Mock provider selected."));
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        // No live provider was ever expected here, so this must NOT become a degradation notice on
+        // every capture in an ordinary offline install.
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderIsMock);
+        result.Detail.Should().BeNull();
     }
 
     [Fact]
@@ -548,6 +754,48 @@ public class LlmCaptureTriageExtractorTests
     }
 
     [Fact]
+    public async Task ExtractAsync_UnknownCompatibleUsage_CommitsReservationEstimateForLargeTranscript()
+    {
+        _quotaMock
+            .Setup(q => q.ReserveAsync(
+                _userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(
+                true, null, _reservationId, 100_000, 60, EstimatedTokens: 4000));
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[{"title":"Send report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"send report"}]}""",
+                0,
+                IsActionable: false,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                HasAuthoritativeTokenUsage = false
+            });
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(new string('x', 4000) + " send report"));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            _reservationId,
+            _userId,
+            LlmSurface.CaptureTriage,
+            "OpenAICompatible",
+            "vendor/model",
+            4000,
+            0,
+            CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ExtractAsync_ShouldReleaseReservation_WhenNoTokensWereConsumed()
     {
         SetupCompletion("not json at all", tokensUsed: 0);
@@ -584,6 +832,75 @@ public class LlmCaptureTriageExtractorTests
         _quotaMock.Verify(
             q => q.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_CancelledAfterDispatch_CommitsReservationEstimate()
+    {
+        _quotaMock
+            .Setup(q => q.ReserveAsync(
+                _userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QuotaReservationDto(
+                true, null, _reservationId, 100_000, 60, EstimatedTokens: 2000));
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                request.DispatchContext.MarkDispatched();
+                return Task.FromException<LlmCompletionResult>(new OperationCanceledException());
+            });
+        var extractor = BuildExtractor();
+
+        await FluentActions
+            .Awaiting(() => extractor.ExtractAsync(_userId, _boardId, TranscriptPayload()))
+            .Should().ThrowAsync<OperationCanceledException>();
+
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            _reservationId,
+            _userId,
+            LlmSurface.CaptureTriage,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ObservedPreDispatchResult_ReleasesReservation()
+    {
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                return new LlmCompletionResult(
+                    "configuration rejected",
+                    0,
+                    IsActionable: false,
+                    Provider: "OpenAICompatible",
+                    Model: "vendor/model",
+                    IsDegraded: true)
+                {
+                    HasAuthoritativeTokenUsage = false,
+                    ShouldSettleQuotaReservation = true
+                };
+            });
+        var extractor = BuildExtractor();
+
+        var result = await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload());
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.ProviderDegraded);
+        _quotaMock.Verify(q => q.ReleaseReservationAsync(_reservationId, CancellationToken.None), Times.Once);
+        _quotaMock.Verify(q => q.CommitReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<LlmSurface>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

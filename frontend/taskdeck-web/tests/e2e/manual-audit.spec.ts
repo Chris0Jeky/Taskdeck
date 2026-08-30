@@ -21,7 +21,7 @@
 import { expect, test } from '@playwright/test'
 import { parseTrueishEnv } from '../../scripts/demo-shared.mjs'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -108,11 +108,10 @@ test.describe('Core loop: Home -> Inbox/Capture -> Review -> Board', () => {
     await page.screenshot({ path: testInfo.outputPath('05-review-approved.png'), fullPage: true })
 
     // Step 9: Apply proposal to board
-    await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-      type: 'confirm',
-      message: 'Apply this approved proposal to the board now?',
-    })
-    await expect(proposalCard).not.toBeVisible()
+    await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
+    // #1967: after Apply the card either leaves the queue or persists as a
+    // read-only decision record - in both renderings the Apply control is gone.
+    await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('06-review-applied.png'), fullPage: true })
 
     // Step 10: Verify card on board

@@ -72,6 +72,10 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 const boardId = ref(route.params.id as string)
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
+    if (id !== boardId.value) {
+      return
+    }
+
     await boardStore.fetchBoard(id)
   },
   onPresenceChanged: (snapshot) => {
@@ -91,6 +95,7 @@ const sortedColumns = computed(() => {
   return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
 })
 const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
+const paperCollapsedColumnIds = ref<Set<string>>(new Set())
 const paperCardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
   for (const card of boardStore.currentBoardCards) {
@@ -122,6 +127,7 @@ const {
 
 const {
   selectedCardId,
+  selectedColumnIndex,
   selectNextCard,
   selectPreviousCard,
   selectNextColumn,
@@ -137,6 +143,36 @@ const {
   sortedColumns,
   () => boardId.value,
   computed(() => paperOn.value ? paperCardsByColumn.value : boardStore.cardsByColumn),
+  (columnId) => !paperOn.value || !paperCollapsedColumnIds.value.has(columnId),
+)
+
+function handlePaperCollapsedColumnsChange(columnIds: string[]) {
+  paperCollapsedColumnIds.value = new Set(columnIds)
+
+  if (!selectedCardId.value) return
+  const selectedCard = boardStore.currentBoardCards.find((card) => card.id === selectedCardId.value)
+  if (selectedCard && paperCollapsedColumnIds.value.has(selectedCard.columnId)) {
+    selectedCardId.value = null
+  }
+}
+
+function handlePaperColumnSelect(columnId: string) {
+  const columnIndex = sortedColumns.value.findIndex((column) => column.id === columnId)
+  if (columnIndex < 0) return
+
+  selectedColumnIndex.value = columnIndex
+  selectedCardId.value = null
+}
+
+watch(
+  () => {
+    if (!paperOn.value || !selectedCardId.value) return false
+    const selectedCard = boardStore.currentBoardCards.find((card) => card.id === selectedCardId.value)
+    return Boolean(selectedCard && paperCollapsedColumnIds.value.has(selectedCard.columnId))
+  },
+  (selectionIsHidden) => {
+    if (selectionIsHidden) selectedCardId.value = null
+  },
 )
 
 function applyPresenceSeed() {
@@ -147,14 +183,17 @@ function applyPresenceSeed() {
 
 onMounted(async () => {
   boardLoadPerf.start()
+  const requestedBoardId = boardId.value
   try {
     // Seed presence with the current user immediately so the panel never
     // shows "No active collaborators" while waiting for the SignalR
     // BoardJoined push event (fixes #523 flicker).
     applyPresenceSeed()
     boardStore.setEditingCard(null)
-    await boardStore.fetchBoard(boardId.value)
-    await realtime.start(boardId.value)
+    const committed = await boardStore.fetchBoard(requestedBoardId)
+    if (committed && boardId.value === requestedBoardId) {
+      await realtime.start(requestedBoardId)
+    }
   } catch (error) {
     logError('Failed to load board:', error)
   } finally {
@@ -177,8 +216,10 @@ watch(
     boardStore.setEditingCard(null)
 
     try {
-      await boardStore.fetchBoard(boardId.value)
-      await realtime.switchBoard(boardId.value)
+      const committed = await boardStore.fetchBoard(nextBoardId)
+      if (committed && boardId.value === nextBoardId) {
+        await realtime.switchBoard(nextBoardId)
+      }
     } catch (error) {
       logError('Failed to switch board:', error)
     }
@@ -310,32 +351,65 @@ function standardBoardOnlyShortcutsEnabled() {
   return !paperOn.value
 }
 
+/**
+ * True while a Paper board dialog (column settings / board settings / card
+ * modal) covers the board. `PaperBoardView` owns those dialogs and reports the
+ * state up, because the shortcuts are registered here.
+ */
+const paperDialogOpen = ref(false)
+
+/**
+ * Board shortcuts are inert while a dialog is open (GH-1959).
+ *
+ * `useKeyboardShortcuts` only ignores keys typed into an input or textarea, so
+ * with a dialog open and focus anywhere else inside it, `n` still clicked
+ * `[data-action="toggle-add-card"]` on the column BEHIND the modal and then
+ * pulled focus out of the dialog into the composer. `Escape` is intentionally
+ * left ungated: the dialogs close themselves through the shared escape stack,
+ * and gating it here would only risk stranding one open.
+ */
+function boardShortcutsEnabled() {
+  return !paperDialogOpen.value
+}
+
 // Setup keyboard shortcuts
 // Card movement shortcuts (Alt+Arrow) are listed before plain Arrow navigation
 // so the modifier-qualified binding matches first. Plain arrow navigation
 // explicitly sets `alt: false` to avoid firing when Alt is held.
 // PaperBoardView still uses the shared board keyboard navigation state, but
 // shortcuts that depend on hidden standard-board controls stay scoped out.
+// Every binding below except `Escape` carries `boardShortcutsEnabled`, so an
+// open Paper dialog makes them inert instead of letting them act on the board
+// underneath it.
 useKeyboardShortcuts([
   // Card movement (Alt + Arrow keys)
-  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn },
-  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn },
-  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp },
-  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown },
+  { key: 'ArrowRight', alt: true, description: 'Move card to next column', action: moveCardToNextColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowLeft', alt: true, description: 'Move card to previous column', action: moveCardToPreviousColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowUp', alt: true, description: 'Move card up in column', action: moveCardUp, enabled: boardShortcutsEnabled },
+  { key: 'ArrowDown', alt: true, description: 'Move card down in column', action: moveCardDown, enabled: boardShortcutsEnabled },
 
   // Navigation
-  { key: 'j', description: 'Next card', action: selectNextCard },
-  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard },
-  { key: 'k', description: 'Previous card', action: selectPreviousCard },
-  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard },
-  { key: 'h', description: 'Previous column', action: selectPreviousColumn },
-  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn },
-  { key: 'l', description: 'Next column', action: selectNextColumn },
-  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn },
+  { key: 'j', description: 'Next card', action: selectNextCard, enabled: boardShortcutsEnabled },
+  { key: 'ArrowDown', alt: false, description: 'Next card', action: selectNextCard, enabled: boardShortcutsEnabled },
+  { key: 'k', description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
+  { key: 'ArrowUp', alt: false, description: 'Previous card', action: selectPreviousCard, enabled: boardShortcutsEnabled },
+  // `h` is deliberately NOT bound here. AppShell owns the workspace-level
+  // `H` -> Home binding in the capture phase and calls stopImmediatePropagation,
+  // so a board-local `h` could never run; binding it advertised a key that
+  // silently navigated away instead. The ledger advertises Left, not H.
+  { key: 'ArrowLeft', alt: false, description: 'Previous column', action: selectPreviousColumn, enabled: boardShortcutsEnabled },
+  { key: 'l', description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },
+  { key: 'ArrowRight', alt: false, description: 'Next column', action: selectNextColumn, enabled: boardShortcutsEnabled },
 
   // Actions
-  { key: 'Enter', description: 'Open selected card', action: openSelectedCard },
-  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: standardBoardOnlyShortcutsEnabled },
+  { key: 'Enter', description: 'Open selected card', action: openSelectedCard, enabled: boardShortcutsEnabled },
+  // `n` is NOT gated to the standard board any more (#1945). It was, because
+  // the Paper column had no `[data-action="toggle-add-card"]` button for
+  // `createCardInSelectedColumn` to click — so the key was a silent no-op.
+  // PaperBoardColumn now renders that button and the `[data-action="add-card-input"]`
+  // textarea it focuses, so the same DOM contract satisfies both skins. It is
+  // gated on the DIALOG state instead, which is a different question.
+  { key: 'n', description: 'New card in current column', action: createCardInSelectedColumn, enabled: boardShortcutsEnabled },
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
@@ -345,7 +419,13 @@ useKeyboardShortcuts([
 </script>
 
 <template>
-  <PaperBoardView v-if="paperOn" :selected-card-id="selectedCardId" />
+  <PaperBoardView
+    v-if="paperOn"
+    :selected-card-id="selectedCardId"
+    @collapsed-columns-change="handlePaperCollapsedColumnsChange"
+    @column-select="handlePaperColumnSelect"
+    @dialog-open-change="paperDialogOpen = $event"
+  />
   <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
     <div class="bg-surface-container border-b border-outline-variant/15">

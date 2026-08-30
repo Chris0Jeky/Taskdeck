@@ -1,10 +1,60 @@
 # Data Model Reference
 
-Last Verified: 2026-08-01 (artefact/transcript persistence, AutomationProposal pin/defer fields, and the corrected delete-behavior rows below)
+Last Verified: 2026-08-26 (current model unchanged; full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
-> **Recertification boundary:** This reference now includes the shipped artefact/transcript seam and corrects known delete-behavior drift. It is not yet a complete inventory of all 51 live `DbSet` mappings; open issue `#1470` owns the remaining full-model recertification.
+> **Current versus accepted-but-unimplemented:** the shipped ownership model remains
+> `Board -> Column -> Card`. Workspace, Project, canonical WorkItem, hierarchy, typed work relations,
+> Actor/Principal, Assignment, custom fields, work logs, templates, and recurrence do not exist in the
+> current schema. ADR-0060 (compatibility-first work-model direction) and ADR-0062 (fields, aggregates,
+> and threshold rules separated) are both **Accepted** as of 2026-08-29 — maintainer rulings recorded on
+> `#2084` and `#2091`; see `docs/decisions/INDEX.md` for the canonical status. Acceptance is a decision,
+> not a schema change: neither ADR changes the entity blocks or diagram below until it is implemented
+> through a reviewed EF Core migration, so everything documented here remains the shipped model.
+
+> **Coverage claim (self-checkable):** every `DbSet` on `TaskdeckDbContext` has a `###` block below,
+> and the only `###` blocks that are *not* a `DbSet` are the domain-only entities named under the
+> ERD. That invariant is the claim -- deliberately not a count, because a hand-maintained count
+> rots silently while the invariant stays checkable. It takes three checks, not one: a single
+> `comm -23` proves only that nothing mapped is missing, and stays silent when an unexpected
+> heading or a duplicate heading is added. Run all three from the repo root, using native `rg`
+> per `AGENTS.md`:
+>
+> ```bash
+> mapped=$(rg --no-filename --no-line-number -o 'DbSet<\w+' \
+>   backend/src/Taskdeck.Infrastructure/Persistence/TaskdeckDbContext.cs | cut -d'<' -f2 | sort -u)
+> headings=$(rg --no-filename --no-line-number -o '^### \w+' \
+>   docs/architecture/DATA_MODEL.md | cut -d' ' -f2 | sort)
+>
+> # 1. mapped entity with no heading    -- expect NO output
+> comm -23 <(printf '%s\n' "$mapped") <(printf '%s\n' "$headings" | sort -u)
+> # 2. heading that is not a DbSet      -- expect EXACTLY: AbuseActor, AbuseEvent
+> comm -13 <(printf '%s\n' "$mapped") <(printf '%s\n' "$headings" | sort -u)
+> # 3. duplicate heading                -- expect NO output
+> printf '%s\n' "$headings" | uniq -d
+> ```
+>
+> Measured on this document 2026-08-12: 51 mapped entities, 53 headings; checks 1 and 3 empty,
+> check 2 exactly `AbuseActor` and `AbuseEvent`.
+>
+> Column-level ground truth is `backend/src/Taskdeck.Domain/**/*.cs` (validation rules) plus
+> `backend/src/Taskdeck.Infrastructure/Migrations/TaskdeckDbContextModelSnapshot.cs` (persisted
+> columns, widths, indexes, delete behavior). Where the two differ -- the domain often validates
+> tighter than the column allows -- both numbers are given.
+>
+> **EF model metadata vs. runtime validation:** `IsRequired()` and a declared width
+> (`HasMaxLength`) are EF model/schema mappings. SQLite stores these mapped string properties as
+> `TEXT` and does not itself enforce declared widths or JSON syntax. In the rows below, `JSON`
+> describes the intended serialized representation, not a database constraint. Where application
+> or domain validation is known, it is called out separately; serialization/deserialization or a
+> length bound alone is not syntax validation.
+>
+> The glob is `Domain/**` on purpose, not `Domain/Entities/*.cs`: 50 of the 51 mapped entities live
+> under `Domain/Entities/`, but `McpToolHash` is defined at
+> `backend/src/Taskdeck.Domain/Agents/McpToolHash.cs`, so an `Entities/`-only sweep silently skips
+> its validation rules. Re-check that exception rather than assuming it, by intersecting the `DbSet`
+> names above with the basenames under `Domain/Entities/`.
 
 > **FK vs. logical references:** Fields marked **FK** have an enforced foreign key constraint in the database (with Cascade, Restrict, or SetNull behavior). Fields marked **references** store a related entity's ID but have no database-level FK constraint -- referential integrity is maintained by application code only.
 
@@ -14,7 +64,7 @@ This document describes entities in the Taskdeck data model, their fields, const
 
 ## Entity Relationship Diagram
 
-> **Diagram legend:** Solid lines represent enforced FK constraints in the database. Lines marked "(logical)" represent application-level associations with no database FK constraint.
+> **Diagram legend:** Solid lines represent enforced FK constraints in the database. Lines marked "(logical)" represent application-level associations with no database FK constraint. The ERD maps *relationships*, so mapped tables that stand alone -- `RegistrationBootstrap` and `RegistrationInvite` -- have no line here and appear only as blocks below.
 
 ```mermaid
 erDiagram
@@ -27,6 +77,7 @@ erDiagram
     User ||--o| NotificationPreference : "has (FK)"
     User ||--o{ Notification : "receives (FK)"
     User ||--o{ CardComment : "authors (FK)"
+    User ||--o{ CardCommentMention : "is mentioned in (FK)"
     User ||--o{ LlmRequest : "submits (FK)"
     User ||--o{ AuditLog : "triggers (FK)"
     User ||--o{ IntegrationConnector : "owns (FK)"
@@ -37,6 +88,11 @@ erDiagram
     User ||--o{ LlmUsageRecord : "tracked for (logical)"
     User ||--o{ KnowledgeDocument : "owns (logical)"
     User ||--o{ AgentProfile : "owns (logical)"
+    User ||--o{ ConnectorCredential : "owns (FK)"
+    User ||--o{ DailySnapshot : "seals (logical)"
+    User ||--o{ TomorrowNote : "writes (logical)"
+    User ||--o{ McpToolHash : "approves (logical)"
+    User ||--o{ OAuthAuthCode : "issued to (logical)"
 
     Board ||--o{ Column : "contains (FK)"
     Board ||--o{ Card : "contains (FK)"
@@ -49,6 +105,9 @@ erDiagram
     Board ||--o{ LlmRequest : "scoped to (FK)"
     Board o|--o{ SourceArtefact : "optionally scopes (FK, SetNull)"
     Board o|--o{ Transcript : "optionally scopes (FK, SetNull)"
+
+    LlmRequest ||--o{ Transcript : "created from (logical)"
+    LlmRequest o|--o| Transcript : "links snapshot (FK, SetNull)"
 
     Column ||--o{ Card : "holds (FK)"
 
@@ -63,8 +122,17 @@ erDiagram
     ChatSession ||--o{ ChatMessage : "contains (FK)"
 
     AutomationProposal ||--o{ AutomationProposalOperation : "defines (FK)"
+    AutomationProposal ||--o{ ProposalRevision : "revised by (FK)"
+    AutomationProposal ||--o{ ProposalOutcome : "decided as (FK)"
+    AutomationProposal ||--o{ ProposalFeedback : "flagged by (FK)"
+    AutomationProposal ||--o| ProposalProvenance : "derived via (FK)"
+
+    ProposalProvenance ||--o{ ProvenanceField : "explains (FK)"
+    ProvenanceField ||--o{ ProvenanceEvidenceLink : "cites (FK)"
+    Transcript ||--o{ ProvenanceEvidenceLink : "anchors transcript evidence (FK)"
 
     IntegrationConnector ||--o{ ConnectorEvent : "logs (FK)"
+    IntegrationConnector ||--o{ ConnectorCredential : "authenticates with (FK)"
 
     KnowledgeDocument ||--o{ KnowledgeChunk : "split into (FK)"
 
@@ -80,7 +148,20 @@ erDiagram
     SourceArtefact o|--o{ Transcript : "optionally originates (FK, SetNull)"
 ```
 
-> **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist in `Taskdeck.Domain.Entities` but are not yet mapped to the database (no `DbSet` or EF configuration). They are documented in the [Audit and Abuse](#audit-and-abuse) section for completeness but are not shown in the ERD above.
+> **Domain-only entities:** two classes derive from `Entity` but have no `DbSet`, no EF
+> configuration, and no table, so they never appear in the ERD: `AbuseActor` and `AbuseEvent`. Both
+> are written out in the [Audit and Abuse](#audit-and-abuse) section because an abuse-containment
+> reader expects them.
+
+> **RFAI-02 vocabulary removed (`#1305` AC3):** the shipped evidence-span capability lives entirely
+> in the mapped `ProvenanceEvidenceLink` / `ProvenanceField` tables. The unmapped RFAI-02
+> intent-envelope spike vocabulary — `IntentEnvelopeV1`, `SourceBlock`, `SourceSpan`,
+> `IntentCandidate`, the domain-only `EvidenceLink`, `TaskdeckProposalBatch`, their companion
+> interfaces `IProposalCompiler` / `IIntentEnvelopeFactory`, and the `proposal-batch.v1` JSON schema
+> — was table-less scaffolding with no production consumer and has been removed. Architecture
+> invariant INV-12 (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`) now asserts the
+> "automation output references its source payload" invariant against `ProvenanceEvidenceLink` /
+> `ProvenanceField`.
 
 ---
 
@@ -157,10 +238,10 @@ A task card within a board column.
 | BoardId | `Guid` | Yes | FK to Board | Parent board |
 | ColumnId | `Guid` | Yes | FK to Column | Current column |
 | Title | `string` | Yes | 1-200 chars | Card title |
-| Description | `string` | Yes | Max 2000 chars | Defaults to empty string |
-| DueDate | `DateTimeOffset?` | No | | Optional deadline |
+| Description | `string` | Yes | Max 4000 chars (DB); domain enforces 2000 | Defaults to empty string |
+| DueDate | `DateTimeOffset?` | No | Canonical UTC `YYYY-MM-DD` key; date-input writes use midnight UTC | Optional calendar-day deadline (ADR-0058) |
 | IsBlocked | `bool` | Yes | | Blocked status flag |
-| BlockReason | `string?` | No | Non-empty when IsBlocked | Reason for blocking |
+| BlockReason | `string?` | No | Non-empty when IsBlocked; 500 is a model width only (SQLite `TEXT`, runtime input unbounded) | Reason for blocking |
 | Position | `int` | Yes | >= 0 | Display order within column |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -239,8 +320,8 @@ Tracks @-mentions within card comments.
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
-| CardCommentId | `Guid` | Yes | FK to CardComment | Parent comment |
-| MentionedUserId | `Guid` | Yes | FK to User | Mentioned user |
+| CardCommentId | `Guid` | Yes | FK to CardComment (Cascade) | Parent comment |
+| MentionedUserId | `Guid` | Yes | FK to User (Cascade) | Mentioned user; deleting the user deletes this row |
 | MentionedUsername | `string` | Yes | 1-50 chars | Username at time of mention |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -292,13 +373,184 @@ A single atomic operation within a proposal.
 | ActionType | `string` | Yes | Non-empty | Operation type (e.g., "CreateCard") |
 | TargetType | `string` | Yes | Non-empty | Target entity type |
 | TargetId | `string?` | No | | ID of existing target |
-| Parameters | `string` | Yes | Non-empty, JSON | Operation parameters |
+| Parameters | `string` | Yes | EF: required `TEXT`; create path: `ProposalOperationInputValidator` requires a non-empty JSON object, max 64 KiB UTF-8, max depth 32; revision path: `ProposalRevisionService` applies `ProposalOperationStructureValidator`, which requires a non-null value no longer than 10,000 characters | Operation parameters |
 | IdempotencyKey | `string` | Yes | Non-empty | Ensures at-most-once execution |
 | ExpectedVersion | `string?` | No | | Optimistic concurrency token |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 **Navigation:** Proposal (parent)
+
+**Indexes:** `IdempotencyKey` (unique), `ProposalId`, `(ProposalId, Sequence)`.
+
+### ProposalRevision
+
+An immutable edit of a proposal. Revisions never overwrite the original payload; they form a
+chronological chain, and `AutomationProposal.ApprovedRevisionId` pins the one Apply executes.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade) | Parent proposal |
+| RevisionNumber | `int` | Yes | >= 1, unique per proposal | Monotonic 1-based revision counter |
+| EditorUserId | `Guid` | Yes | References User (no FK) | Who made the edit |
+| RevisedPayload | `string` | Yes | EF: required `TEXT`; domain requires non-empty; application: `ProposalRevisionService` parses a JSON object with a non-empty `operations` array | Full snapshot of the edited operations, not a diff |
+| RevisedAt | `DateTimeOffset` | Yes | | When the revision was created (UTC) |
+| Reason | `string` | Yes | 1-500 chars | Human-readable reason for the edit |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Navigation:** Proposal (parent)
+
+**Indexes:** `EditorUserId`, `ProposalId`, `(ProposalId, RevisionNumber)` (unique).
+
+### ProposalOutcome
+
+A record of a review decision that is *intended* to store structural dimensions only -- not
+proposal text, user rationale, or other business content. That content-free property is a caller
+convention, not an enforced guarantee: `SourceType`, `RiskLevel`, and `ModelId` are free-form
+strings the public constructor validates only for non-emptiness and length, so a caller could place
+content in them. The entity carries no free-text field, and its enum and numeric dimensions hold
+none by construction.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade) | Decided proposal |
+| DecidedByUserId | `Guid` | Yes | References User (no FK) | Deciding user |
+| Decision | `OutcomeDecision` | Yes | Enum: Approved, EditedThenApproved, Rejected, Ignored | Decision taken |
+| OutcomeType | `OutcomeType` | Yes | Enum: Approved, EditedThenApproved, Rejected, Ignored | Derived from `Decision`; kept in sync |
+| DecidedAt | `DateTimeOffset` | Yes | | Decision timestamp |
+| DecisionLatencySeconds | `double` | Yes | Finite, >= 0 | Time from surfacing to decision |
+| FieldCount | `int` | Yes | >= 0 | Fields in the proposal |
+| EditedFieldCount | `int` | Yes | 0 <= value <= FieldCount | Must be 0 unless the decision is EditedThenApproved, and > 0 when it is |
+| SourceType | `string` | Yes | 1-50 chars | Proposal origin, as text |
+| RiskLevel | `string` | Yes | 1-50 chars | Risk classification, as text |
+| ModelId | `string?` | No | Max 100 chars | Generating model, when known |
+| AverageFieldConfidence | `double?` | No | 0.0-1.0 | Mean provenance confidence |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Navigation:** Proposal (parent)
+
+**Indexes:** `CreatedAt`, `DecidedByUserId`, `Decision`, `ProposalId`.
+
+`SourceType` and `RiskLevel` are stored as strings here, not as the `ProposalSourceType` / `RiskLevel`
+enums used on `AutomationProposal` -- an outcome row keeps its recorded label even if the enum changes.
+
+### ProposalFeedback
+
+A content-free negative signal: a reviewer flagged a proposal as a bad or unhelpful suggestion.
+Orthogonal to the decision lifecycle -- recording feedback never changes `AutomationProposal.Status`.
+The entity has **no free-text field**, so the no-PII invariant cannot be violated by construction.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade) | Flagged proposal |
+| ReportedByUserId | `Guid` | Yes | References User (no FK) | Reporting user |
+| Reason | `ProposalFeedbackReason` | Yes | Enum: Unspecified, Irrelevant, Incorrect, Duplicate, TooRisky, Other | Category; a one-click report stores Unspecified |
+| ReportedAt | `DateTimeOffset` | Yes | | When flagged |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Indexes:** `(ProposalId, ReportedByUserId)` (unique), `(ReportedByUserId, CreatedAt)`.
+
+At most one row exists per (proposal, user). A repeat report never inserts a second row; instead it
+is a **one-time upgrade out of `Unspecified`, and nothing more**. `ProposalFeedbackService`
+rewrites `Reason` only while the stored value is still `Unspecified`
+(`if (existing.Reason == ProposalFeedbackReason.Unspecified && reason != ...Unspecified)`), so once
+a categorized reason is stored it is frozen -- first-specific-wins, not last. Worked sequence for
+one user on one proposal:
+
+| Report | Stored `Reason` after it | Why |
+|--------|--------------------------|-----|
+| 1st: one-click (no category) | `Unspecified` | Row inserted |
+| 2nd: `Irrelevant` | `Irrelevant` | Upgrade fires -- stored value was `Unspecified` |
+| 3rd: `TooRisky` | `Irrelevant` (unchanged) | Guard fails -- stored value is no longer `Unspecified`; silent no-op returning success |
+
+Under *simultaneous* distinct reasons the unique `(ProposalId, ReportedByUserId)` index and the
+`UpdatedAt` concurrency token make it first-committed-wins, and the loser is a benign no-op.
+
+### ProposalProvenance
+
+The head of a proposal's provenance chain: which model produced it, under which correlation, and at
+what token cost. At most one row per proposal, and possibly none. The unique index on `ProposalId`
+forbids a second row, but nothing requires a first: `AutomationProposalService` writes provenance
+only when the optional `IProposalProvenanceRepository` constructor argument was supplied
+(`if (_provenanceRepository is not null)`), the repository lookup returns `ProposalProvenance?`, and
+the FK migration `20260425232031_AddProposalProvenanceForeignKey` added the constraint without
+backfilling existing proposals. Consumers must handle absence --
+`ProvenanceQueryService.GetProvenanceRowsAsync` returns an empty list, not an error.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
+| CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
+| ModelId | `string` | Yes | 1-100 chars | Generating model (e.g. `gpt-4o`, `mock`) |
+| TotalTokens | `int` | Yes | >= 0 | Prompt + completion tokens |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Navigation:** Fields (children)
+
+**Index:** `ProposalId` (unique).
+
+### ProvenanceField
+
+One proposal field with its derivation metadata: how it was produced, from where, and how confidently.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProposalProvenanceId | `Guid` | Yes | FK to ProposalProvenance (Cascade) | Parent chain |
+| FieldName | `string` | Yes | 1-100 chars | Proposal field (e.g. `Title`, `DueDate`) |
+| Kind | `ProvenanceKind` | Yes | Enum: Extractive, Inferred | Verbatim extraction vs. synthesis |
+| Confidence | `double` | Yes | 0.0-1.0 | Match quality (Extractive) or model confidence (Inferred) |
+| ExtractiveQuote | `string?` | No | Max 2000 chars | **Required** when Kind = Extractive; **must be null** otherwise |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Navigation:** EvidenceLinks (children)
+
+**Index:** `ProposalProvenanceId`.
+
+Confidence is monotonic downward once set: verification may downgrade it, never raise it.
+
+### ProvenanceEvidenceLink
+
+A structured pointer from a provenance field back to its source material -- a capture, a chat
+message, a document chunk, or a durable Transcript.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ProvenanceFieldId | `Guid` | Yes | FK to ProvenanceField (Cascade) | Parent field |
+| SourceType | `string` | Yes | 1-100 chars | Kind of source referenced |
+| SourceId | `string` | Yes | 1-500 chars | Identifier within that source |
+| TranscriptId | `Guid?` | Conditional | FK to Transcript (Cascade) | Required for canonical Transcript sources; null for every other source type |
+| Label | `string?` | No | Max 200 chars | Optional display label |
+| SpanStart | `int?` | No | >= 0 | Optional start offset in the source |
+| SpanEnd | `int?` | No | >= 0, >= SpanStart | Optional end offset |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Indexes:** `ProvenanceFieldId`, `TranscriptId`.
+
+For transcript triage, the canonical source contract is `SourceType = "Transcript"`, a `Guid` `D`
+string in `SourceId`, the same value in typed `TranscriptId`, and the fixed non-content label
+`Transcript evidence`. `SpanStart` and `SpanEnd` are either both null when the verbatim quote is
+ambiguous, or a paired half-open
+`[start,end)` range measured in .NET UTF-16 code units over the Transcript's LF-normalized text.
+Neither `Label` nor the inferred field's `ExtractiveQuote` duplicates Transcript content. Board
+readers may receive this opaque metadata, but any future quote resolver must load text through the
+owner-scoped Transcript repository and return an explicit unavailable state to other users.
+
+The database check requires typed `TranscriptId` exactly for `SourceType = "Transcript"`, and its
+FK cascades on Transcript deletion. A link committed before erasure is therefore deleted by the
+database; a stale proposal/link save attempted after erasure fails its FK and rolls back atomically.
+Other generic source types remain untyped and retain only `SourceType`/`SourceId`.
 
 ---
 
@@ -334,7 +586,7 @@ A single message in a chat session.
 | ProposalId | `Guid?` | No | | Linked proposal |
 | TokenUsage | `int?` | No | >= 0 | Tokens consumed |
 | DegradedReason | `string?` | No | | Reason for degraded response |
-| ToolCallMetadataJson | `string?` | No | | Tool call metadata (JSON) |
+| ToolCallMetadataJson | `string?` | No | Optional `TEXT`; application serializer produces the orchestrator metadata; the entity setter only trims and does not validate arbitrary JSON syntax | Tool call metadata (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -397,8 +649,8 @@ MCP HTTP transport authentication key.
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | FK to User | Key owner |
-| KeyHash | `string` | Yes | Non-empty | SHA-256 hash of full key |
-| KeyPrefix_ | `string` | Yes | Non-empty | First 8 chars for display (e.g., `tdsk_a1b2`) |
+| KeyHash | `string` | Yes | Non-empty, max 64 chars, unique | SHA-256 hash of full key |
+| KeyPrefix_ | `string` | Yes | Non-empty, max 10 chars | First 8 chars for display (e.g., `tdsk_a1b2`); persisted as column `KeyPrefix` |
 | Name | `string` | Yes | 1-100 chars | User-provided name |
 | ExpiresAt | `DateTimeOffset?` | No | Must be future | Optional expiration |
 | RevokedAt | `DateTimeOffset?` | No | | Set when revoked |
@@ -407,6 +659,8 @@ MCP HTTP transport authentication key.
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 **Computed:** `IsActive` = not revoked and not expired.
+
+**Indexes:** `KeyHash` (unique), `UserId`. The raw key is `tdsk_` plus 36 base62 characters (41 total) and is never persisted.
 
 ### RegistrationBootstrap
 
@@ -453,6 +707,10 @@ Links a user to an external OAuth provider (e.g., GitHub).
 
 TOTP-based multi-factor authentication credential (one per user).
 
+**Security note:** `Secret` is currently stored plaintext at rest. Encryption is required before
+MFA is used in production; the current entity and EF configuration do not define an encryption
+converter.
+
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
@@ -471,10 +729,10 @@ Short-lived authorization code for OAuth login/linking flows.
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | Code | `string` | Yes | 1-512 chars | Authorization code |
-| UserId | `Guid` | Yes | Non-empty | Authenticated user (login) or initiating user (link) |
+| UserId | `Guid` | Yes | References User (no FK); non-empty | Authenticated user (login) or initiating user (link) |
 | Token | `string` | Yes | | Legacy field, no longer stores JWTs |
 | Purpose | `string` | Yes | `"login"` or `"link"` | Flow type |
-| ProviderData | `string?` | No | | JSON provider identity for linking |
+| ProviderData | `string?` | No | Optional `TEXT`, max 4096 via EF; application serializes provider identity and deserializes it during link exchange; persistence does not enforce syntax | JSON provider identity for linking |
 | ExpiresAt | `DateTimeOffset` | Yes | Must be future | Expiration time |
 | IsConsumed | `bool` | Yes | | Whether already exchanged |
 | ConsumedAt | `DateTimeOffset?` | No | | When consumed |
@@ -501,6 +759,36 @@ Per-user workspace preferences (one per user).
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 ---
+
+## Context Fabric (ADR-0065)
+
+### Capture
+
+The durable, user-owned Inbox object (ADR-0065 §Decision 1). Scaffolded 2026-08-30: the table exists
+and is written only while `ContextFabric:DualWriteCaptures` is on (default off), as an ID-preserving
+mirror of the legacy `LlmRequest` capture row; Inbox reads stay on the queue row until CF-01 `#2255`
+completes the backfill and flips the read path. Job, run, representation, evidence-anchor and
+candidate tables (CF-03, CF-06, CF-07, CF-08) hang off this row and are not yet persisted.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK, never generated by the database | Equal to the legacy `LlmRequest.Id` for mirrored/backfilled rows |
+| UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
+| CapturedAtServer | `DateTimeOffset` | Yes | | Server clock at intake (authoritative) |
+| CapturedAtClient | `DateTimeOffset?` | No | | Client-reported time, a hint only |
+| PrimaryModality | `CaptureModality` | Yes | Text, Audio, Image, Document, Structured | What the capture primarily carries |
+| OriginAdapter | `CaptureOriginAdapter` | Yes | WebComposer, FileUpload, ShareTarget, BrowserExtension, VsCodeExtension, Mcp, Import, Integration, Api | Transport/adapter provenance |
+| Producer | `CaptureProducerKind` | Yes | Human, Agent, Integration, Import | Server-stamped principal kind |
+| Intent | `CaptureIntentMode` | Yes | Remember, Organize, Act, Auto | What the user asked for |
+| Lifecycle | `CaptureLifecycleState` | Yes | Received … Archived (see `CaptureLifecyclePolicy`) | User-legible timeline, independent of job state |
+| LegacySource | `CaptureSource` | Yes | Defined enum value | Derived compatibility field (`CaptureSourceMapping`) |
+| ContextBoardId | `Guid?` | No | FK to Board (SetNull) | Optional explicit context hint; never required |
+| UserTitle | `string?` | No | Max 240 chars, trimmed; single-line — every control character (LF/TAB included) becomes a space, never a rejection (legacy-contract parity) | |
+| UserNote | `string?` | No | Max 2000 chars, trimmed; LF/TAB kept, other control characters become spaces | |
+| LegacyRequestId | `Guid?` | No | Unique | The queue row this capture mirrors; null for native captures after the read switch |
+| CreatedAt / UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Indexes:** `(UserId, CreatedAt)`, `(UserId, Lifecycle)`, `ContextBoardId`, `LegacyRequestId` (unique).
 
 ## Capture Artefacts and Transcripts
 
@@ -547,7 +835,7 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 | SourceArtefactId | `Guid` | Yes | FK to SourceArtefact (Cascade) | Source metadata |
 | ExtractorName | `string` | Yes | 1-100, control-free, valid UTF-16 | Extractor identity |
 | ExtractorVersion | `string` | Yes | 1-50, control-free, valid UTF-16 | Extractor version |
-| WarningsJson | `string` | Yes | Max 4096 chars; up to 16 warnings of 128 chars | Serialized warning list |
+| WarningsJson | `string` | Yes | EF: required `TEXT`, max 4096; domain allows at most 16 warnings, each non-empty, control-free, valid UTF-16, and no longer than 128 characters, then enforces the serialized-length bound and serializes/deserializes the list | Serialized warning list |
 | ExtractedText | `string` | Yes | Max 102,400 chars; LF-only, valid UTF-16 | Immutable extracted text; may be empty |
 | TextLength | `int` | Yes | Derived from text | Character count |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -557,7 +845,9 @@ Immutable extracted-text history. Re-extraction appends a row; consumers select 
 
 ### Transcript
 
-User-owned normalized transcript record. It is an independent durable text store, but not yet the only one: the current transcript-capture path also retains input text in `LlmRequest.Payload` until `#1305` links triage to Transcript and establishes the final ownership boundary.
+User-owned normalized transcript record. It is the canonical durable transcript snapshot for linked
+transcript captures. The current transcript-capture path also retains input text in
+`LlmRequest.Payload` as a compatibility duplicate; this linkage does not imply payload retirement.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -565,8 +855,8 @@ User-owned normalized transcript record. It is an independent durable text store
 | UserId | `Guid` | Yes | FK to User (Restrict) | Owning user |
 | BoardId | `Guid?` | No | FK to Board (SetNull) | Optional board scope |
 | CaptureSource | `CaptureSource` | Yes | Defined enum value | Transcript source |
-| Text | `string` | Yes | 1-102,400 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
-| SegmentsJson | `string` | Yes | Max 1,048,576 chars; at most 5,000 segments | Serialized line-indexed annotations |
+| Text | `string` | Yes | 1-200,000 chars; normalized LF, valid UTF-16 | Normalized text owned by this Transcript record |
+| SegmentsJson | `string` | Yes | EF: required `TEXT`, max 1,048,576; domain allows at most 5,000 segments, validates their content and serialized length, then serializes/deserializes the list | Serialized line-indexed annotations |
 | CreatedFromCaptureId | `Guid?` | No | References LlmRequest (no FK) | Optional soft provenance link |
 | SourceArtefactId | `Guid?` | No | FK to SourceArtefact (SetNull) | Optional originating artefact |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -589,8 +879,9 @@ A queued request for LLM processing.
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | FK to User | Requesting user |
 | BoardId | `Guid?` | No | FK to Board | Optional board scope |
+| TranscriptId | `Guid?` | No | FK to Transcript (SetNull); unique when present | Optional durable transcript snapshot linked to this request |
 | RequestType | `string` | Yes | Non-empty | Request category |
-| Payload | `string` | Yes | Non-empty | Request content (JSON) |
+| Payload | `string` | Yes | EF: required `TEXT`; domain rejects null, empty, or whitespace-only values in both construction and `UpdatePayload`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
 | ErrorMessage | `string?` | No | | Failure message |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
@@ -598,7 +889,9 @@ A queued request for LLM processing.
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
-**Navigation:** User, Board
+**Navigation:** User, Board, Transcript
+
+**Index:** `TranscriptId` (unique; nullable values may repeat).
 
 ### LlmUsageRecord
 
@@ -609,14 +902,31 @@ Per-request token usage tracking for quota and cost visibility.
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | References User (no FK) | Requesting user |
 | Surface | `LlmSurface` | Yes | Enum: Chat, CaptureTriage, Worker | Product surface |
-| Provider | `string` | Yes | Non-empty | LLM provider name |
-| Model | `string` | Yes | | Model identifier |
+| Provider | `string` | Yes | Non-empty; 100 is a model width only (SQLite `TEXT`, not runtime-enforced) | LLM provider name; a reservation stores the literal `reserved` until committed |
+| Model | `string` | Yes | 200 is a model width only (SQLite `TEXT`, not runtime-enforced); empty string allowed | Model identifier |
 | InputTokens | `int` | Yes | >= 0 | Input token count |
 | OutputTokens | `int` | Yes | >= 0 | Output token count |
+| Status | `LlmUsageRecordStatus` | Yes | Enum: Reserved, Committed | Lifecycle state; a directly recorded row is Committed |
+| ExpiresAt | `DateTimeOffset?` | No | Set only while Reserved | Reservation TTL; null on committed rows |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 **Computed:** `TotalTokens` = InputTokens + OutputTokens.
+
+**Indexes:** `CreatedAt`, `UserId`, `(Status, ExpiresAt)`, `(Surface, CreatedAt)`, `(UserId, CreatedAt)`.
+
+`Status`/`ExpiresAt` back the quota-reservation flow: a `Reserved` row holds one request slot
+and an estimated token count, and only counts toward quota while `ExpiresAt > now`, so a crashed
+process's stale reservation is ignored and swept on the next attempt. `Commit` overwrites the
+estimate with actual counts and clears `ExpiresAt`.
+
+**Not atomic.** Reserving is a check-then-insert, and concurrent reservations can over-admit past
+the quota: the race was proven not closeable in-process (it survives even a global full-span lock,
+because of cold-start WAL `-shm` read-visibility), so the redesign is deferred to `#1435` and the
+four guarantee tests in `backend/tests/Taskdeck.Api.Tests/LlmQuotaReservationConcurrencyTests.cs`
+are `Skip`-marked pending it. Treat these columns as a best-effort budget signal, not an enforced
+ceiling. What `#1427` *did* close is settlement, not admission: a client that aborts mid-stream can
+no longer discard its own billed usage record.
 
 ### CommandRun
 
@@ -652,7 +962,7 @@ A log entry for a command execution.
 | Level | `string` | Yes | One of: Debug, Info, Warning, Error | Log level |
 | Source | `string` | Yes | Non-empty | Log source |
 | Message | `string` | Yes | Non-empty | Log message |
-| Metadata | `string?` | No | | Additional data (JSON) |
+| Metadata | `string?` | No | Optional `TEXT`; no application/domain JSON syntax validation is claimed here | Additional data (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -671,7 +981,7 @@ An external integration connector owned by a user.
 | ConnectorType | `ConnectorType` | Yes | Enum: BrowserClipper, MarkdownImport, WebClip, GitHubIssueIntake, WebhookInbound, Custom | Integration type |
 | Direction | `ConnectorDirection` | Yes | Enum: Inbound, Context, Outbound | Data flow direction |
 | Status | `ConnectorStatus` | Yes | Enum: Active, Disabled, Error | Current state |
-| Configuration | `string?` | No | Max 4000 chars | Connector config (JSON) |
+| Configuration | `string?` | No | Optional `TEXT`, max 4000 via EF; length-only mapping, with no application/domain JSON syntax validation claimed here | Connector config (JSON) |
 | UserId | `Guid` | Yes | FK to User | Owner |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -690,6 +1000,30 @@ An audit event for an integration connector.
 | Payload | `string?` | No | Truncated to 1000 chars | Event payload |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Indexes:** `ConnectorId`, `(ConnectorId, CreatedAt)`.
+
+### ConnectorCredential
+
+Encrypted credential material for a connector instance. Plaintext secrets are never stored.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| ConnectorId | `Guid` | Yes | FK to IntegrationConnector (Cascade) | Owning connector |
+| UserId | `Guid` | Yes | FK to User (Cascade) | Owning user |
+| AuthMethod | `ConnectorAuthMethod` | Yes | Enum: None, ApiKey, OAuth2, PersonalAccessToken, WebhookSecret. **Stored as the enum NAME in a `TEXT` column, max length 50** -- not as an integer | Credential type |
+| Label | `string` | Yes | 1-100 chars, trimmed | Non-secret display label |
+| EncryptedValue | `string` | Yes | 1-8000 chars | AES-256 encrypted credential; never plaintext |
+| KeyVersion | `int` | Yes | >= 1, DB default 1 | Encryption key version, for rotation |
+| RotatedAt | `DateTimeOffset?` | No | | Last rotation time |
+| ExpiresAt | `DateTimeOffset?` | No | | Optional expiry |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Computed:** `IsExpired` = `ExpiresAt` is set and not in the future.
+
+**Indexes:** `UserId`, `(ConnectorId, UserId)` (unique) -- at most one credential per connector per user.
 
 ### OutboundWebhookSubscription
 
@@ -722,7 +1056,7 @@ A single webhook delivery attempt.
 | SubscriptionId | `Guid` | Yes | FK to OutboundWebhookSubscription | Parent subscription |
 | BoardId | `Guid` | Yes | Non-empty | Board context |
 | EventType | `string` | Yes | 1-120 chars, lowercase | Event type delivered |
-| Payload | `string` | Yes | Non-empty | JSON payload |
+| Payload | `string` | Yes | EF: required `TEXT`; outbound webhook service serializes the envelope, but SQLite does not enforce JSON syntax | JSON payload |
 | Status | `WebhookDeliveryStatus` | Yes | Enum: Pending, Processing, Delivered, DeadLetter | Delivery state |
 | AttemptCount | `int` | Yes | | Number of attempts |
 | NextAttemptAt | `DateTimeOffset` | Yes | | Scheduled next attempt |
@@ -769,7 +1103,7 @@ A chunk of a knowledge document for retrieval.
 | DocumentId | `Guid` | Yes | FK to KnowledgeDocument | Parent document |
 | ChunkIndex | `int` | Yes | >= 0 | Position in document |
 | Content | `string` | Yes | Non-empty | Chunk text |
-| Metadata | `string?` | No | Max 4000 chars | Chunk metadata (JSON) |
+| Metadata | `string?` | No | Optional `TEXT`, max 4000 via EF; domain enforces length only, with no JSON syntax validation | Chunk metadata (JSON) |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
@@ -790,7 +1124,7 @@ A configured agent template owned by a user.
 | TemplateKey | `string` | Yes | 1-100 chars | Template identifier |
 | ScopeType | `AgentScopeType` | Yes | Enum: Workspace, Board | Scope level |
 | ScopeBoardId | `Guid?` | No | Required when ScopeType = Board | Target board |
-| PolicyJson | `string` | Yes | Max 8000 chars | Agent policy config (JSON); defaults to `{}` |
+| PolicyJson | `string` | Yes | EF: required `TEXT`, max 8000; domain enforces length/default only, with no JSON syntax validation | Agent policy config (JSON); defaults to `{}` |
 | IsEnabled | `bool` | Yes | | Active flag |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -833,12 +1167,97 @@ A timestamped event emitted during an agent run.
 | RunId | `Guid` | Yes | FK to AgentRun | Parent run |
 | SequenceNumber | `int` | Yes | >= 0 | Event order |
 | EventType | `string` | Yes | 1-100 chars | Event type |
-| Payload | `string` | Yes | Max 16000 chars | Event data (JSON); defaults to `{}` |
+| Payload | `string` | Yes | EF: required `TEXT`, max 16000; domain rejects values longer than 16,000 characters and defaults null to `{}`; runtime callers commonly serialize event data, but neither layer validates JSON syntax | Event data (JSON); defaults to `{}` |
 | Timestamp | `DateTimeOffset` | Yes | | Event time |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
 
 **Navigation:** Run (parent)
+
+**Index:** `(RunId, SequenceNumber)` (unique).
+
+### McpToolHash
+
+Per-user approval record for an MCP tool definition. Lives in `Taskdeck.Domain.Agents`, not
+`Taskdeck.Domain.Entities`. When a tool's definition changes the hash changes and the stored
+approval is cleared -- but only when `RecordToolDefinitionAsync` writes the new hash. No MCP
+execution path yet calls that service or `IsToolApprovedAsync`, so this records the *intended*
+re-approval gate rather than enforcing it before a tool runs; runtime enforcement is tracked in
+#1154.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| UserId | `Guid` | Yes | References User (no FK) | Approving user |
+| ToolName | `string` | Yes | 1-200 chars | MCP tool name, unique per user |
+| DefinitionHash | `string` | Yes | 1-128 chars | SHA-256 of (name, description, inputSchema) |
+| IsApproved | `bool` | Yes | | Whether this exact hash is approved; starts false |
+| ApprovedAt | `DateTimeOffset?` | No | | Last approval time; null if never approved |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Index:** `(UserId, ToolName)` (unique).
+
+Updating the hash to a new value clears `IsApproved` and `ApprovedAt`; re-writing the *same* hash is
+a no-op that preserves the existing approval.
+
+---
+
+## Daily Planning
+
+### DailySnapshot
+
+One row per user per calendar day, marking whether that day has been sealed.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| UserId | `Guid` | Yes | References User (no FK) | Owning user |
+| Date | `DateOnly` | Yes | Not in the future at creation | Calendar day |
+| SealedAt | `DateTimeOffset?` | No | | When the day was sealed; null while open |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+**Computed:** `IsSealed` = `SealedAt` is set.
+
+**Indexes:** `UserId`, `(UserId, Date)` (unique). Sealing is idempotent: sealing an already-sealed day is a no-op.
+
+### TomorrowNote
+
+A short free-text note, at most one per user per date.
+
+**`Date` is the authoring day, not the display day.** The shipped flow is same-day on both sides:
+Paper Today passes the line-for-tomorrow editor a `save-date` of
+`formatLocalDossierDate(dossier.value.date)`
+(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue` -- the computed is
+`lineForTomorrowSaveDate` at `main`, renamed to `dossierLocalDate` by open PR `#1976` with the
+expression unchanged) and re-reads the *same* key on load
+(`useTodayDossier.ts:374-381` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`).
+A note written on day X therefore persists as `Date = X` and is read back on day X; at the local day
+rollover the composable clears the field and day X+1 queries key X+1, which returns 204. Neither the
+backend service nor the API applies a one-day shift.
+
+The "tomorrow" framing is *product intent that no code path implements*, and `#1640` still owns the
+open question of which side moves -- whether the server adopts the X -> X+1 handoff or the framing is
+retired. The XML doc on `TodayController.GetTomorrowNote` ("written the previous day and is displayed
+on the specified date's morning open") still describes the X -> X+1 handoff. The Paper UI copy is
+changing in flight: at `main` it reads "A note your tomorrow-self will see at first open"
+(`PaperTodayView.vue`, the `paper-today__section-sub` span in the line-for-tomorrow section), and
+**open PR `#1976` (`#1939`) replaces it** with same-day copy ("Saved with today's date - you see it
+when you reopen Today") plus a spec asserting the surface no longer says "tomorrow-self". That is a
+relabel only: it does not settle `#1640`, and if `#1640` picks the one-day shift the copy moves with
+it. Until then, persist under the current dossier date, not tomorrow's.
+
+| Field | Type | Required | Constraints | Description |
+|-------|------|----------|-------------|-------------|
+| Id | `Guid` | Yes | PK | |
+| UserId | `Guid` | Yes | References User (no FK) | Owning user |
+| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the authoring/dossier day (see above) |
+| Text | `string` | Yes | Max 500 chars; empty allowed, null rejected | Note body |
+| CreatedAt | `DateTimeOffset` | Yes | | |
+| UpdatedAt | `DateTimeOffset` | Yes | | |
+
+**Index:** `(UserId, Date)` (unique).
 
 ---
 
@@ -858,7 +1277,7 @@ A snapshot of a soft-deleted board, column, or card for potential restoration.
 | ArchivedByUserId | `Guid` | Yes | Non-empty | User who archived |
 | ArchivedAt | `DateTime` | Yes | | Archive timestamp |
 | Reason | `string?` | No | | Archive reason |
-| SnapshotJson | `string` | Yes | Non-empty | Full entity snapshot (JSON) |
+| SnapshotJson | `string` | Yes | EF: required `TEXT`; restore application deserializes the snapshot for the selected entity type; persistence does not enforce syntax | Full entity snapshot (JSON) |
 | RestoreStatus | `RestoreStatus` | Yes | Enum: Available, Restored, Expired, Conflict | Restore lifecycle |
 | RestoredAt | `DateTime?` | No | | When restored |
 | RestoredByUserId | `Guid?` | No | | Who restored |
@@ -880,7 +1299,7 @@ Tracks changes to entities for accountability.
 | EntityId | `Guid` | Yes | Non-empty | Target entity ID |
 | Action | `AuditAction` | Yes | Enum: Created, Updated, Deleted, Archived, Unarchived, Moved, PermissionGranted, PermissionRevoked, OwnershipTransferred, DataExported, AccountDeletionRequested, AccountAnonymized | Action performed |
 | UserId | `Guid?` | No | | Acting user |
-| Changes | `string?` | No | | Change details (JSON) |
+| Changes | `string?` | No | Optional `TEXT`, max 4000 via EF; no application/domain JSON syntax validation is claimed here | Change details (JSON) |
 | Timestamp | `DateTimeOffset` | Yes | | When action occurred |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |
@@ -970,16 +1389,32 @@ Immutable audit record for abuse detection events and state transitions.
 | Card -> CardComment | One-to-many | FK (Cascade) | A card has many comments |
 | CardComment -> CardComment | Self-referencing | FK (Restrict) | Threaded replies via `ParentCommentId` |
 | CardComment -> CardCommentMention | One-to-many | FK (Cascade) | A comment can mention many users |
+| User -> CardCommentMention | One-to-many | FK (Cascade) | Deleting a user deletes the mention rows pointing at them via `MentionedUserId` -- unlike `User -> CardComment`, which is Restrict |
 | ChatSession -> ChatMessage | One-to-many | FK (Cascade) | A session contains many messages |
 | AutomationProposal -> AutomationProposalOperation | One-to-many | FK (Cascade) | A proposal has many operations |
+| AutomationProposal -> ProposalRevision | One-to-many | FK (Cascade) | Edit chain; revisions are cascade-owned via `ProposalRevision.ProposalId` |
+| AutomationProposal -> ProposalRevision (approved pin) | One-to-zero-or-one | Logical | `ApprovedRevisionId` points back at the single revision `AutomationExecutorService.MaterializeEffectiveProposalAsync` executes on Apply; opposite direction to the cascade FK, deliberately a plain scalar with no FK to avoid a cycle |
+| AutomationProposal -> ProposalOutcome | One-to-many | FK (Cascade) | Content-free decision records |
+| AutomationProposal -> ProposalFeedback | One-to-many | FK (Cascade) | At most one row per (proposal, user) |
+| AutomationProposal -> ProposalProvenance | One-to-zero-or-one | FK (Cascade) | Provenance chain head, keyed by `ProposalId` |
+| ProposalProvenance -> ProvenanceField | One-to-many | FK (Cascade) | Per-field derivation metadata |
+| ProvenanceField -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Source references per field |
+| Transcript -> ProvenanceEvidenceLink | One-to-many | FK (Cascade) | Typed ownership for canonical Transcript evidence; prevents post-erasure orphan links |
 | IntegrationConnector -> ConnectorEvent | One-to-many | FK (Cascade) | A connector logs many events |
+| IntegrationConnector -> ConnectorCredential | One-to-many | FK (Cascade) | Encrypted credentials per connector |
+| User -> ConnectorCredential | One-to-many | FK (Cascade) | Credentials are deleted with their owner |
+| User -> DailySnapshot | One-to-many | Logical | One snapshot per user per day |
+| User -> TomorrowNote | One-to-many | Logical | One note per user per date |
+| User -> McpToolHash | One-to-many | Logical | Per-user MCP tool approvals |
+| User -> OAuthAuthCode | One-to-many | Logical | Ownership binding: `UserId` is the authenticated user (login) or the initiating user (link); enforced in code, no FK |
 | KnowledgeDocument -> KnowledgeChunk | One-to-many | FK (Cascade) | A document is split into chunks |
 | OutboundWebhookSubscription -> OutboundWebhookDelivery | One-to-many | FK (Cascade) | A subscription has many deliveries |
 | AgentProfile -> AgentRun | One-to-many | FK (Cascade) | A profile executes many runs |
 | AgentRun -> AgentRunEvent | One-to-many | FK (Cascade) | A run emits many events |
 | CommandRun -> CommandRunLog | One-to-many | FK (Cascade) | Execution logs per command run |
-| LlmRequest -> SourceArtefact | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
-| LlmRequest -> Transcript | One-to-many (optional) | Logical | `CreatedFromCaptureId` provenance; no FK |
+| LlmRequest -> SourceArtefact | One-to-many (optional) | Logical | `SourceArtefact.CreatedFromCaptureId` provenance; no FK |
+| LlmRequest -> Transcript (created-from) | One-to-many (optional) | Logical | `Transcript.CreatedFromCaptureId` provenance; no FK; distinct from the snapshot link below |
+| LlmRequest -> Transcript (linked snapshot) | One-to-zero-or-one (optional) | FK (SetNull) | `LlmRequest.TranscriptId`; unique when present |
 | SourceArtefact -> ArtefactBlob | One-to-zero-or-one | FK (Cascade) | Binary payload keyed by `SourceArtefactId` |
 | SourceArtefact -> ArtefactExtraction | One-to-many | FK (Cascade) | Append-only extraction history |
 | SourceArtefact -> Transcript | One-to-many (optional) | FK (SetNull) | Transcript survives source-artefact deletion |
@@ -989,10 +1424,36 @@ Immutable audit record for abuse detection events and state transitions.
 ## Persistence Notes
 
 - **Database:** SQLite via EF Core.
-- **Concurrency:** `UpdatedAt` used as optimistic concurrency token on key entities.
+- **Concurrency:** `UpdatedAt` is configured as an optimistic concurrency token on exactly seven
+  entities -- `AutomationProposal`, `DailySnapshot`, `ProposalFeedback`, `ProposalOutcome`,
+  `ProposalProvenance`, `ProvenanceField`, and `ProvenanceEvidenceLink`. On every other entity
+  that maps `UpdatedAt` it is a plain timestamp maintained by `Touch()` and enforces nothing.
+  A few mapped tables have no `UpdatedAt` column at all -- `ArtefactBlob`, `CardLabel`, and
+  `RegistrationBootstrap` in the current snapshot.
 - **Soft deletes:** Cards use `ArchiveItem` snapshots; comments use `IsDeleted` flags. Boards use `IsArchived`.
-- **JSON columns:** Several entities store structured data as JSON strings (`Parameters`, `SnapshotJson`, `PolicyJson`, `Configuration`, `Payload`, `ToolCallMetadataJson`, `WarningsJson`, `SegmentsJson`).
-- **Enum storage:** Enums are stored as integers by default. Exceptions: `UserPreference.WorkspaceMode` and `UserPreference.OnboardingVisibility` are stored as strings.
+- **JSON strings:** The JSON-described fields below are ordinary SQLite `TEXT` strings. JSON syntax
+  and shape are enforced only where the row calls out an application or domain path;
+  serialization/deserialization and length bounds do not turn the SQLite column into a
+  JSON-enforcing schema type.
+- **Enum storage:** Enums are stored as integers by default. There are exactly three exceptions --
+  every `HasConversion<string>()` call in `Persistence/Configurations/`:
+  `UserPreference.WorkspaceMode`, `UserPreference.OnboardingVisibility`, and
+  `ConnectorCredential.AuthMethod` (the last one capped at `HasMaxLength(50)`). All three persist
+  the enum *name* in a `TEXT` column, so schema tooling and raw SQL must compare against the name,
+  not the ordinal. Re-derive the list with
+  `rg -n 'HasConversion<string>' backend/src/Taskdeck.Infrastructure/Persistence/Configurations/`.
 - **Key format:** Most primary keys are `Guid` values. `CardLabel` has a composite key, `RegistrationBootstrap` uses the fixed string key `registration`, and `ArtefactBlob` reuses `SourceArtefactId` as its primary key. API keys use a `tdsk_` prefix with a SHA-256 hash at rest.
-- **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. Some entities (e.g., `ChatSession`, `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`, `CommandRun`) use logical references only -- referential integrity is maintained by application code. The [Relationship Summary](#relationship-summary) is a curated overview, not a complete inventory; `#1470` owns full live-model recertification.
-- **Domain-only entities:** `AbuseActor` and `AbuseEvent` exist as domain classes but have no EF Core mapping, no `DbSet`, and no database table. They are included in this reference for completeness.
+- **Foreign keys:** Not all `UserId`/`BoardId` columns have database FK constraints. `ChatSession`,
+  `LlmUsageRecord`, `AgentProfile`, `KnowledgeDocument`, `AutomationProposal`, `ArchiveItem`,
+  `CommandRun`, `DailySnapshot`, `TomorrowNote`, `McpToolHash`, and `OAuthAuthCode` use logical
+  references only -- referential integrity is maintained by application code. `OAuthAuthCode` is the
+  security-relevant one: the authenticated GitHub *link* endpoint compares the stored `UserId`
+  against the caller before consuming the code (`AuthController.cs:437`, the link-flow CSRF guard).
+  The anonymous GitHub/OIDC *login* exchanges run no caller check -- they consume the single-use
+  bearer code and load the user it names -- so the caller-identity binding exists only on the link
+  flow, and the database enforces neither. The
+  [Relationship Summary](#relationship-summary) lists every FK relationship in the model snapshot
+  plus the notable logical ones; re-derive it from the `HasForeignKey` calls in
+  `TaskdeckDbContextModelSnapshot.cs` rather than trusting this table after a migration.
+- **Domain-only entities:** eight classes derive from `Entity` without any EF mapping -- see the
+  note under the ERD for the full list. Only `AbuseActor` and `AbuseEvent` are written out below.

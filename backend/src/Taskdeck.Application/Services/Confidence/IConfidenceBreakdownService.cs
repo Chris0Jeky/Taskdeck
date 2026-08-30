@@ -4,13 +4,13 @@ using Taskdeck.Domain.Common;
 namespace Taskdeck.Application.Services.Confidence;
 
 /// <summary>
-/// Computes a multi-component confidence breakdown for a proposal
-/// so the review UI can explain why a proposal is or isn't above the apply threshold.
+/// Reads source-labelled confidence values persisted with proposal provenance.
 /// </summary>
 public interface IConfidenceBreakdownService
 {
     /// <summary>
-    /// Computes the confidence breakdown for the given proposal.
+    /// Returns exact model-reported/derived values, or an explicit deterministic/not-reported
+    /// result with no numeric confidence.
     /// </summary>
     /// <param name="proposalId">The proposal to compute breakdown for.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

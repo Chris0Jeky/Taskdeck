@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Polly;
 using Polly.Extensions.Http;
@@ -11,10 +13,46 @@ namespace Taskdeck.Api.Extensions;
 
 public static class LlmProviderRegistration
 {
+    internal const string OpenAiCompatibleHttpClientName = "OpenAiCompatibleLlmProvider";
+    private const string LlmProviderKey = "Llm:Provider";
+    private const string BuiltInSettingsPath = "appsettings.json";
+    private const string LocalSettingsPath = "appsettings.local.json";
+    private const string RetiredComposeWrapperPresenceKey =
+        "TaskdeckMigration:RetiredLlmProviderConfigurationPresent";
+    private const string RetiredComposeWrapperMessage =
+        "The retired Docker Compose variable TASKDECK_LLM_GEMINI_API_KEY is set. Remove it and configure " +
+        "TASKDECK_LLM_OPENAI_API_KEY with TASKDECK_LLM_PROVIDER=OpenAI, or select OpenAICompatible, Ollama, or Mock.";
+
     public static IServiceCollection AddLlmProviders(
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        if (string.Equals(
+                configuration[RetiredComposeWrapperPresenceKey],
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.ComposeMarker,
+                RetiredComposeWrapperMessage);
+        }
+
+        var llmSection = configuration.GetSection("Llm");
+        var configuredProvider = llmSection["Provider"];
+        var hasHigherPrecedenceProviderSelection =
+            HasHigherPrecedenceProviderSelection(services, configuration);
+        LlmProviderSelectionPolicy.ThrowIfRetiredProvider(configuredProvider);
+        if (!LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
+                configuredProvider,
+                hasHigherPrecedenceProviderSelection)
+            && llmSection.GetChildren().Any(section =>
+                section.Key.Equals("Gemini", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new RetiredLlmProviderConfigurationException(
+                RetiredLlmProviderConfigurationReason.SettingsSection,
+                LlmProviderSelectionPolicy.RetiredGeminiProviderMessage);
+        }
+
         // LLM quota and kill switch settings
         var llmQuotaSettings = configuration.GetSection("LlmQuota").Get<LlmQuotaSettings>() ?? new LlmQuotaSettings();
         services.AddSingleton(llmQuotaSettings);
@@ -47,7 +85,7 @@ public static class LlmProviderRegistration
         services.AddScoped<ILlmCaptureTriageExtractor, LlmCaptureTriageExtractor>();
 
         // LLM provider settings and deterministic provider selection policy
-        var llmProviderSettings = configuration.GetSection("Llm").Get<LlmProviderSettings>() ?? new LlmProviderSettings();
+        var llmProviderSettings = llmSection.Get<LlmProviderSettings>() ?? new LlmProviderSettings();
         services.AddSingleton(llmProviderSettings);
 
         // Circuit breaker settings and shared state tracker (explicit instances
@@ -74,10 +112,10 @@ public static class LlmProviderRegistration
         // request would defeat circuit breaking entirely.
         var openAiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "OpenAI", circuitBreakerSettings);
-        var geminiCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
-            circuitBreakerTracker, "Gemini", circuitBreakerSettings);
         var ollamaCircuitBreakerPolicy = BuildCircuitBreakerPolicy(
             circuitBreakerTracker, "Ollama", circuitBreakerSettings);
+        var openAiCompatibleCircuitBreakerPolicy = BuildOpenAiCompatibleCircuitBreakerPolicy(
+            circuitBreakerTracker, "OpenAICompatible", circuitBreakerSettings);
 
         // Determine once at startup whether localhost LLM endpoints are permitted.
         // This is true only in development-like environments with AllowLiveProvidersInDevelopment.
@@ -85,6 +123,11 @@ public static class LlmProviderRegistration
         services.AddSingleton(localhostPolicy);
         services.TryAddTransient<ProtectedOutboundTelemetryHandler>();
         services.TryAddSingleton<ProtectedOutboundMeterFactory>();
+        var egressRegistry = GetOrCreateEgressRegistry(services);
+        RegisterOpenAiCompatibleEgress(
+            egressRegistry,
+            llmProviderSettings,
+            localhostPolicy.AllowGeneralProviderLocalhost);
 
         services.AddHttpClient<OpenAiLlmProvider>((sp, client) =>
         {
@@ -114,17 +157,14 @@ public static class LlmProviderRegistration
         .AddPolicyHandler(openAiCircuitBreakerPolicy)
         .RemoveAllLoggers()
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
-        services.AddHttpClient<GeminiLlmProvider>((sp, client) =>
+        services.AddHttpClient(OpenAiCompatibleHttpClientName, (sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
-            var timeoutSeconds = settings.Gemini?.TimeoutSeconds > 0 ? settings.Gemini.TimeoutSeconds : 30;
+            var timeoutSeconds = settings.OpenAiCompatible?.TimeoutSeconds > 0 ? settings.OpenAiCompatible.TimeoutSeconds : 30;
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         })
         .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
         {
-            // SSRF protection: DNS-level check prevents connections to private/internal IPs
-            // even if the BaseUrl hostname resolves to a private address (DNS rebinding defense).
-            // In development with AllowLiveProvidersInDevelopment, localhost is permitted.
             return new SocketsHttpHandler
             {
                 AllowAutoRedirect = false,
@@ -138,9 +178,15 @@ public static class LlmProviderRegistration
                         cancellationToken)
             };
         })
-        .AddPolicyHandler(geminiCircuitBreakerPolicy)
+        .AddPolicyHandler(openAiCompatibleCircuitBreakerPolicy)
         .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(sp => new EgressEnvelopeHandler(
+            sp.GetRequiredService<IEgressRegistry>(),
+            sp.GetRequiredService<ILogger<EgressEnvelopeHandler>>(),
+            nameof(OpenAiCompatibleLlmProvider),
+            followRedirects: false))
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
         services.AddHttpClient<OllamaLlmProvider>((sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -167,11 +213,19 @@ public static class LlmProviderRegistration
         .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
 
         services.AddScoped<MockLlmProvider>();
+
+        // Registered so consumers can see WHY this provider was chosen, not just which one. The
+        // capture-triage extractor needs it to tell "mock because that is what was configured"
+        // from "mock because the requested live provider was rejected" (#2192 review) — the second
+        // is a broken live deployment and must be recorded on the capture, not just at startup.
+        services.AddScoped(sp => LlmProviderSelectionPolicy.Evaluate(
+            sp.GetRequiredService<LlmProviderSettings>(),
+            sp.GetRequiredService<IWebHostEnvironment>().EnvironmentName));
+
         services.AddScoped<ILlmProvider>(sp =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
-            var environment = sp.GetRequiredService<IWebHostEnvironment>();
-            var decision = LlmProviderSelectionPolicy.Evaluate(settings, environment.EnvironmentName);
+            var decision = sp.GetRequiredService<LlmProviderDecision>();
 
             var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Taskdeck.Api.LlmProviderSelection");
             logger.LogInformation(
@@ -182,13 +236,165 @@ public static class LlmProviderRegistration
             return decision.ProviderKind switch
             {
                 LlmProviderKind.OpenAi => sp.GetRequiredService<OpenAiLlmProvider>(),
-                LlmProviderKind.Gemini => sp.GetRequiredService<GeminiLlmProvider>(),
+                LlmProviderKind.OpenAiCompatible => CreateOpenAiCompatibleProvider(
+                    sp,
+                    settings,
+                    circuitBreakerTracker,
+                    circuitBreakerSettings,
+                    localhostPolicy),
                 LlmProviderKind.Ollama => sp.GetRequiredService<OllamaLlmProvider>(),
                 _ => sp.GetRequiredService<MockLlmProvider>()
             };
         });
 
         return services;
+    }
+
+    private static bool HasHigherPrecedenceProviderSelection(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        if (configuration is not IConfigurationRoot root)
+        {
+            return false;
+        }
+
+        var builtInSettingsProvider = root.Providers
+            .OfType<JsonConfigurationProvider>()
+            .FirstOrDefault(provider =>
+                string.Equals(
+                    provider.Source.Path,
+                    BuiltInSettingsPath,
+                    StringComparison.OrdinalIgnoreCase));
+        var environmentSettingsPath = GetEnvironmentSettingsPath(
+            GetRegisteredWebHostEnvironment(services)?.EnvironmentName);
+
+        foreach (var provider in root.Providers.Reverse())
+        {
+            if (!provider.TryGet(LlmProviderKey, out _))
+            {
+                continue;
+            }
+
+            // Checked-in Mock settings are safe defaults, not evidence that an operator migrated.
+            return provider is not JsonConfigurationProvider jsonProvider
+                || !IsCheckedInDefaultSettingsProvider(
+                    jsonProvider,
+                    builtInSettingsProvider,
+                    environmentSettingsPath);
+        }
+
+        return false;
+    }
+
+    private static bool IsCheckedInDefaultSettingsProvider(
+        JsonConfigurationProvider provider,
+        JsonConfigurationProvider? builtInSettingsProvider,
+        string? environmentSettingsPath)
+    {
+        // Relative checked-in JSON sources inherit one file-provider instance from the builder.
+        // Absolute operator paths are normalized to a file name by ResolveFileProvider but retain
+        // their own provider instance, so path matching alone cannot preserve this boundary.
+        return builtInSettingsProvider?.Source.FileProvider is { } builtInFileProvider
+            && ReferenceEquals(provider.Source.FileProvider, builtInFileProvider)
+            && IsCheckedInDefaultSettingsPath(provider.Source.Path, environmentSettingsPath);
+    }
+
+    private static bool IsCheckedInDefaultSettingsPath(
+        string? path,
+        string? environmentSettingsPath)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || !string.Equals(path, Path.GetFileName(path), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(path, BuiltInSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // The durable operator file is registered by absolute path. ResolveFileProvider can reduce
+        // that path to its file name, so keep the canonical local-config name explicit here.
+        if (string.Equals(path, LocalSettingsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return environmentSettingsPath is not null
+            && string.Equals(path, environmentSettingsPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetEnvironmentSettingsPath(string? environmentName)
+    {
+        return string.IsNullOrWhiteSpace(environmentName)
+            ? null
+            : $"appsettings.{environmentName}.json";
+    }
+
+    private static IWebHostEnvironment? GetRegisteredWebHostEnvironment(
+        IServiceCollection services)
+    {
+        return services.FirstOrDefault(descriptor =>
+                descriptor.ServiceType == typeof(IWebHostEnvironment))
+            ?.ImplementationInstance as IWebHostEnvironment;
+    }
+
+    private static OpenAiCompatibleLlmProvider CreateOpenAiCompatibleProvider(
+        IServiceProvider services,
+        LlmProviderSettings settings,
+        CircuitBreakerStateTracker circuitBreakerTracker,
+        CircuitBreakerSettings circuitBreakerSettings,
+        LlmProviderRuntimePolicy runtimePolicy)
+    {
+        RegisterOpenAiCompatibleEgress(
+            services.GetRequiredService<IEgressRegistry>(),
+            settings,
+            runtimePolicy.AllowGeneralProviderLocalhost);
+        return new OpenAiCompatibleLlmProvider(
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(OpenAiCompatibleHttpClientName),
+            settings,
+            services.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>(),
+            circuitBreakerTracker,
+            circuitBreakerSettings,
+            runtimePolicy);
+    }
+
+    private static IEgressRegistry GetOrCreateEgressRegistry(IServiceCollection services)
+    {
+        var existing = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(IEgressRegistry));
+        if (existing?.ImplementationInstance is IEgressRegistry registry)
+            return registry;
+
+        var created = new EgressRegistry();
+        if (existing is null)
+            services.AddSingleton<IEgressRegistry>(created);
+        return created;
+    }
+
+    internal static void RegisterOpenAiCompatibleEgress(
+        IEgressRegistry registry,
+        LlmProviderSettings settings,
+        bool allowLocalhostEndpoints)
+    {
+        if (!LlmProviderSelectionPolicy.TryValidateOpenAiCompatibleSettings(
+                settings,
+                out _,
+                allowLocalhostEndpoints) ||
+            !Uri.TryCreate(settings.OpenAiCompatible.BaseUrl, UriKind.Absolute, out var endpoint))
+            return;
+
+        if (registry.GetAllEntries().Any(entry =>
+                string.Equals(entry.Host.TrimEnd('.'), endpoint.Host.TrimEnd('.'), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(entry.ToolOrAgentName, nameof(OpenAiCompatibleLlmProvider), StringComparison.Ordinal)))
+            return;
+
+        registry.Register(new EgressEntry(
+            endpoint.Host,
+            "LLM prompt with board context and user input",
+            nameof(OpenAiCompatibleLlmProvider),
+            EgressDataClassification.UserContent));
     }
 
     /// <summary>
@@ -230,6 +436,34 @@ public static class LlmProviderRegistration
     }
 
     /// <summary>
+    /// Builds the compatible-provider policy. HTTP 501 is intentionally excluded:
+    /// the provider recognizes it as an SSE capability rejection and performs a
+    /// buffered retry, which must remain reachable even at a threshold of one.
+    /// </summary>
+    internal static IAsyncPolicy<HttpResponseMessage> BuildOpenAiCompatibleCircuitBreakerPolicy(
+        CircuitBreakerStateTracker tracker,
+        string circuitName,
+        CircuitBreakerSettings settings)
+    {
+        return Policy<HttpResponseMessage>
+            .Handle<HttpRequestException>()
+            .OrResult(response =>
+                response.StatusCode == HttpStatusCode.RequestTimeout ||
+                ((int)response.StatusCode >= 500 &&
+                 response.StatusCode != HttpStatusCode.NotImplemented))
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: settings.FailureThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
+                onBreak: (outcome, breakDuration) =>
+                {
+                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    tracker.RecordState(circuitName, CircuitState.Open, reason);
+                },
+                onReset: () => tracker.RecordState(circuitName, CircuitState.Closed),
+                onHalfOpen: () => tracker.RecordState(circuitName, CircuitState.HalfOpen));
+    }
+
+    /// <summary>
     /// Determines whether localhost LLM endpoints should be permitted based on the
     /// hosting environment and LLM provider configuration. Returns true only in
     /// development-like environments when AllowLiveProvidersInDevelopment is enabled,
@@ -258,9 +492,7 @@ public static class LlmProviderRegistration
 
         // Check for a registered IWebHostEnvironment to determine if we're in development.
         // During startup the environment is already registered as a singleton.
-        var envDescriptor = services.FirstOrDefault(d =>
-            d.ServiceType == typeof(IWebHostEnvironment));
-        if (envDescriptor?.ImplementationInstance is IWebHostEnvironment env)
+        if (GetRegisteredWebHostEnvironment(services) is { } env)
         {
             var name = env.EnvironmentName;
             return name.Equals("Development", StringComparison.OrdinalIgnoreCase) ||

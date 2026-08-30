@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperTagstamp from './PaperTagstamp.vue'
 import type { PaperTagstampTone } from './PaperTagstamp.vue'
-import { useToastStore, type Toast } from '../../store/toastStore'
+import { copyToastReceipt, useToastStore, type Toast, type ToastLabel } from '../../store/toastStore'
 
 /**
  * PaperToastContainer — bottom-right paper toast stack.  Mirrors
@@ -18,6 +19,9 @@ import { useToastStore, type Toast } from '../../store/toastStore'
  *   └─────────────┴────────────────────────────────┴────────────────────┘
  *
  * Behaviour notes:
+ *   - The tagstamp word comes from `toast.label` (what happened), translated
+ *     via `shell.toast.label.*`; the tagstamp COLOUR comes from `toast.type`
+ *     (severity).  See `FALLBACK_LABEL` for why the two are kept apart.
  *   - The countdown is computed locally from `toast.duration`.
  *   - Hovering/focus pauses both the visual countdown and store removal timer.
  *   - The "undo"/action link emits `action(toast.id)` and runs the toast's
@@ -25,6 +29,37 @@ import { useToastStore, type Toast } from '../../store/toastStore'
  */
 
 const toastStore = useToastStore()
+const { t } = useI18n()
+const expanded = reactive<Record<string, boolean>>({})
+const copyState = reactive<Record<string, 'copied' | 'failed' | undefined>>({})
+const politeAnnouncement = ref('')
+let initialToastIds: Set<string> | null = null
+
+watch(
+  () => toastStore.toasts.map(({ id, message, type }) => ({ id, message, type })),
+  async (current, previous) => {
+    if (initialToastIds === null) {
+      initialToastIds = new Set(current.map(({ id }) => id))
+      return
+    }
+
+    const previousIds = new Set((previous ?? []).map(({ id }) => id))
+    const added = current.filter(
+      ({ id, type }) =>
+        type !== 'error' && !previousIds.has(id) && !initialToastIds!.has(id),
+    )
+
+    if (added.length === 0) {
+      if (!current.some(({ type }) => type !== 'error')) politeAnnouncement.value = ''
+      return
+    }
+
+    politeAnnouncement.value = ''
+    await nextTick()
+    politeAnnouncement.value = added.map(({ message }) => message).join(' ')
+  },
+  { flush: 'post', immediate: true },
+)
 
 type Tone = 'applied' | 'proposed' | 'captured' | 'overdue' | 'undo'
 
@@ -32,21 +67,49 @@ type ToastDescriptor = {
   tone: Tone
   tagstamp: PaperTagstampTone
   glyph: string
+  labelKind: ToastLabel
   label: string
 }
 
-/** Map the existing toast `type` field to the Paper tone palette. */
+/**
+ * Severity-generic stamp for a toast whose caller named no action (GH-1970).
+ *
+ * These four words describe SEVERITY only. The Paper tone names below
+ * ("applied", "overdue", "proposed", "captured") are palette identities and
+ * must never leak into the stamp: rendering the success tone's name printed
+ * "APPLIED" on inbox saves and on pre-apply approvals, contradicting the very
+ * "not yet applied" copy the approve pane shows at the same moment.
+ */
+const FALLBACK_LABEL: Record<Toast['type'], ToastLabel> = {
+  success: 'done',
+  error: 'failed',
+  warning: 'warning',
+  info: 'noted',
+}
+
+/** The outcome word this toast is stamped with — the caller's, else severity's. */
+function labelKind(toast: Toast): ToastLabel {
+  return toast.label ?? FALLBACK_LABEL[toast.type]
+}
+
+/**
+ * Map a toast to its Paper tone palette (from `type`, i.e. severity) and to
+ * its outcome stamp (from `label`, i.e. what happened). The two are separate
+ * on purpose — a `saved` and an `applied` toast are both green successes.
+ */
 function describe(toast: Toast): ToastDescriptor {
+  const kind = labelKind(toast)
+  const label = t(`shell.toast.label.${kind}`)
   switch (toast.type) {
     case 'success':
-      return { tone: 'applied', tagstamp: 'applied', glyph: '✓', label: 'Applied' }
+      return { tone: 'applied', tagstamp: 'applied', glyph: '✓', labelKind: kind, label }
     case 'error':
-      return { tone: 'overdue', tagstamp: 'overdue', glyph: '‼', label: 'Overdue' }
+      return { tone: 'overdue', tagstamp: 'overdue', glyph: '‼', labelKind: kind, label }
     case 'warning':
-      return { tone: 'proposed', tagstamp: 'ember', glyph: '◆', label: 'Proposed' }
+      return { tone: 'proposed', tagstamp: 'ember', glyph: '◆', labelKind: kind, label }
     case 'info':
     default:
-      return { tone: 'captured', tagstamp: 'mute', glyph: '✎', label: 'Captured' }
+      return { tone: 'captured', tagstamp: 'mute', glyph: '✎', labelKind: kind, label }
   }
 }
 
@@ -190,6 +253,22 @@ function handleAction(toast: Toast) {
   toastStore.remove(toast.id)
 }
 
+function dismissToast(id: string) {
+  toastStore.remove(id)
+}
+
+function detailsId(id: string): string {
+  return `paper-toast-details-${id}`
+}
+
+function toggleDetails(id: string) {
+  expanded[id] = !expanded[id]
+}
+
+async function copyReceipt(toast: Toast) {
+  copyState[toast.id] = (await copyToastReceipt(toast)) ? 'copied' : 'failed'
+}
+
 // ── Display helpers ───────────────────────────────────────────────────────
 
 function countdownLabel(toast: Toast): string {
@@ -213,11 +292,15 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
 <template>
   <div
     class="paper-toast-stack"
-    aria-live="polite"
-    aria-atomic="false"
-    role="status"
     data-paper-toast-stack
   >
+    <div
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-toast-polite-announcer
+    >{{ politeAnnouncement }}</div>
     <TransitionGroup name="paper-toast">
       <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- hover/focus pause is a UX affordance; the toast itself is purely informational and the action (when present) is on a real <button> -->
       <article
@@ -225,12 +308,16 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
         :key="toast.id"
         :data-toast-id="toast.id"
         :data-tone="describe(toast).tone"
+        :data-label="describe(toast).labelKind"
         :class="[
           'paper-toast',
           'card-lift',
           `paper-toast--${describe(toast).tone}`,
+          { 'paper-toast--expanded': expanded[toast.id] },
         ]"
         :role="toast.type === 'error' ? 'alert' : undefined"
+        :aria-live="toast.type === 'error' ? 'assertive' : undefined"
+        :aria-atomic="toast.type === 'error' ? 'true' : undefined"
         @mouseenter="setHover(toast.id, true)"
         @mouseleave="setHover(toast.id, false)"
         @focusin="setFocusWithin(toast.id, $event, true)"
@@ -247,6 +334,33 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             <span v-if="toast.title" class="paper-toast__title">{{ toast.title }}</span>
           </div>
           <p class="paper-toast__msg">{{ toast.message }}</p>
+          <div v-if="toast.type === 'error'" class="paper-toast__receipt-actions">
+            <button
+              v-if="toast.details"
+              type="button"
+              class="paper-toast__receipt-button"
+              :aria-expanded="expanded[toast.id] ?? false"
+              :aria-controls="expanded[toast.id] ? detailsId(toast.id) : undefined"
+              @click="toggleDetails(toast.id)"
+            >
+              {{ expanded[toast.id] ? t('shell.toast.receipt.hideDetails') : t('shell.toast.receipt.showDetails') }}
+            </button>
+            <button
+              type="button"
+              class="paper-toast__receipt-button"
+              @click="copyReceipt(toast)"
+            >
+              {{ copyState[toast.id] === 'copied' ? t('shell.toast.receipt.copied') : copyState[toast.id] === 'failed' ? t('shell.toast.receipt.copyFailed') : t('shell.toast.receipt.copyDetails') }}
+            </button>
+          </div>
+          <pre
+            v-if="toast.type === 'error' && toast.details && expanded[toast.id]"
+            :id="detailsId(toast.id)"
+            class="paper-toast__details"
+            tabindex="0"
+            role="region"
+            :aria-label="t('shell.toast.receipt.errorDetails', { message: toast.message })"
+          >{{ toast.details }}</pre>
         </div>
         <div class="paper-toast__action">
           <button
@@ -258,7 +372,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             <span class="paper-toast__undo-label">{{ toast.action.label }}</span>
             <span v-if="toast.action.hint" class="paper-toast__undo-hint">{{ toast.action.hint }}</span>
           </button>
-          <span v-else class="paper-toast__countdown" aria-hidden="true">
+          <span v-else-if="toast.duration > 0" class="paper-toast__countdown" aria-hidden="true">
             {{ countdownLabel(toast) }}
           </span>
           <span
@@ -267,6 +381,14 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
             aria-hidden="true"
             :style="{ '--p': progress(toast) }"
           />
+          <button
+            type="button"
+            class="paper-toast__dismiss"
+            :aria-label="t('shell.toast.receipt.dismissNotification')"
+            @click="dismissToast(toast.id)"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
         </div>
       </article>
     </TransitionGroup>
@@ -288,7 +410,7 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
 .paper-toast {
   pointer-events: auto;
   width: 320px;
-  height: 56px;
+  min-height: 56px;
   display: grid;
   grid-template-columns: 44px 1fr auto;
   align-items: stretch;
@@ -298,6 +420,10 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   font-family: var(--sans);
   color: var(--ink);
   overflow: hidden;
+}
+
+.paper-toast--expanded {
+  height: auto;
 }
 
 .paper-toast--proposed {
@@ -359,6 +485,36 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   text-overflow: ellipsis;
 }
 
+.paper-toast__receipt-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.paper-toast__receipt-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--overdue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.paper-toast__details {
+  max-height: 140px;
+  margin: 6px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
 .paper-toast__action {
   display: flex;
   align-items: center;
@@ -366,6 +522,26 @@ const visibleToasts = computed(() => [...toastStore.toasts].reverse())
   border-left: 1px solid var(--line-soft);
   padding: 0 14px;
   position: relative;
+  gap: 10px;
+}
+
+.paper-toast__dismiss {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--mute);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paper-toast__dismiss:hover,
+.paper-toast__dismiss:focus-visible {
+  color: var(--ink-deep);
 }
 
 .paper-toast__undo {

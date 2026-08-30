@@ -76,6 +76,30 @@ test('Paper Review view has no WCAG 2.1 AA violations', async ({ page }) => {
   await expectNoAxeViolations(page, 'PaperReviewView')
 })
 
+test('Paper Board narrow columns preserve a visible lane identity row', async ({ page, request }) => {
+  const seed = `narrow-${Date.now()}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Paper Narrow Header',
+    description: 'Paper board narrow-header geometry regression',
+    columnNamePrefix: 'Long backlog lane',
+  })
+
+  await page.goto(`/workspace/boards/${boardId}`)
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await page.getByTestId('paper-board-width-select').selectOption('narrow')
+
+  const column = page.locator('[data-column-id]').first()
+  const heading = column.locator('.paper-board-column__heading')
+  const controls = column.locator('.paper-board-column__meta')
+  const headingBox = await heading.boundingBox()
+  const controlsBox = await controls.boundingBox()
+
+  await expect(column.getByRole('heading', { name: `Long backlog lane ${seed}` }))
+    .toBeVisible()
+  expect(headingBox?.width).toBeGreaterThan(100)
+  expect(controlsBox?.y).toBeGreaterThanOrEqual((headingBox?.y ?? 0) + (headingBox?.height ?? 0) - 1)
+})
+
 test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request }) => {
   const seed = `a11y-board-${Date.now()}`
   const boardId = await createBoardWithColumn(request, auth, seed, {
@@ -104,8 +128,70 @@ test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request })
 
   await page.goto(`/workspace/boards/${boardId}`)
   await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
-  await expect(page.locator('.paper-board-card').filter({ hasText: cardTitle })).toBeVisible()
+  const card = page.locator('.paper-board-card').filter({ hasText: cardTitle })
+  const opener = card.getByRole('button', { name: new RegExp(cardTitle) })
+  await expect(card).toBeVisible()
   await expectNoAxeViolations(page, 'PaperBoardView')
+
+  const column = page.locator(`[data-column-id="${columns[0]!.id}"]`)
+  const collapseToggle = page.getByTestId(`paper-column-collapse-${columns[0]!.id}`)
+  await expect(collapseToggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(collapseToggle).toHaveAttribute('aria-controls', `paper-board-column-content-${columns[0]!.id}`)
+  await expect(collapseToggle).toHaveAccessibleName(`Collapse column Backlog ${seed}`)
+  await collapseToggle.focus()
+  await page.keyboard.press('Enter')
+
+  await expect(collapseToggle).toBeFocused()
+  await expect(collapseToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(collapseToggle).toHaveAccessibleName(`Expand column Backlog ${seed}`)
+  await expect(column.getByRole('heading', { name: `Backlog ${seed}` })).toBeVisible()
+  await expect(column.locator('.paper-board-column__count')).toHaveText('1')
+  await expect(card).toHaveCount(0)
+  await expect(column.locator('.paper-board-column__content')).toBeHidden()
+  await expectNoAxeViolations(page, 'PaperBoardView collapsed column')
+
+  await page.reload()
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+  await expect(collapseToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(card).toHaveCount(0)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(collapseToggle).toBeVisible()
+  const mobileColumnSizing = await column.evaluate((element) => ({
+    flex: (element as HTMLElement).style.flex,
+    width: (element as HTMLElement).style.width,
+  }))
+  expect(mobileColumnSizing).toEqual({ flex: '0 0 100%', width: '100%' })
+
+  await collapseToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(collapseToggle).toBeFocused()
+  await expect(collapseToggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(card).toBeVisible()
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  const densityToggle = page.getByTestId('paper-board-density-toggle')
+  await densityToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(densityToggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('[data-surface="paper-board"]')).toHaveAttribute('data-density', 'compact')
+
+  await opener.focus()
+  await page.keyboard.press('Enter')
+  const editor = page.getByRole('dialog', { name: 'Edit Card' })
+  await expect(editor).not.toHaveAttribute('aria-modal', 'true')
+  await expect(page.getByTestId('card-modal-scroll-region')).toHaveAttribute('data-presentation', 'inspector')
+  await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
+
+  await editor.getByRole('button', { name: 'Close card editor' }).click()
+  await expect(editor).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await opener.click()
+  await expect(page.getByTestId('card-modal-scroll-region')).toHaveAttribute('data-presentation', 'modal')
+  await expect(editor).toHaveAttribute('aria-modal', 'true')
 })
 
 test('Login view has no WCAG 2.1 AA violations', async ({ browser, baseURL }) => {

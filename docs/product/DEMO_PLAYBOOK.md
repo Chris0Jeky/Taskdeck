@@ -18,70 +18,118 @@ Capture -> Triage -> Proposal -> Apply -> Board
 Saul-facing recording contract:
 - `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
 
-## Quick Start
+## Quick Start (source-only seeded demo)
 
-1. Start backend
+This playbook is for a source checkout. The packaged Windows release has no seeded credentials and
+uses a different Production run/data contract; follow its
+[archive quick start](../releases/WINDOWS_QUICK_START.md) instead. In particular, use that guide's
+current-process-only OpenAI setup rather than copying demo-key shortcuts into the packaged app.
 
-```bash
-cd backend/src/Taskdeck.Api
-dotnet run
+From the repository root, start the source stack and seed it with one launcher:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
 ```
 
-2. Start frontend
-
 ```bash
-cd frontend/taskdeck-web
-npm install
-npm run dev
+scripts/dev-up.sh --seed
 ```
 
-Default URLs:
+The launcher intentionally leaves the API and Vite frontend running in the background. It waits for
+API readiness, prints the API URL, expected frontend entry point, and PIDs, and records the process
+trees so the matching stop command can close both safely:
+
+```powershell
+.\scripts\dev-up.ps1 -Stop
+```
+
+```bash
+scripts/dev-up.sh --stop
+```
+
+Closing the shell that launched the stack is not the documented stop path. Default URLs are:
 
 - API: `http://localhost:5000/api`
-- UI: `http://localhost:5173`
-- Local fallback ports for UI: `http://localhost:4173`, `http://localhost:5001`
-- Health-check endpoints (note: these are **not** under the `/api` prefix):
-  - `http://localhost:5000/health/live` — liveness probe
-  - `http://localhost:5000/health/ready` — readiness probe
+- UI: `http://localhost:5173` (if Vite selects a fallback, its `Local:` line in the frontend
+  dev-server output is authoritative)
+- Health checks (not under `/api`): `http://localhost:5000/health/live` and
+  `http://localhost:5000/health/ready`
 
-3. Seed baseline demo data
+The source-only seeded accounts are `demo` / `demo123` and `collab` / `demo123`. They do not exist in
+the Windows release. If a launcher-owned source stack is already running, stop it with the matching
+`-Stop` / `--stop` command, then rerun the seeded launcher above. The protected seeder reuses
+recognised baseline artifacts instead of appending a duplicate copy on every run. Do not refresh a
+running stack through the lower-level bare seed command, which has no listener-identity proof.
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
+### Clean rehearsal reset
+
+To restore the source-demo story after a rehearsal changes it, first stop the launcher-owned stack,
+then use the protected reset-and-seed form from the repository root:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed -ResetSeed
 ```
 
-The seeder creates demo users, boards, Inbox items, proposals, queue activity, notifications, and Ops logs.
-On reruns against the canonical demo account, it now reuses the seeded artifacts it can identify instead of appending a fresh copy of every capture, queue sample, comment, chat session, and Ops evidence item.
+```bash
+scripts/dev-up.sh --seed --reset-seed
+```
 
-Use `npm run demo:seed -- --reset` to delete all demo boards before seeding (clean start).
-Use `npm run demo:seed -- --help` for full usage information.
+`-ResetSeed` / `--reset-seed` is invalid without the corresponding seed flag and is never implicit.
+After the launcher proves its exact run identity, the one-socket seeder authenticates the demo owner so
+it can read that user's complete board list. A first-ever seed may create that source-only demo owner;
+after owner authentication, an invalid reset preflight performs no board, artifact, or collaborator-account
+write. Unknown, duplicate, or malformed `DEMO:*` candidates and malformed reserved tombstones fail
+closed. The exact script-owned temporary name `DEMO: Client Onboarding Demo (Chat)` is recognised as
+the capture-board family so an interrupted chat rename can be recovered, while duplicate and near-match
+names still fail closed. Each documented demo board is atomically renamed to an ID-bound non-demo
+tombstone and archived; prior valid tombstones and non-demo boards are preserved. The seeder re-fetches
+and verifies that quarantine before creating four fresh canonical boards with new IDs, including a new
+intentionally archived board, and verifies that persisted set before provisioning the collaborator or
+seeding child artifacts. A 403 or any quarantine/fresh-state failure exits nonzero without collaborator
+provisioning or artifact seeding. Because an earlier transition or fresh-board creation may already have
+succeeded, inspect the remaining demo state before retrying. The launcher then cleans only its own
+API/frontend process trees and does not claim that old tombstone data was physically deleted.
 
 ### Database location
 
-The canonical dev database is `backend/src/Taskdeck.Api/taskdeck.db` (SQLite, created by EF Core migration on first backend startup). The connection string is `Data Source=taskdeck.db` in `appsettings.json`, resolved relative to the backend's working directory.
+The canonical source-launcher database is stable and independent of the repository working directory:
 
-To reset the database without `--reset` (which only deletes demo boards via the API):
+- Windows: `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db`
+- Linux/macOS: `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db`
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:reset-db          # delete canonical dev DB
-npm run demo:reset-db -- --all # also delete e2e/demo/ci DB files
-```
+`dev-up` prints the exact path and passes it only to the API process it starts. A raw developer
+`dotnet run` is an alternative developer-only path: its relative `Data Source=taskdeck.db` resolves
+from that command's working directory, so it is not the canonical seeded-demo database. Likewise,
+`npm run demo:reset-db` targets the legacy repository-local raw-`dotnet run` database; it does not
+reset the stable `dev-up` database. Lower-level reset/seed commands are not the canonical demo path
+and must be confined to an isolated developer environment whose API and database you explicitly own.
 
-Then restart the backend — EF Core will recreate the DB from migrations.
+Other repository-local DB files are per-purpose:
 
-Other DB files in the repo are per-purpose:
 - `taskdeck.e2e*.db` — E2E test databases (Playwright)
 - `taskdeck.demo*.db` — demo director/CI databases
-- `backend/tests/**/taskdeck.db` — backend test databases (created by test runs)
-- `taskdeck.db` at repo root — created when the backend is started from the repo root (e.g. `dotnet run --project backend/src/Taskdeck.Api/...`). Safe to delete when the backend is stopped and your active dev DB is `backend/src/Taskdeck.Api/taskdeck.db`.
+- `backend/tests/**/taskdeck.db` — backend test databases created by test runs
+- a repo-root or API-directory `taskdeck.db` — a raw developer `dotnet run` artifact, not `dev-up`
+
+### Source startup troubleshooting
+
+- If the launcher reports a live recorded stack, run its `-Stop` / `--stop` command before starting
+  another one; it refuses to overwrite live PIDs because that would orphan the old processes.
+- If the API exits before readiness, read the API window/output named by the launcher. Do not keep
+  restarting over an unexamined database or configuration error.
+- The launcher passes its selected API base URL and run identity to the seeder, and passes the same
+  API base to Vite. General seeded demos may use PowerShell's checked `-ApiPort N` option or Bash's
+  `TASKDECK_API_PORT=N ./scripts/dev-up.sh --seed` form and must use the printed URLs. Only the Saul
+  rehearsal contract is deliberately restricted to port 5000. For a UI collision, use the printed
+  frontend URL rather than assuming 5173.
+- Confirm the printed database path before deleting or resetting anything. Stop the stack first so
+  SQLite can checkpoint its WAL cleanly.
 
 ## Managed-Key Mode Disclosure
 
-When running demos with a platform-managed LLM provider key (any configuration where `Llm__Provider` is set to `OpenAI` or `Gemini` with a shared key), presenters should be aware:
+When running demos with an operator-managed, deployment-global OpenAI key, presenters should be aware:
 
-- User chat messages and capture content are sent to the configured third-party provider
+- User chat messages and bounded transcript-source triage chunks are sent to OpenAI
 - Per-user quota limits apply (default: 60 requests/hour, 100K tokens/day)
 - Operator kill switches can throttle or block LLM access per user, per surface, or globally
 
@@ -93,8 +141,8 @@ Full policy details: `docs/security/MANAGED_KEY_USAGE_POLICY.md`
 - Non-local API targets are rejected unless you explicitly set `TASKDECK_DEMO_ALLOW_NON_LOCAL_API=1`.
 - UI links and Playwright bootstrap default to `http://localhost:5173`; local fallback ports `4173` and `5001` are also supported.
 - Demo harness credentials default to `demo` / `demo123` and `collab` / `demo123` unless you override the `TASKDECK_DEMO_*` / `TASKDECK_COLLAB_*` environment variables.
-- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) now auto-enable a live provider when LLM steps are enabled and a usable key is present.
-- Gemini is preferred for full demos when `GEMINI_API_KEY`, `TASKDECK_DEMO_GEMINI_API_KEY`, or `Llm__Gemini__ApiKey` is set. Use `TASKDECK_DEMO_LLM_PROVIDER=OpenAI` to force OpenAI instead.
+- Full Playwright-backed demos (`demo:director` or the opt-in stakeholder recorder) auto-enable OpenAI when LLM steps are enabled and a usable OpenAI key is present.
+- An ambient `GEMINI_API_KEY` is ignored because it may belong to CLI tooling. A retired Taskdeck Gemini selector or provider-specific setting fails fast with migration guidance.
 - Demo-specific live keys now take effect even when the base development environment is pinned to `Llm__Provider=Mock`; use `TASKDECK_DEMO_LLM_PROVIDER=Mock` or `TASKDECK_DEMO_DISABLE_LIVE_LLM=1` to force mock instead.
 - When a full demo injects live-provider overrides, Playwright also disables existing-server reuse by default so the intended backend process is launched instead of silently inheriting a stale mock server.
 - `taskdeck-chat` autopilot and scenario steps marked `requiresLlm: true` still need a usable live-provider key. Use `--skip-llm` for deterministic local or CI runs.
@@ -115,51 +163,17 @@ cd frontend/taskdeck-web
 npm run demo:run -- --list
 ```
 
-Run scenarios:
+Execute a scenario in an isolated fresh-server director run:
 
 ```bash
-npm run demo:run -- engineering-sprint
-npm run demo:run -- support-triage
-npm run demo:run -- content-calendar
-npm run demo:run -- --clean engineering-sprint
-npm run demo:run -- --clean --dry-run engineering-sprint
+cd frontend/taskdeck-web
+npm run demo:director -- --output-dir ./demo-artifacts/engineering-sprint --e2e-db ./taskdeck.demo.engineering-sprint.db --reset-e2e-db --fresh-servers --scenario engineering-sprint --skip-llm --turns 0 --rng-seed engineering-sprint
 ```
 
-JSON-runner flags:
-
-```bash
-# skip default LLM-dependent steps and any step marked requiresLlm: true
-npm run demo:run -- support-triage --skip-llm
-
-# keep running after a failed step
-npm run demo:run -- engineering-sprint --continue-on-error
-```
-
-Autopilot simulation:
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain heuristic
-```
-
-Deterministic autopilot simulation (seeded):
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain heuristic --rng-seed 42
-```
-
-Optional chat-driven autopilot (requires live provider setup):
-
-```bash
-npm run demo:autopilot -- --turns 5 --brain taskdeck-chat
-```
-
-Loop-specific autopilot runs:
-
-```bash
-npm run demo:autopilot -- --loop queue
-npm run demo:autopilot -- --loop capture
-npm run demo:autopilot -- --loop mixed
-```
+Change the scenario/output/database/rng names together for another deterministic story. The lower-level
+scenario and autopilot commands remain useful implementation tools, but they do not carry the
+launcher's listener-identity proof and are not copyable operator paths. Their flags and schemas are
+documented in [SCENARIOS.md](SCENARIOS.md).
 
 ## 5-Minute Stakeholder Flow
 
@@ -217,7 +231,8 @@ These surfaces are event-driven:
 - `Ops -> Logs` needs Ops runs.
 - `Access` needs board-specific entries.
 
-Use `npm run demo:seed` and/or `npm run demo:run` before a manual walkthrough.
+Use the identity-bound `dev-up -Seed` / `dev-up.sh --seed` path before a manual walkthrough, or use
+the isolated fresh-server director command above for a scenario-specific rehearsal.
 
 ## Feature Flags for Demos
 
@@ -270,7 +285,7 @@ cd frontend/taskdeck-web
 npm run demo:director -- --scenario engineering-sprint --turns 18 --brain heuristic --loop mixed --rng-seed demo-1
 
 # Saul-facing deterministic rehearsal artifacts (no autoplay turns)
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env Llm__Provider=Mock Llm__EnableLiveProviders=false Llm__AllowLiveProvidersInDevelopment=false TASKDECK_DEMO_LLM_PROVIDER=Mock TASKDECK_DEMO_DISABLE_LIVE_LLM=1 npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
 
 # CI-style deterministic run without LLM-required steps
 npm run demo:director -- --scenario engineering-sprint --turns 12 --skip-llm --rng-seed ci-1

@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
@@ -13,7 +15,23 @@ namespace Taskdeck.Application.Services;
 public class ChatService : IChatService
 {
     private const int MaxPromptLength = 4000;
+    private const int MaxStreamedAssistantBytes = 1_048_576;
     private const int MaxChecklistItemCount = 30;
+    private const string StreamErrorPlaceholder = "The provider could not complete the response.";
+    private const string StreamErrorDegradedReason = "The upstream provider could not complete the response.";
+    // Stand-in text for a provider outcome that carries no assistant text. It is deliberately generic:
+    // the OpenAI-compatible buffered path sanitizes content_filter/refusal responses to empty content
+    // precisely so upstream refusal text never reaches a log, a persisted row, or the client (#1617).
+    private const string EmptyAssistantContentPlaceholder = "The provider ended the response without returning text.";
+    private const string EmptyAssistantContentDegradedReason = "The provider returned no assistant text.";
+    // The honest no-board notice (#2004). Chat can only change a board by creating a proposal for
+    // review, and a proposal needs a bound board, so a session with none must say plainly that the
+    // text above changed nothing — otherwise generated Markdown reads as completed work. The claim
+    // is scoped to boards on purpose: the same turn does persist chat messages and any @mention
+    // notifications, so an unqualified "nothing was created" would be literally false.
+    private const string NoBoardActionNotice =
+        "(No board is linked to this chat session, so nothing was created or changed on any board. " +
+        "Open a board-scoped chat session to turn this into a proposal you can review.)";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -37,6 +55,7 @@ public class ChatService : IChatService
     private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
     private readonly LlmToolCallingSettings _toolCallingSettings;
     private readonly ILogger<ChatService>? _logger;
+    private readonly RetiredLlmProviderConfigurationNotice? _retiredProviderNotice;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -51,7 +70,8 @@ public class ChatService : IChatService
         IBoardContextBuilder? boardContextBuilder = null,
         ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
         LlmToolCallingSettings? toolCallingSettings = null,
-        ILogger<ChatService>? logger = null)
+        ILogger<ChatService>? logger = null,
+        RetiredLlmProviderConfigurationNotice? retiredProviderNotice = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -66,6 +86,7 @@ public class ChatService : IChatService
         _toolCallingOrchestrator = toolCallingOrchestrator;
         _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
         _logger = logger;
+        _retiredProviderNotice = retiredProviderNotice;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -101,9 +122,26 @@ public class ChatService : IChatService
 
     public async Task<ChatProviderHealthDto> GetProviderHealthAsync(bool probe = false, CancellationToken ct = default)
     {
-        var health = probe
-            ? await _llmProvider.ProbeAsync(ct)
-            : await _llmProvider.GetHealthAsync(ct);
+        LlmHealthStatus health;
+        long? probeLatencyMs = null;
+        if (probe)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                health = await _llmProvider.ProbeAsync(ct);
+            }
+            finally
+            {
+                stopwatch.Stop();
+            }
+
+            probeLatencyMs = stopwatch.ElapsedMilliseconds;
+        }
+        else
+        {
+            health = await _llmProvider.GetHealthAsync(ct);
+        }
 
         var verificationStatus = DeriveVerificationStatus(health);
 
@@ -114,7 +152,12 @@ public class ChatService : IChatService
             health.Model,
             health.IsMock,
             health.IsProbed,
-            verificationStatus);
+            verificationStatus,
+            probeLatencyMs,
+            // #2233: the packaged desktop start drops retired provider variables inherited from the
+            // Windows profile. Surface that here so "Verify LLM" says the settings were found and
+            // ignored rather than leaving the user to wonder why their old provider is not in use.
+            _retiredProviderNotice?.IgnoredEnvironmentConfiguration ?? false);
     }
 
     private static string DeriveVerificationStatus(LlmHealthStatus health)
@@ -137,6 +180,8 @@ public class ChatService : IChatService
         string? quotaBilledProvider = null;
         string? quotaBilledModel = null;
         var quotaBilledTokens = 0;
+        var quotaEstimatedTokens = 0;
+        LlmDispatchContext? quotaDispatchContext = null;
         try
         {
             if (string.IsNullOrWhiteSpace(dto.Content))
@@ -190,6 +235,7 @@ public class ChatService : IChatService
                 if (!reservation.Allowed)
                     return Result.Failure<ChatMessageDto>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "LLM quota exceeded");
                 quotaReservationId = reservation.ReservationId;
+                quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
             if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
@@ -238,6 +284,7 @@ public class ChatService : IChatService
                         toolChatMessages,
                         Attribution: BuildAttribution(session, userId),
                         SystemPrompt: ToolCallingSystemPrompt.Prompt);
+                    quotaDispatchContext = toolCompletionRequest.DispatchContext;
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
@@ -375,30 +422,35 @@ public class ChatService : IChatService
                             Attribution: BuildAttribution(session, userId),
                             BoardContext: boardContext,
                             SystemPrompt: clarificationPrompt);
+                        quotaDispatchContext = completionRequest.DispatchContext;
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
 
-                        // Finalize the quota reservation with the actual token count. The provider
-                        // reports a combined TokensUsed total without an input/output split. Record
-                        // the full total as input tokens and 0 for output until providers surface
-                        // separate counts.
-                        if (_quotaService != null && quotaReservationId is Guid singleResId && llmResult.TokensUsed > 0)
+                        // Finalize with authoritative combined usage when present. If the provider
+                        // omitted usage, commit the reservation estimate so a short output cannot
+                        // undercharge a large input. Record the chosen total as input tokens and 0
+                        // for output until providers surface a reliable split.
+                        var quotaTokens = ResolveQuotaTokens(
+                            llmResult,
+                            quotaEstimatedTokens,
+                            completionRequest.DispatchContext);
+                        if (_quotaService != null && quotaReservationId is Guid singleResId && quotaTokens > 0)
                         {
                             // CancellationToken.None (M1, #1427 review): see the tool-result commit above.
                             quotaBilledProvider = llmResult.Provider;
                             quotaBilledModel = llmResult.Model;
-                            quotaBilledTokens = llmResult.TokensUsed;
+                            quotaBilledTokens = quotaTokens;
                             await _quotaService.CommitReservationAsync(
                                 singleResId,
                                 userId, Domain.Enums.LlmSurface.Chat,
                                 llmResult.Provider, llmResult.Model,
-                                llmResult.TokensUsed, 0,
+                                quotaTokens, 0,
                                 CancellationToken.None);
                             quotaCommitted = true;
                         }
                     }
 
                     assistantContent = llmResult.Content;
-                    tokenUsage = llmResult.TokensUsed;
+                    tokenUsage = llmResult.HasAuthoritativeTokenUsage ? llmResult.TokensUsed : null;
                     degradedReason = llmResult.DegradedReason;
 
                     if (llmResult.IsDegraded)
@@ -417,18 +469,40 @@ public class ChatService : IChatService
                     if (isClarification && messageType != "degraded")
                     {
                         messageType = "clarification";
-                        // No proposal creation — wait for user's clarifying response
+                        // No proposal creation — wait for user's clarifying response.
+                        // An unbound session cannot act, so say so here instead of letting the
+                        // clarification loop end in prose with no signal (#2004).
+                        // This site is deliberately NOT gated on TurnRequestsAction. `isClarification`
+                        // above is decided by a text heuristic over the model's *reply* — with a live
+                        // provider, IsClarificationRequest is never set, so two question marks are
+                        // enough — and that says nothing about the user's intent either way. Gating
+                        // here would silence exactly the turns that need the notice most: an ambiguous
+                        // ask like "help me plan the sprint" carries no noun the local classifier
+                        // recognises. Over-firing costs one sentence on a chatty reply that happened to
+                        // end in questions; under-firing restores the silent failure this fixes.
+                        // The type stays "clarification" so the round still counts toward best-effort
+                        // forcing and the composer still offers the skip action. A textless
+                        // clarification is left alone so it keeps falling through to the empty-content
+                        // placeholder below, which deliberately reclassifies it as "degraded".
+                        if (!session.BoardId.HasValue && !string.IsNullOrWhiteSpace(llmResult.Content))
+                            assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                     }
                     else
                     {
-                        var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+                        var hasProposalIntent = llmResult.IsActionable
+                            || (dto.RequestProposal && session.BoardId.HasValue);
+                        var shouldAttemptProposal = !llmResult.IsDegraded && hasProposalIntent;
 
-                        if (shouldAttemptProposal)
+                        if (llmResult.IsDegraded && hasProposalIntent)
+                        {
+                            assistantContent = "The provider response was degraded. No proposal was created, and nothing changed.";
+                        }
+                        else if (shouldAttemptProposal)
                         {
                             if (!session.BoardId.HasValue)
                             {
                                 // Surface a hint so the user knows why no proposal was created
-                                assistantContent = $"{llmResult.Content}\n\n(To act on this, open a board-scoped chat session.)";
+                                assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                                 messageType = "status";
                             }
                             else
@@ -493,8 +567,51 @@ public class ChatService : IChatService
                                 }
                             }
                         }
+                        else if (!session.BoardId.HasValue
+                                 && messageType != "degraded"
+                                 && !string.IsNullOrWhiteSpace(llmResult.Content)
+                                 && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort))
+                        {
+                            // The provider answered in prose without flagging its own response
+                            // actionable, but the turn did ask for an action: an explicit proposal
+                            // request, a skip phrase such as "just do your best" (ClarificationDetector
+                            // matches those anywhere, with or without a prior clarification round), or
+                            // a user message the local classifier reads as a board action. With no
+                            // bound board none of it could have become a proposal, so the turn says
+                            // so rather than ending in Markdown that reads as completed work
+                            // (#2004). A degraded turn keeps its own classification and reason, and
+                            // a textless turn keeps falling through to the empty-content
+                            // placeholder below — there is no prose there to be misread.
+                            assistantContent = AppendNoBoardActionNotice(llmResult.Content);
+                            messageType = "status";
+                        }
                     }
                 }
+            }
+
+            // A provider outcome can legitimately carry no assistant text. The OpenAI-compatible
+            // buffered path sanitizes content_filter and refusal responses to empty content so no
+            // upstream refusal text is surfaced, and a tool-calling result can be textless too.
+            // ChatMessage rejects empty content, so persisting it verbatim throws and the user loses
+            // the assistant-history entry entirely (#1617). Substitute the same non-secret placeholder
+            // the streaming path already uses; the sanitized specifics stay in DegradedReason.
+            if (string.IsNullOrWhiteSpace(assistantContent))
+            {
+                assistantContent = EmptyAssistantContentPlaceholder;
+
+                // Substituting the placeholder must not destroy a real artifact reference. When a
+                // proposal was actually created (board-scoped tool calling can return a proposal id
+                // with no closing text), the message stays "proposal-reference": the client renders
+                // the "Open in Review" action only for that type paired with a proposalId, so
+                // reclassifying here would strand a live proposal with no way to reach it.
+                // "clarification" deliberately gets no such guard — a clarification with no question
+                // text has nothing for the user to answer and no attached artifact, so "degraded" is
+                // the honest classification for it.
+                if (proposalId == null)
+                    messageType = "degraded";
+
+                if (string.IsNullOrWhiteSpace(degradedReason))
+                    degradedReason = EmptyAssistantContentDegradedReason;
             }
 
             var persistedDegradedReason = string.IsNullOrWhiteSpace(degradedReason)
@@ -549,7 +666,21 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        var dispatch = quotaDispatchContext?.ReadSnapshot();
+                        if (dispatch is { Phase: LlmDispatchPhase.Dispatched } && quotaEstimatedTokens > 0)
+                        {
+                            await _quotaService.CommitReservationAsync(
+                                rid,
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                dispatch.Value.Provider ?? string.Empty,
+                                dispatch.Value.Model ?? string.Empty,
+                                quotaEstimatedTokens, 0,
+                                CancellationToken.None);
+                        }
+                        else
+                        {
+                            await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception settleEx)
@@ -599,13 +730,19 @@ public class ChatService : IChatService
         // Accumulate streamed content and capture usage from the final token event
         // so we can persist an assistant message and record quota usage after the
         // stream completes.
-        var contentBuilder = new System.Text.StringBuilder();
+        var contentBuilder = new StringBuilder();
+        var streamedContentBytes = 0;
         int? tokensUsed = null;
         string? provider = null;
         string? model = null;
+        var streamIsDegraded = false;
+        string? streamDegradedReason = null;
+        var persistEmptyTerminalOutcome = false;
+        var terminalHadError = false;
         // True once the provider has delivered at least one non-error event: the LLM call was made and
         // tokens flowed, so the reservation is billable even if the final usage event never arrives.
         var providerStreamed = false;
+        LlmDispatchContext? quotaDispatchContext = null;
 
         // try/finally (no catch — legal around `yield` in an iterator) guarantees the reservation is
         // settled if the stream throws or yields no usable tokens. The scope opens immediately after
@@ -625,6 +762,7 @@ public class ChatService : IChatService
                 chatMessages,
                 Attribution: BuildAttribution(session, userId),
                 BoardContext: boardContext);
+            quotaDispatchContext = request.DispatchContext;
 
             await foreach (var token in _llmProvider.StreamAsync(request, ct))
             {
@@ -633,9 +771,9 @@ public class ChatService : IChatService
                 if (token.Error == null)
                     providerStreamed = true;
 
-                contentBuilder.Append(token.Token);
-                // Best-known provider/model: any event may carry them; the final usage event is
-                // authoritative and overwrites earlier values.
+                // Capture terminal attribution and authoritative usage before enforcing the
+                // local persistence cap. An oversized terminal event is still billable, even
+                // though its content must never be appended or stored.
                 if (token.Provider != null)
                     provider = token.Provider;
                 if (token.Model != null)
@@ -643,19 +781,64 @@ public class ChatService : IChatService
                 if (token.IsComplete)
                     tokensUsed = token.TokensUsed;
 
+                var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
+                if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
+                    terminalHadError = true;
+                    persistEmptyTerminalOutcome = true;
+                    yield return new LlmTokenEvent(
+                        string.Empty,
+                        true,
+                        Error: streamDegradedReason,
+                        TokensUsed: tokensUsed,
+                        Provider: provider,
+                        Model: model)
+                    {
+                        IsDegraded = true,
+                        DegradedReason = streamDegradedReason
+                    };
+                    break;
+                }
+
+                streamedContentBytes += tokenBytes;
+                contentBuilder.Append(token.Token);
+                if (token.IsDegraded)
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = token.DegradedReason ?? "Provider returned a degraded stream.";
+                    if (token.IsComplete)
+                        persistEmptyTerminalOutcome = true;
+                }
+                if (!string.IsNullOrWhiteSpace(token.Error))
+                {
+                    streamIsDegraded = true;
+                    streamDegradedReason = StreamErrorDegradedReason;
+                    terminalHadError = true;
+                    if (token.IsComplete)
+                        persistEmptyTerminalOutcome = true;
+                }
+
                 yield return token;
             }
 
             // Persist the streamed assistant message with token usage so the streaming
             // path is consistent with the non-streaming SendMessageAsync path.
             var streamedContent = contentBuilder.ToString();
+            if (streamedContent.Length == 0 && persistEmptyTerminalOutcome)
+                streamedContent = terminalHadError
+                    ? StreamErrorPlaceholder
+                    : EmptyAssistantContentPlaceholder;
             if (!string.IsNullOrEmpty(streamedContent))
             {
                 var assistantMessage = new ChatMessage(
                     sessionId,
                     ChatMessageRole.Assistant,
                     streamedContent,
-                    tokenUsage: tokensUsed);
+                    messageType: streamIsDegraded ? "degraded" : "text",
+                    tokenUsage: tokensUsed,
+                    degradedReason: streamIsDegraded ? streamDegradedReason : null);
                 session.AddMessage(assistantMessage);
                 await _unitOfWork.ChatMessages.AddAsync(assistantMessage, ct);
                 await _unitOfWork.SaveChangesAsync(ct);
@@ -698,22 +881,33 @@ public class ChatService : IChatService
                             tokensUsed.Value, 0,
                             CancellationToken.None);
                     }
-                    else if (providerStreamed)
-                    {
-                        // No final count exists, so the reserved estimate is committed as input tokens
-                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
-                        // the estimate than to let abandonment erase real usage. Unknown provider/model
-                        // fall back to the repository's reservation placeholder.
-                        await _quotaService.CommitReservationAsync(
-                            rid,
-                            userId, Domain.Enums.LlmSurface.Chat,
-                            provider ?? string.Empty, model ?? string.Empty,
-                            quotaEstimatedTokens, 0,
-                            CancellationToken.None);
-                    }
                     else
                     {
-                        await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        var dispatch = quotaDispatchContext?.ReadSnapshot();
+                        var shouldCommitEstimate = dispatch switch
+                        {
+                            { Phase: LlmDispatchPhase.Dispatched } => true,
+                            { Phase: LlmDispatchPhase.ObservedPreDispatch } => false,
+                            _ => providerStreamed
+                        } && quotaEstimatedTokens > 0;
+                        if (!shouldCommitEstimate)
+                        {
+                            await _quotaService.ReleaseReservationAsync(rid, CancellationToken.None);
+                        }
+                        else
+                        {
+                            // No final count exists, so the reserved estimate is committed as input tokens
+                        // (output 0) — the deliberate over-count-not-bypass posture: better to charge
+                        // the estimate than to let abandonment erase real usage. Unknown provider/model
+                            // fall back to the repository's reservation placeholder.
+                            await _quotaService.CommitReservationAsync(
+                                rid,
+                                userId, Domain.Enums.LlmSurface.Chat,
+                                provider ?? dispatch?.Provider ?? string.Empty,
+                                model ?? dispatch?.Model ?? string.Empty,
+                                quotaEstimatedTokens, 0,
+                                CancellationToken.None);
+                        }
                     }
                 }
                 catch (Exception settleEx)
@@ -727,6 +921,51 @@ public class ChatService : IChatService
                 }
             }
         }
+    }
+
+    private static int ResolveQuotaTokens(
+        LlmCompletionResult result,
+        int reservationEstimate,
+        LlmDispatchContext dispatchContext)
+    {
+        var dispatch = dispatchContext.ReadSnapshot();
+        if (dispatch.Phase == LlmDispatchPhase.ObservedPreDispatch)
+            return 0;
+        if (dispatch.Phase == LlmDispatchPhase.Dispatched)
+            return result.HasAuthoritativeTokenUsage && result.TokensUsed > 0
+                ? result.TokensUsed
+                : reservationEstimate;
+
+        return result.HasAuthoritativeTokenUsage
+            ? result.TokensUsed
+            : result.ShouldSettleQuotaReservation
+                ? reservationEstimate
+                : 0;
+    }
+
+    /// <summary>
+    /// Appends the no-board notice to assistant text so an unbound session never returns prose that
+    /// reads as an applied change (#2004).
+    /// </summary>
+    private static string AppendNoBoardActionNotice(string content) =>
+        $"{content}\n\n{NoBoardActionNotice}";
+
+    /// <summary>
+    /// True when the turn asks the assistant to act, independently of whether the provider flagged
+    /// its own response actionable (#2004). This decides only whether an unbound session owes the
+    /// user the no-board notice — it never creates or attempts a proposal, so a false positive
+    /// costs one honest sentence, while a false negative is the silent-prose failure this guards.
+    /// </summary>
+    private static bool TurnRequestsAction(string userContent, bool requestProposal, bool forceBestEffort)
+    {
+        // The user ticked "Request proposal generation", or told a clarification round to proceed.
+        if (requestProposal || forceBestEffort)
+            return true;
+
+        // Otherwise fall back to the same local classifier the no-tool reuse path uses, run over
+        // the user's own message rather than the model's reply.
+        var (userIntentIsActionable, _) = LlmIntentClassifier.Classify(userContent);
+        return userIntentIsActionable;
     }
 
     private static bool ContainsBlockedPromptPattern(string content)
@@ -884,7 +1123,8 @@ public class ChatService : IChatService
             o.IdempotencyKey,
             o.ExpectedVersion)).ToList();
 
-        var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, ct);
+        // Creating a proposal is a mutation lane: write-capable membership required (#1836).
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, ct);
         if (!permissionResult.IsSuccess)
             return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
 

@@ -97,7 +97,7 @@ describe('AgentRunsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Something failed')
-    expect(wrapper.find('.td-agent-runs__state--error button').exists()).toBe(true)
+    expect(wrapper.find('.paper-agent-runs__state--error button').exists()).toBe(true)
   })
 
   it('shows empty state when no runs exist', async () => {
@@ -121,6 +121,23 @@ describe('AgentRunsView', () => {
     expect(wrapper.text()).toContain('Proposal linked')
   })
 
+  it('explains that queued API-created runs have not started', async () => {
+    mockAgentStore.runs = [{
+      ...MOCK_RUN,
+      status: 'Queued',
+      stepsExecuted: 0,
+      summary: null,
+      proposalId: null,
+      completedAt: null,
+    }]
+    const wrapper = mount(AgentRunsView)
+    await waitForUi()
+
+    expect(wrapper.text()).toContain('Queued by the API. Execution has not started.')
+    expect(wrapper.text()).toContain('Requested:')
+    expect(wrapper.text()).not.toContain('Started:')
+  })
+
   it('shows failure reason for failed runs', async () => {
     mockAgentStore.runs = [{
       ...MOCK_RUN,
@@ -138,7 +155,7 @@ describe('AgentRunsView', () => {
     const wrapper = mount(AgentRunsView)
     await waitForUi()
 
-    await wrapper.find('.td-agent-runs__card-btn').trigger('click')
+    await wrapper.find('.paper-agent-runs__card-btn').trigger('click')
     expect(mockPush).toHaveBeenCalledWith('/workspace/agents/profile-1/runs/run-1')
   })
 
@@ -146,7 +163,7 @@ describe('AgentRunsView', () => {
     const wrapper = mount(AgentRunsView)
     await waitForUi()
 
-    await wrapper.find('.td-agent-runs__back').trigger('click')
+    await wrapper.find('.paper-agent-runs__back').trigger('click')
     expect(mockPush).toHaveBeenCalledWith('/workspace/agents')
   })
 })

@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -376,7 +377,7 @@ public class RoadmapInvariantTests
         var expectedSites = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "OpenAiLlmProvider",
-            "GeminiLlmProvider",
+            "OpenAiCompatibleLlmProvider",
             "OllamaLlmProvider",
             "OutboundWebhookDeliveryWorker",
             "WorkerRegistration",
@@ -433,15 +434,18 @@ public class RoadmapInvariantTests
     // ─── Invariant 10: MCP tool hash-pinning ───────────────────────────
 
     /// <summary>
-    /// INV-10: MCP tool hash-pinning.
-    /// Each MCP tool definition should include a content hash so that tool
-    /// schema changes are detectable and auditable.
+    /// INV-10: MCP tool definition hash mechanism.
+    /// This invariant verifies deterministic detection of changes to a declared
+    /// tool's name, description, or input schema. It does not assert runtime
+    /// approval or invocation enforcement: the shipped code has no user-driven
+    /// definition-recording or approval lifecycle.
     /// </summary>
     [Fact]
-    public void Invariant10_McpToolHashPinning()
+    public void Invariant10_McpToolDefinitionHashes_DetectDefinitionDrift()
     {
-        // McpToolDefinitionHashService pins a tool's (name, description, inputSchema) into a
-        // content hash so schema changes are detectable and require re-approval.
+        // McpToolDefinitionHashService hashes a tool's (name, description, inputSchema) so
+        // definition changes are detectable. It is mechanism-only until a user-driven approval
+        // lifecycle can supply records and approvals to an invocation-time enforcement path.
         const string name = "propose_create_card";
         const string description = "Create a card via a proposal.";
         const string schema = "{\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"}}}";
@@ -474,19 +478,49 @@ public class RoadmapInvariantTests
             McpToolDefinitionHashService.ComputeDefinitionHash("a", "b|c", schema),
             McpToolDefinitionHashService.ComputeDefinitionHash("a|b", "c", schema));
 
-        // Connect the invariant to the REAL MCP tool surface: load the actual [McpServerTool]
-        // definitions and confirm the hash mechanism applies to them and distinguishes them
-        // (distinct tools -> distinct hashes, so a schema change is detectable).
-        // NOTE: the hash service is shipped but not yet invoked by the MCP runtime, so end-to-end
-        // re-approval enforcement is tracked separately in #1154; this guards the mechanism + drift
-        // detection across the real tool set, not the (un-wired) runtime enforcement.
+        // Connect the invariant to the declared MCP tool surface. This guards the mechanism and
+        // the existing inventory; it deliberately does not claim invocation-time enforcement.
         var mcpToolNames = GetSourceFiles("src/Taskdeck.Api/Mcp")
             .SelectMany(f => Regex.Matches(ReadFile(f), @"\[McpServerTool\s*\(\s*Name\s*=\s*""([^""]+)""\s*\)")
                 .Select(m => m.Groups[1].Value))
             .Distinct()
             .ToList();
 
-        Assert.NotEmpty(mcpToolNames);
+        var expectedMcpToolNames = new[]
+        {
+            "archive_card",
+            "create_capture",
+            "create_card",
+            "create_column",
+            "dismiss_proposal",
+            "get_board_summary",
+            "get_proposal_status",
+            "list_proposals",
+            "move_card",
+            "search_cards",
+            "update_card",
+        };
+
+        Assert.Equal(expectedMcpToolNames, mcpToolNames.OrderBy(name => name, StringComparer.Ordinal));
+
+        // The hash-service lifecycle has no production caller. This is intentional: enabling a
+        // deny gate before users can record and approve definitions would deny every tool, while
+        // automatic approval would not be user approval. When a user-driven lifecycle is introduced,
+        // replace this assertion with end-to-end approved, missing, and stale-definition invocation tests.
+        var approvalLifecycleMethods = new[]
+        {
+            "IsToolApprovedAsync(",
+            "RecordToolDefinitionAsync(",
+            "ApproveToolAsync(",
+        };
+        var approvalLifecycleCallers = GetSourceFiles("src")
+            .Where(file => !Path.GetFileName(file).Equals(
+                "McpToolDefinitionHashService.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(file => approvalLifecycleMethods.Any(method =>
+                ReadFile(file).Contains(method, StringComparison.Ordinal)))
+            .ToList();
+        Assert.Empty(approvalLifecycleCallers);
+
         var toolHashes = mcpToolNames
             .Select(n => McpToolDefinitionHashService.ComputeDefinitionHash(n, description, schema))
             .ToList();
@@ -535,60 +569,92 @@ public class RoadmapInvariantTests
         }
     }
 
-    // ─── Invariant 12: Source spans reference source payload ────────────
+    // ─── Invariant 12: Proposal evidence references source payload ───────
 
     /// <summary>
-    /// INV-12: Source spans reference source payload.
-    /// Every automation output (proposal, chat message, tool result) must carry
-    /// a provenance span linking back to the originating source payload.
+    /// INV-12: the integrity contract of a proposal's provenance chain.
+    /// This is a domain-contract spec, not a completeness scan. It deliberately does NOT assert
+    /// that every proposal carries provenance (nothing in the shipped model forces that), nor that
+    /// every field carries evidence (the non-transcript path legally produces inferred fields with
+    /// zero evidence links). It asserts only what the domain types enforce about the chain
+    /// (<see cref="ProposalProvenance"/> → <see cref="ProvenanceField"/> →
+    /// <see cref="ProvenanceEvidenceLink"/>) once it is built: an evidence link resolves to a
+    /// concrete source-payload span (e.g. a transcript range); an extractive field must carry the
+    /// quote it claims; transcript evidence must reference its transcript; spans are ordered; and
+    /// a field or link cannot be attached across different outputs.
+    ///
+    /// Rewritten under issue #1305 AC3: the original RFAI-02 spike vocabulary
+    /// (SourceSpan / IntentCandidate / EvidenceLink / IntentEnvelopeV1) was unmapped, table-less
+    /// scaffolding and was removed. The shipped evidence-span capability lives in the mapped
+    /// <c>ProvenanceEvidenceLink</c> / <c>ProvenanceField</c> tables, so the same guards are now
+    /// asserted against those types — preserving the intent, not merely deleting the test.
     /// </summary>
     [Fact]
-    public void Invariant12_SourceSpans_ReferenceSourcePayload()
+    public void Invariant12_ProposalEvidence_ReferencesSourcePayload()
     {
-        // A SourceSpan must reference its originating source payload (source block + envelope)
-        // and resolve to valid content: ordered offsets and a snippet whose length matches the span.
-        var sourceBlockId = Guid.NewGuid();
-        var envelopeId = Guid.NewGuid();
-        var span = new SourceSpan(sourceBlockId, envelopeId, startOffset: 10, endOffset: 15, snippetText: "hello");
+        // An automation output (a proposal) carries a provenance chain that ties each derived
+        // field back to the source payload it came from.
+        var proposalId = Guid.NewGuid();
+        var transcriptId = Guid.NewGuid();
+        var provenance = new ProposalProvenance(proposalId, "corr-123", "mock");
 
-        Assert.Equal(sourceBlockId, span.SourceBlockId);   // links back to the source block
-        Assert.Equal(envelopeId, span.EnvelopeId);         // and the originating envelope
-        Assert.Equal(10, span.StartOffset);
-        Assert.Equal(15, span.EndOffset);
-        Assert.Equal(5, span.Length);
-        Assert.Equal("hello", span.SnippetText);
-        Assert.Equal(span.Length, span.SnippetText.Length); // snippet resolves to the span range
+        // An extractive field must carry the verbatim quote it was extracted from — this guards
+        // against fabricated evidence (an extraction claim with nothing behind it).
+        var field = new ProvenanceField(
+            "Title", ProvenanceKind.Extractive, confidence: 0.9, provenance.Id,
+            extractiveQuote: "ship the API review card");
+        provenance.AddField(field);
 
-        // Integrity is enforced: a span with no source reference, or whose snippet does not
-        // match its offsets, or with inverted offsets, is rejected.
+        // The evidence link resolves to a concrete source-payload span: a transcript range.
+        var link = new ProvenanceEvidenceLink(
+            ProvenanceEvidenceLink.TranscriptSourceType,
+            transcriptId.ToString("D"),
+            field.Id,
+            label: "contains the request",
+            spanStart: 10,
+            spanEnd: 34,
+            transcriptId: transcriptId);
+        field.AddEvidenceLink(link);
+
+        // The chain resolves end to end: output → field → evidence → source-payload span.
+        Assert.Equal(proposalId, provenance.ProposalId);            // provenance ties to the output
+        var boundField = Assert.Single(provenance.Fields);
+        Assert.Equal(provenance.Id, boundField.ProposalProvenanceId);
+        var boundLink = Assert.Single(boundField.EvidenceLinks);
+        Assert.Equal(field.Id, boundLink.ProvenanceFieldId);        // evidence resolves back to the field
+        Assert.Equal(ProvenanceEvidenceLink.TranscriptSourceType, boundLink.SourceType);
+        Assert.Equal(transcriptId, boundLink.TranscriptId);         // ...and to the originating payload
+        Assert.Equal(transcriptId.ToString("D"), boundLink.SourceId);
+        Assert.Equal(10, boundLink.SpanStart);
+        Assert.Equal(34, boundLink.SpanEnd);
+
+        // Integrity is enforced so INV-12 cannot go false-green:
+
+        // (a) an extractive field with no quote is rejected — no unbacked extraction claims.
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(Guid.Empty, envelopeId, 0, 5, "hello"));         // no source block reference
+            new ProvenanceField("Title", ProvenanceKind.Extractive, 0.9, provenance.Id));
+
+        // (b) transcript evidence must actually reference a transcript payload: a missing
+        //     transcript id, or a SourceId that does not match it, is rejected.
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(sourceBlockId, envelopeId, 10, 15, "mismatch")); // snippet length != span range
+            new ProvenanceEvidenceLink(ProvenanceEvidenceLink.TranscriptSourceType,
+                transcriptId.ToString("D"), field.Id));                                    // no transcript id
         Assert.Throws<DomainException>(() =>
-            new SourceSpan(sourceBlockId, envelopeId, 15, 10, "x"));        // end <= start
+            new ProvenanceEvidenceLink(ProvenanceEvidenceLink.TranscriptSourceType,
+                Guid.NewGuid().ToString("D"), field.Id, transcriptId: transcriptId));      // id mismatch
 
-        // An automation output must actually LINK to a source span — not merely have spans exist
-        // in isolation. An IntentCandidate carries EvidenceLinks that resolve to the SourceSpan
-        // referencing the originating payload; this guards against INV-12 going false-green when an
-        // output ships with no evidence link back to its source.
-        var candidate = new IntentCandidate(envelopeId, "Create card for API review", confidence: 0.9, rank: 0, actionType: "create-card");
-        var evidence = new EvidenceLink(candidate.Id, span.Id, relevance: 1.0, rationale: "contains the request");
-        candidate.AddEvidenceLink(evidence, span);
-
-        var link = Assert.Single(candidate.EvidenceLinks);
-        Assert.Equal(span.Id, link.SourceSpanId);            // the output's evidence resolves to the span...
-        Assert.Equal(candidate.Id, link.IntentCandidateId);  // ...and back to the originating output
-
-        // The link can only be formed when the span belongs to the output's envelope — a span from
-        // an unrelated envelope (i.e., not the output's source payload) is rejected.
-        var foreignSpan = new SourceSpan(Guid.NewGuid(), Guid.NewGuid(), 0, 3, "abc");
+        // (c) an inverted span (end before start) is rejected.
         Assert.Throws<DomainException>(() =>
-            candidate.AddEvidenceLink(new EvidenceLink(candidate.Id, foreignSpan.Id), foreignSpan));
+            new ProvenanceEvidenceLink("capture", "cap-1", field.Id, spanStart: 15, spanEnd: 10));
 
-        // A proposal's provenance chain also ties automation output back to its originating run.
-        var provenance = new ProposalProvenance(Guid.NewGuid(), "corr-123", "mock");
-        Assert.NotEqual(Guid.Empty, provenance.ProposalId);
-        Assert.Equal("corr-123", provenance.CorrelationId);
+        // (d) evidence can only attach to a field of THIS output — a link built for a foreign
+        //     field id is rejected, so evidence cannot be laundered across outputs.
+        var foreignLink = new ProvenanceEvidenceLink("capture", "cap-2", Guid.NewGuid());
+        Assert.Throws<DomainException>(() => field.AddEvidenceLink(foreignLink));
+
+        // (e) a field can only attach to THIS provenance — a field built for a foreign provenance
+        //     id is rejected by AddField.
+        var foreignField = new ProvenanceField("Title", ProvenanceKind.Inferred, 0.5, Guid.NewGuid());
+        Assert.Throws<DomainException>(() => provenance.AddField(foreignField));
     }
 }

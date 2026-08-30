@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
   createCaptureItem,
@@ -37,7 +37,7 @@ test.describe('Paper capture-review-apply loop', () => {
       response.request().method() === 'POST'
       && /\/api\/capture\/items$/i.test(response.url()))
     await captureBody.fill(`- [ ] ${cardTitle}`)
-    await page.getByRole('button', { name: 'Capture' }).click()
+    await page.getByRole('button', { name: /^Capture/ }).click()
     const createCaptureResponse = await createCaptureResponsePromise
     await assertOk(createCaptureResponse, 'create Paper capture')
     const capturePayload = await createCaptureResponse.json() as { id?: string }
@@ -45,14 +45,27 @@ test.describe('Paper capture-review-apply loop', () => {
 
     const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
     await expect(captureRow).toBeVisible()
-    await captureRow.getByRole('button', { name: 'Accept' }).click()
+
+    await test.step('Paper Home triage card opens the seeded capture in Inbox', async () => {
+      await page.goto('/workspace/home')
+      await expect(page.getByTestId('paper-home')).toBeVisible()
+
+      const triageCard = page.getByTestId('paper-home-card-carryover').first()
+      await expect(triageCard).toBeVisible()
+      await triageCard.getByRole('button').click()
+
+      await expect(page).toHaveURL(/\/workspace\/inbox$/)
+      await expect(captureRow).toBeVisible()
+    })
+
+    await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
 
     const triagedCapture = await waitForProposalCreated(request, paperAuth, capturePayload.id!)
     const proposalId = triagedCapture.provenance?.proposalId
     expect(proposalId).toBeTruthy()
     expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
 
-    await page.getByRole('link', { name: /Review$/ }).click()
+    await page.locator('[data-paper-sidebar] a[href="/workspace/review"]').first().click()
     await expect(page).toHaveURL(/\/workspace\/review$/)
     await expect(page.getByTestId('paper-review-view')).toBeVisible()
     await expect(
@@ -65,16 +78,20 @@ test.describe('Paper capture-review-apply loop', () => {
     await page.getByTestId('decision-apply').click()
     await assertOk(await approveResponsePromise, `approve Paper proposal ${proposalId}`)
     expect(await listBoardCards(request, paperAuth, boardId)).toHaveLength(0)
+    await expect(page.getByTestId('paper-review-decision-receipt')).toHaveAttribute(
+      'data-decision',
+      'approved',
+    )
 
     const executeResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
       && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
-    // The final apply confirmation is a hard gate: expectDialog FAILS this test
-    // if the confirm() dialog is removed, instead of silently executing anyway.
-    await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-      type: 'confirm',
-      message: 'Apply this approved proposal to the board now?',
-    })
+    // The final apply confirmation is a hard gate: expectApplyConfirmDialog FAILS
+    // this test if the in-app confirmation is removed (#1818), instead of
+    // silently executing anyway. The approved receipt requires a second,
+    // explicit Apply click; the board-card count above proves approval itself
+    // did not write anything.
+    await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
     await assertOk(await executeResponsePromise, `execute Paper proposal ${proposalId}`)
     const createdCard = await waitForCardWithTitle(request, paperAuth, boardId, cardTitle)
 
@@ -134,11 +151,11 @@ test('capture triage should create proposal and apply card with provenance links
   const cardsAfterApprove = await listBoardCards(request, auth, boardId)
   expect(cardsAfterApprove.length).toBe(0)
 
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
-  await expect(proposalCard).not.toBeVisible()
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
+  // #1967: at its exact hash the applied proposal stays inspectable as a
+  // read-only decision record instead of vanishing from the view.
+  await expect(proposalCard.getByTestId('review-applied-decision-record')).toBeVisible()
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, checklistTaskTitle)
 

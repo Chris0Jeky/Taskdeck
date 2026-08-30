@@ -37,12 +37,44 @@ describe('captureApi', () => {
     })
   })
 
+  it('preserves composer due date and label names in the capture request', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'capture-2' } })
+
+    await captureApi.createItem({
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items', {
+      boardId: 'board-1',
+      text: 'Buy milk',
+      dueDate: '2026-08-23',
+      labels: ['shopping'],
+    })
+  })
+
   it('loads capture item detail by id', async () => {
     vi.mocked(http.get).mockResolvedValue({ data: { id: 'capture-42' } })
 
     await captureApi.getItem('capture-42')
 
     expect(http.get).toHaveBeenCalledWith('/capture/items/capture-42')
+  })
+
+  it('posts keep and archive dispositions and returns their receipts', async () => {
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({ data: { id: 'capture-2', disposition: { kind: 'Kept' } } })
+      .mockResolvedValueOnce({ data: { id: 'capture-3', disposition: { kind: 'Archived' } } })
+
+    const kept = await captureApi.keepItem('capture-2')
+    const archived = await captureApi.archiveItem('capture-3')
+
+    expect(http.post).toHaveBeenNthCalledWith(1, '/capture/items/capture-2/keep')
+    expect(http.post).toHaveBeenNthCalledWith(2, '/capture/items/capture-3/archive')
+    expect(kept.disposition?.kind).toBe('Kept')
+    expect(archived.disposition?.kind).toBe('Archived')
   })
 
   it('posts ignore action', async () => {
@@ -72,9 +104,23 @@ describe('captureApi', () => {
 
     const result = await captureApi.enqueueTriage('capture-2')
 
-    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/triage')
+    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-2/triage', undefined)
     expect(result.status).toBe('Triaging')
     expect(result.alreadyTriaging).toBe(false)
+  })
+
+  it('posts triage action with a target board when supplied (#1764)', async () => {
+    vi.mocked(http.post).mockResolvedValue({
+      data: {
+        id: 'capture-3',
+        status: 'Triaging',
+        alreadyTriaging: false,
+      },
+    })
+
+    await captureApi.enqueueTriage('capture-3', 'board-9')
+
+    expect(http.post).toHaveBeenCalledWith('/capture/items/capture-3/triage', { boardId: 'board-9' })
   })
 
   it('posts batch triage request', async () => {
@@ -120,5 +166,32 @@ describe('captureApi', () => {
       titleHint: 'New Title',
     })
     expect(result.rawText).toBe('updated text')
+  })
+
+  it('puts an explicit metadata replacement for correction or clearing', async () => {
+    vi.mocked(http.put).mockResolvedValue({
+      data: {
+        id: 'capture-3',
+        rawText: 'updated text',
+        metadata: { dueDate: null, labels: [] },
+      },
+    })
+
+    const result = await captureApi.updateSuggestion('capture-3', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+
+    expect(http.put).toHaveBeenCalledWith('/capture/items/capture-3/suggestion', {
+      text: 'updated text',
+      metadata: {
+        dueDate: null,
+        labels: [],
+      },
+    })
+    expect(result.metadata).toEqual({ dueDate: null, labels: [] })
   })
 })

@@ -1,7 +1,7 @@
 import type { APIResponse, Response } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
-import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, triageCaptureItem, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
 import { assertOk } from './support/httpAsserts'
@@ -65,19 +65,19 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     response.request().method() === 'POST'
     && /\/api\/capture\/items$/i.test(response.url()))
   await captureBody.fill(`- [ ] ${cardTitle}`)
-  await page.getByRole('button', { name: 'Capture' }).click()
+  await page.getByRole('button', { name: /^Capture/ }).click()
   const response = await createCaptureResponse
   await assertOk(response, 'create Paper first-run capture')
   const captureId = await parseCreatedCaptureId(response)
 
   const captureRow = page.locator('.paper-triage__row').filter({ hasText: cardTitle }).first()
   await expect(captureRow).toBeVisible()
-  await captureRow.getByRole('button', { name: 'Accept' }).click()
+  await captureRow.getByRole('button', { name: 'Ask AI', exact: true }).click()
   const triagedCapture = await waitForProposalCreated(request, auth, captureId)
   const proposalId = triagedCapture.provenance?.proposalId
   expect(proposalId).toBeTruthy()
 
-  await page.getByRole('link', { name: /Review$/ }).click()
+  await page.locator('[data-paper-sidebar] a[href="/workspace/review"]').first().click()
   await expect(page.getByTestId('paper-review-view')).toBeVisible()
   await expect(
     page.getByRole('heading', { level: 1, name: `Capture triage: ${cardTitle}` }),
@@ -88,16 +88,18 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
     && response.url().endsWith(`/automation/proposals/${proposalId}/approve`))
   await page.getByTestId('decision-apply').click()
   await assertOk(await approveResponse, `approve Paper first-run proposal ${proposalId}`)
+  await expect(page.getByTestId('paper-review-decision-receipt')).toHaveAttribute(
+    'data-decision',
+    'approved',
+  )
 
   const executeResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && response.url().endsWith(`/automation/proposals/${proposalId}/execute`))
   // Hard-assert the final apply confirmation (see capture-loop.spec.ts): the
-  // test must FAIL if the confirm() gate disappears, not execute silently.
-  await expectDialog(page, () => page.getByTestId('decision-apply').click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
+  // test must FAIL if the phase-2 gate disappears, not execute silently. The
+  // receipt keeps Apply as a second, explicit reviewer action.
+  await expectApplyConfirmDialog(page, () => page.getByTestId('decision-apply').click())
   await assertOk(await executeResponse, `execute Paper first-run proposal ${proposalId}`)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 
@@ -201,7 +203,7 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await openProposalButton.click()
 
   await expect(page).toHaveURL(new RegExp(`/workspace/review\\?boardId=${boardId}#proposal-${proposalId}`))
-  await expect(page.getByText(boardName)).toBeVisible()
+  await expect(page.locator('.td-review__board-filter').getByText(boardName, { exact: true })).toBeVisible()
   await expect(page.locator(`#proposal-${controlProposalId}`)).toHaveCount(0)
   const proposalCard = page.locator(`#proposal-${proposalId}`)
   await expect(proposalCard).toBeVisible()
@@ -209,11 +211,10 @@ test(LEGACY_FIRST_RUN_TITLE, async ({ page, request }) => {
   await proposalCard.getByRole('button', { name: 'Approve for board' }).click()
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
-  await expect(proposalCard).not.toBeVisible()
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
+  // #1967: after Apply the card either leaves the queue or persists as a
+  // read-only decision record - in both renderings the Apply control is gone.
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
 

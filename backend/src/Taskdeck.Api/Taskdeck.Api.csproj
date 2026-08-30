@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -16,6 +16,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Taskdeck.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TaskdeckDesktopPackage)' == 'true'">
+    <AssemblyMetadata Include="TaskdeckDesktopPackage" Value="true" />
   </ItemGroup>
 
   <ItemGroup>

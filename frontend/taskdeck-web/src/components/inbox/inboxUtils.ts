@@ -38,6 +38,49 @@ export function sourceLabel(source: CaptureSourceValue): string {
   return String(source)
 }
 
+/**
+ * Where a capture stands from the USER's point of view (#1944).
+ *
+ * `statusLabel` names the server status; this names what the user's decision
+ * did and what happens next, so a row can narrate itself. `undecided` is
+ * reserved for a capture still waiting on a decision — that is the invariant
+ * behind "a decided row can never render identically to an undecided one".
+ *
+ * `unknown` is deliberate rather than a fallback to `undecided`: an
+ * out-of-contract status from the server is NOT a fresh capture, and claiming
+ * it is would be the same class of lie this issue is about.
+ *
+ * `Triaged` and `ProposalCreated` are two different endings and must not share
+ * a state. The server decides between them on whether triage produced anything:
+ * `CaptureStatusPolicy` (backend `Domain/Enums/CaptureStatus.cs`) maps a
+ * completed triage to `ProposalCreated` when a proposal was linked and to
+ * `Triaged` when none was — the "triaged, nothing to propose" verdict, which is
+ * a SUCCESS, not a failure. Sending a `Triaged` row to Review would send the
+ * user after something that was never created, and neither Accept nor Reject is
+ * live on that row to walk it back.
+ */
+export type CaptureRowState =
+  | 'undecided'
+  | 'sending'
+  | 'nothingToPropose'
+  | 'inReview'
+  | 'applied'
+  | 'rejected'
+  | 'failed'
+  | 'unknown'
+
+export function captureRowState(status: CaptureStatusValue | undefined): CaptureRowState {
+  if (status === undefined) return 'unknown'
+  if (status === 0 || status === 'New') return 'undecided'
+  if (status === 1 || status === 'Triaging') return 'sending'
+  if (status === 2 || status === 'Triaged') return 'nothingToPropose'
+  if (status === 3 || status === 'ProposalCreated') return 'inReview'
+  if (status === 4 || status === 'Converted') return 'applied'
+  if (status === 5 || status === 'Ignored') return 'rejected'
+  if (status === 6 || status === 'Failed') return 'failed'
+  return 'unknown'
+}
+
 export function canMutateSelection(status: CaptureStatusValue | undefined): boolean {
   if (status === undefined) {
     return false
@@ -45,19 +88,6 @@ export function canMutateSelection(status: CaptureStatusValue | undefined): bool
 
   return status === 0 ||
     status === 'New' ||
-    status === 6 ||
-    status === 'Failed'
-}
-
-export function canEditSuggestion(status: CaptureStatusValue | undefined): boolean {
-  if (status === undefined) {
-    return false
-  }
-
-  return status === 0 ||
-    status === 'New' ||
-    status === 2 ||
-    status === 'Triaged' ||
     status === 6 ||
     status === 'Failed'
 }
@@ -91,4 +121,74 @@ export function triageButtonLabel(
   }
 
   return 'Start Triage'
+}
+
+/**
+ * Capture statuses that mean the triage RUN COMPLETED (#2202).
+ *
+ * The backend's `RequestStatus.Completed` is not a capture status the client
+ * ever sees: `CaptureStatusPolicy.MapFromQueueStatus` splits it three ways —
+ * `Converted` when the proposal was applied, `ProposalCreated` when one was
+ * linked, `Triaged` when triage completed with nothing to propose. All three
+ * are successful endings, and they are the only statuses a degradation notice
+ * may ride.
+ *
+ * This is deliberately a positive allowlist rather than `status !== Failed`.
+ * `ErrorMessage` has two writers on the entity: `MarkAsCompleted(notice)` (the
+ * degradation notice) and `MarkAsFailed(message)` (a real failure). `Cancel()`
+ * clears neither, and it accepts a Failed request — so a failed capture that
+ * was then ignored surfaces as `Ignored` STILL CARRYING ITS FAILURE TEXT. Under
+ * a "not Failed" rule that failure would render as a friendly degradation
+ * notice on an ignored row, which is the same class of dishonesty this issue
+ * exists to remove.
+ */
+const TRIAGE_COMPLETED_STATUSES: readonly CaptureStatusValue[] = [
+  'Triaged',
+  2,
+  'ProposalCreated',
+  3,
+  'Converted',
+  4,
+]
+
+/**
+ * The server-authored degradation notice for a capture whose triage SUCCEEDED
+ * on the deterministic extractor after its LLM leg could not deliver (#2192 /
+ * #2203), or `null` when there is nothing to say.
+ *
+ * The text is returned verbatim: it is server-authored, already redacted, and
+ * bounded, and the frontend must present it rather than re-parse it for
+ * structure (#2202). Nothing from local configuration is ever appended.
+ */
+export function triageDegradedNotice(
+  item: { status?: CaptureStatusValue; errorMessage?: string | null } | null | undefined,
+): string | null {
+  if (!item || item.status === undefined) return null
+  if (!TRIAGE_COMPLETED_STATUSES.includes(item.status)) return null
+
+  const notice = item.errorMessage?.trim()
+  return notice ? notice : null
+}
+
+/**
+ * The `inbox.degraded.review*` catalog key whose guidance is true for THIS
+ * capture's status (PR #2224 review).
+ *
+ * One sentence cannot cover the three statuses the notice rides. "Read it
+ * closely before you apply it" is impossible on `Triaged` — triage completed
+ * with nothing to propose, so there is no proposal to read or apply — and
+ * stale on `Converted`, where the proposal was applied to the board already.
+ * Only `ProposalCreated` has something pending review.
+ *
+ * Callers reach this only when `triageDegradedNotice` returned a notice, which
+ * already restricts the status to the allowlist above; the `ProposalCreated`
+ * key is the fallback purely so the return type stays total.
+ */
+export function triageDegradedReviewKey(
+  item: { status?: CaptureStatusValue } | null | undefined,
+): string {
+  const status = item?.status
+  if (status === 'Triaged' || status === 2) return 'inbox.degraded.reviewTriaged'
+  if (status === 'Converted' || status === 4) return 'inbox.degraded.reviewConverted'
+  return 'inbox.degraded.reviewProposal'
 }

@@ -18,6 +18,9 @@ backend/.vs/
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+# Taskdeck's own release docs live under docs/releases (the pattern above targets build output)
+!docs/releases/
+!docs/releases/**
 x64/
 x86/
 [Ww][Ii][Nn]32/
@@ -155,3 +158,4 @@ frontend/*/reports/mutation/
 /.analysis-logs/
 /audit_prs.sh
 /audit_prs_*.tsv
+/filesAndResources/taskdeck_context_fabric_pack

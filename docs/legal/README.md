@@ -73,7 +73,7 @@ This directory is intentionally narrow:
   data portability / account deletion, delivered in `#83` / `#666`).
 - `docs/security/` — security posture, rate limiting, and logging-redaction policies.
 - `docs/platform/CONFIGURATION_REFERENCE.md` — which config toggles gate optional
-  sub-processors (OpenAI, Gemini, OAuth providers).
+  sub-processors (OpenAI, operator-configured compatible endpoints, OAuth providers).
 - `docs/strategy/03_CLOUD_COLLABORATION_STRATEGY.md` — hosted-cloud evolution plan
   that originally motivated this draft. _(That strategy doc is itself SUPERSEDED / de-scoped by the 2026-06-13 archive pivot — no hosted-cloud evolution is planned.)_
 

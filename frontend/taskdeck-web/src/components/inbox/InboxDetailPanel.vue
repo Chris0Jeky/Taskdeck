@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { TdBadge, TdEmptyState, TdInlineAlert, TdSkeleton, TdSpinner } from '../ui'
-import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, canEditSuggestion, triageButtonLabel } from './inboxUtils'
+import { statusLabel, statusBadgeVariant, sourceLabel, canMutateSelection, triageButtonLabel, triageDegradedNotice, triageDegradedReviewKey } from './inboxUtils'
 import type { CaptureItem } from '../../types/capture'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   selectedItemId: string | null
   selectedItem: CaptureItem | null
   hashLoadFailedItemId: string | null
@@ -13,7 +13,8 @@ defineProps<{
   isEditingSuggestion: boolean
   editedText: string
   editedTitleHint: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   (e: 'close-detail'): void
@@ -30,6 +31,30 @@ const emit = defineEmits<{
 }>()
 
 const canTriageSelection = canMutateSelection
+
+/**
+ * The degradation notice for a capture whose triage SUCCEEDED on the
+ * deterministic extractor after its LLM leg could not deliver (#2202).
+ *
+ * Kept strictly apart from the Failed block below it. That block is a
+ * `TdInlineAlert variant="error"` headed "Triage failed" and offers a retry;
+ * this one is a `warning` note on a capture that completed, and offers nothing
+ * to retry because there is nothing to retry. Widening the Failed `v-if` to
+ * cover both is exactly the trade of one dishonest surface for another that
+ * #2202 was filed to prevent.
+ *
+ * Copy comes from the `inbox.degraded.*` catalog; `$t` is available in the
+ * template through `globalInjection` (see `src/i18n/index.ts`), so this panel
+ * needs no `useI18n()` line of its own.
+ */
+const degradedNotice = triageDegradedNotice
+
+/**
+ * Which `inbox.degraded.review*` sentence is true for this capture's status
+ * (PR #2224 review). The notice rides `Triaged`, `ProposalCreated` and
+ * `Converted`; apply guidance is only accurate on the middle one.
+ */
+const degradedReviewKey = triageDegradedReviewKey
 </script>
 
 <template>
@@ -46,7 +71,9 @@ const canTriageSelection = canMutateSelection
     <div v-else-if="!selectedItemId" class="td-inbox__detail-feedback" data-testid="inbox-detail-placeholder">
       <TdEmptyState
         title="No item selected"
-        description="Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it."
+        :description="props.readOnly
+          ? 'Select an item to inspect the retained capture. Archived capture history is read-only.'
+          : 'Select an item to inspect the captured text and decide whether to triage, ignore, or cancel it.'"
       >
         <template #icon>
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -96,7 +123,7 @@ const canTriageSelection = canMutateSelection
         <div v-if="loadingDetail" class="td-inbox-detail__spinner">
           <TdSpinner label="Refreshing detail..." />
         </div>
-        <template v-else-if="isEditingSuggestion">
+        <template v-else-if="isEditingSuggestion && selectedItem.canEditSuggestion === true && !props.readOnly">
           <label for="inbox-edit-text" class="td-inbox-detail__edit-label">Capture Text</label>
           <textarea
             id="inbox-edit-text"
@@ -138,7 +165,7 @@ const canTriageSelection = canMutateSelection
         <template v-else>
           <pre class="td-inbox-detail__text">{{ selectedItem.rawText }}</pre>
           <button
-            v-if="canEditSuggestion(selectedItem.status)"
+            v-if="selectedItem.canEditSuggestion === true && !props.readOnly"
             class="td-btn td-btn--secondary td-btn--sm td-inbox-detail__edit-btn"
             data-testid="suggestion-edit-btn"
             @click="emit('start-edit-suggestion')"
@@ -148,6 +175,29 @@ const canTriageSelection = canMutateSelection
         </template>
       </div>
 
+      <!--
+        Degraded triage (#2202). Rendered as a plain block, NOT a TdInlineAlert:
+        that primitive hardcodes `role="alert"`, and a capture that completed
+        must not interrupt a screen reader as though something had failed. The
+        enclosing section is already an `aria-live="polite"` region, so
+        `role="status"` here matches the surface it sits in. The server's notice
+        is presented verbatim; nothing local is appended to it.
+      -->
+      <div
+        v-if="degradedNotice(selectedItem)"
+        class="td-inbox-detail__degraded"
+        role="status"
+        data-testid="capture-degraded-notice"
+      >
+        <p class="td-inbox-detail__degraded-title">{{ $t('inbox.degraded.label') }}</p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.lead') }}</p>
+        <p class="td-inbox-detail__degraded-reason" data-testid="capture-degraded-reason">
+          {{ $t('inbox.degraded.reason', { reason: degradedNotice(selectedItem) }) }}
+        </p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t(degradedReviewKey(selectedItem)) }}</p>
+        <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.action') }}</p>
+      </div>
+
       <TdInlineAlert
         v-if="selectedItem.status === 6 || selectedItem.status === 'Failed'"
         variant="error"
@@ -155,15 +205,21 @@ const canTriageSelection = canMutateSelection
       >
         <p class="td-inbox-detail__error-title">Triage failed</p>
         <p v-if="selectedItem.errorMessage" class="td-inbox-detail__error-msg">{{ selectedItem.errorMessage }}</p>
-        <p class="td-inbox-detail__error-hint">
+        <p v-if="props.readOnly" class="td-inbox-detail__error-hint">
+          This archived capture is retained for inspection. Restore the board before changing its capture workflow.
+        </p>
+        <p v-else-if="selectedItem.canEditSuggestion === true" class="td-inbox-detail__error-hint">
           You can edit the text and retry, or ignore this capture if it is no longer needed.
+        </p>
+        <p v-else class="td-inbox-detail__error-hint">
+          Editing is unavailable for this capture. Retry triage or ignore this capture if it is no longer needed.
         </p>
       </TdInlineAlert>
 
       <div v-if="selectedItem.provenance?.proposalId" class="td-inbox-detail__proposal-link" data-testid="inbox-proposal-link">
         <TdInlineAlert variant="success">
           <div class="td-inbox-detail__proposal-link-content">
-            <span>A proposed board update is ready for approval.</span>
+            <span>{{ props.readOnly ? 'Open the related retained decision record.' : 'A proposed board update is ready for approval.' }}</span>
             <button
               class="td-btn td-btn--primary td-btn--sm"
               @click="emit('open-proposal', selectedItem.provenance!.proposalId!)"
@@ -183,6 +239,7 @@ const canTriageSelection = canMutateSelection
           {{ loadingDetail ? 'Refreshing...' : 'Refresh Detail' }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--primary"
           @click="emit('triage-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canTriageSelection(selectedItem.status)"
@@ -190,6 +247,7 @@ const canTriageSelection = canMutateSelection
           {{ actionBusyItemId === selectedItem.id ? 'Working...' : triageButtonLabel(selectedItem.status, triagePollingItemId, selectedItemId) }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--danger"
           @click="emit('ignore-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"
@@ -197,6 +255,7 @@ const canTriageSelection = canMutateSelection
           {{ actionBusyItemId === selectedItem.id ? 'Working...' : 'Ignore' }}
         </button>
         <button
+          v-if="!props.readOnly"
           class="td-btn td-btn--secondary"
           @click="emit('cancel-selected')"
           :disabled="actionBusyItemId === selectedItem.id || !canMutateSelection(selectedItem.status)"
@@ -387,6 +446,61 @@ const canTriageSelection = canMutateSelection
   font-size: var(--td-font-xs);
   line-height: 1.5;
   margin: 0;
+}
+
+/*
+ * Degraded-triage note (#2202). It sits above the Failed alert and must never
+ * be mistaken for it: no error tint, no red rule, no retry affordance — a
+ * warning-toned side rule on the panel's own surface, which reads as an
+ * annotation on a result rather than a report of a broken one.
+ */
+.td-inbox-detail__degraded {
+  border: 0.5px solid var(--td-border-ghost);
+  border-left: 3px solid var(--td-color-warning);
+  border-radius: var(--td-radius-md);
+  background: var(--td-color-warning-light);
+  padding: var(--td-space-3);
+}
+
+.td-inbox-detail__degraded-title {
+  color: var(--td-text-primary);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin: 0 0 var(--td-space-1) 0;
+  font-weight: 600;
+}
+
+.td-inbox-detail__degraded-msg {
+  color: var(--td-text-primary);
+  font-size: var(--td-font-sm);
+  line-height: 1.5;
+  margin: 0 0 var(--td-space-1) 0;
+  word-break: break-word;
+}
+
+.td-inbox-detail__degraded-msg:last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * The server's own words, set apart from Taskdeck's explanation around them.
+ *
+ * `--td-text-secondary`, not `--td-text-tertiary` (PR #2224 review). Composited
+ * over this panel (`--td-color-warning-light`, rgba(251,191,36,0.15), over the
+ * detail surface #1c1b1b => rgb(61,52,28)), the tertiary token is a 40% white
+ * wash that lands at 2.87:1 — under WCAG AA for normal text, on the one line
+ * that carries the server's diagnosis. #e4beba on the same composite is 7.25:1,
+ * so the 11px mono size stands; the mono face and size still set it apart.
+ */
+.td-inbox-detail__degraded-reason {
+  color: var(--td-text-secondary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: var(--td-font-xs);
+  line-height: 1.5;
+  margin: 0 0 var(--td-space-1) 0;
+  overflow-wrap: anywhere;
 }
 
 .td-inbox-detail__proposal-link-content {

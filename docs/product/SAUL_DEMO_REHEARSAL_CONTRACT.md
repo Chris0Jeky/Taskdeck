@@ -1,6 +1,6 @@
 # Saul-Facing Demo Rehearsal Contract
 
-Last Updated: 2026-03-26
+Last Updated: 2026-08-22
 
 ## Purpose
 
@@ -24,21 +24,61 @@ Out of scope:
 - new architecture or feature expansion
 - public GTM/landing narrative (`#216`)
 
+This rehearsal is local product evidence only. It does not authorize or prove a public release.
+The v0.1.1 public-artifact proof plus the maintainer's explicit clean-Sandbox waiver satisfies
+`#1877`, but the 2026-08-22 ordinary-profile startup incident reopened `#1876`; this rehearsal
+satisfies neither that correction nor `#1242`'s distinct maintainer record decision.
+
 ## Preconditions
 
-- backend API is reachable at `http://localhost:5000/api`
-- frontend is running from `frontend/taskdeck-web`
+- run the launcher from the repository root; it owns both backend and frontend processes
+- the canonical Saul rehearsal is default-port only: the launcher's `API` line must report `http://localhost:5000`
+- if the launcher selects or is given another API port, stop; do not continue this rehearsal against it
 - demo credentials are valid (`demo` / `demo123` unless overridden)
-- local run uses deterministic/mock-safe mode (`--skip-llm`)
+- the commands below scope deterministic Mock/live-disabled settings to a child process tree; they
+  do not display, read, persist, or overwrite any provider key value
+- remove any retired Taskdeck `Llm__Gemini__*` setting before the rehearsal; the intentional
+  migration guard rejects that retired provider configuration even when these commands select Mock
 
 ## Canonical Bootstrap
 
-Run from `frontend/taskdeck-web`:
+From the repository root, choose the command for the current shell. Each command scopes only the
+non-secret provider selectors to a child process; no interactive-shell setting or configuration file
+is changed.
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  & ".\scripts\dev-up.ps1" -Seed -ResetSeed
+}'
+```
 
 ```bash
-npm run demo:seed
-npm run demo:run -- --clean --skip-llm client-onboarding
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  ./scripts/dev-up.sh --seed --reset-seed
 ```
+
+Continue only after the launcher prints `Stack is up.` and its `API` line reports
+`http://localhost:5000`. The launcher passes a fresh run identity to the seeder and binds
+every seed request to the API process it started. Do not replace this step with bare
+`npm run demo:seed` or `npm run demo:run`; those commands do not carry the launcher-owned
+connection proof. If port 5000 is unavailable, stop the launcher, free the port, and rerun this
+default-port contract rather than switching the rehearsal to another listener.
+
+The explicit reset flag is required for a clean rehearsal and is never implied by normal seeding.
+It is valid only with `-Seed` / `--seed`. Before changing anything, the run-bound seeder validates
+the complete board list and fails closed on unknown, duplicate, or malformed `DEMO:*` candidates or
+malformed reserved tombstones. It atomically renames each documented demo board to an ID-bound
+non-demo tombstone and archives it, then re-fetches that quarantine before creating and verifying
+four fresh canonical board IDs. Prior valid tombstones and non-demo boards are preserved. A 403 or
+any quarantine/fresh-state failure stops before child artifacts are seeded. A failure can leave a
+partial quarantine or fresh board set: the launcher cleans only the process trees it started, and
+the operator must inspect the remaining demo state before retrying.
 
 This is the canonical rehearsal state:
 - board: `DEMO: Client Onboarding Demo`
@@ -59,10 +99,30 @@ New client onboarding - ACME Ltd
 
 ## Artifact Capture Command (Recommended)
 
-For a deterministic artifact bundle before recording:
+For a deterministic artifact bundle before recording, run the npm command from its declared
+working directory, `frontend/taskdeck-web`. The wrappers below keep the Mock/live-disabled posture
+on the director, Playwright, and fresh-server process tree without exposing or changing any key
+value.
 
 ```bash
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  TASKDECK_DEMO_LLM_PROVIDER=Mock \
+  TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
+  $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
+  npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+}'
 ```
 
 Expected artifact root:
@@ -94,15 +154,16 @@ Required files:
 
 If rehearsal fails, use this order:
 
-1. Rerun bootstrap commands exactly (`demo:seed` then `demo:run -- --clean --skip-llm client-onboarding`).
-2. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
-3. Confirm API target is local and reachable (`http://localhost:5000/api` unless explicitly overridden).
-4. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.
-5. Treat any missing trust cue, missing ACME lineage, or unclear board reveal as fail-no-recording.
+1. Stop only the launcher-owned stack with `.\scripts\dev-up.ps1 -Stop` or `./scripts/dev-up.sh --stop`.
+2. Confirm port 5000 is free, then rerun the matching protected reset-and-seed command above; do not fall back to bare `demo:seed` or `demo:run`.
+3. Confirm backend auto-processing is enabled for local Development (`Workers:EnableAutoQueueProcessing=true`, or env `Workers__EnableAutoQueueProcessing=true`).
+4. Confirm the launcher's `API` line again reports exactly `http://localhost:5000` before opening the rehearsal.
+5. If using director artifacts, rerun with `--fresh-servers --reset-e2e-db` to clear stale server/db state.
+6. Treat any missing trust cue, missing ACME lineage, or unclear board reveal as fail-no-recording.
 
 ## Pass/Fail Checklist
 
-- [ ] Bootstrap commands completed without errors.
+- [ ] The launcher seed completed without errors and its `API` line reported `http://localhost:5000`.
 - [ ] Canonical board is `DEMO: Client Onboarding Demo`.
 - [ ] ACME capture text is present and maps to proposal output.
 - [ ] Review screen shows explicit trust-first gating language.

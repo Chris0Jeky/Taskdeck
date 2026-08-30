@@ -2,6 +2,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { automationApi } from '../api/automationApi'
 import { boardsApi } from '../api/boardsApi'
+import { i18n } from '../i18n'
 import type { ReviewSummaryCard } from '../components/review/ReviewSummaryCards.vue'
 import { useToastStore } from '../store/toastStore'
 import {
@@ -10,6 +11,7 @@ import {
 } from '../utils/automation'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
+import { proposalIdsEqual } from '../utils/proposalIdentity'
 import type { Proposal as ApiProposal } from '../types/automation'
 import type { Board } from '../types/board'
 import { getErrorDisplay } from './useErrorMapper'
@@ -22,6 +24,26 @@ import { usePerformanceMark } from './usePerformanceMark'
  * drift class — ADR-0038).
  */
 export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * How often the Review surface re-reads the queue while it is open and the tab
+ * is visible (#2194).
+ *
+ * There is nothing to subscribe to: the only SignalR hub is `BoardsHub`
+ * (`/hubs/boards`), its groups are strictly per-board, and it emits exactly
+ * `boardMutation` / `boardPresence` / `toolStatus` over board/card/column/label
+ * entities. `AutomationProposalService` never touches `IBoardRealtimeNotifier`,
+ * so proposal creation is silent on the wire and the all-boards review queue has
+ * no board group to join in the first place. A bounded poll is therefore the
+ * whole available mechanism until a proposal event exists server-side.
+ *
+ * 15 s is short enough that a proposal created by Ask AI elsewhere appears
+ * inside one glance -- #2194 measured 115 s of a false "Nothing waiting" -- and
+ * long enough that an idle Review tab costs 4 requests/minute against an
+ * endpoint the surface already calls on entry. Ticks are skipped entirely while
+ * the tab is hidden, so a backgrounded tab costs nothing.
+ */
+export const REVIEW_QUEUE_REFRESH_MS = 15_000
 
 /**
  * Decision rules shared by every review surface (Paper deep-review and the
@@ -84,6 +106,17 @@ export function isProposalReadOnly(proposal: ApiProposal, isExpired: boolean): b
   )
 }
 
+/**
+ * A 403 on the review-queue read means board access was revoked, not a blip.
+ * Deliberately narrower than `isAccessDeniedError` (403 OR 404): a 404 from the
+ * LIST endpoint is not a permission signal, and treating it as one would tear
+ * down a queue over a routing mistake.
+ */
+function isForbiddenError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  return (err as { response?: { status?: number } }).response?.status === 403
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
@@ -100,14 +133,31 @@ export function useReviewProposals() {
   const router = useRouter()
   const toast = useToastStore()
   const reviewLoadPerf = usePerformanceMark('review-load')
+  // Module-scoped i18n rather than `useI18n()` — see the note in
+  // useReviewActions.ts. This composable is shared with the Legacy shell and is
+  // exercised by specs that never mount a component.
+  const t = i18n.global.t
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
+  // A deep link is an explicit request, not a selection preference. Preserve a
+  // confirmed 404 separately so Paper can say what happened instead of
+  // presenting the ordinary empty queue or a different actionable proposal.
+  const unavailableProposalId = ref<string | null>(null)
+  // Set when a background read is refused with 403 (board access revoked
+  // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
+  // for an honest one -- clearing the queue without saying why would turn a
+  // permission failure into a fresh false negative, which is the exact class
+  // #2194 exists to remove.
+  const queueAccessRevoked = ref(false)
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
   const boardFilterInput = ref('')
   const activeBoardFilter = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+  const isArchivedHistory = computed(
+    () => route.query.history === 'archived' && activeBoardFilter.value !== null,
+  )
   const showCompleted = ref(false)
 
   // Reactive clock for client-side expiry detection -- updates every 60 s
@@ -214,9 +264,14 @@ export function useReviewProposals() {
     return proposals.value.filter((proposal) => {
       if (!matchesActiveBoardFilter(proposal.boardId)) return false
       const status = normalizeProposalStatus(proposal.status)
+      const expired = isProposalExpired(proposal)
+      if (isArchivedHistory.value) {
+        return status === 'Approved' || completedStatuses.has(status) || expired
+      }
+      const isHashTarget = proposalIdsEqual(proposal.id, hashTargetId)
       if (status === 'Dismissed') return false
-      if (isProposalExpired(proposal)) return true
-      if (isProposalDeferred(proposal) && proposal.id !== hashTargetId) return false
+      if (expired) return true
+      if (isProposalDeferred(proposal) && !isHashTarget) return false
       if (!showCompleted.value && completedStatuses.has(status)) return false
       return true
     })
@@ -250,11 +305,34 @@ export function useReviewProposals() {
       if (hasProvenanceContext(proposal)) captureLinked += 1
     }
 
+    // The card ids are stable DOM/test contracts and never translate; only the
+    // label and helper are copy. This computed re-runs on a language switch
+    // because `t` reads the active locale.
     return [
-      { id: 'pending-review', label: 'Pending review', value: pendingReview, helper: 'Changes waiting for an explicit decision.' },
-      { id: 'ready-to-execute', label: 'Ready to execute', value: readyToExecute, helper: 'Approved proposals that can now land on boards.' },
-      { id: 'capture-linked', label: 'Capture-linked', value: captureLinked, helper: 'Review items that came through the inbox loop.' },
-      { id: 'applied', label: 'Applied', value: appliedRecently, helper: 'Proposals already executed successfully.' },
+      {
+        id: 'pending-review',
+        label: t('review.summary.pendingReview.label'),
+        value: pendingReview,
+        helper: t('review.summary.pendingReview.helper'),
+      },
+      {
+        id: 'ready-to-execute',
+        label: t('review.summary.readyToExecute.label'),
+        value: readyToExecute,
+        helper: t('review.summary.readyToExecute.helper'),
+      },
+      {
+        id: 'capture-linked',
+        label: t('review.summary.captureLinked.label'),
+        value: captureLinked,
+        helper: t('review.summary.captureLinked.helper'),
+      },
+      {
+        id: 'applied',
+        label: t('review.summary.applied.label'),
+        value: appliedRecently,
+        helper: t('review.summary.applied.helper'),
+      },
     ]
   })
 
@@ -273,7 +351,7 @@ export function useReviewProposals() {
   }
 
   const dismissableProposalIds = computed(() =>
-    proposals.value
+    (isArchivedHistory.value ? [] : proposals.value)
       .filter((p) => isProposalDismissable(p))
       .filter((p) => matchesActiveBoardFilter(p.boardId))
       .map((p) => p.id),
@@ -296,12 +374,19 @@ export function useReviewProposals() {
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) return
     await nextTick()
-    const element = document.getElementById(`proposal-${proposalId}`)
+    const canonicalProposal = proposals.value.find((proposal) =>
+      proposalIdsEqual(proposal.id, proposalId),
+    )
+    const element = canonicalProposal
+      ? document.getElementById(`proposal-${canonicalProposal.id}`)
+      : null
     element?.scrollIntoView({ block: 'nearest' })
   }
 
   function upsertProposal(proposal: ApiProposal) {
-    const existingIndex = proposals.value.findIndex((current) => current.id === proposal.id)
+    const existingIndex = proposals.value.findIndex((current) =>
+      proposalIdsEqual(current.id, proposal.id),
+    )
     if (existingIndex >= 0) {
       proposals.value[existingIndex] = proposal
       return
@@ -333,35 +418,51 @@ export function useReviewProposals() {
   async function openProposalFromHash() {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
-    if (!proposalId) return
+    if (!proposalId) {
+      unavailableProposalId.value = null
+      return
+    }
 
-    const currentProposal = proposals.value.find((p) => p.id === proposalId)
+    // A different hash starts a fresh lookup. Keep the current unavailable
+    // state only while it still describes the route the user asked for.
+    if (!proposalIdsEqual(unavailableProposalId.value, proposalId)) {
+      unavailableProposalId.value = null
+    }
+
+    const currentProposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
     if (currentProposal) {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
+      unavailableProposalId.value = null
       await scrollToProposalFromHash()
       return
     }
 
     try {
       const fetchedProposal = await automationApi.getProposal(proposalId)
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
+      // A route lookup may canonicalize GUID hex casing, but it may not return a
+      // different record. Retain the hash as unavailable instead of upserting a
+      // response whose identity does not match the requested proposal.
+      if (!proposalIdsEqual(fetchedProposal.id, proposalId)) {
+        unavailableProposalId.value = proposalId
+        return
+      }
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
         return
       }
       upsertProposal(fetchedProposal)
+      unavailableProposalId.value = null
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
-      if (getProposalIdFromHash(route.hash) !== proposalId) return
+      if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       if (isHttpNotFound(e)) {
-        await safeReplace({ name: 'workspace-review', query: route.query })
+        unavailableProposalId.value = proposalId
         return
       }
-      toast.error(getErrorDisplay(e, 'Failed to load proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
     }
   }
 
@@ -373,7 +474,7 @@ export function useReviewProposals() {
   // hide an already-snoozed deep-linked target (its prior deferredUntil still in effect) with no
   // retry path.
   async function clearProposalDeepLink(proposalId: string) {
-    if (getProposalIdFromHash(route.hash) !== proposalId) return
+    if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
     await safeReplace({ name: 'workspace-review', query: route.query })
   }
 
@@ -389,9 +490,13 @@ export function useReviewProposals() {
       })
       if (requestId !== latestProposalLoadRequestId) return
       proposals.value = loadedProposals
+      // An explicit load that succeeded is proof access is back.
+      const accessWasRevoked = queueAccessRevoked.value
+      queueAccessRevoked.value = false
+      if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return
-      toast.error(getErrorDisplay(e, 'Failed to load proposals').message)
+      toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
     } finally {
       if (requestId === latestProposalLoadRequestId) proposalsLoading.value = false
       reviewLoadPerf.end()
@@ -401,6 +506,267 @@ export function useReviewProposals() {
       await openProposalFromHash()
     }
   }
+
+  // --- Background queue refresh (#2194) ---------------------------------
+
+  let refreshInterval: ReturnType<typeof setInterval> | null = null
+  let refreshInFlight = false
+  // A 403 pauses the configured poll without making it forget how the owning
+  // surface asked it to behave. Permanent stop/disposal clears this state so a
+  // late successful explicit load cannot resurrect a surface that has left.
+  let queueRefreshConfigured = false
+  let queueRefreshSuspendedForPermission = false
+  let shouldRefreshNow: (() => boolean) | null = null
+  let refreshAbort: AbortController | null = null
+  /**
+   * Called synchronously immediately AFTER a background poll's answer has
+   * replaced the queue (#2215 A). It is the only signal a surface has that the
+   * queue moved without the reviewer asking: every reviewer-driven path (rail
+   * click, filter change, deep link, decision) runs through the surface's own
+   * handlers, while this one lands on its own.
+   *
+   * Deliberately fired AFTER the assignment rather than before it, so a surface
+   * whose selection is a computed over `proposals` can compare the selection
+   * Vue is about to render against the one its watcher reports as previous.
+   */
+  let onQueueReplacedByPoll: (() => void) | null = null
+  // Bumped by any out-of-band write that a queue read started earlier would
+  // clobber. The array-identity guard cannot catch every such write: saving a
+  // proposal revision updates `useProposalRevisions` state and never touches
+  // `proposals`, so a GET issued before the save would sail through the identity
+  // check and restore the pre-revision summary, operations and latestRevisionId.
+  let queueWriteGeneration = 0
+
+  /**
+   * Invalidate every queue read currently in flight. Callers are surfaces that
+   * have just written something a pre-write read would undo -- today that is a
+   * saved proposal revision. Deliberately NOT `latestProposalLoadRequestId`:
+   * bumping that counter would make an in-flight `loadProposals` discard its own
+   * result AND skip the `proposalsLoading = false` reset in its finally block,
+   * wedging the surface in a permanent loading state.
+   */
+  function invalidateQueueReads() {
+    queueWriteGeneration += 1
+  }
+
+  function isDocumentVisible(): boolean {
+    // No document (non-DOM test context) counts as NOT visible: a surface that
+    // cannot be looked at must not generate background traffic.
+    if (typeof document === 'undefined') return false
+    return document.visibilityState === 'visible'
+  }
+
+  /**
+   * A background re-read of the queue. Deliberately gentler than
+   * `loadProposals`, because it fires under a reviewer who did not ask for it:
+   *
+   *  - it never raises `proposalsLoading`, so no skeleton flashes and no
+   *    decision control blinks disabled mid-review;
+   *  - it defers to any explicit load (route change, post-decision reload)
+   *    rather than racing it, and drops its own answer if one started while it
+   *    was in flight -- the explicit load is the fresher truth;
+   *  - it stays silent on failure: a poll the user never requested must not
+   *    raise a toast. The error is logged, never swallowed.
+   *
+   * Server truth wins for ordering and removals -- the response replaces the
+   * list, exactly as `loadProposals` does -- with one carve-out: a `#proposal-`
+   * deep-link target is fetched by id and may legitimately sit outside the list
+   * page, so a refresh must not evict the very record the URL names.
+   */
+  async function refreshProposals(): Promise<void> {
+    // An explicit load is authoritative and about to replace the list wholesale.
+    if (proposalsLoading.value || refreshInFlight) return
+    // Snapshot the load counter rather than incrementing it: bumping it here
+    // would make an in-flight `loadProposals` discard its own result AND skip
+    // the `proposalsLoading = false` reset in its finally block, wedging the
+    // surface in a permanent loading state.
+    const observedLoadId = latestProposalLoadRequestId
+    // Identity snapshot of the queue. EVERY single-proposal decision path
+    // (approve/reject/defer/execute in useReviewActions) patches the row locally
+    // with `proposals.value = proposals.value.map(...)`, assigning a NEW array
+    // and never touching the load counter. So a read issued BEFORE the click can
+    // resolve AFTER it, and writing its answer would revert the row to
+    // PendingReview while the decision receipt on screen says approved. A changed
+    // reference is the signal that a decision landed under this read.
+    const observedProposals = proposals.value
+    const observedWriteGeneration = queueWriteGeneration
+    // The scope this read is ASKING about. A late answer -- success or 403 --
+    // describes the board it queried, never whichever board is on screen now.
+    const requestedBoardId = activeBoardFilter.value || null
+    // True when this answer is about a different question than the one the
+    // surface is now asking: a newer explicit load started, or the board scope
+    // moved. Applies to the 403 branch too, which is the whole point: a 403 from
+    // a board the reviewer has already left says nothing about the board they
+    // are on, and must not clear it or stop its polling.
+    const isSupersededRead = () =>
+      observedLoadId !== latestProposalLoadRequestId ||
+      proposalsLoading.value ||
+      (activeBoardFilter.value || null) !== requestedBoardId
+    const controller = new AbortController()
+    refreshAbort = controller
+    refreshInFlight = true
+    try {
+      const loadedProposals = await automationApi.getProposals(
+        {
+          limit: 200,
+          boardId: activeBoardFilter.value || undefined,
+        },
+        // Fail fast and stay cancellable. The shared interceptor retries a
+        // transient failure three times with backoff, which would keep a dead
+        // poll running for seconds past the tick that asked for it and land its
+        // answer arbitrarily late; `stopQueueRefresh` aborts whatever is open.
+        { skipRetry: true, signal: controller.signal },
+      )
+      if (controller.signal.aborted) return
+      // A newer explicit load started, or the scope moved, while this poll was in
+      // flight; its answer supersedes this one.
+      if (isSupersededRead()) return
+      if (proposals.value !== observedProposals) return
+      // An out-of-band write landed that this read predates -- a saved revision,
+      // which leaves the `proposals` reference untouched and so is invisible to
+      // the identity check above.
+      if (observedWriteGeneration !== queueWriteGeneration) return
+      // Re-checked AFTER the await, not only before it: a confirm dialog can open
+      // while the read is in flight, and landing then would pull the record out
+      // from under the reviewer -- the Reject dialog is bound to a computed that
+      // closes itself when its proposal leaves the list, discarding a half-typed
+      // reason.
+      if (shouldRefreshNow && !shouldRefreshNow()) return
+      const hashTargetId = getProposalIdFromHash(route.hash)
+      const next = [...loadedProposals]
+      if (hashTargetId && !next.some((p) => proposalIdsEqual(p.id, hashTargetId))) {
+        const pinned = proposals.value.find((p) => proposalIdsEqual(p.id, hashTargetId))
+        if (pinned) {
+          // Restore it at its createdAt position, by the same rule
+          // `upsertProposal` uses. Appending would drop the record the reviewer
+          // is reading to the bottom of a rail that renders array order, so it
+          // would visibly jump on the first refresh.
+          const pinnedCreatedAt = new Date(pinned.createdAt).getTime()
+          const insertIndex = next.findIndex(
+            (current) => new Date(current.createdAt).getTime() < pinnedCreatedAt,
+          )
+          if (insertIndex >= 0) next.splice(insertIndex, 0, pinned)
+          else next.push(pinned)
+        }
+      }
+      proposals.value = next
+      // The queue moved under a reviewer who did not ask for it. Surfaces use
+      // this to notice that the row they were rendering has just been dropped
+      // or reordered away, instead of silently sliding onto another one
+      // (#2215 A).
+      onQueueReplacedByPoll?.()
+    } catch (e: unknown) {
+      // An abort is this surface's own teardown, not a failure.
+      if (controller.signal.aborted) return
+      if (isForbiddenError(e)) {
+        // Only trust a 403 that answers the question currently being asked.
+        // Without this, a late refusal from a board the reviewer just left would
+        // wipe the board they moved to and stop polling a scope that is fine.
+        if (isSupersededRead()) return
+        // Board access was revoked. Stop polling rather than hammering an
+        // endpoint that will keep refusing, drop rows the server no longer
+        // authorises, and let the surface say so.
+        queueAccessRevoked.value = true
+        proposals.value = []
+        suspendQueueRefreshForPermission()
+        return
+      }
+      logError('Review queue background refresh failed:', e)
+    } finally {
+      refreshInFlight = false
+      if (refreshAbort === controller) refreshAbort = null
+    }
+  }
+
+  function onRefreshVisibilityChange() {
+    // Re-entering a tab is the moment a stale "Nothing waiting" is most likely
+    // to be on screen, so read immediately instead of waiting out the interval.
+    if (!isDocumentVisible()) return
+    void maybeRefresh()
+  }
+
+  function maybeRefresh(): Promise<void> {
+    if (!isDocumentVisible()) return Promise.resolve()
+    // The surface can veto a tick -- see the call site in PaperReviewView for
+    // the mid-decision conditions it holds off on.
+    if (shouldRefreshNow && !shouldRefreshNow()) return Promise.resolve()
+    return refreshProposals()
+  }
+
+  function clearQueueRefreshRuntime() {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    if (refreshInterval !== null) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+    if (refreshAbort) {
+      // Cancel a read that is still open, so a late answer cannot write into a
+      // suspended or departed surface.
+      refreshAbort.abort()
+      refreshAbort = null
+    }
+  }
+
+  function armQueueRefresh() {
+    if (!queueRefreshConfigured || refreshInterval !== null) return
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    refreshInterval = setInterval(() => {
+      void maybeRefresh()
+    }, REVIEW_QUEUE_REFRESH_MS)
+  }
+
+  function suspendQueueRefreshForPermission() {
+    clearQueueRefreshRuntime()
+    queueRefreshSuspendedForPermission = queueRefreshConfigured
+  }
+
+  function resumeQueueRefreshAfterPermissionRecovery() {
+    if (!queueRefreshConfigured || !queueRefreshSuspendedForPermission) return
+    queueRefreshSuspendedForPermission = false
+    armQueueRefresh()
+  }
+
+  /**
+   * Starts the bounded, visibility-aware queue poll. `shouldRefresh` lets the
+   * owning surface hold a tick while the reviewer is mid-decision (a confirm
+   * dialog open, an action in flight) so the record under the cursor cannot
+   * change underneath the decision being made.
+   *
+   * `hooks.onQueueReplaced` fires once per landed poll, right after the queue
+   * has been replaced, so a surface can tell a poll-driven selection change
+   * apart from one the reviewer made (#2215 A).
+   */
+  function startQueueRefresh(
+    shouldRefresh?: () => boolean,
+    hooks?: { onQueueReplaced?: () => void },
+  ) {
+    // Guard against double-start exactly as startClock does. Configuration can
+    // outlive the interval while a 403 suspension is active, so key this guard
+    // to configuration rather than the runtime handle.
+    if (queueRefreshConfigured) return
+    queueRefreshConfigured = true
+    shouldRefreshNow = shouldRefresh ?? null
+    onQueueReplacedByPoll = hooks?.onQueueReplaced ?? null
+    if (queueAccessRevoked.value) {
+      queueRefreshSuspendedForPermission = true
+      return
+    }
+    armQueueRefresh()
+  }
+
+  function stopQueueRefresh() {
+    clearQueueRefreshRuntime()
+    queueRefreshConfigured = false
+    queueRefreshSuspendedForPermission = false
+    shouldRefreshNow = null
+    onQueueReplacedByPoll = null
+  }
+
+  onScopeDispose(stopQueueRefresh)
 
   async function loadBoardOptions() {
     try {
@@ -416,8 +782,11 @@ export function useReviewProposals() {
   // --- Navigation helpers ---
 
   function inboxPath(boardId?: string | null, captureItemId?: string): string {
-    const encodedBoardId = boardId ? encodeURIComponent(boardId) : null
-    const query = encodedBoardId ? `?boardId=${encodedBoardId}` : ''
+    const params = new URLSearchParams()
+    if (boardId) params.set('boardId', boardId)
+    if (isArchivedHistory.value) params.set('history', 'archived')
+    const queryString = params.toString()
+    const query = queryString ? `?${queryString}` : ''
     const hash = captureItemId ? `#capture-${encodeURIComponent(captureItemId)}` : ''
     return `/workspace/inbox${query}${hash}`
   }
@@ -435,10 +804,14 @@ export function useReviewProposals() {
   }
 
   function proposalHref(proposal: ApiProposal): string {
-    const query = proposal.boardId ?? activeBoardFilter.value
+    const boardId = proposal.boardId ?? activeBoardFilter.value
+    const params = new URLSearchParams()
+    if (boardId) params.set('boardId', boardId)
+    if (isArchivedHistory.value) params.set('history', 'archived')
+    const query = params.toString()
     const encodedProposalId = encodeURIComponent(proposal.id)
     return query
-      ? `/workspace/review?boardId=${encodeURIComponent(query)}#proposal-${encodedProposalId}`
+      ? `/workspace/review?${query}#proposal-${encodedProposalId}`
       : `/workspace/review#proposal-${encodedProposalId}`
   }
 
@@ -451,6 +824,14 @@ export function useReviewProposals() {
 
   function openRoute(path: string) {
     safeNavigate(path)
+  }
+
+  function openProposal(proposalId: string) {
+    safeNavigate({
+      name: 'workspace-review',
+      query: route.query,
+      hash: `#proposal-${encodeURIComponent(proposalId)}`,
+    })
   }
 
   function openBoard(boardId: string) {
@@ -467,9 +848,24 @@ export function useReviewProposals() {
     }
   }
 
-  function clearBoardFilter() {
+  async function clearBoardFilter() {
     boardFilterInput.value = ''
-    safeNavigate({ name: 'workspace-review' })
+    // Read the mode BEFORE the query is rewritten -- `isArchivedHistory` is
+    // derived from the route, so it flips as soon as the replace lands.
+    const leavingArchivedHistory = isArchivedHistory.value
+    const query = { ...route.query }
+    delete query.boardId
+    delete query.history
+    // Leaving archived history takes any `#proposal-<id>` deep link with it.
+    // Keeping the hash would hand an archived board's proposal to the UNSCOPED
+    // queue: `openProposalFromHash` refetches it by id, `matchesActiveBoardFilter`
+    // waves it through now that no board filter is set, and `upsertProposal`
+    // reinserts it into a mutation-enabled Review where Apply/Reject act on an
+    // archived board. Read-only is the whole point of the mode, so the exit
+    // drops the target rather than smuggling it across the boundary.
+    // Ordinary (non-archived) board clears keep their deep link as before.
+    const hash = leavingArchivedHistory ? '' : route.hash
+    await safeReplace({ name: 'workspace-review', query, hash })
   }
 
   // --- Watchers ---
@@ -487,10 +883,13 @@ export function useReviewProposals() {
   return {
     proposals,
     proposalsLoading,
+    unavailableProposalId,
+    queueAccessRevoked,
     availableBoards,
     loadingBoards,
     boardFilterInput,
     activeBoardFilter,
+    isArchivedHistory,
     activeBoardName,
     showCompleted,
     boardOptions,
@@ -507,13 +906,18 @@ export function useReviewProposals() {
     isStaleProposal,
     clearProposalDeepLink,
     loadProposals,
+    refreshProposals,
+    invalidateQueueReads,
     loadBoardOptions,
     startClock,
     stopClock,
+    startQueueRefresh,
+    stopQueueRefresh,
     openInbox,
     proposalHref,
     captureHrefForProposal,
     openRoute,
+    openProposal,
     openBoard,
     applyBoardFilter,
     clearBoardFilter,

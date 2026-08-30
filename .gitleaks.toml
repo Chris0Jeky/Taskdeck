@@ -61,7 +61,5 @@ useDefault = true
     # Documentation placeholder patterns (anchored)
     '''your-secret-key-here''',
     # Test fixture LLM API key values (clearly fake, exact matches)
-    '''gemini-key''',
     '''openai-key''',
-    '''shell-gemini-key''',
   ]

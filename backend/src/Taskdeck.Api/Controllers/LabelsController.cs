@@ -63,7 +63,7 @@ public class LabelsController : AuthenticatedControllerBase
             return permissionError;
 
         var createDto = dto with { BoardId = boardId };
-        var result = await _labelService.CreateLabelAsync(createDto);
+        var result = await _labelService.CreateLabelAsync(createDto, actorUserId: userId);
         return result.IsSuccess
             ? CreatedAtAction(nameof(GetLabels), new { boardId }, result.Value)
             : result.ToErrorActionResult();
@@ -85,7 +85,7 @@ public class LabelsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _labelService.UpdateLabelAsync(boardId, labelId, dto);
+        var result = await _labelService.UpdateLabelAsync(boardId, labelId, dto, actorUserId: userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -105,7 +105,7 @@ public class LabelsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _labelService.DeleteLabelAsync(boardId, labelId);
+        var result = await _labelService.DeleteLabelAsync(boardId, labelId, actorUserId: userId);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }

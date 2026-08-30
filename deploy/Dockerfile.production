@@ -52,6 +52,9 @@ WORKDIR /src
 COPY backend/Taskdeck.sln backend/
 COPY global.json ./
 COPY backend/Directory.Packages.props backend/
+# Directory.Build.props carries the version stamp defaults (#1804) and must be present
+# for restore as well as build so both evaluate the same properties.
+COPY backend/Directory.Build.props backend/
 COPY backend/src/Taskdeck.Domain/Taskdeck.Domain.csproj backend/src/Taskdeck.Domain/
 COPY backend/src/Taskdeck.Application/Taskdeck.Application.csproj backend/src/Taskdeck.Application/
 COPY backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj backend/src/Taskdeck.Infrastructure/
@@ -65,14 +68,21 @@ RUN dotnet restore backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj
 # Copy all backend source
 COPY backend/ backend/
 
+# Product version stamped into the published binaries (#1804). release-container.yml passes
+# the v* tag with the leading "v" stripped; any other build (a local `docker build`, a
+# rehearsal dispatch) keeps the recognisable development fallback.
+ARG TASKDECK_VERSION=0.0.0-dev
+
 # Publish release build
 RUN dotnet publish backend/src/Taskdeck.Api/Taskdeck.Api.csproj \
     -c Release \
     -o /app/publish \
+    /p:Version=$TASKDECK_VERSION \
     /p:UseAppHost=false
 RUN dotnet publish backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj \
     -c Release \
     -o /app/cli \
+    /p:Version=$TASKDECK_VERSION \
     /p:UseAppHost=false
 
 # ---------------------------------------------------------------------------
@@ -80,6 +90,16 @@ RUN dotnet publish backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj \
 # ---------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
+
+# OCI image metadata (#1804). ARG must be re-declared after FROM to be visible in this
+# stage. release-container.yml also applies docker/metadata-action labels on top, which
+# carry the same tag-derived version; these are the values a plain `docker build` gets.
+ARG TASKDECK_VERSION=0.0.0-dev
+LABEL org.opencontainers.image.title="Taskdeck" \
+      org.opencontainers.image.description="Local-first execution workspace: capture in, evidence-linked proposals out, human-approved board changes." \
+      org.opencontainers.image.version="$TASKDECK_VERSION" \
+      org.opencontainers.image.source="https://github.com/Chris0Jeky/Taskdeck" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 # Install curl for Docker HEALTHCHECK probe and gosu for entrypoint user switching.
 # gosu is needed because Railway mounts volumes as root, overwriting build-time
@@ -99,6 +119,9 @@ RUN mkdir -p /app/data && chown taskdeck:taskdeck /app/data
 # read everything; also allows future writes to AppContext.BaseDirectory if needed).
 COPY --chown=taskdeck:taskdeck --from=backend-build /app/publish ./
 COPY --chown=taskdeck:taskdeck --from=backend-build /app/cli ./cli/
+COPY --chown=taskdeck:taskdeck LICENSE /app/LICENSE
+COPY --chown=taskdeck:taskdeck RELICENSING.md /app/RELICENSING.md
+COPY --chown=taskdeck:taskdeck LICENSES /app/LICENSES
 
 # Copy frontend build output into wwwroot/ so the .NET app serves it
 # (PipelineConfiguration.cs: UseDefaultFiles + UseStaticFiles + MapFallbackToFile)

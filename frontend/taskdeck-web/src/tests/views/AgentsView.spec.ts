@@ -63,7 +63,7 @@ describe('AgentsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Loading agents...')
-    expect(wrapper.find('.td-agents__spinner').exists()).toBe(true)
+    expect(wrapper.find('.paper-agents__spinner').exists()).toBe(true)
   })
 
   it('shows error state with retry button', async () => {
@@ -72,7 +72,7 @@ describe('AgentsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Failed to fetch')
-    const retryBtn = wrapper.find('.td-agents__state--error button')
+    const retryBtn = wrapper.find('.paper-agents__state--error button')
     expect(retryBtn.exists()).toBe(true)
     expect(retryBtn.text()).toBe('Retry')
   })
@@ -101,7 +101,7 @@ describe('AgentsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Disabled')
-    expect(wrapper.find('.td-agents__status-badge--disabled').exists()).toBe(true)
+    expect(wrapper.find('.paper-agents__status-badge--disabled').exists()).toBe(true)
   })
 
   it('navigates to runs view when profile card is clicked', async () => {
@@ -109,7 +109,7 @@ describe('AgentsView', () => {
     const wrapper = mount(AgentsView)
     await waitForUi()
 
-    await wrapper.find('.td-agents__card-btn').trigger('click')
+    await wrapper.find('.paper-agents__card-btn').trigger('click')
     expect(mockPush).toHaveBeenCalledWith('/workspace/agents/profile-1/runs')
   })
 
@@ -118,7 +118,7 @@ describe('AgentsView', () => {
     const wrapper = mount(AgentsView)
     await waitForUi()
 
-    const btn = wrapper.find('.td-agents__card-btn')
+    const btn = wrapper.find('.paper-agents__card-btn')
     expect(btn.attributes('aria-label')).toBe('View runs for Triage Bot')
   })
 })

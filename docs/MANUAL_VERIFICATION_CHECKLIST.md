@@ -310,7 +310,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 - [ ] On a board, open the Starter Pack catalog. Verify the modal background matches the dark theme — no bright white background.
 - [ ] Verify text in the modal uses dark-theme-appropriate colors — readable on dark backgrounds.
 - [ ] Verify status indicators (success/warning/error badges on packs) remain visually distinct in dark theme.
-- [ ] If light theme is available (`[data-theme="light"]`), switch to it and verify the modal also renders correctly.
+- [ ] If the Paper skin is enabled (Appearance → Paper), switch to it and verify the modal also renders correctly.
 - [ ] Apply a starter pack via the modal. Verify the apply/dry-run flow works — no functional regression from the styling migration.
 
 ---

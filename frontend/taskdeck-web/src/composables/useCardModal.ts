@@ -5,6 +5,12 @@ import type { Card, CardCaptureProvenance, Label } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
+import {
+  calendarDateKeyToMidnightUtc,
+  formatCalendarDate,
+  isCalendarDateOverdue,
+  toCalendarDateKey,
+} from '../utils/dueDates'
 
 export interface UseCardModalOptions {
   getCard: () => Card
@@ -33,12 +39,18 @@ export function useCardModal(options: UseCardModalOptions) {
   const replyDraftByParent = ref<Record<string, string>>({})
   const editingCommentId = ref<string | null>(null)
   const editingCommentContent = ref('')
+  const commentPendingDeletion = ref<CardComment | null>(null)
+  const showCommentDeleteConfirm = ref(false)
+  const isDeletingComment = ref(false)
 
   // Provenance state
   const captureProvenance = ref<CardCaptureProvenance | null>(null)
   const captureProvenanceError = ref<string | null>(null)
   const loadingCaptureProvenance = ref(false)
   const loadedCaptureProvenanceCardId = ref<string | null>(null)
+  let loadingCaptureProvenanceCardId: string | null = null
+  let provenanceLoadVersion = 0
+  let cardSessionVersion = 0
 
   // Delete state
   const showDeleteConfirm = ref(false)
@@ -56,29 +68,50 @@ export function useCardModal(options: UseCardModalOptions) {
 
   const formattedDueDate = computed(() => {
     if (!card.value.dueDate) return 'No due date'
-    const date = new Date(card.value.dueDate)
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    return formatCalendarDate(
+      card.value.dueDate,
+      { year: 'numeric', month: 'long', day: 'numeric' },
+      'en-US',
+    ) || 'No due date'
   })
 
   const isOverdue = computed(() => {
-    if (!card.value.dueDate) return false
-    return new Date(card.value.dueDate) < new Date()
+    return isCalendarDateOverdue(card.value.dueDate)
   })
 
   const isFormValid = computed(() => {
     if (title.value.trim().length === 0) return false
     if (isBlocked.value && blockReason.value.trim().length === 0) return false
+    if (dueDate.value && !calendarDateKeyToMidnightUtc(dueDate.value)) return false
     return true
   })
 
+  const hasUnsavedChanges = computed(() => {
+    const currentCard = card.value
+    return (
+      title.value !== currentCard.title ||
+      description.value !== (currentCard.description || '') ||
+      dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
+      isBlocked.value !== currentCard.isBlocked ||
+      blockReason.value !== (currentCard.blockReason || '') ||
+      selectedLabelIds.value.length !== currentCard.labels.length ||
+      selectedLabelIds.value.some((id) => !currentCard.labels.some((label) => label.id === id)) ||
+      newCommentContent.value.trim().length > 0 ||
+      Object.values(replyDraftByParent.value).some((draft) => draft.trim().length > 0) ||
+      editingCommentId.value !== null
+    )
+  })
+
   // Watchers
-  watch(() => options.getCard(), (newCard) => {
+  watch(() => options.getCard(), (newCard, previousCard) => {
     if (newCard) {
+      const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
+      if (switchedCards) {
+        cardSessionVersion += 1
+      }
       title.value = newCard.title
       description.value = newCard.description || ''
-      dueDate.value = newCard.dueDate
-        ? new Date(newCard.dueDate).toISOString().split('T')[0] ?? ''
-        : ''
+      dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
       isBlocked.value = newCard.isBlocked
       blockReason.value = newCard.blockReason || ''
       selectedLabelIds.value = newCard.labels.map(l => l.id)
@@ -86,8 +119,27 @@ export function useCardModal(options: UseCardModalOptions) {
       captureProvenanceError.value = null
       loadedCaptureProvenanceCardId.value = null
 
-      if (options.getIsOpen()) {
-        loadCaptureProvenance().catch(() => {})
+      if (switchedCards && options.getIsOpen()) {
+        provenanceLoadVersion += 1
+        loadingCaptureProvenanceCardId = null
+        loadingCaptureProvenance.value = false
+        expectedUpdatedAt.value = newCard.updatedAt
+        newCommentContent.value = ''
+        replyDraftByParent.value = {}
+        editingCommentId.value = null
+        editingCommentContent.value = ''
+        commentPendingDeletion.value = null
+        showCommentDeleteConfirm.value = false
+        isDeletingComment.value = false
+        showDeleteConfirm.value = false
+        isDeleting.value = false
+
+        if (previousCard && boardStore.editingCardId === previousCard.id) {
+          boardStore.setEditingCard(null)
+        }
+        boardStore.setEditingCard(newCard.id)
+        void boardStore.fetchCardComments(newCard.boardId, newCard.id)
+        void loadCaptureProvenance()
       }
     }
   }, { immediate: true })
@@ -107,10 +159,15 @@ export function useCardModal(options: UseCardModalOptions) {
       replyDraftByParent.value = {}
       editingCommentId.value = null
       editingCommentContent.value = ''
+      commentPendingDeletion.value = null
+      showCommentDeleteConfirm.value = false
+      isDeletingComment.value = false
       captureProvenance.value = null
       captureProvenanceError.value = null
       loadingCaptureProvenance.value = false
       loadedCaptureProvenanceCardId.value = null
+      loadingCaptureProvenanceCardId = null
+      provenanceLoadVersion += 1
 
       if (boardStore.editingCardId === card.value.id) {
         boardStore.setEditingCard(null)
@@ -121,21 +178,33 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Provenance
   async function loadCaptureProvenance() {
-    if (loadingCaptureProvenance.value || loadedCaptureProvenanceCardId.value === card.value.id) {
+    const targetCard = card.value
+    if (
+      loadingCaptureProvenanceCardId === targetCard.id ||
+      loadedCaptureProvenanceCardId.value === targetCard.id
+    ) {
       return
     }
 
+    const requestVersion = ++provenanceLoadVersion
+    loadingCaptureProvenanceCardId = targetCard.id
     loadingCaptureProvenance.value = true
     captureProvenanceError.value = null
     try {
-      captureProvenance.value = await boardStore.fetchCardProvenance(card.value.boardId, card.value.id)
-      loadedCaptureProvenanceCardId.value = card.value.id
+      const provenance = await boardStore.fetchCardProvenance(targetCard.boardId, targetCard.id)
+      if (requestVersion !== provenanceLoadVersion || card.value.id !== targetCard.id) return
+      captureProvenance.value = provenance
+      loadedCaptureProvenanceCardId.value = targetCard.id
     } catch {
+      if (requestVersion !== provenanceLoadVersion || card.value.id !== targetCard.id) return
       captureProvenance.value = null
       captureProvenanceError.value = 'Unable to load capture provenance.'
-      loadedCaptureProvenanceCardId.value = card.value.id
+      loadedCaptureProvenanceCardId.value = targetCard.id
     } finally {
-      loadingCaptureProvenance.value = false
+      if (requestVersion === provenanceLoadVersion) {
+        loadingCaptureProvenance.value = false
+        loadingCaptureProvenanceCardId = null
+      }
     }
   }
 
@@ -143,22 +212,26 @@ export function useCardModal(options: UseCardModalOptions) {
   async function handleSave() {
     if (!isFormValid.value) return
 
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     try {
-      await boardStore.updateCard(card.value.boardId, card.value.id, {
-        title: title.value !== card.value.title ? title.value : null,
-        description: description.value !== card.value.description ? description.value : null,
-        dueDate: dueDate.value ? new Date(dueDate.value).toISOString() : null,
-        clearDueDate: Boolean(card.value.dueDate) && !dueDate.value,
-        isBlocked: isBlocked.value !== card.value.isBlocked ? isBlocked.value : null,
+      await boardStore.updateCard(targetCard.boardId, targetCard.id, {
+        title: title.value !== targetCard.title ? title.value : null,
+        description: description.value !== targetCard.description ? description.value : null,
+        dueDate: dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null,
+        clearDueDate: Boolean(targetCard.dueDate) && !dueDate.value,
+        isBlocked: isBlocked.value !== targetCard.isBlocked ? isBlocked.value : null,
         blockReason: isBlocked.value ? blockReason.value : null,
         labelIds: selectedLabelIds.value,
         expectedUpdatedAt: expectedUpdatedAt.value,
       })
 
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       options.onUpdated()
       options.onClose()
     } catch (error) {
       logError('Failed to update card:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to save card changes. Please try again.')
     }
   }
@@ -203,6 +276,8 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleAddComment(parentCommentId?: string) {
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     const content = parentCommentId
       ? (replyDraftByParent.value[parentCommentId] ?? '').trim()
       : newCommentContent.value.trim()
@@ -212,18 +287,22 @@ export function useCardModal(options: UseCardModalOptions) {
     }
 
     try {
-      await boardStore.createCardComment(card.value.boardId, card.value.id, {
+      await boardStore.createCardComment(targetCard.boardId, targetCard.id, {
         content,
         parentCommentId: parentCommentId ?? null,
       })
 
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       if (parentCommentId) {
-        replyDraftByParent.value[parentCommentId] = ''
-      } else {
+        if ((replyDraftByParent.value[parentCommentId] ?? '').trim() === content) {
+          replyDraftByParent.value[parentCommentId] = ''
+        }
+      } else if (newCommentContent.value.trim() === content) {
         newCommentContent.value = ''
       }
     } catch (error) {
       logError('Failed to add comment:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to add comment. Please try again.')
     }
   }
@@ -243,34 +322,67 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleSaveEditComment(commentId: string) {
+    const targetCard = card.value
+    const targetSessionVersion = cardSessionVersion
     const content = editingCommentContent.value.trim()
     if (!content) {
       return
     }
 
     try {
-      await boardStore.updateCardComment(card.value.boardId, card.value.id, commentId, { content })
-      handleCancelEditComment()
+      await boardStore.updateCardComment(targetCard.boardId, targetCard.id, commentId, { content })
+      if (
+        isCurrentCardSession(targetCard.id, targetSessionVersion) &&
+        editingCommentId.value === commentId &&
+        editingCommentContent.value.trim() === content
+      ) {
+        handleCancelEditComment()
+      }
     } catch (error) {
       logError('Failed to update comment:', error)
+      if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       toast.error('Failed to update comment. Please try again.')
     }
   }
 
-  async function handleDeleteComment(comment: CardComment) {
+  function isCurrentCardSession(cardId: string, sessionVersion: number): boolean {
+    return cardSessionVersion === sessionVersion && card.value.id === cardId
+  }
+
+  function handleDeleteComment(comment: CardComment) {
     if (!canEditComment(comment)) {
       return
     }
 
-    if (!confirm('Delete this comment?')) {
+    commentPendingDeletion.value = comment
+    showCommentDeleteConfirm.value = true
+  }
+
+  function handleCommentDeleteCancel() {
+    if (isDeletingComment.value) {
       return
     }
 
+    showCommentDeleteConfirm.value = false
+    commentPendingDeletion.value = null
+  }
+
+  async function handleCommentDeleteConfirm() {
+    const comment = commentPendingDeletion.value
+    if (!comment || isDeletingComment.value) {
+      return
+    }
+
+    isDeletingComment.value = true
     try {
       await boardStore.deleteCardComment(card.value.boardId, card.value.id, comment.id)
+      showCommentDeleteConfirm.value = false
+      commentPendingDeletion.value = null
     } catch (error) {
       logError('Failed to delete comment:', error)
       toast.error('Failed to delete comment. Please try again.')
+    } finally {
+      isDeletingComment.value = false
     }
   }
 
@@ -294,10 +406,16 @@ export function useCardModal(options: UseCardModalOptions) {
     replyDraftByParent.value = {}
     editingCommentId.value = null
     editingCommentContent.value = ''
+    commentPendingDeletion.value = null
+    showCommentDeleteConfirm.value = false
+    isDeletingComment.value = false
     captureProvenance.value = null
     captureProvenanceError.value = null
     loadingCaptureProvenance.value = false
     loadedCaptureProvenanceCardId.value = null
+    loadingCaptureProvenanceCardId = null
+    provenanceLoadVersion += 1
+    cardSessionVersion += 1
   })
 
   return {
@@ -309,6 +427,7 @@ export function useCardModal(options: UseCardModalOptions) {
     blockReason,
     selectedLabelIds,
     isFormValid,
+    hasUnsavedChanges,
 
     // Due date
     formattedDueDate,
@@ -328,6 +447,11 @@ export function useCardModal(options: UseCardModalOptions) {
     handleCancelEditComment,
     handleSaveEditComment,
     handleDeleteComment,
+    commentPendingDeletion,
+    showCommentDeleteConfirm,
+    isDeletingComment,
+    handleCommentDeleteCancel,
+    handleCommentDeleteConfirm,
 
     // Provenance
     captureProvenance,

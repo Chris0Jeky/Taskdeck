@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { apiKeysApi } from '../api/apiKeysApi'
-import type { ApiKeyListItem, CreateApiKeyResponse } from '../api/apiKeysApi'
+import type {
+  ApiKeyListItem,
+  ApiKeyScopeName,
+  CreateApiKeyResponse,
+} from '../api/apiKeysApi'
 import TdButton from '../components/ui/TdButton.vue'
 import TdDialog from '../components/ui/TdDialog.vue'
 import TdInput from '../components/ui/TdInput.vue'
@@ -19,6 +23,7 @@ const loadError = ref<string | null>(null)
 // ── Create dialog state ──
 const showCreateDialog = ref(false)
 const newKeyName = ref('')
+const newKeyScopes = ref<ApiKeyScopeName[]>([])
 const creating = ref(false)
 const createError = ref<string | null>(null)
 const createdKey = ref<CreateApiKeyResponse | null>(null)
@@ -34,6 +39,31 @@ const keyToRevoke = ref<ApiKeyListItem | null>(null)
 const activeKeys = computed(() => keys.value.filter(k => k.isActive))
 const revokedKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt !== null))
 const expiredKeys = computed(() => keys.value.filter(k => !k.isActive && k.revokedAt === null))
+const canCreateKey = computed(
+  () => newKeyName.value.trim().length > 0 && newKeyScopes.value.length > 0,
+)
+
+const scopeOptions: ReadonlyArray<{
+  value: ApiKeyScopeName
+  label: string
+  description: string
+}> = [
+  {
+    value: 'read',
+    label: 'Read',
+    description: 'Search and inspect boards, cards, proposals, and MCP resources.',
+  },
+  {
+    value: 'propose',
+    label: 'Propose',
+    description: 'Create reviewable board-change proposals. This does not grant approval.',
+  },
+  {
+    value: 'manage',
+    label: 'Manage',
+    description: 'Capture Inbox items and dismiss completed proposals.',
+  },
+]
 
 async function loadKeys() {
   loading.value = true
@@ -49,6 +79,7 @@ async function loadKeys() {
 
 function openCreateDialog() {
   newKeyName.value = ''
+  newKeyScopes.value = []
   createError.value = null
   createdKey.value = null
   keyCopied.value = false
@@ -69,10 +100,17 @@ async function handleCreateKey() {
     createError.value = 'Key name is required.'
     return
   }
+  if (newKeyScopes.value.length === 0) {
+    createError.value = 'Select at least one permission.'
+    return
+  }
   creating.value = true
   createError.value = null
   try {
-    createdKey.value = await apiKeysApi.createKey(newKeyName.value.trim())
+    createdKey.value = await apiKeysApi.createKey(
+      newKeyName.value.trim(),
+      [...newKeyScopes.value],
+    )
   } catch (e: unknown) {
     createError.value = getErrorDisplay(e, 'Failed to create API key.').message
   } finally {
@@ -139,19 +177,28 @@ function formatDate(dateString: string | null): string {
   })
 }
 
+function formatScopes(scopes: readonly ApiKeyScopeName[]): string {
+  return scopes
+    .map(scope => scopeOptions.find(option => option.value === scope)?.label ?? scope)
+    .join(', ')
+}
+
 onMounted(loadKeys)
 </script>
 
 <template>
-  <div class="td-settings">
-    <h1 class="td-page-title">API Keys</h1>
-    <p class="td-page-desc">
-      Manage API keys for MCP server HTTP transport authentication.
-      Keys use the <code class="td-code-inline">tdsk_</code> prefix and are rate-limited.
-    </p>
+  <div class="paper-api-keys">
+    <header class="paper-api-keys__hero">
+      <span class="tk-eyebrow paper-api-keys__eyebrow">Settings</span>
+      <h1 class="tk-h1 paper-api-keys__title">API Keys</h1>
+      <p class="tk-lede paper-api-keys__subtitle">
+        Manage API keys for MCP server HTTP transport authentication.
+        Keys use the <code class="paper-api-keys__code">tdsk_</code> prefix and are rate-limited.
+      </p>
+    </header>
 
     <!-- Loading state -->
-    <section v-if="loading" class="td-settings__section" aria-label="Loading API keys">
+    <section v-if="loading" class="paper-api-keys__panel" aria-label="Loading API keys">
       <TdSkeleton height="1.5rem" width="40%" />
       <TdSkeleton height="3rem" />
       <TdSkeleton height="3rem" />
@@ -166,7 +213,7 @@ onMounted(loadKeys)
     </TdInlineAlert>
 
     <!-- Empty state -->
-    <section v-else-if="keys.length === 0" class="td-settings__section">
+    <section v-else-if="keys.length === 0" class="paper-api-keys__panel">
       <TdEmptyState
         title="No API keys yet"
         description="Create an API key to authenticate MCP server requests over HTTP transport."
@@ -181,48 +228,52 @@ onMounted(loadKeys)
 
     <!-- Keys list -->
     <template v-else>
-      <section class="td-settings__section">
-        <div class="td-section-header">
-          <h2 class="td-section-title">Active Keys</h2>
+      <section class="paper-api-keys__panel">
+        <div class="paper-api-keys__panel-header">
+          <h2 class="tk-h3 paper-api-keys__panel-title">Active Keys</h2>
           <TdButton variant="primary" size="sm" aria-label="Create a new API key" @click="openCreateDialog">
             Create Key
           </TdButton>
         </div>
 
-        <div v-if="activeKeys.length === 0" class="td-keys-empty-hint">
+        <div v-if="activeKeys.length === 0" class="paper-api-keys__empty-hint">
           No active keys. Create one to get started.
         </div>
 
-        <div v-else class="td-keys-list" role="list" aria-label="Active API keys">
+        <div v-else class="paper-api-keys__list" role="list" aria-label="Active API keys">
           <div
             v-for="key in activeKeys"
             :key="key.id"
-            class="td-key-card"
+            class="paper-api-keys__card"
             role="listitem"
           >
-            <div class="td-key-card__header">
-              <span class="td-key-card__name">{{ key.name }}</span>
+            <div class="paper-api-keys__card-header">
+              <span class="paper-api-keys__card-name">{{ key.name }}</span>
               <TdBadge variant="success" size="sm">Active</TdBadge>
             </div>
-            <div class="td-key-card__meta">
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Prefix:</span>
-                <code class="td-code-inline">{{ key.keyPrefix }}...</code>
+            <div class="paper-api-keys__card-meta">
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Prefix:</span>
+                <code class="paper-api-keys__code">{{ key.keyPrefix }}...</code>
               </span>
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Created:</span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Created:</span>
                 {{ formatDate(key.createdAt) }}
               </span>
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Last used:</span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Last used:</span>
                 {{ formatDate(key.lastUsedAt) }}
               </span>
-              <span v-if="key.expiresAt" class="td-key-meta">
-                <span class="td-key-meta__label">Expires:</span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
+              </span>
+              <span v-if="key.expiresAt" class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Expires:</span>
                 {{ formatDate(key.expiresAt) }}
               </span>
             </div>
-            <div class="td-key-card__actions">
+            <div class="paper-api-keys__card-actions">
               <TdButton
                 variant="danger"
                 size="sm"
@@ -236,54 +287,62 @@ onMounted(loadKeys)
         </div>
       </section>
 
-      <section v-if="expiredKeys.length > 0" class="td-settings__section td-settings__section--muted">
-        <h2 class="td-section-title">Expired Keys</h2>
-        <div class="td-keys-list" role="list" aria-label="Expired API keys">
+      <section v-if="expiredKeys.length > 0" class="paper-api-keys__panel paper-api-keys__panel--muted">
+        <h2 class="tk-h3 paper-api-keys__panel-title">Expired Keys</h2>
+        <div class="paper-api-keys__list" role="list" aria-label="Expired API keys">
           <div
             v-for="key in expiredKeys"
             :key="key.id"
-            class="td-key-card td-key-card--inactive"
+            class="paper-api-keys__card paper-api-keys__card--inactive"
             role="listitem"
           >
-            <div class="td-key-card__header">
-              <span class="td-key-card__name">{{ key.name }}</span>
+            <div class="paper-api-keys__card-header">
+              <span class="paper-api-keys__card-name">{{ key.name }}</span>
               <TdBadge variant="warning" size="sm">Expired</TdBadge>
             </div>
-            <div class="td-key-card__meta">
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Prefix:</span>
-                <code class="td-code-inline">{{ key.keyPrefix }}...</code>
+            <div class="paper-api-keys__card-meta">
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Prefix:</span>
+                <code class="paper-api-keys__code">{{ key.keyPrefix }}...</code>
               </span>
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Expired:</span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Expired:</span>
                 {{ formatDate(key.expiresAt) }}
+              </span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
               </span>
             </div>
           </div>
         </div>
       </section>
 
-      <section v-if="revokedKeys.length > 0" class="td-settings__section td-settings__section--muted">
-        <h2 class="td-section-title">Revoked Keys</h2>
-        <div class="td-keys-list" role="list" aria-label="Revoked API keys">
+      <section v-if="revokedKeys.length > 0" class="paper-api-keys__panel paper-api-keys__panel--muted">
+        <h2 class="tk-h3 paper-api-keys__panel-title">Revoked Keys</h2>
+        <div class="paper-api-keys__list" role="list" aria-label="Revoked API keys">
           <div
             v-for="key in revokedKeys"
             :key="key.id"
-            class="td-key-card td-key-card--revoked"
+            class="paper-api-keys__card paper-api-keys__card--revoked"
             role="listitem"
           >
-            <div class="td-key-card__header">
-              <span class="td-key-card__name">{{ key.name }}</span>
+            <div class="paper-api-keys__card-header">
+              <span class="paper-api-keys__card-name">{{ key.name }}</span>
               <TdBadge variant="error" size="sm">Revoked</TdBadge>
             </div>
-            <div class="td-key-card__meta">
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Prefix:</span>
-                <code class="td-code-inline">{{ key.keyPrefix }}...</code>
+            <div class="paper-api-keys__card-meta">
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Prefix:</span>
+                <code class="paper-api-keys__code">{{ key.keyPrefix }}...</code>
               </span>
-              <span class="td-key-meta">
-                <span class="td-key-meta__label">Revoked:</span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Revoked:</span>
                 {{ formatDate(key.revokedAt) }}
+              </span>
+              <span class="paper-api-keys__meta">
+                <span class="paper-api-keys__meta-label">Permissions:</span>
+                {{ formatScopes(key.scopes) }}
               </span>
             </div>
           </div>
@@ -303,12 +362,12 @@ onMounted(loadKeys)
           Copy this key now. It will not be shown again.
         </TdInlineAlert>
 
-        <div class="td-created-key">
-          <p id="created-key-description" class="td-created-key__label">Your new API key</p>
-          <div class="td-created-key__display" aria-describedby="created-key-description">
+        <div class="paper-api-keys__created">
+          <p id="created-key-description" class="paper-api-keys__created-label">Your new API key</p>
+          <div class="paper-api-keys__created-display" aria-describedby="created-key-description">
             <code
               ref="createdKeyValueRef"
-              class="td-created-key__value"
+              class="paper-api-keys__created-value"
               data-testid="created-key-value"
             >{{ createdKey.key }}</code>
             <TdButton
@@ -320,6 +379,9 @@ onMounted(loadKeys)
               {{ keyCopied ? 'Copied' : 'Copy' }}
             </TdButton>
           </div>
+          <p class="paper-api-keys__created-scopes">
+            Permissions: {{ formatScopes(createdKey.scopes) }}
+          </p>
         </div>
       </template>
 
@@ -329,16 +391,38 @@ onMounted(loadKeys)
           {{ createError }}
         </TdInlineAlert>
 
-        <div class="td-form-group">
-          <label for="api-key-name" class="td-label">Key Name</label>
+        <div class="paper-api-keys__form-group">
+          <label for="api-key-name" class="paper-api-keys__label">Key Name</label>
           <TdInput
             id="api-key-name"
             v-model="newKeyName"
             placeholder="e.g. CI pipeline, local dev"
             :disabled="creating"
           />
-          <span class="td-form-hint">A descriptive name to identify this key later.</span>
+          <span class="paper-api-keys__hint">A descriptive name to identify this key later.</span>
         </div>
+
+        <fieldset class="paper-api-keys__scope-fieldset" :disabled="creating">
+          <legend class="paper-api-keys__label">Permissions</legend>
+          <span class="paper-api-keys__hint">Select at least one permission for this key.</span>
+          <label
+            v-for="scope in scopeOptions"
+            :key="scope.value"
+            class="paper-api-keys__scope-option"
+          >
+            <input
+              v-model="newKeyScopes"
+              class="paper-api-keys__scope-checkbox"
+              type="checkbox"
+              name="api-key-scope"
+              :value="scope.value"
+            >
+            <span>
+              <span class="paper-api-keys__scope-name">{{ scope.label }}</span>
+              <span class="paper-api-keys__scope-description">{{ scope.description }}</span>
+            </span>
+          </label>
+        </fieldset>
       </template>
 
       <template #footer>
@@ -352,7 +436,7 @@ onMounted(loadKeys)
           <TdButton
             variant="primary"
             :loading="creating"
-            :disabled="!newKeyName.trim()"
+            :disabled="!canCreateKey"
             @click="handleCreateKey"
           >
             Create Key
@@ -371,7 +455,7 @@ onMounted(loadKeys)
         {{ revokeError }}
       </TdInlineAlert>
 
-      <p class="td-revoke-warning">
+      <p class="paper-api-keys__revoke-warning">
         Are you sure you want to revoke the key
         <strong>{{ keyToRevoke?.name }}</strong>?
         Any integrations using this key will immediately stop working.
@@ -395,175 +479,286 @@ onMounted(loadKeys)
 </template>
 
 <style scoped>
-.td-settings { max-width: 640px; }
+/* ── Paper & Graphite — ApiKeySettingsView ──
+   Styled against the Paper token system (--paper, --ink, --ember families).
+   Tokens live under `.paper` / `.paper-night` in paper-tokens.css and are NOT
+   defined at :root, so outside the Paper shell (Legacy/Obsidian "off" mode)
+   every var() resolves to its literal fallback. The substrate line on the root —
+   `background: var(--paper, #f3eee5)` painted alongside `color: var(--ink,
+   #1a1814)` — is what keeps the text legible in Legacy: without it the near-black
+   ink lands on AppShell's Obsidian `--td-surface-base` (#131313) at ~1.05:1. It
+   is a no-op under `.paper` / `.paper-night`, where `.td-shell--paper
+   .td-content` already paints `var(--paper)`.
+   Paper typography (the `tk-*` classes) is scoped as `.paper .tk-*` /
+   `.paper-night .tk-*` and intentionally does NOT render in Legacy mode — only
+   legibility is preserved there, not the Paper type ladder.
 
-.td-page-title {
-  font-size: var(--td-font-2xl);
-  font-weight: 700;
-  margin-bottom: var(--td-space-2);
-  color: var(--td-text-primary);
+   Scope note: this page composes shared `components/ui/Td*` primitives
+   (TdButton, TdBadge, TdDialog, TdInlineAlert, TdEmptyState, TdSkeleton, TdInput)
+   which have no Paper variant and are owned by the shared-component layer, not
+   by this view. Only the page's own chrome is restyled here; making the Td*
+   primitives Paper-aware is a separate, shared-surface change. */
+
+.paper-api-keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4, 16px);
+  max-width: 640px;
+  font-family: var(--sans, system-ui, sans-serif);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
 }
 
-.td-page-desc {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
-  margin-bottom: var(--td-space-6);
-  line-height: 1.5;
+/* ── Hero ── */
+
+.paper-api-keys__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
 }
 
-.td-settings__section {
-  background: var(--td-surface-primary);
-  border-radius: var(--td-radius-lg);
-  padding: var(--td-space-6);
-  margin-bottom: var(--td-space-4);
-  border: 1px solid var(--td-border-default);
+.paper-api-keys__eyebrow {
+  color: var(--mute, #635c4e);
 }
 
-.td-settings__section--muted {
+.paper-api-keys__title {
+  margin: 0;
+  font-size: var(--t-h2, 32px);
+}
+
+.paper-api-keys__subtitle {
+  margin: 0;
+  color: var(--ink-2, #3a352d);
+}
+
+/* ── Panels ── */
+
+.paper-api-keys__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3, 12px);
+  padding: var(--s-5, 20px);
+  border-radius: var(--r-3, 6px);
+  border: 1px solid var(--line, #d8d0bf);
+  background: var(--paper-card, #fbf7ee);
+  box-shadow: var(--shadow-card, 0 1px 0 #d8d0bf);
+}
+
+.paper-api-keys__panel--muted {
   opacity: 0.7;
 }
 
-.td-section-header {
+.paper-api-keys__panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--td-space-4);
+  gap: var(--s-3, 12px);
 }
 
-.td-section-title {
-  font-size: var(--td-font-lg);
-  font-weight: 600;
-  color: var(--td-text-primary);
+.paper-api-keys__panel-title {
   margin: 0;
+  font-size: var(--t-lg, 18px);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-keys-list {
+/* ── Key cards ── */
+
+.paper-api-keys__list {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-3);
+  gap: var(--s-3, 12px);
 }
 
-.td-keys-empty-hint {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-tertiary);
+.paper-api-keys__empty-hint {
+  font-size: var(--t-sm, 12px);
+  color: var(--mute, #635c4e);
   text-align: center;
-  padding: var(--td-space-4);
+  padding: var(--s-4, 16px);
 }
 
-.td-key-card {
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-4);
-  background: var(--td-surface-container);
+.paper-api-keys__card {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-2);
+  gap: var(--s-2, 8px);
+  padding: var(--s-4, 16px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
 }
 
-.td-key-card--revoked,
-.td-key-card--inactive {
+.paper-api-keys__card--revoked,
+.paper-api-keys__card--inactive {
   opacity: 0.6;
 }
 
-.td-key-card__header {
+.paper-api-keys__card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--s-3, 12px);
 }
 
-.td-key-card__name {
-  font-size: var(--td-font-base);
+.paper-api-keys__card-name {
+  font-family: var(--serif, Georgia, serif);
+  font-size: var(--t-bd, 15px);
   font-weight: 600;
-  color: var(--td-text-primary);
+  color: var(--ink-deep, #0a0908);
 }
 
-.td-key-card__meta {
+.paper-api-keys__card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--td-space-4);
+  gap: var(--s-4, 16px);
 }
 
-.td-key-meta {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
+.paper-api-keys__meta {
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
 }
 
-.td-key-meta__label {
-  color: var(--td-text-tertiary);
-  margin-right: var(--td-space-1);
+.paper-api-keys__meta-label {
+  color: var(--mute, #635c4e);
+  margin-right: var(--s-1, 4px);
 }
 
-.td-key-card__actions {
+.paper-api-keys__card-actions {
   display: flex;
   justify-content: flex-end;
-  padding-top: var(--td-space-2);
-  border-top: 1px solid var(--td-border-ghost);
+  padding-top: var(--s-2, 8px);
+  border-top: 1px solid var(--line-soft, #e3dcc9);
 }
 
-.td-code-inline {
-  font-family: monospace;
-  font-size: var(--td-font-sm);
-  background: var(--td-surface-container-high);
-  padding: 1px var(--td-space-1);
-  border-radius: var(--td-radius-sm);
+.paper-api-keys__code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
+  background: var(--paper-2, #ebe5d8);
+  color: var(--ink, #1a1814);
+  padding: 1px var(--s-1, 4px);
+  border-radius: var(--r-1, 2px);
 }
 
-/* ── Create key display ── */
-.td-created-key {
+/* ── Created-key display (inside the shared TdDialog) ── */
+
+.paper-api-keys__created {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-2);
+  gap: var(--s-2, 8px);
 }
 
-.td-created-key__label {
-  font-size: var(--td-font-sm);
-  font-weight: 500;
-  color: var(--td-text-secondary);
+.paper-api-keys__created-label {
   margin: 0;
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #635c4e);
 }
 
-.td-created-key__display {
+.paper-api-keys__created-display {
   display: flex;
   align-items: center;
-  gap: var(--td-space-2);
-  background: var(--td-surface-container-high);
-  border: 1px solid var(--td-border-default);
-  border-radius: var(--td-radius-md);
-  padding: var(--td-space-2) var(--td-space-3);
+  gap: var(--s-2, 8px);
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper-2, #ebe5d8);
 }
 
-.td-created-key__value {
+.paper-api-keys__created-value {
   flex: 1;
-  font-family: monospace;
-  font-size: var(--td-font-sm);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-sm, 12px);
   word-break: break-all;
-  color: var(--td-text-primary);
+  color: var(--ink, #1a1814);
   user-select: all;
 }
 
+.paper-api-keys__created-scopes {
+  margin: 0;
+  font-size: var(--t-sm, 12px);
+  color: var(--ink-2, #3a352d);
+}
+
 /* ── Form helpers ── */
-.td-form-group {
+
+.paper-api-keys__form-group {
   display: flex;
   flex-direction: column;
-  gap: var(--td-space-1);
+  gap: var(--s-1, 4px);
 }
 
-.td-label {
-  font-size: var(--td-font-sm);
-  font-weight: 500;
-  color: var(--td-text-secondary);
+.paper-api-keys__label {
+  font-size: var(--t-xs, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute, #635c4e);
 }
 
-.td-form-hint {
-  font-size: var(--td-font-xs);
-  color: var(--td-text-tertiary);
+.paper-api-keys__hint {
+  font-size: var(--t-xs, 10.5px);
+  color: var(--mute, #635c4e);
+}
+
+.paper-api-keys__scope-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2, 8px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.paper-api-keys__scope-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-2, 8px);
+  padding: var(--s-3, 12px);
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper-card, #fbf7ee);
+  cursor: pointer;
+}
+
+.paper-api-keys__scope-option:has(.paper-api-keys__scope-checkbox:checked) {
+  border-color: var(--ember, #a34b2b);
+}
+
+.paper-api-keys__scope-option:has(.paper-api-keys__scope-checkbox:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.paper-api-keys__scope-checkbox {
+  margin-top: 2px;
+  accent-color: var(--ember, #a34b2b);
+}
+
+.paper-api-keys__scope-name,
+.paper-api-keys__scope-description {
+  display: block;
+}
+
+.paper-api-keys__scope-name {
+  font-size: var(--t-sm, 12px);
+  font-weight: 600;
+  color: var(--ink, #1a1814);
+}
+
+.paper-api-keys__scope-description {
+  margin-top: var(--s-1, 4px);
+  font-size: var(--t-xs, 10.5px);
+  line-height: 1.45;
+  color: var(--mute, #635c4e);
 }
 
 /* ── Revoke warning ── */
-.td-revoke-warning {
-  font-size: var(--td-font-sm);
-  color: var(--td-text-secondary);
-  line-height: 1.6;
+
+.paper-api-keys__revoke-warning {
   margin: 0;
+  font-size: var(--t-md, 13.5px);
+  color: var(--ink-2, #3a352d);
+  line-height: 1.6;
 }
 </style>

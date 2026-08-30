@@ -5,6 +5,7 @@ export {
   statusBadgeVariant,
   sourceLabel,
   canMutateSelection,
-  canEditSuggestion,
+  captureRowState,
   triageButtonLabel,
 } from './inboxUtils'
+export type { CaptureRowState } from './inboxUtils'

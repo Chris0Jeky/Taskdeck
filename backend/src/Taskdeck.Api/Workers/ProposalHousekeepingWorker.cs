@@ -11,6 +11,13 @@ public class ProposalHousekeepingWorker : BackgroundService
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly ILogger<ProposalHousekeepingWorker> _logger;
 
+    /// <summary>
+    /// The archived-board skip count reported by the previous sweep, so the operator log line is
+    /// emitted on transitions rather than once a minute forever. Touched only from the single
+    /// sequential <see cref="ExecuteAsync"/> loop, so it needs no synchronization.
+    /// </summary>
+    private int _lastSkippedArchivedBoardCount;
+
     public ProposalHousekeepingWorker(
         IServiceScopeFactory scopeFactory,
         WorkerSettings settings,
@@ -66,9 +73,49 @@ public class ProposalHousekeepingWorker : BackgroundService
         // than a bounded display-order page (#1259): the prior GetByStatusAsync(limit 100) + in-memory
         // ExpiresAt filter could leave genuinely-expired proposals un-expired once the pending backlog
         // exceeded the page (the bottom of the window — typically the oldest/stalest — was dropped).
-        var expiredProposals = (await unitOfWork.AutomationProposals.GetExpiredAsync(ct)).ToList();
+        //
+        // The sweep arrives already partitioned by ADR-0063's archived-board rule (#2197): proposals
+        // on an extant archived board are withheld by the query, so this loop cannot expire one, and
+        // no save, notification, or audit row is produced for them. They are not dropped — restoring
+        // the board makes them eligible on a later cycle.
+        var sweep = await unitOfWork.AutomationProposals.GetExpiredAsync(ct);
+        var expiredProposals = sweep.Expirable;
         var expiredCount = 0;
         activity?.SetTag("taskdeck.proposals.expired_candidate_count", expiredProposals.Count);
+        activity?.SetTag(
+            "taskdeck.proposals.skipped_archived_board_count",
+            sweep.SkippedArchivedBoardCount);
+
+        // Report what the guard withheld, but only when the figure CHANGES. This sweep runs every
+        // 60s and a withheld proposal stays PendingReview until its board is restored, so logging
+        // unconditionally emitted ~1,440 identical Information lines a day for a single archived
+        // board — which trains operators to filter the line out, costing the signal it exists for.
+        // Steady state is therefore Debug; a transition is Information, including the transition
+        // back to zero so the condition CLEARING is visible and not just its onset.
+        if (sweep.SkippedArchivedBoardCount != _lastSkippedArchivedBoardCount)
+        {
+            if (sweep.SkippedArchivedBoardCount > 0)
+            {
+                // Count only — no proposal id, summary, or board name — so this stays non-secret.
+                _logger.LogInformation(
+                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                        + "restore the board to let them expire.",
+                    sweep.SkippedArchivedBoardCount);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "No stale proposals are being withheld for archived boards any more.");
+            }
+        }
+        else if (sweep.SkippedArchivedBoardCount > 0)
+        {
+            _logger.LogDebug(
+                "Still skipping {SkippedCount} stale proposals because their board is archived.",
+                sweep.SkippedArchivedBoardCount);
+        }
+
+        _lastSkippedArchivedBoardCount = sweep.SkippedArchivedBoardCount;
 
         foreach (var proposal in expiredProposals)
         {

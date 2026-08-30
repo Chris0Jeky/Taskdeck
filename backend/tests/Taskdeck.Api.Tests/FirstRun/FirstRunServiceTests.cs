@@ -1,51 +1,148 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
 using Taskdeck.Api.FirstRun;
+using Xunit;
 
 namespace Taskdeck.Api.Tests.FirstRun;
 
 public class FirstRunServiceTests
 {
-    // ---- TryOpenBrowser — guarded by AutoOpenBrowser flag --------------------
-
     [Fact]
-    public void TryOpenBrowser_WhenAutoOpenBrowserFalse_DoesNotThrow()
+    public void TryOpenBrowser_WhenGenericAutoOpenIsDisabled_DoesNotLaunch()
     {
-        var settings = new FirstRunSettings { AutoOpenBrowser = false };
-        var sut = new FirstRunService(NullLogger<FirstRunService>.Instance, settings);
+        var launches = new List<string>();
+        var sut = CreateService(
+            new FirstRunSettings { AutoOpenBrowser = false },
+            launches.Add,
+            isPackagedDesktop: false,
+            browserSuppressed: false);
 
-        // Should be a no-op, no exception.
-        sut.TryOpenBrowser("http://localhost:5000");
+        sut.TryOpenBrowser("http://127.0.0.1:5000");
+
+        Assert.Empty(launches);
     }
 
     [Fact]
-    public void TryOpenBrowser_WhenAutoOpenBrowserTrue_AndCiEnvSet_DoesNotThrow()
+    public void TryOpenBrowser_WhenGenericAutoOpenIsEnabled_LaunchesInjectedBrowser()
     {
-        // Simulate CI environment so the browser is never actually opened.
-        var prevValue = Environment.GetEnvironmentVariable("TASKDECK_HEADLESS");
-        Environment.SetEnvironmentVariable("TASKDECK_HEADLESS", "1");
-        try
-        {
-            var settings = new FirstRunSettings { AutoOpenBrowser = true, Port = 5000 };
-            var sut = new FirstRunService(NullLogger<FirstRunService>.Instance, settings);
+        var launches = new List<string>();
+        var sut = CreateService(
+            new FirstRunSettings { AutoOpenBrowser = true },
+            launches.Add,
+            isPackagedDesktop: false,
+            browserSuppressed: false);
 
-            sut.TryOpenBrowser("http://localhost:5000"); // should be a no-op in headless mode
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TASKDECK_HEADLESS", prevValue);
-        }
+        sut.TryOpenBrowser("http://127.0.0.1:5000");
+
+        Assert.Equal(new[] { "http://127.0.0.1:5000" }, launches);
     }
 
-    // ---- FirstRunSettings defaults ------------------------------------------
+    [Fact]
+    public void TryOpenBrowser_WhenPackaged_UsesDesktopDefaultWithoutChangingGenericSetting()
+    {
+        var launches = new List<string>();
+        var sut = CreateService(
+            new FirstRunSettings { AutoOpenBrowser = false },
+            launches.Add,
+            isPackagedDesktop: true,
+            browserSuppressed: false);
+
+        sut.TryOpenBrowser("http://127.0.0.1:54321");
+
+        Assert.Equal(new[] { "http://127.0.0.1:54321" }, launches);
+    }
 
     [Fact]
-    public void FirstRunSettings_DefaultsAreConservative()
+    public void TryOpenBrowser_WhenCiContainerOrExplicitHeadlessSuppressesIt_DoesNotLaunch()
+    {
+        var launches = new List<string>();
+        var sut = CreateService(
+            new FirstRunSettings { AutoOpenBrowser = true },
+            launches.Add,
+            isPackagedDesktop: true,
+            browserSuppressed: true);
+
+        sut.TryOpenBrowser("http://127.0.0.1:5000");
+
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public async Task ReportPackagedReadyAndOpenBrowserAsync_WaitsForReadinessBeforeLaunch()
+    {
+        var readiness = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launches = new List<string>();
+        var sut = new FirstRunService(
+            NullLogger<FirstRunService>.Instance,
+            new FirstRunSettings(),
+            launches.Add,
+            (_, _) => readiness.Task,
+            isPackagedDesktop: true,
+            browserSuppressed: () => false);
+
+        var reportTask = sut.ReportPackagedReadyAndOpenBrowserAsync(
+            "http://127.0.0.1:54321",
+            CancellationToken.None);
+        Assert.Empty(launches);
+
+        readiness.SetResult(true);
+        await reportTask;
+
+        Assert.Equal(new[] { "http://127.0.0.1:54321" }, launches);
+    }
+
+    [Fact]
+    public async Task ReportPackagedReadyAndOpenBrowserAsync_WhenReadinessFails_DoesNotLaunch()
+    {
+        var launches = new List<string>();
+        var sut = new FirstRunService(
+            NullLogger<FirstRunService>.Instance,
+            new FirstRunSettings(),
+            launches.Add,
+            (_, _) => Task.FromResult(false),
+            isPackagedDesktop: true,
+            browserSuppressed: () => false);
+
+        await sut.ReportPackagedReadyAndOpenBrowserAsync(
+            "http://127.0.0.1:54321",
+            CancellationToken.None);
+
+        Assert.Empty(launches);
+    }
+
+    [Fact]
+    public void TryOpenBrowser_WhenPackagedLauncherFails_RemainsNonFatal()
+    {
+        var sut = CreateService(
+            new FirstRunSettings(),
+            _ => throw new InvalidOperationException("synthetic raw provider-like detail"),
+            isPackagedDesktop: true,
+            browserSuppressed: false);
+
+        var exception = Record.Exception(() => sut.TryOpenBrowser("http://127.0.0.1:5000"));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void FirstRunSettings_DefaultsAreConservativeForGenericHosts()
     {
         var settings = new FirstRunSettings();
 
-        Assert.False(settings.AutoOpenBrowser, "AutoOpenBrowser must default to false");
+        Assert.False(settings.AutoOpenBrowser);
         Assert.Equal(5000, settings.Port);
         Assert.True(settings.ResolveAppDataDbPath);
     }
+
+    private static FirstRunService CreateService(
+        FirstRunSettings settings,
+        Action<string> browserLauncher,
+        bool isPackagedDesktop,
+        bool browserSuppressed)
+        => new(
+            NullLogger<FirstRunService>.Instance,
+            settings,
+            browserLauncher,
+            (_, _) => Task.FromResult(true),
+            isPackagedDesktop,
+            () => browserSuppressed);
 }

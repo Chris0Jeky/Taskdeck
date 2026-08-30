@@ -443,18 +443,29 @@ public class AutomationPlannerService : IAutomationPlannerService
                 operations
             );
 
-            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
-            if (!result.IsSuccess)
-                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
-
-            // Validate permissions
-            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
+            // Proposal creation is a mutation lane: the requester must be write-capable on the
+            // board the proposal targets (#1433, #1836). Validate before persisting so a
+            // denied request cannot leave an unauthorized proposal in PendingReview.
+            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
             if (!permissionResult.IsSuccess)
             {
                 return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
             }
 
+            var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
+            if (!result.IsSuccess)
+                return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
+
             return Result.Success(result.Value);
+        }
+        // Caller-requested cancellation is not a planning failure. Rethrow so the worker can
+        // leave the queue item alone instead of marking it Failed and burning a retry. The
+        // `when` filter is load-bearing: an OperationCanceledException raised by an INTERNAL
+        // budget or provider timeout, where the caller's token is still live, falls through to
+        // the general handler below and keeps its UnexpectedError mapping.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -566,15 +577,24 @@ public class AutomationPlannerService : IAutomationPlannerService
                 allOperations
             );
 
+            // Proposal creation is a mutation lane: the requester must be write-capable on the
+            // board the proposal targets (#1433, #1836). Validate before persisting so a
+            // denied request cannot leave an unauthorized proposal in PendingReview.
+            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, BoardAccessBar.Write, cancellationToken);
+            if (!permissionResult.IsSuccess)
+                return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+
             var result = await _proposalService.CreateProposalAsync(createDto, cancellationToken);
             if (!result.IsSuccess)
                 return Result.Failure<ProposalDto>(result.ErrorCode, result.ErrorMessage);
 
-            var permissionResult = await _policyEngine.ValidatePermissionsAsync(userId, boardId, operationDtos, cancellationToken);
-            if (!permissionResult.IsSuccess)
-                return Result.Failure<ProposalDto>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
-
             return Result.Success(result.Value);
+        }
+        // Same discrimination as the single-instruction path above: caller cancellation
+        // propagates, internal cancellation stays an UnexpectedError.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {

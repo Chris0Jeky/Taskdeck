@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-25
+Last Updated: 2026-08-30
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -61,6 +61,12 @@ Optional clean start:
 - Stop API process.
 - Remove `backend/src/Taskdeck.Api/taskdeck.db`.
 - Restart API.
+
+## R1. v0.3.0-rc.1 release-candidate checks (2026-08-30)
+
+- [ ] **Prerelease semantics (`#2217`).** The `v0.3.0-rc.1` GitHub Release shows the *Pre-release* badge and `/releases/latest` still resolves to `v0.2.0`; `ghcr.io/chris0jeky/taskdeck:latest` still resolves to the v0.2.0 digest recorded before the tag, **no `:0.3` alias exists** (the `{{major}}.{{minor}}` alias is derived from the RC version and is the tag the prerelease guard must withhold — `release-container.yml:111-112`), and `:0.3.0-rc.1` exists. Record the `:latest` digest before tagging.
+- [ ] **Upgrade from a real v0.2.0 database.** Start the RC on a copy of a v0.2.0 workspace: a pre-migration snapshot appears next to the database, `MakeProvenanceConfidenceHonest` and `AddApiKeyScopes` are the only migrations applied, every pre-existing API key shows all three scopes (**Read, Propose, Manage** — the UI never renders a literal "Full"; `ApiKeyScopeRules.ToNames(ApiKeyScope.Full)` serialises the three names), and creating a new key without scopes is rejected.
+- [ ] **Triage degradation is visible (`#2202`).** With a **live provider selected and enabled but unable to deliver** — `Llm__Provider=OpenAI`, `Llm__EnableLiveProviders=true`, and either the kill switch on or an invalid key (the default no-key configuration selects `Mock`, whose `ProviderIsMock` outcome is *not* degraded and renders no notice) — a transcript capture completes as *Triaged* with the degradation notice rendered in both Inbox surfaces, and the deterministic proposals are still reviewable.
 
 ## C0. Container Deployment Hardening Matrix (`#142`)
 
@@ -356,11 +362,13 @@ Prerequisite: GitHub OAuth must be configured (`GitHubOAuth:ClientId` and `GitHu
 
 ## K. MCP Server Validation (MCP-01/MCP-02, `#652`/`#653`)
 
-Prerequisite: MCP stdio mode requires starting the API with `--mcp` flag.
+Prerequisite: follow [MCP Server — From source](MCP_SERVER.md#from-source) to run the web app once,
+create the intended local user, and configure stdio with the same absolute project path, database,
+and identity. The root `mcp.example.json` is for the packaged executable, not a source checkout.
 
-1. Start API with `--mcp` flag: `dotnet run --project backend/src/Taskdeck.Api/Taskdeck.Api.csproj -- --mcp`
+1. Start the source API with the `--mcp` flag through that client configuration.
    - Expected: process starts in MCP stdio host mode (no HTTP listener).
-2. Configure `mcp.example.json` in Claude Code or Cursor as the MCP client config.
+2. Confirm the client entry uses the exact JSON shape from the linked source instructions.
 3. From the MCP client, request `taskdeck://boards` resource.
    - Expected: JSON listing of boards with id, name, columnCount, cardCount, isArchived, updatedAt fields.
 4. Verify board listing matches the user's boards (scoped by `StdioUserContextProvider` identity).
@@ -1010,7 +1018,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 **Cloud Cost Observability (PR #798):**
 6. [ ] Verify all cross-references between cost docs are valid (ADR links, ops doc mutual references).
 7. [ ] Verify ADR appears in `docs/decisions/INDEX.md` with correct number and status.
-8. [ ] Verify LLM cost estimates reference actual supported providers (OpenAI GPT-4o-mini, Gemini 2.5 Flash).
+8. [ ] Verify LLM cost estimates reference the supported vendor provider and current configured model; re-check current pricing before deployment.
 9. [ ] Verify mitigation actions reference actual Taskdeck config keys and API endpoints.
 10. [ ] Verify runbook phases are actionable given the current architecture (single-node, SQLite, in-process workers).
 
@@ -1054,7 +1062,12 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 19. [ ] Verify mutation testing workflow is NOT listed in `ci-required.yml` (non-blocking, nightly only).
 20. [ ] Verify `StrykerOutput` directories are in `.gitignore`.
 21. [ ] Run `npm run mutation:test` locally to validate frontend Stryker setup (after `npm install`).
-22. [ ] Run `dotnet stryker --config-file stryker-config.json` locally in `backend/` to validate backend setup.
+22. [ ] Validate the backend Stryker setup from the repository root.
+    - Run: `powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest`
+    - Run: `dotnet tool restore`
+    - Run: `cd backend/tests/Taskdeck.Domain.Tests`
+    - Run: `dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput`
+    - Expected: the preflight passes and Stryker uses only `Taskdeck.Domain.Tests` for the `Taskdeck.Domain` mutation run.
 
 ### Z8. Platform: PWA and Offline Readiness (PR #802 — merged)
 
@@ -1164,7 +1177,7 @@ Status legend: `[ ]` = not yet performed, `[x]` = verified.
 
 ### Z19. MCP HTTP Transport and API Key CLI (PR #819 — merged 2026-04-12)
 
-1. [ ] Verify `taskdeck api-key create --name "test"` generates a key with `tdsk_` prefix.
+1. [ ] Verify `taskdeck api-key create --name "test" --scopes read,propose` generates a key with `tdsk_` prefix and the returned scopes are exactly `read, propose` (omitting `--scopes` now exits with a usage error — keys never default to Full).
    - Expected: key displayed once, starts with `tdsk_`, stored hashed.
 2. [ ] Verify `taskdeck api-key list` shows created keys with masked values.
    - Expected: list shows key name, created date, last-used date; value is masked.

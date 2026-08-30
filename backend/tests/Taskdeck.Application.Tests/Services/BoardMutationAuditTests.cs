@@ -339,6 +339,8 @@ public class BoardMutationAuditTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
+        // The null actor is correct here: this exercises the no-actor UpdateBoardAsync(id, dto)
+        // overload. The attributed lane is pinned by DirectCrudAuditActorTests.
         _historyServiceMock.Verify(
             h => h.LogActionAsync("board", board.Id, AuditAction.Updated, null,
                 It.Is<string?>(s => s != null && s.Contains("Name:") && s.Contains("'Renamed'"))),
@@ -371,6 +373,11 @@ public class BoardMutationAuditTests
     #endregion
 
     #region LabelService Audit Tests
+
+    // The null actor is correct throughout this region: every call below omits the actor
+    // argument, so actorUserId defaults to null (these are the actor-bearing overloads with the
+    // default applied, not the positional-token overloads). The attributed lane is pinned by
+    // DirectCrudAuditActorTests (#1979).
 
     [Fact]
     public async Task CreateLabel_RecordsAuditLog()
@@ -564,6 +571,8 @@ public class BoardMutationAuditTests
 
         // Assert - should record Unarchived, not Updated
         result.IsSuccess.Should().BeTrue();
+        // The null actor is correct here: this exercises the no-actor UpdateBoardAsync(id, dto)
+        // overload. The attributed lane is pinned by DirectCrudAuditActorTests.
         _historyServiceMock.Verify(
             h => h.LogActionAsync("board", board.Id, AuditAction.Unarchived, null,
                 It.Is<string?>(s => s != null && s.Contains("Unarchived"))),

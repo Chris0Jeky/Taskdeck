@@ -61,44 +61,85 @@ describe('typeLabel', () => {
   })
 })
 
+/**
+ * The stripe colours moved from the Tailwind palette to `--td-notify-*` tokens
+ * (#1817) so they follow the active skin; this function is still the single
+ * source of the type -> stripe mapping, which is what these tests pin.
+ */
 describe('typeBorderClass', () => {
-  it('returns amber border for proposals', () => {
-    expect(typeBorderClass('ProposalOutcome')).toContain('border-l-amber-500')
+  it('returns the proposal stripe for proposals', () => {
+    expect(typeBorderClass('ProposalOutcome')).toContain('td-notify-stripe--proposal')
   })
 
-  it('returns blue border for mentions', () => {
-    expect(typeBorderClass('Mention')).toContain('border-l-blue-500')
+  it('returns the mention stripe for mentions', () => {
+    expect(typeBorderClass('Mention')).toContain('td-notify-stripe--mention')
   })
 
-  it('returns green border for board changes', () => {
-    expect(typeBorderClass('BoardChange')).toContain('border-l-green-500')
+  it('returns the board-change stripe for board changes', () => {
+    expect(typeBorderClass('BoardChange')).toContain('td-notify-stripe--board-change')
   })
 
-  it('returns purple border for assignments', () => {
-    expect(typeBorderClass('Assignment')).toContain('border-l-purple-500')
+  it('returns the assignment stripe for assignments', () => {
+    expect(typeBorderClass('Assignment')).toContain('td-notify-stripe--assignment')
   })
 
-  it('returns gray border for system', () => {
-    expect(typeBorderClass('System')).toContain('border-l-gray-400')
+  it('returns the system stripe for system', () => {
+    expect(typeBorderClass('System')).toContain('td-notify-stripe--system')
   })
 
-  it('all classes include border-l-4', () => {
-    expect(typeBorderClass('Mention')).toContain('border-l-4')
-    expect(typeBorderClass('System')).toContain('border-l-4')
+  it('all classes include the shared stripe geometry class', () => {
+    expect(typeBorderClass('Mention')).toContain('td-notify-stripe ')
+    expect(typeBorderClass('System')).toContain('td-notify-stripe ')
+  })
+
+  it('gives every type a distinct stripe modifier', () => {
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    const modifiers = types.map((t) => typeBorderClass(t).split(' ').find((c) => c.includes('--')))
+    expect(new Set(modifiers).size).toBe(types.length)
   })
 })
 
+/**
+ * The badge colours moved from the Tailwind palette to `--td-notify-*-bg` /
+ * `--td-notify-*-fg` tokens (#1842), the same move #1840 made for the stripes,
+ * so they follow the active skin. This function is still the single source of
+ * the type -> badge mapping, which is what these tests pin.
+ */
 describe('typeBadgeClass', () => {
-  it('returns amber badge for proposals', () => {
-    expect(typeBadgeClass('ProposalOutcome')).toContain('bg-amber-100')
+  it('returns the proposal badge for proposals', () => {
+    expect(typeBadgeClass('ProposalOutcome')).toBe('td-notify-badge--proposal')
   })
 
-  it('returns blue badge for mentions', () => {
-    expect(typeBadgeClass('Mention')).toContain('bg-blue-100')
+  it('returns the mention badge for mentions', () => {
+    expect(typeBadgeClass('Mention')).toBe('td-notify-badge--mention')
   })
 
-  it('includes dark mode variant', () => {
-    expect(typeBadgeClass('Mention')).toContain('dark:bg-blue-900')
+  it('returns the board-change badge for board changes', () => {
+    expect(typeBadgeClass('BoardChange')).toBe('td-notify-badge--board-change')
+  })
+
+  it('returns the assignment badge for assignments', () => {
+    expect(typeBadgeClass('Assignment')).toBe('td-notify-badge--assignment')
+  })
+
+  it('returns the system badge for system', () => {
+    expect(typeBadgeClass('System')).toBe('td-notify-badge--system')
+  })
+
+  it('gives every type a distinct badge class', () => {
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    expect(new Set(types.map(typeBadgeClass)).size).toBe(types.length)
+  })
+
+  it('emits no raw Tailwind palette hue and no dead dark: variant', () => {
+    // `darkMode: 'class'` with nothing ever setting `dark` meant the four
+    // `dark:` utilities never rendered; the light ones were Obsidian-era hues
+    // inside the cream Paper shell (#1842).
+    const types = ['ProposalOutcome', 'Mention', 'BoardChange', 'Assignment', 'System']
+    for (const t of types) {
+      expect(typeBadgeClass(t)).not.toMatch(/\bdark:/)
+      expect(typeBadgeClass(t)).not.toMatch(/\b(bg|text)-(amber|blue|green|purple|gray)-\d{3}\b/)
+    }
   })
 })
 

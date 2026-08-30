@@ -52,7 +52,7 @@ const formattedConfidence = computed(() =>
       <span>{{ who }}</span>
       <template v-if="formattedConfidence !== null">
         <span aria-hidden="true"> · </span>
-        <span>conf {{ formattedConfidence }}</span>
+        <span>{{ $t('review.queueItem.confidence', { value: formattedConfidence }) }}</span>
       </template>
       <span aria-hidden="true"> · </span>
       <span>{{ reach }}</span>

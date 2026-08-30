@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import SavedViewsView from '../../views/SavedViewsView.vue'
 import type { SavedView, SavedViewFilter } from '../../store/savedViewStore'
@@ -11,6 +11,10 @@ const routerMocks = vi.hoisted(() => ({
 
 const routeMock = vi.hoisted(() => ({
   params: {} as Record<string, unknown>,
+}))
+
+const cardsApiMocks = vi.hoisted(() => ({
+  getCards: vi.fn(),
 }))
 
 function makeFilter(overrides: Partial<SavedViewFilter> = {}): SavedViewFilter {
@@ -82,7 +86,7 @@ vi.mock('../../store/boardStore', () => ({
 
 vi.mock('../../api/cardsApi', () => ({
   cardsApi: {
-    getCards: vi.fn().mockResolvedValue([]),
+    getCards: cardsApiMocks.getCards,
   },
 }))
 
@@ -110,9 +114,14 @@ describe('SavedViewsView', () => {
     mockSavedViewStore.activeView = null
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
+    cardsApiMocks.getCards.mockResolvedValue([])
     mockSavedViewStore.createView.mockImplementation((name, icon, filter) =>
       makeView({ id: `custom-${Date.now()}`, name, icon, filter, isDefault: false }),
     )
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('renders the Saved Views title', async () => {
@@ -120,6 +129,17 @@ describe('SavedViewsView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Saved Views')
+  })
+
+  it('renders with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(SavedViewsView)
+    await waitForUi()
+
+    // Root and hero should use the Paper (`paper-views__*`) idiom, and none of
+    // the legacy Obsidian (`td-saved-views__*`) hooks should survive.
+    expect(wrapper.find('.paper-views').exists()).toBe(true)
+    expect(wrapper.find('.paper-views__hero').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-saved-views"]').exists()).toBe(false)
   })
 
   it('renders default views in the picker', async () => {
@@ -252,7 +272,7 @@ describe('SavedViewsView', () => {
     const wrapper = mount(SavedViewsView)
     await waitForUi()
 
-    const viewCard = wrapper.findAll('.td-saved-views__card').at(0)
+    const viewCard = wrapper.findAll('.paper-views__card').at(0)
     expect(viewCard).toBeDefined()
     await viewCard!.trigger('click')
     await waitForUi()
@@ -321,6 +341,34 @@ describe('SavedViewsView', () => {
 
       const clearBtn = wrapper.findAll('button').find((b) => b.text().includes('Clear Filter'))
       expect(clearBtn).toBeDefined()
+    })
+
+    it('renders the saved-view due key unchanged west of UTC', async () => {
+      vi.stubEnv('TZ', 'America/Los_Angeles')
+      mockSavedViewStore.activeView = makeView()
+      mockBoardStore.boards = [makeBoard()]
+      cardsApiMocks.getCards.mockResolvedValue([{
+        id: 'card-1',
+        boardId: 'board-1',
+        columnId: 'column-1',
+        title: 'Calendar-day card',
+        description: null,
+        dueDate: '2026-08-23T00:00:00.000Z',
+        isBlocked: false,
+        blockReason: null,
+        position: 0,
+        labels: [],
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+      }])
+
+      const wrapper = mount(SavedViewsView)
+      await waitForUi()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Calendar-day card')
+      expect(wrapper.text()).toContain('23')
+      expect(wrapper.text()).not.toContain('22')
     })
 
     it('navigates to /workspace/views when Clear Filter is clicked', async () => {

@@ -23,6 +23,9 @@ vi.mock('../../store/toastStore', () => ({
 
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_err: unknown, fallback: string) => ({ message: fallback, code: null }),
+  // Store catch blocks now also read a request diagnostic (GH-1938); stub it so
+  // this partial module mock doesn't leave the import undefined at runtime.
+  getErrorDetails: () => null,
 }))
 
 vi.mock('../../api/boardsApi', () => ({

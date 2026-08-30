@@ -14,6 +14,7 @@ namespace Taskdeck.Application.Services;
 public class ProvenanceQueryService : IProvenanceQueryService
 {
     private readonly IProposalProvenanceRepository _provenanceRepository;
+    private readonly ITranscriptRepository _transcriptRepository;
 
     /// <summary>
     /// Stable mapping from canonical field name (lower-cased) to emoji icon.
@@ -56,19 +57,28 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// </summary>
     internal const string DefaultIcon = "\U0001F4C4"; // page facing up
 
-    public ProvenanceQueryService(IProposalProvenanceRepository provenanceRepository)
+    public ProvenanceQueryService(
+        IProposalProvenanceRepository provenanceRepository,
+        ITranscriptRepository transcriptRepository)
     {
         _provenanceRepository = provenanceRepository ?? throw new ArgumentNullException(nameof(provenanceRepository));
+        _transcriptRepository = transcriptRepository ?? throw new ArgumentNullException(nameof(transcriptRepository));
     }
 
     public async Task<Result<IReadOnlyList<ProvenanceRowDto>>> GetProvenanceRowsAsync(
         Guid proposalId,
+        Guid callerUserId,
         CancellationToken cancellationToken = default)
     {
         if (proposalId == Guid.Empty)
             return Result.Failure<IReadOnlyList<ProvenanceRowDto>>(
                 ErrorCodes.ValidationError,
                 "ProposalId cannot be empty");
+
+        if (callerUserId == Guid.Empty)
+            return Result.Failure<IReadOnlyList<ProvenanceRowDto>>(
+                ErrorCodes.ValidationError,
+                "CallerUserId cannot be empty");
 
         var provenance = await _provenanceRepository.GetByProposalIdAsync(proposalId, cancellationToken);
 
@@ -79,22 +89,86 @@ public class ProvenanceQueryService : IProvenanceQueryService
                 Array.Empty<ProvenanceRowDto>());
         }
 
+        // Which transcripts this caller may actually open is a claims-derived fact, resolved once
+        // for the whole payload. Provenance is board-authorized while transcript read is
+        // owner-only, so a board collaborator legitimately sees links they cannot follow.
+        var ownedTranscriptIds = await ResolveOwnedTranscriptIdsAsync(
+            provenance,
+            callerUserId,
+            cancellationToken);
+
         var rows = provenance.Fields
-            .Select(MapFieldToRow)
+            .Select(field => MapFieldToRow(field, ownedTranscriptIds))
             .ToList()
             .AsReadOnly();
 
         return Result.Success<IReadOnlyList<ProvenanceRowDto>>(rows);
     }
 
-    internal static ProvenanceRowDto MapFieldToRow(ProvenanceField field)
+    /// <summary>
+    /// Returns the transcript ids referenced by this provenance that <paramref name="callerUserId"/>
+    /// owns. Ids the caller does not own are absent, so nothing about another user's data is
+    /// disclosed beyond the caller's own access.
+    /// </summary>
+    private async Task<IReadOnlySet<Guid>> ResolveOwnedTranscriptIdsAsync(
+        ProposalProvenance provenance,
+        Guid callerUserId,
+        CancellationToken cancellationToken)
+    {
+        var referencedTranscriptIds = provenance.Fields
+            .SelectMany(field => field.EvidenceLinks)
+            .Where(IsTranscriptEvidence)
+            .Select(link => link.TranscriptId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (referencedTranscriptIds.Count == 0)
+            return EmptyTranscriptIds;
+
+        var owned = await _transcriptRepository.FilterOwnedIdsAsync(
+            referencedTranscriptIds,
+            callerUserId,
+            cancellationToken);
+
+        return owned.ToHashSet();
+    }
+
+    private static readonly IReadOnlySet<Guid> EmptyTranscriptIds = new HashSet<Guid>();
+
+    /// <summary>
+    /// True for a link that names a stored transcript with a typed transcript id — the only
+    /// evidence kind with a read endpoint behind the "view in transcript" affordance today.
+    /// </summary>
+    internal static bool IsTranscriptEvidence(ProvenanceEvidenceLink link) =>
+        string.Equals(link.SourceType, ProvenanceEvidenceLink.TranscriptSourceType, StringComparison.Ordinal)
+        && link.TranscriptId is { } transcriptId
+        && transcriptId != Guid.Empty;
+
+    internal static ProvenanceRowDto MapFieldToRow(ProvenanceField field, IReadOnlySet<Guid> ownedTranscriptIds)
     {
         var icon = ResolveIcon(field.FieldName);
         var key = field.FieldName;
         var value = BuildValue(field);
-        var weight = MapWeight(field.Kind, field.Confidence);
+        var weight = MapWeight(field.Kind, field.Confidence, field.ConfidenceSource);
+        var evidenceLinks = field.EvidenceLinks
+            .OrderBy(link => link.SourceType, StringComparer.Ordinal)
+            .ThenBy(link => link.SourceId, StringComparer.Ordinal)
+            .ThenBy(link => link.Label, StringComparer.Ordinal)
+            .ThenBy(link => link.SpanStart)
+            .ThenBy(link => link.SpanEnd)
+            .Select(link => new ProvenanceEvidenceLinkDto(
+                link.SourceType,
+                link.SourceId,
+                link.Label,
+                link.SpanStart,
+                link.SpanEnd,
+                // Fails closed: an evidence kind with no reader, or a transcript this caller does
+                // not own, is never advertised as viewable.
+                IsTranscriptEvidence(link) && ownedTranscriptIds.Contains(link.TranscriptId!.Value)))
+            .ToList()
+            .AsReadOnly();
 
-        return new ProvenanceRowDto(icon, key, value, weight);
+        return new ProvenanceRowDto(icon, key, value, weight, evidenceLinks);
     }
 
     /// <summary>
@@ -110,13 +184,21 @@ public class ProvenanceQueryService : IProvenanceQueryService
     }
 
     /// <summary>
-    /// Builds a human-readable value string from the provenance field.
-    /// For extractive fields, includes the quote snippet.
-    /// For inferred fields, notes the confidence level.
+    /// Builds a human-readable value string from the provenance field without presenting a number
+    /// unless its persisted source says it was model-reported or algorithmically derived.
     /// </summary>
     internal static string BuildValue(ProvenanceField field)
     {
-        var confidencePercent = (int)Math.Round(field.Confidence * 100);
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.Deterministic)
+            return "Deterministic extraction (no model confidence)";
+
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.NotReported || field.Confidence is null)
+            return "No model confidence reported";
+
+        var confidencePercent = (int)Math.Round(field.Confidence.Value * 100);
+
+        if (field.ConfidenceSource == ProvenanceConfidenceSource.ModelReported)
+            return $"Model reported {confidencePercent}% confidence";
 
         if (field.Kind == ProvenanceKind.Extractive && !string.IsNullOrWhiteSpace(field.ExtractiveQuote))
         {
@@ -128,9 +210,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
         }
 
         if (field.Kind == ProvenanceKind.Inferred)
-        {
-            return $"Inferred by model ({confidencePercent}% confidence)";
-        }
+            return $"Derived confidence: {confidencePercent}%";
 
         // Fallback for extractive fields without a quote (should not happen per domain rules,
         // but we handle it defensively).
@@ -138,7 +218,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
     }
 
     /// <summary>
-    /// Maps the domain <see cref="ProvenanceKind"/> and confidence score to
+    /// Maps the domain <see cref="ProvenanceKind"/> and trustworthy confidence score to
     /// the 4-bucket weight system used by the Paper deep-Review surface.
     ///
     /// Buckets:
@@ -153,13 +233,27 @@ public class ProvenanceQueryService : IProvenanceQueryService
     /// data. The frontend can inject them client-side or a future backend
     /// enhancement can add a dedicated "excluded sources" list.
     /// </summary>
-    internal static string MapWeight(ProvenanceKind kind, double confidence)
+    internal static string MapWeight(
+        ProvenanceKind kind,
+        double? confidence,
+        ProvenanceConfidenceSource confidenceSource)
     {
         return kind switch
         {
             ProvenanceKind.Inferred => "inferred",
-            ProvenanceKind.Extractive => confidence >= 0.7 ? "primary" : "contextual",
+            ProvenanceKind.Extractive when
+                confidenceSource == ProvenanceConfidenceSource.Derived && confidence >= 0.7 => "primary",
+            ProvenanceKind.Extractive => "contextual",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unrecognized ProvenanceKind")
         };
     }
+
+    internal static string MapWeight(ProvenanceKind kind, double confidence) =>
+        MapWeight(
+            kind,
+            confidence,
+            kind == ProvenanceKind.Extractive
+                ? ProvenanceConfidenceSource.Derived
+                : ProvenanceConfidenceSource.ModelReported);
+
 }

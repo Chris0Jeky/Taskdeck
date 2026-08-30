@@ -1,6 +1,6 @@
 # Mutation Testing Policy
 
-Last Updated: 2026-04-09
+Last Updated: 2026-07-27
 
 ## Purpose
 
@@ -14,8 +14,11 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 
 - **Target**: `Taskdeck.Domain` project
 - **Test project**: `Taskdeck.Domain.Tests`
-- **Rationale**: Domain contains core business logic (entity state machines, validation rules, invariants) where surviving mutants have the highest impact. Domain is pure C# with no infrastructure dependencies, making mutation runs fast and deterministic.
+- **Tool contract**: Stryker.NET `4.16.0`
+- **Rationale**: Domain contains core business logic (entity state machines, validation rules, invariants) where surviving mutants have the highest impact. Domain is pure C# with no infrastructure dependencies, making it the narrowest deterministic backend target; its full mutation set is still a long-running workload.
 - **Config**: `backend/stryker-config.json`
+- **Execution context**: run from `backend/tests/Taskdeck.Domain.Tests`; do not add `solution` or `test-projects` to the config because solution context takes precedence and discovers unrelated tests
+- **Preflight**: `scripts/ci/Test-StrykerConfig.ps1 -SelfTest` rejects obsolete schema keys, solution-context selectors, and workflow/artifact drift before the long mutation run starts
 
 ### Frontend (Stryker JS/TS)
 
@@ -51,12 +54,18 @@ After the first 3-4 runs:
 ### Backend (local)
 
 ```bash
-# Install Stryker.NET as a global tool (once)
-dotnet tool install --global dotnet-stryker
+# From the repository root, validate the checked-in schema contract.
+# Native Windows PowerShell:
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7 on Linux/macOS/Windows uses the equivalent `pwsh -File ...` form.
 
-# Run from the backend/ directory
-cd backend
-dotnet stryker --config-file stryker-config.json
+# Restore the repository-local Stryker.NET 4.16.0 tool manifest. This remains
+# deterministic even when another Stryker version is installed globally.
+dotnet tool restore
+
+# Run from the Domain test project so Stryker discovers only that test project.
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 ```
 
 Report: `backend/StrykerOutput/<timestamp>/reports/mutation-report.html`
@@ -77,6 +86,9 @@ The mutation testing workflow runs:
 - **On demand**: via `workflow_dispatch` from the Actions tab
 
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
+The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
+
+The first repaired backend-only baseline, [run 30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d`, completed in 192 seconds. It created 3,682 mutants: 2,351 killed, 576 survived, 2 timed out, and 753 skipped, for a 70.75% score. The non-empty two-file report artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`). Keep the 0% break threshold until the policy's 3-4-run calibration window exists.
 
 ## Interpreting Reports
 
@@ -101,11 +113,11 @@ Reports are uploaded as GitHub Actions artifacts with 30-day retention.
 
 When mutation testing reveals surviving mutants:
 
-1. **File an issue** with the label `test-hardening` and link to the mutation report artifact
+1. **File an issue** with the existing `testing` and `hardening` labels and link to the mutation report artifact
 2. **Categorize** surviving mutants by triage priority (see above)
 3. **Bundle fixes**: Group related assertion improvements into a single PR per module rather than one PR per mutant
 4. **Do not chase 100%**: Some surviving mutants are acceptable (e.g., log messages, cosmetic formatting). Document intentional exclusions:
-   - **Backend (Stryker.NET)**: Use `excluded-mutations` or `ignored-methods` in `backend/stryker-config.json`
+   - **Backend (Stryker.NET 4.16.0)**: Add Stryker patterns as non-empty string entries in the `ignore-mutations` or `ignore-methods` arrays in `backend/stryker-config.json`; the preflight accepts empty arrays and non-empty string entries while rejecting scalar/invalid entries and the obsolete `excluded-mutations` and `ignored-methods` spellings
    - **Frontend (Stryker JS)**: Adjust `mutate` glob patterns in `stryker.config.mjs` or use inline `// Stryker disable` comments in source files
 
 ## Scope Expansion Roadmap

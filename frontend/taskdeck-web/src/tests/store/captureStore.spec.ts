@@ -8,11 +8,21 @@ const toastMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }))
 
+const workspaceMocks = vi.hoisted(() => ({
+  refreshWorkloadCounts: vi.fn(async () => {}),
+}))
+
+const errorMapperMocks = vi.hoisted(() => ({
+  getErrorDetails: vi.fn<(error: unknown) => string | null>(() => null),
+}))
+
 vi.mock('../../api/captureApi', () => ({
   captureApi: {
     createItem: vi.fn(),
     listItems: vi.fn(),
     getItem: vi.fn(),
+    keepItem: vi.fn(),
+    archiveItem: vi.fn(),
     ignoreItem: vi.fn(),
     cancelItem: vi.fn(),
     enqueueTriage: vi.fn(),
@@ -25,8 +35,13 @@ vi.mock('../../store/toastStore', () => ({
   useToastStore: () => toastMocks,
 }))
 
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => workspaceMocks,
+}))
+
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDetails: errorMapperMocks.getErrorDetails,
 }))
 
 describe('captureStore', () => {
@@ -54,6 +69,70 @@ describe('captureStore', () => {
 
     expect(store.items).toHaveLength(1)
     expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 100 })
+  })
+
+  it('keeps the unfiltered Inbox after a late board-scoped response resolves', async () => {
+    const store = useCaptureStore()
+    let resolveScoped!: (value: any[]) => void
+    let resolveUnfiltered!: (value: any[]) => void
+    const scopedResponse = new Promise<any[]>((resolve) => { resolveScoped = resolve })
+    const unfilteredResponse = new Promise<any[]>((resolve) => { resolveUnfiltered = resolve })
+    vi.mocked(captureApi.listItems)
+      .mockReturnValueOnce(scopedResponse as never)
+      .mockReturnValueOnce(unfilteredResponse as never)
+
+    const scopedLoad = store.fetchItems({ boardId: 'board-7', limit: 200 })
+    const unfilteredLoad = store.fetchItems({ limit: 200 })
+
+    resolveUnfiltered([{
+      id: 'all-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+      textExcerpt: 'visible after clearing scope', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await unfilteredLoad
+
+    resolveScoped([{
+      id: 'scoped-capture', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'late scoped result', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await scopedLoad
+
+    expect(store.items.map((item) => item.id)).toEqual(['all-capture'])
+  })
+
+  it('keeps retained scoped rows and the latest error after an unfiltered replacement fails', async () => {
+    const store = useCaptureStore()
+    store.items = [{
+      id: 'retained-scoped', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'retained until replacement commits', createdAt: new Date().toISOString(), processedAt: null,
+    }]
+    let resolveScoped!: (value: any[]) => void
+    let rejectUnfiltered!: (reason?: unknown) => void
+    const scopedResponse = new Promise<any[]>((resolve) => { resolveScoped = resolve })
+    const unfilteredResponse = new Promise<any[]>((_resolve, reject) => { rejectUnfiltered = reject })
+    vi.mocked(captureApi.listItems)
+      .mockReturnValueOnce(scopedResponse as never)
+      .mockReturnValueOnce(unfilteredResponse as never)
+
+    const scopedLoad = store.fetchItems({ boardId: 'board-7', limit: 200 })
+    const unfilteredLoad = store.fetchItems({ limit: 200 })
+    expect(store.loadingList).toBe(true)
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+
+    const unfilteredFailure = expect(unfilteredLoad).rejects.toBeInstanceOf(Error)
+    rejectUnfiltered(new Error('unfiltered failed'))
+    await unfilteredFailure
+    expect(store.loadingList).toBe(false)
+    expect(store.listError).toBe('Failed to load inbox items')
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+
+    resolveScoped([{
+      id: 'late-scoped', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
+      textExcerpt: 'obsolete scoped response', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await scopedLoad
+    expect(store.loadingList).toBe(false)
+    expect(store.listError).toBe('Failed to load inbox items')
+    expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
   })
 
   it('loads and caches capture details', async () => {
@@ -183,6 +262,71 @@ describe('captureStore', () => {
     })
   })
 
+  // Regression for the archived-history list-write boundary (#1973).
+  //
+  // `fetchDetail`'s success path calls `cacheDetail(detail, syncSummary)`, and
+  // `upsertSummary` UNSHIFTS an absent summary to the top of `items` with no
+  // scope or request-generation guard — `latestListLoadRequestId` protects only
+  // `fetchItems`. So a detail GET started inside archived history that resolves
+  // AFTER the mode-exit's unscoped list load would seat the archived board's
+  // capture at the top of the LIVE Inbox, where Triage / Ignore / Cancel are
+  // enabled against an archived board. `syncSummary: false` is what the
+  // orchestrator passes in that mode; this pins that it actually holds under the
+  // late-resolve ordering, which is the ordering that makes the leak reachable.
+  it('keeps a late archived detail out of the live list when the caller opts out of summary sync', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+
+    let resolveDetail: ((value: unknown) => void) | null = null
+    vi.mocked(captureApi.getItem).mockImplementation(
+      () => new Promise((resolve) => { resolveDetail = resolve }) as Promise<never>,
+    )
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      {
+        id: 'live-1',
+        userId: 'u1',
+        boardId: 'live-board',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'a live capture',
+        createdAt,
+        processedAt: null,
+      },
+    ])
+
+    // 1. Inside archived history: open the retained capture. The GET hangs.
+    const detailPromise = store.fetchDetail('archived-capture', { syncSummary: false })
+
+    // 2. Leave archived history. The exit watcher's unscoped list load lands
+    //    first and, correctly, omits the archived board's capture.
+    await store.fetchItems()
+    expect(store.items.map((item) => item.id)).toEqual(['live-1'])
+
+    // 3. The archived detail GET resolves LAST — after the live list is seated.
+    resolveDetail?.({
+      id: 'archived-capture',
+      userId: 'u1',
+      boardId: 'archived-board',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'retained archived capture',
+      rawText: 'retained archived capture',
+      createdAt,
+      processedAt: null,
+      retryCount: 0,
+    })
+    await detailPromise
+
+    // The detail is cached so the read-only panel can render it...
+    expect(store.detailById['archived-capture']).toMatchObject({
+      id: 'archived-capture',
+      rawText: 'retained archived capture',
+    })
+    // ...but it must NOT have been seated into the live queue.
+    expect(store.items.map((item) => item.id)).toEqual(['live-1'])
+    expect(store.items.some((item) => item.boardId === 'archived-board')).toBe(false)
+  })
+
   it('returns cached detail from peekDetail without reloading the API', async () => {
     const store = useCaptureStore()
     const createdAt = new Date().toISOString()
@@ -231,7 +375,126 @@ describe('captureStore', () => {
 
     expect(store.items[0].id).toBe('c3')
     expect(store.detailById.c3?.rawText).toBe('new full text')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox')
+    // SAVED, never APPLIED (#1970) — nothing has reached a board yet.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox', undefined, {
+      label: 'saved',
+    })
+    // The sidebar badge counts pending captures, so it must be told (#1974).
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('attaches request diagnostics to the capture-failure toast so its receipt is inspectable', async () => {
+    // GH-1938: an opaque "request failed" toast loses the user's text with no
+    // way to inspect or report it. The store must hand the toast a `details`
+    // payload so the receipt's expander and Copy become functional.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockRejectedValueOnce({
+      response: { status: 503, data: { errorCode: 'UnexpectedError' } },
+    })
+    errorMapperMocks.getErrorDetails.mockReturnValueOnce('Status: 503\nRequest ID: req-1938')
+
+    await expect(store.createItem({ boardId: null, text: 'lose me not' })).rejects.toBeTruthy()
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to capture item', undefined, {
+      details: 'Status: 503\nRequest ID: req-1938',
+    })
+  })
+
+  it('raises the capture-failure toast without a details payload when the error carries no diagnostic', async () => {
+    // A bare, non-axios failure has no request context — the toast then keeps
+    // its original single-argument shape rather than an empty expander.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockRejectedValueOnce(new Error('offline'))
+    errorMapperMocks.getErrorDetails.mockReturnValueOnce(null)
+
+    await expect(store.createItem({ boardId: null, text: 'lose me not' })).rejects.toBeTruthy()
+
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to capture item')
+  })
+
+  it('skips the badge refresh when the caller opts out because it fetches the full summary itself', async () => {
+    // Paper Home runs its own `fetchHomeSummary()` right after the capture.
+    // Both are GET /workspace/home, so notifying as well would read the
+    // heaviest endpoint on the surface twice for one keystroke (#1974).
+    const store = useCaptureStore()
+    vi.mocked(captureApi.createItem).mockResolvedValue({
+      id: 'c3b',
+      userId: 'u1',
+      boardId: null,
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'no double fetch',
+      rawText: 'no double fetch',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+    })
+
+    await store.createItem({ boardId: null, text: 'no double fetch' }, { refreshWorkload: false })
+
+    expect(store.items[0].id).toBe('c3b')
+    // The capture itself still lands, and its toast still fires — only the
+    // redundant second read is suppressed.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture saved to inbox', undefined, {
+      label: 'saved',
+    })
+    expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
+  })
+
+  it('never stamps any capture success with the applied label', async () => {
+    // `applied` is caller-opt-in and reserved for a proposal written to a
+    // board (#1970). Nothing in this store may claim it, so drive EVERY
+    // success path that toasts and check the labels they actually carried —
+    // this is what keeps a future "just reuse the success word" edit from
+    // re-introducing the original defect.
+    const store = useCaptureStore()
+    const detail = {
+      id: 'c-labels',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'label check',
+      rawText: 'label check',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    }
+    vi.mocked(captureApi.createItem).mockResolvedValue(detail)
+    vi.mocked(captureApi.getItem).mockResolvedValue(detail)
+    vi.mocked(captureApi.ignoreItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.cancelItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c-labels',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c-labels', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+    vi.mocked(captureApi.updateSuggestion).mockResolvedValue(detail)
+
+    await store.createItem({ boardId: null, text: 'label check' })
+    await store.ignoreItem('c-labels')
+    await store.cancelItem('c-labels')
+    await store.triageItem('c-labels')
+    await store.batchTriage(['c-labels'], 'triage')
+    await store.updateSuggestion('c-labels', { text: 'label check' })
+
+    const labels = toastMocks.success.mock.calls.map(
+      (call) => (call[2] as { label?: string } | undefined)?.label,
+    )
+    // Guards the guard: an empty call list would make this vacuously green.
+    expect(labels.length).toBe(6)
+    expect(labels).toContain('saved')
+    expect(labels).toContain('queued')
+    expect(labels).not.toContain('applied')
+    expect(labels).not.toContain('approved')
   })
 
   it('updates selection detail after ignore action', async () => {
@@ -254,6 +517,119 @@ describe('captureStore', () => {
 
     expect(captureApi.ignoreItem).toHaveBeenCalledWith('c4')
     expect(store.detailById.c4?.status).toBe('Ignored')
+    // Ignoring takes a capture out of `New + Failed`, so the badge must move.
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('caches server-stamped keep and archive receipts without creating work', async () => {
+    const store = useCaptureStore()
+    const kept = {
+      id: 'c-keep',
+      userId: 'u1',
+      boardId: null,
+      status: 'New' as const,
+      source: 'Typed' as const,
+      textExcerpt: 'kept',
+      rawText: 'kept',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      disposition: {
+        kind: 'Kept' as const,
+        at: new Date().toISOString(),
+        byUserId: 'u1',
+        boardId: null,
+      },
+    }
+    const archived = {
+      ...kept,
+      id: 'c-archive',
+      status: 'Ignored' as const,
+      disposition: { ...kept.disposition, kind: 'Archived' as const },
+    }
+    vi.mocked(captureApi.keepItem).mockResolvedValue(kept)
+    vi.mocked(captureApi.archiveItem).mockResolvedValue(archived)
+
+    await store.keepItem(kept.id)
+    await store.archiveItem(archived.id)
+
+    expect(store.detailById[kept.id]?.disposition?.kind).toBe('Kept')
+    expect(store.detailById[archived.id]?.disposition?.kind).toBe('Archived')
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not insert a late keep response into a newly loaded board scope', async () => {
+    const store = useCaptureStore()
+    const createdAt = new Date().toISOString()
+    store.items = [{
+      id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+      textExcerpt: 'board A', createdAt, processedAt: null,
+    }]
+    let resolveKeep!: (value: any) => void
+    vi.mocked(captureApi.keepItem).mockReturnValueOnce(new Promise((resolve) => { resolveKeep = resolve }) as never)
+    vi.mocked(captureApi.listItems).mockResolvedValueOnce([{
+      id: 'board-b-item', userId: 'u1', boardId: 'board-b', status: 'New', source: 'Typed',
+      textExcerpt: 'board B', createdAt, processedAt: null,
+    }])
+
+    const keep = store.keepItem('board-a-item')
+    await store.fetchItems({ boardId: 'board-b' })
+    resolveKeep({
+      id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+      textExcerpt: 'board A', rawText: 'board A', createdAt, processedAt: null, retryCount: 0,
+      disposition: { kind: 'Kept', at: createdAt, byUserId: 'u1', boardId: 'board-a' },
+    })
+    await keep
+
+    expect(store.items.map((item) => item.id)).toEqual(['board-b-item'])
+    expect(store.detailById['board-a-item']?.disposition?.kind).toBe('Kept')
+  })
+
+  it('tells the badge a cancelled capture left the pending count', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.cancelItem).mockResolvedValue(undefined)
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c4b',
+      userId: 'u1',
+      boardId: null,
+      status: 'Cancelled',
+      source: 'Typed',
+      textExcerpt: 'cancelled',
+      rawText: 'full text',
+      createdAt: new Date().toISOString(),
+      processedAt: new Date().toISOString(),
+      retryCount: 0,
+    })
+
+    await store.cancelItem('c4b')
+
+    expect(captureApi.cancelItem).toHaveBeenCalledWith('c4b')
+    expect(store.detailById['c4b']?.status).toBe('Cancelled')
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not touch the badge when only the capture text is edited', async () => {
+    // The negative that keeps the hook honest: `updateSuggestion` changes text,
+    // never triage state, so it must NOT fire a workload read. Without this,
+    // "refresh after every mutation" would look equally correct.
+    const store = useCaptureStore()
+    vi.mocked(captureApi.updateSuggestion).mockResolvedValue({
+      id: 'c4c',
+      userId: 'u1',
+      boardId: null,
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'edited',
+      rawText: 'edited full text',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    await store.updateSuggestion('c4c', { text: 'edited full text' })
+
+    expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
   })
 
   it('surfaces errors when list loading fails', async () => {
@@ -338,10 +714,40 @@ describe('captureStore', () => {
 
     await store.triageItem('c7')
 
-    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7')
+    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7', undefined)
     expect(captureApi.getItem).toHaveBeenCalledWith('c7')
     expect(store.detailById.c7?.status).toBe('Triaging')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued')
+    // QUEUED, never APPLIED (#1970) — triage is enqueued, not run.
+    expect(toastMocks.success).toHaveBeenCalledWith('Capture item triage queued', undefined, {
+      label: 'queued',
+    })
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards the chosen board id to the API when triaging a board-less capture (#1764)', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+      id: 'c7b',
+      status: 'Triaging',
+      alreadyTriaging: false,
+    })
+    vi.mocked(captureApi.getItem).mockResolvedValue({
+      id: 'c7b',
+      userId: 'u1',
+      boardId: 'board-picked',
+      status: 'Triaging',
+      source: 'Typed',
+      textExcerpt: 'triaging',
+      rawText: 'triage me',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+    })
+
+    await store.triageItem('c7b', 'board-picked')
+
+    expect(captureApi.enqueueTriage).toHaveBeenCalledWith('c7b', 'board-picked')
   })
 
   it('optimistically updates cached detail status without overwriting a fresher summary when triage starts from an open item', async () => {
@@ -453,6 +859,12 @@ describe('captureStore', () => {
       processedAt: null,
       retryCount: 0,
       provenance: null,
+      disposition: {
+        kind: 'Kept',
+        at: createdAt,
+        byUserId: 'u1',
+        boardId: 'b1',
+      },
     }
 
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
@@ -462,12 +874,13 @@ describe('captureStore', () => {
     })
     vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
 
-    await expect(store.triageItem('c7-stale')).rejects.toBeInstanceOf(Error)
+    await expect(store.triageItem('c7-stale')).resolves.toMatchObject({ status: 'Triaging' })
 
     expect(store.detailById['c7-stale']).toMatchObject({
       status: 'Triaging',
       textExcerpt: 'stale detail excerpt',
       rawText: 'stale detail text',
+      disposition: null,
     })
     expect(store.items[0]).toMatchObject({
       id: 'c7-stale',
@@ -581,17 +994,23 @@ describe('captureStore', () => {
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(1)
       expect(store.detailById['poll-1']?.status).toBe('Triaging')
+      // A non-terminal poll changes nothing the badge counts.
+      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
 
       // Second tick at 4s — still Triaging
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(2)
       expect(store.detailById['poll-1']?.status).toBe('Triaging')
+      expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
 
       // Third tick at 6s — now ProposalCreated, polling should stop
       await vi.advanceTimersByTimeAsync(2_000)
       expect(callCount).toBe(3)
       expect(store.detailById['poll-1']?.status).toBe('ProposalCreated')
       expect(store.triagePollingItemId).toBeNull()
+      // Terminal is exactly where the count can move (a `Failed` outcome puts
+      // the capture back into `New + Failed`), so the badge is told once.
+      expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
 
       // No more ticks after terminal
       await vi.advanceTimersByTimeAsync(4_000)
@@ -744,7 +1163,7 @@ describe('captureStore', () => {
     })
   })
 
-  it('emits a single triage error toast when detail refresh fails after enqueue', async () => {
+  it('keeps a successful triage enqueue successful when detail refresh fails', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
       id: 'c9',
@@ -753,10 +1172,15 @@ describe('captureStore', () => {
     })
     vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('detail-refresh-failed'))
 
-    await expect(store.triageItem('c9')).rejects.toBeInstanceOf(Error)
+    await expect(store.triageItem('c9')).resolves.toMatchObject({ status: 'Triaging' })
 
-    expect(toastMocks.error).toHaveBeenCalledTimes(1)
-    expect(toastMocks.error).toHaveBeenCalledWith('Failed to triage capture item')
+    expect(toastMocks.error).not.toHaveBeenCalled()
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Capture item triage queued',
+      undefined,
+      { label: 'queued' },
+    )
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   // ── Batch triage tests ──
@@ -783,6 +1207,8 @@ describe('captureStore', () => {
     expect(result.succeeded).toBe(2)
     expect(toastMocks.success).toHaveBeenCalledWith('2 of 2 items processed')
     expect(captureApi.listItems).toHaveBeenCalled()
+    // A batch moves several captures out of the pending count at once.
+    expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
   it('reports partial batch failures with error toast', async () => {
@@ -857,7 +1283,13 @@ describe('captureStore', () => {
     expect(captureApi.updateSuggestion).toHaveBeenCalledWith('c10', { text: 'edited full text' })
     expect(result.rawText).toBe('edited full text')
     expect(store.detailById.c10?.rawText).toBe('edited full text')
-    expect(toastMocks.success).toHaveBeenCalledWith('Capture text updated')
+    // Stamped SAVED, never APPLIED: a text correction touches no board, and the
+    // Paper toast renders that word (GH-1951).
+    expect(toastMocks.success).toHaveBeenCalledWith(
+      'Capture updated',
+      undefined,
+      { label: 'saved' },
+    )
   })
 
   it('surfaces error when suggestion update fails', async () => {
@@ -866,8 +1298,8 @@ describe('captureStore', () => {
 
     await expect(store.updateSuggestion('c11', { text: 'new text' })).rejects.toBeInstanceOf(Error)
 
-    expect(store.actionError).toBe('Failed to update capture text')
-    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture text')
+    expect(store.actionError).toBe('Failed to update capture')
+    expect(toastMocks.error).toHaveBeenCalledWith('Failed to update capture')
   })
 
   it('tracks actionBusyItemId during suggestion update', async () => {
@@ -890,4 +1322,104 @@ describe('captureStore', () => {
 
     expect(store.actionBusyItemId).toBeNull()
   })
+
+  // ── Batch triage: cached-detail reconciliation (#2202, PR #2224 review) ──
+  //
+  // `batchTriage` re-read the LIST only, so an open Legacy detail kept its
+  // pre-batch status — and with it no `errorMessage`, so the degradation
+  // notice stayed invisible until a manual refresh.
+
+  function degradedDetail(status: string, errorMessage: string | null) {
+    return {
+      id: 'c-deg',
+      userId: 'u1',
+      boardId: null,
+      status,
+      source: 'TranscriptPaste',
+      textExcerpt: 'standup at nine',
+      rawText: 'standup at nine',
+      createdAt: new Date().toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      errorMessage,
+      provenance: null,
+    } as never
+  }
+
+  const DEGRADED_NOTICE =
+    'LLM triage unavailable (ProviderDegraded); using deterministic extractor.'
+
+  it('refetches a cached detail whose list row reached a terminal status', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+    expect(store.detailById['c-deg'].status).toBe('Triaging')
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+    ])
+    vi.mocked(captureApi.getItem).mockResolvedValue(
+      degradedDetail('ProposalCreated', DEGRADED_NOTICE),
+    )
+
+    await store.batchTriage(['c-deg'], 'triage')
+
+    // The cached detail now carries what the notice renders from.
+    expect(store.detailById['c-deg'].status).toBe('ProposalCreated')
+    expect(store.detailById['c-deg'].errorMessage).toBe(DEGRADED_NOTICE)
+  })
+
+  it('does not refetch a detail whose list row is still mid-flight (no polling)', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+    const callsAfterPrime = vi.mocked(captureApi.getItem).mock.calls.length
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'Triaging',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: null, disposition: null } as never,
+    ])
+
+    await store.batchTriage(['c-deg'], 'triage')
+
+    expect(vi.mocked(captureApi.getItem).mock.calls.length).toBe(callsAfterPrime)
+  })
+
+  it('keeps a successful batch successful when the detail refetch fails', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
+    await store.fetchDetail('c-deg')
+
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1, succeeded: 1, failed: 0,
+      results: [{ itemId: 'c-deg', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+        source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+        createdAt: new Date().toISOString(), processedAt: null,
+        errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+    ])
+    vi.mocked(captureApi.getItem).mockRejectedValue(new Error('detail-refresh-failed'))
+    toastMocks.error.mockClear()
+
+    await expect(store.batchTriage(['c-deg'], 'triage')).resolves.toMatchObject({ succeeded: 1 })
+    expect(toastMocks.error).not.toHaveBeenCalled()
+  })
+
 })

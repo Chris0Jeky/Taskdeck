@@ -70,3 +70,26 @@ whole time.
 ---
 
 <!-- New entries go directly below this line, newest first. -->
+
+## 2026-08-27 — dogfooding re-scoped to a standing tracker (maintainer ruling, agent-recorded)
+
+Maintainer assessment, given in-session on 2026-08-27 and recorded on #1271: he has tried using
+v0.1.2 for real work and **it is not yet enough for his personal workflow — more features and more
+polish are needed before daily-driver use is realistic**. The ruling: dogfooding stops being a
+v0.2.0 release gate and becomes a **standing tracker** (#1271 unmilestoned, still open); the
+≥10-day floor is retained only as a long-horizon signal; findings from whatever use happens keep
+feeding milestones and stay exempt from the intake severity bar. This is the "mixed outcome
+requires an explicit maintainer assessment" branch of the checkpoint rule, exercised — explicitly
+NOT an archive trigger. Same day, a maintainer-directed agent acceptance walkthrough live-verified
+the transcript→proposals→evidence→apply loop end-to-end on a fresh instance (see #1304's closing
+matrix), so the loop's readiness and the human's appetite are now tracked separately.
+
+## 2026-08-23 — sprint formally started (agent-recorded)
+
+Maintainer declaration (guided walkthrough 2026-08-23, q-2 = A): **the ≥10-day dogfooding sprint
+started 2026-08-22** on the v0.1.1 build. Day 1 was not quiet — it produced the workflow/UX-UI
+findings now driving the v0.1.2 scope (#1876 + the Priority I tranche; see the v0.1.2 milestone).
+The ADR-0044 checkpoint is re-anchored to ≥10 days from this start (no earlier than 2026-09-01),
+and the sprint extends to a collaborator once the collaboration surface works, or once the product
+feels good and is releasable to macOS (q-8 = A, recorded on #1271). Maintainer-authored entries in
+the protocol format follow below/above this record as the days accrue.

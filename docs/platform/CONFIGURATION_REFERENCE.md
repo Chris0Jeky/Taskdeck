@@ -21,6 +21,7 @@ Source files used to build this reference:
 ## Table of contents
 
 - [Conventions](#conventions)
+- [Product version](#product-version)
 - [JWT and authentication](#jwt-and-authentication)
   - [`Jwt`](#jwt)
   - [`GitHubOAuth`](#githuboauth)
@@ -33,6 +34,8 @@ Source files used to build this reference:
   - [`LlmKillSwitch`](#llmkillswitch)
   - [`CaptureTriageLlm`](#capturetriagellm)
   - [`AbuseDetection`](#abusedetection)
+- [Context Fabric](#context-fabric)
+  - [`ContextFabric`](#contextfabric)
 - [Workers](#workers)
   - [`Workers`](#workers-1)
   - [`OutboundWebhooks:Security`](#outboundwebhookssecurity)
@@ -52,6 +55,7 @@ Source files used to build this reference:
   - [`Analytics`](#analytics)
 - [Database](#database)
   - [`Database`](#database-1)
+  - [`Database:Backup`](#databasebackup)
   - [`AuditRetention`](#auditretention)
 - [Persistence and first run](#persistence-and-first-run)
   - [`ConnectionStrings`](#connectionstrings)
@@ -81,6 +85,37 @@ Source files used to build this reference:
 - Arrays may be provided either as a JSON array or a comma-separated string
   for keys that explicitly support it (`Cors:AllowedOrigins`,
   `ForwardedHeaders:KnownProxies`, `ForwardedHeaders:KnownNetworks`).
+
+## Product version
+
+The product version is **not configurable** — it is stamped into the assemblies
+at build time and only read at runtime. It is documented here because it is the
+answer to "what version am I running?" for a self-hoster.
+
+`backend/Directory.Build.props` sets `Version` for every backend project.
+Release workflows override it from the `v*` release tag, stripping the leading
+`v` and any `+<build>` metadata (the runtime reader drops build metadata before
+reporting, so stamping it would make the reported value un-comparable with the
+value injected):
+
+| Build | Injection | Reported version |
+| --- | --- | --- |
+| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
+| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
+| Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
+
+Where to read it:
+
+- `GET /health/live` → `version` (anonymous, cheapest probe)
+- `GET /health/ready` → `version`
+- `taskdeck --version` → `{"version":"…"}` (answered before any configuration,
+  database, or migration work, so it still works on a broken data directory)
+- Container image OCI labels → `org.opencontainers.image.version`
+  (`docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' <image>`)
+
+A reported `0.0.0-dev` or `0.0.0-dryrun` means the binary was not cut from a
+release tag — it is not a released artefact.
 
 ## Startup validation
 
@@ -136,6 +171,42 @@ Developers can alternatively supply the secret via `dotnet user-secrets` or the
 | `Jwt:Issuer` | `string` | `Taskdeck` | `iss` claim and validation value. | Yes |
 | `Jwt:Audience` | `string` | `TaskdeckUsers` | `aud` claim and validation value. | Yes |
 | `Jwt:ExpirationMinutes` | `int` | `1440` (24h) | Access-token lifetime in minutes. | No |
+
+### Generated local configuration file
+
+`FirstRunBootstrapper` resolves one absolute `appsettings.local.json` path per
+host and uses that exact path for loading and first-run writes:
+
+- non-headless Production desktop: `%LOCALAPPDATA%\Taskdeck\appsettings.local.json`
+  on Windows (an absolute `LOCALAPPDATA` override is honored for isolated
+  profiles) and the platform-equivalent local app-data directory elsewhere;
+- Development, Test/Staging, and headless Production: the historical
+  executable-local path, preserving development and container compatibility.
+
+For MCP stdio, `DOTNET_ENVIRONMENT` is authoritative when it is nonblank;
+`ASPNETCORE_ENVIRONMENT` is a backward-compatible fallback. When neither is
+set, Generic Host command-line/default selection remains authoritative. The
+selected name is applied to the Generic Host before configuration is built, so
+host identity, `appsettings.{Environment}.json`, and local-config path policy
+cannot disagree.
+
+On the first desktop launch after v0.1.0, a complete provider-loadable
+executable-local file is copied atomically into the absent durable path. The
+legacy source is retained as recovery evidence. An existing durable file always
+wins; Taskdeck does not merge or overwrite it with the legacy file. Both copies
+are restricted to the current user, and unreadable, corrupt, permission-unsafe,
+or changing input fails closed before replacement secrets are generated.
+
+Connector identity is checked before JWT generation. If the resolved SQLite
+database already exists but neither configuration nor the persisted file supplies
+`Connectors:EncryptionKey`, startup stops instead of rotating the key. Likewise,
+if the configured per-user database target is absent while a v0.1 executable-local
+database or either of its `-wal`/`-shm` sidecars remains, startup stops rather than
+creating a blank replacement database. A sidecar beside an absent resolved target
+also stops startup; recover the complete SQLite set while Taskdeck is stopped.
+Explicit absolute database paths and
+`Data Source=:memory:` remain authoritative. Relative/default desktop paths
+resolve under the same per-user Taskdeck directory as the generated configuration.
 
 ### `Auth:Registration`
 
@@ -208,38 +279,49 @@ Bound to `MfaPolicySettings`. Registered in `SettingsRegistration.cs`.
 
 ### `Llm`
 
-Bound to `LlmProviderSettings` (nested: `OpenAi`, `Gemini`, `Ollama`). Registered in
+Bound to `LlmProviderSettings` (nested: `OpenAi`, `OpenAiCompatible`, `Ollama`). Registered in
 `LlmProviderRegistration.AddLlmProviders`. The Mock provider is always the
 default and the only one that ships enabled. See
 `docs/platform/LLM_PROVIDER_SETUP_GUIDE.md` for end-to-end provider setup.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, Gemini, Ollama) only run when this is true. | No |
-| `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in the `Development` environment unless this is also true. | No |
-| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `Gemini`, or `Ollama`. Resolved by `LlmProviderSelectionPolicy.Evaluate`. | No |
+| `Llm:EnableLiveProviders` | `bool` | `false` | Master switch. Live providers (OpenAI, OpenAICompatible, Ollama) only run when this is true. | No |
+| `Llm:AllowLiveProvidersInDevelopment` | `bool` | `false` | Safety gate — live providers refuse to run in `Development`, `Test`, or `Testing` unless this is also true. | No |
+| `Llm:Provider` | `string` | `Mock` | Provider selector. `Mock`, `OpenAi`, `OpenAiCompatible`, or `Ollama`. The retired `Gemini` value fails startup with migration guidance instead of falling back to Mock. The checked-in relative `appsettings.json` and `appsettings.{Environment}.json` values are defaults, not explicit operator selections; higher-precedence environment-variable, command-line, in-memory, absolute `appsettings.local.json`, and custom JSON sources are explicit. | No |
 | `Llm:OpenAi:ApiKey` | `string` | `""` | OpenAI API key. Required to use the OpenAI provider. Store as a secret. | Only for `Llm:Provider = OpenAi` |
-| `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Override for compatible gateways. | No |
-| `Llm:OpenAi:Model` | `string` | `gpt-4o-mini` | Model identifier sent in chat requests. | No |
+| `Llm:OpenAi:BaseUrl` | `string` | `https://api.openai.com/v1` | OpenAI API base URL. Use `OpenAiCompatible` for third-party compatible gateways. | No |
+| `Llm:OpenAi:Model` | `string` | `gpt-5.6-luna` | Model identifier sent in chat requests. Reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`, excluding `-chat` variants) are detected by `OpenAiLlmProvider.IsReasoningModel`; for them the outbound payload omits `temperature`, which those models reject, and adds a fixed 4096-token headroom to `max_completion_tokens` because that cap covers reasoning and visible output together. Every model receives `max_completion_tokens` (not the legacy `max_tokens`). | No |
 | `Llm:OpenAi:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the OpenAI provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateOpenAiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
-| `Llm:Gemini:ApiKey` | `string` | `""` | Gemini API key. Required to use the Gemini provider. Store as a secret. | Only for `Llm:Provider = Gemini` |
-| `Llm:Gemini:BaseUrl` | `string` | `https://generativelanguage.googleapis.com/v1beta` | Gemini API base URL. | No |
-| `Llm:Gemini:Model` | `string` | `gemini-2.5-flash` | Model identifier. | No |
-| `Llm:Gemini:TimeoutSeconds` | `int` | `30` | `HttpClient.Timeout` applied to the Gemini provider. Must be `> 0`: `LlmProviderSelectionPolicy.TryValidateGeminiSettings` rejects values `<= 0` as invalid and the selection policy falls back to the Mock provider. (The `HttpClient` registration also substitutes `30` when the value is `<= 0`, but only as a safety net — the provider will still not be selected.) | No |
+| `Llm:OpenAiCompatible:ApiKey` | `string` | `""` | API key for the configured OpenAI-compatible endpoint. Store as a secret. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:BaseUrl` | `string` | `""` | Required OpenAI Chat Completions-compatible base URL, such as `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, or `https://api.deepseek.com/v1`. Public HTTPS is required except when the host is exactly `localhost`, the environment is `Development`, `Test`, or `Testing`, and `Llm:AllowLiveProvidersInDevelopment=true`; numeric loopback addresses such as `127.0.0.1` and `[::1]`, and all other private/link-local hosts, remain blocked. The URL may contain a path but not user information, a query, or a fragment, and passes private-network, metadata-host, egress-envelope, and DNS connection-time SSRF controls. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:Model` | `string` | `""` | Required model identifier supplied by the compatible vendor. | Only for `Llm:Provider = OpenAiCompatible` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `int` | `30` | Full compatible-provider response deadline, including response-body/SSE reads after headers. Valid range: 1--300; invalid values select Mock. | No |
+| `Llm:OpenAiCompatible:MaxResponseBytes` | `int` | `1048576` | Maximum UTF-8 bytes accepted from a buffered response or aggregate SSE response. Valid range: 1024--4194304. | No |
+| `Llm:OpenAiCompatible:MaxSseLineBytes` | `int` | `65536` | Maximum UTF-8 bytes in one SSE line. Valid range: 256--262144. | No |
+| `Llm:OpenAiCompatible:MaxSseEventBytes` | `int` | `131072` | Maximum UTF-8 bytes in one assembled SSE event. Valid range: 512--524288 and cannot exceed `MaxResponseBytes`. | No |
+| `Llm:OpenAiCompatible:ExtraHeaders:<HeaderName>` | `object` (map) | `{}` | Optional non-secret gateway headers, for example `HTTP-Referer` and `X-Title` for OpenRouter. Authorization, proxy, hop-by-hop, cookie, host-routing, forwarding, and `x-taskdeck-*` headers are reserved; values with line breaks are rejected. | No |
 | `Llm:Ollama:BaseUrl` | `string` | Production: `null`; Development: `http://localhost:11434` | Ollama API base URL. The production configuration intentionally leaves Ollama unconfigured; the development override supplies exact `localhost`, which is accepted only by the development-localhost policy below. | No |
 | `Llm:Ollama:Model` | `string` | `llama3.2` | Model identifier sent to Ollama chat requests. | No |
 | `Llm:Ollama:TimeoutSeconds` | `int` | `120` | `HttpClient.Timeout` applied to Ollama. Must be between `1` and `600`; invalid values make provider selection fall back to Mock. | No |
 | `Llm:Ollama:AllowLocalhostEndpoints` | `bool` | `false` | Additional Ollama opt-in for exact `localhost`. Effective only in Development/Test/Testing when `Llm:AllowLiveProvidersInDevelopment=true`; it never permits literal loopback/private addresses or Production localhost. | No |
 
-**Outbound transport boundary:** the OpenAI, Gemini, and Ollama primary clients
-set `UseProxy = false`. They ignore ambient/system proxy settings so the
-configured provider origin remains the target inspected by
+The retired `Gemini` selector is always a fatal startup error. A remaining
+`Llm:Gemini:*` section is also fatal unless a higher-precedence operator source
+explicitly selects a supported provider, including `Mock`. The checked-in relative
+`appsettings.json` and `appsettings.{Environment}.json` defaults do not count as that
+explicit migration choice, so obsolete secrets/configuration cannot be ignored silently.
+
+**Outbound transport boundary:** the OpenAI, OpenAICompatible, and
+Ollama primary clients set `UseProxy = false`. They ignore ambient/system proxy
+settings so the configured provider origin remains the target inspected by
 `OutboundWebhookConnectCallback`. The existing development-localhost opt-ins
 remain unchanged. There is no proxy-aware provider setting: corporate
-proxy-only deployments fail closed. This path does not use
-`EgressEnvelopeHandler`, and its existing no-auto-redirect and audit behavior is
-unchanged. Default `IHttpClientFactory` request logging is removed for these
-protected clients. Their primary handlers disable distributed-trace header
+proxy-only deployments fail closed. OpenAI and Ollama retain the
+dedicated connect-callback boundary without `EgressEnvelopeHandler`;
+OpenAICompatible additionally uses a fixed-origin `EgressEnvelopeHandler` and
+rejects all redirects. Default `IHttpClientFactory` request logging is removed
+for these protected clients. Their primary handlers disable distributed-trace header
 propagation, and Taskdeck's configured OpenTelemetry pipeline excludes their
 marked HTTP activities and private-scope HTTP metrics (including destination
 dimensions such as `server.address` and `server.port`). This is Taskdeck exporter
@@ -305,6 +387,15 @@ class defaults apply.
 | `CaptureTriageLlm:MaxOutputTokens` | `int` | `4096` | Completion-token budget for the extraction response (range 256–32768). Sized for the worst-case 20-task v1 output with headroom; a truncated response is detected as degraded and falls back deterministically. | No |
 | `CaptureTriageLlm:Temperature` | `double` | `0.1` | Sampling temperature for extraction (range 0–2). Low by default: fidelity over creativity. | No |
 
+**Transcript size cap and retention (not configurable).** The transcript text size cap is
+**200,000 characters** — a compile-time domain constant (`Transcript.MaxTextLength`, enforced in the
+`Transcript` constructor), deliberately **not** a configuration knob: it is a fixed data-integrity
+bound, not an operator-tunable limit. Transcript text is user data and is not held under a
+configurable retention policy either. Every transcript is included verbatim in the GDPR data export
+(`DataExportService`, both the buffered and streaming paths) and is removed on account deletion by a
+set-based delete (`ITranscriptRepository.DeleteByUserIdAsync`) inside the account-deletion
+transaction (`AccountDeletionService`); its FK-owned provenance evidence links cascade with it.
+
 ### `AbuseDetection`
 
 Bound to `AbuseDetectionSettings`.
@@ -320,6 +411,19 @@ Bound to `AbuseDetectionSettings`.
 | `AbuseDetection:RestrictedSignalThreshold` | `int` | `6` | Signal count to escalate from Suspicious to Restricted. | No |
 | `AbuseDetection:BlockedSignalThreshold` | `int` | `10` | Signal count to escalate from Restricted to Blocked. | No |
 | `AbuseDetection:EvaluationWindowMinutes` | `int` | `60` | Sliding window, in minutes, for signal accumulation. | No |
+
+## Context Fabric
+
+### `ContextFabric`
+
+Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton and validated
+through `OptionsValidationRegistration`). Migration switches for the Context Fabric slices
+(ADR-0065, `docs/architecture/CONTEXT_FABRIC.md`). Every key defaults to the shipped behaviour; the
+section is absent from `appsettings.json`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, `CaptureService.CreateAsync` mirrors every new capture into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the table stays empty. | No |
 
 ## Workers
 
@@ -461,7 +565,7 @@ Bound to `CircuitBreakerSettings`. Consumed by
 `Taskdeck.Api.Extensions.LlmProviderRegistration.AddLlmProviders` and
 `Taskdeck.Api.Extensions.AuthenticationRegistration.AddTaskdeckAuthentication`.
 Polly circuit breaker policies are applied to LLM provider HTTP clients
-(OpenAI, Gemini) and OAuth/OIDC backchannel handlers.
+(OpenAI, OpenAICompatible, and Ollama) and OAuth/OIDC backchannel handlers.
 
 | Key | Type | Default | Env override | Description | Restart required? |
 |-----|------|---------|--------------|-------------|-------------------|
@@ -518,7 +622,7 @@ Development when the key is unset (`SettingsRegistration.cs`). Consumed by
 | `SecurityHeaders:HstsMaxAgeDays` | `int` | `365` | `max-age` value for HSTS in days. | No |
 | `SecurityHeaders:HstsIncludeSubDomains` | `bool` | `false` | Include `includeSubDomains` in HSTS. | No |
 | `SecurityHeaders:HstsPreload` | `bool` | `false` | Include `preload` in HSTS. | No |
-| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
+| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
 | `SecurityHeaders:XFrameOptions` | `string` | `DENY` | Value for `X-Frame-Options`. | No |
 | `SecurityHeaders:ReferrerPolicy` | `string` | `no-referrer` | Value for `Referrer-Policy`. | No |
 
@@ -543,7 +647,7 @@ Sentry is fully off until explicitly opted in.
 
 When enabled, Taskdeck keeps Sentry's server-side exception tracking and removes
 Sentry's automatic outbound `IHttpClientFactory` handler only from the registered
-OpenAI, Gemini, Ollama, and `OutboundWebhookDelivery` clients. Those protected
+OpenAI, OpenAICompatible, Ollama, and `OutboundWebhookDelivery` clients. Those protected
 clients therefore do not acquire Sentry trace/baggage propagation, URL breadcrumbs,
 or failed-request capture outside their dedicated telemetry boundary. Unrelated
 factory clients retain normal Sentry instrumentation.
@@ -590,6 +694,52 @@ Registered via `RegisterValidatedOptions<DatabaseSettings>` with
 | --- | --- | --- | --- | --- | --- |
 | `Database:CommandTimeoutSeconds` | `int` | `30` | 1–300 | EF Core command timeout applied to the SQLite `DbContext`. Affects all queries including `Database.Migrate()` calls — avoid very low values if migrations are expected. | No |
 | `Database:BusyTimeoutMilliseconds` | `int` | `5000` | 0–60000 | SQLite `busy_timeout` applied to every connection (alongside WAL journal mode). When the single writer slot is contended (UI + MCP + CLI share one file), a waiting connection retries for up to this long before surfacing `SQLITE_BUSY`. `0` fails immediately (not recommended). | No |
+
+### `Database:Backup`
+
+Bound to `DatabaseBackupSettings` (`Taskdeck.Application.Services.DatabaseBackupSettings`).
+Registered in `Taskdeck.Infrastructure.DependencyInjection.AddInfrastructure` with
+`ValidateDataAnnotations().ValidateOnStart()`, so it applies to **every** host mode (API, CLI,
+MCP HTTP, MCP stdio) — all four apply migrations on startup.
+
+Before applying any pending EF Core migration, `SerializedMigrator` writes a consistent snapshot
+of the SQLite database file via SQLite's online backup API (WAL-safe: it folds uncheckpointed WAL
+frames in, and the resulting file needs no `-wal`/`-shm` sidecar). The snapshot is written to a
+`.tmp` sibling and moved into place only once complete.
+
+Behaviour worth knowing before you tune it:
+
+- **Only when migrations are pending.** An ordinary boot against an up-to-date schema copies
+  nothing, and a first run that creates the database copies nothing (there is no prior state).
+- **Fail-closed.** If the snapshot cannot be written, `PreMigrationBackupException` propagates out
+  of startup and the migration is **not** applied. Retention *pruning* failures are the exception:
+  they log a warning and let startup continue, because the protective copy already exists.
+- **Naming and retention order (`#1839`).** Snapshots are named
+  `<db file name>-pre-migration-<UTC timestamp>-<sequence>.db`. Two details matter:
+  - The key is the database's **full file name**, extension included — not its stem. `taskdeck.db`
+    and `taskdeck.sqlite` sharing one backup directory therefore cannot prune each other's
+    snapshots.
+  - Retention orders by the **sequence** (one past the highest already on disk for that database),
+    not by the timestamp. The timestamp is descriptive only. A wall clock that steps backwards —
+    NTP correction, a VM resuming, a DST-naive host — could otherwise make the newest snapshot look
+    oldest and get it deleted first, which is exactly the file the user needs.
+  - Snapshots written by the earlier stem-keyed, sequence-less scheme (`<stem>-pre-migration-<UTC
+    timestamp>.db`) are still recognised and still pruned, so they age out rather than accumulating
+    forever. They sort oldest and are deleted first, which is correct: any sequenced snapshot was
+    necessarily written by newer code. That shape was never released — the feature landed in
+    `#1829`, after the `v0.1.0` tag — so only hosts tracking `main` between `#1829` and `#1839` can
+    hold one.
+- **Lock contention while reading.** The **source** connection (the live database being read) gets a
+  5000 ms `PRAGMA busy_timeout`, mirroring the `Database:BusyTimeoutMilliseconds` default, so a
+  moment of contention with an in-flight writer in another Taskdeck process does not fail startup
+  closed. This is a fixed value, not a configuration key. The destination connection deliberately
+  gets no timeout: it writes a freshly created `.tmp` file nothing else has opened.
+
+| Key | Type | Default | Range | Description | Required? |
+| --- | --- | --- | --- | --- | --- |
+| `Database:Backup:Enabled` | `bool` | `true` | — | Snapshot the SQLite file before applying pending migrations. Setting this to `false` removes the only automatic protection against a failed upgrade — do it only when an external system already snapshots the file, or for throwaway databases. | No |
+| `Database:Backup:RetainCount` | `int` | `5` | 1–100 | How many pre-migration snapshots to keep per database file. After a successful backup, older snapshots are deleted oldest-first. Only files matching the managed naming scheme below are ever deleted. | No |
+| `Database:Backup:Directory` | `string` | `""` (→ `backups/` next to the database file) | — | Where snapshots are written. A **relative** path resolves against the directory holding the database file, not the process working directory (the API, CLI, and MCP hosts do not share one). | No |
 
 ### `AuditRetention`
 
@@ -711,7 +861,7 @@ key → user mapping via `HttpUserContextProvider` and does not read these keys.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `McpServer:DefaultUserId` | `string` (GUID) | unset | User ID used to identify the MCP stdio caller. When unset, the provider falls back to the first local user in the database — which is safe for single-user installs but risks routing actions to the wrong account in multi-user databases. When set to a GUID that no longer exists, the provider logs a warning and falls back to the first local user. | Recommended for multi-user installs running MCP stdio |
+| `McpServer:DefaultUserId` | `string` (non-empty GUID) | unset | User ID used to identify the MCP stdio caller. When configured, it must name an existing active local user; an empty, zero, malformed, missing, or inactive value fails closed without trying another account. When truly unset, the provider selects the only active local user. Zero or multiple active users are errors, and inactive users do not count toward that fallback. | Required for MCP stdio when more than one active local user exists |
 
 ## Logging
 
@@ -759,6 +909,15 @@ Examples:
 | `Jwt:SecretKey` | `Jwt__SecretKey` |
 | `Auth:Registration:Mode` | `Auth__Registration__Mode` |
 | `Llm:OpenAi:ApiKey` | `Llm__OpenAi__ApiKey` |
+| `Llm:OpenAiCompatible:ApiKey` | `Llm__OpenAiCompatible__ApiKey` |
+| `Llm:OpenAiCompatible:BaseUrl` | `Llm__OpenAiCompatible__BaseUrl` |
+| `Llm:OpenAiCompatible:Model` | `Llm__OpenAiCompatible__Model` |
+| `Llm:OpenAiCompatible:TimeoutSeconds` | `Llm__OpenAiCompatible__TimeoutSeconds` |
+| `Llm:OpenAiCompatible:MaxResponseBytes` | `Llm__OpenAiCompatible__MaxResponseBytes` |
+| `Llm:OpenAiCompatible:MaxSseLineBytes` | `Llm__OpenAiCompatible__MaxSseLineBytes` |
+| `Llm:OpenAiCompatible:MaxSseEventBytes` | `Llm__OpenAiCompatible__MaxSseEventBytes` |
+| `Llm:OpenAiCompatible:ExtraHeaders:HTTP-Referer` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` |
+| `Llm:OpenAiCompatible:ExtraHeaders:X-Title` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` |
 | `Workers:RetryBackoffSeconds:0` | `Workers__RetryBackoffSeconds__0` |
 | `RateLimiting:AuthPerIp:PermitLimit` | `RateLimiting__AuthPerIp__PermitLimit` |
 | `RateLimiting:McpAuthenticationPerIp:PermitLimit` | `RateLimiting__McpAuthenticationPerIp__PermitLimit` |
@@ -782,7 +941,15 @@ container as standard ASP.NET Core environment variables.
 | `TASKDECK_LLM_ENABLE_LIVE_PROVIDERS` | `Llm__EnableLiveProviders` | `false` | No |
 | `TASKDECK_LLM_PROVIDER` | `Llm__Provider` | `Mock` | No |
 | `TASKDECK_LLM_OPENAI_API_KEY` | `Llm__OpenAi__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAi` |
-| `TASKDECK_LLM_GEMINI_API_KEY` | `Llm__Gemini__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=Gemini` |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_API_KEY` | `Llm__OpenAiCompatible__ApiKey` | `""` | Only for `TASKDECK_LLM_PROVIDER=OpenAICompatible`; keep in a secret store |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_BASE_URL` | `Llm__OpenAiCompatible__BaseUrl` | `""` | Required public HTTPS base URL in the Production compose profile |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MODEL` | `Llm__OpenAiCompatible__Model` | `""` | Required compatible model identifier |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_TIMEOUT_SECONDS` | `Llm__OpenAiCompatible__TimeoutSeconds` | `30` | Full response deadline, including body/SSE reads |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_RESPONSE_BYTES` | `Llm__OpenAiCompatible__MaxResponseBytes` | `1048576` | Buffered or aggregate SSE response budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_LINE_BYTES` | `Llm__OpenAiCompatible__MaxSseLineBytes` | `65536` | Per-line SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_MAX_SSE_EVENT_BYTES` | `Llm__OpenAiCompatible__MaxSseEventBytes` | `131072` | Per-event SSE budget |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_HTTP_REFERER` | `Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer` | `""` | Optional non-secret OpenRouter attribution header |
+| `TASKDECK_LLM_OPENAI_COMPATIBLE_X_TITLE` | `Llm__OpenAiCompatible__ExtraHeaders__X-Title` | `""` | Optional non-secret OpenRouter application title |
 | `TASKDECK_PROXY_PORT` | Host port mapped to the nginx reverse proxy | `8080` | No |
 | `TASKDECK_VITE_API_BASE_URL` | Build-time `VITE_API_BASE_URL` for the web image | `/api` | No |
 

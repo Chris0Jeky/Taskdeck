@@ -30,6 +30,11 @@ export interface ReviewKeymapHandlers {
 
 export interface ReviewKeymapOptions {
   enabled?: () => boolean
+  /**
+   * Restricts individual shortcuts when the surface has a truthful subset of
+   * actions available (for example, an approved receipt exposes Apply only).
+   */
+  isActionEnabled?: (action: keyof ReviewKeymapHandlers) => boolean
   /** Exposed for tests so we don't have to mount into a real document. */
   target?: () => EventTarget | null | undefined
 }
@@ -101,6 +106,7 @@ export function useReviewKeymap(
   options: ReviewKeymapOptions = {},
 ): { handleKeyDown: (event: KeyboardEvent) => void } {
   const enabled = options.enabled ?? (() => true)
+  const isActionEnabled = options.isActionEnabled ?? (() => true)
   const target = options.target ?? (() => (typeof window !== 'undefined' ? window : null))
 
   function handleKeyDown(event: KeyboardEvent): void {
@@ -114,6 +120,7 @@ export function useReviewKeymap(
 
     const action = matchAction(event)
     if (!action) return
+    if (!isActionEnabled(action)) return
 
     const fn = handlers[action]
     if (!fn) return

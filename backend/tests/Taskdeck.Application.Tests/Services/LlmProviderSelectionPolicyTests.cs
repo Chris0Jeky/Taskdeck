@@ -75,74 +75,223 @@ public class LlmProviderSelectionPolicyTests
         result.ProviderKind.Should().Be(LlmProviderKind.OpenAi);
     }
 
-    [Fact]
-    public void Evaluate_ShouldSelectGemini_WhenProductionAndConfigurationIsValid()
+    [Theory]
+    [InlineData("Gemini")]
+    [InlineData("gemini")]
+    [InlineData(" GEMINI ")]
+    public void Evaluate_ShouldRejectRetiredGeminiBeforeAnyMockFallback(string provider)
     {
         var settings = BuildValidSettings();
-        settings.EnableLiveProviders = true;
-        settings.AllowLiveProvidersInDevelopment = false;
-        settings.Provider = "Gemini";
+        settings.EnableLiveProviders = false;
+        settings.Provider = provider;
 
-        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+        var act = () => LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
-        result.ProviderKind.Should().Be(LlmProviderKind.Gemini);
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("OpenAi");
+        exception.Message.Should().Contain("OpenAiCompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
+    }
+
+    [Theory]
+    [InlineData("Mock", false, false)]
+    [InlineData("Mock", true, true)]
+    [InlineData("OpenAI", true, true)]
+    [InlineData("Gemini", true, false)]
+    [InlineData("historical-free-form-provider", true, false)]
+    public void IsExplicitlySupportedProvider_RequiresHigherPrecedenceSelection(
+        string provider,
+        bool hasHigherPrecedenceProviderSelection,
+        bool expected)
+    {
+        LlmProviderSelectionPolicy.IsExplicitlySupportedProvider(
+                provider,
+                hasHigherPrecedenceProviderSelection)
+            .Should()
+            .Be(expected);
     }
 
     [Fact]
-    public void Evaluate_ShouldSelectMock_WhenGeminiConfigurationIsInvalid()
+    public void Evaluate_ShouldSelectOpenAiCompatible_WhenProductionAndConfigurationIsValid()
     {
         var settings = BuildValidSettings();
         settings.EnableLiveProviders = true;
-        settings.Provider = "Gemini";
-        settings.Gemini.ApiKey = string.Empty;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { ["X-Title"] = "Taskdeck" }
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.OpenAiCompatible);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleBaseUrlTargetsPrivateHost()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://127.0.0.1/v1",
+            Model = "local-model"
+        };
 
         var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
         result.ProviderKind.Should().Be(LlmProviderKind.Mock);
-        result.Reason.Should().Contain("Gemini configuration is invalid");
-        result.Reason.Should().Contain("ApiKey is required");
+        result.Reason.Should().Contain("SSRF");
     }
 
     [Fact]
-    public void Evaluate_ShouldSelectMock_WhenGeminiBaseUrlIsInvalid()
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeadersIsNull()
     {
         var settings = BuildValidSettings();
         settings.EnableLiveProviders = true;
-        settings.Provider = "Gemini";
-        settings.Gemini.BaseUrl = "not-a-url";
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = null!
+        };
 
         var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
         result.ProviderKind.Should().Be(LlmProviderKind.Mock);
-        result.Reason.Should().Contain("BaseUrl must be an absolute HTTP(S) URI");
+        result.Reason.Should().Contain("ExtraHeaders");
     }
 
-    [Fact]
-    public void Evaluate_ShouldSelectMock_WhenGeminiTimeoutIsNotPositive()
+    [Theory]
+    [InlineData("Content-Type")]
+    [InlineData("X Invalid")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeaderIsInvalidOrRestricted(string headerName)
     {
         var settings = BuildValidSettings();
         settings.EnableLiveProviders = true;
-        settings.Provider = "Gemini";
-        settings.Gemini.TimeoutSeconds = 0;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { [headerName] = "value" }
+        };
 
         var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
         result.ProviderKind.Should().Be(LlmProviderKind.Mock);
-        result.Reason.Should().Contain("TimeoutSeconds must be greater than zero");
+        result.Reason.Should().Contain("invalid or restricted");
     }
 
-    [Fact]
-    public void Evaluate_ShouldSelectMock_WhenGeminiSettingsAreMissing()
+    [Theory]
+    [InlineData("Host")]
+    [InlineData("Proxy-Authorization")]
+    [InlineData("Connection")]
+    [InlineData("Transfer-Encoding")]
+    [InlineData("Cookie")]
+    [InlineData("Set-Cookie")]
+    [InlineData("X-Authorization")]
+    [InlineData("Authentication-Info")]
+    [InlineData("WWW-Authenticate")]
+    [InlineData("X-Api-Key")]
+    [InlineData("X-Auth-Token")]
+    [InlineData("X-Forwarded-Host")]
+    [InlineData("X-Taskdeck-Correlation-Id")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleExtraHeaderIsDangerous(string headerName)
     {
         var settings = BuildValidSettings();
         settings.EnableLiveProviders = true;
-        settings.Provider = "Gemini";
-        settings.Gemini = null!;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            ExtraHeaders = new Dictionary<string, string> { [headerName] = "value" }
+        };
 
         var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
 
         result.ProviderKind.Should().Be(LlmProviderKind.Mock);
-        result.Reason.Should().Contain("Gemini settings are required");
+        result.Reason.Should().Contain("dangerous or reserved");
+    }
+
+    [Theory]
+    [InlineData("test\r\nX-Evil: yes", "ApiKey", null)]
+    [InlineData("test-compatible-key", "BaseUrl", "https://api.groq.com/openai/v1?target=other")]
+    [InlineData("test-compatible-key", "BaseUrl", "https://api.groq.com/openai/v1#fragment")]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleCredentialOrBaseUrlIsAmbiguous(
+        string apiKey,
+        string expectedReason,
+        string? baseUrl = null)
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = apiKey,
+            BaseUrl = baseUrl ?? "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant"
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain(expectedReason);
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleTimeoutExceedsDeclaredMaximum()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            TimeoutSeconds = 301
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("between 1 and 300");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldSelectMock_WhenOpenAiCompatibleResponseBudgetsAreInconsistent()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "OpenAICompatible";
+        settings.OpenAiCompatible = new OpenAiCompatibleProviderSettings
+        {
+            ApiKey = "test-compatible-key",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            Model = "llama-3.1-8b-instant",
+            MaxResponseBytes = 1024,
+            MaxSseLineBytes = 512,
+            MaxSseEventBytes = 2048
+        };
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.Reason.Should().Contain("budgets");
     }
 
     [Fact]
@@ -269,28 +418,6 @@ public class LlmProviderSelectionPolicyTests
     }
 
     [Theory]
-    [InlineData("https://10.0.0.1/v1beta")]
-    [InlineData("https://192.168.1.1/v1beta")]
-    [InlineData("https://172.16.0.1/v1beta")]
-    [InlineData("https://127.0.0.1/v1beta")]
-    [InlineData("https://[::1]/v1beta")]
-    [InlineData("https://metadata.google.internal/v1beta")]
-    [InlineData("https://metadata.goog/v1beta")]
-    public void Evaluate_ShouldSelectMock_WhenGeminiBaseUrlTargetsPrivateOrInternalHost(string baseUrl)
-    {
-        var settings = BuildValidSettings();
-        settings.EnableLiveProviders = true;
-        settings.Provider = "Gemini";
-        settings.Gemini.BaseUrl = baseUrl;
-
-        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
-
-        result.ProviderKind.Should().Be(LlmProviderKind.Mock,
-            $"Gemini BaseUrl '{baseUrl}' targets a private/internal host and should be blocked by SSRF protection");
-        result.Reason.Should().Contain("SSRF");
-    }
-
-    [Theory]
     [InlineData("http://api.openai.com/v1")]
     public void Evaluate_ShouldSelectMock_WhenOpenAiBaseUrlUsesHttp(string baseUrl)
     {
@@ -336,35 +463,12 @@ public class LlmProviderSelectionPolicyTests
     }
 
     [Fact]
-    public void TryValidateGeminiSettings_ShouldRejectPrivateIpBaseUrl()
-    {
-        var settings = BuildValidSettings();
-        settings.Gemini.BaseUrl = "https://192.168.1.1/v1beta";
-
-        var isValid = LlmProviderSelectionPolicy.TryValidateGeminiSettings(settings, out var error);
-
-        isValid.Should().BeFalse();
-        error.Should().Contain("SSRF");
-    }
-
-    [Fact]
     public void TryValidateOpenAiSettings_ShouldAcceptLegitimateBaseUrl()
     {
         var settings = BuildValidSettings();
         settings.OpenAi.BaseUrl = "https://api.openai.com/v1";
 
         var isValid = LlmProviderSelectionPolicy.TryValidateOpenAiSettings(settings, out _);
-
-        isValid.Should().BeTrue();
-    }
-
-    [Fact]
-    public void TryValidateGeminiSettings_ShouldAcceptLegitimateBaseUrl()
-    {
-        var settings = BuildValidSettings();
-        settings.Gemini.BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
-
-        var isValid = LlmProviderSelectionPolicy.TryValidateGeminiSettings(settings, out _);
 
         isValid.Should().BeTrue();
     }
@@ -386,21 +490,6 @@ public class LlmProviderSelectionPolicyTests
 
         result.ProviderKind.Should().Be(LlmProviderKind.OpenAi,
             "localhost should be allowed in development with AllowLiveProvidersInDevelopment for local LLM gateways like Ollama");
-    }
-
-    [Fact]
-    public void Evaluate_ShouldSelectGemini_WhenLocalhostInDevelopmentWithAllowLiveProviders()
-    {
-        var settings = BuildValidSettings();
-        settings.EnableLiveProviders = true;
-        settings.AllowLiveProvidersInDevelopment = true;
-        settings.Provider = "Gemini";
-        settings.Gemini.BaseUrl = "http://localhost:8080/v1beta";
-
-        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
-
-        result.ProviderKind.Should().Be(LlmProviderKind.Gemini,
-            "localhost should be allowed in development with AllowLiveProvidersInDevelopment");
     }
 
     [Fact]
@@ -474,14 +563,98 @@ public class LlmProviderSelectionPolicyTests
                 BaseUrl = "https://api.openai.com/v1",
                 Model = "gpt-4o-mini",
                 TimeoutSeconds = 30
-            },
-            Gemini = new GeminiProviderSettings
-            {
-                ApiKey = "test-gemini-key",
-                BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                Model = "gemini-2.5-flash",
-                TimeoutSeconds = 30
             }
         };
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // #2192 review, HIGH: a live request that ends on the mock must be distinguishable from mock
+    // by choice, so capture triage can record the degradation instead of falling back silently.
+    // -----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenRequestedOpenAiSettingsFailValidation()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi!.ApiKey = "   ";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("The configured live provider failed startup validation.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenTheEnvironmentDeclinesARequestedLiveProvider()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = false;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Development");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("Live providers are not permitted in this environment.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldFlagMockDiversion_WhenTheProviderSelectorIsNotRecognized()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.Provider = "not-a-real-provider";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().Be("The configured provider selector is not recognized.");
+    }
+
+    [Fact]
+    public void Evaluate_ShouldNotFlagMockDiversion_WhenTheMockIsWhatWasAskedFor()
+    {
+        var settings = BuildValidSettings();
+        settings.Provider = "Mock";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Evaluate_ShouldNotFlagMockDiversion_WhenLiveProvidersAreDeliberatelyDisabled()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = false;
+        settings.Provider = "OpenAI";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        // The operator turned live providers off. That is a choice, not a broken deployment, so it
+        // must not put a degradation notice on every capture.
+        result.ProviderKind.Should().Be(LlmProviderKind.Mock);
+        result.MockDiversionReason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Evaluate_ShouldKeepTheConfiguredEndpointOutOfTheDiversionReason()
+    {
+        var settings = BuildValidSettings();
+        settings.EnableLiveProviders = true;
+        settings.AllowLiveProvidersInDevelopment = true;
+        settings.Provider = "OpenAI";
+        settings.OpenAi!.BaseUrl = "not-an-absolute-uri-secret-host";
+
+        var result = LlmProviderSelectionPolicy.Evaluate(settings, "Production");
+
+        // The precise cause can name the configured BaseUrl and belongs in the startup log only;
+        // the diversion reason is published on a capture, so it stays coarse.
+        result.MockDiversionReason.Should().Be("The configured live provider failed startup validation.");
+        result.MockDiversionReason.Should().NotContain("secret-host");
     }
 }

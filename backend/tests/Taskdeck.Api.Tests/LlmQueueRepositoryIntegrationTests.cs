@@ -726,6 +726,74 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task TrySetCaptureDispositionAsync_ShouldLoseToConcurrentTriageTransition()
+    {
+        using var setupScope = _factory.Services.CreateScope();
+        var setupDb = setupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var user = new User("capture-disposition-cas", "capture-disposition-cas@example.com", "hash");
+        var request = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"race\"}");
+        setupDb.Users.Add(user);
+        setupDb.LlmRequests.Add(request);
+        await setupDb.SaveChangesAsync();
+        var expectedUpdatedAt = request.UpdatedAt;
+
+        using (var triageScope = _factory.Services.CreateScope())
+        {
+            var triageDb = triageScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var triageRequest = await triageDb.LlmRequests.SingleAsync(item => item.Id == request.Id);
+            triageRequest.MarkAsProcessing();
+            await triageDb.SaveChangesAsync();
+        }
+
+        using var dispositionScope = _factory.Services.CreateScope();
+        var repository = dispositionScope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var updated = await repository.TrySetCaptureDispositionAsync(
+            request.Id,
+            RequestStatus.Pending,
+            expectedUpdatedAt,
+            RequestStatus.Pending,
+            "{\"text\":\"race\",\"disposition\":{\"kind\":\"kept\"}} ");
+
+        updated.Should().BeFalse();
+        var persisted = await dispositionScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>()
+            .LlmRequests.AsNoTracking().SingleAsync(item => item.Id == request.Id);
+        persisted.Status.Should().Be(RequestStatus.Processing);
+        persisted.Payload.Should().NotContain("kept");
+    }
+
+    [Fact]
+    public async Task TryClaimProcessingCaptureAsync_ShouldRefreshTrackedUpdatedAtToPersistedValue()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("llm-claim-refresh-capture", "llm-claim-refresh-capture@example.com", "hash");
+            db.Users.Add(user);
+
+            var request = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"refresh-capture\"}");
+            request.MarkAsProcessing();
+            db.LlmRequests.Add(request);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            // Materialize the candidate through the tracking repository query, matching the worker path.
+            var tracked = (await repo.GetOldestProcessingCaptureAsync(limit: 1))
+                .Single(r => r.Id == request.Id);
+            var expectedUpdatedAt = tracked.UpdatedAt;
+
+            var claimed = await repo.TryClaimProcessingCaptureAsync(request.Id, expectedUpdatedAt);
+
+            claimed.Should().BeTrue();
+
+            // Read directly from SQLite to prove the tracked value matches what the raw UPDATE persisted.
+            var persisted = await db.LlmRequests
+                .AsNoTracking()
+                .SingleAsync(r => r.Id == request.Id);
+            persisted.UpdatedAt.Should().NotBe(expectedUpdatedAt);
+            tracked.UpdatedAt.Should().Be(persisted.UpdatedAt);
+        });
+    }
+
+    [Fact]
     public async Task TryClaimProcessingCaptureAsync_ShouldRejectNonCaptureRequestType()
     {
         using var scope = _factory.Services.CreateScope();
@@ -865,6 +933,35 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task GetCaptureSummaryByUserAsync_ShouldExcludeKeptCapturesFromAttentionCounts()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+        var user = new User("kept-summary-user", "kept-summary@example.com", "hash");
+        db.Users.Add(user);
+
+        var keptPayload = CaptureRequestContract.SerializePayload(new CapturePayloadV1(
+            1,
+            CaptureSource.Typed,
+            "later",
+            Disposition: new CaptureDispositionV1(CaptureDisposition.Kept, DateTimeOffset.UtcNow, user.Id)));
+        var keptPending = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, keptPayload);
+        var keptFailed = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, keptPayload);
+        keptFailed.MarkAsProcessing();
+        keptFailed.MarkAsFailed("retry later");
+        var untouched = new LlmRequest(user.Id, CaptureRequestContract.RequestTypeV1, "{\"text\":\"now\"}");
+        db.LlmRequests.AddRange(keptPending, keptFailed, untouched);
+        await db.SaveChangesAsync();
+
+        var summary = await repo.GetCaptureSummaryByUserAsync(user.Id);
+
+        summary.TotalCaptures.Should().Be(3);
+        summary.NewCount.Should().Be(1);
+        summary.FailedCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task GetCaptureSummaryByUserAsync_WithProposalPayload_ShouldReduceTriagedCount()
     {
         using var scope = _factory.Services.CreateScope();
@@ -924,6 +1021,133 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
             summary.NewCount.Should().Be(2);      // pending capture + pending transcript
             summary.TriagingCount.Should().Be(1); // processing transcript
         });
+    }
+
+    [Fact]
+    public async Task GetCaptureSummaryByUserAsync_ExcludesArchivedEffectiveBoards_FromActiveCountsOnly()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ILlmQueueRepository>();
+
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var user = new User($"llm-active-summary-{suffix}", $"llm-active-summary-{suffix}@example.com", "hash");
+        var otherUser = new User($"llm-active-summary-other-{suffix}", $"llm-active-summary-other-{suffix}@example.com", "hash");
+        var activeBoard = new Board("Active capture board", ownerId: user.Id);
+        var archivedBoard = new Board("Archived capture board", ownerId: user.Id);
+        var otherArchivedBoard = new Board("Other archived capture board", ownerId: otherUser.Id);
+        archivedBoard.Archive();
+        otherArchivedBoard.Archive();
+        db.AddRange(user, otherUser, activeBoard, archivedBoard, otherArchivedBoard);
+        await db.SaveChangesAsync();
+
+        static string Payload(string text) => CaptureRequestContract.SerializePayload(
+            new CapturePayloadV1(CaptureRequestContract.CurrentSchemaVersion, CaptureSource.Typed, text));
+
+        static void AddProvenance(
+            LlmRequest capture,
+            string text,
+            Guid? boardId = null,
+            Guid? proposalId = null)
+        {
+            capture.UpdatePayload(CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        text),
+                    capture.Id,
+                    proposalId: proposalId,
+                    boardId: boardId)));
+        }
+
+        var activePending = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("active pending"),
+            activeBoard.Id);
+        var archivedDirect = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("archived direct"),
+            archivedBoard.Id);
+
+        var archivedProvenance = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("archived provenance"));
+        AddProvenance(archivedProvenance, "archived provenance", boardId: archivedBoard.Id);
+        archivedProvenance.MarkAsFailed("synthetic failure");
+
+        var archivedApplied = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("archived applied proposal"));
+        archivedApplied.MarkAsProcessing();
+        var appliedProposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            user.Id,
+            "Applied proposal resolves the archived board",
+            RiskLevel.Low,
+            $"corr-active-summary-{suffix}",
+            archivedBoard.Id,
+            archivedApplied.Id.ToString());
+        appliedProposal.Approve(user.Id);
+        appliedProposal.MarkAsApplied();
+        AddProvenance(archivedApplied, "archived applied proposal", proposalId: appliedProposal.Id);
+
+        var boardless = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("boardless"));
+        var dangling = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("dangling provenance"));
+        AddProvenance(dangling, "dangling provenance", boardId: Guid.NewGuid());
+
+        var rawBoardWins = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("raw active board wins"),
+            activeBoard.Id);
+        AddProvenance(rawBoardWins, "raw active board wins", boardId: archivedBoard.Id);
+
+        var activeCompleted = new LlmRequest(
+            user.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("active completed"),
+            activeBoard.Id);
+        activeCompleted.MarkAsProcessing();
+        activeCompleted.MarkAsCompleted();
+
+        var otherArchived = new LlmRequest(
+            otherUser.Id,
+            CaptureRequestContract.RequestTypeV1,
+            Payload("other user's archived capture"),
+            otherArchivedBoard.Id);
+
+        db.AddRange(
+            activePending,
+            archivedDirect,
+            archivedProvenance,
+            archivedApplied,
+            appliedProposal,
+            boardless,
+            dangling,
+            rawBoardWins,
+            activeCompleted,
+            otherArchived);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var summary = await repo.GetCaptureSummaryByUserAsync(user.Id);
+
+        summary.TotalCaptures.Should().Be(8, "archived capture history still drives onboarding progress");
+        summary.NewCount.Should().Be(4, "active, boardless, dangling, and raw-board-precedence captures stay visible");
+        summary.FailedCount.Should().Be(0, "the provenance-linked failure belongs to an archived board");
+        summary.TriagingCount.Should().Be(0, "the validated applied-proposal path resolves to an archived board");
+        summary.TriagedCount.Should().Be(1);
     }
 
     [Fact]
@@ -1236,7 +1460,7 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
         try
         {
             var builder = new DbContextOptionsBuilder<TaskdeckDbContext>()
-                .UseSqlite($"Data Source={dbPath}");
+                .UseSqlite(TestSqlite.ConnectionString(dbPath));
             if (interceptor != null)
             {
                 builder.AddInterceptors(interceptor);
@@ -1248,7 +1472,6 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
             {
                 var path = dbPath + suffix;

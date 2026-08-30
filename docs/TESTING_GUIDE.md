@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-02
+Last Updated: 2026-08-29
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -10,13 +10,448 @@ Companion Active Docs:
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
 
+## 2026-08-22 correction: ordinary inherited Windows profile
+
+The v0.1.1 public-artifact checks below remain valid for the hermetic child environment they ran in,
+but they are not a complete ordinary-Desktop upgrade proof. The archive harness removes all
+inherited `Llm__*` names for credential containment. On the maintainer's ordinary profile, an
+inherited user-scoped `Llm__Provider=Gemini` plus `Llm__Gemini__*` names caused startup to fail
+before listening, and the packaged catch hid the fixed migration reason behind generic port/data
+guidance. See [`V0_1_1_WINDOWS_STARTUP_INCIDENT.md`](platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md).
+The correction later shipped on main through `#1876`/PR `#2016`; the public v0.1.1 artifact remains unchanged.
+
+A corrective release must prove both paths separately:
+
+1. Keep the existing hermetic clean-install, persistence, migration, browser, and live OpenAI
+   journey; never expose an operator credential to logs/evidence.
+2. Launch a self-contained marked package with synthetic retired settings **inherited from the
+   process environment**, in both shapes: `Llm__Provider=Gemini` plus synthetic retired children,
+   and synthetic retired children with no selector at all (the upgraded-profile case). Since
+   `#2233` each must reach readiness on the packaged default, emit exactly one
+   `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored` with its static
+   guidance, emit no fatal marker, and leak none of the synthetic values — each injected setting
+   gets its own distinct sentinel, and every captured console line is scanned, not just the marker
+   lines. A stale ambient `Llm__OpenAi__*` pin must reach readiness with no warning at all.
+3. Launch a marked package whose retired settings live in Taskdeck's **own durable
+   `appsettings.local.json`** rather than the environment. That source is unchanged by `#2233`:
+   require exit 1, exact `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`, static
+   migration guidance, no ready marker/listener, and zero
+   synthetic-value/raw-exception/stack/URL leakage. Command-line and Docker Compose retired
+   selectors keep this same fail-closed contract.
+4. Launch with an explicit supported selector plus inert stale Gemini child names and require
+   readiness. This behavior is shipped on current main through PR `#2016`, but not in the public v0.1.1 artifact.
+5. After publication, test the unchanged downloaded ZIP from the ordinary Desktop path with the
+   explicit user provider migration in place and without deleting credential-bearing variables.
+
+Implementation checkpoint: PR `#2016` merged as `909e33f9`. Application 56/56, API 89/89,
+archive Python 35/35, architecture 26 passed + 1 intentional skip, release contract 61/61,
+an actual marked-package diagnostic, and the full backend solution (8,094 passed + 5 intentional
+skips) passed locally. Exact-head hosted Required CI, dynamic Playwright smoke, and bounded review
+also passed. Exact-main no-publish and isolated synthetic Mock core-loop evidence is recorded below;
+the v0.1.2 tag, unchanged public-artifact proof, inherited-profile migration, and ordinary-profile
+Explorer/SmartScreen acceptance remain unverified.
+
+## 2026-08-24 exact-main Windows candidate rehearsal
+
+- Blank-tag Release Desktop run [`32679854224`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32679854224)
+  resolved exact main `789cad4d0b78e4592cc3725a84cfb7845a5a47b3`, built and tested the untouched
+  Windows x64 ZIP, uploaded `release-win-x64`, and skipped `Create GitHub Release` as intended.
+- The downloaded `taskdeck-v0.0.0-dryrun+789cad4-win-x64.zip` matched its sidecar at SHA-256
+  `334707099073a8b656aa496e47afe520179c0578cadc78097a2d22de4b5103f2` before and after the
+  manual journey.
+- The packaged EXE launched from an unrelated working directory with isolated synthetic
+  `%LOCALAPPDATA%` and no inherited provider/API-key/configuration overrides. It emitted the data,
+  bootstrap, and ready markers at `http://127.0.0.1:5000`; a fresh local account then registered,
+  created a Personal Kanban board, captured and triaged a board-linked task, reviewed it, and
+  approved it. A separate board tab still showed one card after approval. Only the explicit
+  `Apply to board` confirmation changed the board to two cards. Console control then produced both
+  documented safe-stop markers and the process exited.
+- This proves the isolated deterministic-Mock package/core-loop boundary. It does **not** prove an
+  Explorer extraction/double-click path, SmartScreen behavior, inherited user-profile retired-
+  provider migration, a live OpenAI call, a signed/public v0.1.2 artifact, or another machine.
+- That candidate exposed a non-blocking typography/CSP regression. PRs `#2039` and `#2041`
+  subsequently added `font-src 'self'`, removed the Google font/style routes, self-hosted the active
+  Material Symbols face, and included its Apache-2.0 licence in Windows and Pages artifacts.
+- Exact-main no-publish run [`32692308935`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692308935)
+  resolved `3fa6071763404255d2bc25b5f2b936647139c35b`; its untouched product ZIP matched SHA-256
+  `9981177c734300d1f97fd51f3a1b77a882d57ea5d640276c2c7e1339c9d3cbd5`. Pages run
+  [`32692278478`](https://github.com/Chris0Jeky/Taskdeck/actions/runs/32692278478) shipped the exact
+  reviewed Material Symbols licence in the deployed artifact.
+- A fresh isolated packaged-browser probe loaded all 12 intended WOFF2 resources from same-origin
+  `/assets/*` with HTTP 200 and `font/woff2`; it made no Google/Gstatic requests and produced zero
+  font/style CSP violations. Offline emulation rendered the visible `cloud_off` ligature as a glyph.
+- The visual-parity follow-up (PR `#2046`) pins the local Material Symbols 200 face and removes the
+  package's unlayered 24px class rule. A production preview computed the shared default at 20px/200, the
+  `text-base` close and topbar icons at 16px/200, and offline/update/queue icons at 18px/200; the
+  probed ligatures remained visible and the font request stayed same-origin.
+  `PaperBranding.spec.ts`, the production build, scoped lint, release/Pages licence contracts, docs
+  governance, and diff hygiene cover the static seam. The separate packaged
+  `manifest.webmanifest` CSP refusal remains tracked in `#2045`.
+
+## 2026-08-24 to 2026-08-26 v0.1.2 Priority I and v0.2 residual verification map (through main `006ab8303`)
+
+- `#1966`/PR `#2017`: 277 focused Inbox/Review composable and component tests, typecheck, build,
+  exact-head hosted CI, and bounded review passed. The live `Open proposal` and `+ Capture`
+  board-scope journeys were not manually browser-tested.
+- `#2021`/PR `#2042`: 76 focused API and 61 Application tests passed; the earlier full backend run
+  passed 8,112 tests with 5 intentional skips. Exact-base hosted CI, dynamic E2E, custom
+  relative/absolute JSON and environment-spoof regressions, and bounded review passed. This is
+  configuration-stack proof, not a new packaged inherited-profile migration journey.
+- `#2022`/PR `#2043`: four focused Inbox suites passed 172 tests after the final base refresh,
+  alongside typecheck, production build, scoped lint, exact-base hosted CI, dynamic E2E, and a
+  fresh adversarial review. The retained-editor DOM/draft path is covered; the page-count and
+  same-scope refresh-error residuals remain tracked by `#2022` and `#2044`.
+- `#1938`/PRs `#2023`, `#2033`, and `#2067`: the capture-recovery slice's pre-final full frontend run passed
+  4,725 tests and its final seam passed 50 targeted tests; the shared receipt slice passed 63 focused
+  tests and the full 4,737-test frontend suite, then 17 Paper-dismiss and 76 refreshed-base focused
+  tests. Both passed typecheck, build, lint, exact-head hosted CI, and bounded review; `#2033` also
+  passed dynamic Playwright after its base refresh. The remount-announcement successor passed 30
+  focused Legacy/Paper toast tests, typecheck, scoped lint, diff hygiene, hosted CI, and two bounded
+  review rounds. On exact main, a manually injected persistent toast survived a Paper-to-Legacy
+  remount while the announcer remained empty. Actual screen-reader speech and a pinned-build
+  reproduction of the original intermittent failure were not verified.
+- `#1949`/PRs `#2027`, `#2032`, `#2038`, `#2055`, and `#2068`: the native-button slice passed 10
+  dead-affordance guard cases; the labelled-control slice passed 12 focused cases and the full
+  4,734-test frontend suite. The two keyboard-parser slices each passed 13 focused guard cases,
+  typecheck, scoped lint, and diff hygiene; the final merged head also passed hosted CI and fresh
+  review. The latest slice rejects Ctrl/Alt/Shift/Meta-modified Enter/Space while accepting canonical
+  lowercase handlers with benign modifiers. This remains source-level proof, not runtime walking of
+  every control or keystroke; dynamic/compiler-expanded bindings remain on the open parent issue.
+- `#1992`/PRs `#2029`, `#2030`, and `#2065`: the PWA denylist regression and full hosted gate passed; the
+  proxy slice passed static/rendered-template parity, real nginx 1.27 configuration validation,
+  Terraform dev/staging/prod baselines, exact-head hosted CI, dynamic Playwright smoke, and a fresh
+  integration review. Required container CI now executes the same reverse-proxy contract before
+  image work. A live split-container request and MCP SSE stream were not exercised.
+- `#1967`/PRs `#2034`, `#2056`, `#2066`, and `#2070`: the canonical-identity slice passed 263 focused proposal/review
+  tests, typecheck, build, lint/diff hygiene, exact-head hosted CI including dynamic Playwright,
+  automatic review, an independent full-diff review, and a clean P1 fix-diff review. The missing
+  Paper deep-link slice then passed 187 focused tests, typecheck, build, quiet lint, diff hygiene,
+  hosted CI, and bounded review. Legacy diff casing added 14 focused passing cases. The mismatched-
+  response slice passed 192 focused tests, typecheck, scoped lint, production build, diff hygiene,
+  and fresh exact-head review; its hosted head completed 21 successful check runs, including E2E
+  Smoke, with 11 intentional skips and no failure or pending check. Applied-proposal read-only detail
+  and the remaining stale/terminal lifecycle cases stay open on `#1967`.
+- `#1967`/PR `#2101`: historical applied-record copy passed 122 focused Review tests, 16 locale-catalog
+  tests, typecheck, build, scoped lint, diff hygiene, exact-head hosted CI, and bounded review. The
+  added test omitted `presentation`, so only the fallback path was proven historical; the API-shaped
+  residual is `#2117`, closed by PR `#2120` with a populated-presentation regression test. The
+  broader proposal-lifecycle residuals remain open on `#1967`.
+- `#2080`/`#2106`/`#2109`/PR `#2110`: 37 CardService tests, 64 final CardService/BoardService tests,
+  22 focused API archive/migration/resilience tests, provider-native SQL Server script generation,
+  SQLite migration bootstrap, pending-model validation, exact-head Required CI, E2E Smoke, and both
+  the full-diff and fix-diff reviews passed. A live SQL Server application run was not performed.
+- `#2117`+`#2132`/PR `#2120`: the status-aware historical-copy fix carries a regression test on an
+  **API-shaped payload with `presentation` populated** — the exact shape PR `#2101`'s test omitted —
+  plus pluralized `bodyApplied` catalog coverage in `en`, `es`, and `it`. Exact-head Required CI and
+  the review gate passed. The Legacy `ReviewProposalCard` path is **not** covered and stays open on
+  `#2121`; `it`/`es` strings remain machine-translated.
+- `#2114`/PR `#2134`: six deterministic race/independence tests cover external import, starter-pack
+  apply, and archive-item restore including the restore path's column half, each mutation-checked
+  against its reverted fix. Exact-head Required CI and the review gate passed. This is
+  unit/integration proof of the conditional-update predicate, not a live concurrent-load run.
+- `#2123`+`#2115`/PR `#2137`: the `CardMutationMarker` replacement for `Touch()` makes the archive
+  guard deterministic rather than clock-dependent, so the same-tick no-op case is now provable
+  instead of timing-dependent; migration `20260826201256` and the board-list cache-coherence
+  behavior are covered at the same head, with exact-head Required CI and the review gate passing.
+  Whether recency should be activity- or metadata-based is a product question on `#2138`, not a
+  verification gap.
+- `#2105`/PR `#2107`: swagger contract tests assert the archived-card 409 on Create/Move/Delete and
+  the reworded Update declaration resolve to the `ApiErrorResponse` schema reference, and the
+  assertions were mutation-checked. This is contract/metadata proof only — no runtime 409 journey
+  was added by this PR, and none of the contract tests were changed when it was rescued from the
+  dead `#2080` stack base. The old API Integration redness on that abandoned base was traced to
+  `#2080`'s token-advance defect, not to this change.
+- `#2085`/PR `#2098`: two independent reviews returned clean. Its required CI was blocked by a
+  GitHub **runner-assignment outage**, not by the change; a close/reopen retriggered assignment and
+  the exact head then completed green. Treat the outage as an infrastructure event, not evidence.
+- `#2111`/PR `#2112`: the Windows launcher TERM/KILL regression is now evidence-based — teardown
+  waits until the fixture root is actually removable against a deadline and **names surviving native
+  pids** when it gives up, so a failure reports what held the tree instead of a bare EBUSY. Five
+  review P2s were deferred to `#2136` and a Linux/macOS stub-server shutdown gap to `#2135`; both
+  are open, so this hardens the evidence path without closing the whole teardown class.
+- `#1938`/PR `#2102`: per-stage regressions cover the toast clipboard path — the async Clipboard API
+  fast path and the legacy-DOM `document.execCommand` fallback, the latter contained as explicitly
+  best-effort rather than reported as a success it cannot prove. No real-browser legacy-DOM
+  clipboard run was performed.
+- Dependabot PR `#2064`: the NuGet minor/patch group (FsCheck 3.4.0, PdfPig 0.1.16, OpenTelemetry
+  1.18.0 and others) plus the PdfPig sentinel move 0.1.15 → 0.1.16 were proven on a **refreshed
+  base**, so FsCheck 3.4.0 ran against the new capture contracts rather than a stale tree. PdfPig
+  evidence-version drift is noted on `#1429`; the Stryker 9.6.1 → 10 bump is deferred to `#2139`.
+- **Wave-level CI bound.** All eleven 2026-08-26 merges had exact-head Required CI green. Post-merge
+  `main` CI was SUCCESS at `44aceede6`, but the run at the wave's final tip `006ab8303`
+  (`33015017508`) concluded **`cancelled`** — superseded by the next merge, frontend dependabot
+  `#2118` (`d37954730`), landing mid-run. Several intermediate post-merge runs concluded `cancelled`
+  for the same reason. **There is therefore no green post-merge `main` run at the wave tip**, and
+  confirming one on a settled `main` remains owed before any release deck.
+- `#1940`/PR `#2069`: the receipt/keymap seam passed 181 focused tests; the late-approval selection-
+  race fix passed 115 Paper Review tests and the exact two-proposal regression. Three repaired local
+  Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
+  including full E2E, completed successfully. The browser checks prove the explicit receipt -> Apply
+  transition; they do not close the progressive-disclosure, All/Mine, focus, or lifecycle residuals.
+- **Prepared but unshipped checkpoints:** `origin/issue-1949/directive-attribute-tokenization`
+  (`d89bd7cc3`) passed 13 guard tests, typecheck, scoped lint, and diff hygiene after rebasing onto
+  `55dbf6e14`. `origin/issue-1967/applied-read-only-detail` (`010021a745`) passed 186 focused tests,
+  16 locale-catalog tests, typecheck, scoped lint, production build, and diff hygiene on the same
+  base. Neither has an open PR or hosted exact-head gate. The applied-detail slice has not run the
+  full frontend suite, Playwright/native-button keyboard journey, live backend, or packaged desktop.
+- **Final-main release seam — run for v0.2.0 (2026-08-29):** on the exact tag head `48c05e1dc`, a
+  blank-tag no-publish Windows candidate (run 33233342037) was dispatched and verified (untouched
+  inner ZIP, skipped release creation, 0.2.x in-zip quick start), and the downloaded candidate ran
+  the isolated headless packaged journey — register -> board with one card -> board-scoped capture
+  -> Mock triage -> approved receipt with the board unchanged -> explicit Apply -> board 1 -> 2 cards
+  — with the zip hash unchanged; after publication the released zip was re-verified (hash vs
+  sidecar, provenance, `/health/live` = `0.2.0`, GHCR tags). The same seam is owed again for the
+  next tag.
+- `#2028`/PR `#2048`: focused backend/frontend checks, typecheck, production build, lint/diff
+  hygiene, exact-head hosted CI including dynamic E2E, and bounded review passed. An isolated
+  exact-head desktop journey used Los Angeles, Tokyo, and UTC clocks: the stored card stayed on
+  August 23 while Today/Calendar requests and due/overdue classification followed each local day.
+  Maximum-range `localDate` validation and unchanged legacy-value audit noise remain on `#2049`
+  and `#2050`.
+- `#2005`/PR `#2058` (merged as `6cc7544a`): the final head passed 48 focused Application tests and
+  120 focused API tests. Independent backend review added 75 API worker/concurrency and 87
+  Application capture/revision/operation passes; independent UI review added 136 focused frontend
+  passes. Diff hygiene and exact-head hosted CI, including dynamic Playwright smoke, passed with no
+  CRITICAL/HIGH review finding. An isolated synthetic browser journey on UI-equivalent pre-hardening
+  head `fb065547` proved unknown-label failure, lossless correction to `Sales, EMEA`, retry, approval
+  without board mutation, and exactly one explicit Apply retaining the expected due day and label.
+  Final-head recovery-revision and fresh-worker-scope changes are automated concurrency/worker proof,
+  not a second browser run. Closed PRs `#2026` and `#2047` remain historical lineage; comma-containing
+  composer labels and post-success uncommitted-label reset remain open on `#2053` and `#2057`.
+- PR `#2020`: docs and GitHub-operations governance, five touched-skill validators, the focused
+  worktree-helper contract, stale-policy scan, diff hygiene, and hosted Workflow Lint passed. No
+  runtime product test applies to the DCO enforcement pause.
+
+## 2026-08-21 public Windows v0.1.1 release proof
+
+The public v0.1.1 Windows x64 artifact passed the following isolated host journey, with the
+unavailable Windows Sandbox lane recorded separately as an owner waiver rather than a passing
+clean-machine result. The 2026-08-22 correction above limits this claim to the hermetic environment:
+
+Durable public-artifact evidence: [issue #1876 final record](https://github.com/Chris0Jeky/Taskdeck/issues/1876#issuecomment-5373235996).
+
+- **Published source and assets:** annotated tag `v0.1.1` peels exactly to
+  `e338566d0f3d1fc65004beb5a29c10778e6e61bc`. Release Container `32505993267`, Release Security
+  `32505993558`, CI Release `32505993464`, and Release Desktop `32505993397` all passed. The public
+  53,258,784-byte ZIP rehash equals its sidecar:
+  `e8bcbf36dfce28b75be7ee89842a6d5b2c248535f6c11678d06b2cb91c4c607b`.
+- **Public Windows host journey:** a Chrome download had `ZoneId=3`; Windows Shell extracted exactly
+  147 expected files and 0 forbidden files. The executable retained `ZoneId=3`, reported file
+  version `0.1.1.0` / product version `0.1.1`, and is intentionally unsigned for this beta. The
+  supplied shortcut launched successfully from an unrelated working directory, bound only to
+  `127.0.0.1:5000`, wrote state only under isolated local app data, and opened the default browser
+  at `/login?redirect=/workspace/home`. No blocking SmartScreen intervention appeared on this host.
+- **Public live OpenAI journey:** the unchanged public ZIP passed
+  `Test-WindowsDesktopArchive.ps1 -LiveOpenAI` with schema-6 evidence. It proved exact
+  `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2` attribution, non-Mock probed/verified health,
+  proposal states `0 -> 1 -> 3`, card counts `0/0/1`, one applied operation, one card after restart,
+  clean-install identity create/reuse, adjacent-config retention, durable app-data import, database
+  reuse, board creation, and signed-in restart. The recursive evidence check found 0 forbidden
+  credential, secret, token, prompt, transcript, raw-response, log, configuration-path, or
+  filesystem-path fields.
+- **Public container journey:** an anonymous pull using an empty Docker auth config succeeded for
+  `ghcr.io/chris0jeky/taskdeck:0.1.1`. Its digest is
+  `sha256:a04edc297416d149934b688227cf8c34f0e7add80320f7e2350f59d7f09bdd8e`; OCI labels identify
+  version `0.1.1`, revision `e338566d`, and the Taskdeck repository.
+
+Earlier candidate checkpoints that built up this final proof are retained below:
+
+- PR `#1885`: 62 focused runtime/FirstRun tests, Python 11/11, release structure 58/58,
+  33/33 hosted checks, and an exact-head blank-tag rehearsal that tested the untouched ZIP before
+  upload.
+- PR `#1886`: release structure 60/60, 37/37 hosted checks, an exact-head clean-runner archive
+  content and untouched-ZIP rehearsal, and a local 147-file inventory with 7 required paths and
+  0 forbidden files.
+- PR `#1888` / issue `#1879`: full local backend proof passed Domain 1,656, Application 3,798, API 2,309
+  (+4 intentional skips), CLI 140, Architecture 24 (+1 existing skip), and Integration 35;
+  a synthetic Chromium journey verified OpenAI / `gpt-5.6-luna` without reading or printing the
+  key value and completed in 15.1 seconds. Final reviewed head `83d3502c` passed a no-publish hosted
+  Windows build plus a local live run of the downloaded untouched ZIP: evidence schema 2 recorded
+  OpenAI / `gpt-5.6-luna`, non-Mock/probed/verified, a server-measured 1,382 ms
+  probe duration, fallback then default-port launch, review-first card counts 0/0/1, and one card
+  after restart. The active provider filter below passes 167/167 after Gemini retirement. The
+  issue stays open for the separate post-0.1.x BYOK setup/validation/rotation/removal decision and
+  maintainer record, not for missing automated probe timing.
+- PR `#1889`: exact-head no-publish run `32419422433` passed the untouched-ZIP gate and skipped
+  release creation. Downloaded-artifact evidence schema 3 kept the inner archive unchanged and
+  recorded only two lifecycle booleans per launch: `jwtCreated=true` and `connectorCreated=true`
+  on clean launch, then both `false` on restart against the same isolated app-data state. The live
+  OpenAI proposal/review/apply journey and one-card restart persistence passed without retaining a
+  JWT, connector key, API key, configuration value/path, secret-derived hash, or application log.
+- PR `#1901`: evidence schema 4 adds a value-free `migration` record. Its four exact states are
+  `legacy=adjacent/retained`, `durable=app-data/imported`, `database=app-data/reused`, and
+  `board=app-data/created`; both migration launches report `jwtCreated=false` and
+  `connectorCreated=false`. Local offline and live-OpenAI ZIP rehearsals passed, and exact-head
+  no-publish run `32444016514` passed the untouched-ZIP gate and skipped release creation.
+- Merged PR `#1908` / closed issue `#1903`: schema 5 makes clean install and migration separate,
+  mandatory create/restart journeys in one current-gate run. The clean-install journey proves
+  bootstrap identity `true/true` then `false/false`; the migration journey keeps the four states
+  above while running its own create/restart product path. The complete parsed durable config must
+  equal the synthetic fixture, including the non-identity `ArchiveAcceptance.Sentinel`; harmless
+  formatting-only reserialization is accepted. The archive harness passed 26/26 and the release
+  structure contract passed 60/60. Exact-head no-publish run `32453648121` passed both journeys and
+  the untouched-ZIP gate, then skipped `Create GitHub Release`; it proves neither a public v0.1.1
+  release nor manual clean-machine acceptance.
+- PR `#1902`: the identity-bound `demo:seed` transport established a 10,000 ms response deadline.
+  PR `#1909` keeps that deadline for ordinary requests and grants only the exact provider
+  chat-message `POST` 700,000 ms: up to three 30-second tool rounds, the supported 600-second
+  Ollama fallback, and 10 seconds of response-delivery allowance. Expiry still marks the one-shot
+  transport failed, destroys its agent/socket, and never retries or creates a replacement
+  connection. The final focused transport suite passes 38/38.
+- PRs `#1913` and `#1915` hide archived reset generations from active Inbox/Review lists and align
+  Home/Today workload counts with those lists while preserving explicit history and onboarding
+  history. PR `#1920` validates reset inventory and authenticates the collaborator before any
+  quarantine/replacement write; repeated protected resets retain unrelated boards and history but
+  produce one fresh active demo generation. PRs `#1926` and `#1928` keep the exact launcher suite
+  inside per-case CI deadlines and allow only a transient post-`taskkill` unknown identity while
+  preserving fail-closed behavior before signaling or on PID mismatch.
+- PR `#1922` makes local `-LiveOpenAI` acceptance mandatory rather than accepting a missing-key skip,
+  and replaces the old chat-only proof with Transcript capture -> Inbox triage -> proposal review ->
+  apply -> restart. The gate requires exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
+  attribution before approval. PR `#1924` removes current and retired provider credential aliases
+  case-insensitively from the Playwright child environment and fails closed if a recognized name or
+  synthetic value survives.
+- Exact `main` `f9d9b84c` Required CI run `32488801335` accepted all 18 jobs (16 success and 2
+  intentional skips), including dynamic E2E Smoke. No-publish run `32488879613` also completed
+  successfully: `Build win-x64` tested the untouched inner archive and `Create GitHub Release` was
+  skipped. Downloaded artifact
+  `9449039716` contained `taskdeck-v0.0.0-dryrun+f9d9b84-win-x64.zip`; its normalized checksum and
+  independent rehash both equal
+  `d4e5ea79eb8932e0a434ef7630fa5e3eb88377564b16f72730def7dfc10b79af`. Running that unchanged ZIP
+  through `Test-WindowsDesktopArchive.ps1 -LiveOpenAI` returned success and schema-6 evidence proved
+  two extractions, clean-install bootstrap identity `true/true` then `false/false`, adjacent-config
+  retention plus durable identity/database reuse, non-Mock probed/verified OpenAI triage, proposal
+  states before approval/after approval/after apply, card counts `0/0/1`, and one card after restart.
+  The archive remained byte-identical and the recursive evidence validator rejected credential,
+  transcript, prompt, raw provider-response, filesystem-path, and application-log fields.
+
+The public proof does **not** establish a genuinely clean Windows machine: Windows Sandbox remained
+unable to create an environment after a supported Store-package reset and retry, with deterministic
+Filter Manager `0xC03A001C` (`STATUS_VHD_INVALID_STATE`) failures. The maintainer explicitly waived
+that lane and authorized the host fallback; this is not a pass claim. Windows Shell automation—not
+an independent human click-through—performed extraction and shortcut invocation, and the absence of
+a SmartScreen block is specific to this host's reputation and policy. Issue `#1242` also remains open
+for separate maintainer acceptance of the redacted identity record.
+
+## 2026-08-16 API Integration Timing Evidence (`#1682`)
+
+The successful-run diagnostic artifact is summary-only: it may contain resolved test class/method
+identity, outcome, and duration, but never TRX output, error details, attachments, or theory
+arguments. Raw TRX stays failure-only. Prove the parser, workflow syntax, and one real TRX shape
+without running the complete API suite:
+
+```powershell
+python scripts/ci/test_summarize_trx_timing.py
+python -m py_compile scripts/ci/summarize_trx_timing.py scripts/ci/test_summarize_trx_timing.py
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~Taskdeck.Api.Tests.ResultExtensionsTests" --logger "trx;LogFileName=api-integration.trx" --results-directory "backend/TestResults/api-integration/local"
+python scripts/ci/summarize_trx_timing.py --trx "backend/TestResults/api-integration/local/api-integration.trx" --output "backend/TestResults/api-integration/local/api-integration-timing.json"
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 parser tests and 22/22 focused API tests**, followed by successful
+parsing of all 22 real TRX results. Hosted CI remains the authoritative proof that both matrix
+lanes upload the 14-day summary and Workflow Lint accepts the changed YAML. The artifact diagnoses
+the next recurrence; it does not by itself identify the cause or prove a duration repair.
+
+Required API Integration also emits a best-effort, 14-day testhost assembly diagnostic when the
+testhost exits normally. Its fixed numeric schema records only before/exit process counters plus
+aggregate `ConfigureServices` and `Database.Migrate()` workload timings. It never records paths,
+environment values, test identities, database names, exception text, or request content. A missing
+artifact after a killed or crashed testhost is itself diagnostic and must not mask the authoritative
+`dotnet test` result. Prove the dormant serializer and workflow contract without running the full
+API suite:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TestAssemblyDiagnosticsTests"
+Push-Location scripts/ci
+py -3 -B -m unittest -v test_collect_runner_context.py
+py -3 -m py_compile test_collect_runner_context.py
+Pop-Location
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Local slice evidence is **5/5 diagnostic serializer tests, 5/5 workflow-contract tests, and one
+real factory-backed testhost exit** producing a 642-byte schema-v1 artifact. Hosted Ubuntu and
+Windows upload evidence remains required before treating the workflow path as proven; even then,
+the artifact is instrumentation rather than a timing-root-cause claim.
+
+## 2026-08-16 REVIVAL-09 Transcript Linkage and Editability Checkpoint (`#1305`)
+
+The first linkage slice must prove the domain attachment invariant, immutable edit boundary,
+worker retry/reuse behavior, real SQLite FK/index/delete behavior, the proposal-first HTTP path,
+and EF model parity:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmRequestTests|FullyQualifiedName~TranscriptTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests.LlmGoldenPath_TranscriptCaptureTriageApproveExecute_ShouldCreateStubCardsWithLlmProvenance"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldUpdateCaptureText|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldAllowTranscriptTextAtSourceSpecificLimit|FullyQualifiedName~CaptureApiTests.UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+```
+
+Linkage-head result: **23 Domain, 38 Application, 23 worker, 15 repository/migration,
+one golden-path HTTP, and three focused capture-API tests passed**; the Release solution build
+completed with zero errors and EF reported no pending model changes. These checks prove one
+canonical Transcript per processed queue request, replay reuse, LF/UTF-16 input, edit locking,
+and SQLite unique/`SET NULL` behavior. At that linkage head they did not prove evidence spans or
+provenance reads; the evidence checkpoint below now covers those backend seams. Paper quote
+resolution and real external-provider behavior remain outside both checkpoints.
+
+The follow-up editability slice reuses the authoritative Application rule in the additive capture-detail
+capability and proves that Inbox neither offers nor retains an editor after linkage:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureApiTests"
+Push-Location frontend/taskdeck-web
+npx vitest --run src/tests/views/InboxView.spec.ts --maxWorkers=2
+npm run typecheck
+npm run lint
+npm run build
+Pop-Location
+```
+
+Editability-head result: **42 Application, 27 capture-API, and 71 Inbox tests passed**;
+type-check and production build passed, while lint reported zero errors and six unrelated existing
+accessibility warnings. The API proof also confirms that capture detail does not expose `TranscriptId`.
+
+## 2026-08-16 REVIVAL-09 Transcript Evidence Checkpoint (`#1305`)
+
+When changing transcript quote-to-span resolution, trusted proposal evidence, opaque provenance
+responses, or Transcript erasure cleanup, run:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceEvidenceLinkTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmCaptureTriageExtractorTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests|FullyQualifiedName~AccountDeletionServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~TranscriptTriageWorkerTests|FullyQualifiedName~TranscriptTriageLlmGoldenPathIntegrationTests|FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~AutomationProposalsApiTests|FullyQualifiedName~MigrationBootstrapTests"
+dotnet build backend/Taskdeck.sln -c Release -m:1
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+node scripts/check-docs-governance.mjs
+node scripts/check-golden-principles.mjs
+```
+
+Evidence-head result: **17 Domain, 252 Application, and 86 API tests passed**, with no failures or skips; the
+Release solution build completed with zero errors and two pre-existing nullable warnings in
+`CliStartupTraceTests`, EF reported no pending model changes, and both documentation gates passed.
+The proof covers UTF-16 absolute offsets, repeated-quote and same-title ambiguity, stable reduction
+alignment, one trusted link per operation, database source-type consistency, cascading erasure,
+atomic stale-link rejection, migration/model parity, and a board viewer receiving opaque metadata
+without Transcript text.
+It does not prove PostgreSQL-specific deletion translation, Paper quote resolution/deep links,
+provenance export, or real external-provider behavior.
+
 ## Current Verified Totals (2026-05-16)
 
 - Backend: **6,614 passing** (0 failed, 6 skipped; 6,620 total) -- verified 2026-05-16 via `dotnet test backend/Taskdeck.sln -c Release -m:1` on `main` after bulk merge of PRs `#1055`–`#1074`
   - Domain: 1,626 passed
   - Application: 3,185 passed
   - API integration: 1,685 passed (0 failed, 2 skipped; 1,687 total)
-  - CLI contract (**newer than this dated aggregate**): 112 passed / 0 skipped / 0 failed on Windows at `#1533`; hosted exact-head Windows recertification remains required
+  - CLI contract (**newer than this dated aggregate**): 127 passed / 0 skipped / 0 failed at `#1530` / PR `#1669`; the exact-head hosted Windows lane recertified 127/127 in 2m28s
   - Architecture boundaries: 0 failed, **1 skipped** (only INV-09/DataFlowRegistry; INV-10/11/12 un-skipped with real assertions in #1126) — exact pass/total pending CI recertification (#1138)
   - Integration project (**newer than this dated aggregate**): 35 tests at `#1520` — 28 PostgreSQL-backed cases plus 7 Docker-independent fixture/native checks. Dockerless evidence is 7 passed / 28 skipped; positive PostgreSQL evidence requires all 28 container cases to execute and pass the hosted TRX identity contract.
 - Frontend unit: **3,267 passing** -- verified 2026-05-16 post-bulk-merge (CI)
@@ -29,6 +464,46 @@ Verification note:
 - prior recertification: backend 6,336 (2026-05-05 after Paper backend gap PR `#1040`), frontend 2,805 (2026-04-25)
 - growth since last recertification: backend +278 passing tests, frontend +462 passing tests
 
+## OpenAI-Compatible Provider Replacement Checkpoint (`#1306`)
+
+Current-main integration verification on 2026-08-09 exercises the compatible
+provider, the dispatch/accounting seam, and the registered transport chain:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiCompatibleLlmProviderTests|FullyQualifiedName~CircuitBreakerStateTrackerTests|FullyQualifiedName~LlmDispatchTrackingHandlerTests|FullyQualifiedName~ChatServiceTests|FullyQualifiedName~LlmCaptureTriageExtractorTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~LlmProviderRegistrationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CircuitBreakerTests"
+```
+
+Results: **157 passed / 0 failed / 0 skipped** in Application and **81 passed /
+0 failed / 0 skipped** in API. Coverage includes buffered completion and real
+registered-loopback SSE; UTF-8 byte, line, event, and aggregate ceilings;
+content-filter/refusal handling without persisting provider detail; schema-v2
+triage compatibility; zero/known usage normalization; every-redirect rejection; exact-origin egress and DNS
+checks; direct-only proxy and telemetry controls; scoped Sentry removal; 501
+stream fallback outside the compatible Polly failure set; pre-dispatch versus
+dispatched quota settlement; and deterministic half-open race/cooldown behavior
+across separate Polly and companion circuit states.
+
+The compatible registration originally expanded the protected-client inventory from the
+four clients proved by `#1513` to five while Gemini was active. After `#1879`, the active
+inventory is four: OpenAI, OpenAICompatible, Ollama, and outbound webhook delivery. Generic
+`x-goog-api-key` redaction and redirect stripping remain even though Gemini is no longer executable.
+The earlier pre-integration provider tree passed the required full gate:
+
+```powershell
+dotnet test backend/Taskdeck.sln -c Release -m:1
+```
+
+Result: **7,660 passed, 5 intentional skips, 0 failed** (Domain 1,636;
+Application 3,678; API 2,189 + 4 skips; CLI 100; Architecture 22 + 1 skip;
+Integration 35). Docs governance, golden-principles governance, GitHub-operations
+governance, and `git diff --check` also passed. PR `#1537` later carried the streamed-refusal repair
+through clean bounded reviews, exact-head hosted CI, CI Extended, and CodeQL before merging as
+`0b0c9c70`. DCO was an active evidence item at that historical checkpoint but enforcement was
+paused on 2026-08-23. A
+maintainer-supplied compatible-provider key and a visibly incremental stream in
+the real UI are separate human gates; loopback transport tests do not prove
+either.
 ## 2026-08-02 REVIVAL-08 M2 Checkpoint (`#1304`)
 
 Long-transcript triage needs both the chunk-planning contract and the existing proposal-first golden
@@ -48,7 +523,7 @@ npm run typecheck
 
 The map-reduce path must preserve proposal-first behavior: any failed map leg falls back for the whole
 capture, never persists a partial automatic board write. The M3 contract has its own checkpoint
-below; `#1305` evidence linkage remains outside both checkpoints.
+below; persistent Transcript evidence linkage is covered by the 2026-08-16 checkpoint above.
 
 ## 2026-08-02 REVIVAL-08 M3 Contract Checkpoint (`#1304`)
 
@@ -64,8 +539,8 @@ The application seam must reject missing, unknown, wrongly typed, noncanonical, 
 non-verbatim model fields as a complete fallback; it must not normalize or retain a partial map leg.
 It also pins that model classification, assignee, due-date, and confidence metadata never enter
 executable operation parameters. The API golden path proves a valid exact quote remains reviewable
-in the proposed card description. `#1305` durable evidence spans/provenance/API/UI linkage remains
-outside this contract-only checkpoint.
+in the proposed card description. Durable span/provenance API coverage is now in the 2026-08-16
+checkpoint above; Paper quote resolution and deep links remain outside this contract checkpoint.
 
 ## 2026-08-01 Merged-Main Checkpoints (`#1305`, `#1354`, `#1520`)
 
@@ -78,9 +553,10 @@ dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~TranscriptRepositoryIntegrationTests|FullyQualifiedName~MigrationBootstrapTests"
 ```
 
-Current-main result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
-skips. This proves persistence, export/deletion, and migration/bootstrap behavior only; `#1305`
-remains open for triage linkage, evidence spans, provenance API reads, and Paper deep links.
+Foundation-head result: **5 Domain + 63 Application + 14 API tests passed**, with no failures or
+skips. That checkpoint proves persistence, export/deletion, and migration/bootstrap behavior. The
+linkage and evidence checkpoints above cover the subsequent backend work; `#1305` remains open for
+Paper quote resolution/deep links, provenance export, and the final payload-retention boundary.
 
 The MCP create-card column contract is exercised through the real write tool and SQLite-backed
 proposal lifecycle:
@@ -129,21 +605,20 @@ to prove normal trace propagation/activity/metric export while protected request
 configured OpenTelemetry exporter. The metric guarantee is deliberately scoped to Taskdeck's exporter, not arbitrary
 process-global listeners. Registered-provider controls also prove that outer .NET HTTP EventSource
 payloads do not contain the configured path/query while the real configured origin reaches the wire,
-and that Sentry's outbound handler is removed only from the four protected clients: the unrelated
+and that Sentry's outbound handler was removed only from the four then-registered protected clients: the unrelated
 `GitHubConnectorProvider` client retains the handler and sends `sentry-trace`. Public caller-owned
 provider clients retain their configured URI, request body, and authentication. The guarantee does
 not cover independently installed Activity/Meter listeners or transport-stage host/IP observation.
 
 ```powershell
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~GeminiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~OllamaLlmProviderTests|FullyQualifiedName~LlmProviderResilienceTests|FullyQualifiedName~LlmProviderSelectionPolicyTests|FullyQualifiedName~LlmProviderConstructorCompatibilityTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests"
 ```
 
-The six provider-dispatch cases passed five consecutive repetitions, and the registered EventSource
-and scoped-Sentry boundary pair passed three fresh-process repetitions. The provider and
-selection-policy compatibility subset (`OpenAiLlmProviderTests`, `GeminiLlmProviderTests`,
-`OllamaLlmProviderTests`, `LlmProviderResilienceTests`, and `LlmProviderSelectionPolicyTests`)
-passed **151 / 0 failed / 0 skipped**; the constructor-compatibility and remasking classes add
-**7 / 0 failed / 0 skipped**, so the documented Application filter proves **158 / 0 / 0**.
+The historical six-provider-dispatch repetition record included Gemini. The active post-`#1879`
+filter covers `OpenAiLlmProviderTests`, `OllamaLlmProviderTests`, provider resilience and selection,
+constructor compatibility, and protected outbound telemetry; it passed **167 / 0 failed / 0 skipped**
+on 2026-08-20. Historical free-form provider data and generic Google-key defenses remain covered
+without retaining an executable Gemini provider.
 Docs governance, golden-principles governance, GitHub-operations governance, and
 `git diff --check` passed on the same working tree.
 
@@ -160,7 +635,7 @@ path-based skips, and CodeQL 4/4 before merging as `840874ac`.
 Tracker `#972` seeds the next review-first AI verification program. Delivered items are marked; remaining items are planned work until their implementation issues land:
 
 - `#973`: (**delivered**, `#986`) twelve roadmap invariants covering automation-only mutation safety, proposal execution idempotency/version checks, outbound egress envelope coverage, disclosure registry coverage, MCP tool-definition hash pinning, telemetry content rejection, and proposal source-span integrity.
-- `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests.
+- `#974`: (**delivered**, `#989`) schema/provider smoke coverage for `IntentEnvelopeV1`, `TaskdeckProposalBatch`, `IChatClient` adapter viability, and the `JsonSchemaExporter` vs handwritten-schema decision. 117 tests. _(Update `#1305` AC3: the `IntentEnvelopeV1`/`TaskdeckProposalBatch` entity suite and its `proposal-batch.v1` schema were later removed as unmapped scaffolding — see the RFAI-02 record under "Roadmap v4 Second-Wave Testing" below.)_
 - `#975`--`#977`: (**delivered**, `#993`/`#994`/`#991` + `#1071`/`#1058`/`#1062`) golden proposal dataset checks, schema validity, extractive quote/span verification, inferred evidence-link resolution, field confidence scoring, and edit-before-approve paths. Full delivery: `IProposalGenerator`/`FieldVerifier`/`ProposalGeneratorV1` (`#1071`), revision endpoints + edit-before-approve flow (`#1058`), Paper Review deep-dive wired to backend APIs (`#1062`). Combined: provenance 139 + revision 70 + confidence 136 + generator/verifier/review wiring tests. _(Update `#1198`, 2026-06-13: `ProposalGeneratorV1` + its `IProposalGenerator` interface and test class were removed as dead code (zero consumers); `FieldVerifierTests` and the provenance/confidence/revision suites are unaffected.)_
 - `#978`--`#979`: (**both delivered**, `#990`/`#1050`) vector-search fallback tests, embedding backfill safety (61 tests). RFAI-07 hybrid retrieval, duplicate calibration, and memory-assisted generation delivered in `#1050`.
 - `#980`: (**delivered**, `#992` + `#1073`/`#1074`) TelemetryGuard fuzz rejection, egress registry completeness (108 tests), egress disclosure API endpoint (`#1073`), privacy insights API for proposal outcome cohorts (`#1074`).
@@ -181,6 +656,29 @@ $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { exit $code }
 ```
+
+## Workflow Lint Bootstrap Checks
+
+CI Extended's `Workflow Lint` job bootstraps checksum-pinned Actionlint and Pyflakes artifacts directly, uses the Ubuntu runner's ShellCheck through an explicit path, runs the focused contract suite, then lints every checked-out workflow verbosely. The hosted job is the authoritative integration proof: its unchanged-head log must show both checksum checks, Actionlint 1.7.12, Pyflakes 3.4.0, the runner ShellCheck version, the checked-out SHA, a positive workflow count, seven passing contract checks, and a zero-error repository lint. A run that fails before checkout or never reads the workflows is not green evidence.
+
+On native Windows, set Git Bash explicitly because bare `bash` can resolve to the Microsoft Store/WSL alias. The static, ordering, and checksum boundary is the portable fast path:
+
+```powershell
+$env:BASH_BIN = 'C:\Program Files\Git\bin\bash.exe'
+node --test --test-name-pattern='pins|bootstrap boundary|checksum verifier' scripts/ci/actionlint-bootstrap.test.mjs
+```
+
+The full seven-check suite additionally requires local Actionlint, ShellCheck, and Pyflakes executables:
+
+```powershell
+$env:BASH_BIN = 'C:\Program Files\Git\bin\bash.exe'
+$env:ACTIONLINT_BIN = '<path-to-actionlint>'
+$env:ACTIONLINT_SHELLCHECK_BIN = '<path-to-shellcheck>'
+$env:ACTIONLINT_PYFLAKES_BIN = '<path-to-pyflakes>'
+node --test scripts/ci/actionlint-bootstrap.test.mjs
+```
+
+Do not infer external-linter coverage from Actionlint alone: Actionlint can skip ShellCheck or Pyflakes when they are unavailable. Keep the explicit tool paths and the fixture assertions for `SC2086` and the Pyflakes undefined-name diagnostic.
 
 ## Agentic Operating Layer Checks
 
@@ -212,6 +710,7 @@ py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_led
 powershell -NoLogo -NoProfile -NonInteractive -File scripts\git\Test-New-CodexIssueWorktree.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-docs-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-golden-principles.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+node --test scripts\check-github-ops-governance.test.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node scripts\check-github-ops-governance.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
@@ -233,7 +732,46 @@ python3 -B scripts/agent_hooks/render_failure_ledger.py
 python3 -B -m unittest discover -s scripts/agent_hooks -p 'test_render_failure_ledger.py'
 node scripts/check-docs-governance.mjs
 node scripts/check-golden-principles.mjs
+node --test scripts/check-github-ops-governance.test.mjs
 node scripts/check-github-ops-governance.mjs
+```
+
+The staging-gate governance regression pins the complete parked workflow after normalizing line
+endings. Any intentional edit to that workflow requires a reviewed digest and fixture update plus
+Actionlint; substring checks are not treated as proof of effective YAML semantics. Its 26-test Node
+suite includes 12 `prepare-staging-compose-inputs` contracts and 14 workflow/governance contracts.
+The helper invokes Docker Compose's effective `config --variables --format json` parser, rejects
+command/JSON/schema/key-name/boolean drift before generating secrets, proves comments and `$${...}`
+literals are inert with a real minimal Compose file, and preserves mask-before-environment ordering.
+The workflow regression keeps each preparation step immediately before its first Compose consumer.
+
+Manual run [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896)
+passed build verification, real S1-S9 smoke plus cleanup, and the parked handoff at exact unmerged
+workflow/helper head `3efb7bd4499c30d0f0b3c3683e43221e46f103f7`; logs masked both generated
+inputs, the summary reported environment `none` and deployment `no`, and an exact-SHA deployments
+query returned `[]`. This follow-up changes documentation only, not the proven workflow/helper bytes.
+Required CI must still pass on the final docs head. The stacked non-default base did not generate
+CodeQL; re-run it after retargeting before maintainer merge.
+
+For a local check against the real Compose contract, prove both the positive configuration and the
+missing-connector-key negative path. These are explicitly non-production test values:
+
+```powershell
+$env:TASKDECK_JWT_SECRET='non-production-compose-test-secret'
+$env:TASKDECK_CONNECTORS_ENCRYPTION_KEY='MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA='
+docker compose -f deploy/docker-compose.yml --profile baseline config *> $null
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Remove-Item Env:TASKDECK_CONNECTORS_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+$composeOutput = docker compose -f deploy/docker-compose.yml --profile baseline config 2>&1
+$composeExit = $LASTEXITCODE
+if ($composeExit -eq 0) { Write-Error 'Compose unexpectedly accepted a missing connector key'; exit 1 }
+if (($composeOutput | Out-String) -notmatch 'TASKDECK_CONNECTORS_ENCRYPTION_KEY') {
+  $composeOutput
+  Write-Error 'Compose failed for an unexpected reason'
+  exit 1
+}
+Remove-Item Env:TASKDECK_JWT_SECRET -ErrorAction SilentlyContinue
 ```
 
 The project settings checks are structural proof only. A fresh runtime hook inventory is still needed to distinguish no Taskdeck project hooks from surviving user-, organization-, or runtime-level controls.
@@ -261,7 +799,7 @@ powershell -NoProfile -File $script -SelfTest
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-`-SelfTest` is authentication-free and reports its exact check count. It includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, truncated nested connections, a positive limit ceiling, aggregated missing/multiple same-repository Issue priority labels before PR lookups, raw REST Issue/PullRequest normalization, same-repository authority, default-off external Issue authority, mixed/external-only references, strict `Priority V` fallback, ignored-reference source drift, ordered option dispatch, zero-write option validation, partial writer failures, and verified post-apply output. The Required CI docs-governance job parses the script and runs this same authentication-free suite.
+`-SelfTest` is authentication-free, currently reports **102 checks**, and includes a mocked 1,001-item project plus fail-closed cases for early termination, exact duplicate IDs, case-distinct IDs, count/stamp drift, repeated or missing cursors, exact-Boolean outer and nested pagination metadata (including null/string/number/object values), truncated nested connections, a positive limit ceiling, aggregated missing/multiple same-repository Issue priority labels before PR lookups, raw REST Issue/PullRequest normalization, same-repository authority, default-off external Issue authority, mixed/external-only references, strict `Priority V` fallback, ignored-reference source drift, ordered option dispatch, zero-write option validation, partial writer failures, and verified post-apply output. The restart coverage proves drift-then-success, late-page whole-snapshot restart from `after = null`, explicit bound exhaustion, malformed-metadata mixed-fault non-retry precedence, CLI-scale limit compatibility, intrinsic overflow and terminal premature-count precedence over count/stamp drift, and zero Apply writes when the pre-write snapshot exhausts its restart budget or intrinsic pagination faults are observed. The post-Apply cases separately prove that an exhausted audit can follow attempted or applied writes and reports the final state as unknown; they also prove that a partial writer failure does not skip the complete audit. The Required CI docs-governance job parses the script and runs this same authentication-free suite.
 
 Then exercise the live read-only boundaries:
 
@@ -332,8 +870,8 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Tomorro
 
 `backend/tests/Taskdeck.Application.Tests/Services/ProvenanceQueryServiceTests.cs` — **41 tests** covering:
 - Icon map: 26-entry case-insensitive map with fallback default icon
-- Weight bucketing: extractive >= 0.7 confidence → "primary", < 0.7 → "contextual", inferred → "inferred"
-- Human-readable value strings with quote snippet truncation, `Math.Round` for confidence display
+- Weight bucketing: inferred fields → "inferred"; extractive fields become "primary" only for derived confidence >= 0.7, otherwise "contextual"
+- Human-readable-value tests explicitly distinguish exact model-reported confidence from deterministic extraction with no number; quote truncation and `Math.Round` display remain covered. Derived and not-reported endpoint semantics are covered separately by the confidence-service tests below
 - Empty provenance (returns empty list, not error), missing proposal, authorization
 - FK enforcement via `AddProposalProvenanceForeignKey` migration
 
@@ -354,16 +892,35 @@ Run:
 dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~SideEffect"
 ```
 
-### Confidence Breakdown Tests (`#1021`/`#1036`)
+### Source-labelled Proposal Confidence Tests (originally `#1021`/`#1036`; corrected by `#1307` AC1 / PR `#2160`)
 
-`backend/tests/Taskdeck.Domain.Tests/Confidence/ConfidenceComponentTests.cs`, `ConfidenceBreakdownTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/Confidence/ConfidenceBreakdownServiceTests.cs` — **63 tests** covering:
-- ConfidenceComponent: value range [0..1], NaN/Infinity rejection, key validation
-- ConfidenceBreakdown: overall/threshold range, MeetsThreshold computed property, defensive component list copy
-- ConfidenceBreakdownService: 4-component weighted computation (Pattern match, Reach, Reversibility, Recency), reach formula `2.0 / (2.0 + log2(n))`, risk-level reversibility scoring, recency from expiry window, threshold note generation, static weight map
+Backend coverage lives in `backend/tests/Taskdeck.Domain.Tests/Entities/ProvenanceFieldTests.cs`, `backend/tests/Taskdeck.Application.Tests/Services/AutomationProposalServiceTests.cs`, `CaptureTriageServiceTests.cs`, `Confidence/ConfidenceBreakdownServiceTests.cs`, `ProvenanceQueryServiceTests.cs`, and `backend/tests/Taskdeck.Api.Tests/AutomationProposalsApiTests.cs`. Focused Paper Review coverage lives in:
 
-Run:
+- `frontend/taskdeck-web/src/tests/api/proposalDeepReviewApi.spec.ts`
+- `frontend/taskdeck-web/src/tests/composables/usePaperReviewSelectors.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewMembershipFilter.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewView.language.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/PaperReviewView.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/ReviewMain.spec.ts`
+- `frontend/taskdeck-web/src/tests/views/paper/review/ReviewWhyNow.spec.ts`
+
+Together these cover:
+
+- nullable source/value invariants: model-reported and derived sources require bounded values; deterministic and not-reported sources forbid numeric decoration
+- validated schema-v2 confidence round-tripping per operation through the trusted application-only seam; HTTP create callers cannot inject trusted confidence, and deterministic fallback carries no number
+- `/confidence` returning exact persisted item values plus a display-only average for model-reported or derived sources; `threshold` and `meetsThreshold` are null, and Pattern match/Reach/Reversibility/Recency components are not synthesized
+- Paper Review rendering model-reported numeric evidence and explicit deterministic/not-reported states without using confidence to gate approval or Apply; derived endpoint behavior is backend-covered, while these focused frontend fixtures do not exercise a derived source
+
+Run from the repository root unless noted:
+
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ConfidenceBreakdown"
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~ProvenanceFieldTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~AutomationProposalServiceTests|FullyQualifiedName~CaptureTriageServiceTests|FullyQualifiedName~ConfidenceBreakdownServiceTests|FullyQualifiedName~ProvenanceQueryServiceTests"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~AutomationProposalsApiTests"
+dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~RoadmapInvariantTests"
+dotnet ef migrations has-pending-model-changes --project backend/src/Taskdeck.Infrastructure/Taskdeck.Infrastructure.csproj --startup-project backend/src/Taskdeck.Api/Taskdeck.Api.csproj
+cd frontend/taskdeck-web
+npx vitest --run --maxWorkers=2 src/tests/api/proposalDeepReviewApi.spec.ts src/tests/composables/usePaperReviewSelectors.spec.ts src/tests/views/paper/review/PaperReviewMembershipFilter.spec.ts src/tests/views/paper/review/PaperReviewView.language.spec.ts src/tests/views/paper/review/PaperReviewView.spec.ts src/tests/views/paper/review/ReviewMain.spec.ts src/tests/views/paper/review/ReviewWhyNow.spec.ts
 ```
 
 ### Conflict Detection Tests (`#1022`/`#1040`)
@@ -409,18 +966,11 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Similar
 
 The RFAI-02 through RFAI-08 foundational slice wave (PRs `#989`–`#994`) added ~631 new backend tests across 6 PRs. Each PR received adversarial review with review-added tests fixing bot findings from Gemini and Codex connector reviews.
 
-### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`)
+### IntentEnvelopeV1 Tests (RFAI-02, `#974`/`#989`) — removed under `#1305` AC3
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — **117 tests** covering:
-- IntentEnvelopeV1 lifecycle (Created→Extracting→Processed), candidate addition, evidence linking
-- SourceBlock/SourceSpan validation: offset ranges, snippet length consistency, evidence fabrication prevention
-- IntentCandidate confidence bounds, evidence link construction
-- ProposalBatch schema round-trip smoke tests against handwritten JSON schema
+The RFAI-02 intent-envelope entity suite (`IntentEnvelopeV1Tests.cs`, `IntentCandidateTests.cs`, `SourceBlockTests.cs`, `SourceSpanTests.cs`, `EvidenceLinkTests.cs`, `TaskdeckProposalBatchTests.cs`, `ProposalBatchSchemaRoundTripTests.cs` — 150 tests, grown from the 117 in the original RFAI-02 wave) was **removed under `#1305` AC3**, together with the unmapped, table-less entities it exercised (`IntentEnvelopeV1`/`SourceBlock`/`SourceSpan`/`IntentCandidate`/`EvidenceLink`/`TaskdeckProposalBatch`) and the `proposal-batch.v1` schema. That vocabulary was scaffolding with no production consumer, superseded by the shipped `ProvenanceEvidenceLink` / `ProvenanceField` provenance chain.
 
-Run:
-```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~IntentEnvelope or FullyQualifiedName~SourceSpan or FullyQualifiedName~SourceBlock or FullyQualifiedName~IntentCandidate or FullyQualifiedName~EvidenceLink or FullyQualifiedName~ProposalBatch"
-```
+The "automation output references its source payload" invariant those tests protected (evidence fabrication prevention, evidence-linked proposals as a first-class concept) now lives in architecture invariant **INV-12** (`Taskdeck.Architecture.Tests/RoadmapInvariantTests.cs`), asserted against the shipped provenance types. Provenance coverage: `ProvenanceFieldTests.cs`, `ProposalProvenanceTests.cs`, and the ProvenanceEvidenceLink suite under `Taskdeck.Domain.Tests`.
 
 ### Semantic Memory Vector Index Tests (RFAI-06, `#978`/`#990`)
 
@@ -580,7 +1130,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Options
 
 ### CLI Tests Restored (TST-58, `#853`/`#906`)
 
-CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave; its newer exact local count is **112 tests** at `#1533`:
+CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes and extracting a shared `CliTestHarness` (replacing ~90-line duplication across 5 files). The CLI suite totalled approximately **78 tests across 10 files** at time of this wave; its newer exact local count is **127 tests** at `#1530`:
 
 | File | Tests |
 |------|-------|
@@ -595,7 +1145,7 @@ CLI test discovery was fixed by adding missing `[Fact]`/`[Theory]` attributes an
 | `CliJsonContractTests.cs` | 4 |
 | `CommandDispatcherTests.cs` | 3 |
 
-Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk; invalid timeouts are rejected before temporary-directory allocation; every child receives an isolated harness working directory; active subprocess launches are capped at half the available processors (minimum 1, maximum 4); stdout, stderr, and exit are observed concurrently; and the unchanged 30-second process deadline kills the tree, falls back to a direct root kill when tree termination reports an expected platform error, and polls every explicitly tracked PID for up to five seconds before returning. Every failure after a successful process start, including output-drain failures, takes that termination/reap path before the launch slot is released. The first fault is observed without awaiting sibling tasks; remaining observations are canceled and explicitly settled after cleanup. A throwing cancellation callback cannot bypass reap and is preserved as an additional cause. Successful cleanup otherwise preserves the selected original failure, while cleanup failure preserves all causes and poisons the shared launch gate. Poisoning wakes queued callers with an error while retaining the failed root's capacity so no later child is admitted beside it; bounded reap expiry additionally reports the exact live-PID set. Deterministic process-start, queue, cancellation, output-drain fault, cancellation-callback failure, and reaper-barrier signals prove both two-root overlap and one-slot serialization/reap ordering without fixed-delay scheduler assumptions. The lifecycle stress collection disables parallelization so its fixed two-root probe never adds load beside other CLI test classes. `[Collection("Console Tests")]` on `ConsoleOutputTests` preserves `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
+Harness improvements: `AppContext.BaseDirectory` dll lookup replaces the fragile repo-tree walk; invalid timeouts are rejected before temporary-directory allocation; every child receives an isolated harness working directory; all real-process contracts, including `CliJsonContractTests`, use the shared launcher; a source invariant rejects any second process-launch file; ordinary real-process launches are serialized while lifecycle tests inject a wider gate only for deterministic cleanup coverage; stdout, stderr, and exit are observed concurrently; and the default outer process deadline is derived from `SerializedMigrator.DefaultLockTimeout` (30 seconds) plus a separately bounded command-completion budget (30 seconds), leaving 60 seconds total for the inner lock wait followed by migration, dispatch, and disposal. Default harnesses copy a process-local, fully disposed, fully migrated empty SQLite byte template into their own paths, so command contracts still execute real CLI startup and `SerializedMigrator` lock acquisition without rebuilding the complete migration chain for every test. The template is built exactly once through a thread-safe `Lazy<byte[]>`, uses pooling-disabled SQLite without persistent WAL state, is read only after context disposal, and leaves no persistent template directory. Copies remain mutation-isolated. `preprovisionDatabase: false` retains an explicit cold-start path; the full-lifecycle test proves an absent database is created by the CLI, all migrations apply, all eight trace phases complete, and product tables remain empty. Deadline cleanup kills the tree, falls back to a direct root kill when tree termination reports an expected platform error, and polls every explicitly tracked PID for up to five seconds before returning. Every failure after a successful process start, including output-drain failures, takes that termination/reap path before the launch slot is released. The first fault is observed without awaiting sibling tasks; remaining observations are canceled and explicitly settled after cleanup. A throwing cancellation callback cannot bypass reap and is preserved as an additional cause. Successful cleanup otherwise preserves the selected original failure, while cleanup failure preserves all causes and poisons the shared launch gate. Poisoning wakes queued callers with an error while retaining the failed root's capacity so no later child is admitted beside it; bounded reap expiry additionally reports the exact live-PID set. When the test harness supplies its allow-listed correlation, the CLI derives a fixed-format trace filename inside its own working directory; normal invocations receive no correlation. Timeout output is redacted to command shape plus fixed process/task/phase state, and tracing failure is fail-open. Deterministic process-start, queue, cancellation, output-drain fault, cancellation-callback failure, and reaper-barrier signals prove both two-root overlap and one-slot serialization/reap ordering without fixed-delay scheduler assumptions. The deterministic deadline-contract test proves the outer bound remains strictly greater than the migrator's lock bound without sleeping. The hard-deadline reap regression retains an injected 500-millisecond deadline and deliberately accepts any startup phase, while a separate migration-lock regression waits for the bounded trace to reach `migration-begin` before injecting cancellation. The lifecycle stress collection disables parallelization so its fixed two-root probe never adds load beside other CLI test classes. `[Collection("Console Tests")]` on `ConsoleOutputTests` preserves `Console.Out` thread safety when xUnit runs classes in parallel, and `InternalsVisibleTo` on `Taskdeck.Cli` lets `Cli.Tests` unit-test internal types directly.
 
 Run:
 ```bash
@@ -778,18 +1328,24 @@ CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uplo
 
 ### Mutation Testing (TST-05, `#90`/`#796`)
 
-Backend (Stryker.NET): targets `Taskdeck.Domain` with `Taskdeck.Domain.Tests`. Thresholds: break=60, high=80.
+Backend (Stryker.NET 4.16.0): targets `Taskdeck.Domain` from the `Taskdeck.Domain.Tests` project context. Thresholds: break=0, low=60, high=80. The checked-in preflight rejects obsolete config keys and solution-context/workflow drift before the long mutation run.
 Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with vitest runner.
 
 Run commands:
 ```bash
 # Backend
-cd backend && dotnet tool install dotnet-stryker && dotnet stryker
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+dotnet tool restore
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 # Frontend
 cd frontend/taskdeck-web && npm run mutation:test
 ```
 
-CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. Non-blocking, reports uploaded as artifacts. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+CI: `mutation-testing.yml` runs weekly (Sunday 04:00 UTC) + manual dispatch. The backend job has a finite 180-minute ceiling for the full Domain mutation set and fails if no report artifact exists. Mutation score remains non-blocking. Policy at `docs/testing/MUTATION_TESTING_POLICY.md`.
+
+Verified baseline: backend-only run [30236307062](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30236307062) on exact workflow head `307add004fbe142321a6ec11be21fab708824d5d` completed in 192 seconds. Stryker created 3,682 mutants; 2,351 were killed, 576 survived, 2 timed out, and 753 were skipped, for a 70.75% score. The uploaded two-file `stryker-net-report` artifact is 874,386 bytes (SHA-256 `0e8a9a41b8cd484b6c267bd914c57cda0ffa973f59d8989e89038157605f21c8`).
 
 ### Container Integration Tests (TST-06, `#91`/`#804`)
 
@@ -867,7 +1423,7 @@ New test coverage:
 - `ToolCallingChatOrchestratorTests`: multi-turn loop, timeout, max-round enforcement
 - `ReadToolSchemasTests`: schema generation for all 5 read tools
 - `MockLlmProviderToolCallingTests` / `MockToolCallDispatcherTests` / `MockToolResultsTests`: mock provider tool-calling dispatch and result formatting
-- `OpenAiToolCallingParseTests` / `GeminiToolCallingParseTests`: provider-specific tool-call response parsing
+- Historical at PR `#669`: `OpenAiToolCallingParseTests` / `GeminiToolCallingParseTests` covered both then-active providers. The Gemini parser and its executable provider surface were retired by `#1879`; OpenAI parsing remains active.
 
 Manual validation recommended: send "What cards are in my Backlog?" via chat with Mock provider and verify dynamic tool-calling response.
 
@@ -876,9 +1432,11 @@ Manual validation recommended: send "What cards are in my Backlog?" via chat wit
 Tracking issue: `#652` (Phase 1 of `#648`)
 
 New test coverage:
-- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, phantom-user fallback, multi-user board scoping
+- `McpBoardResourcesTests`: `taskdeck://boards` resource listing, fail-closed identity resolution, multi-user board scoping
 
-Manual validation recommended: configure `mcp.example.json` in Claude Code / Cursor and ask "What boards do I have?" to verify resource delivery.
+Manual validation recommended: follow [MCP Server — From source](MCP_SERVER.md#from-source) in
+Claude Code or Cursor and ask "What boards do I have?" to verify resource delivery against the
+intended source database and identity.
 
 ## GDPR Data Portability Coverage (PR #666, delivered 2026-04-01)
 
@@ -953,9 +1511,12 @@ Mutation testing is available as a non-blocking quality signal for detecting wea
 ### Running locally
 
 ```bash
-# Backend (requires dotnet-stryker global tool)
-cd backend
-dotnet stryker --config-file stryker-config.json
+# Backend (from the repository root; uses the workflow-pinned tool version)
+powershell -NoProfile -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+# PowerShell 7/Linux runner equivalent: pwsh -File scripts/ci/Test-StrykerConfig.ps1 -SelfTest
+dotnet tool restore
+cd backend/tests/Taskdeck.Domain.Tests
+dotnet tool run dotnet-stryker -- --config-file ../../stryker-config.json --output ../../StrykerOutput
 
 # Frontend
 cd frontend/taskdeck-web
@@ -964,7 +1525,7 @@ npm run mutation:test
 
 ### CI
 
-Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. Reports uploaded as artifacts.
+Weekly workflow (Sunday 04:00 UTC) + manual dispatch via `.github/workflows/mutation-testing.yml`. The backend job has a 180-minute ceiling and missing backend reports fail artifact upload.
 
 ### Policy and triage
 
@@ -1223,6 +1784,49 @@ npm run typecheck
 npm run build
 ```
 
+Frontend spec type-checking (`#1468` / `#1634`, ADR-0049, delivered 2026-08-12):
+- `npm run typecheck` is `vue-tsc -b`, which builds every project referenced from
+  `frontend/taskdeck-web/tsconfig.json`. `tsconfig.app.json` covers production source and still
+  excludes `src/tests/**`; `tsconfig.vitest.json` covers the spec tree. No CI workflow change was
+  needed — the existing `Run frontend typecheck` step picks the new project up.
+- Before this, **nothing type-checked a spec**: `vue-tsc` skipped them and vitest transpiles without
+  checking (`--typecheck` is opt-in and applies to `*.test-d.ts`). A spec could reference a property
+  that does not exist and every gate stayed green. `#1462` hit exactly that.
+- `tsconfig.vitest.json` mirrors `tsconfig.app.json`'s compiler options exactly. Do **not** add
+  `"node"` to its `types`: it clears 13 `TS2591` in the quarantined specs (3 bare `process`, 10
+  `node:` module imports) and
+  breaks production source pulled in as a dependency. Measured, exactly one error —
+  `PaperHomeView.vue(238,5): TS2322: Type 'number' is not assignable to type 'Timeout'`, because
+  `greetingTimer` is annotated `ReturnType<typeof window.setInterval>`, which resolves to node's
+  `Timeout` while the call still returns the DOM `number`. `"vitest/globals"` is likewise
+  unnecessary; 283 of the 284 specs import their vitest symbols explicitly.
+- Its `include` carries `src/**/*.d.ts` on purpose. `src/types/web-speech.d.ts` is *ambient* —
+  global scope, imported by nothing — so a `src/tests/**`-only include drops it, and production
+  source pulled in as a dependency then compiles without those globals. Without that line,
+  un-quarantining `composables/useVoiceCapture.spec.ts` reports 3 errors in untouched production
+  source and masks 2 of the spec's own by making two `@ts-expect-error` directives spuriously
+  "used". Keep the line, and add any new ambient declaration under `src/`, not elsewhere.
+- Its `exclude` array is a **quarantine**, not configuration. The historical 2026-08-07 baseline
+  listed 64 files carrying 415 pre-existing errors, measured over the 286 `.ts` files under
+  `src/tests/` (284 specs plus `setup.ts` and a mock). PR `#1634` fixed 24 one-error files, leaving
+  **40 quarantined files / 391 errors**. **New spec files are checked by default** because they are not
+  in the list. The list may only shrink — delete an entry once its file is fixed, never add one to
+  turn a red build green. Burn-down is tracked in `#1607`.
+- **Scope caveat — do not read this as "the test suite is type-checked".** A full Vitest run
+  executes **302** spec files: 284 under `src/tests/` and 18 under the frontend-root `tests/`
+  directory. This project gates **244** of them (284 − 40). The **58** it does not gate are those
+  40 plus those 18. (Do not subtract 222 from 302 — 222 counts *files in the project*, including
+  `setup.ts` and a mock that are not specs.) The 18 are Node-flavoured — they import the `.mjs`
+  files under `scripts/` and use `process`/`NodeJS` — so they need a Node type environment and
+  therefore a fourth, separate project; putting them here would require the one setting that breaks
+  production source. Measured with this project's options: 54 errors in the run — 42 across 15 of
+  the 18 specs, plus 12 in three `playwright.*.ts` helpers pulled in as dependencies. Also
+  tracked in `#1607`.
+- Type-level assertions are now available in ordinary specs: `expectTypeOf` erases at runtime, so
+  the assertion is discharged by `vue-tsc -b` rather than by the vitest run. See
+  `src/tests/api/automationApi.spec.ts` for the worked example (it pins
+  `Proposal.approvedRevisionId`, which its runtime tests structurally could not).
+
 Frontend lint suppression guidance:
 - Prefer fixing lint violations over suppressing them.
 - Keep suppressions as narrow as possible (`eslint-disable-next-line` with reason).
@@ -1452,6 +2056,7 @@ Policy notes:
 - when fresh-server mode cannot bind `http://localhost:5000/api`, the director automatically selects a free local API port; if explicit overrides still conflict, it prints a remediation hint for `TASKDECK_E2E_API_BASE_URL` / `TASKDECK_E2E_FRONTEND_PORT`.
 - `ci-extended.yml` exposes a matching `demo-director-smoke` lane for explicit validation through `workflow_dispatch` or a PR labeled `automation` when the PR touches `.github/workflows/**`, `backend/**`, `frontend/**`, `deploy/**`, or `scripts/**`.
 - `npm run demo:seed` is expected to be rerun-safe on the canonical demo account: seeded captures, queue examples, chat evidence, comments, and Ops logs should be reused when present instead of multiplying on every local/manual regression run.
+- When `dev-up -Seed` / `dev-up.sh --seed` invokes `demo:seed`, the launcher supplies a fresh run identity and the seeder pins every request to one proven HTTP connection. Ordinary responses have a 10,000 ms deadline; only the exact provider chat-message `POST` has a 700,000 ms deadline for the maximum supported tool-round, Ollama-fallback, and delivery sequence. Either expiry destroys that transport and exits without retry or reconnection. Bare manual `npm run demo:seed` remains outside this run-bound mode.
 - `demo:director` validates its own options before Playwright passthrough; keep director flags before `--` and pass raw Playwright arguments only after `--`.
 - Full stakeholder walkthrough recording remains manual/headed via `TASKDECK_RUN_DEMO=1`.
 - opt-in live-provider chat verification is now separate from demo mode: use `TASKDECK_RUN_LIVE_LLM_TESTS=1` when you want a real-provider probe without running the full stakeholder demo flow.
@@ -1461,25 +2066,65 @@ Policy notes:
 Canonical operator contract:
 - `docs/product/SAUL_DEMO_REHEARSAL_CONTRACT.md`
 
-Deterministic bootstrap for the Saul-facing story:
+Deterministic bootstrap for the Saul-facing story (the wrappers scope only non-secret Mock/live-disabled
+settings to the launcher process tree; they do not display, read, persist, or overwrite any provider
+key value):
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
-npm run demo:run -- --clean --skip-llm client-onboarding
+```powershell
+# From the repository root
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  & ".\scripts\dev-up.ps1" -Seed -ResetSeed
+}'
 ```
 
-Deterministic artifact rehearsal bundle:
+```bash
+# From the repository root
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  ./scripts/dev-up.sh --seed --reset-seed
+```
+
+Continue only after `Stack is up.` and the launcher's API line reports
+`http://localhost:5000`. This Saul contract is default-port only; stop and abort the rehearsal if
+that URL is different. Do not replace the launcher with bare `demo:seed` or `demo:run` commands.
+
+Deterministic artifact rehearsal bundle (run from `frontend/taskdeck-web`; the wrappers preserve
+the same child-scoped Mock/live-disabled settings through the director and its fresh servers):
 
 ```bash
-cd frontend/taskdeck-web
-npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+env \
+  Llm__Provider=Mock \
+  Llm__EnableLiveProviders=false \
+  Llm__AllowLiveProvidersInDevelopment=false \
+  TASKDECK_DEMO_LLM_PROVIDER=Mock \
+  TASKDECK_DEMO_DISABLE_LIVE_LLM=1 \
+  npm run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+```
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command '& {
+  $env:Llm__Provider = "Mock"
+  $env:Llm__EnableLiveProviders = "false"
+  $env:Llm__AllowLiveProvidersInDevelopment = "false"
+  $env:TASKDECK_DEMO_LLM_PROVIDER = "Mock"
+  $env:TASKDECK_DEMO_DISABLE_LIVE_LLM = "1"
+  npm.cmd run demo:director -- --output-dir ./demo-artifacts/saul-rehearsal --e2e-db ./taskdeck.demo.saul.db --reset-e2e-db --fresh-servers --scenario client-onboarding --skip-llm --turns 0 --rng-seed saul-rehearsal
+}'
 ```
 
 Acceptance focus for this rehearsal:
 - prove `Home -> Inbox/Capture -> Review -> Board`
 - prove review-first trust language is visible without narration
 - prove ACME onboarding capture becomes clean board work after explicit approval
+- this rehearsal remains local evidence only and does not itself prove or authorize a public
+  release; the separate v0.1.1 public-artifact proof plus the explicit clean-Sandbox waiver
+  satisfies `#1877` only. Issue `#1876` was reopened by the 2026-08-22 ordinary-profile incident,
+  while `#1242` remains open for its distinct maintainer record decision
 
 ## Load Harness (k6 + Playwright Concurrency)
 
@@ -1581,9 +2226,12 @@ Notes:
 ## MCP Operations Validation
 
 ```powershell
-docker mcp server ls
+docker mcp profile server ls --format json
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.Tests.ps1
 ```
+
+The validator is deliberately non-starting: it reads the user-scope profile and requires the exact sorted set of running `docker-mcp=true` container IDs to match before and after the check. Normal output exposes only counts and SHA-256 fingerprints, never profile JSON or container IDs. Any inventory error or identity-set drift fails closed, and the validator never stops or removes containers because the shared Docker daemon provides no invocation identity that proves ownership. This proves profile membership and zero container churn during the validation window; it does not prove live gateway startup.
 
 Optional servers (`postman`, `dockerhub`) warning mode:
 
@@ -1591,7 +2239,7 @@ Optional servers (`postman`, `dockerhub`) warning mode:
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional
 ```
 
-Optional servers strict mode (fail-fast on missing prereqs/runtime failures):
+Optional servers strict mode (fail-fast on missing profile entries or prerequisites):
 
 ```powershell
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors
@@ -1609,12 +2257,11 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 
 Required workflow: `.github/workflows/ci-required.yml`
 
-- `dco`
-  - Checks every pull-request commit for a DCO `Signed-off-by:` trailer with the
-    SHA-pinned `KineticCafe/actions-dco` action
-  - Active for pull requests and currently **advisory**
-    (`continue-on-error: true`); promotion into branch protection remains
-    maintainer-owned under #1173
+- DCO is not an active CI gate. By explicit maintainer decision on 2026-08-23, no workflow invokes
+  `scripts/ci/check-dco-signoffs.sh` or `KineticCafe/actions-dco`, and `Signed-off-by:` trailers are
+  optional. The verifier and `scripts/ci/test-check-dco-signoffs.sh` remain dormant restoration
+  assets; run the synthetic test only when changing those assets or implementing an explicitly
+  authorized restoration. `#2019` is the restoration tracker, not authorization to reactivate it.
 - `docs-governance`
   - Ubuntu `Docs Governance` enforces required active docs, failure-ledger synchronization, Golden
     Principles, and GitHub-operations invariants
@@ -1631,9 +2278,14 @@ Required workflow: `.github/workflows/ci-required.yml`
     guard/initializer launch rules without a second Claude worktree, restored host opt-in, directly
     pasteable here-string syntax, real PowerShell 5.1 two-argv transport, occupied-target rejection
     before normal or dry-run ref mutation, bounded dirty-artifact cleanup without force,
-    clean-only separate-Git-dir late-collision removal plus tracked/untracked/ignored-content
-    preservation, case-variant remote refresh, and pre-mutation rejection
-    of invalid, overlong, or namespace-colliding Windows branch refs
+    clean-only separate-Git-dir late-collision removal plus preservation of
+    tracked/untracked/ignored content and bytes hidden by `assume-unchanged`/`skip-worktree`,
+    case-variant remote refresh, and a real stalled remote-helper root plus child that
+    must be absent before bounded failure returns without changing refs or worktrees. It also covers
+    post-checkout-hook timeouts after worktree registration, proving clean populated targets plus
+    locked metadata are removed safely while dirty or index-hidden bytes and their registrations
+    are preserved, alongside pre-mutation rejection of invalid, overlong, or
+    namespace-colliding Windows branch refs
 - `backend-architecture`
   - Enforces architecture boundaries in CI
 - `backend-unit`
@@ -1647,6 +2299,8 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 - `container-images`
+  - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
+    static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
   - Validates compose rendering
   - Builds backend/frontend container images
   - Exports compressed image artifacts plus SHA256 checksums
@@ -1666,7 +2320,7 @@ Required workflow: `.github/workflows/ci-required.yml`
 - `sast-scan` (#1132, ADR-0035)
   - Semgrep SAST via `reusable-sast-scanning.yml`
   - **Advisory** (`enforce-findings: false`) pending the pre-existing finding baseline triage (#1175)
-- Frontend bundle-size budget runs **enforcing** as a step inside `frontend-unit` (`scripts/ci/check-bundle-size.mjs`, total-js < 1200 KB)
+- Frontend bundle-size budget runs **enforcing** as a step inside `frontend-unit` (`scripts/ci/check-bundle-size.mjs`; the hard gate is eager-graph JS — entry + modulepreload — < 1250 KB per the #1858 ruling; total emitted JS warns only)
 
 > Phased enforcement (ADR-0035): only `secret-scan` and the bundle check hard-block today;
 > `dependency-security`/`sast-scan` run on every PR but are advisory until the baseline is clean.
@@ -1817,7 +2471,7 @@ Planned quality expectations when implementation starts:
   - Includes LLM tool-calling orchestrator coverage (multi-turn loop, timeout, round limits) and read tool schema generation
   - Includes GDPR data export service (user-scoped completeness, versioned payload) and account deletion service (re-auth, confirmation phrase, PII anonymization)
   - Includes board metrics service coverage (aggregation, date range, label grouping)
-  - Includes MCP board resource coverage (listing, phantom-user fallback, multi-user scoping)
+  - Includes MCP board resource coverage (listing, fail-closed identity resolution, multi-user scoping)
   - Includes integrations registry service coverage (connector CRUD, enable/disable lifecycle, event logging)
 - HTTP contracts and behavior mappings:
   - `backend/tests/Taskdeck.Api.Tests`

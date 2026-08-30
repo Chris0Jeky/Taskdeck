@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
+import { formatShortcut } from '../../../utils/keyboardShortcuts'
 
 /**
  * PaperCaptureNib — variant A of the Paper Inbox capture surface.
@@ -23,6 +24,15 @@ const props = defineProps<{
    */
   bleeding?: boolean
   submitting?: boolean
+  /**
+   * A capture submitted from this nib failed and its inspectable receipt is
+   * showing (GH-1938). Marks the input invalid and points assistive tech at
+   * the receipt so the failure is announced against the field, not just as a
+   * toast that expires.
+   */
+  invalid?: boolean
+  /** DOM id of the failure receipt to associate via `aria-describedby`. */
+  errorId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -57,17 +67,30 @@ function resetDraft() {
   text.value = ''
 }
 
+/**
+ * The draft as it stands, for the parent to persist across a 401 redirect
+ * (GH-2142). Untrimmed on purpose — the user gets back exactly what was there.
+ */
+function snapshotDraft() {
+  return { text: text.value }
+}
+
+/** Put a previously stashed draft back into the nib (GH-2142). */
+function restoreDraft(draft: { text: string }) {
+  text.value = draft.text
+}
+
 onMounted(async () => {
   await nextTick()
   inputRef.value?.focus()
 })
 
-defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
+defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, restoreDraft })
 </script>
 
 <template>
   <div class="paper-nib">
-    <div class="paper-nib__eyebrow tk-eyebrow">Quick capture · ⌘;</div>
+    <div class="paper-nib__eyebrow tk-eyebrow">Quick capture · {{ formatShortcut('mod+;') }}</div>
 
     <div v-if="bleeding" class="paper-nib__bleed" data-testid="paper-nib-bleed">
       <!-- TODO(PAPER-07/PAPER-10): wire ink bleed once #1010 merges. -->
@@ -84,6 +107,8 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
       aria-label="Quick capture input"
       placeholder="What's on your mind, quickly?"
       :disabled="submitting"
+      :aria-invalid="invalid ? 'true' : undefined"
+      :aria-describedby="errorId ?? undefined"
       @keydown="onKeydown"
     />
 

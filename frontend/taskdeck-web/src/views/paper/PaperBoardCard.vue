@@ -2,6 +2,7 @@
 /* eslint-disable vuejs-accessibility/no-static-element-interactions -- the article and aria-hidden drag glyph are pointer drag boundaries; named-button activation and board keyboard movement remain separate */
 import { computed } from 'vue'
 import type { Card, Label } from '../../types/board'
+import { formatCalendarDate, isCalendarDateOverdue } from '../../utils/dueDates'
 
 /**
  * PaperBoardCard — index card / tag-ribbon card in the Paper kanban surface.
@@ -92,11 +93,31 @@ const ageLabel = computed(() => formatRelative(props.card.updatedAt ?? props.car
 
 const isOverdue = computed(() => props.tone === 'overdue')
 
+const formattedDueDate = computed(() => formatCalendarDate(
+  props.card.dueDate,
+  { year: 'numeric', month: 'numeric', day: 'numeric' },
+  'en-US',
+))
+
+const isDueDateOverdue = computed(() => isCalendarDateOverdue(props.card.dueDate))
+
+const openerLabel = computed(() => {
+  const base = `Card ${props.card.title}`
+  if (!formattedDueDate.value) return base
+  return `${base}, due ${formattedDueDate.value}${isDueDateOverdue.value ? ', overdue' : ''}`
+})
+
 const tagstampTone = computed(() => {
   if (props.tone === 'proposed') return 'ember'
   if (props.tone === 'applied') return 'applied'
   if (props.tone === 'overdue') return 'overdue'
+  if (isDueDateOverdue.value) return 'overdue'
   return null
+})
+
+const tagstampLabel = computed(() => {
+  if (props.tone) return props.tone.toUpperCase()
+  return isDueDateOverdue.value ? 'OVERDUE' : ''
 })
 
 function isDragHandleTarget(target: EventTarget | null): boolean {
@@ -148,7 +169,7 @@ function onDragHandleMouseDown() {
       type="button"
       class="paper-board-card__open"
       data-action="open-card"
-      :aria-label="`Card ${card.title}`"
+      :aria-label="openerLabel"
       @click="onClick"
       @keydown.enter.stop.prevent="onClick"
       @keydown.space.stop.prevent="onClick"
@@ -173,7 +194,7 @@ function onDragHandleMouseDown() {
               tagstampTone === 'ember' ? 'var(--ember)' :
               tagstampTone === 'applied' ? 'var(--applied)' :
               'var(--overdue)' }"
-          >{{ (tone ?? '').toUpperCase() }}</span>
+          >{{ tagstampLabel }}</span>
           <span
             class="paper-board-card__drag-handle"
             data-action="drag-card-handle"
@@ -202,6 +223,11 @@ function onDragHandleMouseDown() {
           :style="{ color: label.colorHex }"
         >· {{ label.name }}</span>
         <span class="paper-board-card__spacer" />
+        <span
+          v-if="formattedDueDate"
+          class="paper-board-card__due-date"
+          :class="{ 'paper-board-card__due-date--overdue': isDueDateOverdue }"
+        >Due {{ formattedDueDate }}</span>
         <span v-if="subtasks" class="paper-board-card__subtasks">
           {{ subtasks.done }}/{{ subtasks.total }}
         </span>
@@ -390,8 +416,17 @@ function onDragHandleMouseDown() {
   flex: 1;
 }
 
+.paper-board-card__due-date,
 .paper-board-card__subtasks,
 .paper-board-card__age {
   font-variant-numeric: tabular-nums;
+}
+
+.paper-board-card__due-date {
+  white-space: nowrap;
+}
+
+.paper-board-card__due-date--overdue {
+  color: var(--overdue);
 }
 </style>

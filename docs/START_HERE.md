@@ -126,14 +126,34 @@ The following are shipped, but they are not the normal first-run path:
 
 If you are evaluating Taskdeck for the first time, stay in `Home`, `Today`, `Inbox`, `Review`, and `Boards` until the loop makes sense.
 
+## Fastest Run Path (Windows release)
+
+The supported evaluation path for 0.1.x is the packaged Windows release - no toolchain needed:
+download the ZIP + checksum from the
+[latest public release](https://github.com/Chris0Jeky/Taskdeck/releases/latest) and follow
+[releases/WINDOWS_QUICK_START.md](releases/WINDOWS_QUICK_START.md) (verify, extract, double-click,
+register). The source path below is for contributors and non-Windows evaluation.
+
 ## Seeded Evaluation Path
 
 If you want a populated workspace instead of starting mostly empty:
 
-```bash
-cd frontend/taskdeck-web
-npm run demo:seed
+From the repository root on Windows:
+
+```powershell
+.\scripts\dev-up.ps1 -Seed
 ```
+
+Or on Linux/macOS:
+
+```bash
+./scripts/dev-up.sh --seed
+```
+
+Continue only after the launcher prints `Stack is up.`, then use its printed API and frontend URLs.
+The launcher binds every seed request to the Development API instance it started. If a
+launcher-owned stack is already running, stop it with `-Stop` / `--stop`, then rerun the seeded
+launcher instead of calling the lower-level demo scripts directly.
 
 Use this when:
 

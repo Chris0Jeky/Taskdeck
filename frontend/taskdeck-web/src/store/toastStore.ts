@@ -10,15 +10,105 @@ export interface ToastAction {
   handler: () => void
 }
 
-export interface Toast {
+/**
+ * The outcome word a toast is stamped with (#1970).
+ *
+ * A toast's `type` is its SEVERITY — which colour to paint — not a statement
+ * about what happened. Paper renders a word beside the message, and deriving
+ * that word from the severity stamped "APPLIED" on every success, including
+ * inbox saves and pre-apply approvals where "applied" is precisely the thing
+ * that had NOT happened yet.
+ *
+ * `label` is that word's identity, chosen by the caller that knows which
+ * action ran. `applied` is reserved for a proposal actually written to a board
+ * (post-`/execute`) and must never be used as a generic success stamp.
+ *
+ * `done` / `noted` / `warning` / `failed` are the severity-generic fallbacks
+ * used when a caller names no action; the renderer picks one from `type`, so
+ * an unlabelled toast degrades to a neutral word, never to an action word.
+ */
+export type ToastLabel =
+  | 'saved'
+  | 'queued'
+  | 'approved'
+  | 'applied'
+  | 'done'
+  | 'noted'
+  | 'warning'
+  | 'failed'
+
+export interface ToastOptions {
+  /** Optional title, used by paper-mode rendering for the strong line. */
+  title?: string
+  /** Optional diagnostic detail shown only when an error receipt is expanded. */
+  details?: string
+  /** Optional inline action (e.g. an "open" shortcut). */
+  action?: ToastAction
+  /** Outcome word for the paper-mode stamp; falls back to a severity word. */
+  label?: ToastLabel
+}
+
+export interface Toast extends ToastOptions {
   id: string
   message: string
   type: 'success' | 'error' | 'info' | 'warning'
   duration: number
-  /** Optional title, used by paper-mode rendering for the strong line. */
-  title?: string
-  /** Optional inline action (e.g. an "open" shortcut). */
-  action?: ToastAction
+}
+
+/**
+ * Return exactly the user-visible receipt that the toast copy action exposes.
+ * Keeping this in the shared contract prevents the legacy and Paper surfaces
+ * from copying different representations of the same failure.
+ */
+export function toastReceiptText(toast: Pick<Toast, 'message' | 'details'>): string {
+  return toast.details ? `${toast.message}\n\n${toast.details}` : toast.message
+}
+
+/**
+ * Copy a toast receipt without making clipboard support a prerequisite for the
+ * app. Browsers that deny the async Clipboard API get a textarea fallback;
+ * both paths fail closed and never throw into the toast interaction.
+ */
+export async function copyToastReceipt(toast: Pick<Toast, 'message' | 'details'>): Promise<boolean> {
+  const text = toastReceiptText(toast)
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to the legacy DOM path (common in insecure/local contexts).
+    }
+  }
+
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  let textarea: HTMLTextAreaElement | null = null
+  try {
+    const body = document.body
+    if (!body || typeof document.execCommand !== 'function') {
+      return false
+    }
+
+    textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    body.appendChild(textarea)
+    textarea.select()
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    try {
+      textarea?.remove()
+    } catch {
+      // Cleanup is best effort; the copy contract still fails closed.
+    }
+  }
 }
 
 type ToastTimer = {
@@ -61,7 +151,7 @@ export const useToastStore = defineStore('toast', () => {
     message: string,
     type: Toast['type'] = 'info',
     duration = 3000,
-    options: { title?: string; action?: ToastAction } = {},
+    options: ToastOptions = {},
   ) {
     const id = `toast-${Date.now()}-${Math.random()}`
     const toast: Toast = { id, message, type, duration, ...options }
@@ -72,20 +162,21 @@ export const useToastStore = defineStore('toast', () => {
     return id
   }
 
-  function success(message: string, duration = 3000) {
-    return show(message, 'success', duration)
+  function success(message: string, duration = 3000, options: ToastOptions = {}) {
+    return show(message, 'success', duration, options)
   }
 
-  function error(message: string, duration = 5000) {
-    return show(message, 'error', duration)
+  /** Errors remain available as receipts until the user dismisses them. */
+  function error(message: string, duration = 0, options: ToastOptions = {}) {
+    return show(message, 'error', duration, options)
   }
 
-  function info(message: string, duration = 3000) {
-    return show(message, 'info', duration)
+  function info(message: string, duration = 3000, options: ToastOptions = {}) {
+    return show(message, 'info', duration, options)
   }
 
-  function warning(message: string, duration = 4000) {
-    return show(message, 'warning', duration)
+  function warning(message: string, duration = 4000, options: ToastOptions = {}) {
+    return show(message, 'warning', duration, options)
   }
 
   function remove(id: string) {

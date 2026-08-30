@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
 import ReviewView from '../../views/ReviewView.vue'
+import { REVIEW_QUEUE_REFRESH_MS } from '../../composables/useReviewProposals'
+import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
 
 const vueHelpers = vi.hoisted(async () => {
   const { computed, ref, shallowRef } = await import('vue')
@@ -13,9 +15,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   const { computed, ref, shallowRef } = await vueHelpers
   return {
     useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
-      const getCount = typeof options.count === 'function'
-        ? options.count
-        : () => options.count.value
+      const count = options.count
+      const getCount = typeof count === 'function'
+        ? count
+        : () => count.value
       return {
         parentRef: ref(null),
         virtualItemEls: shallowRef([]),
@@ -37,6 +40,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   }
 })
 
+vi.mock('../../store/workspaceStore', () => ({
+  useWorkspaceStore: () => ({ refreshWorkloadCounts: mocks.refreshWorkloadCounts }),
+}))
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (reason?: unknown) => void
@@ -50,6 +57,7 @@ function createDeferred<T>() {
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
+  refreshWorkloadCounts: vi.fn(),
   getProposal: vi.fn(),
   approveProposal: vi.fn(),
   rejectProposal: vi.fn(),
@@ -58,6 +66,7 @@ const mocks = vi.hoisted(() => ({
   dismissProposals: vi.fn(),
   getRevisions: vi.fn(),
   getBoards: vi.fn(),
+  getColumns: vi.fn(),
   successToast: vi.fn(),
   errorToast: vi.fn(),
   infoToast: vi.fn(),
@@ -80,6 +89,10 @@ vi.mock('../../api/boardsApi', () => ({
   boardsApi: {
     getBoards: mocks.getBoards,
   },
+}))
+
+vi.mock('../../api/columnsApi', () => ({
+  columnsApi: { getColumns: mocks.getColumns },
 }))
 
 vi.mock('../../store/toastStore', () => ({
@@ -160,6 +173,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
       ],
     },
     approvedRevisionId: null,
+    latestRevisionId: null,
   }
 
   const hasPresentationOverride = 'presentation' in overrides
@@ -224,8 +238,7 @@ async function mountAt(path: string) {
     },
   })
 
-  await Promise.resolve()
-  await Promise.resolve()
+  await flushPromises()
   await wrapper.vm.$nextTick()
 
   mountedWrapper = wrapper
@@ -239,6 +252,7 @@ let originalPrompt: typeof window.prompt
 describe('ReviewView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetProposalDisplayNamesForTests()
     localStorage.clear()
     // Wave-3 (ADR-0038): default is now 'paper'; pin Legacy so this spec keeps asserting Legacy DOM.
     localStorage.setItem('td.paper.mode.v2', 'off')
@@ -256,6 +270,7 @@ describe('ReviewView', () => {
     mocks.executeProposal.mockResolvedValue(buildProposal({ status: 'Applied' }))
     mocks.getProposalDiff.mockResolvedValue('diff')
     mocks.getRevisions.mockResolvedValue([])
+    mocks.getColumns.mockResolvedValue([])
     mocks.dismissProposals.mockResolvedValue({ dismissed: 1 })
     mocks.createRequestId.mockReturnValue('request-1')
   })
@@ -271,6 +286,62 @@ describe('ReviewView', () => {
     })
 
     window.prompt = originalPrompt
+  })
+
+  // #2194 review round: the Legacy skin had ZERO coverage of the queue-refresh
+  // wiring, so a regression there would have been silent.
+  it('re-reads the queue while Legacy Review stays open, and stops on unmount (#2194)', async () => {
+    // clearInterval must be faked with setInterval, or the real one cannot
+    // cancel a fake handle and the unmount half of this test cannot fail.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const { wrapper } = await mountAt('/workspace/review')
+
+      mocks.getProposals.mockResolvedValue([
+        buildProposal({ id: 'late-1', summary: 'Arrived while open' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toContain('Arrived while open')
+
+      const callsWhileOpen = mocks.getProposals.mock.calls.length
+      wrapper.unmount()
+      mountedWrapper = null
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS * 3)
+      await flushPromises()
+      expect(mocks.getProposals.mock.calls.length).toBe(callsWhileOpen)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes the shell Review badge when the Legacy queue changes (#2194)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const { wrapper } = await mountAt('/workspace/review')
+      // The route-entry load is deliberately NOT a badge read: AppShell already
+      // fetched that summary.
+      mocks.refreshWorkloadCounts.mockClear()
+
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'late-2' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(mocks.refreshWorkloadCounts).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces the awaiting count in a polite live region (#2194)', async () => {
+    const { wrapper } = await mountAt('/workspace/review')
+    const live = wrapper.find('[data-testid="review-queue-live"]')
+    expect(live.exists()).toBe(true)
+    expect(live.attributes('role')).toBe('status')
+    expect(live.attributes('aria-live')).toBe('polite')
+    expect(live.text()).toContain('0 proposals awaiting review')
   })
 
   it('shows guided empty-state actions when there are no proposals', async () => {
@@ -327,6 +398,46 @@ describe('ReviewView', () => {
     const toggle = wrapper.find('.td-review__toggle-input')
     await toggle.setValue(true)
     expect(wrapper.text()).toContain('Applied to board')
+  })
+
+  it('renders an exact deep-linked Applied proposal as a read-only Legacy record', async () => {
+    const appliedProposal = buildProposal({
+      id: 'proposal-applied-record',
+      status: 'Applied',
+      summary: 'Exact historical proposal',
+      decidedAt: '2026-08-24T09:00:00.000Z',
+      decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      appliedAt: '2026-08-24T09:30:00.000Z',
+      presentation: {
+        plainSummary: 'Exact historical proposal',
+        impactSummary: 'One effective operation was applied.',
+        riskCue: 'Low risk.',
+        sourceCue: 'Created from Inbox capture triage.',
+        operationHeadlines: ['Create card "Legacy exact record".'],
+        affectedEntities: [],
+      },
+    })
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockResolvedValue(appliedProposal)
+
+    const { wrapper, router } = await mountAt(
+      '/workspace/review#proposal-proposal-applied-record',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-proposal-applied-record')
+    const card = wrapper.get('#proposal-proposal-applied-record')
+    expect(card.get('[data-testid="review-applied-decision-record"]').text()).toContain(
+      'Create card "Legacy exact record".',
+    )
+    expect(card.text()).toContain('Historical applied record')
+    expect(card.text()).not.toContain('Approve for board')
+    expect(card.text()).not.toContain('Reject')
+    expect(card.text()).not.toContain('Apply to board')
+    expect(card.findAll('button').some((button) => button.text() === 'View stored preview')).toBe(
+      true,
+    )
   })
 
   it('renders capture provenance and canonical review links', async () => {
@@ -393,7 +504,7 @@ describe('ReviewView', () => {
     expect(wrapper.find('a[href="/workspace/inbox?boardId=board-7#capture-capture-99"]').exists()).toBe(true)
   })
 
-  it('clears boardless proposal hashes on board-scoped review routes', async () => {
+  it('keeps boardless proposal hashes unavailable on board-scoped review routes', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -414,9 +525,12 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-boardless')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-boardless',
+    )
     expect(wrapper.find('#proposal-proposal-boardless').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Boardless proposal')
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
@@ -433,7 +547,7 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Support Triage')
   })
 
-  it('hydrates board-scoped proposal hashes that fall outside the first page', async () => {
+  it('hydrates a mixed-case hash without substituting another Legacy proposal', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -451,20 +565,48 @@ describe('ReviewView', () => {
         id: 'proposal-older',
         boardId: 'board-7',
         summary: 'Older board proposal',
+        operations: [
+          {
+            id: 'operation-older',
+            proposalId: 'proposal-older',
+            sequence: 0,
+            actionType: 'CreateCard',
+            targetType: 'Card',
+            targetId: null,
+            parameters: '{}',
+            idempotencyKey: 'operation-older-key',
+            expectedVersion: null,
+          },
+        ],
       }),
     )
+    mocks.approveProposal.mockResolvedValue(
+      buildProposal({ id: 'proposal-older', boardId: 'board-7', status: 'Approved' }),
+    )
 
-    const { wrapper } = await mountAt('/workspace/review?boardId=board-7#proposal-proposal-older')
+    const { wrapper } = await mountAt(
+      '/workspace/review?boardId=board-7#proposal-PROPOSAL-OLDER',
+    )
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
+    expect(mocks.getProposal).toHaveBeenCalledWith('PROPOSAL-OLDER')
     expect(wrapper.text()).toContain('Older board proposal')
+    expect(wrapper.text()).not.toContain('Newest board proposal')
+    expect(wrapper.text()).not.toContain('Second board proposal')
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(true)
     expect(wrapper.text()).toContain('Support Triage')
+
+    const target = wrapper.get('#proposal-proposal-older')
+    const approve = target.findAll('button').find((button) => button.text() === 'Approve for board')
+    expect(approve).toBeDefined()
+    await approve!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.approveProposal).toHaveBeenCalledWith('proposal-older')
   })
 
-  it('clears stale proposal hashes when the fetched proposal belongs to a different board', async () => {
+  it('keeps out-of-scope proposal hashes unavailable instead of falling back', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -485,13 +627,16 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Wrong board proposal')
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
-  it('clears stale proposal hashes when the target proposal cannot be fetched', async () => {
+  it('keeps a genuine missing proposal hash unavailable instead of falling back', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -510,7 +655,12 @@ describe('ReviewView', () => {
     await wrapper.vm.$nextTick()
 
     expect(mocks.getProposal).toHaveBeenCalledWith('proposal-older')
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-7')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-7#proposal-proposal-older',
+    )
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Scoped board proposal')
+    expect(wrapper.text()).not.toContain('Approve for board')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
 
@@ -536,7 +686,7 @@ describe('ReviewView', () => {
     expect(mocks.errorToast).toHaveBeenCalledWith('Failed to load proposal')
   })
 
-  it('clears cached proposal hashes that no longer match the active board filter', async () => {
+  it('keeps cached proposal hashes unavailable when the active board filter changes', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-1',
@@ -561,7 +711,9 @@ describe('ReviewView', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/review?boardId=board-9')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/workspace/review?boardId=board-9#proposal-proposal-older',
+    )
     expect(wrapper.find('#proposal-proposal-older').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Older board proposal')
   })
@@ -575,6 +727,96 @@ describe('ReviewView', () => {
     await Promise.resolve()
 
     expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-7')
+  })
+
+  it('shows archived board decisions as inspectable read-only history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-applied-history',
+        boardId: 'board-99',
+        status: 'Applied',
+        summary: 'Applied archived decision',
+        diffPreview: 'stored applied preview',
+      }),
+      buildProposal({
+        id: 'proposal-rejected-history',
+        boardId: 'board-99',
+        status: 'Rejected',
+        summary: 'Rejected archived decision',
+        diffPreview: 'stored rejected preview',
+      }),
+      buildProposal({
+        id: 'proposal-pending-history',
+        boardId: 'board-99',
+        status: 'PendingReview',
+        summary: 'Live pending proposal',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99&history=archived')
+
+    expect(mocks.getProposals).toHaveBeenCalledWith({ limit: 200, boardId: 'board-99' })
+    expect(wrapper.text()).toContain('Archived decision history is read-only')
+    expect(wrapper.text()).toContain('Applied archived decision')
+    expect(wrapper.text()).toContain('Rejected archived decision')
+    expect(wrapper.text()).not.toContain('Live pending proposal')
+    expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Clear completed')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+
+    const storedPreviewButton = wrapper
+      .get('#proposal-proposal-applied-history')
+      .findAll('button')
+      .find((button) => button.text() === 'View stored preview')
+    expect(storedPreviewButton).toBeDefined()
+    await storedPreviewButton!.trigger('click')
+    expect(wrapper.text()).toContain('stored applied preview')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    const pushSpy = vi.spyOn(router, 'push')
+    const openInboxButton = wrapper
+      .find('.td-review__hero-actions')
+      .findAll('button')
+      .find((button) => button.text() === 'Open Inbox')
+    await openInboxButton?.trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-99&history=archived')
+  })
+
+  it('closes a pending apply gate when the route enters archived history', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-approved-history',
+        boardId: 'board-99',
+        status: 'Approved',
+        summary: 'Approved archived decision',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-99')
+    const applyButton = wrapper
+      .get('#proposal-proposal-approved-history')
+      .findAll('button')
+      .find((button) => button.text() === 'Apply to board')
+    expect(applyButton).toBeDefined()
+    await applyButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const staleConfirm = document.body.querySelector(
+      '[data-testid="apply-confirm-accept"]',
+    ) as HTMLButtonElement | null
+    expect(staleConfirm).not.toBeNull()
+
+    await router.push('/workspace/review?boardId=board-99&history=archived')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.querySelector('[data-testid="apply-confirm-dialog"]')).toBeNull()
+    staleConfirm!.click()
+    await flushPromises()
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
   })
 
   it('keeps the newest proposal load when board-scoped requests resolve out of order', async () => {
@@ -656,7 +898,7 @@ describe('ReviewView', () => {
     expect(entitiesToggle).toBeDefined()
     await entitiesToggle!.trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.text()).toContain('Board board-12 · 1 change')
+    expect(wrapper.text()).toContain('Content Calendar · 1 change')
 
     // Planned changes are collapsed by default -- expand to verify
     const operationsToggle = wrapper.findAll('.td-review-card__collapse-toggle').find((btn) => btn.text().includes('Planned changes'))
@@ -771,7 +1013,7 @@ describe('ReviewView', () => {
     const { wrapper } = await mountAt('/workspace/review?boardId=board-7')
 
     expect(wrapper.text()).toContain('Support Triage')
-    expect(wrapper.text()).not.toContain('board-7')
+    expect(wrapper.get('#proposal-proposal-1').find('.td-review-card__header').text()).not.toContain('board-7')
     expect(wrapper.text()).toContain('Show all boards')
   })
 
@@ -793,44 +1035,76 @@ describe('ReviewView', () => {
     expect(selector.find('input').exists()).toBe(true)
   })
 
-  it('clears the board filter when "Show all boards" is clicked', async () => {
+  it('clears only the board filter when "Show all boards" is clicked', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({ boardId: 'board-7' }),
     ])
 
-    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7')
-    const pushSpy = vi.spyOn(router, 'push')
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-7&source=proposal#proposal-proposal-1')
+    const replaceSpy = vi.spyOn(router, 'replace')
 
     const clearButton = wrapper.findAll('button').find((node) => node.text() === 'Show all boards')
     await clearButton?.trigger('click')
     await Promise.resolve()
 
-    expect(pushSpy).toHaveBeenCalledWith({ name: 'workspace-review' })
+    expect(replaceSpy).toHaveBeenCalledWith({
+      name: 'workspace-review',
+      query: { source: 'proposal' },
+      hash: '#proposal-proposal-1',
+    })
   })
 
-  it('does not reject a proposal when the rejection prompt is cancelled', async () => {
+  it('does not reject a proposal when the reason dialog is cancelled', async () => {
     mocks.getProposals.mockResolvedValue([buildProposal()])
-    window.prompt = vi.fn(() => null)
 
     const { wrapper } = await mountAt('/workspace/review')
     const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button')[2]!
 
     await rejectButton.trigger('click')
     await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    // GH-1969: the dialog is a TdDialog teleported to <body>.
+    const cancel = document.body.querySelector(
+      '[data-testid="reject-dialog-cancel"]',
+    ) as HTMLButtonElement | null
+    expect(cancel, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+    cancel!.click()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
 
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
     expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-testid="reject-dialog"]')).toBeNull()
   })
 
   it('sends null when an optional rejection reason is left blank', async () => {
     mocks.getProposals.mockResolvedValue([buildProposal()])
-    window.prompt = vi.fn(() => '   ')
 
     const { wrapper } = await mountAt('/workspace/review')
     const rejectButton = wrapper.get('#proposal-proposal-1').findAll('button').find((node) => node.text() === 'Reject')!
 
     await rejectButton.trigger('click')
     await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    // Whitespace only — the "optional" semantics are preserved: it still
+    // rejects, and the reason is stored as absent rather than as blanks.
+    const field = document.body.querySelector(
+      '[data-testid="reject-dialog-reason"]',
+    ) as HTMLTextAreaElement | null
+    expect(field).not.toBeNull()
+    field!.value = '   '
+    field!.dispatchEvent(new Event('input'))
+    await wrapper.vm.$nextTick()
+
+    const accept = document.body.querySelector(
+      '[data-testid="reject-dialog-accept"]',
+    ) as HTMLButtonElement | null
+    expect(accept!.disabled).toBe(false)
+    accept!.click()
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
 
     expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-1', null)
   })

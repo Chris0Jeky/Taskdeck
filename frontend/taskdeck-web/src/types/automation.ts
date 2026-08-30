@@ -85,16 +85,21 @@ export interface Proposal {
    * review surface advertising semantics it cannot back).
    */
   approvedRevisionId: string | null
+  /** Latest effective revision while PendingReview; null for original content or decided rows. */
+  latestRevisionId: string | null
 }
 
 /**
  * The pinned-revision id as the wire carries it. Exported deliberately, and referenced from
- * production source rather than a spec, because it is the ONLY thing that makes
- * `Proposal.approvedRevisionId` survive a dead-code sweep: `tsconfig.app.json` excludes
- * `src/tests/**`, so `npm run typecheck` never type-checks specs, and the field has no consumer yet
- * (`#1298` forbids a UI claim without a design decision). Deleting the interface member makes this
- * alias fail to compile, which is the gate the field would otherwise lack entirely (`#1462` review;
- * the broader "specs are never type-checked" gap is `#1468`).
+ * production source rather than a spec, so that `Proposal.approvedRevisionId` survives a dead-code
+ * sweep: the field still has no consumer (`#1298` forbids a UI claim without a design decision), so
+ * deleting the interface member is otherwise a silent no-op. Deleting it makes this alias fail to
+ * compile.
+ *
+ * Since `#1468` the spec tree is type-checked too (`tsconfig.vitest.json`), and
+ * `src/tests/api/automationApi.spec.ts` carries an `expectTypeOf` pin on the same member. This alias
+ * is kept as the belt to that braces: it holds from inside production source, so it survives even if
+ * that spec were quarantined, and it is what a dead-code sweep of `src/` actually sees.
  */
 export type ProposalApprovedRevisionId = Proposal['approvedRevisionId']
 
@@ -104,4 +109,57 @@ export interface ProposalFilters {
   userId?: string
   riskLevel?: ProposalRiskLevel
   limit?: number
+}
+
+/** Receipt from the all-or-none approve-only batch endpoint. */
+export interface BatchApproveProposalsResult {
+  approvedIds: string[]
+}
+
+/** Exact reviewer-selected snapshot submitted to the all-or-none batch endpoint. */
+export interface BatchApproveProposalSelection {
+  id: string
+  expectedProposalUpdatedAt: string
+  expectedLatestRevisionId: string | null
+}
+
+
+/**
+ * One proposal submitted to the per-proposal batch execute endpoint (`#1307`, q-14 C).
+ *
+ * `approvedRevisionId` is a REQUIRED member with a nullable value, mirroring `Proposal`'s own pin:
+ * the server rejects a payload that omits the key (400) rather than reading the absence as
+ * "approved from the original operations", which would slip a drifted proposal past the fail-closed
+ * drift check. Echo `proposal.approvedRevisionId` verbatim, including `null`.
+ *
+ * `idempotencyKey` is per proposal, not per request: it is carried into exactly the same executor
+ * call the single-execute `Idempotency-Key` header reaches.
+ */
+export interface BatchExecuteProposalSelection {
+  proposalId: string
+  approvedRevisionId: string | null
+  idempotencyKey: string
+}
+
+/**
+ * Per-item outcome. `Applied` is claimed only by the call that performed the board write; replaying
+ * the same keys reports `Skipped`. Both are success outcomes and the whole response is still 200.
+ */
+export type BatchExecuteOutcome = 'Applied' | 'Skipped' | 'Failed'
+
+/** One item's receipt. `appliedOperations` is populated for `Applied` only. */
+export interface BatchExecuteProposalResult {
+  proposalId: string
+  outcome: BatchExecuteOutcome
+  errorCode: string | null
+  errorMessage: string | null
+  appliedOperations: number | null
+}
+
+/**
+ * Receipt for a per-proposal batch execute, in request order. Partial success is the contract: a
+ * failing item never rolls back its neighbours.
+ */
+export interface BatchExecuteProposalsResult {
+  results: BatchExecuteProposalResult[]
 }

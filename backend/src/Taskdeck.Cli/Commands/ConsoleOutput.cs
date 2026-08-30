@@ -46,11 +46,13 @@ internal static class ConsoleOutput
               taskdeck cards move --card <card-id> --target-column <column-id> [--position <position>]
               taskdeck cards list --board <board-id> [--search <text>] [--column <column-id>] [--label <label-id>]
 
-              taskdeck api-key create --name <name> [--expires <days>]
+              taskdeck api-key create --name <name> --scopes <read,propose,manage> [--expires <days>]
               taskdeck api-key list
               taskdeck api-key revoke --name <name> | --id <key-id>
 
               taskdeck invite create [--expires <days>]
+
+              taskdeck --version
 
             Exit codes:
               0 success

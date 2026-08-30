@@ -1,11 +1,25 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
+import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
+import { useSessionStore } from '../../store/sessionStore'
+import { onAuthExpired } from '../../utils/authExpiry'
+import {
+  clearCaptureDraft,
+  stashCaptureDraft,
+  takeCaptureDraft,
+  type CaptureDraftVariant,
+  type StashedCaptureDraft,
+} from '../../utils/captureDraftStash'
+import type { CaptureItem } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
 import PaperTriageTable from './inbox/PaperTriageTable.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
+import PaperScopeDisclosure from '../../components/paper/PaperScopeDisclosure.vue'
 
 /**
  * PaperInboxView — Paper-themed Inbox / Capture orchestrator.
@@ -20,32 +34,105 @@ import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
  * `⌘;` (or `Ctrl+;` on non-Mac) toggles between them globally.  Default is
  * the composer ledger, which is the variant the design handoff calls "the
  * structured/recommended path".
+ *
+ * Copy lives in the `inbox.*` catalogs (ADR-0054). "Nib" and "Composer" are
+ * Taskdeck's own names for the two variants and stay in English in every
+ * locale — they are keyed only so a translator sees them in context and can
+ * see they are deliberately untranslated.
  */
 type Variant = 'nib' | 'composer'
 
 const variant = ref<Variant>('composer')
+const { t } = useI18n()
+// The signed-in account, for the draft stash's identity gate (GH-2142). Still
+// in memory when the 401 fires: `http.ts` clears `tokenStorage`, not this.
+const sessionStore = useSessionStore()
 const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
 const captureSubmitting = ref(false)
+
+/**
+ * A capture failure receipt, scoped PER VARIANT (GH-1938). The nib and composer
+ * are two independent surfaces; a single shared ref left a nib failure's receipt
+ * rendered under the composer after a `⌘;` toggle. Keying by variant means each
+ * surface shows only its own failure, and the active one drives the receipt.
+ */
+type CaptureFailure = { message: string; details: string | null }
+const captureErrors = ref<Record<Variant, CaptureFailure | null>>({ nib: null, composer: null })
+const activeCaptureError = computed(() => captureErrors.value[variant.value])
+const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.nib : null))
+const composerError = computed(() =>
+  variant.value === 'composer' ? captureErrors.value.composer : null,
+)
+const CAPTURE_ERROR_ID = 'paper-inbox-capture-error'
+
+const captureMetadataCompatibilityWarning = ref(false)
+
+/**
+ * A draft that survived the 401 redirect (GH-2142) and was put back into the
+ * capture surface, until the user sends it or discards it. Not a failure by
+ * itself -- the failure receipt beside it carries the reason.
+ */
+const restoredDraft = ref<StashedCaptureDraft | null>(null)
 let bleedTimer: ReturnType<typeof setTimeout> | null = null
 
 const {
   captureStore,
   items,
   activeBoardId,
+  activeColumnId,
+  isArchivedHistory,
+  activeBoardName,
+  activeColumnName,
   loadInbox,
+  clearScope,
 } = useInboxOrchestrator({
   scrollToIndex: () => undefined,
+})
+
+// Header counters (GH-1974). `pendingTriageCount` is the sidebar badge's own
+// definition applied to these rows; `capturedCount` is everything fetched.
+// The eyebrow labels them separately — the total is not a queue.
+const { pendingTriageCount, capturedCount } = useInboxCounts(items)
+
+const scopeLabel = computed(() => {
+  if (!activeBoardId.value) return ''
+  return activeColumnId.value
+    ? t('inbox.scope.boardAndColumn', { board: activeBoardName.value, column: activeColumnName.value })
+    : t('inbox.scope.board', { board: activeBoardName.value })
+})
+
+// Read-only inspection of one retained capture in archived history (#1973).
+const historyDetailItemId = ref<string | null>(null)
+const historyDetail = ref<CaptureItem | null>(null)
+const historyDetailLoading = ref(false)
+const historyDetailError = ref<string | null>(null)
+
+/**
+ * Deep link from a retained capture to the decision record it produced, kept in
+ * archived history mode so the destination is the read-only Review queue rather
+ * than the live one. Null when triage never recorded a proposal for it.
+ */
+const historyProposalHref = computed<string | null>(() => {
+  const proposalId = historyDetail.value?.provenance?.proposalId
+  if (!proposalId) return null
+  const params = new URLSearchParams()
+  const boardId = historyDetail.value?.boardId ?? activeBoardId.value
+  if (boardId) params.set('boardId', boardId)
+  params.set('history', 'archived')
+  return `/workspace/review?${params.toString()}#proposal-${encodeURIComponent(proposalId)}`
 })
 
 let stopTriagePolling: (() => void) | null = null
 
 function toggleVariant() {
+  if (isArchivedHistory.value) return
   setVariant(variant.value === 'nib' ? 'composer' : 'nib')
 }
 
 function setVariant(next: Variant) {
+  if (isArchivedHistory.value) return
   variant.value = next
   void nextTick(() => {
     if (next === 'nib') {
@@ -58,28 +145,68 @@ function setVariant(next: Variant) {
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // ⌘;  or Ctrl+;  toggles between the two capture variants.
-  if ((event.metaKey || event.ctrlKey) && event.key === ';') {
+  if (!isArchivedHistory.value && (event.metaKey || event.ctrlKey) && event.key === ';') {
     event.preventDefault()
     toggleVariant()
   }
 }
 
-async function dispatchCapture(text: string, opts: { boardId?: string | null } = {}): Promise<boolean> {
+async function dispatchCapture(
+  sourceVariant: Variant,
+  text: string,
+  opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
+): Promise<boolean> {
+  if (isArchivedHistory.value) {
+    return false
+  }
   if (captureSubmitting.value) {
     return false
   }
 
+  captureErrors.value[sourceVariant] = null
+  captureMetadataCompatibilityWarning.value = false
   captureSubmitting.value = true
   try {
-    await captureStore.createItem({
+    const metadataRequested = Object.hasOwn(opts, 'dueDate') || Object.hasOwn(opts, 'labels')
+    const created = await captureStore.createItem({
       boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
       source: 'Typed',
+      ...(metadataRequested
+        ? { dueDate: opts.dueDate ?? null, labels: opts.labels ?? [] }
+        : {}),
     })
-    await loadInbox()
+    if (metadataRequested && !Object.hasOwn(created, 'metadata')) {
+      // Split web/API deployments can briefly pair this SPA with an older API.
+      // The text is already saved, so acknowledge it and warn against a retry
+      // that would create a duplicate capture.
+      captureMetadataCompatibilityWarning.value = true
+    }
+    // The draft is saved. Empty the surface HERE, before the follow-up refresh:
+    // if that refresh 401s, the expiry handler would otherwise re-stash text
+    // that is already in Inbox and invite a duplicate submit after sign-in.
+    if (sourceVariant === 'nib') {
+      nibRef.value?.resetDraft()
+    } else {
+      composerRef.value?.resetDraft()
+    }
+    restoredDraft.value = null
+    clearCaptureDraft()
+    await loadInbox().catch(() => {
+      // The capture already exists. The orchestrator/store owns listError and
+      // its toast; treating this refresh failure as a rejected create would
+      // retain the draft and invite a duplicate capture on retry.
+    })
     return true
-  } catch {
-    // captureStore handles toast surfacing; we keep the surface usable.
+  } catch (error: unknown) {
+    // The store's toast remains useful global feedback, but it lives in the
+    // corner and can be dismissed. Keep an inspectable receipt beside the draft
+    // until the user retries (GH-1938): the human message plus a copy-pasteable
+    // request diagnostic.
+    captureErrors.value[sourceVariant] = {
+      message: getErrorDisplay(error, t('inbox.capture.errorFallback')).message,
+      details: getErrorDetails(error),
+    }
     return false
   } finally {
     captureSubmitting.value = false
@@ -87,12 +214,12 @@ async function dispatchCapture(text: string, opts: { boardId?: string | null } =
 }
 
 async function onNibSubmit(text: string) {
-  const created = await dispatchCapture(text)
+  const created = await dispatchCapture('nib', text)
   if (!created) {
     return
   }
 
-  nibRef.value?.resetDraft()
+  // The draft was already emptied by `dispatchCapture`, before the refresh.
   // Show the static ember placeholder (TODO: ink bleed) for ~1.4s after a
   // confirmed create; the placeholder is purely motion stand-in.
   nibBleeding.value = true
@@ -116,27 +243,25 @@ async function onComposerSubmit(payload: {
   labels: string[]
   dueAt: string | null
 }) {
-  // Labels / dueAt aren't part of CreateCaptureItemDto yet — they're surfaced
-  // for the design but not persisted by the current API.  We still pass the
-  // boardId so the capture lands on the right board.
-  const created = await dispatchCapture(payload.text, { boardId: payload.boardId })
-  if (created) {
-    composerRef.value?.resetDraft()
-  }
+  const metadata = payload.dueAt || payload.labels.length > 0
+    ? { dueDate: payload.dueAt, labels: payload.labels }
+    : {}
+  // No reset here: `dispatchCapture` empties the surface on success, before
+  // the inbox refresh that could 401 (GH-2142).
+  await dispatchCapture('composer', payload.text, {
+    boardId: payload.boardId,
+    ...metadata,
+  })
 }
 
-function onComposerAttachments(_files: File[]) {
-  // Real upload pipeline is out of scope for PAPER-07.  Bubble silently for
-  // now; tests assert the event fires.
-}
-
-async function onTriageAccept(itemId: string) {
+async function onTriageAccept(itemId: string, boardId?: string | null) {
+  if (isArchivedHistory.value) return
   if (stopTriagePolling) {
     stopTriagePolling()
     stopTriagePolling = null
   }
   try {
-    await captureStore.triageItem(itemId)
+    await captureStore.triageItem(itemId, boardId)
     const latestStatus = captureStore.detailById[itemId]?.status
     if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
       return
@@ -150,25 +275,187 @@ async function onTriageAccept(itemId: string) {
   }
 }
 
-async function onTriageReject(itemId: string) {
+async function onCaptureKeep(itemId: string) {
+  if (isArchivedHistory.value) return
   try {
-    await captureStore.ignoreItem(itemId)
+    await captureStore.keepItem(itemId)
   } catch {
     // Store handles toast + error state.
   }
 }
 
-function onTriageOpen(_itemId: string) {
-  // Paper Inbox has no detail panel. Avoid mutating selectedItemId here because
-  // the legacy selection watcher owns triage polling lifecycle cleanup.
+async function onTriageReject(itemId: string) {
+  if (isArchivedHistory.value) return
+  try {
+    await captureStore.archiveItem(itemId)
+  } catch {
+    // Store handles toast + error state.
+  }
 }
+
+/**
+ * In live capture mode this stays a no-op: Paper Inbox has no detail panel, and
+ * mutating `selectedItemId` here would fight the legacy selection watcher that
+ * owns triage-polling lifecycle cleanup.
+ *
+ * In archived history (#1973) there is no triage path at all, so the row's only
+ * content would be a truncated `textExcerpt` and a dead button — "reachable"
+ * with nothing to reach. Opening a row therefore expands a read-only inspection
+ * panel with the full retained capture and its provenance. `peekDetail` is used
+ * deliberately over `fetchDetail`: it returns the item WITHOUT caching it into
+ * `detailById` or syncing the list summary, so inspecting archived history
+ * cannot disturb live capture state.
+ */
+async function onTriageOpen(itemId: string) {
+  if (!isArchivedHistory.value) return
+
+  if (historyDetailItemId.value === itemId) {
+    closeHistoryDetail()
+    return
+  }
+
+  historyDetailItemId.value = itemId
+  historyDetail.value = null
+  historyDetailError.value = null
+  historyDetailLoading.value = true
+  try {
+    const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
+    // The user may have collapsed this row or opened another while the request
+    // was in flight; a late payload must not reopen or mislabel the panel.
+    if (historyDetailItemId.value !== itemId) return
+    historyDetail.value = detail
+  } catch (e: unknown) {
+    if (historyDetailItemId.value !== itemId) return
+    historyDetailError.value = getErrorDisplay(e, t('inbox.history.detail.error')).message
+  } finally {
+    if (historyDetailItemId.value === itemId) {
+      historyDetailLoading.value = false
+    }
+  }
+}
+
+function closeHistoryDetail() {
+  historyDetailItemId.value = null
+  historyDetail.value = null
+  historyDetailError.value = null
+  historyDetailLoading.value = false
+}
+
+// Leaving archived history (or re-scoping to another board) must not leave a
+// previous board's retained capture expanded underneath the new list.
+watch([isArchivedHistory, activeBoardId], () => {
+  closeHistoryDetail()
+})
+
+/**
+ * The session expired and `api/http.ts` is about to hard-navigate to /login
+ * (GH-2142). This runs synchronously in that last beat: persist the active
+ * surface's draft -- text, board target, labels, due date -- plus its failure
+ * receipt, so the flagship "capture a thought" path does not silently eat the
+ * typed text on the auth-expiry class.
+ *
+ * The receipt is usually still empty here: the interceptor fires before the
+ * capture call's own rejection reaches `dispatchCapture`. A session-expiry
+ * reason is synthesised in that case so the restored draft always arrives with
+ * an explanation rather than sitting there unaccounted for.
+ */
+function handleAuthExpired() {
+  if (isArchivedHistory.value) return
+  // Both surfaces stay mounted under `v-show`, so the variant on screen is not
+  // necessarily the one holding text: someone can type in the nib, toggle to
+  // the composer, and expire there. Prefer the active surface, then fall back
+  // to the other non-empty one, so a toggled-away draft is not lost either.
+  const candidates: CaptureDraftVariant[] =
+    variant.value === 'nib' ? ['nib', 'composer'] : ['composer', 'nib']
+  for (const surface of candidates) {
+    const snapshot =
+      surface === 'nib' ? nibRef.value?.snapshotDraft() : composerRef.value?.snapshotDraft()
+    if (!snapshot) continue
+    const draft = snapshot as {
+      text: string
+      boardId?: string | null
+      labels?: string[]
+      dueAt?: string | null
+    }
+    if (draft.text.trim().length === 0) continue
+    stashCaptureDraft({
+      userId: sessionStore.userId,
+      variant: surface,
+      text: draft.text,
+      boardId: draft.boardId ?? null,
+      labels: draft.labels ?? [],
+      dueAt: draft.dueAt ?? null,
+      failure:
+        captureErrors.value[surface] ?? {
+          message: t('inbox.capture.sessionExpiredReason'),
+          details: null,
+        },
+    })
+    return
+  }
+}
+
+/**
+ * Put a stashed draft back after re-authentication. Read-and-clear: once the
+ * text is in the composer it lives there, and a later reload must not
+ * resurrect a copy of something already sent or discarded. Archived history
+ * has no capture surface at all, so the stash is left untouched for the next
+ * live visit rather than silently dropped.
+ */
+function restoreStashedDraft() {
+  if (isArchivedHistory.value) return
+  // The identity gate lives in the stash: a record stamped for another account
+  // is dropped there rather than handed to whoever signed in this time.
+  const stashed = takeCaptureDraft(sessionStore.userId)
+  if (!stashed) return
+  restoredDraft.value = stashed
+  variant.value = stashed.variant
+  captureErrors.value[stashed.variant] = stashed.failure
+  void nextTick(() => {
+    if (stashed.variant === 'nib') {
+      nibRef.value?.restoreDraft({ text: stashed.text })
+      nibRef.value?.focus()
+      return
+    }
+    composerRef.value?.restoreDraft({
+      text: stashed.text,
+      boardId: stashed.boardId,
+      labels: stashed.labels,
+      dueAt: stashed.dueAt,
+    })
+    composerRef.value?.focus()
+  })
+}
+
+/** Explicit "I do not want this back" -- empties the surface and the stash. */
+function discardRestoredDraft() {
+  const surface = restoredDraft.value?.variant ?? variant.value
+  restoredDraft.value = null
+  captureErrors.value[surface] = null
+  clearCaptureDraft()
+  if (surface === 'nib') {
+    nibRef.value?.resetDraft()
+    nibRef.value?.focus()
+    return
+  }
+  composerRef.value?.resetDraft()
+  composerRef.value?.focus()
+}
+
+let stopAuthExpiredListener: (() => void) | null = null
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)
+  stopAuthExpiredListener = onAuthExpired(handleAuthExpired)
+  restoreStashedDraft()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  if (stopAuthExpiredListener) {
+    stopAuthExpiredListener()
+    stopAuthExpiredListener = null
+  }
   if (bleedTimer) {
     clearTimeout(bleedTimer)
     bleedTimer = null
@@ -183,44 +470,76 @@ defineExpose({ variant, toggleVariant, setVariant })
 </script>
 
 <template>
-  <div class="paper-inbox" :data-variant="variant">
+  <div
+    class="paper-inbox"
+    :data-variant="variant"
+    :data-history-mode="isArchivedHistory ? 'archived' : undefined"
+  >
     <header class="paper-inbox__header">
       <div>
-        <div class="tk-eyebrow">Inbox · capture surface · {{ items.length }} in queue</div>
-        <h1 class="tk-h1 paper-inbox__title">
-          What's on your mind, <em>quickly?</em>
+        <!-- The third argument is the plural CHOICE: it/es agree the participle
+             with the total ("1 catturato" vs "2 catturati"), so the count has to
+             reach the catalog as a choice and not only as an interpolation. -->
+        <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
+          {{
+            isArchivedHistory
+              ? $t('inbox.history.eyebrow')
+              : $t(
+                  'inbox.eyebrow',
+                  { pending: pendingTriageCount, total: capturedCount },
+                  capturedCount,
+                )
+          }}
+        </div>
+        <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">
+          {{ $t('inbox.history.title') }}
+        </h1>
+        <h1 v-else class="tk-h1 paper-inbox__title">
+          {{ $t('inbox.title.lead') }} <em>{{ $t('inbox.title.emphasis') }}</em>
         </h1>
         <p class="tk-lede paper-inbox__lede">
-          Drop the thought. It will sit here, untouched, until you triage it.
-          Nothing flows to the board without your approval.
+          {{ isArchivedHistory ? $t('inbox.history.lede') : $t('inbox.lede') }}
         </p>
+        <PaperScopeDisclosure
+          v-if="scopeLabel"
+          :label="scopeLabel"
+          :clear-label="$t('inbox.scope.clear')"
+          @clear="clearScope"
+        />
       </div>
 
-      <div class="paper-inbox__variant-toggle" role="tablist" aria-label="Capture variant">
+      <div
+        v-if="!isArchivedHistory"
+        class="paper-inbox__variant-toggle"
+        role="tablist"
+        :aria-label="$t('inbox.variantToggle.label')"
+      >
         <PaperHLBtn
           role="tab"
           :aria-selected="variant === 'nib'"
           :variant="variant === 'nib' ? 'ember' : 'default'"
-          label="Nib"
+          :label="$t('inbox.variant.nib')"
           @click="setVariant('nib')"
         />
         <PaperHLBtn
           role="tab"
           :aria-selected="variant === 'composer'"
           :variant="variant === 'composer' ? 'ember' : 'default'"
-          label="Composer"
+          :label="$t('inbox.variant.composer')"
           kbd="⌘;"
           @click="setVariant('composer')"
         />
       </div>
     </header>
 
-    <section class="paper-inbox__capture" data-testid="paper-inbox-capture">
+    <section v-if="!isArchivedHistory" class="paper-inbox__capture" data-testid="paper-inbox-capture">
       <PaperCaptureNib
         v-show="variant === 'nib'"
         ref="nibRef"
         :bleeding="nibBleeding"
         :submitting="captureSubmitting"
+        :invalid="!!nibError"
+        :error-id="nibError ? CAPTURE_ERROR_ID : null"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer
@@ -228,9 +547,61 @@ defineExpose({ variant, toggleVariant, setVariant })
         ref="composerRef"
         :default-board-id="activeBoardId"
         :submitting="captureSubmitting"
+        :invalid="!!composerError"
+        :error-id="composerError ? CAPTURE_ERROR_ID : null"
         @submit="onComposerSubmit"
-        @attachments-changed="onComposerAttachments"
       />
+      <p
+        v-if="restoredDraft"
+        class="paper-inbox__capture-restored"
+        role="status"
+        data-testid="paper-inbox-capture-restored"
+      >
+        <strong>{{ $t('inbox.capture.draftRestoredLead') }}</strong>
+        <span>{{ $t('inbox.capture.draftRestoredDetail') }}</span>
+        <span
+          v-if="restoredDraft.truncated || restoredDraft.labelsDropped"
+          data-testid="paper-inbox-capture-restored-truncated"
+        >
+          {{ $t('inbox.capture.draftRestoredTruncated') }}
+        </span>
+        <button
+          type="button"
+          class="paper-inbox__capture-restored-discard"
+          data-testid="paper-inbox-capture-restored-discard"
+          @click="discardRestoredDraft"
+        >
+          {{ $t('inbox.capture.draftRestoredDiscard') }}
+        </button>
+      </p>
+      <p
+        v-if="activeCaptureError"
+        :id="CAPTURE_ERROR_ID"
+        class="paper-inbox__capture-error"
+        role="alert"
+        data-testid="paper-inbox-capture-error"
+      >
+        <strong>{{ $t('inbox.capture.errorLead') }}</strong>
+        <span>{{ $t('inbox.capture.errorDetail', { reason: activeCaptureError.message }) }}</span>
+        <template v-if="activeCaptureError.details">
+          <strong class="paper-inbox__capture-diagnostics-label">
+            {{ $t('inbox.capture.errorDiagnosticsLabel') }}
+          </strong>
+          <span
+            class="paper-inbox__capture-diagnostics"
+            data-testid="paper-inbox-capture-error-diagnostics"
+          >{{ activeCaptureError.details }}</span>
+        </template>
+      </p>
+      <p
+        v-if="captureMetadataCompatibilityWarning"
+        class="paper-inbox__capture-compatibility-warning"
+        role="status"
+        data-testid="paper-inbox-capture-metadata-compatibility-warning"
+      >
+        <strong>{{ $t('inbox.capture.metadataCompatibilityLead') }}</strong>
+        <span>{{ $t('inbox.capture.metadataCompatibilityDetail') }}</span>
+      </p>
     </section>
 
     <PaperTriageTable
@@ -239,10 +610,20 @@ defineExpose({ variant, toggleVariant, setVariant })
       :list-error="captureStore.listError"
       :action-busy-item-id="captureStore.actionBusyItemId"
       :triage-polling-item-id="captureStore.triagePollingItemId"
+      :scope-label="scopeLabel"
+      :scope-clear-label="$t('inbox.scope.clear')"
+      :read-only="isArchivedHistory"
+      :detail-item-id="historyDetailItemId"
+      :detail="historyDetail"
+      :detail-loading="historyDetailLoading"
+      :detail-error="historyDetailError"
+      :detail-proposal-route="historyProposalHref"
       @accept="onTriageAccept"
+      @keep="onCaptureKeep"
       @reject="onTriageReject"
       @open="onTriageOpen"
       @retry="loadInbox"
+      @clear-scope="clearScope"
     />
   </div>
 </template>
@@ -286,6 +667,72 @@ defineExpose({ variant, toggleVariant, setVariant })
 }
 .paper-inbox__capture {
   margin-top: 8px;
+}
+.paper-inbox__capture-restored {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--ember);
+  border-radius: 2px;
+  background: var(--paper-2);
+  font-size: 13px;
+  color: var(--ink);
+}
+.paper-inbox__capture-restored-discard {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--mute);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.paper-inbox__capture-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--ember);
+  border-radius: var(--r-1);
+  background: var(--ember-tint);
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.paper-inbox__capture-diagnostics-label {
+  flex-basis: 100%;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.paper-inbox__capture-diagnostics {
+  flex-basis: 100%;
+  margin: 0;
+  white-space: pre-line;
+  opacity: 0.9;
+}
+.paper-inbox__capture-compatibility-warning {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--ink-2);
+  border-radius: var(--r-1);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
 }
 @media (max-width: 720px) {
   .paper-inbox__header {

@@ -37,7 +37,8 @@ public class AccountDeletionService : IAccountDeletionService
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
         IActiveUserCache? activeUserCache = null,
-        ILogger<AccountDeletionService>? logger = null)
+        ILogger<AccountDeletionService>? logger = null,
+        ICaptureStore? captureStore = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -45,7 +46,10 @@ public class AccountDeletionService : IAccountDeletionService
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
+        _captureStore = captureStore;
     }
+
+    private readonly ICaptureStore? _captureStore;
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
         Guid userId,
@@ -119,9 +123,18 @@ public class AccountDeletionService : IAccountDeletionService
                 captureItemsDeleted++;
             }
 
+            // 3b. Delete the durable Capture mirrors (ADR-0065). Rows exist only when
+            //     ContextFabric:DualWriteCaptures was ever on; they carry user-authored titles and
+            //     their FK to User is Restrict, so they must go inside this same transaction.
+            var durableCapturesDeleted = _captureStore is null
+                ? 0
+                : await _captureStore.DeleteByUserAsync(userId, cancellationToken);
+
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.
             var artefactsDeleted = await _artefacts.DeleteByUserIdAsync(userId, cancellationToken);
+            // Transcript evidence links are database-owned by their Transcript FK, so this
+            // set-based delete cascades without a racy string-source-ID scan.
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions
@@ -207,7 +220,8 @@ public class AccountDeletionService : IAccountDeletionService
                 ExternalLoginsDeleted: externalLoginsDeleted,
                 PreferencesDeleted: preferencesDeleted,
                 ArtefactsDeleted: artefactsDeleted,
-                TranscriptsDeleted: transcriptsDeleted));
+                TranscriptsDeleted: transcriptsDeleted,
+                DurableCapturesDeleted: durableCapturesDeleted));
         }
         catch (Exception ex)
         {

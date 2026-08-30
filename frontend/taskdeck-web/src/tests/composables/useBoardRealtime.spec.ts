@@ -47,6 +47,16 @@ const mockBuilder = {
   build: vi.fn(() => mockConnection),
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
+
 vi.mock('@microsoft/signalr', () => ({
   HubConnectionBuilder: vi.fn().mockImplementation(function () { return mockBuilder }),
   HubConnectionState: {
@@ -207,6 +217,64 @@ describe('createBoardRealtimeController', () => {
 
     expect(mockConnection.invoke).toHaveBeenCalledWith('LeaveBoard', 'board-1')
     expect(mockConnection.invoke).toHaveBeenCalledWith('JoinBoard', 'board-2')
+  })
+
+  it('keeps the latest board when a switch arrives while the initial connection is pending', async () => {
+    const connectionStarted = createDeferred<void>()
+    mockConnection.start.mockImplementation(() => {
+      mockConnection.state = 'Connecting'
+      return connectionStarted.promise
+    })
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    const startA = controller.start('board-a')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mockConnection.start).toHaveBeenCalledOnce()
+
+    const switchB = controller.switchBoard('board-b')
+    expect(mockConnection.invoke).not.toHaveBeenCalled()
+
+    mockConnection.state = 'Connected'
+    connectionStarted.resolve()
+    await Promise.all([startA, switchB])
+
+    const joinedBoardIds = mockConnection.invoke.mock.calls
+      .filter(([method]) => method === 'JoinBoard')
+      .map(([, boardId]) => boardId)
+    expect(joinedBoardIds).toEqual(['board-b'])
+  })
+
+  it('defers a reconnecting switch until connected while polling the requested board', async () => {
+    vi.useFakeTimers()
+    const fetchBoard = vi.fn(async () => undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-a')
+    mockConnection.invoke.mockClear()
+    mockConnection.state = 'Reconnecting'
+    await callbacks.reconnecting?.()
+
+    await controller.switchBoard('board-b')
+    expect(mockConnection.invoke).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+    expect(fetchBoard).toHaveBeenCalledWith('board-b')
+
+    mockConnection.state = 'Connected'
+    await callbacks.reconnected?.()
+
+    const boardTransitionSends = mockConnection.invoke.mock.calls.filter(
+      ([method]) => method === 'LeaveBoard' || method === 'JoinBoard',
+    )
+    expect(boardTransitionSends).toEqual([
+      ['LeaveBoard', 'board-a'],
+      ['JoinBoard', 'board-b'],
+    ])
+
+    await controller.stop()
   })
 
   it('cancels a pending debounce timer when switching boards', async () => {

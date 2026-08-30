@@ -11,7 +11,6 @@ public class LlmProviderConstructorCompatibilityTests
 {
     [Theory]
     [InlineData("OpenAi", "https://openai.example/v1/chat/completions")]
-    [InlineData("Gemini", "https://gemini.example/v1beta/models/test-gemini-model:generateContent")]
     [InlineData("Ollama", "https://ollama.example/api/chat")]
     public async Task PublicConstructor_WithCallerOwnedHttpClient_ShouldPreserveConfiguredRequest(
         string providerName,
@@ -36,12 +35,8 @@ public class LlmProviderConstructorCompatibilityTests
             case "OpenAi":
                 handler.Authorization.Should().Be("Bearer test-openai-key");
                 break;
-            case "Gemini":
-                handler.GeminiApiKey.Should().Be("test-gemini-key");
-                break;
             case "Ollama":
                 handler.Authorization.Should().BeNull();
-                handler.GeminiApiKey.Should().BeNull();
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(providerName), providerName, null);
@@ -59,12 +54,6 @@ public class LlmProviderConstructorCompatibilityTests
                 BaseUrl = "https://openai.example/v1",
                 Model = "test-openai-model"
             },
-            Gemini = new GeminiProviderSettings
-            {
-                ApiKey = "test-gemini-key",
-                BaseUrl = "https://gemini.example/v1beta",
-                Model = "test-gemini-model"
-            },
             Ollama = new OllamaProviderSettings
             {
                 BaseUrl = "https://ollama.example",
@@ -78,10 +67,6 @@ public class LlmProviderConstructorCompatibilityTests
                 client,
                 settings,
                 NullLogger<OpenAiLlmProvider>.Instance),
-            "Gemini" => new GeminiLlmProvider(
-                client,
-                settings,
-                NullLogger<GeminiLlmProvider>.Instance),
             "Ollama" => new OllamaLlmProvider(
                 client,
                 settings,
@@ -95,7 +80,6 @@ public class LlmProviderConstructorCompatibilityTests
         internal string? RequestUri { get; private set; }
         internal string? RequestBody { get; private set; }
         internal string? Authorization { get; private set; }
-        internal string? GeminiApiKey { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -106,9 +90,6 @@ public class LlmProviderConstructorCompatibilityTests
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
             Authorization = request.Headers.Authorization?.ToString();
-            GeminiApiKey = request.Headers.TryGetValues("x-goog-api-key", out var values)
-                ? values.SingleOrDefault()
-                : null;
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -121,10 +102,6 @@ public class LlmProviderConstructorCompatibilityTests
             "OpenAi" =>
                 """
                 {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
-                """,
-            "Gemini" =>
-                """
-                {"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":1}}
                 """,
             "Ollama" =>
                 """

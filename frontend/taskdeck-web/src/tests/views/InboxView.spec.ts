@@ -49,6 +49,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }>,
   loadingList: false,
   loadingDetail: false,
@@ -74,6 +75,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }, syncSummary?: boolean) => void>(),
   fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
   fetchDetail: vi.fn<(itemId: string, options?: {
@@ -104,6 +106,7 @@ const mockCaptureStore = reactive({
       proposalId: string | null
       promptVersion: string | null
     } | null
+    canEditSuggestion?: boolean
   }>>(),
   ignoreItem: vi.fn<(itemId: string) => Promise<void>>(),
   cancelItem: vi.fn<(itemId: string) => Promise<void>>(),
@@ -316,6 +319,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
       mockCaptureStore.detailById[itemId] = detail
       return detail
@@ -371,6 +375,33 @@ describe('InboxView', () => {
     expect(wrapper.text()).toContain('Showing capture items linked to board board-7.')
   })
 
+  it('renders archived board capture history without composer, selection, edit, or triage actions', async () => {
+    routeMock.query = { boardId: 'board-7', history: 'archived' }
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+
+    expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    expect(wrapper.text()).toContain('Archived capture history')
+    expect(wrapper.text()).toContain('Read-only retained captures')
+    expect(wrapper.find('[aria-label="Open capture modal to add a new inbox item"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="select-all"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="inbox-item-checkbox"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="inbox-item"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Start Triage')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Ignore')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Cancel')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Refresh Detail')).toBe(true)
+    expect(mockCaptureStore.triageItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.ignoreItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.cancelItem).not.toHaveBeenCalled()
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
   it('auto-opens capture detail when the route hash points at a capture', async () => {
     routeMock.hash = '#capture-capture-2'
 
@@ -378,7 +409,7 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -653,7 +684,7 @@ describe('InboxView', () => {
     const wrapper = mount(InboxView)
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture')
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture', { syncSummary: true })
     expect(wrapper.text()).toContain('Select an item to inspect the captured text')
     expect(routerMocks.replace).toHaveBeenCalledWith({
       name: 'workspace-inbox',
@@ -681,7 +712,7 @@ describe('InboxView', () => {
     await firstRow.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1')
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', { syncSummary: true })
     expect(wrapper.text()).toContain('Full text for capture-1')
   })
 
@@ -694,7 +725,7 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -736,7 +767,7 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2')
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -1031,7 +1062,10 @@ describe('InboxView', () => {
     await refreshButton?.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenLastCalledWith('capture-1', { forceRefresh: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenLastCalledWith('capture-1', {
+      forceRefresh: true,
+      syncSummary: true,
+    })
     expect(wrapper.text()).toContain('Capture Detail')
   })
 
@@ -1140,6 +1174,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1167,6 +1202,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1207,6 +1243,7 @@ describe('InboxView', () => {
         processedAt: null,
         retryCount: 0,
         provenance: null,
+        canEditSuggestion: true,
       }
     })
 
@@ -1226,6 +1263,129 @@ describe('InboxView', () => {
 
     expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('hides a stale editor when refreshed detail becomes non-editable', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'New',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Editable transcript excerpt',
+        rawText: 'Editable transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+        canEditSuggestion: true,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+    await wrapper.get('[data-testid="suggestion-edit-btn"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(true)
+
+    const current = mockCaptureStore.detailById['capture-1']!
+    mockCaptureStore.detailById['capture-1'] = {
+      ...current,
+      status: 'Triaging',
+      canEditSuggestion: false,
+    }
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-textarea"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+  })
+
+  it('hides edit for a linked triaged capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Triaged',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Linked transcript excerpt',
+        rawText: 'Linked transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 0,
+        provenance: null,
+        canEditSuggestion: false,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+  })
+
+  it('shows edit and edit recovery guidance for an unlinked failed capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Failed',
+        source: 'Typed',
+        textExcerpt: 'Failed capture excerpt',
+        rawText: 'Failed capture text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 1,
+        errorMessage: 'Triage failed',
+        provenance: null,
+        canEditSuggestion: true,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capture-error-banner"]').text()).toContain('You can edit the text and retry')
+  })
+
+  it('hides edit and gives retry or ignore guidance for a linked failed capture', async () => {
+    mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
+      mockCaptureStore.detailById[itemId] = {
+        id: itemId,
+        userId: 'user-1',
+        boardId: null,
+        status: 'Failed',
+        source: 'TranscriptPaste',
+        textExcerpt: 'Linked failed excerpt',
+        rawText: 'Linked failed transcript text',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+        retryCount: 1,
+        errorMessage: 'Triage failed',
+        provenance: null,
+        canEditSuggestion: false,
+      }
+    })
+
+    const wrapper = mount(InboxView)
+    await waitForUi()
+    await wrapper.get('[role="option"]').trigger('click')
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="suggestion-edit-btn"]').exists()).toBe(false)
+    const banner = wrapper.find('[data-testid="capture-error-banner"]')
+    expect(banner.text()).toContain('Retry triage or ignore this capture')
+    expect(banner.text()).not.toContain('You can edit the text')
   })
 
   describe('triage action visibility', () => {

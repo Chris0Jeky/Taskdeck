@@ -25,6 +25,16 @@ public class BoardConfiguration : IEntityTypeConfiguration<Board>
         builder.Property(b => b.IsArchived)
             .IsRequired();
 
+        builder.Property(b => b.ConcurrencyToken)
+            .IsRequired()
+            .IsConcurrencyToken();
+
+        // Guard marker for dependent writes (see Board.RecordDependentMutation). Mapped as an
+        // ordinary column, never a concurrency token: it must be SET by the dependent write, not
+        // tested by one.
+        builder.Property(b => b.CardMutationMarker)
+            .IsRequired();
+
         builder.Property(b => b.OwnerId);
 
         builder.Property(b => b.CreatedAt)

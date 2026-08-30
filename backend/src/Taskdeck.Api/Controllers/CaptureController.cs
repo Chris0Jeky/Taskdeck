@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
@@ -124,6 +125,44 @@ public class CaptureController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Keep a capture in the Inbox for later without creating a proposal or work item.
+    /// </summary>
+    [HttpPost("{id:guid}/keep")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [ProducesResponseType(typeof(CaptureItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Keep(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.KeepAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Archive a capture without creating a proposal or work item.
+    /// </summary>
+    [HttpPost("{id:guid}/archive")]
+    [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
+    [ProducesResponseType(typeof(CaptureItemDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _captureService.ArchiveAsync(userId, id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Mark a capture item as ignored (dismissed without triage).
     /// </summary>
     /// <param name="id">The capture item identifier.</param>
@@ -170,24 +209,32 @@ public class CaptureController : AuthenticatedControllerBase
     /// proposal that the user must review before any board changes are applied.
     /// </summary>
     /// <param name="id">The capture item identifier.</param>
+    /// <param name="dto">Optional body supplying a target board when the capture has none yet.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Triage enqueue result with status information.</returns>
     /// <response code="202">Triage enqueued — proposal will be generated asynchronously.</response>
+    /// <response code="400">The capture has no target board (a proposal must target a board).</response>
     /// <response code="401">Authentication required.</response>
+    /// <response code="403">The caller lacks write access to the target board (#1794), or the capture belongs to another user.</response>
     /// <response code="404">Capture item not found.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("{id:guid}/triage")]
     [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
     [ProducesResponseType(typeof(CaptureTriageEnqueueResultDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> EnqueueTriage(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> EnqueueTriage(
+        Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] EnqueueTriageRequestDto? dto,
+        CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
 
-        var result = await _captureService.EnqueueTriageAsync(userId, id, cancellationToken);
+        var result = await _captureService.EnqueueTriageAsync(userId, id, dto?.BoardId, cancellationToken);
         return result.IsSuccess ? Accepted(result.Value) : result.ToErrorActionResult();
     }
 

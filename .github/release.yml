@@ -1,0 +1,65 @@
+# =============================================================================
+# Automatic release-notes grouping (#2234)
+# =============================================================================
+#
+# Read by `POST /repos/{owner}/{repo}/releases/generate-notes`, which the
+# Release Desktop workflow calls to build the `## What's changed` section of the
+# composed release page (`scripts/ci/compose-release-notes.mjs`). Without this
+# file GitHub emits one flat PR list; with it, the same PRs land under headings
+# a reader can skim.
+#
+# Categories are matched TOP-DOWN and a PR lands in the first one that matches,
+# so the order below is the precedence order: a `bug` + `ci` PR is a bug fix.
+# `catch-all` collects everything unlabelled, so no merged PR disappears.
+#
+# Labels come from the repo's own set — see `gh label list`. Priority labels are
+# deliberately not categories: they describe scheduling, not what changed.
+# =============================================================================
+
+changelog:
+  exclude:
+    labels:
+      - duplicate
+      - invalid
+      - wontfix
+      - historical
+  categories:
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Security and hardening
+      labels:
+        - security
+        - hardening
+    - title: Features
+      labels:
+        - feature
+        - automation
+        - llm
+        - mcp
+    - title: Interface and experience
+      labels:
+        - ui
+        - ux
+        - frontend
+    - title: Performance
+      labels:
+        - performance
+    - title: Documentation
+      labels:
+        - docs
+        - decision
+        - product-truth
+    - title: Build, CI and packaging
+      labels:
+        - ci
+        - packaging
+        - testing
+        - refactor
+        - tech-debt
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other changes
+      labels:
+        - "*"

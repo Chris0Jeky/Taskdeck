@@ -179,6 +179,27 @@ map $http_upgrade $connection_upgrade {
     default upgrade;
     '' close;
 }
+# Percent-encoded spellings of a machine prefix (#1992 round 1, ADR-0064). /%61pi/boards decodes
+# to /api/boards in BOTH nginx and Kestrel, so by the time either one matches, the encoding is
+# gone and the request is on the real controller -- but proxy_pass carries no URI, so the raw form
+# is what the API receives. The rule needs both views of the request at once, which one `if`
+# cannot express, so it is assembled from maps: does the FIRST raw segment contain a percent
+# escape, and is the DECODED path machine-facing? Only the conjunction is rejected, which is what
+# keeps an ordinary SPA route such as /caf%C3%A9 working.
+map $request_uri $td_encoded_first_segment {
+    default 0;
+    "~^/[^/?]*%" 1;
+}
+
+map $uri $td_machine_uri {
+    default 0;
+    "~*^/(?:api|hubs|health|mcp)(?:/|$)" 1;
+}
+
+map "$td_encoded_first_segment$td_machine_uri" $td_encoded_machine_prefix {
+    default 0;
+    "11" 1;
+}
 
 server {
     listen 8080;
@@ -213,8 +234,34 @@ server {
     # 'unsafe-inline' can be removed entirely.
     add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; script-src 'self'; connect-src 'self' ws: wss:;" always;
 
-    location /api/ {
-        proxy_pass http://api:8080/api/;
+    # Fail closed on machine-path spellings that only some layers read as machine surface
+    # (#1992 q-10 A, ADR-0064). $request_uri is the raw request line and the only place these
+    # forms are still visible: by the time a location is chosen, nginx has percent-decoded the
+    # URI and applied merge_slashes (on by default), and proxy_pass carries no URI, so the raw
+    # form is what the API would receive. Two alternations, matched case-insensitively:
+    #
+    #   1. /mcp%2Fmessages -- decodes to a machine path here, but the API leaves %2F encoded
+    #      and reads it back as one opaque non-machine segment.
+    #   2. //api/boards and /%2fapi/boards -- decoding plus merge_slashes collapse the leading
+    #      separator run, so these select the machine location, while the API keeps the empty
+    #      first segment and reads them as SPA paths. Two or more leading separators is the
+    #      discriminator: exactly one plain slash is the canonical spelling.
+    #
+    # The boundary on the second alternation is what keeps //apidocs a client-side route.
+    if ($request_uri ~* "^(?:/(?:api|hubs|health|mcp)%2f|(?:/|%2f){2,}(?:api|hubs|health|mcp)(?:[/?]|%2f|$))") {
+        return 404;
+    }
+    # Percent-encoded prefix letters, decided by the map conjunction above: the raw first segment
+    # carries an escape AND the decoded path is machine surface. Kept separate from the regex
+    # guard because no single regex over $request_uri can know what $uri decoded to.
+    if ($td_encoded_machine_prefix) {
+        return 404;
+    }
+
+    # Keep the bare machine prefix and all descendants on the API container.
+    # Omitting a URI from proxy_pass preserves the incoming /api path exactly.
+    location ~ ^/api(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -224,8 +271,8 @@ server {
         proxy_read_timeout 120s;
     }
 
-    location /hubs/ {
-        proxy_pass http://api:8080/hubs/;
+    location ~ ^/hubs(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -237,8 +284,8 @@ server {
         proxy_read_timeout 120s;
     }
 
-    location /health/ {
-        proxy_pass http://api:8080/health/;
+    location ~ ^/health(?:/|$) {
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -246,6 +293,27 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
         proxy_read_timeout 30s;
+    }
+
+    location ~ ^/mcp(?:/|$) {
+        proxy_pass http://api:8080;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_read_timeout 120s;
+    }
+
+    # The four machine locations above are exact lowercase and case-SENSITIVE, so they are
+    # matched first and this block cannot shadow them. Every other casing of a machine prefix
+    # lands here and is 404 rather than falling through to the SPA container, which would
+    # answer 200 + index.html for a path the API itself resolves case-insensitively
+    # (#1992 q-10 A, ADR-0064). Variants are rejected, never folded to the canonical spelling.
+    location ~* ^/(?:api|hubs|health|mcp)(?:/|$) {
+        return 404;
     }
 
     location / {

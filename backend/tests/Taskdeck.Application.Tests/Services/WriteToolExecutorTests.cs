@@ -8,6 +8,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Tests.Services;
 
@@ -31,6 +32,13 @@ public class WriteToolExecutorTests
 
         _policyEngine.Setup(p => p.ClassifyRisk(It.IsAny<IReadOnlyList<ProposalOperationDto>>()))
             .Returns(RiskLevel.Low);
+        _policyEngine.Setup(p => p.ValidatePermissionsAsync(
+                _userId,
+                _boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
     }
 
     private ToolExecutionContext MakeContext() => new(_boardId, _userId);
@@ -464,8 +472,15 @@ public class WriteToolExecutorTests
     [Fact]
     public async Task ProposeCreateColumn_WithValidName_CreatesProposal()
     {
-        SetupColumns("Backlog", "Done");
-        SetupProposalCreation(Guid.NewGuid());
+        var columns = new[]
+        {
+            new Column(_boardId, "Backlog", 0),
+            new Column(_boardId, "Done", 4)
+        };
+        _columnRepo.Setup(r => r.GetByBoardIdAsync(_boardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(columns);
+        CreateProposalDto? captured = null;
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
 
         var executor = new ProposeCreateColumnExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
         var args = ParseArgs("""{"name": "In Review"}""");
@@ -475,6 +490,13 @@ public class WriteToolExecutorTests
 
         doc.RootElement.GetProperty("proposal_id").GetString().Should().NotBeNullOrEmpty();
         doc.RootElement.GetProperty("summary").GetString().Should().Contain("In Review");
+        captured.Should().NotBeNull();
+        captured!.Operations.Should().ContainSingle();
+        using var parameters = JsonDocument.Parse(captured.Operations![0].Parameters);
+        parameters.RootElement.GetProperty("boardId").GetGuid().Should().Be(_boardId);
+        parameters.RootElement.GetProperty("name").GetString().Should().Be("In Review");
+        parameters.RootElement.GetProperty("position").GetInt32().Should().Be(5,
+            "omitted position must use ColumnService's max-plus-one append semantics");
     }
 
     [Fact]
@@ -501,6 +523,63 @@ public class WriteToolExecutorTests
         var doc = JsonDocument.Parse(result);
 
         doc.RootElement.GetProperty("error").GetString().Should().Contain("name is required");
+    }
+
+    [Theory]
+    [InlineData("1.5")]
+    [InlineData("\"1\"")]
+    [InlineData("null")]
+    public async Task ProposeCreateColumn_NonIntegerPosition_ReturnsErrorAndCreatesNoProposal(string positionJson)
+    {
+        SetupColumns("Backlog");
+        var executor = new ProposeCreateColumnExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs($"{{\"name\":\"Review\",\"position\":{positionJson}}}");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+        using var doc = JsonDocument.Parse(result);
+
+        doc.RootElement.GetProperty("error").GetString().Should().Contain("integer");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateColumn_OccupiedPosition_ReturnsConflictAndCreatesNoProposal()
+    {
+        SetupColumns("Backlog", "Done");
+        var executor = new ProposeCreateColumnExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs("""{"name":"Review","position":1}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+        using var doc = JsonDocument.Parse(result);
+
+        doc.RootElement.GetProperty("error").GetString().Should().Contain("position 1 is already occupied");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ProposeCreateColumn_PermissionFailure_ReturnsErrorAndCreatesNoProposal()
+    {
+        SetupColumns("Backlog");
+        _policyEngine.Setup(p => p.ValidatePermissionsAsync(
+                _userId,
+                _boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "User does not have access to board"));
+        var executor = new ProposeCreateColumnExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+
+        var result = await executor.ExecuteAsync(MakeContext(), ParseArgs("""{"name":"Review"}"""));
+        using var doc = JsonDocument.Parse(result);
+
+        doc.RootElement.GetProperty("error").GetString().Should().Contain("does not have access");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     #endregion

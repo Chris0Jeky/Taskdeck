@@ -6,7 +6,7 @@
 | [0002](ADR-0002-claims-first-identity.md) | Claims-First Identity Model | Accepted | 2026-01 |
 | [0003](ADR-0003-proposal-first-automation.md) | Proposal-First Automation (Review-First Safety) | Accepted | 2026-02-23 |
 | [0004](ADR-0004-multi-tenancy-shared-schema.md) | Multi-Tenancy - Shared Schema + TenantId | Accepted (cross-user isolation live via per-UserId/board-access; multi-org/TenantId shared-schema premise parked: archive pivot) | 2026-02-22 |
-| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted | 2026-02-23 |
+| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted (to be superseded by ADR-0065 when CF-01 `#2255` lands the ID-preserving backfill; until then the queue row is the capture) | 2026-02-23 |
 | [0006](ADR-0006-llm-provider-mock-default.md) | LLM Provider - Mock-Default with Config-Gated Live Providers | Accepted | 2026-02 |
 | [0007](ADR-0007-stable-error-contracts.md) | Stable Error Contracts (ApiErrorResponse) | Accepted | 2026-01 |
 | [0008](ADR-0008-novice-first-product-legibility.md) | Novice-First Product Legibility Before Breadth | Accepted | 2026-03-07 |
@@ -47,6 +47,28 @@
 | [0043](ADR-0043-proposal-quality-feedback-signal.md) | Proposal Quality Feedback as a Separate Content-Free Signal | Accepted | 2026-06-27 |
 | [0044](ADR-0044-revival-pivot-open-beta.md) | Revival Pivot — Open-Beta Distribution with a Commercial Horizon (Supersedes the Archive Pivot) | Accepted | 2026-07-10 |
 | [0045](ADR-0045-llm-transcript-triage-engine.md) | LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance | Accepted | 2026-07-11 |
-| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted | 2026-07-13 |
+| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted (amended 2026-08-30 by ADR-0065: decision 4 storage now via `IBlobStore` over SQLite, decision 5 image intake becomes local-OCR-first with cloud vision as one registered escalation processor) | 2026-07-13 |
 | [0047](ADR-0047-artefact-extraction-resource-bounding.md) | Artefact-Extraction Resource Bounding — Permit Gate (Shipped) + Provider-Injection Decode Ceiling as Defense-in-Depth | Accepted | 2026-07-18 |
 | [0048](ADR-0048-decompression-bomb-containment-worker-process.md) | Decompression-Bomb Containment Boundary — Memory-Capped Extraction Worker Process | Accepted | 2026-07-18 |
+| [0049](ADR-0049-frontend-spec-typecheck-quarantined-project.md) | Type-Check the Frontend Spec Tree via a Separate Project with an Explicit Quarantine | Accepted | 2026-08-07 |
+| [0050](ADR-0050-gplv3-copyleft-core.md) | Adopt GPLv3-only for the Taskdeck Core | Accepted | 2026-08-12 |
+| [0051](ADR-0051-autonomous-backlog-admission-and-merge-authority.md) | Autonomous Backlog Admission and Agent-Executable Merge Authority | Accepted | 2026-08-18 |
+| [0052](ADR-0052-ci-estate-right-sizing.md) | CI Estate Right-Sizing — Keep/Fix/Kill/Gate Verdict Per Scheduled Lane | Accepted | 2026-08-19 |
+| [0053](ADR-0053-legacy-token-substrate-paper-scoped-remap.md) | Legacy Obsidian Token Substrate — Paper-Scoped Remap as an Interim Floor, Per-View Migration as the Fix | Accepted | 2026-08-19 |
+| [0054](ADR-0054-i18n-vue-i18n-surface-by-surface.md) | Internationalization — `vue-i18n` in Composition Mode, Per-Surface Catalogs, Surface-by-Surface Rollout | Accepted | 2026-08-19 |
+| [0055](ADR-0055-openai-only-live-provider-surface.md) | Collapse Supported Live LLM Configuration to OpenAI | Accepted (amended 2026-08-30, `#2233`: packaged-desktop environment-source exception) | 2026-08-20 |
+| [0056](ADR-0056-direct-human-board-editing-first-class.md) | Direct Human Board Editing Is First-Class; the Proposal Loop Governs Non-Human Actors | Accepted | 2026-08-22 |
+| [0057](ADR-0057-user-sovereign-delegated-authority.md) | User-Sovereign Delegated Authority for Automation | Accepted (maintainer ruling 2026-08-24 with an openness caveat; review-first operative until separately gated implementation) | 2026-08-23 |
+| [0058](ADR-0058-due-dates-are-calendar-days.md) | Due Dates Are Calendar Days | Accepted | 2026-08-24 |
+| [0059](ADR-0059-machine-path-404-405-contract.md) | Machine-Facing Paths Answer 405 for a Wrong Verb and 404 Only for a Missing Route | Accepted (maintainer ruling 2026-08-24, recorded on `#1992`) | 2026-08-24 |
+| [0060](ADR-0060-canonical-work-model-and-compatibility-path.md) | Canonical Work Model and Compatibility Path | Accepted (maintainer ruling 2026-08-29, q-2 B, recorded on #2084) | 2026-08-26 |
+| [0061](ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) | Trusted Shared Instance and Managed SaaS Boundary | Accepted as direction only, evidence pending (maintainer ruling 2026-08-29, q-3 A, recorded on #1772) | 2026-08-26 |
+| [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Accepted (maintainer ruling 2026-08-29, q-4 A, recorded on #2091) | 2026-08-26 |
+| [0063](ADR-0063-archived-board-card-write-protection.md) | Archived Boards Reject Card Writes Until Restored | Accepted (maintainer scope ruling on `#2080`, 2026-08-24) | 2026-08-26 |
+| [0064](ADR-0064-machine-paths-are-exact-lowercase.md) | Machine-Facing Paths Are Exact Lowercase; Non-Canonical Spellings Are 404 at Every Layer | Accepted (maintainer ruling 2026-08-30, v0.3 RC deck q-10 A, recorded on `#1992`) | 2026-08-30 |
+| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted under delegation (maintainer's 2026-08-30 mandate; nine conditions ruled by the agent pass on `#2254`, revisable) | 2026-08-30 |
+
+> Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
+> archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
+> autoscaling, platform expansion) remain parked under the current direction — now pending the
+> post-retention horizon in `docs/strategy/PRODUCT_DIRECTION.md` §5, not the archive.

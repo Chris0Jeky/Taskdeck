@@ -13,6 +13,39 @@
 # Review this file periodically to remove entries for deleted code.
 # =============================================================================
 
-# No fingerprints yet. Add entries here as the full-history scan surfaces
-# false positives that cannot be suppressed via .gitleaks.toml allowlists.
-# Format: one fingerprint per line, with a comment explaining why it is safe.
+# Prefer a pattern allowlist in .gitleaks.toml for recurring placeholder SHAPES
+# (see its existing ghp_... regex); use a fingerprint here when the finding is a
+# specific reviewed instance. The per-instance route was chosen below because it
+# cannot over-mask a future real secret of the same rule class.
+#
+# The six findings below are from the first full-history scan ever executed
+# (ci-release dispatch run 32212936430, 2026-08-19, scan-mode: full). Each was
+# reviewed at its pinned historical commit. NOTE: only the dev key is gone from
+# HEAD - the five docs placeholders are live illustrative text whose line
+# numbers have already drifted at HEAD; these fingerprints pin the historical
+# commits, so do NOT delete them as "deleted code". If a future edit re-flags a
+# placeholder at a new line, extend the .gitleaks.toml regex allowlist for the
+# ellipsis-truncated shape instead of stacking fingerprints.
+
+# Dev-only Connectors:EncryptionKey default that was committed to
+# appsettings.Development.json (2026-04-23, #880) and removed 2026-05-16 by
+# f6abffc0 (SEC-31/SEC-32, #1067). The field is "" at HEAD, git grep of the
+# value at HEAD is empty, and first-run bootstrap hard-fails rather than
+# defaulting (keys are generated into appsettings.local.json). It only ever
+# encrypted local dev connector data; not a live service credential.
+12bf091fafd2b520d38831c46e29dc436a137db5:backend/src/Taskdeck.Api/appsettings.Development.json:generic-api-key:14
+
+# Documentation examples: an illustrative webhook signing secret
+# ("whsec_a1b2c3d4e5f6...") and truncated sample JWTs ("eyJhbGciOiJIUzI1NiIs...")
+# in API docs. Placeholders, never real credentials; still present (harmlessly)
+# in the live docs at HEAD.
+de67130fb58f2a349934504e02013f7fa82217ec:docs/api/WEBHOOKS.md:generic-api-key:44
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:curl-auth-header:65
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/AUTHENTICATION.md:generic-api-key:23
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:36
+aafdbe6c18c3401d0557a91ff9401b5f8cf93663:docs/api/QUICKSTART.md:generic-api-key:54
+
+# Synthetic 32-byte connector-encryption prerequisite used only to execute the
+# retired-provider Compose interpolation regression. The test asserts that the
+# separate synthetic retired-provider value never reaches Compose output.
+f581076b99d276f0c9f950761bdc3c6d1cd0d425:scripts/ci/test_retired_llm_compose_migration.py:generic-api-key:83

@@ -13,7 +13,7 @@ public class EgressRegistryTests
         var entries = registry.GetAllEntries();
 
         entries.Should().NotBeEmpty();
-        entries.Count.Should().BeGreaterOrEqualTo(5, "seed entries cover OpenAI, Gemini, webhooks, Sentry, analytics");
+        entries.Count.Should().BeGreaterOrEqualTo(4, "seed entries cover OpenAI, webhooks, Sentry, analytics, and local Ollama");
     }
 
     [Fact]
@@ -24,10 +24,10 @@ public class EgressRegistryTests
     }
 
     [Fact]
-    public void DefaultRegistry_ShouldAllowGeminiHost()
+    public void DefaultRegistry_ShouldRejectRetiredGeminiHost()
     {
         var registry = new EgressRegistry();
-        registry.IsHostAllowed("generativelanguage.googleapis.com").Should().BeTrue();
+        registry.IsHostAllowed("generativelanguage.googleapis.com").Should().BeFalse();
     }
 
     [Fact]
@@ -114,8 +114,6 @@ public class EgressRegistryTests
         var openAiEntry = entries.First(e => e.Host == "api.openai.com");
         openAiEntry.Classification.Should().Be(EgressDataClassification.UserContent);
 
-        var geminiEntry = entries.First(e => e.Host == "generativelanguage.googleapis.com");
-        geminiEntry.Classification.Should().Be(EgressDataClassification.UserContent);
     }
 
     [Fact]
@@ -127,7 +125,7 @@ public class EgressRegistryTests
 
         // Verify all known outbound paths are documented
         hosts.Should().Contain("api.openai.com", "OpenAI provider must be registered");
-        hosts.Should().Contain("generativelanguage.googleapis.com", "Gemini provider must be registered");
+        hosts.Should().NotContain("generativelanguage.googleapis.com", "the retired Gemini provider must not be registered");
     }
 
     [Fact]

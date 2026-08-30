@@ -1,5 +1,6 @@
-import { ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { automationApi } from '../api/automationApi'
+import { i18n } from '../i18n'
 import { proposalRevisionsApi } from '../api/proposalRevisionsApi'
 import { useToastStore } from '../store/toastStore'
 import { createRequestId } from '../utils/requestId'
@@ -8,6 +9,11 @@ import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 /**
  * How the review diff pane presents its content (#1397):
@@ -48,6 +54,15 @@ export function useReviewActions(
 ) {
   const toast = useToastStore()
   const diffRenderPerf = usePerformanceMark('proposal-diff-render')
+  /**
+   * i18n via the MODULE-SCOPED runtime, not `useI18n()` (ADR-0054 / `#1770`).
+   * `useI18n()` requires a live component instance; this composable is also
+   * driven by the Legacy shell and exercised by specs that never mount one, and
+   * threading a `t` argument through would change every caller's signature for
+   * no gain. `i18n.global.t` reads `i18n.global.locale` internally, so a call
+   * made inside a computed still re-evaluates on a language switch.
+   */
+  const t = i18n.global.t
 
   const proposalActionBusyId = ref<string | null>(null)
   // Bulk dismiss has no single proposal id to track, so it gets its own
@@ -87,10 +102,16 @@ export function useReviewActions(
   async function loadStoredRevisedSignal(proposalId: string, requestId: number) {
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       selectedDiffRevised.value = revisions.length > 0
     } catch {
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       selectedDiffRevised.value = null
     }
   }
@@ -110,9 +131,12 @@ export function useReviewActions(
       await automationApi.getProposal(proposalId)
     } catch (e: unknown) {
       if (!isAccessDeniedError(e)) return
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
       resetDiffState()
-      toast.error('This proposal is no longer available to you.')
+      toast.error(t('review.toast.noLongerAvailable'))
     }
   }
 
@@ -135,7 +159,7 @@ export function useReviewActions(
     () => {
       const id = selectedDiffProposalId.value
       if (!id) return false
-      const proposal = proposals.value.find((p) => p.id === id)
+      const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, id))
       if (!proposal) return false
       return isProposalReadOnly(proposal, isProposalExpired(proposal))
     },
@@ -149,7 +173,9 @@ export function useReviewActions(
       // late response render live UI on a read-only proposal.
       if (selectedDiffMode.value === 'stored') return
       const id = selectedDiffProposalId.value
-      const proposal = id ? proposals.value.find((p) => p.id === id) : undefined
+      const proposal = id
+        ? proposals.value.find((p) => proposalIdsEqual(p.id, id))
+        : undefined
       if (!proposal) return
       // Cancel any in-flight live fetch so its late response can't overwrite
       // the read-only presentation.
@@ -158,41 +184,161 @@ export function useReviewActions(
     },
   )
 
+  // #2215 B: the open pane is keyed on the proposal id alone, so a queue refresh
+  // that brings in a revision another reviewer saved leaves a diff on screen that
+  // was computed for the previous revision — while Approve pins, and Apply
+  // executes, the server's latest. Track the (proposal, revision) pair the pane
+  // was rendered for and close it when the revision moves under it.
+  //
+  // The pair is remembered in closure state rather than read from the watcher's
+  // `oldValue`, because opening a pane also changes this getter (null → row) and
+  // must NOT be mistaken for a revision landing under an already-open pane.
+  let openDiffProposalId: string | null = null
+  let openDiffRevisionId: string | null = null
+  watch(
+    () => {
+      const id = selectedDiffProposalId.value
+      if (!id) return null
+      return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
+    },
+    (proposal) => {
+      if (!proposal) {
+        openDiffProposalId = null
+        openDiffRevisionId = null
+        return
+      }
+      // The EFFECTIVE revision, and only a genuine move (round 2): a decision
+      // taken elsewhere nulls `latestRevisionId` on the wire, which must let
+      // the pane convert to the stored decision-time presentation rather than
+      // wiping it as a collaborator edit.
+      const revisionId = proposalRevisionIdentity(proposal)
+      if (
+        openDiffProposalId !== null &&
+        proposalIdsEqual(openDiffProposalId, proposal.id) &&
+        proposalRevisionMoved(openDiffRevisionId, revisionId)
+      ) {
+        // Cancel any in-flight fetch so a late response cannot re-open the pane.
+        latestDiffRequestId += 1
+        resetDiffState()
+        openDiffProposalId = null
+        openDiffRevisionId = null
+        return
+      }
+      openDiffProposalId = proposal.id
+      openDiffRevisionId = revisionId
+    },
+  )
+
   async function handleApproveProposal(proposalId: string) {
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.approveProposal(proposalId)
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal approved for board application')
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
+      // APPROVED, not APPLIED (GH-1970): phase 1 of the two-phase decision has
+      // landed and NOTHING has reached a board yet — the approve pane says as
+      // much in the same breath, so the stamp must not contradict it.
+      toast.success(t('review.toast.approved'), undefined, { label: 'approved' })
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to approve proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.approveFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
   }
 
-  async function handleRejectProposal(proposalId: string, riskLevel: ApiProposal['riskLevel']) {
-    const requiresReason = ['High', 'Critical'].includes(normalizeProposalRiskLevel(riskLevel))
-    const promptedReason = prompt(
-      requiresReason ? 'Reason is required for this risk level:' : 'Optional rejection reason:',
-    )
-    if (promptedReason === null) return
+  // --- Reject reason collection --------------------------------------------
+  //
+  // GH-1969: the reason used to come from a native `window.prompt`, alone among
+  // the review flow's confirmations. A native prompt is unstyled by either skin,
+  // is NOT translated (it stayed English under `Italiano`), cannot be exercised
+  // by the dialog specs, and is suppressed outright in some embedded and
+  // automation contexts — where the reason would be silently lost rather than
+  // collected. The rejection reason is decision-ledger content: it is what a
+  // future reader sees explaining why a proposal did not ship, so it cannot be
+  // collected through the one mechanism the product can neither style, translate
+  // nor test.
+  //
+  // Same shape as the phase-2 execute gate below: a declarative request the
+  // surface renders with the app's own dialog, and only `confirmRejectProposal`
+  // reaches the API. `performReject` is deliberately NOT exported, so no caller
+  // can reject without collecting a reason through that gate.
+  const rejectPromptProposalId = ref<string | null>(null)
 
-    const reason = promptedReason.trim()
-    if (requiresReason && !reason) {
-      toast.error('Rejection reason is required for high and critical risk proposals')
+  /** The proposal awaiting a rejection reason, so the dialog can show its summary. */
+  const rejectPromptProposal = computed<ApiProposal | null>(() => {
+    const id = rejectPromptProposalId.value
+    if (!id) return null
+    return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
+  })
+
+  /**
+   * High/Critical proposals must carry a reason. Derived from the proposal in
+   * the list rather than from an argument captured at request time, so a risk
+   * level that changes under the open dialog is honoured by the gate below.
+   */
+  const rejectRequiresReason = computed(() => {
+    const proposal = rejectPromptProposal.value
+    if (!proposal) return false
+    return ['High', 'Critical'].includes(normalizeProposalRiskLevel(proposal.riskLevel))
+  })
+
+  function requestRejectProposal(proposalId: string) {
+    // Another decision is mid-flight; opening the gate now would let the user
+    // reject against state that is already changing.
+    if (proposalActionBusyId.value !== null) return
+    rejectPromptProposalId.value = proposalId
+  }
+
+  function cancelRejectProposal() {
+    rejectPromptProposalId.value = null
+  }
+
+  async function confirmRejectProposal(reason: string) {
+    const proposalId = rejectPromptProposalId.value
+    if (!proposalId) return
+    // Rejecting a proposal that vanished from the list (refresh, filter change,
+    // decided elsewhere) would decide something no longer on screen — and the
+    // dialog has already closed itself, since its `open` derives from the same
+    // computed. Load-bearing guard, not a tidy-up.
+    const stillPresent = rejectPromptProposal.value !== null
+    const requiresReason = rejectRequiresReason.value
+    const trimmed = reason.trim()
+    // The dialog disables its accept button for this case; re-checked here so
+    // the invariant does not depend on the surface enforcing it.
+    if (requiresReason && !trimmed) {
+      toast.error(t('review.toast.rejectReasonRequired'))
       return
     }
+    // Close the gate BEFORE awaiting so a double-confirm cannot fire two rejects.
+    rejectPromptProposalId.value = null
+    if (!stillPresent) return
+    await performReject(proposalId, trimmed.length > 0 ? trimmed : null)
+  }
 
-    const reasonOrNull = reason.length > 0 ? reason : null
+  // Keep the pending id from lingering after its proposal leaves the list, so a
+  // later refresh that re-adds it cannot silently re-open the dialog. Sync flush:
+  // a pre-flush watcher would miss a set-then-remove that happens in one tick.
+  watch(
+    rejectPromptProposal,
+    (proposal) => {
+      if (rejectPromptProposalId.value !== null && proposal === null) {
+        rejectPromptProposalId.value = null
+      }
+    },
+    { flush: 'sync' },
+  )
 
+  async function performReject(proposalId: string, reason: string | null) {
     try {
       proposalActionBusyId.value = proposalId
-      const updated = await automationApi.rejectProposal(proposalId, reasonOrNull)
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal rejected')
+      const updated = await automationApi.rejectProposal(proposalId, reason)
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
+      toast.success(t('review.toast.rejected'))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to reject proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.rejectFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -207,40 +353,104 @@ export function useReviewActions(
       const updated = await automationApi.deferProposal(proposalId)
       // Map the returned proposal in place so its new deferredUntil/expiresAt are live;
       // the ~60s review clock then resurfaces it when the snooze window elapses.
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Snoozed for 1 hour — it will return to your queue.')
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
+      toast.success(t('review.toast.snoozed'))
       return true
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to snooze proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.snoozeFailed')).message)
       return false
     } finally {
       proposalActionBusyId.value = null
     }
   }
 
-  async function handleExecuteProposal(proposalId: string) {
-    if (!confirm('Apply this approved proposal to the board now?')) return
+  // --- Phase 2 (execute) confirmation --------------------------------------
+  //
+  // #1818: the approve→execute split is the ADR-0003 product invariant and does
+  // NOT change here — only its feedback does. The second phase used to be gated
+  // by a native `confirm()`, which cannot carry the proposal summary, is not
+  // styled by either surface, and is invisible to component specs. It is now a
+  // declarative request: the surface renders the app's own dialog (TdDialog, the
+  // #1407 hardening idiom) bound to `executeConfirmProposalId`, and only
+  // `confirmExecuteProposal()` reaches the API. `handleExecuteProposal` is
+  // deliberately NOT exported so no caller can execute without that gate.
+  const executeConfirmProposalId = ref<string | null>(null)
 
+  /** The proposal awaiting the phase-2 confirmation, so the dialog can show its summary. */
+  const executeConfirmProposal = computed<ApiProposal | null>(() => {
+    const id = executeConfirmProposalId.value
+    if (!id) return null
+    return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
+  })
+
+  function requestExecuteProposal(proposalId: string) {
+    // Another decision is mid-flight; opening the gate now would let the user
+    // confirm against state that is already changing.
+    if (proposalActionBusyId.value !== null) return
+    executeConfirmProposalId.value = proposalId
+  }
+
+  function cancelExecuteProposal() {
+    executeConfirmProposalId.value = null
+  }
+
+  async function confirmExecuteProposal() {
+    const proposalId = executeConfirmProposalId.value
+    if (!proposalId) return
+    // Confirming against a proposal that vanished from the list (refresh, filter
+    // change, dismissed elsewhere) would apply something no longer on screen —
+    // and the dialog has already closed itself, since its `open` is derived from
+    // this same computed. Load-bearing guard, not a tidy-up.
+    const stillPresent = executeConfirmProposal.value !== null
+    // Close the gate BEFORE awaiting so a double-confirm cannot fire two
+    // executes; the Idempotency-Key would make the second a no-op server-side,
+    // but the surface must not depend on that to stay honest.
+    executeConfirmProposalId.value = null
+    if (!stillPresent) return
+    await handleExecuteProposal(proposalId)
+  }
+
+  // Keep the pending id from lingering after its proposal leaves the list, so a
+  // later refresh that re-adds it cannot silently re-open the dialog. Sync flush:
+  // a pre-flush watcher would miss a set-then-remove that happens in one tick.
+  watch(
+    executeConfirmProposal,
+    (proposal) => {
+      if (executeConfirmProposalId.value !== null && proposal === null) {
+        executeConfirmProposalId.value = null
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  async function handleExecuteProposal(proposalId: string) {
     try {
       proposalActionBusyId.value = proposalId
       const updated = await automationApi.executeProposal(proposalId, createRequestId())
-      proposals.value = proposals.value.map((p) => (p.id === proposalId ? updated : p))
-      toast.success('Proposal applied to board')
+      proposals.value = proposals.value.map((p) =>
+        proposalIdsEqual(p.id, proposalId) ? updated : p,
+      )
+      // The ONE path allowed to stamp APPLIED (GH-1970): phase 2 succeeded, so
+      // the proposal really is written to the board. Every other success in the
+      // app names its own outcome or falls back to a severity word.
+      toast.success(t('review.toast.applied'), undefined, { label: 'applied' })
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to apply proposal to board').message)
+      toast.error(getErrorDisplay(e, t('review.toast.applyFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
   }
 
   async function handleToggleDiff(proposalId: string) {
-    if (selectedDiffProposalId.value === proposalId) {
+    if (proposalIdsEqual(selectedDiffProposalId.value, proposalId)) {
       latestDiffRequestId += 1
       resetDiffState()
       return
     }
 
-    const proposal = proposals.value.find((p) => p.id === proposalId)
+    const proposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
     // Anchor the pane to this proposal before any await so a concurrent toggle
     // or a stale response can be detected/ignored.
     const requestId = ++latestDiffRequestId
@@ -270,12 +480,18 @@ export function useReviewActions(
     diffRenderPerf.start()
     try {
       const diff = await automationApi.getProposalDiff(proposalId)
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
 
       selectedDiff.value = diff
       selectedDiffMode.value = 'live'
     } catch (e: unknown) {
-      if (requestId !== latestDiffRequestId || selectedDiffProposalId.value !== proposalId) return
+      if (
+        requestId !== latestDiffRequestId ||
+        !proposalIdsEqual(selectedDiffProposalId.value, proposalId)
+      ) return
 
       // A 400 ValidationError means the backend ran Apply's gates at diff time
       // (#1376/#1395). It carries one of two distinct reasons — "Proposal must
@@ -296,7 +512,7 @@ export function useReviewActions(
       // Any other failure (e.g. a 404 because it was deleted elsewhere) stays a
       // toast with a clean teardown.
       resetDiffState()
-      toast.error(getErrorDisplay(e, 'Failed to load proposal diff').message)
+      toast.error(getErrorDisplay(e, t('review.toast.diffFailed')).message)
     } finally {
       diffRenderPerf.end()
     }
@@ -307,15 +523,15 @@ export function useReviewActions(
       proposalActionBusyId.value = proposalId
       const result = await automationApi.dismissProposals([proposalId])
       if (result.dismissed > 0) {
-        proposals.value = proposals.value.filter((p) => p.id !== proposalId)
-        toast.success('Proposal dismissed')
+        proposals.value = proposals.value.filter((p) => !proposalIdsEqual(p.id, proposalId))
+        toast.success(t('review.toast.dismissed'))
       } else {
-        proposals.value = proposals.value.filter((p) => p.id !== proposalId)
-        toast.info('Proposal removed from view. Refreshing...')
+        proposals.value = proposals.value.filter((p) => !proposalIdsEqual(p.id, proposalId))
+        toast.info(t('review.toast.dismissedRefreshing'))
         void loadProposals()
       }
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to dismiss proposal').message)
+      toast.error(getErrorDisplay(e, t('review.toast.dismissFailed')).message)
     } finally {
       proposalActionBusyId.value = null
     }
@@ -328,7 +544,7 @@ export function useReviewActions(
 
     const ids = dismissableProposalIds.value
     if (ids.length === 0) {
-      toast.info('No completed proposals to clear.')
+      toast.info(t('review.toast.nothingToClear'))
       return
     }
 
@@ -336,14 +552,15 @@ export function useReviewActions(
       bulkDismissBusy.value = true
       const result = await automationApi.dismissProposals(ids)
       if (result.dismissed === ids.length) {
-        const dismissedSet = new Set(ids)
-        proposals.value = proposals.value.filter((p) => !dismissedSet.has(p.id))
+        proposals.value = proposals.value.filter(
+          (proposal) => !ids.some((id) => proposalIdsEqual(proposal.id, id)),
+        )
       } else {
         await loadProposals()
       }
-      toast.success(`Cleared ${result.dismissed} completed proposal${result.dismissed === 1 ? '' : 's'}.`)
+      toast.success(t('review.toast.cleared', { count: result.dismissed }, result.dismissed))
     } catch (e: unknown) {
-      toast.error(getErrorDisplay(e, 'Failed to clear proposals').message)
+      toast.error(getErrorDisplay(e, t('review.toast.clearFailed')).message)
     } finally {
       bulkDismissBusy.value = false
     }
@@ -357,10 +574,19 @@ export function useReviewActions(
     selectedDiffMode,
     selectedDiffInvalidReason,
     selectedDiffRevised,
+    executeConfirmProposalId,
+    executeConfirmProposal,
+    rejectPromptProposalId,
+    rejectPromptProposal,
+    rejectRequiresReason,
     handleApproveProposal,
-    handleRejectProposal,
+    requestRejectProposal,
+    cancelRejectProposal,
+    confirmRejectProposal,
     handleDeferProposal,
-    handleExecuteProposal,
+    requestExecuteProposal,
+    cancelExecuteProposal,
+    confirmExecuteProposal,
     handleToggleDiff,
     handleDismissProposal,
     handleDismissApplied,

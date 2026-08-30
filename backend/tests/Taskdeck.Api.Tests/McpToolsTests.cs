@@ -32,7 +32,7 @@ public class McpToolsTests : IDisposable
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
+                    ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(_dbPath),
                     ["Connectors:EncryptionKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
                 })
                 .Build());
@@ -647,22 +647,92 @@ public class McpToolsTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateColumn_ReturnsProposalId()
+    public async Task CreateColumn_UsesCanonicalAppendContractAndAppliesOnlyAfterApprovalAndExecution()
     {
         using var scope = _serviceProvider.CreateScope();
         var (user, boardId, _) = await SetupBoardAsync(scope);
-
-        var tools = new WriteTools(
-            scope.ServiceProvider.GetRequiredService<IAutomationProposalService>(),
-            new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
-            scope.ServiceProvider.GetRequiredService<ICaptureService>(),
-            scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var columnService = scope.ServiceProvider.GetRequiredService<ColumnService>();
+        (await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Sparse", 4, null)))
+            .IsSuccess.Should().BeTrue();
+        var tools = CreateWriteTools(scope, user.Id);
 
         var json = await tools.CreateColumn(boardId.ToString(), "In Progress", wip_limit: 3);
 
-        using var doc = JsonDocument.Parse(json);
-        doc.RootElement.TryGetProperty("proposalId", out _).Should().BeTrue();
-        doc.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        document.RootElement.GetProperty("status").GetString().Should().Be("Pending");
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var proposal = await proposalService.GetProposalByIdAsync(proposalId);
+        proposal.IsSuccess.Should().BeTrue(proposal.ErrorMessage);
+        proposal.Value.Operations.Should().ContainSingle();
+        using (var parameters = JsonDocument.Parse(proposal.Value.Operations.Single().Parameters))
+        {
+            parameters.RootElement.GetProperty("boardId").GetGuid().Should().Be(boardId);
+            parameters.RootElement.GetProperty("name").GetString().Should().Be("In Progress");
+            parameters.RootElement.GetProperty("position").GetInt32().Should().Be(5);
+            parameters.RootElement.GetProperty("wipLimit").GetInt32().Should().Be(3);
+        }
+
+        (await proposalService.GetProposalDiffAsync(proposalId)).IsSuccess.Should().BeTrue();
+        (await unitOfWork.Columns.GetByBoardIdAsync(boardId))
+            .Should().NotContain(column => column.Name == "In Progress");
+
+        (await proposalService.ApproveProposalAsync(proposalId, user.Id)).IsSuccess.Should().BeTrue();
+        (await unitOfWork.Columns.GetByBoardIdAsync(boardId))
+            .Should().NotContain(column => column.Name == "In Progress");
+
+        var executor = new AutomationExecutorService(
+            unitOfWork,
+            proposalService,
+            new AutomationPolicyEngine(unitOfWork),
+            scope.ServiceProvider.GetRequiredService<CardService>(),
+            scope.ServiceProvider.GetRequiredService<BoardService>(),
+            columnService);
+        var executionResult = await executor.ExecuteProposalAsync(proposalId, Guid.NewGuid().ToString());
+
+        executionResult.IsSuccess.Should().BeTrue(executionResult.ErrorMessage);
+        var created = (await unitOfWork.Columns.GetByBoardIdAsync(boardId))
+            .Should().ContainSingle(column => column.Name == "In Progress").Subject;
+        created.Position.Should().Be(5);
+        created.WipLimit.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task CreateColumn_DuplicateNameCreatesProposalAtNextAvailablePosition()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, _) = await SetupBoardAsync(scope);
+        var json = await CreateWriteTools(scope, user.Id).CreateColumn(boardId.ToString(), "backlog");
+
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+        var proposal = await proposalService.GetProposalByIdAsync(proposalId);
+        proposal.IsSuccess.Should().BeTrue(proposal.ErrorMessage);
+        using var parameters = JsonDocument.Parse(proposal.Value.Operations.Single().Parameters);
+        parameters.RootElement.GetProperty("name").GetString().Should().Be("backlog");
+        parameters.RootElement.GetProperty("position").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CreateColumn_InaccessibleBoardReturnsErrorAndCreatesNoProposal()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (caller, _, _) = await SetupBoardAsync(scope);
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var owner = new User($"owner-{Guid.NewGuid():N}", $"owner-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unitOfWork.Users.AddAsync(owner);
+        await unitOfWork.SaveChangesAsync();
+        var privateBoard = await scope.ServiceProvider.GetRequiredService<BoardService>()
+            .CreateBoardAsync(new CreateBoardDto("Private board", null), owner.Id);
+
+        var json = await CreateWriteTools(scope, caller.Id)
+            .CreateColumn(privateBoard.Value.Id.ToString(), "Review");
+
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        (await unitOfWork.AutomationProposals.GetByBoardIdAsync(privateBoard.Value.Id)).Should().BeEmpty();
     }
 
     // ── ProposalTools tests ──────────────────────────────────────────────────
@@ -821,6 +891,58 @@ public class McpToolsTests : IDisposable
         using var doc = JsonDocument.Parse(json);
         doc.RootElement.GetProperty("dismissed").GetInt32().Should().Be(0,
             "pending proposals should not be dismissible");
+    }
+
+    [Fact]
+    public async Task DismissProposal_ArchivedBoard_ReturnsExactRootError_AndKeepsDecision()
+    {
+        const string expectedMessage =
+            "Cannot modify proposals on an archived board. Restore the board before changing its decision history.";
+        Guid proposalId;
+
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var (user, boardId, colId) = await SetupBoardAsync(scope);
+            var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+            var writeTools = new WriteTools(
+                proposalService,
+                new McpBoardResourcesTests.FixedUserContextProvider(user.Id),
+                scope.ServiceProvider.GetRequiredService<ICaptureService>(),
+                scope.ServiceProvider.GetRequiredService<IUnitOfWork>());
+            var createJson = await writeTools.CreateCard(
+                boardId.ToString(),
+                "Archived MCP decision",
+                colId.ToString());
+            using (var createDocument = JsonDocument.Parse(createJson))
+            {
+                proposalId = createDocument.RootElement.GetProperty("proposalId").GetGuid();
+            }
+
+            var rejectResult = await proposalService.RejectProposalAsync(
+                proposalId,
+                user.Id,
+                new UpdateProposalStatusDto("Prepared for MCP archive guard"));
+            rejectResult.IsSuccess.Should().BeTrue();
+
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var board = await unitOfWork.Boards.GetByIdAsync(boardId);
+            board.Should().NotBeNull();
+            board!.Archive();
+            await unitOfWork.SaveChangesAsync();
+
+            var proposalTools = new ProposalTools(
+                proposalService,
+                new McpBoardResourcesTests.FixedUserContextProvider(user.Id));
+            var json = await proposalTools.DismissProposal(proposalId.ToString());
+
+            using var document = JsonDocument.Parse(json);
+            document.RootElement.GetProperty("error").GetString().Should().Be(expectedMessage);
+        }
+
+        using var verifyScope = _serviceProvider.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await verifyDb.AutomationProposals.AsNoTracking().SingleAsync(proposal => proposal.Id == proposalId))
+            .Status.Should().Be(ProposalStatus.Rejected);
     }
 
     // ── Write tools review-first compliance test ─────────────────────────────

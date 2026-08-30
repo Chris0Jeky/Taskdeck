@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Taskdeck.Api.Contracts;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
 
@@ -33,9 +34,9 @@ public sealed class UnhandledExceptionMiddleware
             _logger.LogInformation(
                 "Request was canceled while processing {Method} {Path} (CorrelationId: {CorrelationId}; " +
                 "ExceptionType: {ExceptionType}).",
-                context.Request.Method,
-                context.Request.Path,
-                context.TraceIdentifier,
+                LogSanitizer.SanitizeForLog(context.Request.Method),
+                LogSanitizer.SanitizeForLog(context.Request.Path.Value),
+                LogSanitizer.SanitizeForLog(context.TraceIdentifier),
                 BoundTypeName(ex.GetType()));
         }
         catch (Exception ex)
@@ -47,9 +48,9 @@ public sealed class UnhandledExceptionMiddleware
                 "ClassificationTruncated: {ClassificationTruncated}; " +
                 "SqliteErrorCode: {SqliteErrorCode}; " +
                 "SqliteExtendedErrorCode: {SqliteExtendedErrorCode}.",
-                context.Request.Method,
-                context.Request.Path,
-                context.TraceIdentifier,
+                LogSanitizer.SanitizeForLog(context.Request.Method),
+                LogSanitizer.SanitizeForLog(context.Request.Path.Value),
+                LogSanitizer.SanitizeForLog(context.TraceIdentifier),
                 classification.ExceptionType,
                 classification.LastInspectedExceptionType,
                 classification.ClassificationTruncated,

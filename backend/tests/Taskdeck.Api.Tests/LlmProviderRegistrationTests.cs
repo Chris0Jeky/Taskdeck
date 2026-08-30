@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Http;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Application.Services;
 using Xunit;
@@ -13,14 +15,382 @@ namespace Taskdeck.Api.Tests;
 
 public class LlmProviderRegistrationTests
 {
+    private const string SyntheticRetiredGeminiValue = "synthetic-retired-gemini-value-2021";
+
+    [Theory]
+    [InlineData("Gemini")]
+    [InlineData("gemini")]
+    [InlineData(" GEMINI ")]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSelector(string selector)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = selector
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("OpenAi");
+        exception.Message.Should().Contain("OpenAiCompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
+    }
+
+    [Theory]
+    [InlineData("Mock")]
+    [InlineData("OpenAI")]
+    [InlineData("OpenAICompatible")]
+    [InlineData("Ollama")]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenSupportedProviderIsExplicit(
+        string provider)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = provider,
+                ["Llm:Gemini:ApiKey"] = "stale-test-key"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenBuiltInMockIsTheOnlySelector()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration();
+
+        configuration["Llm:Provider"].Should().Be("Mock");
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WhenDevelopmentMockIsTheOnlySelector()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
+        var configuration = BuildRealProviderConfiguration(environmentName: "Development");
+
+        configuration["Logging:LogLevel:Default"].Should().Be("Debug");
+        configuration["Llm:Provider"].Should().Be("Mock");
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().NotContain(SyntheticRetiredGeminiValue);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenEnvironmentExplicitlySelectsMock()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
+        var configuration = BuildRealProviderConfiguration(
+            providerOverride: "Mock",
+            environmentName: "Development");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenCommandLineExplicitlySelectsMock()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Development"));
+        var configuration = BuildRealProviderConfiguration(
+            environmentName: "Development",
+            commandLineArguments: ["--Llm:Provider=Mock"]);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("appsettings.local.json", "local")]
+    [InlineData("appsettings.FutureEnvironment.json", "FutureEnvironment")]
+    [InlineData("operator-provider.json", "FutureEnvironment")]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenAbsoluteJsonExplicitlySelectsMock(
+        string fileName,
+        string environmentName)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment(environmentName));
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            fileName,
+            useAbsolutePath: true,
+            environmentName: environmentName);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("appsettings.FutureEnvironment.json", "FutureEnvironment", true)]
+    [InlineData("appsettings.FutureEnvironment.json", "DifferentEnvironment", false)]
+    [InlineData("appsettings.operator.json", "FutureEnvironment", false)]
+    [InlineData("appsettings..json", "FutureEnvironment", false)]
+    [InlineData("appsettings.FutureEnvironment.json.backup", "FutureEnvironment", false)]
+    [InlineData("operator-provider.json", "FutureEnvironment", false)]
+    public void AddLlmProviders_ShouldRecognizeOnlyStandardRelativeEnvironmentSettingsAsDefaults(
+        string fileName,
+        string environmentName,
+        bool shouldTreatAsDefault)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment(environmentName));
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            fileName,
+            useAbsolutePath: false,
+            environmentName: environmentName);
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        if (!shouldTreatAsDefault)
+        {
+            act.Should().NotThrow();
+            return;
+        }
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().NotContain(SyntheticRetiredGeminiValue);
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldIgnoreRetiredGeminiSection_WhenRelativeCustomJsonSpoofsEnvironmentName()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("FutureEnvironment"));
+        var configuration = BuildSyntheticJsonProviderConfiguration(
+            "appsettings.operator.json",
+            useAbsolutePath: false,
+            environmentName: "operator");
+
+        configuration[WebHostDefaults.EnvironmentKey].Should().Be("operator");
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSelector_WhenEnvironmentExplicitlySelectsIt()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildRealProviderConfiguration("Gemini");
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ProviderSelector);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("historical-free-form-provider")]
+    public void AddLlmProviders_ShouldRejectRetiredGeminiSection_WithoutExplicitSupportedProvider(
+        string? provider)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:Provider"] = provider,
+                ["Llm:Gemini:ApiKey"] = "stale-test-key"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.SettingsSection);
+        exception.Message.Should().Contain("Gemini provider support was removed");
+        exception.Message.Should().Contain("remove the retired Gemini settings section");
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("TRUE")]
+    [InlineData("TrUe")]
+    public void AddLlmProviders_ShouldRejectRetiredComposeWrapperPresenceMarker(string marker)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TaskdeckMigration:RetiredLlmProviderConfigurationPresent"] = marker,
+                ["Llm:Provider"] = "Mock"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        var exception = act.Should().Throw<RetiredLlmProviderConfigurationException>().Which;
+        exception.Reason.Should().Be(RetiredLlmProviderConfigurationReason.ComposeMarker);
+        exception.Message.Should().Contain("TASKDECK_LLM_GEMINI_API_KEY");
+        exception.Message.Should().Contain("TASKDECK_LLM_OPENAI_API_KEY");
+        exception.Message.Should().Contain("OpenAICompatible");
+        exception.Message.Should().Contain("Ollama");
+        exception.Message.Should().Contain("Mock");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("false")]
+    [InlineData(" true ")]
+    public void AddLlmProviders_ShouldIgnoreInactiveRetiredComposeWrapperPresenceMarker(string? marker)
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TaskdeckMigration:RetiredLlmProviderConfigurationPresent"] = marker,
+                ["Llm:Provider"] = "Mock"
+            })
+            .Build();
+
+        var act = () => services.AddLlmProviders(configuration);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AddLlmProviders_ResolvesOpenAiCompatibleProvider_WhenSelectionIsValid()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Production"));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:EnableLiveProviders"] = "true",
+                ["Llm:Provider"] = "OpenAICompatible",
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = "https://api.groq.com/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant",
+                ["Llm:OpenAiCompatible:TimeoutSeconds"] = "30"
+            })
+            .Build();
+
+        services.AddLlmProviders(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<ILlmProvider>().GetType().FullName
+            .Should().Be("Taskdeck.Application.Services.OpenAiCompatibleLlmProvider");
+        var compatibleType = typeof(ILlmProvider).Assembly.GetType(
+            "Taskdeck.Application.Services.OpenAiCompatibleLlmProvider",
+            throwOnError: true)!;
+        provider.GetService(compatibleType).Should().BeNull(
+            "the selector, not a directly resolvable concrete transport, owns the live-provider decision");
+        provider.GetRequiredService<IEgressRegistry>().GetAllEntries()
+            .Should().ContainSingle(entry =>
+                entry.Host == "api.groq.com" &&
+                entry.ToolOrAgentName == "OpenAiCompatibleLlmProvider");
+        var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        EnumeratePipeline(handler).Should().Contain(item => item is EgressEnvelopeHandler,
+            "the configured disclosure entry must also be enforced on the compatible client");
+    }
+
+    [Fact]
+    public void RegisteredPipelines_KeepCompatibleProviderInsideProtectedDirectEgressBoundary()
+    {
+        var services = BuildCompatibleServices();
+        using var provider = services.BuildServiceProvider();
+        var factory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
+
+        using var openAi = factory.CreateHandler(nameof(OpenAiLlmProvider));
+        using var compatible = factory.CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        using var ollama = factory.CreateHandler(nameof(OllamaLlmProvider));
+
+        EnumeratePipeline(openAi).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        EnumeratePipeline(compatible).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+        ProxySafeHttpHandlerTestHarness.AssertProxySafeOriginHandler(compatible);
+        EnumeratePipeline(compatible).Should().Contain(item => item is EgressEnvelopeHandler);
+        EnumeratePipeline(compatible).Select(item => item.GetType().Name).Should().ContainInOrder(
+            "PolicyHttpMessageHandler",
+            nameof(ProtectedOutboundTelemetryHandler),
+            nameof(EgressEnvelopeHandler),
+            "LlmDispatchTrackingHandler",
+            nameof(SocketsHttpHandler));
+
+        var workerServices = new ServiceCollection();
+        workerServices.AddLogging();
+        workerServices.AddTaskdeckWorkers(
+            new ConfigurationBuilder().Build(),
+            new TestWebHostEnvironment("Production"));
+        using var workerProvider = workerServices.BuildServiceProvider();
+        using var webhook = workerProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler("OutboundWebhookDelivery");
+        EnumeratePipeline(webhook).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.MovedPermanently)]
+    [InlineData(HttpStatusCode.Found)]
+    [InlineData(HttpStatusCode.SeeOther)]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task CompatibleClientPipeline_RefusesEveryRedirectWithoutFollowing(HttpStatusCode statusCode)
+    {
+        var services = BuildCompatibleServices();
+        using var provider = services.BuildServiceProvider();
+        using var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var egressHandler = EnumeratePipeline(handler).OfType<EgressEnvelopeHandler>().Single();
+        const string sensitiveMarker = "must-not-appear-in-egress-audit";
+        var redirectHandler = new RedirectStubHandler(
+            statusCode,
+            $"https://api.groq.com/second-hop?marker={sensitiveMarker}");
+        egressHandler.InnerHandler = redirectHandler;
+        using var invoker = new HttpMessageInvoker(handler);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://api.groq.com/openai/v1/chat/completions?marker={sensitiveMarker}");
+        ProtectedOutboundTelemetryHandler.PrepareForSend(request);
+        var act = () => invoker.SendAsync(request, CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<EgressViolationException>();
+        exception.Which.Violation.ViolationType.Should().Be(Taskdeck.Domain.Agents.EgressViolationType.RedirectNotAllowed);
+        exception.Which.Violation.RequestUri.Should().Be("https://api.groq.com");
+        exception.Which.ToString().Should().NotContain(sensitiveMarker);
+        request.RequestUri!.Host.Should().Be("protected-outbound.invalid",
+            "the protected request must be remasked even when the egress boundary throws");
+        redirectHandler.InvocationCount.Should().Be(1, "the compatible pipeline must never dispatch a redirected request");
+    }
+
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
-    [InlineData(nameof(GeminiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(OllamaLlmProvider))]
     public void AddLlmProviders_ShouldDisableProxyAndRetainOriginGuards_OnFactoryPipeline(
         string clientName)
     {
-        using var serviceProvider = BuildServiceProvider("Production");
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
 
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
@@ -33,9 +403,9 @@ public class LlmProviderRegistrationTests
     [InlineData(nameof(OpenAiLlmProvider), "http://127.0.0.1/protected")]
     [InlineData(nameof(OpenAiLlmProvider), "http://10.0.0.1/protected")]
     [InlineData(nameof(OpenAiLlmProvider), "http://169.254.169.254/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://127.0.0.1/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://10.0.0.1/protected")]
-    [InlineData(nameof(GeminiLlmProvider), "http://169.254.169.254/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://127.0.0.1/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://10.0.0.1/protected")]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName, "http://169.254.169.254/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://127.0.0.1/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://10.0.0.1/protected")]
     [InlineData(nameof(OllamaLlmProvider), "http://169.254.169.254/protected")]
@@ -43,24 +413,34 @@ public class LlmProviderRegistrationTests
         string clientName,
         string blockedOrigin)
     {
-        using var serviceProvider = BuildServiceProvider("Production");
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
 
         await ProxySafeHttpHandlerTestHarness.AssertBlockedOriginIgnoresProxyAsync(
             pipeline,
-            blockedOrigin);
+            blockedOrigin,
+            expectStructuredEgressViolation:
+                clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName);
     }
 
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
-    [InlineData(nameof(GeminiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldReachAllowedDirectOriginWithoutConsultingHostileProxy(
         string clientName)
     {
-        using var serviceProvider = BuildServiceProvider("Development");
+        using var serviceProvider = BuildServiceProvider(
+            "Development",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock");
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
@@ -69,12 +449,12 @@ public class LlmProviderRegistrationTests
     }
 
     [Theory]
-    [InlineData("OpenAi", typeof(OpenAiLlmProvider))]
-    [InlineData("Gemini", typeof(GeminiLlmProvider))]
-    [InlineData("Ollama", typeof(OllamaLlmProvider))]
+    [InlineData("OpenAi", nameof(OpenAiLlmProvider))]
+    [InlineData("OpenAiCompatible", "OpenAiCompatibleLlmProvider")]
+    [InlineData("Ollama", nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldApplyResolvedLocalhostPolicyToConcreteProvider(
         string providerName,
-        Type expectedProviderType)
+        string expectedProviderType)
     {
         using var serviceProvider = BuildServiceProvider("Development", providerName);
         using var scope = serviceProvider.CreateScope();
@@ -87,7 +467,7 @@ public class LlmProviderRegistrationTests
         runtimePolicy.AllowOllamaLocalhost.Should().BeTrue();
         runtimePolicy.ProtectOutboundTelemetry.Should().BeTrue(
             "registered provider clients must mask destinations before HttpClient diagnostics run");
-        provider.Should().BeOfType(expectedProviderType);
+        provider.GetType().Name.Should().Be(expectedProviderType);
         health.IsAvailable.Should().BeTrue(
             "the selected concrete provider must reuse the same localhost policy as selection and connect-time validation");
     }
@@ -95,8 +475,8 @@ public class LlmProviderRegistrationTests
     [Theory]
     [InlineData("OpenAi", false, "/v1/chat/completions")]
     [InlineData("OpenAi", true, "/v1/chat/completions")]
-    [InlineData("Gemini", false, "/v1beta/models/test-gemini-model:generateContent")]
-    [InlineData("Gemini", true, "/v1beta/models/test-gemini-model:generateContent")]
+    [InlineData("OpenAiCompatible", false, "/openai/v1/chat/completions")]
+    [InlineData("OpenAiCompatible", true, "/openai/v1/chat/completions")]
     [InlineData("Ollama", false, "/api/chat")]
     [InlineData("Ollama", true, "/api/chat")]
     public async Task AddLlmProviders_ShouldDispatchProbeAndCompletionThroughRegisteredLoopbackPipeline(
@@ -110,7 +490,7 @@ public class LlmProviderRegistrationTests
         var providerBaseUrl = providerName switch
         {
             "OpenAi" => $"{origin}/v1",
-            "Gemini" => $"{origin}/v1beta",
+            "OpenAiCompatible" => $"{origin}/openai/v1",
             _ => origin
         };
         using var serviceProvider = BuildServiceProvider(
@@ -139,6 +519,40 @@ public class LlmProviderRegistrationTests
         rawRequest.Should().StartWith($"POST {expectedPath} HTTP/1.1",
             "the concrete provider must dispatch through its registered protected HttpClient");
         AssertProviderRequestBody(requestBody, providerName, probe);
+    }
+
+    [Fact]
+    public async Task AddLlmProviders_CompatibleStreamUsesRegisteredLoopbackPipelineIncrementally()
+    {
+        const string sse =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n" +
+            "data: {\"choices\":[],\"usage\":{\"total_tokens\":7}}\n\n" +
+            "data: [DONE]\n\n";
+        await using var server = new SingleRequestLoopbackServer(
+            responseBody: sse,
+            responseContentType: "text/event-stream");
+        using var serviceProvider = BuildServiceProvider(
+            "Development",
+            "OpenAiCompatible",
+            providerBaseUrl: $"http://localhost:{server.Port}/openai/v1");
+        using var scope = serviceProvider.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in provider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "stream loopback")],
+                           SystemPrompt: string.Empty)))
+        {
+            events.Add(item);
+        }
+
+        events.Select(item => item.Token).Should().Equal("Hel", "lo", string.Empty);
+        events[^1].TokensUsed.Should().Be(7);
+        (await server.ReceivedRequest).Should().StartWith(
+            "POST /openai/v1/chat/completions HTTP/1.1");
+        using var payload = JsonDocument.Parse(await server.ReceivedBody);
+        payload.RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
     }
 
     [Fact]
@@ -173,23 +587,118 @@ public class LlmProviderRegistrationTests
 
     [Theory]
     [InlineData(nameof(OpenAiLlmProvider))]
-    [InlineData(nameof(GeminiLlmProvider))]
+    [InlineData(LlmProviderRegistration.OpenAiCompatibleHttpClientName)]
     [InlineData(nameof(OllamaLlmProvider))]
     public async Task AddLlmProviders_ShouldSuppressProtectedRequestLogging(string clientName)
     {
         var loggerProvider = new RecordingHttpLoggerProvider();
-        using var serviceProvider = BuildServiceProvider("Production", loggerProvider: loggerProvider);
+        using var serviceProvider = BuildServiceProvider(
+            "Production",
+            clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName
+                ? "OpenAiCompatible"
+                : "Mock",
+            loggerProvider: loggerProvider);
         var pipeline = serviceProvider
             .GetRequiredService<IHttpMessageHandlerFactory>()
             .CreateHandler(clientName);
 
         await ProxySafeHttpHandlerTestHarness.AssertBlockedOriginIgnoresProxyAsync(
             pipeline,
-            "http://127.0.0.1/protected");
+            "http://127.0.0.1/protected",
+            expectStructuredEgressViolation:
+                clientName == LlmProviderRegistration.OpenAiCompatibleHttpClientName);
 
         loggerProvider.Messages.Should().NotContain(
             message => message.Contains(ProxySafeHttpHandlerTestHarness.SensitiveMarker, StringComparison.Ordinal),
             "protected query/header/body markers must not reach default IHttpClientFactory logs");
+    }
+
+    [Fact]
+    public async Task CompatibleRegisteredPolicy_Http501StillReachesBufferedFallbackAtThresholdOne()
+    {
+        var services = BuildCompatibleServices(failureThreshold: 1);
+        using var serviceProvider = services.BuildServiceProvider();
+        var pipeline = serviceProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var dispatchHandler = EnumeratePipeline(pipeline)
+            .OfType<DelegatingHandler>()
+            .Single(handler => handler.GetType().Name == "LlmDispatchTrackingHandler");
+        var transport = new SequentialResponseHandler(
+            new HttpResponseMessage(HttpStatusCode.NotImplemented),
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"choices":[{"message":{"content":"fallback reply"},"finish_reason":"stop"}],"usage":{"total_tokens":9}}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        dispatchHandler.InnerHandler = transport;
+        using var scope = serviceProvider.CreateScope();
+        var compatibleProvider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var item in compatibleProvider.StreamAsync(new ChatCompletionRequest(
+                           [new ChatCompletionMessage("User", "fallback")],
+                           SystemPrompt: string.Empty)))
+        {
+            events.Add(item);
+        }
+
+        events.Should().ContainSingle();
+        events[0].Token.Should().Be("fallback reply");
+        events[0].IsDegraded.Should().BeTrue();
+        events[0].Error.Should().BeNull();
+        transport.InvocationCount.Should().Be(2);
+        serviceProvider.GetRequiredService<CircuitBreakerStateTracker>()
+            .Get("OpenAICompatible")?.State.Should().NotBe(CircuitState.Open);
+    }
+
+    [Fact]
+    public async Task CompatibleRegisteredPolicy_PreDispatchPollyRejection_DoesNotPoisonCompanionCircuit()
+    {
+        var services = BuildCompatibleServices(failureThreshold: 1);
+        using var serviceProvider = services.BuildServiceProvider();
+        var pipeline = serviceProvider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
+        var dispatchHandler = EnumeratePipeline(pipeline)
+            .OfType<DelegatingHandler>()
+            .Single(handler => handler.GetType().Name == "LlmDispatchTrackingHandler");
+        var blockingBody = new SignallingBlockingReadStream();
+        var transport = new SequentialResponseHandler(
+            new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StreamContent(blockingBody)
+            },
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"choices":[{"message":{"content":"unexpected transport response"},"finish_reason":"stop"}],"usage":{"total_tokens":9}}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            });
+        dispatchHandler.InnerHandler = transport;
+        using var scope = serviceProvider.CreateScope();
+        var compatibleProvider = scope.ServiceProvider.GetRequiredService<ILlmProvider>();
+        using var cancellation = new CancellationTokenSource();
+        var firstRequest = compatibleProvider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "first request")],
+            SystemPrompt: string.Empty), cancellation.Token);
+        await blockingBody.ReadStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => firstRequest);
+        var secondResult = await compatibleProvider.CompleteAsync(new ChatCompletionRequest(
+            [new ChatCompletionMessage("User", "second request")],
+            SystemPrompt: string.Empty));
+
+        secondResult.IsDegraded.Should().BeTrue();
+        transport.InvocationCount.Should().Be(1,
+            "the open Polly circuit must reject the second request before dispatch");
+        var tracker = serviceProvider.GetRequiredService<CircuitBreakerStateTracker>();
+        tracker.RecordState("OpenAICompatible", CircuitState.Closed);
+        tracker.Get("OpenAICompatible")?.State.Should().Be(CircuitState.Closed,
+            "a pre-dispatch Polly rejection must not open the companion provider circuit");
     }
 
     [Theory]
@@ -226,6 +735,98 @@ public class LlmProviderRegistrationTests
         result.AllowOllamaLocalhost.Should().Be(expected);
     }
 
+    private static IConfigurationRoot BuildRealProviderConfiguration(
+        string? providerOverride = null,
+        string? environmentName = null,
+        string[]? commandLineArguments = null)
+    {
+        var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
+        var providerVariable = $"{prefix}Llm__Provider";
+        var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
+        try
+        {
+            if (providerOverride is not null)
+            {
+                Environment.SetEnvironmentVariable(providerVariable, providerOverride);
+            }
+
+            Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory);
+            builder.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+            if (environmentName is not null)
+            {
+                builder.AddJsonFile(
+                    $"appsettings.{environmentName}.json",
+                    optional: false,
+                    reloadOnChange: false);
+            }
+
+            builder.AddEnvironmentVariables(prefix);
+            if (commandLineArguments is not null)
+            {
+                builder.AddCommandLine(commandLineArguments);
+            }
+
+            return builder.Build();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(providerVariable, null);
+            Environment.SetEnvironmentVariable(retiredChildVariable, null);
+        }
+    }
+
+    private static IConfigurationRoot BuildSyntheticJsonProviderConfiguration(
+        string fileName,
+        bool useAbsolutePath,
+        string environmentName)
+    {
+        var tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-llm-provider-registration-{Guid.NewGuid():N}");
+        var path = Path.Combine(tempDirectory, fileName);
+        var builtInPath = Path.Combine(tempDirectory, "appsettings.json");
+        var prefix = $"TASKDECK_TEST_{Guid.NewGuid():N}_";
+        var retiredChildVariable = $"{prefix}Llm__Gemini__ApiKey";
+        Directory.CreateDirectory(tempDirectory);
+        File.WriteAllText(builtInPath, "{}");
+        var settings = new Dictionary<string, object?>
+        {
+            ["Llm"] = new Dictionary<string, string?>
+            {
+                ["Provider"] = "Mock"
+            }
+        };
+        if (!string.IsNullOrWhiteSpace(environmentName))
+        {
+            settings[WebHostDefaults.EnvironmentKey] = environmentName;
+        }
+
+        File.WriteAllText(
+            path,
+            JsonSerializer.Serialize(settings));
+
+        try
+        {
+            Environment.SetEnvironmentVariable(retiredChildVariable, SyntheticRetiredGeminiValue);
+            return new ConfigurationBuilder()
+                .SetBasePath(tempDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+                .AddJsonFile(
+                    useAbsolutePath ? path : fileName,
+                    optional: false,
+                    reloadOnChange: false)
+                .AddEnvironmentVariables(prefix)
+                .Build();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(retiredChildVariable, null);
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     private static ServiceProvider BuildServiceProvider(
         string environmentName,
         string providerName = "Mock",
@@ -253,11 +854,13 @@ public class LlmProviderRegistrationTests
                     ? providerBaseUrl
                     : "http://localhost:12345",
                 ["Llm:OpenAi:Model"] = "test-openai-model",
-                ["Llm:Gemini:ApiKey"] = "test-gemini-key",
-                ["Llm:Gemini:BaseUrl"] = providerName == "Gemini" && providerBaseUrl is not null
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = providerName == "OpenAiCompatible" && providerBaseUrl is not null
                     ? providerBaseUrl
-                    : "http://localhost:12345",
-                ["Llm:Gemini:Model"] = "test-gemini-model",
+                    : environmentName == "Production"
+                        ? "https://api.groq.com/openai/v1"
+                        : "http://localhost:12345/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "test-compatible-model",
                 ["Llm:Ollama:BaseUrl"] = providerName == "Ollama" && providerBaseUrl is not null
                     ? providerBaseUrl
                     : "http://localhost:12345",
@@ -275,9 +878,9 @@ public class LlmProviderRegistrationTests
             """
             {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
             """,
-        "Gemini" =>
+        "OpenAiCompatible" =>
             """
-            {"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":1}}
+            {"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"total_tokens":1}}
             """,
         "Ollama" =>
             """
@@ -301,20 +904,21 @@ public class LlmProviderRegistrationTests
             case "OpenAi":
                 root.GetProperty("model").GetString().Should().Be("test-openai-model");
                 root.GetProperty("stream").GetBoolean().Should().BeFalse();
-                root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                // The OpenAI adapter sends the current `max_completion_tokens`
+                // parameter; only OpenAiCompatible still speaks `max_tokens`.
+                // `test-openai-model` is non-reasoning, so no headroom is added
+                // and temperature is still sent.
+                root.GetProperty("max_completion_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                root.TryGetProperty("max_tokens", out _).Should().BeFalse();
                 root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
                 root.GetProperty("messages")[0].GetProperty("content").GetString().Should().Be(expectedContent);
                 break;
-            case "Gemini":
-                var generationConfig = root.GetProperty("generationConfig");
-                generationConfig.GetProperty("maxOutputTokens").GetInt32().Should().Be(expectedMaxTokens);
-                generationConfig.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
-                root.GetProperty("contents")[0]
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString()
-                    .Should()
-                    .Be(expectedContent);
+            case "OpenAiCompatible":
+                root.GetProperty("model").GetString().Should().Be("test-compatible-model");
+                root.GetProperty("stream").GetBoolean().Should().BeFalse();
+                root.GetProperty("max_tokens").GetInt32().Should().Be(expectedMaxTokens);
+                root.GetProperty("temperature").GetDouble().Should().BeApproximately(expectedTemperature, 0.000001);
+                root.GetProperty("messages")[0].GetProperty("content").GetString().Should().Be(expectedContent);
                 break;
             case "Ollama":
                 root.GetProperty("model").GetString().Should().Be("test-ollama-model");
@@ -339,4 +943,92 @@ public class LlmProviderRegistrationTests
         public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
     }
 
+    private static ServiceCollection BuildCompatibleServices(int failureThreshold = 5)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Production"));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Llm:EnableLiveProviders"] = "true",
+                ["Llm:Provider"] = "OpenAICompatible",
+                ["Llm:OpenAiCompatible:ApiKey"] = "test-compatible-key",
+                ["Llm:OpenAiCompatible:BaseUrl"] = "https://api.groq.com/openai/v1",
+                ["Llm:OpenAiCompatible:Model"] = "llama-3.1-8b-instant",
+                ["CircuitBreaker:FailureThreshold"] = failureThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["CircuitBreaker:BreakDurationSeconds"] = "60"
+            })
+            .Build();
+        services.AddLlmProviders(configuration);
+        return services;
+    }
+
+    private sealed class RedirectStubHandler(HttpStatusCode statusCode, string location) : HttpMessageHandler
+    {
+        public int InvocationCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            var response = new HttpResponseMessage(statusCode);
+            response.Headers.Location = new Uri(location);
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class SequentialResponseHandler(params HttpResponseMessage[] responses) : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses = new(responses);
+
+        public int InvocationCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            return Task.FromResult(_responses.Dequeue());
+        }
+    }
+
+    private sealed class SignallingBlockingReadStream : Stream
+    {
+        private readonly TaskCompletionSource _readStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ReadStarted => _readStarted.Task;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _readStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private static IEnumerable<HttpMessageHandler> EnumeratePipeline(HttpMessageHandler root)
+    {
+        for (var current = root; current is not null; current = (current as DelegatingHandler)?.InnerHandler)
+            yield return current;
+    }
 }

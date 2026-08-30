@@ -10,8 +10,11 @@ export interface BoardAccess {
   grantedAt: string
 }
 
+// Grant board access by an email-or-username `identifier` (resolved server-side) or, for API
+// compatibility, a raw `userId` GUID. Supply exactly one; `identifier` takes precedence.
 export interface GrantAccessDto {
-  userId: string
+  userId?: string
+  identifier?: string
   role: BoardRoleValue
 }
 

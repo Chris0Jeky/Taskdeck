@@ -189,6 +189,15 @@ public sealed class StarterPackApplyService : IStarterPackApplyService
                 nextPositionByColumnId[column.Id] = nextPosition + 1;
             }
 
+            // Join the board's concurrency-token predicate without advancing it, so an archive that
+            // commits after the archived-state check in ApplyToBoardAsync invalidates this whole
+            // apply instead of seeding an archived board. EF issues a conditional UPDATE against the
+            // token read at the start of the apply; a racing archive advanced it, SaveChanges raises
+            // a concurrency failure that UnitOfWork maps to DomainException(Conflict), and the catch
+            // below rolls the transaction back so no label, column, or seed card is left behind.
+            // Applies to other boards are untouched, and the token is not advanced, so an apply does
+            // not invalidate an unrelated in-flight card write on the same board.
+            board.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
 

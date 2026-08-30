@@ -7,7 +7,9 @@ public record CreateCaptureItemDto(
     string Text,
     string? Source = null,
     string? TitleHint = null,
-    string? ExternalRef = null);
+    string? ExternalRef = null,
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null);
 
 public record CaptureItemDto(
     Guid Id,
@@ -21,7 +23,18 @@ public record CaptureItemDto(
     DateTimeOffset? ProcessedAt,
     int RetryCount,
     string? ErrorMessage = null,
-    CaptureProvenanceV1? Provenance = null);
+    CaptureProvenanceV1? Provenance = null,
+    bool CanEditSuggestion = false,
+    CaptureSuggestionMetadataDto? Metadata = null,
+    CaptureDispositionV1? Disposition = null);
+
+/// <summary>
+/// User-authored capture metadata that remains inert until proposal approval and execution.
+/// Label names are resolved against the proposal board during triage; this contract never creates labels.
+/// </summary>
+public record CaptureSuggestionMetadataDto(
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null);
 
 public record CaptureItemSummaryDto(
     Guid Id,
@@ -31,12 +44,22 @@ public record CaptureItemSummaryDto(
     CaptureSource Source,
     string TextExcerpt,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? ProcessedAt);
+    DateTimeOffset? ProcessedAt,
+    string? ErrorMessage = null,
+    CaptureDispositionV1? Disposition = null);
 
 public record CaptureListFilterDto(
     CaptureStatus? Status = null,
     Guid? BoardId = null,
     int Limit = 50);
+
+/// <summary>
+/// Optional request body for triage enqueue. Supplies a target board when the capture has none
+/// yet — Home quick-capture lands board-less, and triage turns a capture into a board proposal, so
+/// it requires a target board. Absent body / null board means "use the board already on the item".
+/// </summary>
+public record EnqueueTriageRequestDto(
+    Guid? BoardId = null);
 
 public record CaptureTriageEnqueueResultDto(
     Guid Id,
@@ -48,6 +71,10 @@ public record CaptureTriageEnqueueResultDto(
 /// propose" outcome (an LLM run that deliberately found zero action items): the workers mark the
 /// item Completed WITHOUT a linked proposal, which the capture status policy renders as the
 /// terminal Triaged state — not Failed, because a correct empty verdict is a successful triage.
+/// <see cref="DegradedNotice"/> is non-null when the LLM leg was attempted, could not deliver, and
+/// the deterministic extractor produced this result instead (#2192). It names the outcome so the
+/// fallback is recorded on the capture rather than being silent; the run still succeeded, so the
+/// workers complete the item and never fail or retry it on account of the notice.
 /// </summary>
 public record CaptureTriageProposalResultDto(
     Guid CaptureItemId,
@@ -56,7 +83,8 @@ public record CaptureTriageProposalResultDto(
     int OperationCount,
     string PromptVersion,
     string Provider,
-    string Model);
+    string Model,
+    string? DegradedNotice = null);
 
 /// <summary>
 /// Describes a single item action within a batch triage request.
@@ -91,8 +119,11 @@ public record BatchTriageResultDto(
     IReadOnlyList<BatchTriageItemResultDto> Results);
 
 /// <summary>
-/// Request payload for editing the suggestion text of a capture item before triage.
+/// Request payload for editing a capture suggestion before triage. Older clients omit
+/// <see cref="Metadata"/> and preserve the stored due date and labels. When supplied, the
+/// metadata object is a complete replacement: a null due date and empty/null labels clear them.
 /// </summary>
 public record UpdateCaptureSuggestionDto(
     string Text,
-    string? TitleHint = null);
+    string? TitleHint = null,
+    CaptureSuggestionMetadataDto? Metadata = null);

@@ -35,6 +35,7 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
 
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/home"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/today"));
+        await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/collaboration"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.GetAsync("/api/workspace/preferences"));
         await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
             "/api/workspace/preferences",
@@ -42,6 +43,95 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
         await ApiTestHarness.AssertUnauthorizedAsync(await client.PutAsJsonAsync(
             "/api/workspace/onboarding",
             new UpdateWorkspaceOnboardingDto(WorkspaceOnboardingActionContract.Dismiss)));
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldReportSoloWorkspace_ForAUserWithNoSharedBoards()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-collab-solo");
+
+        // No boards at all: the caller is still one member of their own workspace.
+        var emptyResponse = await client.GetAsync("/api/workspace/collaboration");
+        emptyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var empty = await emptyResponse.Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        empty.Should().NotBeNull();
+        empty!.MemberCount.Should().Be(1);
+        empty.HasCollaborators.Should().BeFalse();
+
+        // An owned board grants no BoardAccess row, so the owner must still be counted.
+        _ = await ApiTestHarness.CreateBoardAsync(client, "workspace-collab-solo-board");
+
+        var ownedResponse = await client.GetAsync("/api/workspace/collaboration");
+        ownedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var owned = await ownedResponse.Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        owned.Should().NotBeNull();
+        owned!.MemberCount.Should().Be(1);
+        owned.HasCollaborators.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldFlip_WhenASecondMemberIsGrantedBoardAccess()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var guestClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "workspace-collab-owner");
+        var guest = await ApiTestHarness.AuthenticateAsync(guestClient, "workspace-collab-guest");
+
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "workspace-collab-shared");
+
+        var beforeShare = await (await ownerClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        beforeShare.Should().NotBeNull();
+        beforeShare!.HasCollaborators.Should().BeFalse();
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, guest.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterShare = await (await ownerClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        afterShare.Should().NotBeNull();
+        afterShare!.MemberCount.Should().Be(2);
+        afterShare.HasCollaborators.Should().BeTrue();
+
+        // The grantee sees the same shared workspace from their own side.
+        var guestView = await (await guestClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        guestView.Should().NotBeNull();
+        guestView!.MemberCount.Should().Be(2);
+        guestView.HasCollaborators.Should().BeTrue();
+
+        owner.UserId.Should().NotBe(guest.UserId);
+    }
+
+    [Fact]
+    public async Task Collaboration_ShouldNotLeakMembershipFromBoardsTheCallerCannotRead()
+    {
+        using var strangerClient = _factory.CreateClient();
+        using var strangerGuestClient = _factory.CreateClient();
+        using var isolatedClient = _factory.CreateClient();
+
+        await ApiTestHarness.AuthenticateAsync(strangerClient, "workspace-collab-stranger");
+        var strangerGuest = await ApiTestHarness.AuthenticateAsync(strangerGuestClient, "workspace-collab-strangerguest");
+        await ApiTestHarness.AuthenticateAsync(isolatedClient, "workspace-collab-isolated");
+
+        var strangerBoard = await ApiTestHarness.CreateBoardAsync(strangerClient, "workspace-collab-stranger-board");
+        var grantResponse = await strangerClient.PostAsJsonAsync(
+            $"/api/boards/{strangerBoard.Id}/access",
+            new GrantAccessDto(strangerBoard.Id, strangerGuest.UserId, UserRole.Editor));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _ = await ApiTestHarness.CreateBoardAsync(isolatedClient, "workspace-collab-isolated-board");
+
+        var isolated = await (await isolatedClient.GetAsync("/api/workspace/collaboration"))
+            .Content.ReadFromJsonAsync<WorkspaceCollaborationDto>();
+        isolated.Should().NotBeNull();
+        isolated!.MemberCount.Should().Be(1);
+        isolated.HasCollaborators.Should().BeFalse();
     }
 
     [Fact]
@@ -143,6 +233,76 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
     }
 
     [Fact]
+    public async Task Calendar_ShouldReturnSuccessForAccessibleBoardWithoutDueDateCards()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-calendar-empty");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-calendar-empty-board");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var column = new Column(board.Id, "Calendar", 0);
+            db.AddRange(column, new Card(board.Id, column.Id, "No due date"));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await client.GetAsync(
+            "/api/workspace/calendar?from=2026-08-01T00%3A00%3A00.0000000Z&to=2026-09-01T00%3A00%3A00.0000000Z");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var calendar = await response.Content.ReadFromJsonAsync<WorkspaceCalendarDto>();
+        calendar.Should().NotBeNull();
+        calendar!.TotalCards.Should().Be(0);
+        calendar.Cards.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Calendar_ShouldUseCallerLocalDateForOverdueStatus()
+    {
+        using var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-calendar-local-date");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-calendar-local-date-board");
+
+        await SeedWorkspaceCalendarDayCardAsync(user.UserId, board.Id, "Calendar-day card");
+
+        const string range = "from=2026-08-01T00%3A00%3A00.0000000Z&to=2026-09-01T00%3A00%3A00.0000000Z";
+        var dueTodayResponse = await client.GetAsync(
+            $"/api/workspace/calendar?{range}&localDate=2026-08-23");
+        dueTodayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var dueToday = await dueTodayResponse.Content.ReadFromJsonAsync<WorkspaceCalendarDto>();
+        dueToday.Should().NotBeNull();
+        dueToday!.Cards.Should().ContainSingle(card =>
+            card.Title == "Calendar-day card" && !card.IsOverdue);
+
+        var overdueResponse = await client.GetAsync(
+            $"/api/workspace/calendar?{range}&localDate=2026-08-24");
+        overdueResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var overdue = await overdueResponse.Content.ReadFromJsonAsync<WorkspaceCalendarDto>();
+        overdue.Should().NotBeNull();
+        overdue!.Cards.Should().ContainSingle(card =>
+            card.Title == "Calendar-day card" && card.IsOverdue);
+    }
+
+    [Theory]
+    [InlineData("/api/workspace/today?localDate=08-23-2026", "date-invalid-today")]
+    [InlineData("/api/workspace/calendar?localDate=2026-02-29", "date-invalid-calendar")]
+    public async Task DateAwareWorkspaceEndpoints_ShouldRejectInvalidLocalDate(string path, string userStem)
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, userStem);
+
+        var response = await client.GetAsync(path);
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
+    [Fact]
     public async Task Home_ShouldReturnCurrentUserSummaryOnly()
     {
         using var ownerClient = _factory.CreateClient();
@@ -203,22 +363,31 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
     }
 
     [Fact]
-    public async Task Today_ShouldTreatPositiveOffsetDueDatesAsDueTodayInTheirLocalCalendarDay()
+    public async Task Today_ShouldUseCallerLocalDateForCalendarDayBuckets()
     {
         using var client = _factory.CreateClient();
-        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today-offset");
-        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-offset-board");
+        var user = await ApiTestHarness.AuthenticateAsync(client, "workspace-today-local-date");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "workspace-today-local-date-board");
 
-        await SeedWorkspaceOffsetTodayCardAsync(user.UserId, board.Id);
+        await SeedWorkspaceCalendarDayCardAsync(user.UserId, board.Id, "Calendar-day due date");
 
-        var response = await client.GetAsync("/api/workspace/today");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dueTodayResponse = await client.GetAsync("/api/workspace/today?localDate=2026-08-23");
+        dueTodayResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var today = await response.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        var today = await dueTodayResponse.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
         today.Should().NotBeNull();
         today!.Summary.DueTodayCards.Should().Be(1);
         today.Summary.OverdueCards.Should().Be(0);
-        today.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset due today");
+        today.DueTodayCards.Should().ContainSingle(card => card.Title == "Calendar-day due date");
+
+        var overdueResponse = await client.GetAsync("/api/workspace/today?localDate=2026-08-24");
+        overdueResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var overdue = await overdueResponse.Content.ReadFromJsonAsync<WorkspaceTodayDto>();
+        overdue.Should().NotBeNull();
+        overdue!.Summary.DueTodayCards.Should().Be(0);
+        overdue.Summary.OverdueCards.Should().Be(1);
+        overdue.OverdueCards.Should().ContainSingle(card => card.Title == "Calendar-day due date");
     }
 
     [Fact]
@@ -455,18 +624,16 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
         await dbContext.SaveChangesAsync();
     }
 
-    private async Task SeedWorkspaceOffsetTodayCardAsync(Guid userId, Guid boardId)
+    private async Task SeedWorkspaceCalendarDayCardAsync(Guid userId, Guid boardId, string title)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var column = new Column(boardId, "Backlog", 0);
-        var offset = TimeSpan.FromHours(14);
-        var localToday = DateTimeOffset.UtcNow.ToOffset(offset).Date;
         var dueTodayCard = new Card(
             boardId,
             column.Id,
-            "Offset due today",
-            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
+            title,
+            dueDate: new DateTimeOffset(2026, 8, 23, 0, 0, 0, TimeSpan.Zero));
 
         dbContext.Columns.Add(column);
         dbContext.Cards.Add(dueTodayCard);

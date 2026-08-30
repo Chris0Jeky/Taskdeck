@@ -70,7 +70,16 @@ public record UserDataExportCaptureDto(
     Guid Id,
     string Status,
     string? RequestType,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? BoardId = null,
+    CaptureProvenanceV1? Provenance = null,
+    UserDataExportCaptureDispositionDto? Disposition = null);
+
+public record UserDataExportCaptureDispositionDto(
+    string Kind,
+    DateTimeOffset At,
+    Guid ByUserId,
+    Guid? BoardId = null);
 
 public record UserDataExportProposalDto(
     Guid Id,
@@ -136,4 +145,5 @@ public record AccountDeletionResultDto(
     int ExternalLoginsDeleted,
     int PreferencesDeleted,
     int ArtefactsDeleted = 0,
-    int TranscriptsDeleted = 0);
+    int TranscriptsDeleted = 0,
+    int DurableCapturesDeleted = 0);

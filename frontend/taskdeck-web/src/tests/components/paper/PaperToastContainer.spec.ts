@@ -3,7 +3,8 @@ import { mount, type VueWrapper, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import PaperToastContainer from '../../../components/paper/PaperToastContainer.vue'
-import { useToastStore } from '../../../store/toastStore'
+import { useToastStore, type Toast, type ToastLabel } from '../../../store/toastStore'
+import { i18n, type SupportedLocale } from '../../../i18n'
 
 describe('PaperToastContainer', () => {
   let wrapper: VueWrapper | null = null
@@ -17,6 +18,8 @@ describe('PaperToastContainer', () => {
     vi.useRealTimers()
     wrapper?.unmount()
     wrapper = null
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Reflect.deleteProperty(document, 'execCommand')
   })
 
   it('renders multiple toasts from the store', async () => {
@@ -33,6 +36,39 @@ describe('PaperToastContainer', () => {
     // Stack reverses order so newest is on top.
     expect(messages).toContain('First message')
     expect(messages).toContain('Second message')
+  })
+
+  it('keeps toasts present at mount and remount out of the polite announcement', async () => {
+    const store = useToastStore()
+    store.success('Already visible', 0)
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+
+    wrapper.unmount()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.get('[data-toast-polite-announcer]').text()).toBe('')
+  })
+
+  it('announces only a non-error toast added after mount', async () => {
+    const store = useToastStore()
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+    store.success('Capture saved to inbox', 0)
+    store.error('Network error')
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    expect(announcer.text()).toBe('Capture saved to inbox')
+    const errorToast = wrapper.get('[role="alert"]')
+    expect(errorToast.attributes('aria-live')).toBe('assertive')
+    expect(errorToast.attributes('aria-atomic')).toBe('true')
+    expect(wrapper.get('.paper-toast--applied').attributes('role')).toBeUndefined()
   })
 
   it('pauses the countdown on hover and resumes on leave', async () => {
@@ -137,5 +173,218 @@ describe('PaperToastContainer', () => {
     expect(wrapper.emitted('action')?.[0]).toEqual([id])
     // Toast is removed from the store after action.
     expect(store.toasts.find((t) => t.id === id)).toBeUndefined()
+  })
+
+  it('associates persistent error details only while mounted and announces by variant', async () => {
+    const store = useToastStore()
+    const id = store.error('Network error', undefined, { details: 'status: 503' })
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.attributes('role')).toBe('alert')
+    expect(card.attributes('aria-live')).toBe('assertive')
+    expect(card.attributes('aria-atomic')).toBe('true')
+
+    // `aria-controls` is absent while collapsed because the details element is
+    // only rendered when expanded, so select the control by its expanded state.
+    const detailsButton = card.get('button[aria-expanded="false"]')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('true')
+    expect(detailsButton.attributes('aria-controls')).toBe(`paper-toast-details-${id}`)
+    const details = card.get('pre.paper-toast__details')
+    expect(details.text()).toContain('status: 503')
+    expect(details.attributes('aria-label')).toBe('Error details for Network error')
+    expect(card.find('.paper-toast__countdown').exists()).toBe(false)
+
+    await detailsButton.trigger('click')
+    expect(detailsButton.attributes('aria-expanded')).toBe('false')
+    expect(detailsButton.attributes('aria-controls')).toBeUndefined()
+    expect(card.find('pre.paper-toast__details').exists()).toBe(false)
+
+    vi.advanceTimersByTime(60_000)
+    expect(store.toasts).toHaveLength(1)
+
+    store.remove(id)
+    await nextTick()
+    expect(wrapper.find(`[data-toast-id="${id}"]`).exists()).toBe(false)
+  })
+
+  it('primes an empty polite region before announcing a newly added non-error toast', async () => {
+    const store = useToastStore()
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const announcer = wrapper.get('[data-toast-polite-announcer]')
+    expect(announcer.attributes('role')).toBe('status')
+    expect(announcer.text()).toBe('')
+
+    const id = store.success('Capture saved to inbox', 0)
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.text()).toContain('Capture saved to inbox')
+    expect(card.attributes('role')).toBeUndefined()
+    expect(card.attributes('aria-live')).toBeUndefined()
+    expect(card.attributes('aria-atomic')).toBeUndefined()
+    expect(announcer.text()).toBe('Capture saved to inbox')
+  })
+
+  it('lets a persistent actionless error receipt be dismissed', async () => {
+    const store = useToastStore()
+    const id = store.error('Persistent network error')
+
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+
+    const card = wrapper.get(`[data-toast-id="${id}"]`)
+    expect(card.find('.paper-toast__undo').exists()).toBe(false)
+
+    const dismissButton = card.get('button[aria-label="Dismiss notification"]')
+    await dismissButton.trigger('click')
+
+    expect(store.toasts).toHaveLength(0)
+  })
+
+  it.each([
+    ['en', 'Show details', 'Hide details', 'Copy details', 'Copied', 'Copy failed', 'Dismiss notification', 'Error details for Network error'],
+    ['it', 'Mostra dettagli', 'Nascondi dettagli', 'Copia dettagli', 'Copiato', 'Copia non riuscita', 'Chiudi la notifica', 'Dettagli dell’errore: Network error'],
+    ['es', 'Mostrar detalles', 'Ocultar detalles', 'Copiar detalles', 'Copiado', 'No se pudo copiar', 'Cerrar la notificación', 'Detalles del error: Network error'],
+  ] as Array<[SupportedLocale, string, string, string, string, string, string, string]>)(
+    'localizes persistent error receipt controls in %s',
+    async (locale, show, hide, copy, copied, copyFailed, dismiss, errorDetails) => {
+      i18n.global.locale.value = locale
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+      })
+      const store = useToastStore()
+      const id = store.error('Network error', undefined, { details: 'status: 503' })
+
+      wrapper = mount(PaperToastContainer)
+      await nextTick()
+
+      const card = wrapper.get(`[data-toast-id="${id}"]`)
+      const detailsButton = card.get('button[aria-expanded="false"]')
+      const copyButton = card.findAll('button').find((button) => button.text() === copy)
+      expect(detailsButton.text()).toBe(show)
+      expect(copyButton).toBeDefined()
+      expect(card.get(`button[aria-label="${dismiss}"]`).attributes('aria-label')).toBe(dismiss)
+
+      await detailsButton.trigger('click')
+      expect(detailsButton.text()).toBe(hide)
+      expect(card.get('pre.paper-toast__details').attributes('aria-label')).toBe(errorDetails)
+
+      await copyButton!.trigger('click')
+      await flushPromises()
+      expect(copyButton!.text()).toBe(copied)
+
+      writeText.mockRejectedValueOnce(new Error('clipboard denied'))
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: vi.fn().mockReturnValue(false),
+      })
+      await copyButton!.trigger('click')
+      await flushPromises()
+      expect(copyButton!.text()).toBe(copyFailed)
+
+      vi.advanceTimersByTime(60_000)
+      expect(store.toasts).toHaveLength(1)
+    },
+  )
+})
+
+/**
+ * Toast labels tell the truth about what happened (#1970).
+ *
+ * The stamp used to be derived from the Paper TONE, so every success read
+ * "APPLIED" — on an inbox save, on a queued triage, and on an approval whose
+ * own pane simultaneously said "not yet applied". These assertions read the
+ * rendered stamp, never a screenshot or a delayed query: toasts here are
+ * created with `duration: 0`, which disables the auto-dismiss timer entirely.
+ */
+describe('PaperToastContainer outcome labels', () => {
+  let wrapper: VueWrapper | null = null
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    wrapper?.unmount()
+    wrapper = null
+  })
+
+  async function stampFor(type: Toast['type'], label?: ToastLabel): Promise<string> {
+    const store = useToastStore()
+    store.show('message body', type, 0, label ? { label } : {})
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    return wrapper.find('.paper-toast__head .tagstamp').text()
+  }
+
+  it.each([
+    ['saved', 'Saved'],
+    ['queued', 'Queued'],
+    ['approved', 'Approved'],
+    ['applied', 'Applied'],
+  ] as Array<[ToastLabel, string]>)(
+    'stamps a %s success toast "%s"',
+    async (label, expected) => {
+      expect(await stampFor('success', label)).toBe(expected)
+    },
+  )
+
+  it('never stamps the approve toast with the applied label', async () => {
+    // The AC's negative assertion: approving is step 1 of 2, so the toast must
+    // not claim the board was written. Substring, not equality — "Applied"
+    // must not appear anywhere in the stamp.
+    const stamp = await stampFor('success', 'approved')
+    expect(stamp).not.toContain('Applied')
+  })
+
+  it('falls back to a severity word, not an action word, for an unlabelled success', async () => {
+    // This is the reported defect in its purest form: before the fix an
+    // unlabelled success rendered the success TONE's name — "Applied".
+    const stamp = await stampFor('success')
+    expect(stamp).toBe('Done')
+    expect(stamp).not.toContain('Applied')
+  })
+
+  it.each([
+    ['error', 'Failed'],
+    ['warning', 'Warning'],
+    ['info', 'Noted'],
+  ] as Array<[Toast['type'], string]>)(
+    'stamps an unlabelled %s toast "%s"',
+    async (type, expected) => {
+      // The old fallbacks were tone names too — an error toast read "OVERDUE".
+      expect(await stampFor(type, undefined)).toBe(expected)
+    },
+  )
+
+  it('exposes the label kind as a data attribute independent of locale', async () => {
+    const store = useToastStore()
+    store.show('message body', 'success', 0, { label: 'saved' })
+    wrapper = mount(PaperToastContainer)
+    await nextTick()
+    expect(wrapper.find('.paper-toast').attributes('data-label')).toBe('saved')
+  })
+
+  it('translates the stamp rather than hardcoding English', async () => {
+    i18n.global.locale.value = 'it'
+    try {
+      expect(await stampFor('success', 'saved')).toBe('Salvato')
+    } finally {
+      i18n.global.locale.value = 'en'
+    }
   })
 })

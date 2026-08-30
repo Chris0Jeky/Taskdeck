@@ -42,6 +42,12 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .Where(proposal =>
                 proposal.DeferredUntil == null ||
                 proposal.DeferredUntil <= now)
+            // Match GetActiveByUserIdAsync: boardless and dangling history stays visible, while a
+            // positively identified extant archived board is excluded before Count on every provider.
+            .Where(proposal =>
+                !proposal.BoardId.HasValue ||
+                !_context.Boards.Any(board =>
+                    board.Id == proposal.BoardId.Value && board.IsArchived))
             .CountAsync(cancellationToken);
     }
 
@@ -89,6 +95,7 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         }
 
         return await _dbSet
+            .Include(proposal => proposal.Operations)
             .Where(proposal => uniqueIds.Contains(proposal.Id))
             .ToListAsync(cancellationToken);
     }
@@ -111,6 +118,24 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             limit,
             includeDeferred,
             cancellationToken);
+    }
+
+    public async Task<IEnumerable<AutomationProposal>> GetActiveByUserIdAsync(
+        Guid userId,
+        int limit = 100,
+        ProposalStatus? status = null,
+        RiskLevel? riskLevel = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetLimitedWithOperationsAsync(
+            nameof(AutomationProposal.RequestedByUserId),
+            userId,
+            limit,
+            includeDeferred: false,
+            cancellationToken,
+            excludeArchivedBoards: true,
+            additionalStatus: status,
+            additionalRiskLevel: riskLevel);
     }
 
     public async Task<IEnumerable<AutomationProposal>> GetByRiskLevelAsync(RiskLevel riskLevel, int limit = 100, CancellationToken cancellationToken = default)
@@ -278,13 +303,35 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         return string.Equals(storedTargetId, requestedTargetId, StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<IEnumerable<AutomationProposal>> GetExpiredAsync(CancellationToken cancellationToken = default)
+    public async Task<ExpiredProposalSweep> GetExpiredAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        return await _dbSet
+
+        var expired = _dbSet
+            .Where(p => p.Status == ProposalStatus.PendingReview && p.ExpiresAt < now);
+
+        // Expiry is a decision write, so ADR-0063 / #2168 apply: a proposal on an extant ARCHIVED
+        // board must not be touched by the automatic lanes (#2197). Same predicate shape as
+        // GetActiveByUserIdAsync and CountPendingReviewByUserIdAsync — AutomationProposal has no
+        // Board navigation, so the extant-and-archived test is an explicit subquery, and board-less
+        // or dangling-board rows stay expirable rather than being swept up by it.
+        var expirable = await expired
+            .Where(p =>
+                !p.BoardId.HasValue ||
+                !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
             .Include(p => p.Operations)
-            .Where(p => p.Status == ProposalStatus.PendingReview && p.ExpiresAt < now)
             .ToListAsync(cancellationToken);
+
+        // Counted with the complementary predicate rather than by subtracting from a total, so the
+        // withheld figure is never inferred from two reads that could disagree. It is a count only
+        // and is used solely for an operator log line.
+        var skippedArchivedBoardCount = await expired
+            .Where(p =>
+                p.BoardId.HasValue &&
+                _context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
+            .CountAsync(cancellationToken);
+
+        return new ExpiredProposalSweep(expirable, skippedArchivedBoardCount);
     }
 
     private static readonly ProposalStatus[] TerminalStatuses =
@@ -433,7 +480,10 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
         object filterValue,
         int limit,
         bool includeDeferred,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool excludeArchivedBoards = false,
+        ProposalStatus? additionalStatus = null,
+        RiskLevel? additionalRiskLevel = null)
     {
         if (!AllowedFilterColumns.Contains(filterColumn))
             throw new ArgumentOutOfRangeException(nameof(filterColumn), filterColumn, "Unsupported filter column.");
@@ -458,6 +508,28 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 parameters.Add((int)ProposalStatus.PendingReview);
                 sql.Append(" OR DeferredUntil IS NULL OR DeferredUntil <= {").Append(parameters.Count).Append("})");
                 parameters.Add(now);
+            }
+
+            if (excludeArchivedBoards)
+            {
+                // AutomationProposal intentionally has no Board navigation/FK. Keep board-less and
+                // legacy dangling records visible, but exclude a proposal whose extant board is archived.
+                // This predicate runs before LIMIT so retained reset history cannot under-fill Review.
+                sql.Append(
+                    " AND (BoardId IS NULL OR NOT EXISTS " +
+                    "(SELECT 1 FROM Boards WHERE Boards.Id = AutomationProposals.BoardId AND Boards.IsArchived = 1))");
+            }
+
+            if (additionalStatus.HasValue)
+            {
+                sql.Append(" AND Status = {").Append(parameters.Count).Append('}');
+                parameters.Add((int)additionalStatus.Value);
+            }
+
+            if (additionalRiskLevel.HasValue)
+            {
+                sql.Append(" AND RiskLevel = {").Append(parameters.Count).Append('}');
+                parameters.Add((int)additionalRiskLevel.Value);
             }
 
             sql.Append(" ORDER BY CreatedAt DESC, Id LIMIT {").Append(parameters.Count).Append('}');
@@ -495,6 +567,19 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 p.DeferredUntil == null ||
                 p.DeferredUntil <= now);
         }
+
+        if (excludeArchivedBoards)
+        {
+            query = query.Where(p =>
+                !p.BoardId.HasValue ||
+                !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived));
+        }
+
+        if (additionalStatus.HasValue)
+            query = query.Where(p => p.Status == additionalStatus.Value);
+
+        if (additionalRiskLevel.HasValue)
+            query = query.Where(p => p.RiskLevel == additionalRiskLevel.Value);
 
         return await query
             .Include(p => p.Operations)

@@ -71,9 +71,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   const { computed, ref, shallowRef } = await vueHelpers
   return {
     useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
-      const getCount = typeof options.count === 'function'
-        ? options.count
-        : () => options.count.value
+      const count = options.count
+      const getCount = typeof count === 'function'
+        ? count
+        : () => count.value
       return {
         parentRef: ref(null),
         virtualItemEls: shallowRef([]),
@@ -187,6 +188,21 @@ describe('ActivityView selector discoverability', () => {
         { id: 'label-1', name: 'Bug' },
       ]
     })
+  })
+
+  it('renders the hero with the Paper theme class hooks (not the legacy Obsidian ones)', async () => {
+    const wrapper = mount(ActivityView)
+    await waitForUi()
+
+    // The view shell uses the Paper (`paper-activity__*`) idiom; none of the
+    // legacy Obsidian (`td-activity__*`) view hooks should survive.  The
+    // `.td-activity__controls` hook belongs to ActivitySelector, which this
+    // slice does not own, so it is matched exactly rather than by prefix.
+    expect(wrapper.find('.paper-activity').exists()).toBe(true)
+    expect(wrapper.find('.paper-activity__hero').exists()).toBe(true)
+    expect(wrapper.find('[class*="td-activity__hero"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-activity__eyebrow"]').exists()).toBe(false)
+    expect(wrapper.find('[class*="td-activity__subtitle"]').exists()).toBe(false)
   })
 
   it('uses board selector flow instead of raw ID input', async () => {

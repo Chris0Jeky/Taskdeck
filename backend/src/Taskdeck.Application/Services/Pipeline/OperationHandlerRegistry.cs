@@ -12,6 +12,8 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public class OperationHandlerRegistry
 {
+    internal const string ArchiveCardBlockReason = "Archived by an approved proposal.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
@@ -231,7 +233,7 @@ public class OperationHandlerRegistry
         if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var cardIdError))
             return Result.Failure(ErrorCodes.ValidationError, cardIdError);
 
-        var dto = new UpdateCardDto(null, null, null, true, null, null);
+        var dto = new UpdateCardDto(null, null, null, true, ArchiveCardBlockReason, null);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -381,12 +383,45 @@ public class OperationHandlerRegistry
 
         switch (actionType)
         {
+            case "create":
+                return await CreateColumnAsync(operation, parameters, cancellationToken);
+
             case "reorder":
                 return await ReorderColumnAsync(parameters, cancellationToken);
 
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported column action: {actionType}");
         }
+    }
+
+    private async Task<Result> CreateColumnAsync(
+        ProposalOperationDto operation,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        // Preview/approve/apply all parse the same canonical payload. Recheck the
+        // live position immediately inside execution as well, narrowing the
+        // race between Apply's permission validation and the actual insert.
+        var validationResult = await ProposalOperationContractValidator.ValidateCreateColumnForExecutionAsync(
+            _unitOfWork,
+            operation,
+            parameters,
+            cancellationToken);
+        if (!validationResult.IsSuccess)
+            return Result.Failure(validationResult.ErrorCode, validationResult.ErrorMessage);
+
+        var contract = validationResult.Value;
+        var result = await _columnService.CreateColumnAsync(
+            new CreateColumnDto(
+                contract.BoardId,
+                contract.Name,
+                contract.Position,
+                contract.WipLimit),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Result.Success()
+            : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
     private async Task<Result> ReorderColumnAsync(JsonElement parameters, CancellationToken cancellationToken)

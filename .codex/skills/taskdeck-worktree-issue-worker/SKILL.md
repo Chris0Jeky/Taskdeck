@@ -42,9 +42,10 @@ Command shape:
 
 ```powershell
 git add <paths>
-git commit -s --no-gpg-sign -m "<present-tense message>"
+git commit --no-gpg-sign -m "<present-tense message>"
 ```
 
+DCO trailers are optional while enforcement is paused; do not rewrite history to add one.
 Do not use `--no-verify`. If hooks fail, fix the cause.
 
 ## Verification

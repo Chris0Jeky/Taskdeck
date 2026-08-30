@@ -109,9 +109,15 @@ Enforced via `scripts/ci/check-bundle-size.mjs`:
 |---|---|---|
 | Entry chunk (index-*.js) | > 120 KB | > 150 KB |
 | Largest single chunk | > 200 KB | > 250 KB |
-| Total JS size | > 1000 KB | > 1200 KB |
+| Eager-graph JS (entry + modulepreload) | > 1000 KB | > 1250 KB |
+| Total emitted JS | > 1000 KB | > 1280 KB (warning only — never fails the lane) |
 
-Override thresholds with environment variables: `BUNDLE_MAX_ENTRY_KB`, `BUNDLE_MAX_SINGLE_KB`, `BUNDLE_MAX_TOTAL_JS_KB`, `BUNDLE_WARN_ENTRY_KB`, `BUNDLE_WARN_SINGLE_KB`, `BUNDLE_WARN_TOTAL_JS_KB`.
+The **eager graph** — the entry chunk plus everything `index.html` modulepreloads, i.e. the JS a
+first paint actually downloads — is the hard gate (#1858 ruling, 2026-08-23). Lazy-loaded chunks
+(route views, the code-split it/es locale catalogs) are outside it by design. Total emitted JS is
+still measured and reported, but only warns.
+
+Override thresholds with environment variables: `BUNDLE_MAX_ENTRY_KB`, `BUNDLE_MAX_SINGLE_KB`, `BUNDLE_MAX_EAGER_JS_KB`, `BUNDLE_MAX_TOTAL_JS_KB`, `BUNDLE_WARN_ENTRY_KB`, `BUNDLE_WARN_SINGLE_KB`, `BUNDLE_WARN_EAGER_JS_KB`, `BUNDLE_WARN_TOTAL_JS_KB`.
 
 ### Artifacts
 

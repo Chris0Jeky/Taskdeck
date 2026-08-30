@@ -269,6 +269,9 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("status");
         result.Value.Content.Should().Contain("board-scoped chat session");
+        // The notice must also say plainly that nothing happened, so the prose above it cannot
+        // read as an applied change (#2004).
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
                 It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
@@ -278,7 +281,303 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_ShouldReturnStatusWithParseHint_WhenActionableButPlannerFails()
+    public async Task SendMessageAsync_ShouldReturnStatusWithNoBoardNotice_WhenProposalRequestedButNoBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        // The provider answers in prose and never flags its own reply actionable, so the
+        // proposal path is not entered — the user still opted in and must be told why nothing
+        // happened (#2004).
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is a tidier write-up.", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("Here is a tidier write-up.");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
+        result.Value.Content.Should().Contain("board-scoped chat session");
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnStatusWithNoBoardNotice_WhenSkipRequestForcesBestEffortWithoutBoardScope()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+        session.AddMessage(new ChatMessage(
+            session.Id, ChatMessageRole.Assistant, "Which column should these go in?", "clarification"));
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "Task Title: Board Management Optimization\nDeadline: Today", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("just do your best"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("status");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldLeavePlainChatUntouched_WhenNoBoardAndTurnAsksForNoAction()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("Hello, what can you do?"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("text");
+        result.Value.Content.Should().Be("Assistant response");
+    }
+
+    [Fact]
+    // Scope note: this result has no proposal intent under the exact proposal-attempt predicate.
+    // Its generic degraded content must remain untouched by proposal-suppression messaging.
+    public async Task SendMessageAsync_ShouldKeepDegradedClassification_WhenUnboundNonActionableTurnRequestsAction()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "This is a degraded fallback response.",
+                10,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: "Live provider request failed."));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be("Live provider request failed.");
+        result.Value.Content.Should().Be("This is a degraded fallback response.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldSuppressProposalAttempt_WhenDegradedBoardTurnRequestsProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Degraded board session", boardId);
+        const string degradedReason = "Live provider request failed.";
+        const string misleadingFallback = "I'll create a proposal for the release notes.";
+        const string expectedContent = "The provider response was degraded. No proposal was created, and nothing changed.";
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                misleadingFallback,
+                10,
+                true,
+                "card.create",
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: degradedReason,
+                Instructions: new List<string> { "create card 'Release notes'" }));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Release notes\"", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be(degradedReason);
+        result.Value.Content.Should().Be(expectedContent);
+        result.Value.Content.Should().NotContain(misleadingFallback);
+        result.Value.ProposalId.Should().BeNull();
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be(degradedReason);
+        persisted.Content.Should().Be(expectedContent);
+        persisted.Content.Should().NotContain(misleadingFallback);
+        persisted.ProposalId.Should().BeNull();
+
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _plannerMock.Verify(
+            p => p.ParseBatchInstructionAsync(
+                It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            service => service.CreateProposalAsync(
+                It.IsAny<CreateProposalDto>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundActionTurnHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(string.Empty, 5, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please tidy this up for me", RequestProposal: true),
+            default);
+
+        // No prose exists to be misread as completed work, so the textless outcome keeps its own
+        // placeholder and "degraded" classification rather than being relabelled "status".
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundClarificationHasNoText()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "No board session");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                string.Empty, 5, false, null, IsClarificationRequest: true));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create onboarding tasks", RequestProposal: true),
+            default);
+
+        // A clarification with no question text has nothing for the user to answer, so it keeps
+        // the deliberate "degraded" reclassification instead of carrying the no-board notice.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldNotAddNoBoardNotice_WhenSessionIsBoardScoped()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Board scoped session", boardId);
+        var proposalId = Guid.NewGuid();
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I can create that card.", 12, true, "card.create"));
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "create card",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Test\"", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+        result.Value.Content.Should().Contain("Proposal created for review");
+        result.Value.Content.Should().NotContain("nothing was created or changed on any board");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ShouldReturnAndPersistParseHint_WhenPlannerFailureIncludesHintMarker()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -290,12 +589,13 @@ public class ChatServiceTests
         _llmProviderMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult("I can help with that.", 12, true, "card.create"));
+        var plannerFailure = $"Could not parse instruction into a proposal.{AutomationPlannerService.ParseHintMarker}{{\"supportedPatterns\":[]}}";
         _plannerMock
             .Setup(p => p.ParseInstructionAsync(
                 It.IsAny<string>(), userId, boardId,
                 It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()))
-            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse instruction"));
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, plannerFailure));
 
         var result = await _service.SendMessageAsync(
             session.Id,
@@ -304,8 +604,13 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("parse-hint");
         result.Value.Content.Should().Contain("could not parse it into a proposal");
+        result.Value.Content.Should().Contain(AutomationPlannerService.ParseHintMarker);
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.MessageType.Should().Be("parse-hint");
+        persisted.Content.Should().Contain(AutomationPlannerService.ParseHintMarker);
     }
 
     [Fact]
@@ -476,7 +781,7 @@ public class ChatServiceTests
             .Setup(r => r.GetByBoardIdAsync(boardId, default))
             .ReturnsAsync(new[] { column });
         _policyEngineMock
-            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+            .Setup(p => p.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
         _policyEngineMock
             .Setup(p => p.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
@@ -729,6 +1034,7 @@ public class ChatServiceTests
         result.Model.Should().Be("gpt-4o-mini");
         result.IsMock.Should().BeFalse();
         result.VerificationStatus.Should().Be("unverified");
+        result.ProbeLatencyMs.Should().BeNull();
     }
 
     [Fact]
@@ -745,6 +1051,7 @@ public class ChatServiceTests
         result.Model.Should().Be("stub-model");
         result.IsMock.Should().BeTrue();
         result.VerificationStatus.Should().Be("unverified");
+        result.ProbeLatencyMs.Should().BeNull();
     }
 
     [Fact]
@@ -752,7 +1059,11 @@ public class ChatServiceTests
     {
         _llmProviderMock
             .Setup(p => p.ProbeAsync(default))
-            .ReturnsAsync(new LlmHealthStatus(true, "OpenAI", Model: "gpt-4o-mini", IsProbed: true));
+            .Returns(async () =>
+            {
+                await Task.Delay(20);
+                return new LlmHealthStatus(true, "OpenAI", Model: "gpt-4o-mini", IsProbed: true);
+            });
 
         var result = await _service.GetProviderHealthAsync(probe: true, default);
 
@@ -761,6 +1072,7 @@ public class ChatServiceTests
         result.Model.Should().Be("gpt-4o-mini");
         result.IsProbed.Should().BeTrue();
         result.VerificationStatus.Should().Be("verified");
+        result.ProbeLatencyMs.Should().BeGreaterThan(0);
         _llmProviderMock.Verify(p => p.ProbeAsync(default), Times.Once);
         _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
     }
@@ -779,6 +1091,81 @@ public class ChatServiceTests
         result.ErrorMessage.Should().Be("Connection refused");
         result.IsProbed.Should().BeTrue();
         result.VerificationStatus.Should().Be("failed");
+        result.ProbeLatencyMs.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldNotFlagRetiredConfiguration_WhenNoneWasIgnored()
+    {
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true));
+
+        var result = await _service.GetProviderHealthAsync(probe: false, default);
+
+        result.RetiredProviderConfigurationIgnored.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldFlagRetiredConfiguration_WhenTheStartupIgnoredEnvironmentSettings()
+    {
+        // #2233: the packaged desktop start drops retired provider variables inherited from the
+        // Windows profile, and "Verify LLM" must say so instead of silently running on the default.
+        var notice = new RetiredLlmProviderConfigurationNotice();
+        notice.RecordIgnoredKey("Llm:Gemini:ApiKey");
+        var service = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            retiredProviderNotice: notice);
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true));
+
+        var result = await service.GetProviderHealthAsync(probe: false, default);
+
+        result.RetiredProviderConfigurationIgnored.Should().BeTrue();
+        result.ProviderName.Should().Be("Mock");
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldPropagateProbeFailure()
+    {
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(default))
+            .ThrowsAsync(new InvalidOperationException("synthetic probe failure"));
+
+        ChatProviderHealthDto? result = null;
+        Func<Task> act = async () => result = await _service.GetProviderHealthAsync(probe: true, default);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("synthetic probe failure");
+        result.Should().BeNull();
+        _llmProviderMock.Verify(p => p.GetHealthAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldPropagateCallerCancellationWithoutReturningLatency()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        _llmProviderMock
+            .Setup(p => p.ProbeAsync(cancellation.Token))
+            .ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+        ChatProviderHealthDto? result = null;
+        Func<Task> act = async () =>
+            result = await _service.GetProviderHealthAsync(probe: true, cancellation.Token);
+
+        var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+        thrown.Which.CancellationToken.Should().Be(cancellation.Token);
+        result.Should().BeNull();
+        _llmProviderMock.Verify(p => p.ProbeAsync(cancellation.Token), Times.Once);
+        _llmProviderMock.Verify(p => p.GetHealthAsync(cancellation.Token), Times.Never);
     }
 
     #region NLP Gap Tests — Documents #570 (Chat-to-Proposal NLP Gap)
@@ -1948,6 +2335,92 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_CancelledAfterDispatch_CommitsReservationEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Buffered dispatch cancellation");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                request.DispatchContext.MarkDispatched();
+                return Task.FromException<LlmCompletionResult>(new OperationCanceledException());
+            });
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        var act = () => service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("hello"),
+            default);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ObservedPreDispatch_ReleasesReservation()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Buffered pre-dispatch rejection");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                return new LlmCompletionResult(
+                    "configuration rejected",
+                    0,
+                    false,
+                    Provider: "OpenAICompatible",
+                    Model: "vendor/model",
+                    IsDegraded: true)
+                {
+                    HasAuthoritativeTokenUsage = false,
+                    ShouldSettleQuotaReservation = true
+                };
+            });
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("hello"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        quotaMock.Verify(q => q.ReleaseReservationAsync(reservationId, CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Domain.Enums.LlmSurface>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task StreamResponseAsync_ProviderYieldsOnlyErrorEvent_ShouldReleaseNotCommit()
     {
         // Boundary of the billable-once-started rule: an error event carries no delivered tokens
@@ -1987,9 +2460,477 @@ public class ChatServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_PostDispatchErrorOnly_CommitsEstimateAndPersistsSanitizedPlaceholder()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched error-only stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) => DispatchedErrorOnlyStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        await foreach (var _ in service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.DegradedReason.Should().Be("The upstream provider could not complete the response.");
+        persisted.Content.Should().NotContain("secret-upstream-detail");
+        persisted.DegradedReason.Should().NotContain("secret-upstream-detail");
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_PostDispatchErrorWithUsage_CommitsActualAndPersistsSanitizedPlaceholder()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched error with usage");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+                DispatchedErrorWithUsageStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+
+        await foreach (var _ in service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("The upstream provider could not complete the response.");
+        persisted.TokenUsage.Should().Be(5000);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            5000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_OversizedTerminal_PersistsPlaceholderAndCommitsAuthoritativeUsage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Oversized terminal stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+                OversizedTerminalStream(request));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+        var events = new List<LlmTokenEvent>();
+
+        await foreach (var item in service.StreamResponseAsync(session.Id, userId, default))
+            events.Add(item);
+
+        events.Should().ContainSingle();
+        events[0].IsComplete.Should().BeTrue();
+        events[0].Error.Should().Be("Streamed assistant response exceeded the safety limit.");
+        events[0].TokensUsed.Should().Be(100000);
+        events[0].Provider.Should().Be("OpenAICompatible");
+        events[0].Model.Should().Be("vendor/model");
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.Content.Length.Should().BeLessThan(1_048_577);
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("Streamed assistant response exceeded the safety limit.");
+        persisted.TokenUsage.Should().Be(100000);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            100000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(
+            It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_CancelledAfterDispatchBeforeFirstEvent_CommitsEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Cancelled dispatched stream");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((ChatCompletionRequest request, CancellationToken token) =>
+                DispatchedBlockingStream(request, token));
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var service = CreateServiceWithQuota(quotaMock.Object);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        var act = async () =>
+        {
+            await foreach (var _ in service.StreamResponseAsync(session.Id, userId, cancellation.Token)) { }
+        };
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_UnknownCompatibleUsage_CommitsReservationEstimateForLargePrompt()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Unknown usage quota test");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "short reply",
+                0,
+                false,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                HasAuthoritativeTokenUsage = false
+            });
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 4000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        var result = await serviceWithQuota.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(new string('x', 4000)),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TokenUsage.Should().BeNull("upstream did not report authoritative usage");
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            4000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(false, "Response was stopped by the upstream content filter.", "Response was stopped by the upstream content filter.")]
+    [InlineData(true, "secret-upstream-detail", "The upstream provider could not complete the response.")]
+    public async Task StreamResponseAsync_TerminalDegradedOrError_PersistsPartialHistoryAsDegraded(
+        bool terminalError,
+        string terminalReason,
+        string expectedReason)
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream terminal state persistence");
+        ChatMessage? persisted = null;
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) =>
+            {
+                persisted = message;
+                return message;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(TerminalStateStream(terminalError, terminalReason));
+
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        persisted.Should().NotBeNull();
+        persisted!.Content.Should().Be("partial response");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be(expectedReason);
+        if (terminalError)
+            persisted.DegradedReason.Should().NotContain(terminalReason);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_EmptyDegradedTerminal_PersistsSanitizedReloadableHistoryAndUsage()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Empty degraded terminal persistence");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(EmptyDegradedTerminalStream());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+        var reloaded = await serviceWithQuota.GetSessionAsync(session.Id, userId, default);
+
+        reloaded.IsSuccess.Should().BeTrue();
+        reloaded.Value.RecentMessages.Should().ContainSingle();
+        var persisted = reloaded.Value.RecentMessages.Single();
+        persisted.Content.Should().Be("The provider ended the response without returning text.");
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be("Response was stopped by the upstream content filter.");
+        persisted.TokenUsage.Should().Be(7);
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            7,
+            0,
+            CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_UsageAbsent_CommitsReservationEstimate()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream missing usage quota");
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage message, CancellationToken _) => message);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamWithoutUsage());
+
+        var reservationId = Guid.NewGuid();
+        var quotaMock = new Mock<ILlmQuotaService>();
+        quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, default))
+            .ReturnsAsync(new DTOs.QuotaReservationDto(
+                true, null, reservationId, 10000, 100, EstimatedTokens: 2000));
+        var serviceWithQuota = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            quotaService: quotaMock.Object);
+
+        await foreach (var _ in serviceWithQuota.StreamResponseAsync(session.Id, userId, default)) { }
+
+        quotaMock.Verify(q => q.CommitReservationAsync(
+            reservationId,
+            userId,
+            Domain.Enums.LlmSurface.Chat,
+            "OpenAICompatible",
+            "vendor/model",
+            2000,
+            0,
+            CancellationToken.None), Times.Once);
+        quotaMock.Verify(q => q.ReleaseReservationAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static async IAsyncEnumerable<LlmTokenEvent> ErrorOnlyStream()
     {
         yield return new LlmTokenEvent(string.Empty, true, Error: "provider unavailable");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedErrorOnlyStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Error: "secret-upstream-detail",
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedErrorWithUsageStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Error: "secret-upstream-detail",
+            TokensUsed: 5000,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> OversizedTerminalStream(
+        ChatCompletionRequest request)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        yield return new LlmTokenEvent(
+            new string('x', 1_048_577),
+            true,
+            TokensUsed: 100000,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> DispatchedBlockingStream(
+        ChatCompletionRequest request,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+        request.DispatchContext.MarkDispatched();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        yield break;
+    }
+
+    private ChatService CreateServiceWithQuota(ILlmQuotaService quotaService) => new(
+        _unitOfWorkMock.Object,
+        _llmProviderMock.Object,
+        _plannerMock.Object,
+        _proposalServiceMock.Object,
+        _policyEngineMock.Object,
+        _notificationServiceMock.Object,
+        _authorizationServiceMock.Object,
+        quotaService: quotaService);
+
+    private static async IAsyncEnumerable<LlmTokenEvent> TerminalStateStream(
+        bool terminalError,
+        string reason)
+    {
+        yield return new LlmTokenEvent(
+            "partial response",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        if (terminalError)
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                Error: reason,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model");
+        }
+        else
+        {
+            yield return new LlmTokenEvent(
+                string.Empty,
+                true,
+                TokensUsed: 7,
+                Provider: "OpenAICompatible",
+                Model: "vendor/model")
+            {
+                IsDegraded = true,
+                DegradedReason = reason
+            };
+        }
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> StreamWithoutUsage()
+    {
+        yield return new LlmTokenEvent(
+            "hello",
+            false,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model");
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<LlmTokenEvent> EmptyDegradedTerminalStream()
+    {
+        yield return new LlmTokenEvent(
+            string.Empty,
+            true,
+            TokensUsed: 7,
+            Provider: "OpenAICompatible",
+            Model: "vendor/model")
+        {
+            IsDegraded = true,
+            DegradedReason = "Response was stopped by the upstream content filter."
+        };
         await Task.CompletedTask;
     }
 

@@ -324,6 +324,38 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task HomeAndToday_ShouldKeepHistoricalCaptureOnboarding_WhenActiveWorkloadIsEmpty()
+    {
+        var userId = Guid.NewGuid();
+        var preference = new UserPreference(userId, WorkspaceMode.Guided);
+
+        _userPreferenceRepositoryMock
+            .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
+            .ReturnsAsync(preference);
+        _llmQueueRepositoryMock
+            .Setup(repository => repository.GetCaptureSummaryByUserAsync(userId, default))
+            .ReturnsAsync((3, 0, 0, 0, 0));
+
+        var home = await _service.GetHomeAsync(userId);
+        var today = await _service.GetTodayAsync(userId);
+
+        home.IsSuccess.Should().BeTrue();
+        home.Value.IsFirstRun.Should().BeFalse("historical captures must keep an established user out of first-run mode");
+        home.Value.Workload.CapturesNeedingTriage.Should().Be(0);
+        home.Value.Workload.CapturesInProgress.Should().Be(0);
+        home.Value.Workload.CapturesReadyForFollowUp.Should().Be(0);
+        home.Value.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
+
+        today.IsSuccess.Should().BeTrue();
+        today.Value.Summary.CapturesNeedingTriage.Should().Be(0);
+        today.Value.Onboarding.Steps
+            .Single(step => step.StepId == "capture-first-item")
+            .IsComplete.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetHomeAsync_ShouldKeepApplyStepIncomplete_WhenProposalReviewedButNotApplied()
     {
         // Regression for the capture→review→apply contract (#1301): reviewing a proposal
@@ -455,18 +487,16 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
-    public async Task GetTodayAsync_ShouldBucketDueDatesUsingCardOffsetCalendarDay()
+    public async Task GetTodayAsync_ShouldBucketOffsetValueByUtcDueDateKeyUsingCallerLocalDate()
     {
         var userId = Guid.NewGuid();
         var board = new Board("Alpha", "Alpha board", userId);
         var column = new Column(board.Id, "Backlog", 0);
-        var offset = TimeSpan.FromHours(14);
-        var localToday = DateTimeOffset.UtcNow.ToOffset(offset).Date;
-        var dueTodayWithPositiveOffset = new Card(
+        var dueToday = new Card(
             board.Id,
             column.Id,
-            "Offset due today",
-            dueDate: new DateTimeOffset(localToday.Year, localToday.Month, localToday.Day, 0, 30, 0, offset));
+            "Offset calendar-key due today",
+            dueDate: new DateTimeOffset(2026, 8, 22, 23, 30, 0, TimeSpan.FromHours(-7)));
 
         _userPreferenceRepositoryMock
             .Setup(repository => repository.GetOrCreateDefaultByUserIdAsync(userId, default))
@@ -479,13 +509,13 @@ public class WorkspaceServiceTests
             .ReturnsAsync((0, 0, 0, 0, 0));
         _cardRepositoryMock
             .Setup(repository => repository.GetAgendaByBoardIdsAsync(It.IsAny<IEnumerable<Guid>>(), default))
-            .ReturnsAsync([dueTodayWithPositiveOffset]);
+            .ReturnsAsync([dueToday]);
 
-        var result = await _service.GetTodayAsync(userId);
+        var result = await _service.GetTodayAsync(userId, new DateOnly(2026, 8, 23));
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Summary.DueTodayCards.Should().Be(1);
-        result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset due today");
+        result.Value.DueTodayCards.Should().ContainSingle(card => card.Title == "Offset calendar-key due today");
         result.Value.Summary.OverdueCards.Should().Be(0);
     }
 
@@ -639,6 +669,48 @@ public class WorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetCalendarAsync_ShouldUseCallerLocalDateForOverdueStatus()
+    {
+        var userId = Guid.NewGuid();
+        var columnId = Guid.NewGuid();
+        var from = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+        var board = new Board("Test Board", ownerId: userId);
+        var card = new Card(
+            board.Id,
+            columnId,
+            "Calendar-day card",
+            dueDate: new DateTimeOffset(2026, 8, 23, 0, 0, 0, TimeSpan.Zero));
+
+        _boardRepositoryMock
+            .Setup(r => r.GetReadableByUserIdAsync(userId, false, default))
+            .ReturnsAsync(new List<Board> { board });
+        _cardRepositoryMock
+            .Setup(r => r.GetByDueDateRangeAsync(
+                It.IsAny<IEnumerable<Guid>>(),
+                from,
+                to,
+                default))
+            .ReturnsAsync(new List<Card> { card });
+
+        var dueToday = await _service.GetCalendarAsync(
+            userId,
+            from,
+            to,
+            new DateOnly(2026, 8, 23));
+        var overdue = await _service.GetCalendarAsync(
+            userId,
+            from,
+            to,
+            new DateOnly(2026, 8, 24));
+
+        dueToday.IsSuccess.Should().BeTrue();
+        dueToday.Value.Cards.Should().ContainSingle(resultCard => !resultCard.IsOverdue);
+        overdue.IsSuccess.Should().BeTrue();
+        overdue.Value.Cards.Should().ContainSingle(resultCard => resultCard.IsOverdue);
+    }
+
+    [Fact]
     public async Task GetCalendarAsync_ShouldIncludeBlockedStatus()
     {
         var userId = Guid.NewGuid();
@@ -685,5 +757,65 @@ public class WorkspaceServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.From.Should().Be(from);
         result.Value.To.Should().Be(to);
+    }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldRejectEmptyUserId()
+    {
+        var result = await _service.GetCollaborationAsync(Guid.Empty);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    public async Task GetCollaborationAsync_ShouldReportSoloWorkspace_WhenNoOtherMemberShares(
+        int distinctMembers,
+        int expectedMemberCount)
+    {
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(distinctMembers);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MemberCount.Should().Be(expectedMemberCount);
+        result.Value.HasCollaborators.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldReportCollaborators_WhenASecondMemberExists()
+    {
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(2);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MemberCount.Should().Be(2);
+        result.Value.HasCollaborators.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCollaborationAsync_ShouldNotDeriveMembershipFromProposalsOrPresence()
+    {
+        // Guards the recorded assumption on #1940: membership must come from the board
+        // collaboration graph alone, never from proposal authorship or online presence.
+        var userId = Guid.NewGuid();
+        _boardRepositoryMock
+            .Setup(repository => repository.CountCollaborationMembersAsync(userId, default))
+            .ReturnsAsync(1);
+
+        var result = await _service.GetCollaborationAsync(userId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.HasCollaborators.Should().BeFalse();
+        _proposalRepositoryMock.VerifyNoOtherCalls();
     }
 }

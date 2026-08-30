@@ -13,9 +13,10 @@ vi.mock('../../composables/useVirtualList', async () => {
   const { computed, ref, shallowRef } = await vueHelpers
   return {
     useVirtualList: (options: { count: { value: number } | (() => number); estimateSize: number }) => {
-      const getCount = typeof options.count === 'function'
-        ? options.count
-        : () => options.count.value
+      const count = options.count
+      const getCount = typeof count === 'function'
+        ? count
+        : () => count.value
       return {
         parentRef: ref(null),
         virtualItemEls: shallowRef([]),
@@ -149,6 +150,7 @@ function buildProposal(overrides: Partial<Proposal> = {}): Proposal {
       ],
     },
     approvedRevisionId: null,
+    latestRevisionId: null,
   }
 
   const hasPresentationOverride = 'presentation' in overrides
@@ -202,6 +204,51 @@ async function mountAt(path: string) {
 let mountedWrapper: ReturnType<typeof mount> | null = null
 let originalPrompt: typeof window.prompt
 
+/**
+ * Accept the #1818 phase-2 confirmation dialog (TdDialog, teleported to <body>).
+ * Hard-asserts the dialog is present so a removed confirmation gate FAILS here
+ * instead of silently letting the execute call through.
+ */
+async function confirmApplyDialog(wrapper: { vm: { $nextTick: () => Promise<unknown> } }) {
+  const accept = document.body.querySelector(
+    '[data-testid="apply-confirm-accept"]',
+  ) as HTMLButtonElement | null
+  expect(
+    accept,
+    'expected the apply-to-board confirmation dialog to be open (#1818 phase-2 gate)',
+  ).not.toBeNull()
+  accept!.click()
+  await Promise.resolve()
+  await wrapper.vm.$nextTick()
+}
+
+/**
+ * Type a rejection reason into the GH-1969 dialog and accept it. Same shape as
+ * the apply gate above and hard-asserting for the same reason: the reason is
+ * decision-ledger content, so a reject that skipped its collector must fail
+ * here rather than quietly send null.
+ */
+async function confirmRejectDialog(
+  wrapper: { vm: { $nextTick: () => Promise<unknown> } },
+  reason: string,
+) {
+  const field = document.body.querySelector(
+    '[data-testid="reject-dialog-reason"]',
+  ) as HTMLTextAreaElement | null
+  expect(field, 'expected the reject reason dialog to be open (GH-1969)').not.toBeNull()
+  field!.value = reason
+  field!.dispatchEvent(new Event('input'))
+  await wrapper.vm.$nextTick()
+
+  const accept = document.body.querySelector(
+    '[data-testid="reject-dialog-accept"]',
+  ) as HTMLButtonElement | null
+  expect(accept).not.toBeNull()
+  accept!.click()
+  await Promise.resolve()
+  await wrapper.vm.$nextTick()
+}
+
 describe('ReviewView — approve and apply actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -252,7 +299,7 @@ describe('ReviewView — approve and apply actions', () => {
   })
 
   it('applies an Approved proposal to the board after confirmation', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = vi.spyOn(window, 'confirm')
 
     mocks.getProposals.mockResolvedValue([
       buildProposal({
@@ -274,7 +321,16 @@ describe('ReviewView — approve and apply actions', () => {
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    // #1818: clicking Apply to board opens the app dialog; nothing executes yet,
+    // and the native confirm() is gone.
+    expect(mocks.executeProposal).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(
+      document.body.querySelector('[data-testid="apply-confirm-summary"]')?.textContent,
+    ).toContain('Apply me')
+
+    await confirmApplyDialog(wrapper)
+
     expect(mocks.executeProposal).toHaveBeenCalledWith('proposal-to-apply', 'request-1')
     expect(mocks.successToast).toHaveBeenCalled()
 
@@ -303,7 +359,7 @@ describe('ReviewView — approve and apply actions', () => {
   })
 
   it('shows error toast when apply fails', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = vi.spyOn(window, 'confirm')
 
     mocks.getProposals.mockResolvedValue([
       buildProposal({
@@ -322,13 +378,18 @@ describe('ReviewView — approve and apply actions', () => {
     await applyBtn!.trigger('click')
     await Promise.resolve()
     await wrapper.vm.$nextTick()
+    await confirmApplyDialog(wrapper)
 
     expect(mocks.errorToast).toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
 
     confirmSpy.mockRestore()
   })
 
-  it('rejects a proposal with a reason and updates the card status', async () => {
+  it('rejects a proposal with a reason typed into the in-app dialog', async () => {
+    // GH-1969: the reason is collected through the rendered dialog, asserted
+    // against the reject request payload. This used to stub `window.prompt`,
+    // which existed only because the implementation forced it.
     mocks.getProposals.mockResolvedValue([
       buildProposal({
         id: 'proposal-to-reject',
@@ -336,7 +397,7 @@ describe('ReviewView — approve and apply actions', () => {
         summary: 'Reject me',
       }),
     ])
-    window.prompt = vi.fn(() => 'Too risky')
+    const promptSpy = vi.spyOn(window, 'prompt')
 
     const { wrapper } = await mountAt('/workspace/review')
 
@@ -346,8 +407,15 @@ describe('ReviewView — approve and apply actions', () => {
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
+    // Opening the gate decides nothing.
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+
+    await confirmRejectDialog(wrapper, 'Too risky')
+
     expect(mocks.rejectProposal).toHaveBeenCalledWith('proposal-to-reject', 'Too risky')
     expect(mocks.successToast).toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
+    promptSpy.mockRestore()
   })
 })
 

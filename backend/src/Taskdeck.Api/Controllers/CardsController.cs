@@ -115,11 +115,13 @@ public class CardsController : AuthenticatedControllerBase
     /// <response code="400">Validation error (e.g., WIP limit exceeded).</response>
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
+    /// <response code="409">The board is archived and cannot accept card writes.</response>
     [HttpPost]
     [ProducesResponseType(typeof(CardDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateCard(Guid boardId, [FromBody] CreateCardDto dto)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -136,7 +138,7 @@ public class CardsController : AuthenticatedControllerBase
             return permissionError;
 
         var createDto = dto with { BoardId = boardId };
-        var result = await _cardService.CreateCardAsync(createDto);
+        var result = await _cardService.CreateCardAsync(createDto, cardId: null, actorUserId: userId);
         return result.IsSuccess
             ? CreatedAtAction(nameof(GetCards), new { boardId }, result.Value)
             : result.ToErrorActionResult();
@@ -153,7 +155,7 @@ public class CardsController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
     /// <response code="404">Card not found.</response>
-    /// <response code="409">Conflict — the card was modified since ExpectedUpdatedAt.</response>
+    /// <response code="409">Conflict — the board is archived and cannot accept card writes, or the card was modified since ExpectedUpdatedAt.</response>
     [HttpPatch("{cardId}")]
     [ProducesResponseType(typeof(CardDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
@@ -190,11 +192,13 @@ public class CardsController : AuthenticatedControllerBase
     /// <response code="400">Validation error (e.g., WIP limit exceeded on target column).</response>
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
+    /// <response code="409">The board is archived and cannot accept card writes.</response>
     [HttpPost("{cardId}/move")]
     [ProducesResponseType(typeof(CardDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> MoveCard(Guid boardId, Guid cardId, [FromBody] MoveCardDto dto)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -210,7 +214,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.MoveCardAsync(boardId, cardId, dto);
+        var result = await _cardService.MoveCardAsync(boardId, cardId, dto, actorUserId: userId);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -223,11 +227,13 @@ public class CardsController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
     /// <response code="404">Card not found.</response>
+    /// <response code="409">The board is archived and cannot accept card writes.</response>
     [HttpDelete("{cardId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteCard(Guid boardId, Guid cardId)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
@@ -243,7 +249,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.DeleteCardAsync(boardId, cardId);
+        var result = await _cardService.DeleteCardAsync(boardId, cardId, actorUserId: userId);
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }

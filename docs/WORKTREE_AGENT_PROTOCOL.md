@@ -1,6 +1,6 @@
 # Worktree Agent Protocol
 
-Last Updated: 2026-07-31
+Last Updated: 2026-08-19
 
 Use this protocol when running multiple agents or Codex sessions in parallel. The failure mode this prevents is simple: workers accidentally operate in the main checkout, switch branches under each other, or commit to the wrong branch.
 
@@ -11,10 +11,23 @@ Accepted agent worktree roots:
 - Codex: `.worktrees/codex-<issue>-<slug>/`
 - Claude Code: `.claude/worktrees/agent-<id>/`
 
-Other roots are allowed only when the coordinator explicitly names them and updates guard configuration.
-The Codex helper intentionally accepts only the exact lowercase repository `.worktrees/` root; a
-different spelling or approved root requires a separately reviewed creation path after the guard
-configuration changes.
+Those two are the *conventional* roots, not the guard's admission test. Since PR #1851 (`#1833`),
+`scripts/worktree_guard.{ps1,sh}` validates a worktree by **substance**, not by path shape: the
+toplevel's `.git` must be a *file* holding a `gitdir:` pointer, that pointer must resolve to the
+same directory Git itself reports, and it must live under `<main-repo>/.git/worktrees/<name>` — the
+things that actually make a checkout a linked worktree. A root outside the conventional directories
+that passes those checks is **accepted**, with an advisory `NOTE [worktree_guard]: root is outside
+the conventional worktree directories; accepted on linked-worktree substance` on stdout. A root that
+is genuinely not a linked worktree — the main checkout, a plain clone, a bare directory — still
+**FATALs** (exit 1) no matter where it sits. Path shape was never the safety property; a directory
+named `.worktrees/` proves nothing on its own.
+
+The advisory NOTE is a signal worth reading: an unconventional root usually means a worktree was
+created outside the standard helpers, so confirm it was intended rather than ignoring the line.
+
+The Codex *creation helper* is deliberately stricter than the guard: it accepts only the exact
+lowercase repository `.worktrees/` root, so a different spelling needs a separately reviewed
+creation path. That is a constraint on how worktrees are created, not on what the guard admits.
 
 ## Coordinator Rules
 
@@ -55,6 +68,20 @@ different working artifacts fail closed. This is a dirty-artifact hygiene check,
 authentication of the helper: PowerShell must begin executing the helper before it can perform its
 own path and byte checks. A same-user process could replace the helper before or during those checks;
 closing that bootstrap boundary would require an independently reviewed, hash-pinned launcher.
+Every helper-owned Git process disables Git/Git Credential Manager prompts and has a 45-second deadline by default, including
+the raw-blob reads used by these hygiene checks. A timeout terminates and boundedly reaps the launched
+process tree before the helper returns a failure; a cleanup or output-drain timeout is reported as a
+separate failure rather than as a successful reap. `-GitCommandTimeoutSeconds` can adjust that bound
+for a controlled test or measured exceptional environment. On Windows, cleanup verifies the captured Git
+root PID and start time before using `taskkill /T`; this prevents ordinary stale-PID targeting but
+does not make the shared same-user process namespace an authentication boundary. The environment
+disables Git and Git Credential Manager prompts; an independently launched SSH transport can still
+use its own console prompt, but the process deadline bounds it. If `git worktree add` times out after
+registering and populating the reserved target, cleanup revalidates the exact detached identity and
+registration, inventories tracked/untracked/ignored content, and rejects pre-existing
+`assume-unchanged` or `skip-worktree` index entries that could hide modified bytes. It unlocks only
+that registration when safe and uses plain removal. Unverified, dirty, index-hidden, or incomplete
+partial state is preserved with an explicit cleanup failure rather than force-removed.
 Every selected base must contain the exact reviewed `scripts/worktree_guard.ps1` and
 `scripts/git/Initialize-CodexIssueWorktree.ps1` blob identities. A commit or tag with missing or
 different handoff code is rejected before the target path or Git worktree registration is created.
@@ -103,8 +130,8 @@ before removal, including repositories whose common Git directory is stored sepa
 main checkout. If target-byte verification discovers dirtiness limited
 to exact reviewed handoff artifacts at the expected detached commit, cleanup temporarily marks only
 those verified per-worktree index entries `skip-worktree`, performs a plain (never forced) worktree
-removal, and restores the flags if removal fails. Any other tracked, untracked, or ignored dirt is
-left intact and cleanup fails closed. The creation-time target byte comparison is not ongoing
+removal, and restores the flags if removal fails. Any pre-existing index-hiding flag or other
+tracked, untracked, or ignored dirt is left intact and cleanup fails closed. The creation-time target byte comparison is not ongoing
 execution-time authentication: a same-user process can still replace the target guard or initializer
 after the helper emitted this block. An external hash-pinned launcher would be required to close that
 post-emission TOCTOU boundary. If the block is accidentally run from another checkout, the target
@@ -266,7 +293,7 @@ First PowerShell commands (copy the complete block printed by New-CodexIssueWork
 
 Use AGENTS.md and the relevant .codex skill(s). Own only: <files/modules>.
 Do not reference or edit the main checkout. Do not revert edits made by others.
-Keep scope to acceptance criteria. Make small signed-off commits with git commit -s --no-gpg-sign.
+Keep scope to acceptance criteria. Make small present-tense commits with git commit --no-gpg-sign.
 Run targeted tests first. Open a PR with Closes #NNN and test evidence.
 Return the ready PR and exact proving evidence to the coordinator. The coordinator enters the canonical global review-and-ship pipeline; resume this worker only for a pipeline-directed fix.
 ```
@@ -283,10 +310,11 @@ When multiple worktrees run local services:
 
 ## Git Rules
 
-- Commit with `git commit -s --no-gpg-sign` in automated/background terminals.
+- Commit with `git commit --no-gpg-sign` in automated/background terminals. DCO trailers are optional
+  while enforcement is paused; do not repair history to add one.
 - Do not use `--no-verify`.
 - Do not use force push unless the user explicitly asks.
-- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --signoff --no-gpg-sign BRANCH_NAME`. After a conflict, resolve and stage the files, then use `git commit -s --no-gpg-sign --no-edit` instead of `git merge --continue`.
+- Prefer merge over rebase when reconciliation stalls; replace `BRANCH_NAME` with the source ref in `git merge --no-gpg-sign BRANCH_NAME`. After a conflict, resolve and stage the files, then use `git commit --no-gpg-sign --no-edit` instead of `git merge --continue`.
 - Check for active Git processes before removing `.git/index.lock`.
 
 ## Post-Run Verification

@@ -1,7 +1,7 @@
 # AGENTS.md — Taskdeck contributor contract
 
 Scope: the whole repo unless a subfolder `AGENTS.md` overrides it.
-Shared facts — what Taskdeck is, architecture, the per-seam proving checks, DCO, Windows/PowerShell
+Shared facts — what Taskdeck is, architecture, the per-seam proving checks, contribution/sign-off posture, Windows/PowerShell
 pitfalls, tier/authority — live in **`CLAUDE.md`** and are not repeated here. Review doctrine has one
 home: global laws 2 and 11 in `~/.claude/CLAUDE.md` plus the `review-and-ship` skill. Do not restate
 either in this file.

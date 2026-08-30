@@ -62,8 +62,9 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
 
 - **Authority docs:** `CLAUDE.md`, `.claude/README.md`, `.claude/skills/README.md`; then
   `AGENTS.md`, `docs/STATUS.md` (authoritative current reality), `IMPLEMENTATION_MASTERPLAN.md`,
-  `docs/GOLDEN_PRINCIPLES.md`, `docs/REVIVAL_PLAN.md` (active planning spine — off-list work is
-  not taken), `docs/decisions/INDEX.md`, `autodoc/AGENT_INDEX.md` (fast seam map — jump to a
+  `docs/GOLDEN_PRINCIPLES.md`, `docs/REVIVAL_PLAN.md` (active planning spine — work enters through
+  a ratified wave or ADR-0051's bounded autonomous-admission lane), `docs/decisions/INDEX.md`,
+  `autodoc/AGENT_INDEX.md` (fast seam map — jump to a
   region, don't bulk-read), `OUTSTANDING_TASKS.md` (surface its open items in every summary;
   never auto-check). Precedence: `STATUS.md` > `AGENTS.md` > `CLAUDE.md`.
 - **Verification commands** (record + trust): backend `dotnet build/test backend/Taskdeck.sln
@@ -83,9 +84,9 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
 - **Inventory** open PRs, issues, red CI, `TODO`/`FIXME`, the failure ledger → seeds the backlog.
 - **Windows/env:** if git misbehaves, use `C:\Program Files\Git\cmd\git.exe`; PowerShell `&&` is
   a parser error (use `;` + `$LASTEXITCODE`, or the Bash tool); `reset --hard`/force-push are
-  hook-blocked — recover via `git merge --abort` / `git merge --signoff --no-gpg-sign origin/main` /
+  hook-blocked — recover via `git merge --abort` / `git merge --no-gpg-sign origin/main` /
   `git push origin HEAD:BRANCH_NAME` after replacing `BRANCH_NAME`. If that merge conflicts,
-  resolve and stage the files, then finish with `git commit -s --no-gpg-sign --no-edit` instead of
+  resolve and stage the files, then finish with `git commit --no-gpg-sign --no-edit` instead of
   `git merge --continue`.
 
 Undiscoverable-but-needed convention → sane default, record the assumption, proceed.
@@ -99,9 +100,15 @@ recurring friction from §8; **(2)** correctness & security (data loss, auth, cr
 severity-first; **(3)** pre-existing errors (failing/flaky tests, lint/type errors, latent
 bugs); **(4)** ready open PRs, reconciled through the canonical pipeline with WIP kept small;
 **(5)** high-value features, then
-polish. Respect `REVIVAL_PLAN.md`'s ratified wave list. **Empty queue → generate the queue**
-(analyze for bugs/risks/debt/missing tests/docs drift, seed issues with scope + acceptance
-criteria), never idle. Leave `CODEX-*`-labelled trackers for Codex. The
+polish. Respect `REVIVAL_PLAN.md`: work must be tracked and enter through a ratified wave or
+ADR-0051's autonomous-admission criteria. Keep at most four issue items in `Now` and eight in
+`Next`; finish or deliberately park existing WIP before replenishing those slots.
+
+**When the admitted queue empties, do bounded discovery instead of manufacturing work.** First
+promote an acceptance-ready existing issue under `REVIVAL_PLAN.md` §5. Seed a new issue with scope
+and acceptance criteria only when no existing tracker owns the evidence and the intake rules admit
+it (or it is a directly observed high-severity defect). If no candidate qualifies and all remaining
+work needs a human decision, pause cleanly under §9. Leave `CODEX-*`-labelled trackers for Codex. The
 **`taskdeck-issue-batch-orchestrator`** skill coordinates multi-issue batches.
 
 ---

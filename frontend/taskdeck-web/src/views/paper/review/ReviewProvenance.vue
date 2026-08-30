@@ -3,13 +3,15 @@ import { ref, computed } from 'vue'
 import type { ProvenanceRow, ProvenanceWeight } from '../../../composables/usePaperReviewSelectors'
 import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
+import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rows: ProvenanceRow[]
   metadata?: ProvenanceMetadata | null
   evidenceLinks?: EvidenceLink[]
   proposalId: string
-}>()
+  readOnly?: boolean
+}>(), { readOnly: false })
 
 const emit = defineEmits<{
   report: [proposalId: string]
@@ -17,6 +19,29 @@ const emit = defineEmits<{
 
 const empty = computed(() => props.rows.length === 0)
 const drawerOpen = ref(false)
+const detailsExpanded = ref(false)
+const detailsId = 'paper-review-provenance-details'
+const disclosureId = 'paper-review-provenance-disclosure'
+
+/**
+ * The footnote sentence, chosen by the provenance the backend actually recorded for this
+ * proposal rather than by a constant (GH-1963).
+ *
+ * Returns null — and the footnote sentence is then not rendered at all — whenever the
+ * recorded provenance is absent or incoherent. This surface exists to tell the user what
+ * read their text and who saw it, so an unsupported claim here is worse than silence.
+ *
+ * Resolved as a key + params so the template's `$t` re-renders it on a language switch
+ * (ADR-0054); `label` is backend wire text and is interpolated verbatim, never translated.
+ */
+const footnote = computed<{ key: string; params: Record<string, string> } | null>(() => {
+  const actor = classifyProvenanceActor(props.metadata)
+  if (actor.kind === 'unknown') return null
+  return {
+    key: `review.provenance.footnote.${actor.kind}`,
+    params: { label: formatProvenanceActorLabel(actor) },
+  }
+})
 
 function tone(weight: ProvenanceWeight): string {
   switch (weight) {
@@ -37,29 +62,57 @@ function tone(weight: ProvenanceWeight): string {
   <section class="paper-review-prov">
     <header class="paper-review-prov__header">
       <span class="tk-serial paper-review-prov__serial">§ II</span>
-      <h3 class="tk-h3 paper-review-prov__title">Provenance</h3>
+      <h3 class="tk-h3 paper-review-prov__title">{{ $t('review.provenance.title') }}</h3>
       <span class="tk-meta paper-review-prov__sub">
-        What was read · what wasn't · what was inferred
+        {{ $t('review.provenance.sub') }}
       </span>
     </header>
-    <div class="card paper-review-prov__card">
-      <div v-if="empty" class="paper-review-prov__empty tk-meta">
-        Provenance not available for this proposal yet.
+    <button
+      :id="disclosureId"
+      type="button"
+      class="paper-review-prov__disclosure"
+      data-testid="paper-review-provenance-disclosure"
+      :aria-controls="detailsId"
+      :aria-expanded="detailsExpanded"
+      @click="detailsExpanded = !detailsExpanded"
+    >
+      <span>{{
+        detailsExpanded
+          ? $t('review.provenance.details.hide')
+          : $t('review.provenance.details.show')
+      }}</span>
+      <span aria-hidden="true">{{ detailsExpanded ? '−' : '+' }}</span>
+    </button>
+    <div
+      v-show="detailsExpanded"
+      :id="detailsId"
+      data-testid="paper-review-provenance-details"
+      role="region"
+      :aria-labelledby="disclosureId"
+    >
+      <div class="card paper-review-prov__card">
+        <div v-if="empty" class="paper-review-prov__empty tk-meta">
+          {{ $t('review.provenance.empty') }}
+        </div>
+        <div
+          v-for="row in rows"
+          :key="`${row.weight}:${row.key}`"
+          class="paper-review-prov__row"
+        >
+          <span class="paper-review-prov__icon" :style="{ color: tone(row.weight) }">{{ row.icon }}</span>
+          <span class="paper-review-prov__key" :style="{ color: tone(row.weight) }">{{ row.key }}</span>
+          <span class="paper-review-prov__value">{{ row.value }}</span>
+        </div>
       </div>
-      <div
-        v-for="row in rows"
-        :key="`${row.weight}:${row.key}`"
-        class="paper-review-prov__row"
-      >
-        <span class="paper-review-prov__icon" :style="{ color: tone(row.weight) }">{{ row.icon }}</span>
-        <span class="paper-review-prov__key" :style="{ color: tone(row.weight) }">{{ row.key }}</span>
-        <span class="paper-review-prov__value">{{ row.value }}</span>
-      </div>
+      <p class="tk-meta paper-review-prov__footnote">
+        <span v-if="footnote" data-testid="paper-review-provenance-footnote">{{
+          $t(footnote.key, footnote.params)
+        }}</span>
+        <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">{{
+          $t('review.provenance.viewAll')
+        }}</a>
+      </p>
     </div>
-    <p class="tk-meta paper-review-prov__footnote">
-      Provenance reflects the actor behind this proposal — a deterministic offline extractor for captures, or your configured AI provider for chat-driven automation.
-      <a href="#" class="paper-review-prov__more" @click.prevent="drawerOpen = true">View full read-set →</a>
-    </p>
 
     <ProvenanceDrawer
       :open="drawerOpen"
@@ -67,6 +120,7 @@ function tone(weight: ProvenanceWeight): string {
       :metadata="metadata ?? null"
       :evidence-links="evidenceLinks ?? []"
       :proposal-id="proposalId"
+      :read-only="props.readOnly"
       @close="drawerOpen = false"
       @report="emit('report', $event)"
     />
@@ -93,6 +147,28 @@ function tone(weight: ProvenanceWeight): string {
 }
 .paper-review-prov__sub {
   margin-left: auto;
+}
+.paper-review-prov__disclosure {
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-2);
+  color: var(--ember);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.paper-review-prov__disclosure:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 3px;
 }
 .paper-review-prov__card {
   padding: 0;

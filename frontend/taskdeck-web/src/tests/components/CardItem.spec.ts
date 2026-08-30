@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CardItem from '../../components/board/CardItem.vue'
 import type { Card } from '../../types/board'
@@ -21,6 +21,10 @@ function createCard(): Card {
   }
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 describe('CardItem — date display', () => {
   it('renders formatted due date and overdue indicator when dueDate is in the past', () => {
     const card = createCard()
@@ -37,6 +41,18 @@ describe('CardItem — date display', () => {
     const wrapper = mount(CardItem, { props: { card } })
     expect(wrapper.find('.td-board-card__due').exists()).toBe(true)
     expect(wrapper.find('.td-board-card__due--overdue').exists()).toBe(false)
+  })
+
+  it('keeps a midnight-UTC calendar day on the board west of UTC', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles')
+    const card = createCard()
+    card.dueDate = '2026-08-23T00:00:00.000Z'
+
+    const wrapper = mount(CardItem, { props: { card } })
+    const dueText = wrapper.get('.td-board-card__due').text()
+
+    expect(dueText).toContain('23')
+    expect(dueText).not.toContain('22')
   })
 })
 

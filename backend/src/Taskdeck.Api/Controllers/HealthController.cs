@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Telemetry;
 using Taskdeck.Api.Workers;
+using Taskdeck.Application.Common;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -16,10 +18,14 @@ namespace Taskdeck.Api.Controllers;
 [Route("health")]
 public class HealthController : ControllerBase
 {
+    private const string DevRunIdConfigKey = "TASKDECK_DEV_RUN_ID";
+    private const string DevRunIdHeaderName = "Taskdeck-Dev-Run-Id";
+
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerSettings _workerSettings;
     private readonly LlmProviderSettings _llmProviderSettings;
     private readonly IWebHostEnvironment _environment;
+    private readonly IConfiguration _configuration;
     private readonly WorkerHeartbeatRegistry _workerHeartbeatRegistry;
     private readonly RedisBackplaneHealthCheck _redisHealthCheck;
     private readonly CircuitBreakerStateTracker _circuitBreakerTracker;
@@ -30,6 +36,7 @@ public class HealthController : ControllerBase
         WorkerSettings workerSettings,
         LlmProviderSettings llmProviderSettings,
         IWebHostEnvironment environment,
+        IConfiguration configuration,
         WorkerHeartbeatRegistry workerHeartbeatRegistry,
         RedisBackplaneHealthCheck redisHealthCheck,
         CircuitBreakerStateTracker circuitBreakerTracker,
@@ -39,17 +46,30 @@ public class HealthController : ControllerBase
         _workerSettings = workerSettings;
         _llmProviderSettings = llmProviderSettings;
         _environment = environment;
+        _configuration = configuration;
         _workerHeartbeatRegistry = workerHeartbeatRegistry;
         _redisHealthCheck = redisHealthCheck;
         _circuitBreakerTracker = circuitBreakerTracker;
         _logger = logger;
     }
 
+    // Liveness probe. Also carries the stamped product version (#1804) so a self-hoster can
+    // answer "what version am I running?" from the cheapest anonymous endpoint. That discloses
+    // strictly less than the readiness probe beside it, which already reports queue depths,
+    // worker staleness, and circuit-breaker state anonymously.
+    // Deliberately a plain comment, not an XML doc comment: Swashbuckle is configured with
+    // IncludeXmlComments, so a <summary> here would drift artifacts/openapi/taskdeck-api.json
+    // and trip the OpenAPI guardrail.
     [HttpGet("live")]
     [AllowAnonymous]
     public IActionResult LiveCheck()
     {
-        return Ok(new { status = "Healthy", timestamp = DateTimeOffset.UtcNow });
+        return Ok(new
+        {
+            status = "Healthy",
+            version = ProductVersion.Value,
+            timestamp = DateTimeOffset.UtcNow
+        });
     }
 
     [HttpGet("ready")]
@@ -298,12 +318,35 @@ public class HealthController : ControllerBase
         }
 
         var statusCode = isReady ? 200 : 503;
+        if (isReady &&
+            _environment.IsDevelopment() &&
+            TryGetCanonicalDevRunId(_configuration[DevRunIdConfigKey], out var devRunId))
+        {
+            Response.Headers[DevRunIdHeaderName] = devRunId;
+            Response.Headers.CacheControl = "no-store";
+        }
+
         return StatusCode(statusCode, new
         {
             status = isReady ? "Ready" : "NotReady",
+            version = ProductVersion.Value,
             timestamp = DateTimeOffset.UtcNow,
             checks
         });
+    }
+
+    private static bool TryGetCanonicalDevRunId(string? configuredValue, out string canonicalValue)
+    {
+        if (configuredValue is { Length: 36 } &&
+            Guid.TryParseExact(configuredValue, "D", out var runId) &&
+            runId != Guid.Empty)
+        {
+            canonicalValue = runId.ToString("D");
+            return true;
+        }
+
+        canonicalValue = string.Empty;
+        return false;
     }
 
     internal static TimeSpan CalculateTranscriptWorkerMaxStaleness(
@@ -339,7 +382,9 @@ public class HealthController : ControllerBase
         return LlmProviderSelectionPolicy.Evaluate(settings, environmentName).ProviderKind switch
         {
             LlmProviderKind.OpenAi => settings.OpenAi?.TimeoutSeconds is > 0 ? settings.OpenAi.TimeoutSeconds : 30,
-            LlmProviderKind.Gemini => settings.Gemini?.TimeoutSeconds is > 0 ? settings.Gemini.TimeoutSeconds : 30,
+            LlmProviderKind.OpenAiCompatible => settings.OpenAiCompatible?.TimeoutSeconds is > 0
+                ? settings.OpenAiCompatible.TimeoutSeconds
+                : 30,
             LlmProviderKind.Ollama => settings.Ollama?.TimeoutSeconds is > 0 ? settings.Ollama.TimeoutSeconds : 120,
             _ => 30 // Mock and policy-disabled modes perform no live completion.
         };

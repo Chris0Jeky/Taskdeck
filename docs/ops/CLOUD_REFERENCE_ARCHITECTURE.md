@@ -234,9 +234,16 @@ Not implemented in the initial topology. When multi-region becomes necessary:
 | `ConnectionStrings__DefaultConnection` | Secrets Manager | PostgreSQL connection string |
 | `Jwt__SecretKey` | Secrets Manager | JWT signing key |
 | `Redis__ConnectionString` | Secrets Manager | Redis connection string |
-| `Llm__Provider` | Task definition env | `Mock`, `OpenAI`, or `Gemini` |
+| `Llm__Provider` | Task definition env | `Mock`, `OpenAI`, `OpenAICompatible`, or `Ollama` |
 | `Llm__OpenAi__ApiKey` | Secrets Manager | OpenAI API key (if enabled) |
-| `Llm__Gemini__ApiKey` | Secrets Manager | Gemini API key (if enabled) |
+| `Llm__OpenAiCompatible__ApiKey` | Secrets Manager | Compatible-provider API key (if enabled) |
+| `Llm__OpenAiCompatible__BaseUrl` | Task definition env | Required public HTTPS compatible API base URL |
+| `Llm__OpenAiCompatible__Model` | Task definition env | Required compatible model identifier |
+| `Llm__OpenAiCompatible__TimeoutSeconds` | Task definition env | Full response deadline; default `30` seconds |
+| `Llm__OpenAiCompatible__MaxResponseBytes` | Task definition env | Buffered or aggregate SSE byte budget; default `1048576` |
+| `Llm__OpenAiCompatible__MaxSseLineBytes` | Task definition env | Per-line SSE byte budget; default `65536` |
+| `Llm__OpenAiCompatible__MaxSseEventBytes` | Task definition env | Per-event SSE byte budget; default `131072` |
+| `Llm__OpenAiCompatible__ExtraHeaders__<HeaderName>` | Task definition env | Optional non-secret gateway header, such as `HTTP-Referer` or `X-Title` |
 | `ASPNETCORE_ENVIRONMENT` | Task definition env | `Production` |
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | Task definition env | `true` |
 | `Observability__EnableOpenTelemetry` | Task definition env | `true` |

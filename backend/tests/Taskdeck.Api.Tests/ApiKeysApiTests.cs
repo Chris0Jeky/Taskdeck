@@ -10,6 +10,8 @@ namespace Taskdeck.Api.Tests;
 
 public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
 {
+    private static readonly IReadOnlyList<string> FullScopes = ["read", "propose", "manage"];
+
     private readonly TestWebApplicationFactory _factory;
 
     public ApiKeysApiTests(TestWebApplicationFactory factory)
@@ -26,7 +28,7 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
             await client.GetAsync("/api/apikeys"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
-            await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("test-key")));
+            await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("test-key", FullScopes)));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await client.DeleteAsync($"/api/apikeys/{Guid.NewGuid()}"));
@@ -52,13 +54,17 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikeys-create");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("my-key"));
+        var selectedScopes = new[] { "read", "manage" };
+        var response = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("my-key", selectedScopes));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = await response.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         result.Should().NotBeNull();
         result!.Key.Should().StartWith("tdsk_");
         result.Name.Should().Be("my-key");
+        result.Scopes.Should().Equal(selectedScopes);
         result.KeyPrefix.Should().NotBeNullOrWhiteSpace();
         result.Id.Should().NotBeEmpty();
     }
@@ -69,7 +75,7 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikeys-empty-name");
 
-        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest(""));
+        var response = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("", FullScopes));
 
         await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.BadRequest, "ValidationError");
     }
@@ -80,7 +86,9 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         using var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "apikeys-lifecycle");
 
-        var createResponse = await client.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("lifecycle-key", 30));
+        var createResponse = await client.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("lifecycle-key", FullScopes, 30));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
         created.Should().NotBeNull();
@@ -91,6 +99,7 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         var listed = await listResponse.Content.ReadFromJsonAsync<ListApiKeysResponse>();
         listed.Should().NotBeNull();
         listed!.Keys.Should().ContainSingle(k => k.Id == created.Id);
+        listed.Keys[0].Scopes.Should().Equal(FullScopes);
         listed.Keys[0].IsActive.Should().BeTrue();
 
         var revokeResponse = await client.DeleteAsync($"/api/apikeys/{created.Id}");
@@ -121,7 +130,9 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         using var clientA = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientA, "apikeys-user-a");
 
-        var createResponse = await clientA.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("user-a-key"));
+        var createResponse = await clientA.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("user-a-key", FullScopes));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createdKey = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
@@ -140,7 +151,9 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         using var clientA = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(clientA, "apikeys-revoke-a");
 
-        var createResponse = await clientA.PostAsJsonAsync("/api/apikeys", new CreateApiKeyRequest("revoke-target"));
+        var createResponse = await clientA.PostAsJsonAsync(
+            "/api/apikeys",
+            new CreateApiKeyRequest("revoke-target", FullScopes));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var createdKey = await createResponse.Content.ReadFromJsonAsync<CreateApiKeyResponse>();
 
@@ -156,4 +169,37 @@ public class ApiKeysApiTests : IClassFixture<TestWebApplicationFactory>
         keysAfterCrossRevoke!.Keys.Should().ContainSingle(k => k.Id == createdKey.Id);
         keysAfterCrossRevoke.Keys[0].IsActive.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Create_ShouldReturn400_WithoutPersisting_WhenScopesAreInvalid()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "apikeys-invalid-scope");
+
+        foreach (var scopes in InvalidScopeSelections)
+        {
+            var response = await client.PostAsJsonAsync(
+                "/api/apikeys",
+                new CreateApiKeyRequest("invalid-scope-key", scopes));
+
+            await ApiTestHarness.AssertErrorContractAsync(
+                response,
+                HttpStatusCode.BadRequest,
+                "ValidationError");
+        }
+
+        var list = await (await client.GetAsync("/api/apikeys"))
+            .Content.ReadFromJsonAsync<ListApiKeysResponse>();
+        list.Should().NotBeNull();
+        list!.Keys.Should().BeEmpty();
+    }
+
+    private static IEnumerable<IReadOnlyList<string>?> InvalidScopeSelections =>
+    [
+        null,
+        Array.Empty<string>(),
+        new[] { "none" },
+        new[] { "full" },
+        new[] { "read", "unknown" }
+    ];
 }

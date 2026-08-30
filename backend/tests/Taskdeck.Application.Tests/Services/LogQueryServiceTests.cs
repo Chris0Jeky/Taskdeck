@@ -5,6 +5,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -136,5 +137,25 @@ public class LogQueryServiceTests
             It.IsAny<string?>(),
             50,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task QueryLogsAsync_ShouldStripTerminalControlsFromLoggedFilters()
+    {
+        var logger = new InMemoryLogger<LogQueryService>();
+        var service = new LogQueryService(_unitOfWorkMock.Object, logger);
+
+        var result = await service.QueryLogsAsync(new LogQueryDto(
+            Level: "Info \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓",
+            Source: "source \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓",
+            CorrelationId: "corr \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓",
+            Limit: 50), default);
+
+        result.IsSuccess.Should().BeTrue();
+        var message = logger.Entries.Single().Message;
+        message.Should().NotContain("\u001B").And.NotContain("\u000B").And.NotContain("\u009B").And.NotContain("\r").And.NotContain("\n");
+        message.Should().Contain("Info escapeverticalc1safe café ✓");
+        message.Should().Contain("source escapeverticalc1safe café ✓");
+        message.Should().Contain("corr escapeverticalc1safe café ✓");
     }
 }

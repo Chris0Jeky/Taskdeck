@@ -8,7 +8,7 @@
 > instance must customize this document for their jurisdiction, hosting provider,
 > retention policy, and sub-processors before publishing it.
 
-**Last updated:** 2026-04-23 (draft)
+**Last updated:** 2026-08-20 (draft)
 **Tracking issue:** `#548` (LEGAL-01)
 
 > **⚠️ DRAFT — NOT IN USE.** This was prepared for a hosted cloud instance that is no longer planned (2026-06-13 archive pivot: Taskdeck is personal-use only, never distributed or hosted as a service). It is retained only as a template; any self-hosted deployment is the operator's sole responsibility. See `docs/STATUS.md`.
@@ -57,9 +57,11 @@ Taskdeck's core flow involves capturing short notes, turning them into proposed
 structured changes to a board, which you then review and approve. This means:
 
 - Captures and inbox items you create are stored until you dismiss or process them.
-- **Capture triage is deterministic and offline in every mode**: turning a capture
-  into a proposal is performed by a local rule-based extractor that never sends your
-  capture text or board context to an LLM provider.
+- Ordinary short-form capture triage uses the local deterministic extractor.
+  Transcript-source triage has a separately gated LLM extraction leg that may send
+  bounded transcript chunks, extraction instructions, and pseudonymous attribution
+  metadata to the configured live provider. If that leg fails, Taskdeck falls back
+  deterministically. Proposals still require review, approval, and explicit execution.
 - Separately, if you use **Automation Chat** and an LLM provider is enabled (see
   Section 4), the text you send and relevant board context (column names, card titles,
   card IDs) may be sent to that provider. **LLM providers are disabled by default**
@@ -119,10 +121,11 @@ and must be reviewed by counsel before publication. Special-category data
 See `SUB_PROCESSORS.md` for the current register. In short:
 
 - **Hosting provider:** `[TO BE NAMED — LEGAL REVIEW REQUIRED]`.
-- **LLM providers:** used only if the operator enables them. Supported: OpenAI
-  and Google (Gemini). When enabled, the content of your chat messages and
-  relevant board context is sent to the chosen provider subject to that
-  provider's terms.
+- **LLM providers:** used only if the operator enables them. OpenAI is the supported
+  vendor-hosted provider. When enabled, Automation Chat content and relevant board
+  context, or the bounded transcript-source triage data described above, is sent
+  subject to the provider's terms. An operator-configured compatible endpoint must
+  be disclosed separately in the sub-processor register before use.
 - **Email provider:** `[NONE BY DEFAULT — the codebase does not ship a transactional
   email integration. If the operator adds one, add it to the register.]`
 - **OAuth providers:** optional (e.g., GitHub). When you sign in with an OAuth

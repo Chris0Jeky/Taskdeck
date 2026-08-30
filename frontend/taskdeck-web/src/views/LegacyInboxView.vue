@@ -17,6 +17,7 @@ const {
   activeDescendantId,
   selectedItem,
   activeBoardId,
+  isArchivedHistory,
   showCaptureModal,
   selectedIds,
   isEditingSuggestion,
@@ -53,14 +54,19 @@ const {
   <div class="td-inbox" role="region" aria-label="Capture inbox">
     <header class="td-inbox__header">
       <div>
-        <h1 class="td-page-title">Inbox</h1>
-        <p class="td-inbox__subtitle">Capture rough notes and turn them into reviewable proposed work.</p>
+        <h1 class="td-page-title">{{ isArchivedHistory ? 'Archived capture history' : 'Inbox' }}</h1>
+        <p class="td-inbox__subtitle">
+          {{ isArchivedHistory
+            ? 'Read-only retained captures. Restore the board before creating, editing, or triaging work.'
+            : 'Capture rough notes and turn them into reviewable proposed work.' }}
+        </p>
         <p v-if="activeBoardId" class="td-inbox__board-context">
           Showing capture items linked to board {{ activeBoardId }}.
         </p>
       </div>
       <div class="td-inbox__header-actions">
         <button
+          v-if="!isArchivedHistory"
           class="td-btn td-btn--primary"
           aria-label="Open capture modal to add a new inbox item"
           @click="openCaptureModal"
@@ -74,6 +80,7 @@ const {
     </header>
 
     <WorkspaceHelpCallout
+      v-if="!isArchivedHistory"
       topic="inbox"
       title="What is Inbox for?"
       description="Inbox is where Taskdeck prepares a proposed change from your note, then sends it to Review before anything reaches a board."
@@ -96,6 +103,7 @@ const {
         :selected-item-id="selectedItemId"
         :selected-ids="selectedIds"
         :active-descendant-id="activeDescendantId"
+        :read-only="isArchivedHistory"
         @open-item="openItemFromList"
         @set-active-index="setActiveIndex"
         @keydown="handleKeydown"
@@ -119,6 +127,7 @@ const {
         :is-editing-suggestion="isEditingSuggestion"
         :edited-text="editedText"
         :edited-title-hint="editedTitleHint"
+        :read-only="isArchivedHistory"
         @close-detail="closeDetail"
         @refresh-detail="refreshSelectedDetail"
         @triage-selected="triageSelected"
@@ -136,7 +145,7 @@ const {
 
   <Teleport to="body">
     <CaptureModal
-      v-if="showCaptureModal"
+      v-if="showCaptureModal && !isArchivedHistory"
       @close="closeCaptureModal"
       @created="handleCaptureCreated"
     />

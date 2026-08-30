@@ -38,7 +38,7 @@ Validated current state:
 
 - Backend: .NET 8 Clean Architecture, SQLite, ASP.NET API, SignalR, EF Core.
 - Frontend: Vue 3, Vite, Pinia, Vue Router.
-- LLM providers: Mock, OpenAI, Gemini.
+- LLM providers: Mock, OpenAI, OpenAICompatible, Ollama.
 - Core surfaces: Home, Today, Inbox/Capture, Review, Boards.
 - Advanced surfaces include Chat, Agents, Metrics, Calendar, Integrations,
   Activity, Ops, Archive, Notifications, Settings, API keys, saved views.

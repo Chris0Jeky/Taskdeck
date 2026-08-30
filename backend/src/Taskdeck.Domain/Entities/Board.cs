@@ -29,6 +29,16 @@ public class Board : Entity
     public string? Description { get; private set; }
     public bool IsArchived { get; private set; }
     public Guid? OwnerId { get; private set; }
+    public Guid ConcurrencyToken { get; private set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Monotonic guard marker advanced by <see cref="RecordDependentMutation"/>. It is deliberately
+    /// non-user-visible: no DTO, API contract, or query reads it. Its only job is to guarantee the
+    /// board row joins a dependent write's UPDATE statement so the concurrency-token predicate runs.
+    /// It is NOT a reliable mutation count — two writers that read the same value both persist
+    /// value + 1, which is harmless because nothing compares it against an expected value.
+    /// </summary>
+    public long CardMutationMarker { get; private set; }
 
     public IReadOnlyCollection<Column> Columns => _columns.AsReadOnly();
     public IReadOnlyCollection<Card> Cards => _cards.AsReadOnly();
@@ -56,7 +66,7 @@ public class Board : Entity
         if (description != null)
             SetDescription(description);
 
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     private void SetDescription(string? description)
@@ -70,13 +80,13 @@ public class Board : Entity
     public void Archive()
     {
         IsArchived = true;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void Unarchive()
     {
         IsArchived = false;
-        Touch();
+        TouchAndAdvanceConcurrencyToken();
     }
 
     public void TransferOwnership(Guid newOwnerId)
@@ -85,7 +95,40 @@ public class Board : Entity
             throw new DomainException(ErrorCodes.ValidationError, "New owner ID cannot be empty");
 
         OwnerId = newOwnerId;
+        TouchAndAdvanceConcurrencyToken();
+    }
+
+    /// <summary>
+    /// Records a card mutation by advancing <see cref="CardMutationMarker"/> — without advancing the
+    /// board concurrency token and without re-stamping <see cref="Entity.UpdatedAt"/>. Changing the
+    /// marker makes EF issue a conditional update using the token the write read, so a board mutation
+    /// that advanced the token after the archived-state check still rejects the card write.
+    /// Independent card writes keep the same token and retain their established success semantics.
+    ///
+    /// The marker exists rather than a re-stamp of <c>UpdatedAt</c> for two reasons. It keeps the
+    /// board's user-visible timestamp meaning "board metadata last changed", so a card write cannot
+    /// make an already-cached board list disagree with the database (`#2115`). And it is
+    /// deterministic: re-stamping <c>UpdatedAt</c> with the current time is a no-op inside one clock
+    /// tick, which leaves the entity Unchanged, emits no board UPDATE, and silently drops the token
+    /// predicate (`#2123`). An incremented marker always differs from the value that was read.
+    /// </summary>
+    /// <remarks>
+    /// The historic marker name is card-specific, but this seam protects any board-dependent write.
+    /// </remarks>
+    public void RecordDependentMutation()
+    {
+        CardMutationMarker++;
+    }
+
+    /// <summary>
+    /// Preserves the card-write vocabulary while sharing the board-level dependent-write marker.
+    /// </summary>
+    public void RecordCardMutation() => RecordDependentMutation();
+
+    private void TouchAndAdvanceConcurrencyToken()
+    {
         Touch();
+        ConcurrencyToken = Guid.NewGuid();
     }
 
     // Navigation properties management (called by infrastructure)

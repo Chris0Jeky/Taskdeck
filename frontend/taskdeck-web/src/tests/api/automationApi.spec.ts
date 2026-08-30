@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import http from '../../api/http'
 import { automationApi } from '../../api/automationApi'
+import type { Proposal } from '../../types/automation'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -20,6 +21,34 @@ describe('automationApi', () => {
     await automationApi.getProposals({ status: 'PendingReview', limit: 25 })
 
     expect(http.get).toHaveBeenCalledWith('/automation/proposals?status=PendingReview&limit=25')
+  })
+
+  // #2194 added an optional request config for the background review-queue poll.
+  // These two cases pin BOTH halves of that contract: the config reaches the
+  // client when supplied, and the call shape is untouched when it is not. The
+  // second is what the assertion above already guarded -- forwarding `undefined`
+  // unconditionally changed every caller's arity and turned this suite red.
+  it('forwards the request config when one is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+    const controller = new AbortController()
+
+    await automationApi.getProposals(
+      { limit: 200 },
+      { skipRetry: true, signal: controller.signal },
+    )
+
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals?limit=200', {
+      skipRetry: true,
+      signal: controller.signal,
+    })
+  })
+
+  it('omits the config argument entirely when none is supplied', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+
+    await automationApi.getProposals()
+
+    expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals'])
   })
 
   it('sends idempotency key when executing proposal', async () => {
@@ -42,23 +71,72 @@ describe('automationApi', () => {
     expect(http.post).toHaveBeenCalledWith('/automation/proposals/p1/reject', { reason: null })
   })
 
+  it('posts the exact approve-only batch and returns its explicit receipt', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { approvedIds: ['p-2', 'p-1'] } })
+    const proposals = [
+      {
+        id: 'p-2',
+        expectedProposalUpdatedAt: '2026-08-28T11:59:00.000Z',
+        expectedLatestRevisionId: 'r-2',
+      },
+      {
+        id: 'p-1',
+        expectedProposalUpdatedAt: '2026-08-28T11:58:00.000Z',
+        expectedLatestRevisionId: null,
+      },
+    ]
+
+    const result = await automationApi.approveProposals(proposals)
+
+    expect(http.post).toHaveBeenCalledOnce()
+    expect(http.post).toHaveBeenCalledWith('/automation/proposals/approve', {
+      proposals,
+    })
+    expect(result.approvedIds).toEqual(['p-2', 'p-1'])
+    expect(http.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/execute'),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
   // #1462: the backend carries ApprovedRevisionId on every REST proposal payload, but no frontend type
   // declared it, so it was invisible to consumers. These assert it is not dropped between the response
   // body and the caller, on the reads AND on the decide responses (which is where the pin is born).
   //
   // Scope of the guard, stated precisely so it is not mistaken for more than it is:
-  //  - RUNTIME pass-through only. It does NOT pin the interface declaration -- `tsconfig.app.json`
-  //    excludes `src/tests/**`, so `npm run typecheck` never type-checks this file. The declaration is
-  //    held instead by the exported `ProposalApprovedRevisionId` alias in `types/automation.ts`, which
-  //    does live in typechecked source. Reproducible on this tree: delete the interface member and
-  //    typecheck fails at the ALIAS (TS2339), never here; delete the member AND the alias and
-  //    typecheck passes with this spec untouched and green -- which is exactly how far the protection
-  //    in this file reaches. (#1468 tracks the general specs-are-not-type-checked gap.)
+  //  - The `it()` blocks below are RUNTIME pass-through only; they do not pin the interface
+  //    declaration. Since #1468 this file IS type-checked (`tsconfig.vitest.json`), so the
+  //    declaration is now pinned here too -- by the `expectTypeOf` assertions directly beneath this
+  //    comment, not by the runtime tests. The exported `ProposalApprovedRevisionId` alias in
+  //    `types/automation.ts` remains the belt to this braces: it holds the field from inside
+  //    production source, which is what stops a dead-code sweep even if this file were quarantined.
   //  - Not "surviving deserialization": `http` is mocked wholesale, so the wire KEY casing is not
   //    exercised here. A serializer naming-policy flip would break every field and surface elsewhere.
   //  - The realistic regression is not a whitelist mapper -- this codebase's api normalizers are
   //    spread-based (`agentApi.ts`, `integrationsApi.ts`), which preserve unknown fields. What these
   //    catch is a field-by-field rebuild or a `?? undefined` narrowing added to one path only.
+
+  // Type-level pin (#1468 acceptance criterion). `expectTypeOf` erases at runtime -- this `it` block
+  // asserts nothing when vitest runs it; the assertion is discharged by `vue-tsc -b` because this
+  // file is now inside `tsconfig.vitest.json`. Mutation-verified, and the two lines do NOT
+  // discriminate on the same thing:
+  //  - `toEqualTypeOf` (first line) is the load-bearing one. It fails on all three mutations:
+  //    deleting the member (TS2339 on the indexed access), widening it to `?:` (TS2344,
+  //    `Actual: undefined`), and dropping its nullability (TS2344, `Actual: never`).
+  //  - `toHaveProperty` (second line) fires ONLY on deletion (TS2345). An optional property still
+  //    satisfies it, so it does not catch the `?:` widening. It is kept because it names the
+  //    property explicitly, which is what makes the intent legible at the failure site.
+  it('declares approvedRevisionId as a required, nullable string on Proposal', () => {
+    expectTypeOf<Proposal['approvedRevisionId']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Proposal>().toHaveProperty('approvedRevisionId')
+  })
+
+  it('declares latestRevisionId as a required, nullable pending snapshot on Proposal', () => {
+    expectTypeOf<Proposal['latestRevisionId']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Proposal>().toHaveProperty('latestRevisionId')
+  })
+
   it('preserves approvedRevisionId on listed proposals', async () => {
     const pinned = 'b3f1c2d4-0000-4000-8000-000000000001'
     vi.mocked(http.get).mockResolvedValue({

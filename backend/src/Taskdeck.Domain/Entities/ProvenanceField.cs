@@ -21,11 +21,14 @@ public class ProvenanceField : Entity
     public ProvenanceKind Kind { get; private set; }
 
     /// <summary>
-    /// Confidence score in the range [0.0, 1.0].
-    /// For extractive fields, this reflects fuzzy match quality.
-    /// For inferred fields, this reflects model confidence.
+    /// Optional confidence score in the range [0.0, 1.0]. A null value is intentional: a
+    /// deterministic extractor or a source that did not report confidence must not be decorated
+    /// with a made-up number.
     /// </summary>
-    public double Confidence { get; private set; }
+    public double? Confidence { get; private set; }
+
+    /// <summary>Where <see cref="Confidence"/> came from.</summary>
+    public ProvenanceConfidenceSource ConfidenceSource { get; private set; }
 
     /// <summary>
     /// The extractive quote from the source (for Extractive kind).
@@ -49,6 +52,25 @@ public class ProvenanceField : Entity
         double confidence,
         Guid proposalProvenanceId,
         string? extractiveQuote = null)
+        : this(
+            fieldName,
+            kind,
+            confidence,
+            proposalProvenanceId,
+            kind == ProvenanceKind.Extractive
+                ? ProvenanceConfidenceSource.Derived
+                : ProvenanceConfidenceSource.ModelReported,
+            extractiveQuote)
+    {
+    }
+
+    public ProvenanceField(
+        string fieldName,
+        ProvenanceKind kind,
+        double? confidence,
+        Guid proposalProvenanceId,
+        ProvenanceConfidenceSource confidenceSource,
+        string? extractiveQuote = null)
     {
         if (string.IsNullOrWhiteSpace(fieldName))
             throw new DomainException(ErrorCodes.ValidationError, "FieldName cannot be empty");
@@ -56,8 +78,16 @@ public class ProvenanceField : Entity
             throw new DomainException(ErrorCodes.ValidationError, "FieldName cannot exceed 100 characters");
         if (!Enum.IsDefined(kind))
             throw new DomainException(ErrorCodes.ValidationError, "ProvenanceKind value is invalid");
-        if (!double.IsFinite(confidence) || confidence < 0.0 || confidence > 1.0)
+        if (confidence is { } value && (!double.IsFinite(value) || value < 0.0 || value > 1.0))
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
+        if (!Enum.IsDefined(confidenceSource))
+            throw new DomainException(ErrorCodes.ValidationError, "ProvenanceConfidenceSource value is invalid");
+        if (confidenceSource is ProvenanceConfidenceSource.ModelReported or ProvenanceConfidenceSource.Derived &&
+            confidence is null)
+            throw new DomainException(ErrorCodes.ValidationError, "A reported or derived confidence source requires a value");
+        if (confidenceSource is ProvenanceConfidenceSource.Deterministic or ProvenanceConfidenceSource.NotReported &&
+            confidence is not null)
+            throw new DomainException(ErrorCodes.ValidationError, "Deterministic or unreported provenance cannot carry a confidence value");
         if (proposalProvenanceId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalProvenanceId cannot be empty");
         if (kind == ProvenanceKind.Extractive && string.IsNullOrWhiteSpace(extractiveQuote))
@@ -70,6 +100,7 @@ public class ProvenanceField : Entity
         FieldName = fieldName;
         Kind = kind;
         Confidence = confidence;
+        ConfidenceSource = confidenceSource;
         ProposalProvenanceId = proposalProvenanceId;
         ExtractiveQuote = extractiveQuote;
     }
@@ -93,10 +124,13 @@ public class ProvenanceField : Entity
     {
         if (!double.IsFinite(newConfidence) || newConfidence < 0.0 || newConfidence > 1.0)
             throw new DomainException(ErrorCodes.ValidationError, "Confidence must be between 0.0 and 1.0");
-        if (newConfidence >= Confidence)
+        if (Confidence is null)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot downgrade confidence when no confidence was reported");
+        if (newConfidence >= Confidence.Value)
             throw new DomainException(ErrorCodes.InvalidOperation, "New confidence must be lower than current confidence for a downgrade");
 
         Confidence = newConfidence;
+        ConfidenceSource = ProvenanceConfidenceSource.Derived;
         Touch();
     }
 }

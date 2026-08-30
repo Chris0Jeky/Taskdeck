@@ -78,6 +78,20 @@ describe('useReviewActions', () => {
     expect(actions.proposalActionBusyId.value).toBeNull()
   })
 
+  it('reconciles action state against proposal ids case-insensitively', async () => {
+    const updated = makeProposal({ id: 'p-1', status: 'Approved' })
+    vi.mocked(automationApi.approveProposal).mockResolvedValue(updated)
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleApproveProposal('P-1')
+
+    expect(automationApi.approveProposal).toHaveBeenCalledWith('P-1')
+    expect(proposals.value).toEqual([updated])
+
+    actions.requestExecuteProposal('P-1')
+    expect(actions.executeConfirmProposal.value?.id).toBe('p-1')
+  })
+
   it('should handle approve error gracefully', async () => {
     vi.mocked(automationApi.approveProposal).mockRejectedValue(new Error('Network error'))
 
@@ -87,65 +101,192 @@ describe('useReviewActions', () => {
     expect(actions.proposalActionBusyId.value).toBeNull()
   })
 
+  // --- GH-1969: the reason comes from the in-app dialog, not window.prompt ---
+  //
+  // These used to stub `globalThis.prompt`. That stub existed only because the
+  // implementation forced it, and it was the reason a native dialog could sit
+  // in the decision flow unnoticed — the specs could not tell the difference.
+
+  it('requesting reject opens the reason gate without calling the API', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await nextTick()
+
+    expect(actions.rejectPromptProposal.value?.id).toBe('p-1')
+    expect(automationApi.rejectProposal).not.toHaveBeenCalled()
+  })
+
   it('should reject a proposal with Low risk and no reason', async () => {
     const updated = makeProposal({ status: 'Rejected' })
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('')
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'Low')
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('')
+
+    // The reason stays OPTIONAL: an empty box still rejects, and sends null.
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', null)
+  })
+
+  it('should treat an all-whitespace reason as no reason', async () => {
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('   ')
 
     expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', null)
   })
 
-  it('should abort reject when prompt is cancelled', async () => {
-    vi.spyOn(globalThis, 'prompt').mockReturnValue(null)
-
+  it('should abort reject when the reason gate is cancelled', async () => {
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'Low')
+    actions.requestRejectProposal('p-1')
+    actions.cancelRejectProposal()
+    await actions.confirmRejectProposal('too late')
 
     expect(automationApi.rejectProposal).not.toHaveBeenCalled()
   })
 
   it('should require reason for High risk proposals', async () => {
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('')
+    proposals.value = [makeProposal({ riskLevel: 'High' })]
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'High')
+    actions.requestRejectProposal('p-1')
+    await nextTick()
+    expect(actions.rejectRequiresReason.value).toBe(true)
+
+    await actions.confirmRejectProposal('   ')
 
     expect(automationApi.rejectProposal).not.toHaveBeenCalled()
+    // The gate stays open so the reviewer can supply what it asked for.
+    expect(actions.rejectPromptProposal.value?.id).toBe('p-1')
   })
 
   it('should accept reason for High risk proposals', async () => {
+    proposals.value = [makeProposal({ riskLevel: 'High' })]
     const updated = makeProposal({ status: 'Rejected' })
     vi.mocked(automationApi.rejectProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'prompt').mockReturnValue('Not needed')
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleRejectProposal('p-1', 'High')
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('Not needed')
 
     expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Not needed')
   })
 
-  it('should abort execute when confirm is cancelled', async () => {
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(false)
+  it('should not reject a proposal that left the list under the open gate', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    proposals.value = []
+    await actions.confirmRejectProposal('gone')
+
+    expect(automationApi.rejectProposal).not.toHaveBeenCalled()
+  })
+
+  it('should close the reason gate when its proposal leaves the list', () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    expect(actions.rejectPromptProposalId.value).toBe('p-1')
+
+    proposals.value = []
+
+    // Synchronous, without an intervening tick: the watcher uses `flush: 'sync'`
+    // precisely so a set-then-remove inside one tick cannot leave the id behind,
+    // where a later refresh that re-adds the proposal would silently re-open the
+    // dialog over it.
+    expect(actions.rejectPromptProposalId.value).toBeNull()
+    expect(actions.rejectPromptProposal.value).toBeNull()
+  })
+
+  it('should fire only one reject when the gate is confirmed twice', async () => {
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleExecuteProposal('p-1')
+    actions.requestRejectProposal('p-1')
 
+    // Both confirms are issued before the first one's API call settles — the
+    // double-click / double-Enter shape. `confirmRejectProposal` clears the
+    // pending id BEFORE awaiting, so the second call finds a closed gate and
+    // returns without deciding anything. Move that clear after the await and
+    // this test sees two rejects.
+    const first = actions.confirmRejectProposal('double')
+    const second = actions.confirmRejectProposal('double')
+    await Promise.all([first, second])
+
+    expect(automationApi.rejectProposal).toHaveBeenCalledTimes(1)
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'double')
+  })
+
+  it('should never use the native prompt() for the rejection reason', async () => {
+    const promptSpy = vi.spyOn(globalThis, 'prompt')
+    vi.mocked(automationApi.rejectProposal).mockResolvedValue(makeProposal({ status: 'Rejected' }))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestRejectProposal('p-1')
+    await actions.confirmRejectProposal('Superseded')
+
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(automationApi.rejectProposal).toHaveBeenCalledWith('p-1', 'Superseded')
+    promptSpy.mockRestore()
+  })
+
+  // --- #1818: phase-2 execute is gated by the in-app dialog, not confirm() ---
+
+  it('requesting execute opens the confirmation without calling the API', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    await nextTick()
+
+    expect(actions.executeConfirmProposalId.value).toBe('p-1')
+    expect(actions.executeConfirmProposal.value?.id).toBe('p-1')
+    // The invariant this test exists for: opening the gate must NOT execute.
     expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('should abort execute when the confirmation is cancelled', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    actions.cancelExecuteProposal()
+    await actions.confirmExecuteProposal()
+
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
+  })
+
+  it('should never use the native confirm() for execute', async () => {
+    const confirmSpy = vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
+    vi.mocked(automationApi.executeProposal).mockResolvedValue(makeProposal({ status: 'Applied' }))
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    await actions.confirmExecuteProposal()
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
   })
 
   it('should execute a proposal when confirmed', async () => {
     const updated = makeProposal({ status: 'Applied' })
     vi.mocked(automationApi.executeProposal).mockResolvedValue(updated)
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(true)
 
     const actions = useReviewActions(proposals, dismissableIds, loadProposals)
-    await actions.handleExecuteProposal('p-1')
+    actions.requestExecuteProposal('p-1')
+    await actions.confirmExecuteProposal()
 
     expect(automationApi.executeProposal).toHaveBeenCalled()
     expect(proposals.value[0].status).toBe('Applied')
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+  })
+
+  it('closes the confirmation without executing when the proposal leaves the list', async () => {
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    actions.requestExecuteProposal('p-1')
+    proposals.value = []
+    await nextTick()
+
+    expect(actions.executeConfirmProposalId.value).toBeNull()
+    await actions.confirmExecuteProposal()
+    expect(automationApi.executeProposal).not.toHaveBeenCalled()
   })
 
   it('should toggle diff on', async () => {
@@ -168,6 +309,18 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiffProposalId.value).toBeNull()
     expect(actions.selectedDiff.value).toBeNull()
     expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('treats mixed-case diff selections as the same proposal', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+    await actions.handleToggleDiff('P-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+
+    await actions.handleToggleDiff('p-1')
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(automationApi.getProposalDiff).toHaveBeenCalledTimes(1)
   })
 
   // --- #1397: read-only / expired proposals never fire the live diff ---
@@ -476,5 +629,98 @@ describe('useReviewActions', () => {
     await actions.handleDismissApplied()
 
     expect(loadProposals).toHaveBeenCalled()
+  })
+  // #2215 B — the open diff pane is keyed on the proposal AND its revision.
+
+  it('closes an open diff when a queue refresh brings a newer revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // Another reviewer saves a revision; the queue read brings the new
+    // latestRevisionId. The pane on screen was computed for the previous one,
+    // while Approve pins and Apply executes the server's latest.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-2' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('keeps an open diff when a revised proposal is approved (#2215 round 2)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // The backend nulls `latestRevisionId` for every non-PendingReview status
+    // and pins the approved revision instead; that is not a revision change.
+    proposals.value = [
+      makeProposal({
+        status: 'Approved',
+        latestRevisionId: null,
+        approvedRevisionId: 'rev-1',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+  })
+
+  it('converts rather than wipes an open diff when a revised proposal is rejected (#2215 round 2)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    vi.mocked(automationApi.getProposal).mockResolvedValue(makeProposal())
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffMode.value).toBe('live')
+
+    // Reject pins nothing, so the effective identity legitimately goes to null.
+    // The pane must reach the read-only stored presentation (#1397 LOW-5), not
+    // vanish because the revision watcher fired first.
+    proposals.value = [
+      makeProposal({
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+        diffPreview: 'stored diff text',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('keeps an open diff when a queue refresh brings the same revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // An ordinary poll that changes nothing must not blink the pane away.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
   })
 })

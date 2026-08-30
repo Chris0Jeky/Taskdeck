@@ -4,11 +4,13 @@ This folder contains deployment, observability, and human-operator runbooks.
 
 ## Deployment
 
-- `DEPLOYMENT_WORKFLOW.md` — Staged blue/green + canary workflow (ADR-0028) — **parked by the archive pivot** (hosted/multi-instance; not the personal run path). The personal release path is the self-contained executable build + smoke in `.github/workflows/release-desktop.yml`. ⚠️ **Caveat:** the implementing workflow `.github/workflows/cd-staging-gate.yml` still auto-triggers on `release: published` and then waits on a `production` environment that doesn't exist for the personal build — so the optional `v0.1.0` archival release would hang it. Disabling/gating that trigger is tracked in **#1228** (a workflow change, out of this docs PR's scope).
+- `DEPLOYMENT_WORKFLOW.md` — Staged blue/green + canary workflow (ADR-0028) — **parked by the archive pivot** (hosted/multi-instance; not the personal run path). The beta release path is the self-contained executable build + smoke in `.github/workflows/release-desktop.yml`. `.github/workflows/cd-staging-gate.yml` is manual-dispatch-only after **#1228**; the stacked, unmerged **#1506** candidate replaces its `production` binding with a non-deploying summary and uses masked ephemeral Compose inputs. Run [30244212896](https://github.com/Chris0Jeky/Taskdeck/actions/runs/30244212896) proved build, real smoke/cleanup, environment `none`, deployment `no`, and no deployment API record at exact workflow/helper head `3efb7bd4`; this follow-up changes docs only. Post-retarget CodeQL still requires proof, while **#1504** activation and merge remain maintainer-owned.
 - `RELEASE_CHECKLIST.md` — Smoke checklist for the OPS-09 staged (blue/green/canary) deployment — **parked by the archive pivot** (hosted/multi-instance; requires staging/prod URLs, container images, rollback slots — not the personal run path).
 - `DEPLOYMENT_CONTAINERS.md` — Container baseline (Dockerfiles, compose, nginx)
 - `DEPLOYMENT_HARDENING_MATRIX.md` — Container hardening verification matrix
 - `DEPLOYMENT_TERRAFORM_BASELINE.md` — Terraform IaC baseline for AWS — **parked by the archive pivot** (cloud/multi-instance IaC; reference-only, not the personal run path)
+- `RELEASE_TRUST_AND_DISTRIBUTION.md` — **active** Windows-first signing, installer, supply-chain evidence, direct-distribution, and private-cloud boundary programme
+- `EXTERNAL_SERVICES_REGISTER.md` — **active, sanitized** vendor purpose, owner class, expiry/cost risk, and exit-path register; no account or credential evidence
 
 ## Operations
 
@@ -22,9 +24,9 @@ This folder contains deployment, observability, and human-operator runbooks.
 - `INCIDENT_REHEARSAL_CADENCE.md`
 - `SBOM_RELEASE_PROVENANCE.md`
 
-## Cloud / Cost (parked by the archive pivot)
+## Cloud / Cost
 
-These document the de-scoped cloud / multi-instance track and are **reference-only** — Taskdeck is single-instance, SQLite, personal-use (never hosted/scaled out). Each file carries its own de-scope banner.
+ADR-0061 — **Accepted as direction only, evidence pending** (maintainer ruling 2026-08-29, recorded on `#1772`) — and `docs/platform/CLOUD_DEPLOYMENT_GUIDE.md` define the maximum boundary for a possible private shared-instance proof: one application instance, one SQLite volume, a few known users, private access, explicit cost/LLM ownership, and tested backup/restore. Acceptance settled the boundary; it produced no Stage 1 evidence and granted no deployment authority. Deployment remains blocked until the three deployment-critical values still pending on `#1772` are supplied (collaborator handle; all-in monthly ceiling **and** alert threshold; off-platform backup retention window), the Stage 1 prerequisites tracked on `#1772` are closed, and an access policy sits in front of the tunnel. MFA is **not** a deployment prerequisite and `#1653` does not gate Stage 1: the ADR-0061 `access-boundary` ruling permits the private proof specifically **while MFA remains disabled** (`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets at rest — enabling MFA there would persist plaintext TOTP secrets outside the accepted risk. The requirement is that MFA stays off and the instance is never represented as MFA-protected. This active planning seam grants no account, billing, or deployment authority and does **not** reactivate the older public-cloud, multi-instance, or SaaS architecture below. ADR-0061's `host-selection` ruling keeps Stage 1 self-hosted behind a tunnel, so the files in this subsection remain **reference-only** and each carries its own de-scope banner.
 
 - `CLOUD_REFERENCE_ARCHITECTURE.md` — cloud target topology + autoscaling reference architecture — **parked** (reference-only)
 - `CLOUD_COST_OBSERVABILITY.md` — cloud cost observability (ADR-0026 companion) — **parked** (reference-only)

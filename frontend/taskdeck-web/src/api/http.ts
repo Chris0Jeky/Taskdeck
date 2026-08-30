@@ -3,6 +3,7 @@ import { isTokenExpired } from '../utils/jwt'
 import { createRequestId } from '../utils/requestId'
 import { isAuthRoutePath } from '../utils/navigation'
 import { isDemoMode } from '../utils/demoMode'
+import { notifyAuthExpired } from '../utils/authExpiry'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logError, logWarn } from '../utils/errorReporting'
 import {
@@ -96,6 +97,11 @@ http.interceptors.response.use(
         const pathname = window.location.pathname
         const currentPath = `${pathname}${window.location.search}`
         if (!isAuthRoutePath(pathname)) {
+          // The assignment below is a full document navigation: every open
+          // surface is destroyed, unsaved input included (GH-2142). Give
+          // those surfaces their one synchronous beat to persist what the
+          // user typed BEFORE the navigation is queued.
+          notifyAuthExpired()
           window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
         }
       }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import PaperCard from '../../components/paper/PaperCard.vue'
 import PaperEmptyState from '../../components/paper/PaperEmptyState.vue'
 import PaperKbd from '../../components/paper/PaperKbd.vue'
@@ -9,6 +10,8 @@ import WorkspaceSetupModal from '../../components/workspace/WorkspaceSetupModal.
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
+import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
+import { formatShortcut } from '../../utils/keyboardShortcuts'
 
 /**
  * PaperHomeView — morning-reset surface in the Paper & Graphite, Ember Edition skin.
@@ -18,13 +21,25 @@ import { useCaptureStore } from '../../store/captureStore'
  *     derived from the local clock at render time.
  *   • A `tk-lede` subtitle summarising today's queue.
  *   • Up to three "queued for you" cards (proposals first — ember-accented —
- *     followed by triage carry-overs, hairline only).
+ *     followed by captures awaiting triage, hairline only).
+ *
  *   • A single-line quick capture row that wires through the existing
  *     captureStore so we don't duplicate dispatch logic.
  *
  * Data is read from the existing `workspaceStore.homeSummary` cache —
  * AppShell prefetches it on mount, so we do not refetch here unless the
  * cache is empty.
+ *
+ * Day-boundary contract (issue #1768): the Home workload counters are pure
+ * STATUS counts — `capturesNeedingTriage` is `NewCount + FailedCount` in
+ * `WorkspaceService.GetHomeAsync`, with no date predicate anywhere in the
+ * chain. This surface must therefore never describe them as belonging to a
+ * particular day ("from yesterday", "carry-over", "overnight"): a capture
+ * saved seconds ago is `New` and would be mislabelled in every timezone.
+ * Copy here stays date-neutral unless the payload grows a real timestamp.
+ * That constraint now applies to the `home.ts` catalog of EVERY locale under
+ * `src/locales`, not just to this file — each one restates it in its header
+ * (ADR-0054).
  */
 
 interface QueueCardModel {
@@ -36,6 +51,7 @@ interface QueueCardModel {
   isProposal: boolean
 }
 
+const { t } = useI18n()
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
@@ -64,10 +80,33 @@ function resolveFirstName(username: string | null | undefined): string | null {
   return token.toLocaleLowerCase().replace(/^\p{L}/u, (first) => first.toLocaleUpperCase())
 }
 
-function periodFor(hour: number): 'morning' | 'afternoon' | 'evening' {
+type Period = 'morning' | 'afternoon' | 'evening'
+
+function periodFor(hour: number): Period {
   if (hour < 12) return 'morning'
   if (hour < 17) return 'afternoon'
   return 'evening'
+}
+
+// Static key maps, not `t(\`home.greeting.${period}\`)`. Message keys assembled
+// at runtime are invisible to grep and to any future key-usage lint. A typo in a
+// static key here is NOT caught by the catalog guard either — that guard only
+// checks the en/it/es catalogs against each other, not view references against
+// the catalogs, so a key absent from all three still renders its raw path with
+// no warning (fallback warnings are off by design). What the static literals buy
+// is greppability: they keep every referenced key visible so a future key-usage
+// lint can cross-check them against the catalogs, which a runtime-assembled key
+// would defeat.
+const GREETING_KEYS: Record<Period, string> = {
+  morning: 'home.greeting.morning',
+  afternoon: 'home.greeting.afternoon',
+  evening: 'home.greeting.evening',
+}
+
+const PERIOD_KEYS: Record<Period, string> = {
+  morning: 'home.period.morning',
+  afternoon: 'home.period.afternoon',
+  evening: 'home.period.evening',
 }
 
 const currentHour = ref(new Date().getHours())
@@ -75,36 +114,41 @@ const currentHour = ref(new Date().getHours())
 const greeting = computed(() => {
   const period = periodFor(currentHour.value)
   const name = resolveFirstName(session.username)
-  const opener = name ? `Good ${period}` : 'Hello'
-  return { opener, name, period }
+  // Keyed per period rather than composed from "Good {period}": the greeting is
+  // one fixed expression in most languages (Buongiorno, Buenas tardes) and does
+  // not survive being assembled from parts.
+  const opener = name ? t(GREETING_KEYS[period]) : t('home.greeting.anonymous')
+  return { opener, name, period, periodLabel: t(PERIOD_KEYS[period]) }
 })
 
 // ── Lede / queue summary ─────────────────────────────────────────────────
 
 const proposalsAwaiting = computed(() => summary.value?.workload.proposalsPendingReview ?? 0)
-const carryOvers = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
+// Status count, not a dated bucket — see the day-boundary contract above.
+const capturesAwaitingTriage = computed(() => summary.value?.workload.capturesNeedingTriage ?? 0)
 const showLoadingState = computed(() => workspace.homeLoading && !summary.value)
 const showErrorState = computed(() => Boolean(workspace.homeError))
 
 const ledeText = computed(() => {
   if (showErrorState.value) {
-    return workspace.homeError ?? 'Workspace summary could not be loaded.'
+    return workspace.homeError ?? t('home.error')
   }
   if (showLoadingState.value || !summary.value) {
-    return 'Loading your workspace summary...'
+    return t('home.loading')
   }
   const p = proposalsAwaiting.value
-  const c = carryOvers.value
+  const c = capturesAwaitingTriage.value
   if (p === 0 && c === 0) {
-    return 'Nothing waiting. Good.'
+    return ''
   }
   const parts: string[] = []
   if (p > 0) {
-    parts.push(`${p} awaiting review`)
+    parts.push(t('home.lede.awaitingReview', { count: p }))
   }
   if (c > 0) {
-    parts.push(`${c} carry-over${c === 1 ? '' : 's'} from yesterday`)
+    parts.push(t('home.lede.awaitingTriage', { count: c }))
   }
+  // The separator is punctuation, not copy — no locale changes a middot.
   return parts.join(' · ')
 })
 
@@ -123,26 +167,33 @@ const queueCards = computed<QueueCardModel[]>(() => {
     .forEach((action, index) => {
       cards.push({
         serial: `#${String(index + 1).padStart(3, '0')}`,
+        // action.title / action.description are SERVER-supplied strings and are
+        // not catalog keys — the backend does not know the client's locale.
+        // Localizing them is a separate, backend-shaped slice.
         title: action.title,
         meta: action.description,
-        tagLabel: 'PROPOSED',
+        tagLabel: t('home.queue.tagProposed'),
         tagTone: 'ember',
         isProposal: true,
       })
     })
 
-  // Triage carry-overs — hairline only, no ember.
+  // Captures awaiting triage — hairline only, no ember. Date-neutral copy.
   if (cards.length < 3 && s.workload.capturesNeedingTriage > 0) {
     const remaining = 3 - cards.length
-    const carryCount = Math.min(remaining, s.workload.capturesNeedingTriage)
-    for (let i = 0; i < carryCount; i += 1) {
+    const triageCount = Math.min(remaining, s.workload.capturesNeedingTriage)
+    for (let i = 0; i < triageCount; i += 1) {
       cards.push({
         serial: `#${String(cards.length + 1).padStart(3, '0')}`,
         title: i === 0
-          ? `Triage ${s.workload.capturesNeedingTriage} capture${s.workload.capturesNeedingTriage === 1 ? '' : 's'} from yesterday`
-          : 'Triage carry-over',
-        meta: 'inbox · awaiting decision',
-        tagLabel: 'CARRY-OVER',
+          ? t(
+              'home.queue.triageCard',
+              { count: s.workload.capturesNeedingTriage },
+              s.workload.capturesNeedingTriage,
+            )
+          : t('home.queue.triageCardMore'),
+        meta: t('home.queue.triageMeta'),
+        tagLabel: t('home.queue.tagTriage'),
         tagTone: 'mute',
         isProposal: false,
       })
@@ -156,10 +207,70 @@ const showFirstBoardSetup = computed(() => summary.value?.boards.totalBoards ===
 const showEmptyState = computed(() =>
   summary.value !== null && queueCards.value.length === 0 && !showFirstBoardSetup.value,
 )
-const completedMilestones = computed(() =>
-  onboarding.value?.steps.filter((step) => step.isComplete).length ?? 0,
-)
 const showSetupModal = ref(false)
+
+// ── Milestones (#1936) ───────────────────────────────────────────────────
+//
+// The first-loop block is first-run onboarding, so it stays prominent while
+// there is anything left to do. Once every step is ticked it has no remaining
+// function, and leaving the largest element on the page as a finished tutorial
+// is what made Home read as a walkthrough instead of a dashboard. So:
+//
+//   • incomplete            → full block, unchanged (prominent onboarding);
+//   • complete              → auto-collapsed to a single line, expandable for
+//                             the session and dismissible for good;
+//   • visibility dismissed  → not rendered at all.
+//
+// Dismissal is NOT a new client-side preference: it reuses the existing
+// server-persisted workspace onboarding visibility (`updateOnboarding`, the
+// same call Legacy Home's Dismiss makes), so it survives reload, a new device,
+// and both skins. Honouring `visibility` here also fixes Paper ignoring a
+// dismissal made from the Legacy Home or Today surfaces.
+
+const milestoneSteps = computed(() => onboarding.value?.steps ?? [])
+const totalMilestones = computed(() => milestoneSteps.value.length)
+const completedMilestones = computed(
+  () => milestoneSteps.value.filter((step) => step.isComplete).length,
+)
+
+// Complete when the server says so OR when every step is ticked — the two
+// agree in practice, and the derived count keeps the collapse honest if a
+// payload's flag ever lags its steps.
+const milestonesComplete = computed(
+  () =>
+    totalMilestones.value > 0 &&
+    (onboarding.value?.isComplete === true ||
+      completedMilestones.value === totalMilestones.value),
+)
+
+const milestonesDismissed = computed(() => onboarding.value?.visibility === 'dismissed')
+const showMilestones = computed(() => totalMilestones.value > 0 && !milestonesDismissed.value)
+
+// Session-scoped override of the auto-collapse. Deliberately not persisted:
+// collapsed is the right default on every visit once the loop is done, and an
+// expand is a one-off "let me look again", not a preference.
+const milestonesExpandedByUser = ref(false)
+const milestonesExpanded = computed(
+  () => !milestonesComplete.value || milestonesExpandedByUser.value,
+)
+const milestonesDismissBusy = ref(false)
+
+function toggleMilestones() {
+  milestonesExpandedByUser.value = !milestonesExpandedByUser.value
+}
+
+async function dismissMilestones() {
+  if (milestonesDismissBusy.value) return
+  milestonesDismissBusy.value = true
+  try {
+    await workspace.updateOnboarding('dismiss')
+  } catch {
+    // The store applies the dismissal optimistically, keeps it flagged unsaved
+    // and raises its own warning toast; nothing to add here.
+  } finally {
+    milestonesDismissBusy.value = false
+  }
+}
 
 function openSetupModal() {
   showSetupModal.value = true
@@ -177,6 +288,10 @@ function handleSetupCreated() {
 
 const captureText = ref('')
 const captureBusy = ref(false)
+const captureError = ref<string | null>(null)
+// Copy-pasteable request diagnostic beside the message (GH-1938): status,
+// endpoint, and the client correlation id, when the failure carries them.
+const captureErrorDetails = ref<string | null>(null)
 const captureInputRef = ref<HTMLInputElement | null>(null)
 
 async function submitCapture() {
@@ -186,18 +301,31 @@ async function submitCapture() {
     return
   }
   if (captureBusy.value) return
+  captureError.value = null
+  captureErrorDetails.value = null
   captureBusy.value = true
   try {
-    await capture.createItem({ boardId: null, text, source: 'Typed' })
+    // `refreshWorkload: false` — the full summary fetched below is a superset
+    // of the store's workload-only badge refresh, and both hit the same
+    // /workspace/home endpoint, so letting the store notify too would double
+    // -fetch the heaviest read on this surface for every quick capture
+    // (GH-1974). Home needs the FULL summary, not just the counters: a capture
+    // also ticks the `capture-first-item` milestone and moves the recommended
+    // actions, so this fetch stays.
+    await capture.createItem({ boardId: null, text, source: 'Typed' }, { refreshWorkload: false })
     captureText.value = ''
     await workspace.fetchHomeSummary().catch(() => {
       // Home summary errors are reflected via workspace.homeError.
     })
     await nextTick()
     captureInputRef.value?.focus()
-  } catch {
-    // captureStore already surfaces a toast; keep the typed text so the
-    // user can retry without re-typing.
+  } catch (error: unknown) {
+    // The store still raises a persistent error toast, but that lives in the
+    // corner and can be dismissed. Keep a local, inspectable error anchored to
+    // the retained draft so retrying never depends on the toast (GH-1938) —
+    // the human message plus a copy-pasteable request diagnostic.
+    captureError.value = getErrorDisplay(error, t('home.capture.errorFallback')).message
+    captureErrorDetails.value = getErrorDetails(error)
   } finally {
     captureBusy.value = false
   }
@@ -286,7 +414,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   <div class="paper-home" data-testid="paper-home">
     <header class="paper-home__hero">
       <p class="tk-eyebrow paper-home__eyebrow" data-testid="paper-home-period">
-        Workspace · {{ greeting.period }}
+        {{ $t('home.eyebrow', { period: greeting.periodLabel }) }}
       </p>
       <h1 class="tk-h1 paper-home__greeting" data-testid="paper-home-greeting">
         <template v-if="greeting.name">
@@ -296,7 +424,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
           {{ greeting.opener }}.
         </template>
       </h1>
-      <p class="tk-lede paper-home__lede" data-testid="paper-home-lede">
+      <p v-if="ledeText" class="tk-lede paper-home__lede" data-testid="paper-home-lede">
         {{ ledeText }}
       </p>
     </header>
@@ -310,7 +438,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     >
       <PaperCard variant="flat">
         <p class="tk-meta paper-home__state-text">
-          Loading your workspace summary...
+          {{ $t('home.loading') }}
         </p>
       </PaperCard>
     </section>
@@ -334,8 +462,8 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
       data-testid="paper-home-first-board"
     >
       <PaperEmptyState tone="ember" mark="✦">
-        <template #title>Shape your first useful board.</template>
-        Start blank or reuse a starter workflow. The existing setup guide will create the board and take you straight into it.
+        <template #title>{{ $t('home.firstBoard.title') }}</template>
+        {{ $t('home.firstBoard.body') }}
         <template #cta>
           <button
             type="button"
@@ -343,7 +471,7 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
             data-testid="paper-home-setup-cta"
             @click="openSetupModal"
           >
-            Start guided setup
+            {{ $t('home.firstBoard.cta') }}
           </button>
         </template>
       </PaperEmptyState>
@@ -356,14 +484,18 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     >
       <PaperCard variant="flat">
         <p class="tk-meta paper-home__empty-text">
-          Nothing waiting. Good.
+          {{ $t('home.empty') }}
         </p>
       </PaperCard>
     </section>
 
-    <section v-else class="paper-home__queue" aria-label="Queued for you">
-      <h2 class="tk-eyebrow paper-home__queue-title">II · Queued for you</h2>
+    <section v-else class="paper-home__queue" :aria-label="$t('home.queue.label')">
+      <h2 class="tk-eyebrow paper-home__queue-title">{{ $t('home.queue.title') }}</h2>
       <div class="paper-home__queue-grid">
+        <!--
+          `carryover` here is a legacy structural id meaning "not a proposal";
+          it carries no date claim. User-visible copy stays date-neutral (#1768).
+        -->
         <PaperCard
           v-for="card in queueCards"
           :key="card.serial"
@@ -391,60 +523,114 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
     </section>
 
     <section
-      v-if="onboarding?.steps.length"
-      class="paper-home__milestones"
+      v-if="showMilestones"
+      :class="['paper-home__milestones', { 'paper-home__milestones--collapsed': !milestonesExpanded }]"
       aria-labelledby="paper-home-milestones-title"
       data-testid="paper-home-milestones"
+      :data-milestones-state="milestonesExpanded ? 'expanded' : 'collapsed'"
     >
       <div class="paper-home__milestones-heading">
         <div>
-          <p class="tk-eyebrow">III · Your first loop</p>
+          <p v-if="milestonesExpanded" class="tk-eyebrow">{{ $t('home.milestones.eyebrow') }}</p>
           <h2 id="paper-home-milestones-title" class="paper-home__milestones-title">
-            From thought to trusted action
+            {{ milestonesComplete ? $t('home.milestones.completeTitle') : $t('home.milestones.title') }}
           </h2>
         </div>
-        <span class="tk-meta">{{ completedMilestones }}/{{ onboarding.steps.length }} complete</span>
+        <div class="paper-home__milestones-controls">
+          <span class="tk-meta" data-testid="paper-home-milestones-progress">
+            {{ $t('home.milestones.progress', { completed: completedMilestones, total: totalMilestones }) }}
+          </span>
+          <!--
+            Offered only once the loop is done: while it is unfinished the
+            block is real onboarding and stays whole (#1936).
+          -->
+          <template v-if="milestonesComplete">
+            <button
+              type="button"
+              class="paper-home__milestones-control"
+              :aria-expanded="milestonesExpanded"
+              aria-controls="paper-home-milestones-body"
+              data-testid="paper-home-milestones-toggle"
+              @click="toggleMilestones"
+            >
+              {{ milestonesExpanded ? $t('home.milestones.collapse') : $t('home.milestones.expand') }}
+            </button>
+            <button
+              type="button"
+              class="paper-home__milestones-control"
+              :disabled="milestonesDismissBusy"
+              data-testid="paper-home-milestones-dismiss"
+              @click="dismissMilestones"
+            >
+              {{ $t('home.milestones.dismiss') }}
+            </button>
+          </template>
+        </div>
       </div>
-      <ol class="paper-home__milestone-list">
-        <li
-          v-for="step in onboarding.steps"
-          :key="step.stepId"
-          :class="['paper-home__milestone', { 'paper-home__milestone--complete': step.isComplete }]"
-        >
-          <span class="paper-home__milestone-mark" aria-hidden="true">
-            {{ step.isComplete ? '✓' : '○' }}
-          </span>
-          <span>
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.description }}</small>
-          </span>
-          <span class="sr-only">{{ step.isComplete ? 'Complete' : 'Not complete' }}</span>
-        </li>
-      </ol>
-      <p class="tk-meta paper-home__milestones-note">
-        These milestones stay in this workspace; they are not sent as analytics.
-      </p>
+      <div v-if="milestonesExpanded" id="paper-home-milestones-body">
+        <ol class="paper-home__milestone-list">
+          <li
+            v-for="step in milestoneSteps"
+            :key="step.stepId"
+            :class="['paper-home__milestone', { 'paper-home__milestone--complete': step.isComplete }]"
+          >
+            <span class="paper-home__milestone-mark" aria-hidden="true">
+              {{ step.isComplete ? '✓' : '○' }}
+            </span>
+            <span>
+              <strong>{{ step.title }}</strong>
+              <small>{{ step.description }}</small>
+            </span>
+            <span class="sr-only">
+              {{ step.isComplete ? $t('home.milestones.stepComplete') : $t('home.milestones.stepIncomplete') }}
+            </span>
+          </li>
+        </ol>
+        <p class="tk-meta paper-home__milestones-note">
+          {{ $t('home.milestones.note') }}
+        </p>
+      </div>
     </section>
 
-    <section class="paper-home__capture" aria-label="Quick capture">
+    <section class="paper-home__capture" :aria-label="$t('home.capture.label')">
       <form class="paper-home__capture-row" @submit.prevent="submitCapture">
-        <label class="sr-only" for="paper-home-capture-input">Capture a thought</label>
+        <label class="sr-only" for="paper-home-capture-input">{{ $t('home.capture.inputLabel') }}</label>
         <input
           id="paper-home-capture-input"
           ref="captureInputRef"
           v-model="captureText"
           class="paper-home__capture-input"
           type="text"
-          placeholder="Capture a thought..."
+          :placeholder="$t('home.capture.placeholder')"
           autocomplete="off"
           :disabled="captureBusy"
+          :aria-invalid="captureError ? 'true' : undefined"
+          :aria-describedby="captureError ? 'paper-home-capture-error' : undefined"
           data-testid="paper-home-capture-input"
         />
         <span class="paper-home__capture-hint">
-          <PaperKbd>⌘</PaperKbd>
-          <PaperKbd>;</PaperKbd>
+          <PaperKbd>{{ formatShortcut('mod+;') }}</PaperKbd>
         </span>
       </form>
+      <p
+        v-if="captureError"
+        id="paper-home-capture-error"
+        class="paper-home__capture-error"
+        role="alert"
+        data-testid="paper-home-capture-error"
+      >
+        <strong>{{ $t('home.capture.errorLead') }}</strong>
+        <span>{{ $t('home.capture.errorDetail', { reason: captureError }) }}</span>
+        <template v-if="captureErrorDetails">
+          <strong class="paper-home__capture-diagnostics-label">
+            {{ $t('home.capture.errorDiagnosticsLabel') }}
+          </strong>
+          <span
+            class="paper-home__capture-diagnostics"
+            data-testid="paper-home-capture-diagnostics"
+          >{{ captureErrorDetails }}</span>
+        </template>
+      </p>
     </section>
 
     <!--
@@ -595,6 +781,34 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   color: var(--mute);
 }
 
+.paper-home__capture-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ember);
+  background: var(--ember-tint);
+  color: var(--ember-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.paper-home__capture-diagnostics-label {
+  flex-basis: 100%;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.paper-home__capture-diagnostics {
+  flex-basis: 100%;
+  margin: 0;
+  white-space: pre-line;
+  opacity: 0.9;
+}
+
 .paper-home__empty-text,
 .paper-home__state-text {
   padding: 18px;
@@ -632,12 +846,27 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   box-shadow: var(--shadow-card);
 }
 
+/*
+  Collapsed (#1936): a finished loop is a one-line receipt, not a panel. Drop
+  the card weight so it reads as a footnote under the live content above it.
+*/
+.paper-home__milestones--collapsed {
+  padding: 10px 14px;
+  background: transparent;
+  box-shadow: none;
+}
+
 .paper-home__milestones-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.paper-home__milestones--collapsed .paper-home__milestones-heading {
+  align-items: center;
+  margin-bottom: 0;
 }
 
 .paper-home__milestones-heading p {
@@ -650,6 +879,44 @@ function onCardKeydown(event: KeyboardEvent, card: QueueCardModel) {
   font-size: 20px;
   font-weight: 500;
   color: var(--ink-deep);
+}
+
+.paper-home__milestones--collapsed .paper-home__milestones-title {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.paper-home__milestones-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.paper-home__milestones-control {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.paper-home__milestones-control:hover:not(:disabled) {
+  border-color: var(--ember);
+  color: var(--ink-deep);
+}
+
+.paper-home__milestones-control:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+.paper-home__milestones-control:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .paper-home__milestone-list {

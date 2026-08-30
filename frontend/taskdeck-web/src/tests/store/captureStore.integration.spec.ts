@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useCaptureStore } from '../../store/captureStore'
+import type { CaptureItem, CaptureItemSummary } from '../../types/capture'
 
 vi.mock('../../api/http', () => ({
   default: {
@@ -33,7 +34,7 @@ vi.mock('../../utils/demoMode', async (importOriginal) => {
   return { ...actual, isDemoMode: false }
 })
 
-function makeSummaryPayload(overrides: Partial<Record<string, unknown>> = {}) {
+function makeSummaryPayload(overrides: Partial<CaptureItemSummary> = {}): CaptureItemSummary {
   return {
     id: 'c-1',
     userId: 'u-1',
@@ -47,8 +48,8 @@ function makeSummaryPayload(overrides: Partial<Record<string, unknown>> = {}) {
   }
 }
 
-function makeDetailPayload(overrides: Partial<Record<string, unknown>> = {}) {
-  const { rawText, ...summaryOverrides } = overrides as { rawText?: string } & Record<string, unknown>
+function makeDetailPayload(overrides: Partial<CaptureItem> = {}): CaptureItem {
+  const { rawText, ...summaryOverrides } = overrides
   return {
     ...makeSummaryPayload(summaryOverrides),
     rawText: rawText ?? 'full capture text',
@@ -182,6 +183,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       // Triage post first, then GET for refresh
       expect(http.post).toHaveBeenCalledWith(
         expect.stringContaining('/capture/items/c-5/triage'),
+        undefined,
       )
       expect(http.get).toHaveBeenCalledWith(expect.stringContaining('/capture/items/c-5'))
       expect(store.detailById['c-5']?.status).toBe('Triaging')
@@ -265,7 +267,7 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
       const store = useCaptureStore()
       await expect(store.updateSuggestion('c-9', { text: 'new' })).rejects.toBeInstanceOf(Error)
 
-      expect(store.actionError).toBe('Failed to update capture text')
+      expect(store.actionError).toBe('Failed to update capture')
     })
   })
 

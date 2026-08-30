@@ -1,17 +1,53 @@
 using System.Globalization;
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Hubs;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Api.Routing;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Api.Extensions;
 
 public static class PipelineConfiguration
 {
+    /// <summary>
+    /// Request-path prefixes owned by machine-facing surfaces — the REST API, SignalR hubs, health
+    /// probes, and the MCP HTTP transport — rather than by the Vue SPA. An unmatched path under one
+    /// of these is a wrong path, never a client-side route, so it is answered with a 404 error
+    /// contract instead of the SPA shell (#1971).
+    ///
+    /// The spelling is exact and lowercase, and is the same literal set nginx and the service
+    /// worker denylist carry. Variants that only some layers read as machine surface — other cases,
+    /// prefix-boundary encoded slashes — are rejected up front by
+    /// <see cref="MachinePathCanonicalForm"/> rather than normalized (#1992, ADR-0064).
+    /// </summary>
+    internal static readonly string[] NonSpaPathPrefixes = ["/api", "/hubs", "/health", "/mcp"];
+
+    /// <summary>
+    /// The HTTP methods <c>MapFallbackToFile</c> stamps on the SPA catch-all (measured: pattern
+    /// <c>{*path:nonfile}</c>, methods <c>[GET, HEAD]</c>). The per-prefix machine-path fallbacks
+    /// match the same set so that a wrong-verb request on a real route is still routed to the
+    /// framework's 405 endpoint for every verb outside it (#1971).
+    /// </summary>
+    private static readonly string[] SpaFallbackHttpMethods = ["GET", "HEAD"];
+
+    /// <summary>
+    /// The display name ASP.NET Core's <c>HttpMethodMatcherPolicy</c> gives the metadata-less
+    /// endpoint it synthesizes when every routing candidate is method-mismatched (pinned on .NET 8;
+    /// the anonymous wrong-verb cases in <c>SpaFallbackRoutingApiTests</c> fail loudly if a
+    /// framework update renames it, because the requests fall back to answering 401).
+    /// </summary>
+    private const string Http405EndpointDisplayName = "405 HTTP Method Not Supported";
+
     public static WebApplication ConfigureTaskdeckPipeline(
         this WebApplication app,
         RateLimitingSettings rateLimitingSettings)
@@ -29,11 +65,14 @@ public static class PipelineConfiguration
         }
 
         // Apply EF Core migrations serialized across processes via a cross-process file lock
-        // so concurrent API/MCP/CLI startups apply the schema exactly once (#1164).
+        // so concurrent API/MCP/CLI startups apply the schema exactly once (#1164), taking a
+        // fail-closed snapshot of the SQLite file first when migrations are pending (#1803).
         using (var scope = app.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            SerializedMigrator.Migrate(dbContext, app.Logger);
+            var backupSettings = scope.ServiceProvider
+                .GetRequiredService<IOptions<DatabaseBackupSettings>>().Value;
+            SerializedMigrator.Migrate(dbContext, backupSettings, app.Logger);
         }
 
         if (app.Environment.IsDevelopment())
@@ -61,10 +100,34 @@ public static class PipelineConfiguration
         // HttpResponse still take effect.
         app.UseResponseCompression();
 
-        app.UseCors("AllowFrontend");
+        // Correlation ID, the unhandled-exception wrapper and the security headers move ahead of
+        // CORS so that the fail-closed machine-path guard below can precede CORS while still
+        // running inside all three (#1992 round 1). Moving them widens their reach — a CORS
+        // preflight now also carries a correlation ID and the security headers — and narrows
+        // nothing: response compression stays outermost, so every one of them can still append
+        // response headers.
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
         app.UseMiddleware<SecurityHeadersMiddleware>();
+
+        // Fail-closed machine-path spelling (#1992, maintainer ruling q-10 A; ADR-0064). A machine
+        // prefix is the exact lowercase literal at a segment boundary; every other spelling that
+        // some layer would read as that prefix answers the 404 contract instead — case variants
+        // (/API/boards), prefix-boundary encoded slashes (/mcp%2Fmessages), leading duplicate or
+        // encoded separators (//api/boards, /%2fapi/boards), and percent-encoded prefix letters
+        // (/%61pi/boards). Nothing is normalized into the canonical path: the ruling rejects that.
+        //
+        // Ahead of CORS, deliberately: CorsMiddleware short-circuits a preflight with 204 as soon
+        // as it sees Access-Control-Request-Method, so a guard placed after it would answer
+        // OPTIONS /API/boards with a success a browser reads as "this endpoint exists".
+        //
+        // Ahead of static files, MCP telemetry and every authentication middleware too, so a
+        // variant is rejected before it can reach a real endpoint, consume a rate-limit budget, or
+        // be answered 401 (which would say "this exists, authenticate" about a path that, under
+        // this contract, does not exist).
+        app.UseMachinePathCanonicalGuard();
+
+        app.UseCors("AllowFrontend");
 
         // SPA static file serving: serve Vue build output from wwwroot/.
         // Placed after security-headers middleware so that the OnStarting callback registered by
@@ -127,7 +190,100 @@ public static class PipelineConfiguration
         {
             app.UseRateLimiter();
         }
+
+        // Routing (auto-inserted at the head of the pipeline) resolves a wrong-verb request whose
+        // every candidate is method-mismatched to a synthetic 405 endpoint that carries NO metadata,
+        // so the global FallbackPolicy would answer it 401 for anonymous callers before the
+        // correction middleware below ever saw the 405 — an anonymous GET typo said 404 (the
+        // machine-path catch-alls are AllowAnonymous) while the same PUT typo said 401. On machine
+        // paths the endpoint is replaced with an equivalent one that opts out of the fallback
+        // policy, so the 404/405 contract is verb-independent for exactly the unauthenticated
+        // scripts and probes it exists for. The conjunction below can never match a real endpoint
+        // (those are RouteEndpoints and carry metadata), and route existence is already disclosed
+        // anonymously — see the fallback comment further down; this discloses nothing further.
+        app.Use(async (context, next) =>
+        {
+            var endpoint = context.GetEndpoint();
+            if (endpoint is { RequestDelegate: not null } and not RouteEndpoint &&
+                endpoint.Metadata.Count == 0 &&
+                string.Equals(endpoint.DisplayName, Http405EndpointDisplayName, StringComparison.Ordinal) &&
+                IsMachineFacingPath(context.Request.Path))
+            {
+                context.SetEndpoint(new Endpoint(
+                    endpoint.RequestDelegate,
+                    new EndpointMetadataCollection(new AllowAnonymousAttribute()),
+                    endpoint.DisplayName));
+            }
+
+            await next(context);
+        });
+
         app.UseAuthorization();
+
+        // Machine-path 404/405 contract (#1971, #1992). One resolver answers "is there a real endpoint
+        // at this path, and with which verbs?" for both halves of it: this middleware, which owns every
+        // verb routing itself rejects, and the per-prefix fallbacks below, which own GET/HEAD.
+        var machineRouteMethods = new MachineRouteMethodResolver(
+            ((IEndpointRouteBuilder)app).DataSources,
+            app.Services.GetRequiredService<ParameterPolicyFactory>(),
+            NonSpaPathPrefixes,
+            app.Logger);
+
+        // Registered before the endpoint middleware WebApplication appends, so awaiting next() here
+        // resumes after the endpoint ran. Routing's own 405 endpoint only sets a status code, so the
+        // response has not started and both the status and the body are still ours to correct.
+        //
+        // Two corrections, both caused by the GET/HEAD catch-alls below sharing a routing node with the
+        // real endpoints:
+        //   * Unknown machine path, non-GET verb -> routing answers a bodyless 405 with "Allow: GET,
+        //     HEAD" because the catch-all made the node method-constrained. Nothing is routed there at
+        //     all, so the honest answer is the same 404 error contract every other unknown machine path
+        //     gets. #1971 recorded this as an accepted trade; it is the same "false success shape,
+        //     different status" the issue is about, so it is corrected here rather than documented.
+        //   * Real machine route, wrong verb -> routing's Allow header is the union of every method at
+        //     the node, so it advertises the catch-all's GET/HEAD on routes that have neither. Replaced
+        //     with the methods the route actually declares.
+        app.Use(async (context, next) =>
+        {
+            await next(context);
+
+            if (context.Response.HasStarted ||
+                context.Response.StatusCode != StatusCodes.Status405MethodNotAllowed ||
+                !IsMachineFacingPath(context.Request.Path))
+            {
+                return;
+            }
+
+            // Only correct a 405 this pipeline itself manufactured: routing's synthetic
+            // method-mismatch endpoint (or its AllowAnonymous replacement above, which keeps the
+            // framework display name) and the GET/HEAD machine fallbacks below. A real endpoint
+            // that answers 405 on its own owns that answer. Measured (2026-08-25): the MCP
+            // transport's wrong-verb 405 survives even without this guard, because that response
+            // has started by the time this middleware resumes — but that immunity is incidental to
+            // how the SDK writes its response, so the scope is pinned here rather than borrowed
+            // from it, held by WrongVerbOnRealMcpEndpoint_KeepsItsOwn405_WithValidApiKey.
+            var respondingEndpoint = context.GetEndpoint();
+            var isSyntheticMethodMismatch =
+                respondingEndpoint is not null &&
+                respondingEndpoint is not RouteEndpoint &&
+                string.Equals(respondingEndpoint.DisplayName, Http405EndpointDisplayName, StringComparison.Ordinal);
+            var isMachineFallback =
+                respondingEndpoint?.Metadata.GetMetadata<MachinePathFallbackMetadata>() is not null;
+            if (!isSyntheticMethodMismatch && !isMachineFallback)
+            {
+                return;
+            }
+
+            var declaredMethods = machineRouteMethods.GetDeclaredMethods(context);
+            if (declaredMethods.Count == 0)
+            {
+                context.Response.Headers.Allow = StringValues.Empty;
+                await WriteUnknownEndpointAsync(context);
+                return;
+            }
+
+            context.Response.Headers.Allow = string.Join(", ", declaredMethods);
+        });
 
         app.MapControllers();
         app.MapHub<BoardsHub>("/hubs/boards");
@@ -159,14 +315,149 @@ public static class PipelineConfiguration
         // before routing and sets an authenticated principal for valid keys, which satisfies the
         // global FallbackPolicy (#1132 AC4). The MCP SDK endpoint does not honor an
         // .AllowAnonymous() convention, so the principal — not endpoint metadata — is the opt-in.
-        // SPA fallback: any route not matched by a controller or hub endpoint returns index.html,
-        // enabling Vue Router's client-side navigation. API (/api/*) and hub (/hubs/*) routes
-        // are matched above and never reach this fallback. AllowAnonymous so the app shell loads for
-        // unauthenticated users (e.g. to reach the login page) under the global FallbackPolicy (#1132 AC4).
+
+        // Machine-facing 404s (#1971). The SPA fallback below matches EVERY unmatched path, so
+        // before this change a typo'd, renamed, or removed API route answered 200 + index.html and
+        // any caller that checks the status code saw a false success. These per-prefix fallbacks
+        // carry a literal first segment, which outranks the SPA catch-all in route precedence, so
+        // an unmatched path under one of them terminates here instead of at the app shell — with the
+        // API's JSON error contract (ApiErrorResponse, application/json) when no route exists there
+        // at all, or a 405 when one exists under another verb (#1992).
+        //
+        // Only *unmatched* paths reach a fallback: every real controller, hub, and MCP endpoint is
+        // a non-fallback endpoint and still wins the match, so an unauthenticated request to an
+        // existing API route keeps returning 401 rather than 404 (#1132 AC4 ordering preserved).
+        //
+        // AllowAnonymous is deliberate: an unknown path has no resource to protect, and without it
+        // the global FallbackPolicy would answer anonymous callers with 401 — re-hiding the "this
+        // endpoint does not exist" signal behind an auth error for exactly the unauthenticated
+        // scripts and probes this issue is about. The cost is that route existence is discoverable
+        // (404 vs 401) without credentials, which the OpenAPI document already publishes.
+        //
+        // GET/HEAD only, mirroring the method metadata MapFallbackToFile puts on the SPA catch-all.
+        // This is load-bearing, not decoration: routing only reaches its 405 endpoint when EVERY
+        // candidate is method-mismatched, so a fallback that accepted every verb would be a valid
+        // candidate for PUT /api/boards and would silently downgrade that 405 to a 404. Scoped to
+        // GET/HEAD, every verb outside the pair still reaches routing's 405 endpoint, where the
+        // middleware registered above corrects its Allow header (or converts it to the 404 contract
+        // when the path matches no route at all).
+        //
+        // Inside the pair the same scoping is what BREAKS 405: a GET on a POST-only route is not
+        // method-mismatched against this fallback, so it lands here instead of at routing's 405
+        // endpoint and used to answer 404 (#1992). The handler therefore asks the resolver whether a
+        // real endpoint exists at the path before choosing a status — routing cannot be asked, because
+        // HttpMethodMatcherPolicy partitions the candidate set by verb inside the DFA, so the POST
+        // endpoint is not visible from here.
+        //
+        // ExcludeFromDescription keeps them out of the OpenAPI document. Swashbuckle discovers
+        // route-mapped endpoints, so without it these catch-alls are published as real GET operations
+        // next to the genuine routes — in the very document consumers use to learn the surface, and
+        // the one this comment block cites as already publishing route existence. Measured with
+        // scripts/ci/generate-openapi-artifact.ps1 (2026-08-22): without the exclusion the document
+        // carries 160 paths including "/api/{path}", "/hubs/{path}", "/health/{path}" and
+        // "/mcp/{path}"; with it, 156 and no "{path}" template at all (#1971).
+        foreach (var prefix in NonSpaPathPrefixes)
+        {
+            app.MapFallback(
+                    $"{prefix}/{{**path}}",
+                    (HttpContext context) => MachinePathFallbackAsync(context, machineRouteMethods))
+                .WithMetadata(MachinePathFallbackMetadata.Instance)
+                .WithMetadata(new HttpMethodMetadata(SpaFallbackHttpMethods))
+                .ExcludeFromDescription()
+                .AllowAnonymous();
+        }
+
+        // SPA fallback: any other unmatched route returns index.html, enabling Vue Router's
+        // client-side navigation. Paths under NonSpaPathPrefixes cannot reach it — either a real
+        // endpoint above matched them, or the per-prefix 404 fallbacks did. AllowAnonymous so the
+        // app shell loads for unauthenticated users (e.g. to reach the login page) under the global
+        // FallbackPolicy (#1132 AC4).
         app.MapFallbackToFile("index.html").AllowAnonymous();
 
         return app;
     }
+
+    /// <summary>
+    /// True when the path sits under one of <see cref="NonSpaPathPrefixes"/>. Uses
+    /// <see cref="PathString.StartsWithSegments(PathString, StringComparison)"/> so the boundary is a
+    /// segment boundary — <c>/api/x</c> and the bare <c>/api</c> are machine paths, <c>/apidocs</c> is
+    /// not — matching the <c>^/api(?:/|$)</c> shape the reverse proxy uses for the same prefixes.
+    ///
+    /// The comparison stays case-insensitive on purpose even though the fail-closed guard
+    /// (<see cref="MachinePathCanonicalForm"/>) has already rejected every non-lowercase spelling
+    /// before this runs: if that guard were ever removed, an ordinal comparison here would hand
+    /// <c>/API/typo</c> back to the SPA shell — the exact defect #1971 fixed — while this one keeps
+    /// answering the machine contract.
+    /// </summary>
+    private static bool IsMachineFacingPath(PathString path)
+    {
+        foreach (var prefix in NonSpaPathPrefixes)
+        {
+            if (path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// GET/HEAD terminal handler for paths under <see cref="NonSpaPathPrefixes"/> that matched no
+    /// endpoint for this verb. A path that a real endpoint declares under some OTHER verb exists — the
+    /// verb is what is wrong — so it answers 405 the way routing answers every other wrong-verb
+    /// request: status only, with the Allow header stamped by the middleware that owns it for all
+    /// verbs. A path no endpoint declares at all is genuinely missing and gets the 404 contract.
+    /// </summary>
+    private static Task MachinePathFallbackAsync(HttpContext context, MachineRouteMethodResolver resolver)
+    {
+        if (resolver.GetDeclaredMethods(context).Count > 0)
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return Task.CompletedTask;
+        }
+
+        return WriteUnknownEndpointAsync(context);
+    }
+
+    /// <summary>
+    /// Writes the 404 answer for a machine-facing path that matches no route. Uses the same
+    /// <see cref="ApiErrorResponse"/> shape (<c>errorCode</c>/<c>message</c>, application/json) that
+    /// <see cref="ResultExtensions.ToErrorActionResult"/> produces for a controller 404, so a client
+    /// parses one error contract regardless of whether the route existed.
+    /// </summary>
+    private static Task WriteUnknownEndpointAsync(HttpContext context)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return context.Response.WriteAsJsonAsync(
+            new ApiErrorResponse(ErrorCodes.NotFound, "The requested endpoint does not exist."));
+    }
+
+    /// <summary>
+    /// Registers the fail-closed machine-path guard (`#1992`, ADR-0064): a request whose spelling
+    /// of a machine prefix is not the canonical one answers the 404 error contract here, before it
+    /// can reach an endpoint, an authentication middleware, or a rate-limit budget.
+    ///
+    /// Shared so the co-hosted API pipeline and the standalone <c>--mcp --transport http</c> host
+    /// enforce the identical rule. The standalone host serves only <c>/mcp</c> and has no SPA
+    /// fallback, so a variant there does not leak the app shell — but without this it answers 401
+    /// (or 200, with a valid key) for <c>/MCP</c>, which is a different contract from the one the
+    /// co-hosted host gives the same URL.
+    /// </summary>
+    internal static IApplicationBuilder UseMachinePathCanonicalGuard(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            // The raw target is where a percent-encoded prefix letter is still visible; Path has
+            // already been decoded by the time this runs.
+            var rawTarget = context.Features.Get<IHttpRequestFeature>()?.RawTarget;
+            if (MachinePathCanonicalForm.IsRejectedSpelling(context.Request.Path, rawTarget, NonSpaPathPrefixes))
+            {
+                await WriteUnknownEndpointAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
 
     internal static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
     {

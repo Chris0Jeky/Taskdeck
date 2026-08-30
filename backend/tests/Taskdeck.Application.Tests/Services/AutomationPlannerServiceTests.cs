@@ -103,7 +103,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -163,7 +163,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -323,7 +323,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -386,7 +386,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -437,7 +437,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -492,7 +492,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -541,7 +541,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -590,7 +590,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -662,7 +662,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -718,7 +718,7 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
-    public async Task ParseInstruction_ShouldReturnFailure_WhenPermissionValidationFails()
+    public async Task ParseInstruction_ShouldNotCreateProposal_WhenPermissionValidationFails()
     {
         // Arrange
         var userId = Guid.NewGuid();
@@ -754,7 +754,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "No access"));
 
         // Act
@@ -763,6 +763,92 @@ public class AutomationPlannerServiceTests
         // Assert
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.ErrorMessage.Should().Be("No access");
+        _policyEngineMock.Verify(e => e.ValidatePermissionsAsync(
+            userId,
+            boardId,
+            It.IsAny<IEnumerable<ProposalOperationDto>>(),
+            BoardAccessBar.Write,
+            default), Times.Once);
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default),
+            Times.Never);
+    }
+
+    // #1523: the planner's general catch used to convert a caller-token
+    // OperationCanceledException into Result.Failure(UnexpectedError). The worker's
+    // IsTransientFailure treats UnexpectedError as retryable, so a host shutdown marked the
+    // queue item Failed and requeued it. Caller cancellation must propagate instead.
+    [Fact]
+    public async Task ParseInstruction_ShouldPropagateCancellation_WhenCallerTokenCanceled()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, cts.Token))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        // Act + Assert. ThrowsAnyAsync, not ThrowsAsync: xUnit's generic overload is
+        // exact-type and a cancelled await can surface the TaskCanceledException subclass.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ParseInstructionAsync("create card 'Test'", userId, boardId, cts.Token));
+
+        // Supporting, not discriminating: the throw aborts before the write either way.
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ParseBatchInstruction_ShouldPropagateCancellation_WhenCallerTokenCanceled()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, cts.Token))
+            .ThrowsAsync(new OperationCanceledException(cts.Token));
+
+        // Act + Assert. ThrowsAnyAsync, not ThrowsAsync: xUnit's generic overload is
+        // exact-type and a cancelled await can surface the TaskCanceledException subclass.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _service.ParseBatchInstructionAsync(
+                ["create cards: 'Test A', 'Test B'"], userId, boardId, cts.Token));
+
+        _proposalServiceMock.Verify(
+            s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // The guard rail for the fix above: an OperationCanceledException whose origin is an
+    // INTERNAL budget/provider timeout, while the caller's token is still live, must keep its
+    // UnexpectedError mapping. This fails if someone writes an unfiltered
+    // `catch (OperationCanceledException) { throw; }`.
+    [Fact]
+    public async Task ParseInstruction_ShouldReturnUnexpectedError_WhenCancellationIsNotCallerRequested()
+    {
+        // Arrange
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+
+        _columnRepoMock
+            .Setup(r => r.GetByBoardIdAsync(boardId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+
+        // Act
+        var result = await _service.ParseInstructionAsync(
+            "create card 'Test'", userId, boardId, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
     }
 
     #endregion
@@ -820,7 +906,7 @@ public class AutomationPlannerServiceTests
                 DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTime.UtcNow.AddDays(1),
                 null, null, null, null, Guid.NewGuid().ToString(),
                 new List<ProposalOperationDto>())));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         var result = await _service.ParseInstructionAsync(instruction, userId, boardId);
@@ -967,7 +1053,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act — use the short 8-char ID, not the full GUID
@@ -1017,7 +1103,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Medium);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -1067,7 +1153,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act
@@ -1115,7 +1201,7 @@ public class AutomationPlannerServiceTests
             .Returns(RiskLevel.Low);
         _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
             .ReturnsAsync(Result.Success(expectedProposal));
-        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), default))
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
             .ReturnsAsync(Result.Success());
 
         // Act — use the full GUID, not a short ID

@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Cli.Tests;
 
@@ -12,7 +15,12 @@ namespace Taskdeck.Cli.Tests;
 /// </summary>
 internal sealed class CliTestHarness : IAsyncDisposable
 {
-    private static readonly TimeSpan ProcessTimeout = TimeSpan.FromSeconds(30);
+    // SerializedMigrator may legitimately consume its full bounded lock wait before
+    // failing open. The outer process deadline must still leave a bounded window for
+    // migration, command dispatch, and host disposal after that inner timeout.
+    internal static readonly TimeSpan DefaultCommandCompletionBudget = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan DefaultProcessTimeout =
+        SerializedMigrator.DefaultLockTimeout + DefaultCommandCompletionBudget;
     private static readonly TimeSpan TerminationTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan TerminationPollInterval = TimeSpan.FromMilliseconds(50);
     // Windows CI has demonstrated that overlapping real CLI roots can leave
@@ -21,6 +29,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
     // they need to exercise concurrent cleanup behavior.
     private const int DefaultProcessLaunchLimit = 1;
     private static readonly CliProcessLaunchGate DefaultProcessLaunchGate = new(DefaultProcessLaunchLimit);
+    private static readonly Lazy<byte[]> MigratedDatabaseTemplate = new(
+        CreateMigratedDatabaseTemplate,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+    private static int _databaseTemplateBuildCount;
+    private static string? _lastDatabaseTemplateDirectory;
 
     private readonly string _dataDirectory;
     private readonly string _databasePath;
@@ -33,6 +46,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly Func<Process, CancellationToken, Task<string>> _readStandardOutputAsync;
     private readonly TaskCompletionSource<int>? _processStartedSignal;
     private int _lastStartedProcessId;
+    private CliStartupTraceSnapshot? _lastStartupTraceSnapshot;
 
     /// <param name="provisionEncryptionKey">
     /// When true (default) the harness injects a test connector encryption key via
@@ -40,9 +54,15 @@ internal sealed class CliTestHarness : IAsyncDisposable
     /// simulates a CLEAN machine: no key is supplied, so the CLI must bootstrap
     /// one itself.
     /// </param>
+    /// <param name="preprovisionDatabase">
+    /// When true (default), copy a fully migrated empty SQLite template into the
+    /// harness's isolated data directory. Set false only when a test explicitly
+    /// needs to prove cold CLI database creation and migration.
+    /// </param>
     public CliTestHarness(
         string dbPrefix = "taskdeck-cli-tests",
         bool provisionEncryptionKey = true,
+        bool preprovisionDatabase = true,
         TimeSpan? processTimeout = null,
         CliProcessLaunchGate? processLaunchGate = null,
         CancellationToken processCancellationToken = default,
@@ -50,19 +70,52 @@ internal sealed class CliTestHarness : IAsyncDisposable
         Func<Process, CancellationToken, Task<string>>? readStandardOutputAsync = null,
         TaskCompletionSource<int>? processStartedSignal = null)
     {
-        _processTimeout = processTimeout ?? ProcessTimeout;
+        _processTimeout = processTimeout ?? DefaultProcessTimeout;
         if (_processTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(processTimeout));
         }
 
+        // Evaluate the process-wide template before allocating this instance's
+        // directory. If the one-time migration fails, repeated constructor calls
+        // observe the Lazy's cached failure without leaking empty harness roots.
+        var databaseTemplate = preprovisionDatabase ? MigratedDatabaseTemplate.Value : null;
+
         // Each harness gets its own data directory so the SQLite file -- and any
         // appsettings.local.json written by the CLI's first-run bootstrap -- are
         // isolated from other tests and cleaned up on dispose.
         _dataDirectory = Path.Combine(Path.GetTempPath(), $"{dbPrefix}-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dataDirectory);
         _databasePath = Path.Combine(_dataDirectory, "taskdeck.db");
         _connectionString = $"Data Source={_databasePath}";
+        try
+        {
+            Directory.CreateDirectory(_dataDirectory);
+            if (databaseTemplate is not null)
+            {
+                File.WriteAllBytes(_databasePath, databaseTemplate);
+            }
+        }
+        catch (Exception constructionFailure)
+        {
+            try
+            {
+                if (Directory.Exists(_dataDirectory))
+                {
+                    Directory.Delete(_dataDirectory, recursive: true);
+                }
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(
+                    "CLI harness database provisioning and cleanup both failed.",
+                    constructionFailure,
+                    cleanupFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(constructionFailure).Throw();
+            throw new UnreachableException();
+        }
+
         _provisionEncryptionKey = provisionEncryptionKey;
         _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
         _processCancellationToken = processCancellationToken;
@@ -87,6 +140,11 @@ internal sealed class CliTestHarness : IAsyncDisposable
             return processId == 0 ? null : processId;
         }
     }
+
+    internal CliStartupTraceSnapshot? LastStartupTraceSnapshot => _lastStartupTraceSnapshot;
+    internal static int DatabaseTemplateBuildCount => Volatile.Read(ref _databaseTemplateBuildCount);
+    internal static string? LastDatabaseTemplateDirectory =>
+        Volatile.Read(ref _lastDatabaseTemplateDirectory);
 
     public async Task<(Guid BoardId, Guid ColumnId)> CreateBoardAndColumnAsync(
         string boardName = "TestBoard",
@@ -162,6 +220,10 @@ internal sealed class CliTestHarness : IAsyncDisposable
                 }
             }
 
+            var traceCorrelationId = Guid.NewGuid().ToString("N");
+            var tracePath = CliStartupTrace.TryGetTracePath(_dataDirectory, traceCorrelationId);
+            startInfo.Environment[CliStartupTrace.CorrelationEnvironmentVariable] = traceCorrelationId;
+
             using var process = new Process { StartInfo = startInfo };
             using var timeoutCts = new CancellationTokenSource(_processTimeout);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -189,13 +251,21 @@ internal sealed class CliTestHarness : IAsyncDisposable
                     standardErrorTask,
                     processExitTask);
 
-                return new CliCommandResult(
+                var result = new CliCommandResult(
                     process.ExitCode,
                     standardOutputTask.Result.Trim(),
                     standardErrorTask.Result.Trim());
+                _lastStartupTraceSnapshot = CliStartupTrace.ReadSnapshot(tracePath, traceCorrelationId);
+                return result;
             }
             catch (Exception executionFailure)
             {
+                var commandShape = DescribeCommandShape(arguments);
+                var isTimeout = executionFailure is OperationCanceledException;
+                var preCancellationSnapshot = isTimeout
+                    ? CaptureTimeoutSnapshot(process, standardOutputTask, standardErrorTask, processExitTask, tracePath, traceCorrelationId)
+                    : null;
+
                 // A drain failure can arrive while the child is still blocked. Cancel
                 // the remaining observations immediately, then reap before retaining
                 // the selected original failure. Waiting for Task.WhenAll here would
@@ -223,6 +293,10 @@ internal sealed class CliTestHarness : IAsyncDisposable
                     _processLaunchGate.Poison(cleanupFailure);
                 }
 
+                var postCleanupSnapshot = isTimeout
+                    ? CaptureTimeoutSnapshot(process, standardOutputTask, standardErrorTask, processExitTask, tracePath, traceCorrelationId)
+                    : null;
+
                 await SettleProcessTasksAsync(
                     standardOutputTask,
                     standardErrorTask,
@@ -230,7 +304,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
 
                 if (cleanupFailure is not null)
                 {
-                    if (executionFailure is OperationCanceledException && cleanupFailure is TimeoutException)
+                    if (isTimeout && cleanupFailure is TimeoutException)
                     {
                         var timeoutFailures = new[]
                             {
@@ -241,9 +315,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
                             .Where(failure => failure is not null)
                             .Cast<Exception>();
                         throw new TimeoutException(
-                            $"CLI process did not exit within {_processTimeout.TotalSeconds}s and cleanup " +
-                            $"could not prove that every tracked process exited. Args: {arguments}. " +
-                            cleanupFailure.Message,
+                            BuildTimeoutMessage(commandShape, preCancellationSnapshot!, postCleanupSnapshot!, "failed"),
                             new AggregateException(timeoutFailures));
                     }
 
@@ -256,25 +328,24 @@ internal sealed class CliTestHarness : IAsyncDisposable
                         .Where(failure => failure is not null)
                         .Cast<Exception>();
                     throw new AggregateException(
-                        $"CLI process failed after launch and cleanup also failed. Args: {arguments}. " +
-                        cleanupFailure.Message,
+                        $"CLI process failed after launch and cleanup also failed. Command: {commandShape}.",
                         combinedFailures);
+                }
+
+                if (isTimeout)
+                {
+                    throw new TimeoutException(
+                        BuildTimeoutMessage(commandShape, preCancellationSnapshot!, postCleanupSnapshot!, "reaped"),
+                        executionFailure);
                 }
 
                 if (observationCancellationFailure is not null)
                 {
                     throw new AggregateException(
                         $"CLI process failed after launch and cancellation of remaining process " +
-                        $"observations also failed. Args: {arguments}.",
+                        $"observations also failed. Command: {commandShape}.",
                         executionFailure,
                         observationCancellationFailure);
-                }
-
-                if (executionFailure is OperationCanceledException timeoutCancellation)
-                {
-                    throw new TimeoutException(
-                        $"CLI process did not exit within {_processTimeout.TotalSeconds}s. Args: {arguments}",
-                        timeoutCancellation);
                 }
 
                 ExceptionDispatchInfo.Capture(executionFailure).Throw();
@@ -286,6 +357,81 @@ internal sealed class CliTestHarness : IAsyncDisposable
             _processLaunchGate.Release();
         }
     }
+
+    internal static string DescribeCommandShape(string arguments)
+    {
+        var tokens = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length < 2)
+        {
+            return "other";
+        }
+
+        var group = tokens[0].ToLowerInvariant();
+        var command = tokens[1].ToLowerInvariant();
+        return (group, command) switch
+        {
+            ("boards", "create" or "list" or "delete") => $"boards/{command}",
+            ("columns", "create" or "list" or "delete") => $"columns/{command}",
+            ("cards", "add" or "list" or "move" or "delete") => $"cards/{command}",
+            ("api-key", "create" or "list" or "revoke") => $"api-key/{command}",
+            ("invites", "create" or "list" or "revoke") => $"invites/{command}",
+            _ => "other"
+        };
+    }
+
+    internal static string BuildTimeoutMessage(
+        string commandShape,
+        CliTimeoutSnapshot preCancellation,
+        CliTimeoutSnapshot postCleanup,
+        string cleanupOutcome) =>
+        ("CLI process did not exit within timeout" +
+        (cleanupOutcome == "failed" ? " and cleanup could not prove that every tracked process exited" : string.Empty) +
+        $". command={commandShape}; pre={preCancellation}; post={postCleanup}; cleanup={cleanupOutcome}.");
+
+    private static CliTimeoutSnapshot CaptureTimeoutSnapshot(
+        Process process,
+        Task? standardOutputTask,
+        Task? standardErrorTask,
+        Task? processExitTask,
+        string? tracePath,
+        string traceCorrelationId)
+    {
+        var processState = "unavailable";
+        int? exitCode = null;
+        try
+        {
+            if (process.HasExited)
+            {
+                processState = "exited";
+                exitCode = process.ExitCode;
+            }
+            else
+            {
+                processState = "live";
+            }
+        }
+        catch (Exception)
+        {
+            // A race while inspecting an owned process is diagnostic-only.
+        }
+
+        return new CliTimeoutSnapshot(
+            processState,
+            exitCode,
+            DescribeTaskStatus(standardOutputTask),
+            DescribeTaskStatus(standardErrorTask),
+            DescribeTaskStatus(processExitTask),
+            CliStartupTrace.ReadSnapshot(tracePath, traceCorrelationId));
+    }
+
+    private static string DescribeTaskStatus(Task? task) => task switch
+    {
+        null => "not-started",
+        { IsCompletedSuccessfully: true } => "completed",
+        { IsFaulted: true } => "faulted",
+        { IsCanceled: true } => "canceled",
+        _ => "pending"
+    };
 
     private static async Task ObserveProcessTasksAsync(params Task[] orderedTasks)
     {
@@ -456,6 +602,70 @@ internal sealed class CliTestHarness : IAsyncDisposable
         }
     }
 
+    private static byte[] CreateMigratedDatabaseTemplate()
+    {
+        Interlocked.Increment(ref _databaseTemplateBuildCount);
+        var templateDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-cli-migrated-template-{Guid.NewGuid():N}");
+        Volatile.Write(ref _lastDatabaseTemplateDirectory, templateDirectory);
+        var templateDatabasePath = Path.Combine(templateDirectory, "taskdeck.db");
+
+        try
+        {
+            Directory.CreateDirectory(templateDirectory);
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = templateDatabasePath,
+                Pooling = false
+            }.ToString();
+            var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(connectionString)
+                .Options;
+
+            using (var context = new TaskdeckDbContext(options))
+            {
+                context.Database.Migrate();
+                if (context.Database.GetPendingMigrations().Any())
+                {
+                    throw new InvalidOperationException(
+                        "The CLI database template still has pending migrations.");
+                }
+
+                if (context.Boards.Any() || context.Users.Any())
+                {
+                    throw new InvalidOperationException(
+                        "The CLI database template must not contain product data.");
+                }
+
+                context.Database.CloseConnection();
+            }
+
+            if (!File.Exists(templateDatabasePath))
+            {
+                throw new InvalidOperationException(
+                    "The CLI database template migration did not create a SQLite file.");
+            }
+
+            if (File.Exists($"{templateDatabasePath}-wal") ||
+                File.Exists($"{templateDatabasePath}-shm") ||
+                File.Exists($"{templateDatabasePath}-journal"))
+            {
+                throw new InvalidOperationException(
+                    "The disposed CLI database template retained live journal state.");
+            }
+
+            return File.ReadAllBytes(templateDatabasePath);
+        }
+        finally
+        {
+            if (Directory.Exists(templateDirectory))
+            {
+                Directory.Delete(templateDirectory, recursive: true);
+            }
+        }
+    }
+
     private static bool IsExpectedTerminationException(Exception exception) =>
         exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException;
 
@@ -579,3 +789,17 @@ internal sealed class CliProcessLaunchGate : IDisposable
 /// Result of a CLI subprocess invocation.
 /// </summary>
 internal sealed record CliCommandResult(int ExitCode, string StdOut, string StdErr);
+
+internal sealed record CliTimeoutSnapshot(
+    string ProcessState,
+    int? ExitCode,
+    string StandardOutputTaskState,
+    string StandardErrorTaskState,
+    string ProcessExitTaskState,
+    CliStartupTraceSnapshot Trace)
+{
+    public override string ToString() =>
+        $"process={ProcessState};exit={ExitCode?.ToString() ?? "none"};" +
+        $"stdout={StandardOutputTaskState};stderr={StandardErrorTaskState};" +
+        $"wait={ProcessExitTaskState};{Trace.ToDiagnosticString()}";
+}

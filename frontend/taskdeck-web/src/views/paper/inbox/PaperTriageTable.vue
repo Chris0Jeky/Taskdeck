@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
-import { canMutateSelection, sourceLabel, statusLabel } from '../../../components/inbox/inboxUtils'
-import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
+import PaperTriageRowEdit from './PaperTriageRowEdit.vue'
+import { useBoardStore } from '../../../store/boardStore'
+import {
+  canMutateSelection,
+  captureRowState,
+  sourceLabel,
+  statusLabel,
+  triageDegradedNotice,
+  triageDegradedReviewKey,
+} from '../../../components/inbox/inboxUtils'
+import type { CaptureRowState } from '../../../components/inbox/inboxUtils'
+import type { Board } from '../../../types/board'
+import type { CaptureItem, CaptureItemSummary, CaptureStatusValue } from '../../../types/capture'
 
 /**
  * PaperTriageTable — captured items list rendered in the paper-card ledger
@@ -12,21 +24,200 @@ import type { CaptureItemSummary, CaptureStatusValue } from '../../../types/capt
  *
  * Idempotent: `actionBusyItemId` mirrors the captureStore field so a
  * double-click on Accept can't fire `accept` twice for the same row.
+ *
+ * Board-less captures (Home quick-capture) can't be triaged into a proposal
+ * without a target board, so Accept first reveals an inline board picker
+ * (#1764); the chosen board rides the `accept` event and the server links it.
+ *
+ * A pre-triage row can also have its text CORRECTED before Accept turns it into
+ * a proposal (GH-1951) — the Legacy detail panel's `Edit Text` affordance,
+ * ported to a skin that has no detail panel. `PaperTriageRowEdit` owns that
+ * surface; this table owns only which row is open and the fact that a row with
+ * an open editor cannot simultaneously be decided.
+ *
+ * Every blocked primary action states its reason (#1944). A precondition that
+ * is not met disables the button AND renders why — an enabled-looking button
+ * that swallows the click is the failure this surface was reported for. The
+ * same rule drives the per-row decision line: once accepted or rejected, the
+ * row says what happened and where the work went, so a decided row can never
+ * render identically to one still waiting on a decision.
+ *
+ * `readOnly` is archived-board capture history (#1973). It strips every write
+ * affordance, which would otherwise leave the row with nothing but a truncated
+ * `textExcerpt` and a dead open button — the retained capture would be
+ * "reachable" in name only. So read-only mode trades the triage controls for an
+ * INSPECTION surface: the open button expands the row into the full retained
+ * text and its triage provenance, supplied by the parent through `detail*`.
+ * Loading and errors are the parent's too; this table only renders them.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: CaptureItemSummary[]
   loadingList?: boolean
   listError?: string | null
   actionBusyItemId?: string | null
   triagePollingItemId?: string | null
-}>()
+  scopeLabel?: string
+  scopeClearLabel?: string
+  readOnly?: boolean
+  /** Row whose read-only detail is expanded; `null` collapses every row. */
+  detailItemId?: string | null
+  detail?: CaptureItem | null
+  detailLoading?: boolean
+  detailError?: string | null
+  /**
+   * Path to the expanded capture's decision record, when one was recorded.
+   * A plain path string, matching `proposalHref` on the Review side.
+   */
+  detailProposalRoute?: string | null
+}>(), {
+  readOnly: false,
+  detailItemId: null,
+  detail: null,
+  detailLoading: false,
+  detailError: null,
+  detailProposalRoute: null,
+})
 
 const emit = defineEmits<{
-  (event: 'accept', itemId: string): void
+  (event: 'accept', itemId: string, boardId?: string | null): void
+  (event: 'keep', itemId: string): void
   (event: 'reject', itemId: string): void
   (event: 'open', itemId: string): void
   (event: 'retry'): void
+  (event: 'clear-scope'): void
 }>()
+
+const boardStore = useBoardStore()
+const { t } = useI18n()
+
+// Item currently awaiting a board choice before its triage can be accepted.
+const boardPickItemId = ref<string | null>(null)
+const pickedBoardId = ref<string | null>(null)
+type BoardListLoadState = 'idle' | 'loading' | 'loaded' | 'failed'
+const boardListLoadState = ref<BoardListLoadState>(
+  boardStore.boards.length > 0 ? 'loaded' : 'idle',
+)
+
+// Row whose text is open for pre-triage correction (GH-1951). One at a time:
+// the editor holds an unsaved draft, and a second open row would give the user
+// two drafts and one Save.
+const editItemId = ref<string | null>(null)
+
+/**
+ * Which action this table started, for which row (#1944).
+ *
+ * `actionBusyItemId` mirrors the captureStore's single busy slot and is action-
+ * AGNOSTIC: `ignoreItem` (Reject) sets it exactly the way `triageItem` (Accept)
+ * does, and the store exposes no kind alongside it. Narrating every in-flight
+ * row as "Sending to Review…" therefore tells a REJECTED row the opposite of
+ * what is happening to it, until the detail refresh lands. The intent is only
+ * knowable at the click, so it is recorded here.
+ *
+ * Scope is deliberately narrow — see `rowState`: it is consulted only while the
+ * busy row is still the row it was recorded for, so it can never speak for a
+ * mutation some other surface started.
+ */
+type PendingAction = { itemId: string; kind: 'accept' | 'keep' | 'reject' }
+const pendingAction = ref<PendingAction | null>(null)
+
+watch(
+  () => props.actionBusyItemId,
+  (busyItemId) => {
+    // The moment the busy row clears or moves, the remembered intent stops
+    // describing anything in flight — keeping it would let a later mutation on
+    // the same row inherit a decision the user never made this time. A null or
+    // absent busy id falls out of the same comparison: it matches no item id.
+    if (busyItemId !== pendingAction.value?.itemId) {
+      pendingAction.value = null
+    }
+  },
+)
+
+watch(
+  () => props.items,
+  (rows) => {
+    // A row that has left the list can no longer be edited, and leaving the id
+    // set would silently reopen the editor if a row with that id came back.
+    if (editItemId.value !== null && !rows.some((row) => row.id === editItemId.value)) {
+      editItemId.value = null
+    }
+  },
+)
+
+watch(
+  () => props.readOnly,
+  (readOnly) => {
+    if (!readOnly) return
+    editItemId.value = null
+    boardPickItemId.value = null
+    pickedBoardId.value = null
+  },
+)
+
+/**
+ * Write capability comes from the server (`BoardDto.CanWrite`, #1836) — a board
+ * the user can only read would 403 at accept, so it is shown DISABLED and
+ * annotated rather than filtered away: a Viewer should see why a board is
+ * unavailable, not wonder where it went.
+ *
+ * Only an explicit `false` gates. A payload without the field (older cache,
+ * a non-caller-scoped source) behaves as it did before the field existed.
+ */
+function isBoardWritable(board: Board): boolean {
+  return board.canWrite !== false
+}
+
+function boardOptionLabel(board: Board): string {
+  return isBoardWritable(board) ? board.name : t('inbox.boardPicker.viewOnlyOption', { name: board.name })
+}
+
+const hasReadOnlyBoard = computed(() => boardStore.boards.some((board) => !isBoardWritable(board)))
+
+const pickedBoardIsWritable = computed(() => {
+  if (!pickedBoardId.value) return false
+  const picked = boardStore.boards.find((board) => board.id === pickedBoardId.value)
+  // An id that is not in the loaded list is left alone: the server remains the
+  // authority, and this gate exists to stop a KNOWN read-only pick.
+  return picked ? isBoardWritable(picked) : true
+})
+
+/**
+ * Why the picker's confirm button is off, or `null` when it is live (#1944).
+ *
+ * The button was already `disabled` in this state, but `.pbtn` had no disabled
+ * styling and the row said nothing — so it read as an enabled primary action
+ * that silently did nothing. The single source of truth now drives the
+ * `disabled` binding, the guard inside the handler, AND the visible reason:
+ * they cannot drift apart into "off for a reason nobody stated".
+ *
+ * Empty-list truth comes first: a request in flight or a failed request is not
+ * evidence that the account has no boards. Once a successful load establishes
+ * the list, "nothing picked" is reported before "not writable", because
+ * `pickedBoardIsWritable` is also false when nothing is picked.
+ */
+type BoardPickBlock = 'loading' | 'loadFailed' | 'noBoards' | 'noBoard' | 'viewOnly'
+
+const boardPickBlock = computed<BoardPickBlock | null>(() => {
+  if (boardStore.boards.length === 0) {
+    if (boardListLoadState.value === 'failed') return 'loadFailed'
+    if (boardListLoadState.value !== 'loaded') return 'loading'
+    return 'noBoards'
+  }
+  if (!pickedBoardId.value) return 'noBoard'
+  if (!pickedBoardIsWritable.value) return 'viewOnly'
+  return null
+})
+
+const boardPickBlockMessage = computed(() => {
+  if (boardPickBlock.value === 'loading' || boardPickBlock.value === 'loadFailed') {
+    return t(`inbox.triage.boardPick.${boardPickBlock.value}`)
+  }
+  return boardPickBlock.value ? t(`inbox.triage.boardPick.blocked.${boardPickBlock.value}`) : ''
+})
+
+function boardPickReasonId(item: CaptureItemSummary): string {
+  return `board-pick-reason-${item.id}`
+}
 
 const hasItems = computed(() => props.items.length > 0)
 const hasMutationInFlight = computed(
@@ -37,17 +228,133 @@ function canMutate(item: CaptureItemSummary): boolean {
   return canMutateSelection(item.status)
 }
 
+function isEditing(item: CaptureItemSummary): boolean {
+  return editItemId.value === item.id
+}
+
+/**
+ * A SIBLING row, while some other row holds an open editor (GH-1951).
+ *
+ * `editItemId` is a single slot, so Edit here would move it — unmounting the
+ * open editor and taking the draft inside it with no warning and no undo: the
+ * same silent loss the editing row is already protected from, one row over.
+ *
+ * The gate is on the editor being OPEN, not on the draft being dirty. The
+ * table cannot see the child's draft without new plumbing, and an open-editor
+ * gate is the discipline Accept and Reject already follow on the editing row —
+ * guessing "probably not dirty" would be exactly the assumption that loses the
+ * text on the one occasion it is wrong.
+ */
+function isEditingElsewhere(item: CaptureItemSummary): boolean {
+  return editItemId.value !== null && editItemId.value !== item.id
+}
+
+function editorOpenReasonId(item: CaptureItemSummary): string {
+  return `capture-editor-open-reason-${item.id}`
+}
+
+/**
+ * A row with an open editor is deliberately undecidable (GH-1951).
+ *
+ * Accept while an unsaved draft sits in the textarea would triage the text the
+ * user is in the middle of replacing and discard the correction without a word
+ * — the exact silent-loss failure this surface keeps being reported for. The
+ * row states the reason next to the editor rather than just going grey.
+ *
+ * The open editor freezes the OTHER rows too, for the same reason and with its
+ * own visible reason next to each of them (GH-1944): every decision on this
+ * surface either replaces the draft's row or moves the editor off it.
+ */
 function isActionDisabled(item: CaptureItemSummary): boolean {
-  return hasMutationInFlight.value || props.triagePollingItemId === item.id || !canMutate(item)
+  return props.readOnly ||
+    hasMutationInFlight.value ||
+    props.triagePollingItemId === item.id ||
+    !canMutate(item) ||
+    isEditing(item) ||
+    isEditingElsewhere(item)
+}
+
+function onEdit(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  // Opening the editor cancels a board pick in progress: they compete for the
+  // same row and the same decision, and leaving both open would let a stale
+  // pick confirm against text that is being rewritten.
+  cancelBoardPick()
+  editItemId.value = item.id
+}
+
+function closeEdit() {
+  editItemId.value = null
+}
+
+function hasBoard(item: CaptureItemSummary): boolean {
+  return typeof item.boardId === 'string' && item.boardId.length > 0
+}
+
+function isPickingBoard(item: CaptureItemSummary): boolean {
+  return boardPickItemId.value === item.id
+}
+
+async function loadBoardsForPicker() {
+  if (boardListLoadState.value === 'loading') return
+  if (boardStore.boards.length > 0) {
+    boardListLoadState.value = 'loaded'
+    return
+  }
+
+  boardListLoadState.value = 'loading'
+  try {
+    await boardStore.fetchBoards()
+    boardListLoadState.value = 'loaded'
+  } catch {
+    boardListLoadState.value = 'failed'
+  }
+}
+
+function retryBoardLoad() {
+  void loadBoardsForPicker()
 }
 
 function onAccept(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
-  emit('accept', item.id)
+  if (hasBoard(item)) {
+    pendingAction.value = { itemId: item.id, kind: 'accept' }
+    emit('accept', item.id, item.boardId)
+    return
+  }
+  // No board yet — require the user to choose one before we queue triage.
+  pickedBoardId.value = null
+  boardPickItemId.value = item.id
+  if (boardStore.boards.length === 0 && boardListLoadState.value === 'idle') {
+    void loadBoardsForPicker()
+  }
+}
+
+function confirmBoardAndAccept(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  // Belt and braces behind the disabled button: never emit an accept with no
+  // board, nor one the server would answer with a 403. Every branch that stops
+  // the emit also renders its reason above the button (`boardPickBlock`).
+  if (boardPickBlock.value !== null) return
+  pendingAction.value = { itemId: item.id, kind: 'accept' }
+  emit('accept', item.id, pickedBoardId.value)
+  cancelBoardPick()
+}
+
+function cancelBoardPick() {
+  boardPickItemId.value = null
+  pickedBoardId.value = null
+}
+
+function onKeep(item: CaptureItemSummary) {
+  if (isActionDisabled(item)) return
+  pendingAction.value = { itemId: item.id, kind: 'keep' }
+  emit('keep', item.id)
 }
 
 function onReject(item: CaptureItemSummary) {
   if (isActionDisabled(item)) return
+  pendingAction.value = { itemId: item.id, kind: 'reject' }
   emit('reject', item.id)
 }
 
@@ -60,6 +367,103 @@ function statusTone(status: CaptureStatusValue): 'ember' | 'applied' | 'overdue'
   return 'mute'
 }
 
+/**
+ * States a row can narrate: the server-derived ones plus `rejecting`, which no
+ * capture status produces — a reject is only observable here, between the click
+ * and the refresh that turns the row into `rejected`.
+ */
+type TriageRowState = CaptureRowState | 'keeping' | 'archiving' | 'kept' | 'archived'
+
+/**
+ * The row's decision state (#1944). A mutation THIS table started for THIS row
+ * reads as its own intent even before the server status catches up, so the
+ * click has a visible consequence immediately rather than after the next poll.
+ *
+ * The intent gate is the whole point: `actionBusyItemId` alone cannot tell an
+ * accept from a reject, and guessing `sending` narrates a rejection as a trip
+ * to Review. With no recorded intent — a busy flag another surface set, a row
+ * mounted mid-flight — the server status answers instead. Saying less is the
+ * honest failure mode; the row simply stays quiet until the refresh lands.
+ */
+function rowState(item: CaptureItemSummary): TriageRowState {
+  const pending = pendingAction.value
+  if (props.actionBusyItemId === item.id && pending?.itemId === item.id) {
+    if (pending.kind === 'keep') return 'keeping'
+    if (pending.kind === 'reject') return 'archiving'
+    return 'sending'
+  }
+  if (item.disposition?.kind === 'Kept' || item.disposition?.kind === 0) return 'kept'
+  if (item.disposition?.kind === 'Archived' || item.disposition?.kind === 1) return 'archived'
+  return captureRowState(item.status)
+}
+
+/**
+ * What the user's decision did and what happens next. `undecided` (and an
+ * out-of-contract `unknown`) return null: silence is correct only while the
+ * row is genuinely still waiting on the user.
+ */
+function decisionLine(item: CaptureItemSummary): string | null {
+  const state = rowState(item)
+  if (state === 'undecided' || state === 'unknown') return null
+  return t(`inbox.triage.decision.${state}`)
+}
+
+function stateTagTitle(item: CaptureItemSummary): string {
+  return t('inbox.triage.tag.state', { label: statusLabel(item.status) })
+}
+
+function sourceTagTitle(item: CaptureItemSummary): string {
+  return t('inbox.triage.tag.source', { label: sourceLabel(item.source) })
+}
+
+function failureReason(item: CaptureItemSummary): string | null {
+  const message = item.errorMessage
+  if (!message) return null
+  return statusTone(item.status) === 'overdue' ? message : null
+}
+
+/**
+ * The degradation notice for a row whose triage SUCCEEDED on the deterministic
+ * extractor after its LLM leg could not deliver (#2202).
+ *
+ * Deliberately a second, separate accessor rather than a widening of
+ * `failureReason`: the two are mutually exclusive by construction (that one
+ * fires only on the `overdue` tone, this one only on a completed status), and
+ * they must stay so. `failureReason` renders inside the row button with
+ * `role="alert"` in the failure tone; this renders as its own `role="status"`
+ * block outside the button. Merging them is what would produce "Triage failed"
+ * over a capture that did not fail.
+ *
+ * Paper has no capture detail panel outside read-only history, so the row is
+ * the ONLY place a Paper user can be told — which is why it carries the whole
+ * notice (who produced it, what the server reported, what it means for review,
+ * what to check) rather than a one-line teaser.
+ */
+function degradedNotice(item: CaptureItemSummary): string | null {
+  return triageDegradedNotice(item)
+}
+
+/**
+ * Which `inbox.degraded.review*` sentence is true for this row's status (PR
+ * #2224 review): a `Triaged` row has no proposal to apply and a `Converted`
+ * row was applied already, so the apply guidance is only right in between.
+ */
+function degradedReviewKey(item: CaptureItemSummary): string {
+  return triageDegradedReviewKey(item)
+}
+
+function degradedNoticeId(item: CaptureItemSummary): string {
+  return `paper-capture-degraded-${item.id}`
+}
+
+onMounted(() => {
+  // Prime boards so the picker is ready if the user accepts a board-less capture.
+  // Archived history has no Accept path, so it must not prime the picker.
+  if (!props.readOnly && boardStore.boards.length === 0) {
+    void loadBoardsForPicker()
+  }
+})
+
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso)
@@ -69,70 +473,375 @@ function formatTime(iso: string): string {
     return ''
   }
 }
+
+// ---- Read-only capture inspection (#1973) ----
+
+/** Whether this row's retained-capture detail is currently expanded. */
+function isDetailOpen(item: CaptureItemSummary): boolean {
+  return props.readOnly && props.detailItemId === item.id
+}
+
+function detailPanelId(item: CaptureItemSummary): string {
+  return `paper-capture-detail-${item.id}`
+}
+
+/**
+ * The loaded detail, but only while it still belongs to the expanded row.
+ * The parent loads asynchronously, so between "row B opened" and "row B's
+ * detail arrived" the stale row-A payload must not render under row B.
+ */
+const activeDetail = computed<CaptureItem | null>(() => {
+  const detail = props.detail
+  if (!detail || !props.detailItemId) return null
+  return detail.id === props.detailItemId ? detail : null
+})
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleString()
+  } catch {
+    return ''
+  }
+}
+
+/** A recorded value, or the explicit "not recorded" placeholder — never blank. */
+function recordedOr(value: string | null | undefined): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || t('inbox.history.detail.none')
+}
 </script>
 
 <template>
-  <section class="paper-triage" aria-label="Captured items">
+  <section
+    class="paper-triage"
+    aria-label="Captured items"
+    :aria-busy="loadingList && !listError"
+  >
     <header class="paper-triage__header">
-      <h2 class="tk-h3 paper-triage__title">Today's captures</h2>
-      <span class="tk-meta">
+      <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
+      <span v-if="!loadingList && !listError" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
     </header>
 
-    <div v-if="loadingList && !hasItems" class="paper-triage__empty">
-      <span class="tk-meta">Loading…</span>
-    </div>
-
-    <div v-else-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
+    <div v-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
       <p class="tk-body">{{ listError }}</p>
       <button type="button" class="paper-triage__retry" @click="emit('retry')">
         Retry
       </button>
     </div>
 
-    <div v-if="!loadingList && !listError && !hasItems" class="paper-triage__empty">
-      <p class="tk-body">A pen and a phrase. Drop a thought above to start.</p>
+    <div v-else-if="loadingList" class="paper-triage__empty" role="status">
+      <span class="tk-meta">Loading…</span>
     </div>
 
-    <ul v-if="hasItems" class="paper-triage__list">
+    <div v-else-if="!hasItems" class="paper-triage__empty">
+      <template v-if="scopeLabel">
+        <p class="tk-body">{{ t('inbox.empty.scoped', { scope: scopeLabel }) }}</p>
+        <button type="button" class="paper-triage__retry" data-testid="paper-triage-clear-scope" @click="emit('clear-scope')">
+          {{ scopeClearLabel }}
+        </button>
+      </template>
+      <p v-else class="tk-body">
+        {{ readOnly ? t('inbox.history.empty') : 'A pen and a phrase. Drop a thought above to start.' }}
+      </p>
+    </div>
+
+    <!--
+      Keep retained rows mounted while a replacement load hides them. The row
+      editor owns its unsaved draft locally, so unmounting this list during a
+      same-scope refresh would silently replace that draft with server text on
+      remount. Conditional display preserves the subtree without exposing
+      stale rows from a route-scope replacement.
+    -->
+    <ul
+      v-if="hasItems"
+      class="paper-triage__list"
+      :style="loadingList || listError ? { display: 'none' } : undefined"
+    >
       <li
         v-for="item in items"
         :key="item.id"
         class="paper-triage__row"
         :data-item-id="item.id"
+        :data-row-state="rowState(item)"
       >
         <button
           type="button"
           class="paper-triage__open"
-          :aria-label="`Open capture ${item.id}`"
+          :aria-label="readOnly
+            ? (isDetailOpen(item) ? t('inbox.history.detail.close') : t('inbox.history.detail.open'))
+            : `Open capture ${item.id}`"
+          :aria-expanded="readOnly ? isDetailOpen(item) : undefined"
+          :aria-controls="readOnly ? detailPanelId(item) : undefined"
+          :aria-describedby="degradedNotice(item) ? degradedNoticeId(item) : undefined"
+          :data-testid="readOnly ? 'capture-history-open' : undefined"
           @click="emit('open', item.id)"
         >
           <span class="tk-serial paper-triage__time">{{ formatTime(item.createdAt) }}</span>
           <span class="paper-triage__excerpt">{{ item.textExcerpt }}</span>
+          <span
+            v-if="failureReason(item)"
+            class="paper-triage__reason"
+            role="alert"
+            :title="failureReason(item) ?? ''"
+            data-testid="capture-failure-reason"
+          >
+            {{ failureReason(item) }}
+          </span>
         </button>
 
         <div class="paper-triage__tags">
-          <PaperTagstamp :tone="statusTone(item.status)">{{ statusLabel(item.status) }}</PaperTagstamp>
-          <PaperTagstamp tone="mute">{{ sourceLabel(item.source) }}</PaperTagstamp>
+          <PaperTagstamp
+            :tone="statusTone(item.status)"
+            data-tag-kind="state"
+            :title="stateTagTitle(item)"
+          >{{ statusLabel(item.status) }}</PaperTagstamp>
+          <PaperTagstamp
+            tone="mute"
+            class="paper-triage__tag--source"
+            data-tag-kind="source"
+            :title="sourceTagTitle(item)"
+          >{{ sourceLabel(item.source) }}</PaperTagstamp>
         </div>
 
-        <div class="paper-triage__actions">
+        <!--
+          Degraded triage (#2202). A capture whose LLM leg could not deliver
+          still TRIAGED, so this is a caution on a success and is built to be
+          unmistakable for the failure above it: its own block outside the row
+          button (not a span inside the button's accessible name), `role="status"`
+          rather than `alert`, and the note palette rather than `--overdue`.
+          The server's notice renders verbatim — it is already redacted and
+          bounded upstream, and nothing local is ever appended to it.
+        -->
+        <div
+          v-if="degradedNotice(item)"
+          :id="degradedNoticeId(item)"
+          class="paper-triage__degraded"
+          role="status"
+          data-testid="capture-degraded-notice"
+        >
+          <p class="paper-triage__degraded-label">{{ t('inbox.degraded.label') }}</p>
+          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.lead') }}</p>
+          <p class="paper-triage__degraded-reason" data-testid="capture-degraded-reason">
+            {{ t('inbox.degraded.reason', { reason: degradedNotice(item) }) }}
+          </p>
+          <p class="paper-triage__degraded-line">{{ t(degradedReviewKey(item)) }}</p>
+          <p class="paper-triage__degraded-line">{{ t('inbox.degraded.action') }}</p>
+        </div>
+
+        <!--
+          Read-only capture inspection (#1973). Archived history has no triage
+          controls, so this expanded panel is the ONLY way to see the retained
+          capture in full — the row above shows a truncated excerpt. It renders
+          text and provenance and links to the decision record; it has no
+          control that writes.
+        -->
+        <div
+          v-if="isDetailOpen(item)"
+          :id="detailPanelId(item)"
+          class="paper-triage__history-detail"
+          data-testid="capture-history-detail"
+        >
+          <p v-if="detailLoading && !activeDetail" class="tk-body" role="status">
+            {{ t('inbox.history.detail.loading') }}
+          </p>
+          <p
+            v-else-if="detailError"
+            class="tk-body paper-triage__history-error"
+            role="alert"
+            data-testid="capture-history-detail-error"
+          >
+            {{ detailError }}
+          </p>
+          <template v-else-if="activeDetail">
+            <h3 class="tk-eyebrow">{{ t('inbox.history.detail.title') }}</h3>
+            <p class="tk-body paper-triage__history-text" data-testid="capture-history-text">{{ activeDetail.rawText }}</p>
+            <dl class="paper-triage__history-meta">
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.captured') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(formatDateTime(activeDetail.createdAt)) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.processed') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(formatDateTime(activeDetail.processedAt)) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.board') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.boardId) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.triageRun') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.provenance?.triageRunId) }}</dd>
+              </div>
+              <div>
+                <dt class="tk-eyebrow">{{ t('inbox.history.detail.promptVersion') }}</dt>
+                <dd class="tk-meta">{{ recordedOr(activeDetail.provenance?.promptVersion) }}</dd>
+              </div>
+            </dl>
+            <RouterLink
+              v-if="detailProposalRoute"
+              class="paper-triage__history-link"
+              :to="detailProposalRoute"
+              data-testid="capture-history-proposal-link"
+            >
+              {{ t('inbox.history.detail.proposalLink') }}
+            </RouterLink>
+            <p v-else class="tk-meta" data-testid="capture-history-no-proposal">
+              {{ t('inbox.history.detail.noProposal') }}
+            </p>
+          </template>
+        </div>
+
+        <div
+          v-if="!readOnly && isPickingBoard(item)"
+          class="paper-triage__board-pick"
+          data-testid="capture-board-pick"
+          :aria-busy="boardPickBlock === 'loading'"
+        >
+          <label class="paper-triage__board-label">
+            <span class="tk-eyebrow">Board</span>
+            <select
+              v-model="pickedBoardId"
+              class="paper-triage__board-select"
+              aria-label="Choose a board for this capture"
+              :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
+              :disabled="boardStore.boards.length === 0"
+            >
+              <option :value="null" disabled>Select a board…</option>
+              <option
+                v-for="board in boardStore.boards"
+                :key="board.id"
+                :value="board.id"
+                :disabled="!isBoardWritable(board)"
+                :data-writable="isBoardWritable(board)"
+              >
+                {{ boardOptionLabel(board) }}
+              </option>
+            </select>
+          </label>
+          <p v-if="hasReadOnlyBoard" class="paper-triage__board-hint" data-testid="board-pick-view-only-hint">
+            {{ t('inbox.boardPicker.viewOnlyHint') }}
+          </p>
+          <p
+            v-if="boardPickBlock"
+            :id="boardPickReasonId(item)"
+            class="paper-triage__board-reason"
+            :role="boardPickBlock === 'loadFailed' ? 'alert' : 'status'"
+            data-testid="board-pick-reason"
+            :data-reason="boardPickBlock"
+          >
+            {{ boardPickBlockMessage }}
+          </p>
+          <button
+            v-if="boardPickBlock === 'loadFailed'"
+            type="button"
+            class="paper-triage__retry"
+            data-action="retry-board-load"
+            :aria-describedby="boardPickReasonId(item)"
+            @click="retryBoardLoad"
+          >
+            {{ t('inbox.triage.boardPick.retry') }}
+          </button>
+          <div class="paper-triage__actions">
+            <PaperHLBtn
+              label="Ask AI for proposal"
+              variant="ember"
+              :disabled="isActionDisabled(item) || boardPickBlock !== null"
+              :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
+              data-action="accept-on-board"
+              @click="confirmBoardAndAccept(item)"
+            />
+            <PaperHLBtn
+              label="Cancel"
+              variant="ghost"
+              data-action="cancel-board-pick"
+              @click="cancelBoardPick"
+            />
+          </div>
+        </div>
+
+        <div v-else-if="!readOnly" class="paper-triage__actions">
           <PaperHLBtn
-            label="Accept"
+            label="Ask AI"
             variant="ember"
             :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="accept"
             @click="onAccept(item)"
           />
           <PaperHLBtn
-            label="Reject"
+            label="Keep"
             variant="ghost"
             :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
+            data-action="keep"
+            @click="onKeep(item)"
+          />
+          <PaperHLBtn
+            label="Archive"
+            variant="ghost"
+            :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="reject"
             @click="onReject(item)"
           />
+          <PaperHLBtn
+            :label="t('inbox.triage.edit.action')"
+            variant="ghost"
+            :disabled="isActionDisabled(item)"
+            :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
+            data-action="edit"
+            @click="onEdit(item)"
+          />
         </div>
+
+        <p
+          v-if="!readOnly && isEditingElsewhere(item)"
+          :id="editorOpenReasonId(item)"
+          class="paper-triage__edit-block paper-triage__edit-block--row"
+          role="status"
+          data-testid="capture-editor-open-block"
+        >
+          {{ t('inbox.triage.edit.blocked.editorOpen') }}
+        </p>
+
+        <div v-if="!readOnly && isEditing(item)" class="paper-triage__edit">
+          <p
+            class="paper-triage__edit-block"
+            role="status"
+            data-testid="capture-edit-decision-block"
+          >
+            {{ t('inbox.triage.edit.decisionBlocked') }}
+          </p>
+          <!--
+            The editor's Save writes through `captureStore.updateSuggestion`,
+            which takes the SAME single busy slot Accept and Reject take. A save
+            started while another row's mutation is in flight overwrites that
+            row's slot, and the `actionBusyItemId` watch above then drops its
+            recorded intent — the row loses its "Sending to Review…" narration
+            mid-flight, and the early release re-opens a second enqueue. The
+            editor cannot see the slot, so the table hands it over.
+          -->
+          <PaperTriageRowEdit
+            :item-id="item.id"
+            :mutation-in-flight="hasMutationInFlight"
+            @close="closeEdit"
+          />
+        </div>
+
+        <p
+          v-if="decisionLine(item)"
+          class="paper-triage__decision"
+          :data-row-state="rowState(item)"
+          data-testid="capture-row-status"
+          role="status"
+        >
+          {{ decisionLine(item) }}
+        </p>
       </li>
     </ul>
   </section>
@@ -232,6 +941,206 @@ function formatTime(iso: string): string {
 }
 .paper-triage__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.paper-triage__reason {
+  grid-column: 2;
+  margin-top: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--overdue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.paper-triage__board-pick {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.paper-triage__board-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.paper-triage__board-hint {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.paper-triage__board-select {
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-bottom-color: var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+}
+.paper-triage__board-select:focus {
+  border-color: var(--ember);
+}
+.paper-triage__board-reason {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--overdue);
+}
+
+.paper-triage__edit {
+  grid-column: 1 / -1;
+}
+.paper-triage__edit-block {
+  margin: 6px 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+/*
+ * The same note, but hung directly off the row grid rather than inside the
+ * editor block — a sibling row states why its buttons are off without an
+ * editor of its own to sit under.
+ */
+.paper-triage__edit-block--row {
+  grid-column: 1 / -1;
+}
+
+/*
+ * Degraded-triage note (#2202). Deliberately NOT `--overdue`: that colour is
+ * the failure tone this row did not earn. A quiet panel with an ember rule
+ * reads as an annotation on a result, which is what it is.
+ */
+.paper-triage__degraded {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--paper-2);
+  border-left: 2px solid var(--ember);
+  border-radius: 2px;
+}
+.paper-triage__degraded-label {
+  margin: 0 0 4px;
+  font-family: var(--sans);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+.paper-triage__degraded-line {
+  margin: 0 0 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.paper-triage__degraded-line:last-child {
+  margin-bottom: 0;
+}
+/* The server's own words, set apart from Taskdeck's explanation around them. */
+.paper-triage__degraded-reason {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.paper-triage__decision {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.paper-triage__decision[data-row-state='applied'] {
+  color: var(--applied);
+}
+.paper-triage__decision[data-row-state='failed'] {
+  color: var(--overdue);
+}
+.paper-triage__decision[data-row-state='rejected'] {
+  color: var(--mute);
+}
+
+/*
+ * A source tag says how the capture ARRIVED (Typed, Voice, Import); a state tag
+ * says where it stands. They sat in the same visual style, so `TYPED` read as a
+ * fourth state next to NEW / READY FOR REVIEW / APPLIED TO BOARD (#1944). The
+ * dashed hairline marks the source tag as a different kind of fact; the `title`
+ * on each tag names the kind in words.
+ */
+.paper-triage__tag--source {
+  border-style: dashed;
+}
+
+/*
+ * Read-only capture inspection (#1973). Sits where the triage actions would be,
+ * so the archived row still has a substantive lower half. `grid-column: 1 / -1`
+ * lets the retained text run the full row width instead of the excerpt column.
+ */
+.paper-triage__history-detail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--paper-2, transparent);
+}
+.paper-triage__history-text {
+  /* The retained capture is the point of the panel — keep its own line breaks
+     and let long single-token pastes wrap instead of forcing a scrollbar. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.paper-triage__history-error {
+  color: var(--overdue);
+}
+.paper-triage__history-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+.paper-triage__history-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.paper-triage__history-link {
+  align-self: flex-start;
+  color: var(--ink-1);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .paper-triage__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .paper-triage__tags,
+  .paper-triage__actions,
+  .paper-triage__reason {
+    grid-column: 1;
+  }
+
+  .paper-triage__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

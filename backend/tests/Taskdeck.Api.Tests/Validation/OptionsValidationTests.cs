@@ -630,12 +630,12 @@ public class OptionsValidationTests
     [Theory]
     [InlineData("Mock")]
     [InlineData("OpenAi")]
-    [InlineData("Gemini")]
+    [InlineData("OpenAiCompatible")]
+    [InlineData("Ollama")]
     [InlineData("OpenAI")]
     [InlineData("openai")]
     [InlineData("OPENAI")]
     [InlineData("mock")]
-    [InlineData("gemini")]
     public void LlmProviderSettings_Provider_AcceptsValidValues(string provider)
     {
         var settings = new LlmProviderSettings { Provider = provider };
@@ -646,6 +646,27 @@ public class OptionsValidationTests
             settings, context, results, validateAllProperties: true);
 
         Assert.True(isValid);
+    }
+
+    [Theory]
+    [InlineData("Gemini")]
+    [InlineData("gemini")]
+    [InlineData("GEMINI")]
+    public void LlmProviderSettings_Provider_RejectsRetiredGeminiAsUnsupported(string provider)
+    {
+        var settings = new LlmProviderSettings { Provider = provider };
+
+        var context = new System.ComponentModel.DataAnnotations.ValidationContext(settings);
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+        var isValid = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+            settings, context, results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        var message = Assert.Single(results).ErrorMessage;
+        Assert.Contains("OpenAi", message);
+        Assert.Contains("OpenAiCompatible", message);
+        Assert.Contains("Ollama", message);
+        Assert.Contains("Mock", message);
     }
 
     [Theory]

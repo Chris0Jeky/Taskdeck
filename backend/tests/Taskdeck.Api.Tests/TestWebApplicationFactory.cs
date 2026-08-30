@@ -13,9 +13,34 @@ namespace Taskdeck.Api.Tests;
 
 public class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private static readonly object PristineDatabaseLock = new();
+    private static Lazy<PristineDatabase>? s_pristineDatabase;
+    private static int s_pristineDatabaseMigrationCount;
+
     private readonly ConcurrentBag<string> _dbPaths = new();
 
+    static TestWebApplicationFactory()
+    {
+        AppDomain.CurrentDomain.ProcessExit += static (_, _) =>
+        {
+            Lazy<PristineDatabase>? pristineDatabase;
+            lock (PristineDatabaseLock)
+            {
+                pristineDatabase = s_pristineDatabase;
+            }
+
+            if (pristineDatabase is { IsValueCreated: true })
+            {
+                DeleteDatabaseFiles(pristineDatabase.Value.Path, includePrimaryDatabase: true);
+            }
+        };
+    }
+
     internal UnhandledExceptionDiagnosticSink UnhandledExceptionDiagnostics { get; } = new();
+
+    // Test-only observation seam. This counts real Database.Migrate calls on the process-local
+    // template, never copies into individual factory databases.
+    internal static int PristineDatabaseMigrationCount => Volatile.Read(ref s_pristineDatabaseMigrationCount);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -35,7 +60,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
         {
             var overrideSettings = new Dictionary<string, string?>
             {
-                ["ConnectionStrings:DefaultConnection"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:DefaultConnection"] = TestSqlite.ConnectionString(dbPath),
                 // Provide a stable test JWT secret so tests do not depend on
                 // appsettings.Development.json or FirstRunBootstrapper side-effects.
                 ["Jwt:SecretKey"] = "TaskdeckTestsOnlySecretKeyMustBeLongEnough123!",
@@ -59,6 +84,8 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices((context, services) =>
         {
+            var diagnostics = TestAssemblyDiagnostics.ActivateIfConfigured();
+            var configureServicesStarted = diagnostics?.BeginConfigureServices();
             var databaseSettings = context.Configuration.GetSection("Database").Get<DatabaseSettings>()
                 ?? new DatabaseSettings();
 
@@ -70,7 +97,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             // only the connection string differs (isolated per-factory temp file), so
             // the test registration is structurally unable to drift from production (#1282).
             services.AddDbContext<TaskdeckDbContext>(options =>
-                options.UseTaskdeckSqlite($"Data Source={dbPath}", databaseSettings));
+                options.UseTaskdeckSqlite(TestSqlite.ConnectionString(dbPath), databaseSettings));
             services.AddSingleton(new LlmProviderSettings
             {
                 EnableLiveProviders = false,
@@ -83,11 +110,79 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
                 MaxBytesPerUser = 1024
             });
 
-            using var provider = services.BuildServiceProvider();
-            using var scope = provider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
-            dbContext.Database.Migrate();
+            File.Copy(GetPristineDatabasePath(databaseSettings), dbPath);
+            if (configureServicesStarted is long configureServicesStartedTimestamp)
+            {
+                diagnostics!.CompleteConfigureServices(configureServicesStartedTimestamp);
+            }
         });
+    }
+
+    private static string GetPristineDatabasePath(DatabaseSettings databaseSettings)
+    {
+        Lazy<PristineDatabase> pristineDatabase;
+        lock (PristineDatabaseLock)
+        {
+            // Every factory has the same in-memory Database section. Capture the first instance so
+            // the one real migration uses the exact production-equivalent options as the copied hosts.
+            pristineDatabase = s_pristineDatabase ??= new Lazy<PristineDatabase>(
+                () => CreatePristineDatabase(databaseSettings),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        return pristineDatabase.Value.Path;
+    }
+
+    private static PristineDatabase CreatePristineDatabase(DatabaseSettings databaseSettings)
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-api-tests-template-{Guid.NewGuid():N}.db");
+        var diagnostics = TestAssemblyDiagnostics.ActivateIfConfigured();
+        var databaseMigrateStarted = diagnostics?.BeginDatabaseMigrate();
+
+        try
+        {
+            var optionsBuilder = new DbContextOptionsBuilder<TaskdeckDbContext>();
+            optionsBuilder.UseTaskdeckSqlite(TestSqlite.ConnectionString(databasePath), databaseSettings);
+
+            using (var dbContext = new TaskdeckDbContext(optionsBuilder.Options))
+            {
+                dbContext.Database.Migrate();
+                CheckpointAndCloseTemplateDatabase(dbContext);
+            }
+
+            // The context is fully disposed before deleting WAL state, so a byte copy of the main
+            // database contains the complete schema and never shares a live SQLite connection.
+            DeleteDatabaseFiles(databasePath, includePrimaryDatabase: false);
+            Interlocked.Increment(ref s_pristineDatabaseMigrationCount);
+            if (databaseMigrateStarted is long migrationStarted)
+            {
+                diagnostics!.CompleteDatabaseMigrate(migrationStarted);
+            }
+
+            return new PristineDatabase(databasePath);
+        }
+        catch
+        {
+            DeleteDatabaseFiles(databasePath, includePrimaryDatabase: true);
+            throw;
+        }
+    }
+
+    private static void CheckpointAndCloseTemplateDatabase(TaskdeckDbContext dbContext)
+    {
+        dbContext.Database.OpenConnection();
+        try
+        {
+            using var command = dbContext.Database.GetDbConnection().CreateCommand();
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            command.ExecuteScalar();
+        }
+        finally
+        {
+            dbContext.Database.CloseConnection();
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -99,29 +194,35 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             return;
         }
 
-        // Drop pooled connections so WAL/SHM sidecar file handles release before the
-        // delete loop (mirrors SqlitePragmaInterceptorTests.Dispose). Without this, a
-        // pooled connection can hold -wal/-shm open, the delete throws IOException,
-        // and the catch below silently leaks the temp files.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // The host's connections use Pooling=False (TestSqlite, #1609), so disposing it above
+        // closes the -wal/-shm handles outright and the delete loop below can succeed. This
+        // previously called the process-global pool-clearing API, which released other test
+        // classes' handles too and raced their concurrent opens.
 
         foreach (var dbPath in _dbPaths)
-        {
-            foreach (var cleanupPath in GetDatabaseCleanupTargets(dbPath))
-            {
-                if (!File.Exists(cleanupPath))
-                {
-                    continue;
-                }
+            DeleteDatabaseFiles(dbPath, includePrimaryDatabase: true);
+    }
 
-                try
-                {
-                    File.Delete(cleanupPath);
-                }
-                catch (IOException)
-                {
-                    // Cleanup failure should not fail test teardown.
-                }
+    private static void DeleteDatabaseFiles(string dbPath, bool includePrimaryDatabase)
+    {
+        var cleanupTargets = includePrimaryDatabase
+            ? GetDatabaseCleanupTargets(dbPath)
+            : GetDatabaseCleanupTargets(dbPath).Skip(1);
+
+        foreach (var cleanupPath in cleanupTargets)
+        {
+            if (!File.Exists(cleanupPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Delete(cleanupPath);
+            }
+            catch (IOException)
+            {
+                // Cleanup failure should not fail test teardown.
             }
         }
     }
@@ -133,7 +234,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>
             dbPath,
             $"{dbPath}-wal",
             $"{dbPath}-shm",
-            $"{dbPath}-journal"
+            $"{dbPath}-journal",
+            $"{dbPath}.migrate.lock"
         ];
     }
+
+    private sealed record PristineDatabase(string Path);
 }

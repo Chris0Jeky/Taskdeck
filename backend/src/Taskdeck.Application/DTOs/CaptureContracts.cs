@@ -13,7 +13,16 @@ public record CapturePayloadV1(
     DateTimeOffset? ClientCreatedAt = null,
     string? TitleHint = null,
     string? ExternalRef = null,
-    CaptureProvenanceV1? Provenance = null);
+    CaptureProvenanceV1? Provenance = null,
+    DateOnly? DueDate = null,
+    IReadOnlyList<string>? Labels = null,
+    CaptureDispositionV1? Disposition = null);
+
+public record CaptureDispositionV1(
+    CaptureDisposition Kind,
+    DateTimeOffset At,
+    Guid ByUserId,
+    Guid? BoardId = null);
 
 public record CaptureProvenanceV1(
     Guid CaptureItemId,
@@ -51,6 +60,10 @@ public static class CaptureRequestContract
     public const int MaxTranscriptTextLength = 200_000;
     public const int MaxTitleHintLength = 240;
     public const int MaxExternalRefLength = 2_048;
+    // Keep capture metadata aligned with the Label domain invariant while bounding
+    // per-capture aggregation before triage fans labels out across task operations.
+    public const int MaxLabelNameLength = 30;
+    public const int MaxLabelCount = 100;
     public const int MaxPromptVersionLength = 64;
     public const int MaxProviderLength = 64;
     public const int MaxModelLength = 128;
@@ -182,10 +195,25 @@ public static class CaptureRequestContract
                 wire.ClientCreatedAt,
                 wire.TitleHint,
                 wire.ExternalRef,
-                wire.Provenance);
+                wire.Provenance,
+                wire.DueDate,
+                wire.Labels,
+                wire.Disposition);
 
             return ValidatePayload(payloadModel);
         }
+    }
+
+    /// <summary>
+    /// Parses a payload already accepted into persistence, including server attribution. Legacy
+    /// plain-text or malformed rows remain readable as typed capture text with no provenance.
+    /// </summary>
+    public static CapturePayloadV1 ParseStoredPayload(string payload)
+    {
+        var payloadResult = ParsePayload(payload, allowServerAttributionFields: true);
+        return payloadResult.IsSuccess
+            ? payloadResult.Value
+            : new CapturePayloadV1(CurrentSchemaVersion, CaptureSource.Typed, payload);
     }
 
     public static Result<CapturePayloadV1> ValidatePayload(CapturePayloadV1 payload)
@@ -222,6 +250,27 @@ public static class CaptureRequestContract
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
                 $"Capture external reference cannot exceed {MaxExternalRefLength} characters");
+        }
+
+        if (payload.Labels?.Count > MaxLabelCount)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture labels cannot contain more than {MaxLabelCount} values");
+        }
+
+        if (payload.Labels?.Any(string.IsNullOrWhiteSpace) == true)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture labels cannot contain empty values");
+        }
+
+        if (payload.Labels?.Any(label => label.Length > MaxLabelNameLength) == true)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                $"Capture label names cannot exceed {MaxLabelNameLength} characters");
         }
 
         if (payload.Provenance?.PromptVersion?.Length > MaxPromptVersionLength)
@@ -265,6 +314,20 @@ public static class CaptureRequestContract
             return Result.Failure<CapturePayloadV1>(
                 ErrorCodes.ValidationError,
                 $"Unsupported capture attribution source surface '{payload.Provenance.SourceSurface}'");
+        }
+
+        if (payload.Disposition is { ByUserId: var dispositionUserId } && dispositionUserId == Guid.Empty)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture disposition user ID cannot be empty");
+        }
+
+        if (payload.Disposition is { BoardId: { } dispositionBoardId } && dispositionBoardId == Guid.Empty)
+        {
+            return Result.Failure<CapturePayloadV1>(
+                ErrorCodes.ValidationError,
+                "Capture disposition board ID cannot be empty");
         }
 
         return Result.Success(payload);
@@ -418,6 +481,17 @@ public static class CaptureRequestContract
 
         if (!allowServerAttributionFields)
         {
+            foreach (var property in root.EnumerateObject())
+            {
+                if (property.Name.Equals("disposition", StringComparison.OrdinalIgnoreCase) &&
+                    property.Value.ValueKind != JsonValueKind.Null)
+                {
+                    return Result.Failure(
+                        ErrorCodes.ValidationError,
+                        "Capture payload must not include server disposition fields");
+                }
+            }
+
             // Every server-authored provenance field is forbidden on the client path — not just
             // actor attribution. proposalId/triageRunId/provider/model/promptVersion are stamped by
             // the triage pipeline after it actually runs; accepting them from a client would let a
@@ -485,5 +559,8 @@ public static class CaptureRequestContract
         public string? TitleHint { get; init; }
         public string? ExternalRef { get; init; }
         public CaptureProvenanceV1? Provenance { get; init; }
+        public DateOnly? DueDate { get; init; }
+        public List<string>? Labels { get; init; }
+        public CaptureDispositionV1? Disposition { get; init; }
     }
 }

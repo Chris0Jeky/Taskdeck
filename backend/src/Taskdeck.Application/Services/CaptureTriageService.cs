@@ -7,6 +7,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
@@ -27,6 +28,29 @@ public class CaptureTriageService : ICaptureTriageService
 
     /// <summary>Model/version identifier for the deterministic capture-triage extractor (#1273).</summary>
     public const string TriageModelName = "capture-triage-v1";
+
+    /// <summary>
+    /// Opening clause of the notice recorded when an attempted LLM triage leg could not deliver and
+    /// the deterministic extractor produced the result instead (#2192). Every degraded outcome uses
+    /// this one wording family and names its own outcome, so a silent fallback is impossible.
+    /// </summary>
+    public const string DegradedTriageNoticePrefix = "LLM triage unavailable";
+
+    /// <summary>
+    /// Detail published when the extraction leg threw an unexpected exception. The exception's own
+    /// message is deliberately NOT used: it is arbitrary text from any layer the extractor touches,
+    /// and this detail reaches a client-visible capture field, so pattern-based redaction (which
+    /// only masks shapes it recognizes) is not a sufficient guard. The exception is logged in full.
+    /// </summary>
+    public const string UnexpectedExtractorFailureDetail =
+        "The triage engine failed unexpectedly; the reason is in the server log.";
+
+    /// <summary>
+    /// Bound on the provider/validation detail appended to a degraded-triage notice. Keeps the
+    /// whole notice comfortably inside the stored <c>ErrorMessage</c> column bound
+    /// (<see cref="LlmRequest.MaxErrorMessageLength"/>) without relying on truncation there.
+    /// </summary>
+    private const int MaxDegradedNoticeDetailLength = 300;
 
     /// <summary>
     /// Provenance value recorded when the engine that produced an existing proposal cannot be
@@ -63,19 +87,22 @@ public class CaptureTriageService : ICaptureTriageService
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly ILlmCaptureTriageExtractor? _llmExtractor;
     private readonly ILogger<CaptureTriageService>? _logger;
+    private readonly IProposalRevisionService? _proposalRevisionService;
 
     public CaptureTriageService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
         IAutomationPolicyEngine policyEngine,
         ILlmCaptureTriageExtractor? llmExtractor = null,
-        ILogger<CaptureTriageService>? logger = null)
+        ILogger<CaptureTriageService>? logger = null,
+        IProposalRevisionService? proposalRevisionService = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
         _llmExtractor = llmExtractor;
         _logger = logger;
+        _proposalRevisionService = proposalRevisionService;
     }
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
@@ -84,6 +111,45 @@ public class CaptureTriageService : ICaptureTriageService
         Guid? boardId,
         CapturePayloadV1 payload,
         CancellationToken cancellationToken = default)
+        => await CreateProposalCoreAsync(
+            captureItemId,
+            userId,
+            boardId,
+            transcriptId: null,
+            payload,
+            cancellationToken);
+
+    public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        Guid transcriptId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken = default)
+    {
+        if (transcriptId == Guid.Empty)
+        {
+            return Result.Failure<CaptureTriageProposalResultDto>(
+                ErrorCodes.ValidationError,
+                "TranscriptId cannot be empty");
+        }
+
+        return await CreateProposalCoreAsync(
+            captureItemId,
+            userId,
+            boardId,
+            transcriptId,
+            payload,
+            cancellationToken);
+    }
+
+    private async Task<Result<CaptureTriageProposalResultDto>> CreateProposalCoreAsync(
+        Guid captureItemId,
+        Guid userId,
+        Guid? boardId,
+        Guid? transcriptId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -119,6 +185,18 @@ public class CaptureTriageService : ICaptureTriageService
             cancellationToken);
         if (existingProposal != null)
         {
+            var reconciliation = await ReconcileExistingCaptureProposalAsync(
+                existingProposal,
+                userId,
+                payload,
+                cancellationToken);
+            if (!reconciliation.IsSuccess)
+            {
+                return Result.Failure<CaptureTriageProposalResultDto>(
+                    reconciliation.ErrorCode,
+                    reconciliation.ErrorMessage);
+            }
+
             var (reuseProvider, reuseModel, reusePromptVersion) = ResolveReuseProvenance(
                 payload,
                 llmIsCandidate,
@@ -129,10 +207,11 @@ public class CaptureTriageService : ICaptureTriageService
                 captureItemId,
                 ResolveTriageRunId(existingProposal.CorrelationId, Guid.NewGuid()),
                 existingProposal.Id,
-                existingProposal.Operations.Count,
+                reconciliation.Value,
                 reusePromptVersion,
                 reuseProvider,
-                reuseModel));
+                reuseModel,
+                ResolveReuseDegradedNotice(llmIsCandidate, reuseProvider)));
         }
 
         // Re-check current board access before service-level board/column reads or transcript extraction. A queued
@@ -142,6 +221,7 @@ public class CaptureTriageService : ICaptureTriageService
         var boardAccessResult = await _policyEngine.ValidateBoardAccessAsync(
             userId,
             boardId,
+            BoardAccessBar.Write,
             cancellationToken);
         if (!boardAccessResult.IsSuccess)
         {
@@ -170,6 +250,10 @@ public class CaptureTriageService : ICaptureTriageService
         }
 
         IReadOnlyList<CaptureTriageTaskV1>? proposalTasks = null;
+        IReadOnlyList<string?>? dueDateHints = null;
+        IReadOnlyList<decimal>? modelReportedConfidences = null;
+        string? degradedNotice = null;
+        LlmCaptureTriageExtraction? successfulLlmExtraction = null;
         var triagePromptVersion = CaptureTriageOutputContract.PromptVersionV1;
         var triageProvider = TriageProviderName;
         var triageModel = TriageModelName;
@@ -183,12 +267,19 @@ public class CaptureTriageService : ICaptureTriageService
                 if (outputValidation.IsSuccess)
                 {
                     // Schema-v2's evidence quote remains visible in the proposed card description.
-                    // Its classification, assignee, due-date, and confidence metadata are deliberately
-                    // non-mutating at this boundary: REVIVAL-09/-11 own durable spans/provenance and
-                    // review presentation before any later consumer can act on those model hints.
+                    // Classification, assignee, and confidence stay descriptive at this boundary.
+                    // A validated due-date hint is carried into the reviewable create-card operation;
+                    // it never mutates a board until the user explicitly approves and applies it.
                     proposalTasks = outputValidation.Value.Tasks
                         .Select(task => new CaptureTriageTaskV1(task.Title, task.EvidenceQuote))
                         .ToList();
+                    dueDateHints = outputValidation.Value.Tasks
+                        .Select(task => task.DueDateHint)
+                        .ToList();
+                    modelReportedConfidences = outputValidation.Value.Tasks
+                        .Select(task => task.Confidence)
+                        .ToList();
+                    successfulLlmExtraction = extraction;
                     triagePromptVersion = outputValidation.Value.PromptVersion;
                     triageProvider = CaptureRequestContract.SanitizeProvenanceMetadata(
                         extraction.Provider, CaptureRequestContract.MaxProviderLength);
@@ -201,6 +292,13 @@ public class CaptureTriageService : ICaptureTriageService
                         "LLM transcript triage returned a succeeded but invalid schema-v2 output for capture {CaptureItemId}; using deterministic extractor. {Error}",
                         captureItemId,
                         outputValidation.ErrorMessage ?? string.Empty);
+
+                    // The leg reported success but its payload failed the contract, so the
+                    // deterministic extractor below authors the proposal. That is the same
+                    // degradation class as InvalidOutput and is recorded under that name (#2192).
+                    degradedNotice = BuildDegradedTriageNotice(
+                        LlmCaptureTriageOutcome.InvalidOutput,
+                        outputValidation.ErrorMessage);
                 }
             }
             else if (extraction.Outcome == LlmCaptureTriageOutcome.EmptyExtraction)
@@ -231,6 +329,12 @@ public class CaptureTriageService : ICaptureTriageService
                     captureItemId,
                     extraction.Outcome,
                     extraction.Detail ?? string.Empty);
+
+                // Every remaining outcome falls through to the deterministic extractor. Until
+                // #2192 this log line was the only record of that, so a failed provider request
+                // produced a deterministic proposal the user could not distinguish from a
+                // model-authored one. Carry the outcome out to the caller instead (#2192).
+                degradedNotice = BuildDegradedTriageNotice(extraction.Outcome, extraction.Detail);
             }
         }
 
@@ -239,9 +343,14 @@ public class CaptureTriageService : ICaptureTriageService
             var (taskCandidates, contextHint) = ExtractTaskCandidates(payload.Text);
             if (taskCandidates.Count == 0)
             {
+                // The capture fails here, so the notice cannot ride the success DTO. Append it to
+                // the failure message instead: a user whose provider is misconfigured must not be
+                // told only that their text was unactionable when an LLM leg failed first (#2192).
                 return Result.Failure<CaptureTriageProposalResultDto>(
                     ErrorCodes.ValidationError,
-                    "Capture text did not produce actionable triage items");
+                    degradedNotice is null
+                        ? "Capture text did not produce actionable triage items"
+                        : $"Capture text did not produce actionable triage items. {degradedNotice}");
             }
 
             var outputValidation = CaptureTriageOutputContract.Validate(BuildOutputModel(taskCandidates, contextHint));
@@ -262,7 +371,10 @@ public class CaptureTriageService : ICaptureTriageService
                 boardId.Value,
                 defaultColumn.Id,
                 task,
-                sequence))
+                sequence,
+                payload.DueDate,
+                dueDateHints?[sequence],
+                payload.Labels))
             .ToList();
 
         var operationDtos = operations
@@ -285,6 +397,7 @@ public class CaptureTriageService : ICaptureTriageService
             userId,
             boardId,
             operationDtos,
+            BoardAccessBar.Write,
             cancellationToken);
         if (!permissionResult.IsSuccess)
         {
@@ -293,8 +406,17 @@ public class CaptureTriageService : ICaptureTriageService
                 permissionResult.ErrorMessage);
         }
 
-        var createProposalResult = await _proposalService.CreateProposalAsync(
-            new CreateProposalDto(
+        var confidenceSource = modelReportedConfidences is null
+            ? ProvenanceConfidenceSource.Deterministic
+            : ProvenanceConfidenceSource.ModelReported;
+        var trustedConfidence = new TrustedProposalConfidenceInput(
+            confidenceSource,
+            operations.Select((operation, sequence) => new ProposalOperationConfidenceInput(
+                operation.Sequence,
+                modelReportedConfidences is null ? null : (double)modelReportedConfidences[sequence]))
+                .ToList());
+
+        var createProposalDto = new CreateProposalDto(
                 SourceType: ProposalSourceType.Queue,
                 RequestedByUserId: userId,
                 Summary: summary,
@@ -302,8 +424,40 @@ public class CaptureTriageService : ICaptureTriageService
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
                 SourceReferenceId: captureReferenceId,
-                Operations: operations),
-            cancellationToken);
+                Operations: operations,
+                ProvenanceModelId: triageModel)
+        {
+            TrustedConfidence = trustedConfidence
+        };
+
+        Result<ProposalDto> createProposalResult;
+        if (transcriptId is Guid linkedTranscriptId && successfulLlmExtraction is not null)
+        {
+            var spans = successfulLlmExtraction.EvidenceSpans;
+            var evidence = operations
+                .Select((_, sequence) =>
+                {
+                    var span = spans is not null && sequence < spans.Count
+                        ? spans[sequence]
+                        : null;
+                    return new TranscriptEvidenceLinkInput(
+                        sequence,
+                        linkedTranscriptId,
+                        span?.Start,
+                        span?.End);
+                })
+                .ToList();
+            createProposalResult = await _proposalService.CreateTranscriptProposalAsync(
+                createProposalDto,
+                evidence,
+                cancellationToken);
+        }
+        else
+        {
+            createProposalResult = await _proposalService.CreateProposalAsync(
+                createProposalDto,
+                cancellationToken);
+        }
 
         if (!createProposalResult.IsSuccess)
         {
@@ -319,8 +473,339 @@ public class CaptureTriageService : ICaptureTriageService
             operations.Count,
             triagePromptVersion,
             triageProvider,
-            triageModel));
+            triageModel,
+            degradedNotice));
     }
+
+    /// <summary>
+    /// Builds the notice recorded on a capture whose LLM triage leg was attempted but could not
+    /// deliver, so the deterministic extractor authored the proposal instead (#2192). Returns null
+    /// for outcomes that are not degradations, so callers record nothing in those cases.
+    /// </summary>
+    internal static string? BuildDegradedTriageNotice(LlmCaptureTriageOutcome outcome, string? detail)
+    {
+        if (!IsDegradedTriageOutcome(outcome))
+        {
+            return null;
+        }
+
+        var notice = $"{DegradedTriageNoticePrefix} ({outcome}); using deterministic extractor";
+
+        // The detail reaches a user-visible field, unlike the log line this replaces. Details come
+        // from provider reasons, contract-validation errors, and caught exception messages, so it
+        // is redacted on the way out — the worker's failure lane already sanitizes for the same
+        // reason, and the success lane must not be the weaker path.
+        var safeDetail = SensitiveDataRedactor.Redact(detail).Trim();
+        if (safeDetail.Length == 0)
+        {
+            return notice;
+        }
+
+        if (safeDetail.Length > MaxDegradedNoticeDetailLength)
+        {
+            safeDetail = safeDetail[..MaxDegradedNoticeDetailLength];
+        }
+
+        return $"{notice}. {safeDetail}";
+    }
+
+    /// <summary>
+    /// Recovers the degradation record for a proposal that an EARLIER run authored and this run is
+    /// only reusing (#2192 review). Without this, the crash-recovery replay — a degraded attempt
+    /// that committed its proposal and stopped before the worker stamped the capture — completed
+    /// with no notice, leaving exactly the silent fallback this issue is about.
+    /// <para>
+    /// The current run did not author the proposal, so the notice is derived from what the author
+    /// actually recorded rather than from anything observed now. It never names an outcome: the
+    /// authoring run's outcome was not persisted, and inventing one would be the same dishonesty
+    /// in the other direction.
+    /// </para>
+    /// </summary>
+    /// <param name="reuseProvider">
+    /// The provenance resolved by <see cref="ResolveReuseProvenance"/> — the author's own stamped
+    /// provider when it recorded one, otherwise <see cref="UnknownProvenanceValue"/>.
+    /// </param>
+    private static string? ResolveReuseDegradedNotice(bool llmIsCandidate, string reuseProvider)
+    {
+        if (!llmIsCandidate)
+        {
+            // No LLM leg was ever a candidate for this capture, so the deterministic extractor is
+            // the expected engine and nothing degraded.
+            return null;
+        }
+
+        if (string.Equals(reuseProvider, TriageProviderName, StringComparison.Ordinal))
+        {
+            // The author stamped its own provenance and it names the deterministic extractor, so a
+            // fallback definitely happened on the run that created this proposal.
+            return $"{DegradedTriageNoticePrefix}; using deterministic extractor. " +
+                   "Recovered from an earlier triage run, which did not record why.";
+        }
+
+        if (string.Equals(reuseProvider, UnknownProvenanceValue, StringComparison.Ordinal))
+        {
+            // The authoring run committed the proposal and crashed before stamping provenance, so
+            // either engine could have produced it. Silence would hide a possible fallback and
+            // naming an outcome would fabricate one, so the honest record is the uncertainty.
+            return "Triage engine unknown for this proposal: it was recovered from an interrupted " +
+                   "run and may have come from the deterministic extractor rather than the model.";
+        }
+
+        // Stamped provenance names a live model — the LLM authored this proposal.
+        return null;
+    }
+
+    /// <summary>
+    /// Classifies an extraction outcome as a degradation worth recording on the capture.
+    /// <para>
+    /// True for every outcome where a live LLM leg was expected to run and did not deliver — the
+    /// kill switch, an unavailable or degraded provider (which covers a failed provider request,
+    /// an unknown model, a timeout, and an open circuit, since the providers return those as
+    /// degraded results rather than throwing), an exhausted quota, and unusable output.
+    /// </para>
+    /// <para>
+    /// False for <see cref="LlmCaptureTriageOutcome.Disabled"/> and
+    /// <see cref="LlmCaptureTriageOutcome.ProviderIsMock"/>: those are configuration states, not
+    /// failures. No live provider was ever expected to run, the deterministic extractor is the
+    /// intended engine, and the proposal's provenance already names it — so reporting them as
+    /// "unavailable" would make the ordinary offline configuration look broken on every capture.
+    /// </para>
+    /// <para>
+    /// False for <see cref="LlmCaptureTriageOutcome.Succeeded"/> and
+    /// <see cref="LlmCaptureTriageOutcome.EmptyExtraction"/>: the LLM produced the result, so
+    /// nothing degraded. A succeeded leg whose payload fails contract validation is reported by its
+    /// caller as <see cref="LlmCaptureTriageOutcome.InvalidOutput"/>, which is the class it belongs
+    /// to.
+    /// </para>
+    /// </summary>
+    private static bool IsDegradedTriageOutcome(LlmCaptureTriageOutcome outcome) => outcome switch
+    {
+        LlmCaptureTriageOutcome.KillSwitchActive => true,
+        LlmCaptureTriageOutcome.ProviderUnavailable => true,
+        LlmCaptureTriageOutcome.QuotaExceeded => true,
+        LlmCaptureTriageOutcome.ProviderDegraded => true,
+        LlmCaptureTriageOutcome.InvalidOutput => true,
+        LlmCaptureTriageOutcome.Disabled => false,
+        LlmCaptureTriageOutcome.ProviderIsMock => false,
+        LlmCaptureTriageOutcome.Succeeded => false,
+        LlmCaptureTriageOutcome.EmptyExtraction => false,
+        _ => false,
+    };
+
+    /// <summary>
+    /// Repairs the narrow proposal-persisted / capture-provenance-not-stamped crash window. A
+    /// metadata edit is represented by a non-null Labels collection: UpdateSuggestion normalizes
+    /// an explicit replacement to an array (including an empty one), while an untouched payload
+    /// keeps Labels null. That distinction prevents a retry from erasing extractor metadata merely
+    /// because the capture was never edited.
+    /// </summary>
+    private async Task<Result<int>> ReconcileExistingCaptureProposalAsync(
+        AutomationProposal proposal,
+        Guid editorUserId,
+        CapturePayloadV1 payload,
+        CancellationToken cancellationToken)
+    {
+        if (payload.Labels is null)
+        {
+            return Result.Success(proposal.Operations.Count);
+        }
+
+        ProposalRevision? latestRevision = null;
+        IReadOnlyList<ProposalOperationDto> effectiveOperations;
+        if (proposal.Status == ProposalStatus.PendingReview)
+        {
+            latestRevision = await _unitOfWork.ProposalRevisions.GetLatestByProposalIdAsync(
+                proposal.Id,
+                cancellationToken);
+            if (latestRevision is null)
+            {
+                effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
+            }
+            else
+            {
+                var parsedRevision = ParseRevisionOperations(proposal.Id, latestRevision.RevisedPayload);
+                if (!parsedRevision.IsSuccess)
+                {
+                    return Result.Failure<int>(parsedRevision.ErrorCode, parsedRevision.ErrorMessage);
+                }
+
+                effectiveOperations = parsedRevision.Value;
+            }
+        }
+        else
+        {
+            // A decided proposal is frozen at its original operations (the same shape Apply is
+            // entitled to execute). Never use a later revision to rewrite a decision.
+            effectiveOperations = proposal.Operations.OrderBy(operation => operation.Sequence).Select(MapOperation).ToList();
+        }
+
+        var patchedOperations = effectiveOperations
+            .Select(operation => PatchCaptureCardMetadata(operation, payload.DueDate, payload.Labels!))
+            .ToList();
+
+        var changed = effectiveOperations.Zip(patchedOperations, (before, after) => before.Parameters != after.Parameters)
+            .Any(parameterChanged => parameterChanged);
+        if (!changed)
+        {
+            return Result.Success(effectiveOperations.Count);
+        }
+
+        if (proposal.Status != ProposalStatus.PendingReview)
+        {
+            return Result.Failure<int>(
+                ErrorCodes.InvalidOperation,
+                $"Cannot reconcile corrected capture metadata for proposal in status {proposal.Status}");
+        }
+
+        if (_proposalRevisionService is null)
+        {
+            return Result.Failure<int>(
+                ErrorCodes.UnexpectedError,
+                "Capture proposal revision service is unavailable");
+        }
+
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(
+            editorUserId,
+            proposal.BoardId,
+            patchedOperations,
+            BoardAccessBar.Write,
+            cancellationToken);
+        if (!permissionResult.IsSuccess)
+        {
+            return Result.Failure<int>(
+                permissionResult.ErrorCode,
+                permissionResult.ErrorMessage);
+        }
+
+        var revisionResult = await _proposalRevisionService.CreateRevisionWithPendingCommitGuardAsync(
+            new CreateProposalRevisionDto(
+                proposal.Id,
+                editorUserId,
+                SerializeRevisionPayload(patchedOperations),
+                "Reconcile corrected capture metadata after interrupted triage"),
+            cancellationToken);
+        if (!revisionResult.IsSuccess)
+        {
+            return Result.Failure<int>(revisionResult.ErrorCode, revisionResult.ErrorMessage);
+        }
+
+        return Result.Success(patchedOperations.Count);
+    }
+
+    private static ProposalOperationDto MapOperation(AutomationProposalOperation operation) => new(
+        operation.Id,
+        operation.ProposalId,
+        operation.Sequence,
+        operation.ActionType,
+        operation.TargetType,
+        operation.TargetId,
+        operation.Parameters,
+        operation.IdempotencyKey,
+        operation.ExpectedVersion);
+
+    private static Result<IReadOnlyList<ProposalOperationDto>> ParseRevisionOperations(Guid proposalId, string payload)
+    {
+        if (!ProposalRevisionPayload.TryParseOperations(proposalId, payload, out var operations, out var errorMessage))
+        {
+            return Result.Failure<IReadOnlyList<ProposalOperationDto>>(
+                ErrorCodes.InvalidOperation,
+                $"Cannot reconcile an invalid proposal revision: {errorMessage}");
+        }
+
+        return Result.Success<IReadOnlyList<ProposalOperationDto>>(
+            operations.OrderBy(operation => operation.Sequence).ToList());
+    }
+
+    private static ProposalOperationDto PatchCaptureCardMetadata(
+        ProposalOperationDto operation,
+        DateOnly? dueDate,
+        IReadOnlyList<string> labels)
+    {
+        if (!string.Equals(operation.ActionType, "create", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(operation.TargetType, "card", StringComparison.OrdinalIgnoreCase))
+        {
+            return operation;
+        }
+
+        using var document = JsonDocument.Parse(operation.Parameters);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot reconcile capture metadata for an operation with non-object parameters");
+        }
+
+        if (CaptureMetadataMatches(document.RootElement, dueDate, labels))
+        {
+            return operation;
+        }
+
+        var parameters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, "dueDate", StringComparison.Ordinal) &&
+                !string.Equals(property.Name, "labels", StringComparison.Ordinal))
+            {
+                parameters[property.Name] = property.Value.Clone();
+            }
+        }
+
+        if (dueDate.HasValue)
+        {
+            parameters["dueDate"] = JsonSerializer.SerializeToElement(new DateTimeOffset(
+                dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)));
+        }
+
+        // Labels is deliberately written even when empty. It is the explicit replacement marker
+        // that makes a user clear reviewable instead of silently retaining old labels.
+        parameters["labels"] = JsonSerializer.SerializeToElement(labels);
+
+        return operation with { Parameters = JsonSerializer.Serialize(parameters) };
+    }
+
+    private static bool CaptureMetadataMatches(
+        JsonElement parameters,
+        DateOnly? dueDate,
+        IReadOnlyList<string> labels)
+    {
+        var dueDateMatches = !parameters.TryGetProperty("dueDate", out var existingDueDate)
+            ? !dueDate.HasValue
+            : dueDate.HasValue &&
+              existingDueDate.ValueKind == JsonValueKind.String &&
+              existingDueDate.TryGetDateTimeOffset(out var parsedDueDate) &&
+              parsedDueDate == new DateTimeOffset(dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        if (!dueDateMatches)
+        {
+            return false;
+        }
+
+        if (!parameters.TryGetProperty("labels", out var existingLabels))
+            return labels.Count == 0;
+
+        if (existingLabels.ValueKind != JsonValueKind.Array ||
+            existingLabels.GetArrayLength() != labels.Count)
+        {
+            return false;
+        }
+
+        return existingLabels.EnumerateArray()
+            .Select(label => label.ValueKind == JsonValueKind.String ? label.GetString() : null)
+            .SequenceEqual(labels);
+    }
+
+    private static string SerializeRevisionPayload(IReadOnlyList<ProposalOperationDto> operations) =>
+        JsonSerializer.Serialize(new
+        {
+            operations = operations.Select(operation => new
+            {
+                id = operation.Id,
+                sequence = operation.Sequence,
+                actionType = operation.ActionType,
+                targetType = operation.TargetType,
+                targetId = operation.TargetId,
+                parameters = operation.Parameters,
+                idempotencyKey = operation.IdempotencyKey,
+                expectedVersion = operation.ExpectedVersion
+            })
+        });
 
     /// <summary>
     /// Runs the LLM extraction leg, converting unexpected exceptions into a fallback-triggering
@@ -349,9 +834,15 @@ public class CaptureTriageService : ICaptureTriageService
                 ex,
                 "LLM transcript triage threw unexpectedly for capture {CaptureItemId}; using deterministic extractor",
                 captureItemId);
+
+            // The exception itself stays in the log above and nowhere else. Its message is
+            // arbitrary text from any layer the extractor touches — internal paths, connection
+            // details, a secret embedded in an unrecognized format — and this Detail is now
+            // published on the capture, so it cannot be a pass-through. Pattern redaction is not
+            // sufficient here because it only masks shapes it already recognizes.
             return new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.InvalidOutput,
-                Detail: ex.Message);
+                Detail: UnexpectedExtractorFailureDetail);
         }
     }
 
@@ -550,24 +1041,55 @@ public class CaptureTriageService : ICaptureTriageService
         Guid boardId,
         Guid columnId,
         CaptureTriageTaskV1 task,
-        int sequence)
+        int sequence,
+        DateOnly? explicitDueDate,
+        string? dueDateHint,
+        IReadOnlyList<string>? labels)
     {
         var cardId = BuildDeterministicCardId(captureItemId, sequence, task.Title);
-        var parameters = JsonSerializer.Serialize(new
+        var parameters = new Dictionary<string, object?>
         {
-            title = task.Title,
-            description = task.Evidence,
-            columnId,
-            boardId
-        });
+            ["title"] = task.Title,
+            ["description"] = task.Evidence,
+            ["columnId"] = columnId,
+            ["boardId"] = boardId
+        };
+
+        // Typed calendar intent wins over an extractor inference. This remains proposal-only;
+        // the normal reviewed create-card path is still the only board mutation route.
+        var dueDate = explicitDueDate ?? ParseDueDateHint(dueDateHint);
+        if (dueDate.HasValue)
+        {
+            parameters["dueDate"] = new DateTimeOffset(
+                dueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        }
+
+        // Composer labels are names, not portable ids. The established proposal validator resolves
+        // them against the selected proposal board and rejects unknown or ambiguous names.
+        if (labels is { Count: > 0 })
+        {
+            parameters["labels"] = labels;
+        }
 
         return new CreateProposalOperationDto(
             Sequence: sequence,
             ActionType: "create",
             TargetType: "card",
-            Parameters: parameters,
+            Parameters: JsonSerializer.Serialize(parameters),
             IdempotencyKey: BuildIdempotencyKey(captureItemId, sequence, task.Title),
             TargetId: cardId.ToString());
+    }
+
+    private static DateOnly? ParseDueDateHint(string? dueDateHint)
+    {
+        return DateOnly.TryParseExact(
+            dueDateHint,
+            "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None,
+            out var parsed)
+            ? parsed
+            : null;
     }
 
     private static string BuildIdempotencyKey(Guid captureItemId, int sequence, string taskTitle)

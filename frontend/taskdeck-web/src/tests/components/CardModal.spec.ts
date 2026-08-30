@@ -1,16 +1,34 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
 import type { Card, Label } from '../../types/board'
+import type { CardComment } from '../../types/comments'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }))
 
+vi.mock('../../store/sessionStore', () => ({
+  useSessionStore: vi.fn(),
+}))
+
 describe('CardModal', () => {
   let mockStore: any
+  let mockSessionStore: { userId: string }
   let card: Card
   let labels: Label[]
 
@@ -59,10 +77,14 @@ describe('CardModal', () => {
       updateCardComment: vi.fn().mockResolvedValue(undefined),
       deleteCardComment: vi.fn().mockResolvedValue(undefined),
       editingCardId: null,
-      setEditingCard: vi.fn(),
+      setEditingCard: vi.fn((cardId: string | null) => {
+        mockStore.editingCardId = cardId
+      }),
     }
+    mockSessionStore = { userId: 'user-1' }
 
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
+    vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
   })
 
   it('should request capture provenance when modal opens', async () => {
@@ -79,6 +101,53 @@ describe('CardModal', () => {
 
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps provenance responses scoped to the card that requested them', async () => {
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    mockStore.fetchCardProvenance.mockImplementation((_boardId: string, cardId: string) => (
+      new Promise((resolve) => {
+        if (cardId === 'card-1') resolveFirst = resolve
+        else resolveSecond = resolve
+      })
+    ))
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Second Card',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+    }
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+
+    await nextTick()
+    await wrapper.setProps({ card: secondCard })
+    await nextTick()
+
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-2')
+
+    resolveFirst({
+      cardId: 'card-1',
+      captureItemId: 'capture-first',
+      proposalId: null,
+      proposalStatus: 'Applied',
+      triageRunId: null,
+    })
+    await flushPromises()
+    expect(wrapper.find('a[href*="capture-first"]').exists()).toBe(false)
+
+    resolveSecond({
+      cardId: 'card-2',
+      captureItemId: 'capture-second',
+      proposalId: null,
+      proposalStatus: 'Applied',
+      triageRunId: null,
+    })
+    await flushPromises()
+    expect(wrapper.find('a[href="/workspace/inbox?boardId=board-1#capture-capture-second"]').exists()).toBe(true)
   })
 
   it('should render capture provenance marker and links when available', async () => {
@@ -118,6 +187,134 @@ describe('CardModal', () => {
 
     expect(wrapper.find('h2').text()).toBe('Edit Card')
     expect(wrapper.find('#card-title').exists()).toBe(true)
+  })
+
+  it('should fall back to the layout viewport when visualViewport is unavailable', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+
+    try {
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: undefined,
+      })
+
+      const wrapper = mount(CardModal, {
+        props: {
+          card,
+          isOpen: true,
+          labels,
+        },
+      })
+      const style = (wrapper.find('[role="dialog"]').element as HTMLElement).style
+
+      expect(style.getPropertyValue('--card-modal-visual-viewport-height')).toBe(
+        `${window.innerHeight}px`,
+      )
+      expect(style.getPropertyValue('--card-modal-visual-viewport-offset-top')).toBe('0px')
+
+      wrapper.unmount()
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window, 'visualViewport', descriptor)
+      } else {
+        Reflect.deleteProperty(window, 'visualViewport')
+      }
+    }
+  })
+
+  it('should focus the close control when opened and restore the invoking card focus', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    opener.textContent = 'Open card'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    expect(document.activeElement).toBe(
+      wrapper.find('[aria-label="Close card editor"]').element,
+    )
+
+    await wrapper.setProps({ isOpen: false })
+    await nextTick()
+    expect(document.activeElement).toBe(opener)
+
+    wrapper.unmount()
+    opener.remove()
+  })
+
+  it('should keep Tab and Shift+Tab inside the dialog focus cycle', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+      },
+      attachTo: document.body,
+    })
+
+    await nextTick()
+    const dialog = wrapper.find('[role="dialog"]')
+    const focusable = dialog.findAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
+
+    ;(first.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last.element)
+
+    ;(last.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(first.element)
+
+    wrapper.unmount()
+  })
+
+  it('renders the desktop inspector as non-modal without trapping board focus', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.attributes('aria-modal')).toBeUndefined()
+    expect(wrapper.get('[data-testid="card-modal-scroll-region"]').attributes('data-presentation')).toBe('inspector')
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    dialog.element.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('requires explicit confirmation before closing an unsaved card draft', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+
+    ;(document.body.querySelector('[data-testid="card-discard-confirm"]') as HTMLButtonElement).click()
+    await nextTick()
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
   })
 
   it('should not render when isOpen is false', () => {
@@ -231,6 +428,43 @@ describe('CardModal', () => {
     )
   })
 
+  it('resets drafts, concurrency state, and presence when the open card changes', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('#new-card-comment').setValue('Unsaved comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Unsaved reply')
+    expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
+
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Second Card',
+      description: 'Second description',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+    }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Second Card')
+    expect((wrapper.get('#new-card-comment').element as HTMLTextAreaElement).value).toBe('')
+    expect((wrapper.get('textarea[aria-label="Reply to comment"]').element as HTMLTextAreaElement).value).toBe('')
+    expect(mockStore.setEditingCard).toHaveBeenCalledWith(null)
+    expect(mockStore.setEditingCard).toHaveBeenCalledWith('card-2')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Save Changes'))
+    await saveButton?.trigger('click')
+    expect(mockStore.updateCard).toHaveBeenCalledWith(
+      'board-1',
+      'card-2',
+      expect.objectContaining({ expectedUpdatedAt: secondCard.updatedAt }),
+    )
+  })
+
   it('should emit updated event after successful save', async () => {
     const wrapper = mount(CardModal, {
       props: {
@@ -248,6 +482,31 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('updated')).toBeTruthy()
+  })
+
+  it('does not let a late save from the previous card close the current card session', async () => {
+    const save = createDeferred<Card>()
+    mockStore.updateCard.mockReturnValue(save.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await wrapper.get('#card-title').setValue('Save card A')
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('Save Changes'))!
+    await saveButton.trigger('click')
+
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Card B',
+      updatedAt: '2026-08-26T14:00:00.000Z',
+    }
+    await wrapper.setProps({ card: secondCard })
+    save.resolve(card)
+    await flushPromises()
+
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Card B')
   })
 
   it('should disable save button when title is empty', async () => {
@@ -386,6 +645,152 @@ describe('CardModal', () => {
       content: 'New card comment',
       parentCommentId: null,
     })
+  })
+
+  function makeOwnComment(): CardComment {
+    return {
+      id: 'comment-1',
+      boardId: 'board-1',
+      cardId: 'card-1',
+      parentCommentId: null,
+      authorUserId: 'user-1',
+      authorUsername: 'testuser',
+      content: 'Delete me',
+      isDeleted: false,
+      editedAt: null,
+      mentions: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  it('does not let late comment or reply additions clear the current card drafts', async () => {
+    const firstComment = makeOwnComment()
+    const secondComment: CardComment = {
+      ...firstComment,
+      id: 'comment-2',
+      cardId: 'card-2',
+      content: 'Card B comment',
+    }
+    mockStore.getCardComments.mockImplementation((cardId: string) => (
+      cardId === 'card-1' ? [firstComment] : [secondComment]
+    ))
+    const addComment = createDeferred<void>()
+    const addReply = createDeferred<void>()
+    mockStore.createCardComment.mockImplementation(
+      (_boardId: string, _cardId: string, request: { parentCommentId: string | null }) => (
+        request.parentCommentId ? addReply.promise : addComment.promise
+      ),
+    )
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.get('#new-card-comment').setValue('Card A comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Card A reply')
+    await wrapper.get('#add-card-comment').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Reply')!.trigger('click')
+
+    const secondCard: Card = { ...card, id: 'card-2', title: 'Card B' }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+    await wrapper.get('#new-card-comment').setValue('Keep Card B comment')
+    await wrapper.get('textarea[aria-label="Reply to comment"]').setValue('Keep Card B reply')
+
+    addComment.resolve()
+    addReply.resolve()
+    await flushPromises()
+
+    expect((wrapper.get('#new-card-comment').element as HTMLTextAreaElement).value).toBe('Keep Card B comment')
+    expect((wrapper.get('textarea[aria-label="Reply to comment"]').element as HTMLTextAreaElement).value).toBe('Keep Card B reply')
+  })
+
+  it('does not let a late edit from the previous card clear the current edit session', async () => {
+    const firstComment = makeOwnComment()
+    const secondComment: CardComment = {
+      ...firstComment,
+      id: 'comment-2',
+      cardId: 'card-2',
+      content: 'Card B comment',
+    }
+    mockStore.getCardComments.mockImplementation((cardId: string) => (
+      cardId === 'card-1' ? [firstComment] : [secondComment]
+    ))
+    const edit = createDeferred<void>()
+    mockStore.updateCardComment.mockReturnValue(edit.promise)
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Edit')!.trigger('click')
+    await wrapper.get('textarea[aria-label="Edit comment"]').setValue('Save card A edit')
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Save')!.trigger('click')
+
+    const secondCard: Card = { ...card, id: 'card-2', title: 'Card B' }
+    await wrapper.setProps({ card: secondCard })
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().trim() === 'Edit')!.trigger('click')
+    await wrapper.get('textarea[aria-label="Edit comment"]').setValue('Keep card B edit')
+
+    edit.resolve()
+    await flushPromises()
+
+    expect((wrapper.get('textarea[aria-label="Edit comment"]').element as HTMLTextAreaElement).value).toBe('Keep card B edit')
+  })
+
+  async function openCommentDeleteDialog(wrapper: ReturnType<typeof mount>) {
+    await nextTick()
+    const deleteButton = wrapper.findAll('button').find((button) => button.text().trim() === 'Delete')
+    expect(deleteButton).toBeDefined()
+    ;(deleteButton!.element as HTMLButtonElement).focus()
+    await deleteButton!.trigger('click')
+    await nextTick()
+    return deleteButton!
+  }
+
+  it('cancels comment deletion through the dialog and restores focus after Escape', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+      attachTo: document.body,
+    })
+
+    const deleteButton = await openCommentDeleteDialog(wrapper)
+    expect(document.body.querySelector('[data-testid="card-comment-delete-confirm"]')).not.toBeNull()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+
+    expect(mockStore.deleteCardComment).not.toHaveBeenCalled()
+    expect(document.body.querySelector('[data-testid="card-comment-delete-confirm"]')).toBeNull()
+    expect(document.activeElement).toBe(deleteButton.element)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
+  it('deletes a confirmed comment exactly once through the rendered dialog', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+      attachTo: document.body,
+    })
+
+    await openCommentDeleteDialog(wrapper)
+    const confirm = document.body.querySelector(
+      '[data-testid="card-comment-delete-confirm"]',
+    ) as HTMLButtonElement
+    confirm.click()
+    confirm.click()
+    await nextTick()
+    await nextTick()
+
+    expect(mockStore.deleteCardComment).toHaveBeenCalledTimes(1)
+    expect(mockStore.deleteCardComment).toHaveBeenCalledWith('board-1', 'card-1', 'comment-1')
+
+    wrapper.unmount()
   })
 
   it('should render "Created manually" empty state when capture provenance is unavailable (manual card)', async () => {

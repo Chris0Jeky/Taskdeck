@@ -1,12 +1,13 @@
 # Taskdeck Golden Principles
 
-Last Updated: 2026-04-25
+Last Updated: 2026-08-25
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
+- `docs/REVIVAL_PLAN.md`
+- `docs/strategy/PRODUCT_DIRECTION.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
-- `docs/GOLDEN_PRINCIPLES.md`
 
 ## Purpose
 
@@ -27,6 +28,7 @@ Mechanical enforcement stays intentionally lightweight and focuses only on low-c
   - Keep canonical active docs aligned with shipped reality when behavior or workflow expectations change.
 - `GP-06 Review-First Automation Safety`
   - Keep automation-originated board writes proposal-first; do not introduce silent/destructive autonomy by default. Manual board UI edits remain direct and auditable.
+  - Direction note (2026-08-23; ADR ratified 2026-08-24): a future generalisation to user-sovereign delegated authority is recorded as [ADR-0057](decisions/ADR-0057-user-sovereign-delegated-authority.md) (**Accepted as direction, with an explicit openness caveat; no implementation is in force**). This principle, ADR-0003, and ADR-0056 remain fully operative, and no auto-approval surface may be built until an implementation slice is separately gated behind its own issues.
 - `GP-07 Lightweight Mechanical Governance`
   - Prefer maintainable, low-brittleness checks over broad regex or policy sprawl.
 - `GP-08 Product Legibility Before Breadth`

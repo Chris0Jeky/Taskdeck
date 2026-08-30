@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useToastStore } from '../../store/toastStore'
+import { copyToastReceipt, toastReceiptText, useToastStore } from '../../store/toastStore'
 
 describe('toastStore', () => {
   let store: ReturnType<typeof useToastStore>
@@ -47,12 +47,12 @@ describe('toastStore', () => {
       expect(store.toasts[0].duration).toBe(3000)
     })
 
-    it('should add an error toast with default 5s duration', () => {
+    it('should keep an error toast as a durable receipt by default', () => {
       store.error('Failed!')
 
       expect(store.toasts).toHaveLength(1)
       expect(store.toasts[0].type).toBe('error')
-      expect(store.toasts[0].duration).toBe(5000)
+      expect(store.toasts[0].duration).toBe(0)
     })
 
     it('should add an info toast', () => {
@@ -147,6 +147,98 @@ describe('toastStore', () => {
 
       vi.advanceTimersByTime(1)
       expect(store.toasts).toHaveLength(0)
+    })
+  })
+
+  describe('error receipts', () => {
+    it('copies the message and optional details as one receipt', () => {
+      const toast = { message: 'Request failed', details: 'status: 503\nrequest id: abc' }
+
+      expect(toastReceiptText(toast)).toBe('Request failed\n\nstatus: 503\nrequest id: abc')
+      expect(toastReceiptText({ message: 'Request failed' })).toBe('Request failed')
+    })
+
+    it('falls back to a textarea when the async clipboard is unavailable', async () => {
+      const execCommand = vi.fn().mockReturnValue(true)
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+      const toast = { message: 'Request failed', details: 'status: 503' }
+
+      expect(await copyToastReceipt(toast)).toBe(true)
+      expect(execCommand).toHaveBeenCalledWith('copy')
+      expect(document.querySelector('textarea')).toBeNull()
+      Reflect.deleteProperty(document, 'execCommand')
+      Reflect.deleteProperty(navigator, 'clipboard')
+    })
+
+    it('prefers the async clipboard when it is available', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      const createElement = vi.spyOn(document, 'createElement')
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+      })
+
+      try {
+        await expect(copyToastReceipt({ message: 'Request failed' })).resolves.toBe(true)
+        expect(writeText).toHaveBeenCalledWith('Request failed')
+        expect(createElement).not.toHaveBeenCalled()
+      } finally {
+        createElement.mockRestore()
+        Reflect.deleteProperty(navigator, 'clipboard')
+      }
+    })
+
+    it.each([
+      ['textarea creation', () => vi.spyOn(document, 'createElement').mockImplementation(() => { throw new Error('create failed') })],
+      ['textarea append', () => vi.spyOn(document.body, 'appendChild').mockImplementation(() => { throw new Error('append failed') })],
+      ['textarea selection', () => vi.spyOn(HTMLTextAreaElement.prototype, 'select').mockImplementation(() => { throw new Error('select failed') })],
+      ['copy command', () => {
+        Object.defineProperty(document, 'execCommand', {
+          configurable: true,
+          value: vi.fn(() => { throw new Error('copy failed') }),
+        })
+        return null
+      }],
+    ])('returns false without throwing when %s fails', async (_failure, setup) => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+      const mock = setup()
+
+      try {
+        await expect(copyToastReceipt({ message: 'Request failed' })).resolves.toBe(false)
+        expect(document.querySelector('textarea')).toBeNull()
+      } finally {
+        if (mock) mock.mockRestore()
+        Reflect.deleteProperty(document, 'execCommand')
+        Reflect.deleteProperty(navigator, 'clipboard')
+      }
+    })
+
+    it('does not throw when fallback cleanup fails', async () => {
+      const execCommand = vi.fn().mockReturnValue(true)
+      const remove = vi.spyOn(HTMLTextAreaElement.prototype, 'remove').mockImplementation(() => {
+        throw new Error('cleanup failed')
+      })
+      Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+
+      try {
+        await expect(copyToastReceipt({ message: 'Request failed' })).resolves.toBe(true)
+      } finally {
+        remove.mockRestore()
+        document.querySelector('textarea')?.remove()
+        Reflect.deleteProperty(document, 'execCommand')
+        Reflect.deleteProperty(navigator, 'clipboard')
+      }
+    })
+
+    it('does not auto-remove a default error receipt', () => {
+      vi.useFakeTimers()
+      store.error('Persistent failure')
+
+      vi.advanceTimersByTime(60_000)
+
+      expect(store.toasts).toHaveLength(1)
     })
   })
 

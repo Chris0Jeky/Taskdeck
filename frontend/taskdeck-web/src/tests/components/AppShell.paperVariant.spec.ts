@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
-import { readFileSync } from 'node:fs'
 import AppShell from '../../components/shell/AppShell.vue'
+// Read through Vite's `?raw` loader rather than node:fs — this project deliberately excludes
+// node types (adding them breaks production source), and `?raw` also resolves relative to this
+// file instead of the process CWD.
+import appShellSource from '../../components/shell/AppShell.vue?raw'
 
 const mockRouter = {
   push: vi.fn(),
@@ -92,6 +95,18 @@ vi.mock('../../composables/useViewportMode', async () => {
 
 vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: 0 }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
+}))
+
+// Every paper-mode mount below renders the real PaperSidebar, which reads the
+// product version through `useProductVersion`. Unstubbed, that fires a genuine
+// request at the configured API root (`http://localhost:5000/health/live`) from
+// happy-dom — passing quietly on a box with no backend, behaving differently on
+// one where the API is up, and repeating on every mount because the failed load
+// clears the memo. Stub the transport; this suite is about shell routing.
+vi.mock('../../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
 }))
 
 function mountShell() {
@@ -230,10 +245,7 @@ describe('AppShell — paper variant routing', () => {
   })
 
   it('keeps Paper phone content padded above the fixed bottom bar', () => {
-    const source = readFileSync(
-      'src/components/shell/AppShell.vue',
-      'utf8',
-    )
+    const source = appShellSource
 
     expect(source).toContain('.td-shell--paper-phone .td-content')
     expect(source).toContain('56px + var(--paper-safe-bottom')
@@ -286,6 +298,33 @@ describe('AppShell — paper variant routing', () => {
     const logoutLink = wrapper.findAll('a.paper-sidebar__item')
       .find((l) => l.text().includes('Logout'))
     await logoutLink?.trigger('click')
+
+    expect(mockSession.logout).toHaveBeenCalledTimes(1)
+    expect(mockRouter.push).toHaveBeenCalledWith('/login')
+  })
+
+  /**
+   * The topbar's own spec can only prove PaperTopBar EMITS `logout`. An emit
+   * nobody listens to is exactly the class of defect issue #1932 is about, so
+   * pin the other half of the seam here: the shell's `@logout` binding, all the
+   * way through to `session.logout()`.
+   */
+  it('wires the Paper top bar account sign-out to session store', async () => {
+    mockPaperTheme.mode = 'paper'
+    mockPaperTheme.isOn = true
+    mockPaperTheme.activeClass = 'paper'
+    wrapper = mountShell()
+
+    await wrapper.find('[data-topbar-action="account"]').trigger('click')
+
+    const menu = wrapper.find('.paper-topbar__menu')
+    expect(menu.exists()).toBe(true)
+    const signOut = menu
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text().includes('Sign out'))
+    expect(signOut).toBeDefined()
+
+    await signOut?.trigger('click')
 
     expect(mockSession.logout).toHaveBeenCalledTimes(1)
     expect(mockRouter.push).toHaveBeenCalledWith('/login')

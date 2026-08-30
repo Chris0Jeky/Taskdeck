@@ -20,6 +20,14 @@ public static class ProposalOperationContractValidator
     private const int MaxCardDescriptionLength = 2000;
     private const int MaxBoardNameLength = 100;
     private const int MaxBoardDescriptionLength = 1000;
+    private const int MaxColumnNameLength = 50;
+    private static readonly HashSet<string> CreateColumnParameterNames = new(StringComparer.Ordinal)
+    {
+        "boardId",
+        "name",
+        "position",
+        "wipLimit"
+    };
 
     public static async Task<Result> ValidateAsync(
         IUnitOfWork unitOfWork,
@@ -69,6 +77,12 @@ public static class ProposalOperationContractValidator
                 cancellationToken);
             if (!fieldResult.IsSuccess)
                 return fieldResult;
+
+            var archiveStateResult = validationContext.ValidateOperationAfterPlannedBoardArchive(operation, parameters);
+            if (!archiveStateResult.IsSuccess)
+                return archiveStateResult;
+
+            validationContext.ApplyPlannedBoardArchiveState(operation, parameters);
 
             if (operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
                 operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase) &&
@@ -219,7 +233,13 @@ public static class ProposalOperationContractValidator
             return Task.FromResult(ValidateBoardFields(operation, parameters));
 
         if (operation.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase))
-            return Task.FromResult(ValidateColumnFields(operation, parameters));
+        {
+            return ValidateColumnFieldsAsync(
+                validationContext,
+                operation,
+                parameters,
+                cancellationToken);
+        }
 
         return Task.FromResult(Result.Failure(
             ErrorCodes.ValidationError,
@@ -387,24 +407,171 @@ public static class ProposalOperationContractValidator
             : Result.Success();
     }
 
-    private static Result ValidateColumnFields(ProposalOperationDto operation, JsonElement parameters)
+    private static async Task<Result> ValidateColumnFieldsAsync(
+        BoardValidationContext validationContext,
+        ProposalOperationDto operation,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
     {
-        if (!operation.ActionType.Equals("reorder", StringComparison.OrdinalIgnoreCase))
+        if (operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase))
         {
-            return Result.Failure(
-                ErrorCodes.ValidationError,
-                $"Unsupported column action: {operation.ActionType}");
+            var contractResult = ParseCreateColumnParameters(operation, parameters);
+            if (!contractResult.IsSuccess)
+                return Result.Failure(contractResult.ErrorCode, contractResult.ErrorMessage);
+
+            return await validationContext.ValidateAndRegisterNewColumnAsync(
+                contractResult.Value,
+                cancellationToken);
         }
 
-        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
-            return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+        if (operation.ActionType.Equals("reorder", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out _, out var columnIdError))
+                return Result.Failure(ErrorCodes.ValidationError, columnIdError);
+
+            if (!OperationParameterParser.TryGetRequiredInt32(parameters, "position", out var position, out var positionError))
+                return Result.Failure(ErrorCodes.ValidationError, positionError);
+
+            return position < 0
+                ? Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative")
+                : Result.Success();
+        }
+
+        return Result.Failure(
+            ErrorCodes.ValidationError,
+            $"Unsupported column action: {operation.ActionType}");
+    }
+
+    internal static Result<CreateColumnOperationParameters> ParseCreateColumnParameters(
+        ProposalOperationDto operation,
+        JsonElement parameters)
+    {
+        if (operation.TargetId is not null)
+        {
+            return Result.Failure<CreateColumnOperationParameters>(
+                ErrorCodes.ValidationError,
+                "Create column operation must not specify targetId");
+        }
+
+        var seenParameterNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in parameters.EnumerateObject())
+        {
+            if (!CreateColumnParameterNames.Contains(property.Name))
+            {
+                return Result.Failure<CreateColumnOperationParameters>(
+                    ErrorCodes.ValidationError,
+                    $"Unsupported create column parameter '{property.Name}'");
+            }
+
+            if (!seenParameterNames.Add(property.Name))
+            {
+                return Result.Failure<CreateColumnOperationParameters>(
+                    ErrorCodes.ValidationError,
+                    $"Duplicate create column parameter '{property.Name}'");
+            }
+        }
+
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "boardId", out var boardId, out var boardIdError))
+            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, boardIdError);
+        if (boardId == Guid.Empty)
+        {
+            return Result.Failure<CreateColumnOperationParameters>(
+                ErrorCodes.ValidationError,
+                "Parameter 'boardId' must be a non-empty identifier");
+        }
+
+        if (!OperationParameterParser.TryGetRequiredString(parameters, "name", out var name, out var nameError))
+            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, nameError);
+        if (name.Length > MaxColumnNameLength)
+        {
+            return Result.Failure<CreateColumnOperationParameters>(
+                ErrorCodes.ValidationError,
+                $"Column name cannot exceed {MaxColumnNameLength} characters");
+        }
 
         if (!OperationParameterParser.TryGetRequiredInt32(parameters, "position", out var position, out var positionError))
-            return Result.Failure(ErrorCodes.ValidationError, positionError);
+            return Result.Failure<CreateColumnOperationParameters>(ErrorCodes.ValidationError, positionError);
+        if (position < 0)
+        {
+            return Result.Failure<CreateColumnOperationParameters>(
+                ErrorCodes.ValidationError,
+                "Invalid position: must be non-negative");
+        }
 
-        return position < 0
-            ? Result.Failure(ErrorCodes.ValidationError, "Invalid position: must be non-negative")
-            : Result.Success();
+        int? wipLimit = null;
+        if (parameters.TryGetProperty("wipLimit", out var wipLimitProperty) &&
+            wipLimitProperty.ValueKind != JsonValueKind.Null)
+        {
+            if (wipLimitProperty.ValueKind != JsonValueKind.Number ||
+                !wipLimitProperty.TryGetInt32(out var parsedWipLimit))
+            {
+                return Result.Failure<CreateColumnOperationParameters>(
+                    ErrorCodes.ValidationError,
+                    "Parameter 'wipLimit' must be an integer or null");
+            }
+
+            if (parsedWipLimit <= 0)
+            {
+                return Result.Failure<CreateColumnOperationParameters>(
+                    ErrorCodes.ValidationError,
+                    "WIP limit must be greater than 0");
+            }
+
+            wipLimit = parsedWipLimit;
+        }
+
+        return Result.Success(new CreateColumnOperationParameters(boardId, name, position, wipLimit));
+    }
+
+    internal static Result ValidateCreateColumnPositionAvailability(
+        IEnumerable<Taskdeck.Domain.Entities.Column> columns,
+        CreateColumnOperationParameters parameters)
+    {
+        if (columns.Any(column => column.Position == parameters.Position))
+        {
+            return Result.Failure(
+                ErrorCodes.Conflict,
+                $"Column position {parameters.Position} is already occupied on board {parameters.BoardId}");
+        }
+
+        return Result.Success();
+    }
+
+    internal static Result<int> ResolveAppendPosition(IEnumerable<Taskdeck.Domain.Entities.Column> columns)
+    {
+        var materializedColumns = columns as IReadOnlyCollection<Taskdeck.Domain.Entities.Column> ?? columns.ToList();
+        if (materializedColumns.Count == 0)
+            return Result.Success(0);
+
+        var maximumPosition = materializedColumns.Max(column => column.Position);
+        return maximumPosition == int.MaxValue
+            ? Result.Failure<int>(ErrorCodes.Conflict, "Cannot append a column because the board has no higher position available")
+            : Result.Success(maximumPosition + 1);
+    }
+
+    internal static async Task<Result<CreateColumnOperationParameters>> ValidateCreateColumnForExecutionAsync(
+        IUnitOfWork unitOfWork,
+        ProposalOperationDto operation,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        var contractResult = ParseCreateColumnParameters(operation, parameters);
+        if (!contractResult.IsSuccess)
+        {
+            return Result.Failure<CreateColumnOperationParameters>(
+                contractResult.ErrorCode,
+                contractResult.ErrorMessage);
+        }
+
+        var columns = await unitOfWork.Columns.GetByBoardIdAsync(
+            contractResult.Value.BoardId,
+            cancellationToken);
+        var availabilityResult = ValidateCreateColumnPositionAvailability(columns, contractResult.Value);
+        return availabilityResult.IsSuccess
+            ? contractResult
+            : Result.Failure<CreateColumnOperationParameters>(
+                availabilityResult.ErrorCode,
+                availabilityResult.ErrorMessage);
     }
 
     private static async Task<Result> ValidateLabelsAsync(
@@ -454,12 +621,45 @@ public static class ProposalOperationContractValidator
         private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
         private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
         private readonly HashSet<Guid> _plannedCardIds = [];
+        private readonly HashSet<int> _plannedColumnPositions = [];
+        private IReadOnlyCollection<Taskdeck.Domain.Entities.Column>? _boardColumns;
         private HashSet<Guid>? _labelIds;
         private Dictionary<string, int>? _labelNameCounts;
 
         public Guid? BoardId { get; } = boardId;
+        private bool _isBoardArchivedInProposal;
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        public Result ValidateOperationAfterPlannedBoardArchive(ProposalOperationDto operation, JsonElement parameters)
+        {
+            if (!_isBoardArchivedInProposal || IsBoardUnarchiveOperation(operation, parameters))
+                return Result.Success();
+
+            return Result.Failure(
+                ErrorCodes.InvalidOperation,
+                "Cannot apply an operation after archiving the proposal board. Restore the board before making further changes.");
+        }
+
+        public void ApplyPlannedBoardArchiveState(ProposalOperationDto operation, JsonElement parameters)
+        {
+            if (!operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase) ||
+                !operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase) ||
+                !OperationParameterParser.TryGetOptionalBoolean(parameters, "isArchived", out var isArchivedProvided, out var isArchived, out _) ||
+                !isArchivedProvided)
+            {
+                return;
+            }
+
+            _isBoardArchivedInProposal = isArchived;
+        }
+
+        private static bool IsBoardUnarchiveOperation(ProposalOperationDto operation, JsonElement parameters) =>
+            operation.TargetType.Equals("board", StringComparison.OrdinalIgnoreCase) &&
+            operation.ActionType.Equals("update", StringComparison.OrdinalIgnoreCase) &&
+            OperationParameterParser.TryGetOptionalBoolean(parameters, "isArchived", out var isArchivedProvided, out var isArchived, out _) &&
+            isArchivedProvided &&
+            !isArchived;
 
         public async Task<Result> ValidateNewCardIdAsync(Guid cardId, CancellationToken cancellationToken)
         {
@@ -518,6 +718,32 @@ public static class ProposalOperationContractValidator
                 : ScopeFailure("Operation column is outside the proposal board scope");
         }
 
+        public async Task<Result> ValidateAndRegisterNewColumnAsync(
+            CreateColumnOperationParameters parameters,
+            CancellationToken cancellationToken)
+        {
+            if (!BoardId.HasValue || parameters.BoardId != BoardId.Value)
+                return ScopeFailure("Operation boardId is outside the proposal board scope");
+
+            _boardColumns ??= (await unitOfWork.Columns.GetByBoardIdAsync(
+                parameters.BoardId,
+                cancellationToken)).ToList();
+
+            var availabilityResult = ValidateCreateColumnPositionAvailability(_boardColumns, parameters);
+            if (!availabilityResult.IsSuccess)
+                return availabilityResult;
+
+            if (_plannedColumnPositions.Contains(parameters.Position))
+            {
+                return Result.Failure(
+                    ErrorCodes.Conflict,
+                    $"Column position {parameters.Position} is duplicated within the proposal");
+            }
+
+            _plannedColumnPositions.Add(parameters.Position);
+            return Result.Success();
+        }
+
         public async Task<bool> ContainsLabelIdAsync(Guid labelId, CancellationToken cancellationToken)
         {
             await EnsureLabelsLoadedAsync(cancellationToken);
@@ -551,3 +777,9 @@ public static class ProposalOperationContractValidator
 
     private static Result ScopeFailure(string message) => Result.Failure(ErrorCodes.Forbidden, message);
 }
+
+internal sealed record CreateColumnOperationParameters(
+    Guid BoardId,
+    string Name,
+    int Position,
+    int? WipLimit);

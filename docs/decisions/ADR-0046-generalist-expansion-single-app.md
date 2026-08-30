@@ -1,6 +1,11 @@
 # ADR-0046: Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork)
 
-- Status: Accepted
+- Status: Accepted — **amended 2026-08-30 by ADR-0065** (Context Fabric): decision 4 keeps blobs in
+  SQLite but behind an `IBlobStore` seam (CF-23 `#2276`); decision 5's cloud-vision-first image MVP
+  becomes local-OCR-first (CF-18 `#2272`) with GEN-03 `#1317` shipping as one registered
+  `image.describe` escalation processor under the same consent and egress constraints; GEN-04 `#1318`
+  is superseded (artefact text is no longer routed as if it were a transcript) and GEN-06 `#1320` is
+  the first slice of Universal Capture (CF-20 `#2273`). Everything else in this ADR stands.
 - Date: 2026-07-13
 - Deciders: Maintainer (Chris)
 - Related: ADR-0044 (revival pivot — the plan this amends), ADR-0045 (LLM transcript triage engine, PR #1312), ADR-0008 (novice-first product legibility before breadth — the standing precedent this extends), `docs/REVIVAL_PLAN.md` §Phase 4, tracker `#1327` (GEN-00), decision gate `#1326` (GEN-12)
@@ -21,7 +26,7 @@ A same-day capability recon (11 questions, file-level verification) established 
 - **The generalist scaffold already exists**: workspace modes (`guided | workbench | agent`), a first-run onboarding model, and the Paper shell's calm language. What reads as "developer product" is the default navigation (Ops CLI, Endpoints, Logs, Dev Tools, API Keys, Agents, Metrics) and jargon — a **visibility + language problem, not an architecture problem**.
 - The review-first proposal machinery, provenance chain, import dry-run/apply pattern, egress disclosure, and quota/kill-switch controls are all reusable as-is.
 
-The governing constraints: ADR-0044's finite-work discipline (a ratified wave list is the admission ticket; scope regrowth is the named failure mode), solo-maintainer capacity, the MIT/local-first commitments, and the ~8-week revival checkpoint.
+The governing constraints: ADR-0044's finite-work discipline (a ratified wave list is the admission ticket; scope regrowth is the named failure mode), solo-maintainer capacity, the local-first commitment, and the ~8-week revival checkpoint. ADR-0050 superseded this ADR's original MIT constraint on 2026-08-12; the current core is GPL-3.0-only.
 
 ## Decision
 

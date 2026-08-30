@@ -12,6 +12,7 @@ import PaperStatusPill from '../components/paper/PaperStatusPill.vue'
 import PaperLedgerRow from '../components/paper/PaperLedgerRow.vue'
 import PaperConfidenceDial from '../components/paper/PaperConfidenceDial.vue'
 import { PAPER_ICON_SHAPES, type PaperIconName } from '../components/paper/paperIconPaths'
+import { formatShortcut } from '../utils/keyboardShortcuts'
 
 const themeStore = usePaperThemeStore()
 
@@ -90,7 +91,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <div><span class="tk-eyebrow">.tk-h1</span><span class="tk-h1">Split <em>"Implement dark mode"</em> into <em>three smaller cards.</em></span></div>
           <div><span class="tk-eyebrow">.tk-h2</span><span class="tk-h2">Provenance &amp; <em>side effects</em></span></div>
           <div><span class="tk-eyebrow">.tk-h3</span><span class="tk-h3">Recently applied</span></div>
-          <div><span class="tk-eyebrow">.tk-lede</span><span class="tk-lede">Haiku read the card body, the linked design doc, and 7 prior activity entries on this board.</span></div>
+          <div><span class="tk-eyebrow">.tk-lede</span><span class="tk-lede">The assistant read the card body, the linked design doc, and 7 prior activity entries on this board.</span></div>
           <div><span class="tk-eyebrow">.tk-body</span><span class="tk-body">Original 4 comments stay on the archived parent.</span></div>
           <div><span class="tk-eyebrow">.tk-meta</span><span class="tk-meta">2026-04-25 · 11:42 PT</span></div>
           <div><span class="tk-eyebrow">.tk-serial</span><span class="tk-serial">REVIEW · #014 · LOCAL-FIRST</span></div>
@@ -142,13 +143,13 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
 
         <h3 class="tk-eyebrow">Buttons &amp; kbd</h3>
         <div class="sg-row">
-          <button class="pbtn" type="button">Default <span class="pkbd">⌫</span></button>
-          <button class="pbtn pbtn-primary" type="button">Primary <span class="pkbd">P</span></button>
-          <button class="pbtn pbtn-ember" type="button">Apply <span class="pkbd">⏎</span></button>
-          <button class="pbtn pbtn-ghost" type="button">Ghost</button>
-          <span class="pkbd">⌘</span>
-          <span class="pkbd">K</span>
+          <button class="pbtn" type="button" data-dead-affordance-exempt="visual-specimen">Default <span class="pkbd">⌫</span></button>
+          <button class="pbtn pbtn-primary" type="button" data-dead-affordance-exempt="visual-specimen">Primary <span class="pkbd">P</span></button>
+          <button class="pbtn pbtn-ember" type="button" data-dead-affordance-exempt="visual-specimen">Apply <span class="pkbd">⏎</span></button>
+          <button class="pbtn pbtn-ghost" type="button" data-dead-affordance-exempt="visual-specimen">Ghost</button>
+          <span class="pkbd">{{ formatShortcut('mod+k') }}</span>
           <span class="pkbd-light pkbd">space</span>
+          <span class="tk-meta">Canonical modifier notation: {{ formatShortcut('mod+k') }}</span>
         </div>
 
         <hr class="hr-line sg-rule" />
@@ -260,8 +261,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
 
         <h3 class="tk-eyebrow sg-section-eyebrow">PaperKbd</h3>
         <div class="sg-row">
-          <PaperKbd>⌘</PaperKbd>
-          <PaperKbd>K</PaperKbd>
+          <PaperKbd>{{ formatShortcut('mod+k') }}</PaperKbd>
           <PaperKbd>⌫</PaperKbd>
           <PaperKbd :light="true">space</PaperKbd>
           <PaperKbd :light="true">tab</PaperKbd>
@@ -309,8 +309,8 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
         <h3 class="tk-eyebrow sg-section-eyebrow">PaperConfidenceDial</h3>
         <div class="sg-row" style="gap: 28px;">
           <PaperConfidenceDial :value="0.18" subline="router · v3" />
-          <PaperConfidenceDial :value="0.5" subline="haiku" />
-          <PaperConfidenceDial :value="0.84" subline="opus" />
+          <PaperConfidenceDial :value="0.5" subline="assistant" />
+          <PaperConfidenceDial :value="0.84" subline="provider" />
           <PaperConfidenceDial :value="1" caption="LIVE" subline="local" />
         </div>
 
@@ -339,7 +339,7 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <PaperStatusPill kind="live">LIVE</PaperStatusPill>
         </div>
         <div class="sg-row" style="gap: 28px;">
-          <PaperConfidenceDial :value="0.62" subline="haiku" />
+          <PaperConfidenceDial :value="0.62" subline="assistant" />
           <PaperCard variant="lift" class="sg-pad-tight" style="min-width: 200px;">
             <span class="tk-eyebrow">card-lift</span>
             <p class="tk-body">Both themes share one stylesheet.</p>

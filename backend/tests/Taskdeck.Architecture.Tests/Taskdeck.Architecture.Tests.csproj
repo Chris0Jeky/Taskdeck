@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -23,7 +23,8 @@
   </ItemGroup>
 
   <!-- Referenced so roadmap-invariant tests can assert against the shipped services/types
-       (TelemetryGuard, McpToolDefinitionHashService, SourceSpan/ProposalProvenance) — #1126. -->
+       (TelemetryGuard, McpToolDefinitionHashService, ProposalProvenance/ProvenanceEvidenceLink) —
+       #1126; INV-12 rewired onto the shipped provenance types under #1305 AC3. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Taskdeck.Domain\Taskdeck.Domain.csproj" />
     <ProjectReference Include="..\..\src\Taskdeck.Application\Taskdeck.Application.csproj" />

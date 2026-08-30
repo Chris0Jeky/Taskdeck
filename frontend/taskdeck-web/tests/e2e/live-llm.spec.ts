@@ -16,8 +16,15 @@ test.describe('live llm chat', () => {
     await expect(page.getByText('Live LLM configured')).toBeVisible()
 
     await page.getByRole('button', { name: 'Verify LLM' }).click()
-    await expect(page.locator('[data-llm-health-state="verified"]')).toBeVisible({ timeout: 30_000 })
+    const verifiedStatus = page.locator('[data-llm-health-state="verified"]')
+    await expect(verifiedStatus).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('Live LLM verified')).toBeVisible()
+    const rawProbeLatency = await verifiedStatus.getAttribute('data-llm-probe-latency-ms')
+    expect(rawProbeLatency).toMatch(/^[1-9]\d*$/)
+    const probeLatencyMs = Number(rawProbeLatency)
+    expect(Number.isSafeInteger(probeLatencyMs)).toBe(true)
+    expect(probeLatencyMs).toBeLessThanOrEqual(300_000)
+    await expect(verifiedStatus).toContainText(`Probe completed in ${probeLatencyMs} ms.`)
 
     const probeToken = `LIVE_LLM_PROBE_${Date.now()}`
 

@@ -62,9 +62,25 @@ services:
         value: Mock
       # - key: Llm__OpenAi__ApiKey
       #   sync: false
-      # - key: Llm__Gemini__ApiKey
+      # OpenAICompatible requires a public HTTPS base URL in Production.
+      # - key: Llm__OpenAiCompatible__ApiKey
       #   sync: false
-
+      # - key: Llm__OpenAiCompatible__BaseUrl
+      #   value: https://api.groq.com/openai/v1
+      # - key: Llm__OpenAiCompatible__Model
+      #   value: llama-3.1-8b-instant
+      # - key: Llm__OpenAiCompatible__TimeoutSeconds
+      #   value: "30"
+      # - key: Llm__OpenAiCompatible__MaxResponseBytes
+      #   value: "1048576"
+      # - key: Llm__OpenAiCompatible__MaxSseLineBytes
+      #   value: "65536"
+      # - key: Llm__OpenAiCompatible__MaxSseEventBytes
+      #   value: "131072"
+      # - key: Llm__OpenAiCompatible__ExtraHeaders__HTTP-Referer
+      #   value: https://your-taskdeck-url.example.com
+      # - key: Llm__OpenAiCompatible__ExtraHeaders__X-Title
+      #   value: Taskdeck
     # Persistent disk for SQLite database
     disk:
       name: taskdeck-data

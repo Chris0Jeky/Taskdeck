@@ -1,0 +1,294 @@
+# Upgrading Taskdeck
+
+Taskdeck is local-first: **your workspace data is a single SQLite file that you own.** The packaged
+Windows app also keeps generated local identity in `appsettings.local.json`; preserve that file with
+the database so sessions and encrypted connector credentials remain usable. Read the section for the
+version you are moving *to* before you upgrade — each one leads with whether it contains breaking
+changes.
+
+- Release notes and downloads: <https://github.com/Chris0Jeky/Taskdeck/releases>
+- Configuration keys referenced below: `docs/platform/CONFIGURATION_REFERENCE.md`
+- Migration mechanics for contributors: `docs/platform/EF_MIGRATION_WORKFLOW.md`
+
+---
+
+## Backup the database and packaged identity
+
+Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives
+in one SQLite database file. To back the workspace up, **stop Taskdeck and copy that file.** A
+packaged Windows install also generates secrets in `appsettings.local.json`; copy the whole
+`%LOCALAPPDATA%\Taskdeck` directory so the database and its local identity stay together.
+
+**Where the file is**
+
+| How you run Taskdeck | Database file |
+| --- | --- |
+| Supported Windows release (0.1.x / 0.2.x) | `%LOCALAPPDATA%\Taskdeck\taskdeck.db` |
+| Source `dev-up` launcher | `%LOCALAPPDATA%\Taskdeck\taskdeck-dev.db` on Windows; `${XDG_DATA_HOME:-$HOME/.local/share}/taskdeck/taskdeck-dev.db` on Linux/macOS |
+| Raw developer `dotnet run` | A relative path resolves from that command's working directory; use `dev-up` for the stable source path above |
+| Explicit connection string | Whatever path `ConnectionStrings:DefaultConnection` points at |
+| Docker Compose (`deploy/docker-compose.yml`) | `/app/data/taskdeck.db` inside the container, on the `taskdeck-db` volume |
+
+If `FirstRun:ResolveAppDataDbPath` is left at its default, a *relative* connection-string path is
+resolved into the OS app-data directory rather than the working directory — so check the startup
+log if you are unsure which file is live.
+
+**Stop Taskdeck first.** Taskdeck runs SQLite in WAL mode, so a running instance may hold recent
+commits in `taskdeck.db-wal` alongside the main file. Copying only `taskdeck.db` while the app is
+running can silently miss them. With every Taskdeck process stopped (API, CLI, and any MCP
+server), the WAL is checkpointed away and the single `.db` file is complete. If you see leftover
+`taskdeck.db-wal` / `taskdeck.db-shm` files, copy those too, or simply start and cleanly stop
+Taskdeck once more.
+
+**To restore:** stop Taskdeck and move the current `taskdeck.db` plus any `-wal`/`-shm` sidecars aside
+until the backup is known-good. Put the backup set under the original names; never leave a sidecar from
+a different database copy in place. Restore the matching packaged `appsettings.local.json` when
+applicable, then start Taskdeck again. Do not pair an older local-config identity with a newer database
+that may contain connector credentials encrypted by a different key.
+
+### Automatic pre-migration backups
+
+Since **v0.1.1**, Taskdeck protects the upgrade itself. When a release ships a database schema
+change, the host takes a consistent snapshot of your database file **before** applying the
+migration:
+
+- Snapshots land in a `backups/` folder next to the database file, named
+  `<database file name>-pre-migration-<UTC timestamp>-<sequence>.db` — for the default database
+  that is `taskdeck.db-pre-migration-20260819T101530000Z-000001.db`. Each one is a complete,
+  standalone SQLite file — copy it back over `taskdeck.db` to return to the pre-upgrade state.
+  **The highest sequence number is the newest snapshot**; prefer it over the timestamp, which is
+  only descriptive and can move backwards if the host clock is corrected.
+- It runs **only when migrations are actually pending.** Ordinary restarts copy nothing.
+- The last **5** snapshots are kept; older ones are pruned automatically. Only files matching the
+  managed name above are ever deleted — your own copies in the same folder are left alone.
+- If you tracked `main` during the v0.1.1 development window, you may also have snapshots in the
+  older `taskdeck-pre-migration-<UTC timestamp>.db` shape (no sequence). Those are still
+  recognised and still pruned, so they age out instead of accumulating; no released version wrote
+  them, so a host upgrading from v0.1.0 will not have any.
+- **If the snapshot cannot be written, the upgrade stops.** Taskdeck refuses to migrate a database
+  it could not back up, and the error names the file, the directory, and the cause. Free some disk
+  space or fix directory permissions, then start again.
+
+Tune it with `Database:Backup:Enabled`, `Database:Backup:RetainCount`, and
+`Database:Backup:Directory` (see `docs/platform/CONFIGURATION_REFERENCE.md`). These snapshots are
+an upgrade safety net, not a backup strategy: they sit on the same disk as the database and are
+only taken on schema changes. Keep your own copy somewhere else.
+
+## Export: your data leaves whenever you want
+
+Taskdeck ships full data export today. You are never locked in, and an export is a good thing to
+take before a major upgrade.
+
+| What | Where |
+| --- | --- |
+| **Full account export (GDPR JSON)** — everything associated with your account | `GET /api/account/export`, or `GET /api/account/export/stream` for large accounts |
+| **Board export** — one board as JSON or CSV | `GET /api/export/boards/{boardId}/json`, `GET /api/export/boards/{boardId}` |
+| **Board import** | `POST /api/import/boards/json`, `POST /api/import/boards` |
+| **In the UI** | Settings → **Export & Import** (`/workspace/settings/export-import`) |
+
+There is also a whole-database export/import pair (`GET /api/export/database`,
+`POST /api/import/database`). It is a developer/sandbox convenience, not the supported migration
+path — for moving a workspace, copy the database file as described above.
+
+## General upgrade procedure
+
+1. Read the section for your target version below. If it has a **BREAKING** entry, follow it.
+2. Stop every Taskdeck process (API, CLI, MCP servers).
+3. Copy `taskdeck.db` somewhere safe. Windows release users should copy the entire
+   `%LOCALAPPDATA%\Taskdeck` folder so `appsettings.local.json` stays with it. (Optional but
+   recommended: also take an account export.)
+4. Replace the binaries / pull the new container image.
+5. Start Taskdeck. Pending migrations are applied automatically on startup, after the automatic
+   pre-migration snapshot.
+6. Check the startup log. A failed migration or a failed backup stops startup with an explicit
+   error rather than continuing in a half-upgraded state.
+
+**Downgrading is not supported.** EF Core migrations are applied forward only; an older binary
+started against a newer database may fail or behave incorrectly. To go back, restore your backup
+copy of the database file alongside the older binary.
+
+**Skipping versions** is fine. Migrations are applied in order, so upgrading from v0.1.0 straight
+to a later release applies every intervening migration in one startup.
+
+---
+
+# Version notes
+
+## Unreleased — after v0.3.0-rc.1 (Context Fabric scaffold)
+
+**BREAKING: none.** The first Context Fabric slice (ADR-0065) adds one **empty** table, `Captures`,
+through migration `20260830034447_AddCaptureAggregate`. The pre-migration snapshot runs as usual and
+the copy is small. Nothing reads or writes the table unless the new `ContextFabric:DualWriteCaptures`
+setting is set to `true` (default `false`); with the default, every capture, inbox, proposal and
+transcript behaviour is unchanged. Downgrading after this migration means dropping the table (the
+migration's `Down` does exactly that) — lossless while the setting was never enabled; if you did enable
+it, export first, because the mirrored rows go with the table.
+
+## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
+
+*Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the
+published `taskdeck-v0.3.0-rc.1-win-x64.zip` links to its anchor.*
+
+**BREAKING: yes, for two kinds of integration** — scripts that create API keys through the API or
+CLI must now name explicit scopes, and clients that treated a non-null capture `errorMessage` as
+"the capture failed" must key on the status instead. Ordinary Windows and Compose users have no
+manual step: both schema migrations run automatically after the pre-migration snapshot. This is a
+**release candidate**: the GitHub Release is flagged *Pre-release*, it is not shown as *Latest*, and
+the container lane publishes only `ghcr.io/chris0jeky/taskdeck:0.3.0-rc.1` — `:latest` and `:0.3`
+stay where they were. Nothing below is in the published v0.2.0 artifacts.
+
+**Behaviour changes to read before upgrading**
+
+1. **New API, UI and CLI keys must select one or more of `read`, `propose`, `manage`.** Omitted,
+   empty or unknown scope selections are rejected instead of defaulting to Full. Existing keys are
+   backfilled to Full and keep working (details below).
+2. **A successful capture can carry an `errorMessage`** (the triage degradation notice). Only the
+   status says whether a capture failed (details below).
+3. **Archive-card proposal operations now block the card with a generated reason** instead of
+   applying as a silent no-op (`#2185`). A previously approved proposal that archives a card will,
+   on apply, show that card as blocked — the intended visible outcome.
+4. **Prerelease semantics for container hosts (`#2217`).** If you deploy `:latest` or `:0.3`, an
+   RC never moves your tag; opt into the RC explicitly with `:0.3.0-rc.1` (pin by digest as the
+   threat model recommends).
+
+**Going back to v0.2.0** after starting the RC once: stop Taskdeck and restore the automatic
+[pre-migration snapshot](#automatic-pre-migration-backups) (or your manual copy) — v0.2.0 does not
+know the two new columns.
+
+**Known limitations carried into this RC (unchanged since earlier releases):** MFA TOTP seeds are
+stored unencrypted in the SQLite file until `#1653` lands — protect the file as you would a
+password store; artefact extraction (files/PDF/images) is present in the code but not connected to
+any request path until the memory-capped worker (`#1429`); batch **approve** stops at *Approved* —
+applying stays per-proposal; Taskdeck sends no telemetry (see `docs/TELEMETRY.md`).
+
+- **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
+  migration makes `ProvenanceFields.Confidence` nullable and adds the required integer
+  `ConfidenceSource` column. Existing rows keep their stored numeric value but receive source `0`
+  (`NotReported`), so an upgrade does not relabel historical confidence as model-reported evidence.
+- **New schema: explicit API-key scopes.** The `AddApiKeyScopes` migration adds a nullable `Scopes`
+  integer to `ApiKeys`, backfills every existing key to `7` (**Full**: Read + Propose + Manage), and
+  then makes the column required without a database default. Existing integrations therefore retain
+  their prior MCP access after upgrade. Current v0.3 integration builds require every new API, UI,
+  and CLI key to select one or more of `read`, `propose`, and `manage`; omitted, empty, or unknown
+  selections are rejected instead of defaulting to Full. Existing backfilled keys remain Full until
+  they are replaced with least-privilege keys.
+- **Behavior change, no schema change: a capture's `errorMessage` can now be non-null on a
+  *successful* capture.** Previously only a `Failed` capture carried one. When transcript triage
+  attempts its LLM leg and cannot deliver — kill switch, an unavailable, misconfigured, or degraded
+  provider, exhausted quota, or unusable model output — the capture now completes as
+  `Completed`/`Triaged` **and** carries a degradation notice naming the outcome, e.g.
+  `LLM triage unavailable (ProviderDegraded); using deterministic extractor.` The status is
+  unchanged and no retry is consumed; the field is simply no longer exclusive to failures. It is
+  exposed wherever the capture is: the capture API (`CaptureItemDto` / `CaptureItemSummaryDto`) and
+  the MCP `CaptureResources` surface. Anything that treats a non-null `errorMessage` as "this
+  capture failed" needs to key on the status instead.
+- **No migration action required.** Both migrations are applied automatically on startup after
+  the automatic [pre-migration snapshot](#automatic-pre-migration-backups); take the manual copy from
+  the [General upgrade procedure](#general-upgrade-procedure) as usual.
+
+## v0.2.0 — 2026-08-29
+
+**BREAKING: none for v0.1.1+ hosts.** v0.1.2 itself contained no schema change, so upgrading
+v0.1.1 → v0.1.2 needed no entry of its own; everything below applies when moving from any v0.1.x to
+v0.2.0. **Skipping from v0.1.0:** the retired Gemini provider migration in the
+[v0.1.1 notes](#v011--2026-08-21) still applies — a host that still sets `Llm:Provider=Gemini` or any
+`Llm:Gemini` value fails startup with migration guidance until that selector is replaced.
+
+- **New schema: a Board concurrency token.** The `AddBoardConcurrencyToken` migration adds one
+  required `ConcurrencyToken` column to the `Boards` table. It is declared as a GUID and left to the
+  database provider to map, so it is stored in the provider's own native type rather than a
+  hand-written column type. On SQLite — the supported deployment — the migration is a single
+  in-place statement:
+
+  ```sql
+  ALTER TABLE "Boards" ADD "ConcurrencyToken" TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000';
+  ```
+
+  **There is no table rebuild**, so the schema change itself is quick no matter how many boards you
+  have. Existing boards take that all-zero default and are issued a fresh token the first time the
+  board record itself changes (rename, description edit, archive, restore, or ownership transfer).
+- **New schema: a Board card-mutation marker.** The `AddBoardCardMutationMarker` migration adds a
+  second `Boards` column in this window — a required non-user-visible counter the archive guard
+  advances on every accepted card write:
+
+  ```sql
+  ALTER TABLE "Boards" ADD "CardMutationMarker" INTEGER NOT NULL DEFAULT 0;
+  ```
+
+  **BREAKING: none.** Again a single in-place statement with no table rebuild; existing boards take
+  the `0` default. Nothing reads the value — it exists so a card write always marks its board row
+  modified, which keeps the token check below deterministic instead of clock-dependent.
+- **No migration action required.** Both migrations are applied automatically on startup like
+  every other one — steps 4-6 of [General upgrade procedure](#general-upgrade-procedure) — after the automatic
+  [pre-migration snapshot](#automatic-pre-migration-backups) introduced in v0.1.1. Note that the
+  snapshot copies the whole database file: on a large workspace that copy, not the `ALTER TABLE`, is
+  what the upgrade spends its time on. Take the manual copy in step 3 as usual; the automatic
+  snapshot is a safety net, not a substitute.
+- **Behavior change: a card write can now lose a race against a board change.** Every accepted card
+  create, update, move, and delete joins a conditional update on its board row keyed on this token
+  (via the card-mutation marker above — the user-visible board "Last updated" timestamp does not
+  move on card activity). Previously, a card write that
+  had already read a board could still commit after another session archived that board — so the
+  write landed in archived history. It now fails the token check, rolls back, and returns
+  `409 Conflict` with *"Record was updated by another session. Refresh and retry your action."*
+  Card writes that do not race a board change keep their existing behavior and success semantics,
+  including creates and updates sent without an `ExpectedUpdatedAt` precondition. Callers that
+  treat `409` as fatal should refresh and retry instead; on retry the board is re-read, and if it is
+  now archived the card write is refused outright — also as a `409` — under
+  [ADR-0063](docs/decisions/ADR-0063-archived-board-card-write-protection.md).
+
+Non-SQLite providers are not a supported Taskdeck deployment. The migration is provider-agnostic and
+its generated SQL Server DDL is covered by an automated check, but it has never been applied to a
+live SQL Server instance; treat any non-SQLite use as unverified.
+
+## v0.1.1 — 2026-08-21
+
+**BREAKING (configuration):** Gemini live-provider support is removed. Before upgrading, replace
+`Llm:Provider=Gemini` with `OpenAI` (or `Mock` for offline use) and remove any `Llm:Gemini`
+configuration section or retired Compose wrapper. Taskdeck fails startup with fixed migration
+guidance when those retired selectors remain; an ambient `GEMINI_API_KEY` no longer selects a live
+provider. OpenAI live use requires the `Llm:OpenAi` configuration described in
+[`docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`](docs/platform/LLM_PROVIDER_SETUP_GUIDE.md).
+
+**Known v0.1.1 Windows desktop limitation:** the packaged top-level catch hides that migration
+guidance and instead prints a generic port/data-folder failure. If `TASKDECK_DESKTOP_FATAL
+code=startup_failed` appears before any ready URL, check the *names and scopes* of Taskdeck provider
+settings without printing their values. Do not delete or print persistent credential-bearing
+variables merely to start v0.1.1. For a temporary compatibility launch, open a fresh PowerShell
+window and remove the retired Gemini names from that process environment only:
+
+```powershell
+$env:Llm__Provider = 'OpenAI'
+Remove-Item Env:Llm__Gemini__* -ErrorAction SilentlyContinue
+$taskdeckV011 = Join-Path $env:USERPROFILE 'Desktop\taskdeck-v0.1.1-win-x64\Taskdeck.Api.exe'
+& $taskdeckV011
+```
+
+`Env:` changes above apply only to that PowerShell process and its children; the persistent user
+variables and their values remain untouched. Close the PowerShell window to discard the temporary
+environment. Do not paste keys into a terminal transcript or issue. v0.1.2 and later tolerate
+those inert child names after an explicit supported selector.
+See the [v0.1.1 Windows startup incident checkpoint](docs/platform/V0_1_1_WINDOWS_STARTUP_INCIDENT.md)
+for the sanitized diagnosis, attempted paths, current workaround, and exact implementation resume point.
+
+- **Automatic pre-migration database backup.** Taskdeck now snapshots the SQLite file before
+  applying pending migrations, keeps the last `Database:Backup:RetainCount` (default 5) snapshots,
+  and refuses to migrate if the snapshot cannot be written. See
+  [Automatic pre-migration backups](#automatic-pre-migration-backups). No action required.
+- **New configuration keys:** `Database:Backup:Enabled`, `Database:Backup:RetainCount`,
+  `Database:Backup:Directory`. All optional; the defaults are the recommended settings.
+- **Desktop support is Windows-only for 0.1.x.** Use the `win-x64` ZIP on Windows 10/11 x64 and
+  follow its archive-local `QUICK_START.md`. The four v0.1.0 platform archives remain immutable
+  historical release evidence, not a continuing cross-platform support promise.
+
+## v0.1.0 — 2026-08-19
+
+**BREAKING: none.** First public release, so there is nothing to upgrade from.
+
+- First tagged open-beta release: 4-platform binaries plus a public GHCR container image.
+- Starting Taskdeck for the first time creates the database and applies the full migration chain.
+  Nothing is backed up on that first run because there is no prior state to protect.
+- Everything under [Backup the database and packaged identity](#backup-the-database-and-packaged-identity) and
+  [Export](#export-your-data-leaves-whenever-you-want) applies to v0.1.0. The *automatic*
+  pre-migration snapshot arrives in v0.1.1 — when upgrading away from v0.1.0, take the manual copy
+  in step 3 of the general procedure.

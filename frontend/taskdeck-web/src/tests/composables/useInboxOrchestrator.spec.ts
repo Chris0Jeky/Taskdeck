@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { BoardDetail } from '../../types/board'
 
 let mountedCallback: (() => void) | null = null
 let unmountedCallback: (() => void) | null = null
@@ -21,6 +22,14 @@ const mockRoute = { hash: '', query: {} }
 vi.mock('vue-router', () => ({
   useRoute: () => mockRoute,
   useRouter: () => mockRouter,
+}))
+
+const mockBoardsApi = vi.hoisted(() => ({
+  getBoard: vi.fn<(id: string) => Promise<BoardDetail>>(),
+}))
+
+vi.mock('../../api/boardsApi', () => ({
+  boardsApi: mockBoardsApi,
 }))
 
 const mockCaptureStore = {
@@ -75,6 +84,56 @@ function watcherForSource(source: unknown) {
   return watcher!
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function makeBoard(id: string, name: string, columnId: string, columnName: string): BoardDetail {
+  const timestamp = '2026-08-24T00:00:00Z'
+  return {
+    id,
+    name,
+    description: null,
+    isArchived: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    columns: [{
+      id: columnId,
+      boardId: id,
+      name: columnName,
+      position: 0,
+      wipLimit: null,
+      cardCount: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }],
+  }
+}
+
+async function flushAsyncWork() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+function summaryRow(id: string, boardId: string | null) {
+  return {
+    id,
+    userId: 'u1',
+    boardId,
+    status: 'New',
+    source: 'Typed',
+    textExcerpt: id,
+    createdAt: '2026-08-24T00:00:00Z',
+    processedAt: null,
+  } as never
+}
+
 describe('useInboxOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -85,6 +144,7 @@ describe('useInboxOrchestrator', () => {
     mockRoute.query = {}
     mockRouter.push.mockReset()
     mockRouter.replace.mockReset()
+    mockBoardsApi.getBoard.mockReset()
   })
 
   describe('batch selection', () => {
@@ -132,6 +192,141 @@ describe('useInboxOrchestrator', () => {
       const orch = createOrchestrator()
       orch.toggleItemSelection('a')
       await expect(orch.batchAction('cancel')).resolves.toBeUndefined()
+    })
+  })
+
+  describe('route scope', () => {
+    it('reads board and column context, then clears both without a page reload', async () => {
+      mockRoute.query = { boardId: 'board-1', columnId: 'column-1', source: 'capture' }
+      const orch = createOrchestrator()
+
+      expect(orch.activeBoardId.value).toBe('board-1')
+      expect(orch.activeColumnId.value).toBe('column-1')
+
+      await orch.clearScope()
+      expect(mockRouter.replace).toHaveBeenCalledWith({
+        name: 'workspace-inbox',
+        query: { source: 'capture' },
+      })
+    })
+
+    // The orchestrator half of the archived-history list-write boundary (#1973).
+    // The store half — that `syncSummary: false` actually holds when the detail
+    // GET resolves after the exit's list load — is pinned in
+    // `store/captureStore.spec.ts`. Legacy loads detail through `fetchDetail`
+    // (Paper uses the non-caching `peekDetail`), and `fetchDetail`'s success
+    // path unshifts an absent summary straight into the live `items`, so the
+    // flag is the only thing standing between archived inspection and a
+    // mutation-enabled row at the top of the live Inbox.
+    it('opts out of summary sync for detail loads inside archived history', async () => {
+      mockRoute.query = { boardId: 'archived-board', history: 'archived' }
+      const orch = createOrchestrator()
+      mockCaptureStore.fetchDetail.mockResolvedValue(undefined)
+
+      expect(orch.isArchivedHistory.value).toBe(true)
+
+      await orch.openItemFromList(summaryRow('archived-capture', 'archived-board'), 0)
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
+        syncSummary: false,
+      })
+
+      // Refresh Detail is a READ affordance and stays available in history mode,
+      // but it takes the same boundary — and `forceRefresh` means it always
+      // reaches the caching path rather than the cached early return.
+      mockCaptureStore.fetchDetail.mockClear()
+      await orch.refreshSelectedDetail()
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
+        forceRefresh: true,
+        syncSummary: false,
+      })
+    })
+
+    it('keeps syncing summaries for detail loads in the live Inbox', async () => {
+      mockRoute.query = {}
+      const orch = createOrchestrator()
+      mockCaptureStore.fetchDetail.mockResolvedValue(undefined)
+
+      expect(orch.isArchivedHistory.value).toBe(false)
+
+      await orch.openItemFromList(summaryRow('live-capture', 'live-board'), 0)
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
+        syncSummary: true,
+      })
+
+      mockCaptureStore.fetchDetail.mockClear()
+      await orch.refreshSelectedDetail()
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
+        forceRefresh: true,
+        syncSummary: true,
+      })
+    })
+
+    it('keeps B names after an obsolete A metadata success resolves last', async () => {
+      const boardA = deferred<BoardDetail>()
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(boardA.promise)
+        .mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+
+      boardA.resolve(makeBoard('board-a', 'Stale Board A', 'column-a', 'Stale Column A'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+    })
+
+    it('keeps B names after an obsolete A metadata failure resolves last', async () => {
+      const boardA = deferred<BoardDetail>()
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(boardA.promise)
+        .mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+
+      boardA.reject(new Error('obsolete A failed'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
+    })
+
+    it('falls back to B ids while loaded A metadata is being replaced', async () => {
+      mockBoardsApi.getBoard.mockResolvedValueOnce(
+        makeBoard('board-a', 'Board A', 'column-a', 'Column A'),
+      )
+      const boardB = deferred<BoardDetail>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(boardB.promise)
+      mockRoute.query = { boardId: 'board-a', columnId: 'column-a' }
+      const orch = createOrchestrator()
+      mountedCallback!()
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board A')
+      expect(orch.activeColumnName.value).toBe('Column A')
+
+      mockRoute.query = { boardId: 'board-b', columnId: 'column-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      expect(orch.activeBoardName.value).toBe('board-b')
+      expect(orch.activeColumnName.value).toBe('column-b')
+
+      boardB.resolve(makeBoard('board-b', 'Board B', 'column-b', 'Column B'))
+      await flushAsyncWork()
+      expect(orch.activeBoardName.value).toBe('Board B')
+      expect(orch.activeColumnName.value).toBe('Column B')
     })
   })
 
@@ -258,7 +453,7 @@ describe('useInboxOrchestrator', () => {
       const event = { key: 'Enter', preventDefault: vi.fn() } as unknown as KeyboardEvent
       await orch.handleKeydown(event)
       expect(event.preventDefault).toHaveBeenCalled()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc')
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', { syncSummary: true })
     })
   })
 
@@ -267,7 +462,7 @@ describe('useInboxOrchestrator', () => {
       mockRoute.hash = '#capture-deep-id'
       const orch = createOrchestrator()
       await orch.loadInbox()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id')
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', { syncSummary: true })
     })
 
     it('loadInbox does not fetch detail when hash is absent', async () => {
@@ -473,7 +668,10 @@ describe('useInboxOrchestrator', () => {
       const orch = createOrchestrator()
       orch.selectedItemId.value = 'item-r'
       await orch.refreshSelectedDetail()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('item-r', { forceRefresh: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('item-r', {
+        forceRefresh: true,
+        syncSummary: true,
+      })
     })
 
     it('does nothing without selection', async () => {

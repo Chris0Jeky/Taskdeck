@@ -2,7 +2,7 @@
 
 This document defines the canonical setup for the `Taskdeck Execution` GitHub Project.
 Use this to keep intake and status transitions consistent for every issue and PR.
-Last Updated: 2026-07-26
+Last Updated: 2026-08-26
 
 ## Canonical Status Model
 
@@ -17,43 +17,23 @@ Required `Status` options:
 Rules:
 - Every new project item must receive `Status=Pending` automatically.
 - `Done` is terminal for closed or merged work.
-- `Now` is WIP-limited to one major item at a time (team discipline + weekly audit).
+- `Now` is WIP-limited to four issue items; `Next` is limited to eight issue items. This is the
+  finite autonomous queue defined by ADR-0051, not a reservation for owner approval.
 
 ## Required Labels
 
 Canonical descriptions and usage rules live in:
 - `docs/ops/GITHUB_LABEL_TAXONOMY.md`
 
-Operational labels:
-- `bug` (GitHub default; keep it present because `bug_report` template uses it)
-- `security`
-- `hardening`
-- `backend`
-- `frontend`
-- `ux`
-- `testing`
-- `docs`
-- `refactor`
-- `tech-debt`
-- `starter-packs`
-- `llm`
-- `feature`
-- `automation`
-- `worker`
-- `performance`
-- `Priority I`
-- `Priority II`
-- `Priority III`
-- `Priority IV`
-- `Priority V`
+The full live label set (type, area, semantic/state, wave, and Priority labels) with canonical
+descriptions is `docs/ops/GITHUB_LABEL_TAXONOMY.md` (Last Updated 2026-08-23); this file does not
+duplicate it. `bug` stays present because the `bug_report` template uses it.
 
 Priority label rules:
-- Every issue must have exactly one priority label.
-- `Priority I` = highest urgency / current cycle blockers.
-- `Priority II` = immediate next tranche after `Priority I`.
-- `Priority III` = medium-term expansion tranche.
-- `Priority IV` = later maturity tranche.
-- `Priority V` = meta/historical/lowest urgency.
+- Every issue must have exactly one priority label, mirrored in the Project `Priority` field.
+- Current `Priority I`-`V` semantics live in `docs/ops/GITHUB_LABEL_TAXONOMY.md` (urgency within the
+  active direction; release membership is expressed by a milestone, not inferred from every issue at
+  the same priority). The v0.1.2-specific Priority I tranche rule retired when that release shipped.
 
 ## Project Views
 
@@ -122,7 +102,7 @@ Project: `Taskdeck Execution`
 - Action: set `Status=Done`.
 
 Optional:
-- `Code review approved` can set `Status=Review`.
+- A code-review event may set `Status=Review`, but human approval is not required for ordinary merge eligibility.
 - `Code changes requested` can set `Status=Now` or `Status=Blocked`.
 
 ## Drift Controls
@@ -132,6 +112,22 @@ Optional:
 - CI must run governance checks:
   - `node scripts/check-docs-governance.mjs`
   - `node scripts/check-github-ops-governance.mjs`
+
+## Stable Project Snapshot Contract
+
+The priority audit must collect a complete ProjectV2 item snapshot before it reports a result or
+writes a field. Every page must preserve the initial `totalCount` and `updatedAt`; duplicate IDs,
+cursor faults, truncated nested connections, malformed responses, limit ceilings, and policy
+defects remain immediate non-retryable failures.
+
+When pagination observes only a recognized `totalCount` or `updatedAt` drift, the helper may make at
+most two whole-snapshot restarts. Each restart begins with `after = null` and discards every partial
+item, cursor, ID, and snapshot value from the failed attempt. Exhaustion of the initial/pre-write
+snapshot restart budget exits nonzero with deterministic diagnostics, emits no `complete: true`
+result, and performs no project writes. Post-Apply audit exhaustion follows the separate completeness
+rule below, where writes may already have occurred and final state is unknown. `-Apply` retains its
+pre-write snapshot/plan drift guard and complete post-Apply audit; a restart does not weaken either
+boundary.
 
 ## Verification Checklist
 
@@ -167,6 +163,7 @@ The priority helper's completeness contract is fail-closed:
 - `-Limit 0` (the default) means no configured ceiling. A positive `-Limit` is a safety ceiling, not a sample size; if the project is larger, the command exits nonzero without a completeness claim.
 - All same-repository project Issues with zero or multiple priority labels are aggregated and reported before any PR reference resolution. Issue priorities are never guessed; fix every listed label defect first under the issue-item rule above.
 - `-Apply` validates every planned Priority option, rebuilds the complete snapshot and source-derived update plan immediately before writes, and aborts before the first write if either plan drifts. The guarded source fingerprint includes the exact ignored external Issue occurrences, so reference identity/count drift is fatal even when the Priority update plan is unchanged. After the first write attempt it always runs a complete post-apply audit, including when a later write fails, because ProjectV2 edits are not transactional as a batch. Success output is built from that verified post-state; a partial failure reports both the writer error and whether the final state was auditable.
+- If the pre-write snapshot exhausts its restart budget, no writes have occurred. If the post-Apply audit snapshot exhausts its restart budget, writes may already have occurred because ProjectV2 edits are nontransactional, so the final project state is unknown; the complete post-Apply audit remains mandatory even after a partial writer failure.
 - `-SelfTest` exercises the authentication-free parser/audit behavior for pagination, saturation, identity, cursor, nested-connection, typed reference authority, ignored-reference evidence/drift, plan drift, zero-write preflight, partial-writer failure, and post-apply output. Required CI runs the parser and this regression suite directly.
 
 ## Weekly Backlog Seeding Cadence (OPS-06)
@@ -176,7 +173,8 @@ Goal:
 
 Weekly process:
 1. Review `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TaskdeckNextWorkChecklist.md`.
-2. Select the highest-priority items whose dependencies are complete.
+2. Select the highest-priority acceptance-ready items: `Now` candidates must have complete
+   dependencies, while a `Next` candidate may be explicitly sequenced behind a named `Now` item.
 3. Create/update issues with explicit acceptance criteria and required labels.
 4. Ensure each issue body includes dependency mapping (`Depends on #...`, `Unblocks #...` when applicable).
 5. For product-facing slices, include thesis-alignment notes:
@@ -187,16 +185,29 @@ Weekly process:
 
 WIP-aware intake limits:
 - Maximum 5 newly-seeded issues per week.
-- Maximum 1 major issue in `Now`.
-- Maximum 2 issues in `Next`.
+- Promoting an already-open tracked issue does not count as newly seeding an issue.
+- Maximum 4 issue items in `Now`.
+- Maximum 8 issue items in `Next`.
 - Remaining seeded issues stay in `Pending` until promoted.
 
-Override rule:
-- Maintainer may explicitly waive intake cap for one-off backlog seeding/reconciliation events.
-- WIP execution discipline (`Now`/`Review` limits) remains in force even when intake cap is waived.
+Promotion and override rules:
+- An authorized coordinator may promote an acceptance-ready existing issue under ADR-0051 and
+  `docs/REVIVAL_PLAN.md` §5 without a separate maintainer request. `Now` items must have complete
+  dependencies; a `Next` item may be explicitly sequenced behind a named `Now` item.
+- Before promotion, the issue must have exactly one Priority label and a matching Project `Priority`
+  field value. Repair label/field parity before changing the Project status.
+- Finish or deliberately park an existing conflicting lane before promoting its successor to `Now`.
+- Explicit owner direction may waive the numeric intake or queue cap for a bounded reconciliation
+  event. Record the waiver and exact resulting queue; it does not waive dependency, ownership,
+  review, CI, or human-only external-action boundaries.
 
 Evidence of execution:
+
+- 2026-08-26: the dogfooding reconciliation found 46 issue records without a Priority label. Forty-three were closed historical records and received `Priority V`; open `#2075` and `#2078` received `Priority III`; open `#2080` received `Priority II`. A complete 2,053-item apply then synchronized 213 issue/PR Project Priority values and post-apply verification reported zero remaining drift.
 - 2026-02-16 seeding pass populated Stage 0 governance issues (`#43`, `#59`, `#41`, `#55`, `#60`, `#56`) and Stage 1 security tranche issues.
 - 2026-02-18 expansion pass seeded future-development waves (`#67` to `#111`) and applied priority labels across all issues.
 - 2026-02-18 reconciliation pass applied issue-priority labels to all issues and synchronized project `Priority` for issues + PRs.
 - 2026-04-25 roadmap-v4 reconciliation pass intentionally exceeded the normal weekly intake cap to seed tracker `#972` and child issues `#973`--`#984`; WIP status discipline still applies before implementation starts.
+- 2026-08-18 ADR-0051 autonomous-admission pass promoted four open issues to `Now` (`#1206`,
+  `#1633`, `#1661`, `#1664`) and eight to `Next` (`#1495`, `#1626`, `#1639`, `#1641`, `#1652`,
+  `#1665`, `#1666`, `#1670`) after live dependency, ownership, acceptance, and Priority checks.

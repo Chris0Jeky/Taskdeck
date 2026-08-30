@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useVirtualList } from '../../composables/useVirtualList'
+import type { VirtualItem } from '@tanstack/vue-virtual'
 
 /**
  * Note: @tanstack/vue-virtual requires real scroll container dimensions to
@@ -61,9 +62,9 @@ function createTestComponent(itemCount: number, estimateSize = 40) {
                     transform: `translateY(${this.translateY}px)`,
                   },
                 },
-                this.virtualRows.map((row: { key: string | number; index: number }) =>
+                this.virtualRows.map((row: VirtualItem) =>
                   h('div', {
-                    key: row.key,
+                    key: row.key as string | number,
                     'data-index': row.index,
                     ref: 'virtualItemEls',
                     style: { height: `${estimateSize}px` },

@@ -1,5 +1,6 @@
 using System.Net;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Agents;
 using Xunit;
@@ -8,6 +9,17 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class EgressEnvelopeHandlerTests
 {
+    [Fact]
+    public void Constructor_PreservesOriginalThreeParameterBinarySignature()
+    {
+        typeof(EgressEnvelopeHandler).GetConstructor(
+            [
+                typeof(IEgressRegistry),
+                typeof(ILogger<EgressEnvelopeHandler>),
+                typeof(string)
+            ]).Should().NotBeNull();
+    }
+
     private static EgressRegistry CreateRegistry(params string[] hosts)
     {
         var entries = hosts.Select(h => new EgressEntry(h, "test", "test", EgressDataClassification.None));
@@ -59,7 +71,7 @@ public class EgressEnvelopeHandlerTests
     {
         // Deliberate test from acceptance criteria:
         // "Test agent attempting https://attacker.example fails with EgressViolation"
-        var (handler, _) = CreateHandler("api.openai.com", "generativelanguage.googleapis.com");
+        var (handler, _) = CreateHandler("api.openai.com", "api.groq.com");
         using var invoker = new HttpMessageInvoker(handler);
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://attacker.example");
@@ -89,6 +101,33 @@ public class EgressEnvelopeHandlerTests
         var ex = await act.Should().ThrowAsync<EgressViolationException>();
         ex.Which.Violation.ViolationType.Should().Be(EgressViolationType.RedirectToUnknownHost);
         ex.Which.Violation.AttemptedHost.Should().Be("evil.example.com");
+    }
+
+    [Fact]
+    public async Task SendAsync_BlockedRedirect_SanitizesViolationAndLogToOrigins()
+    {
+        var logger = new CapturingLogger();
+        var registry = CreateRegistry("trusted.example.com");
+        const string secret = "attacker-secret-token";
+        const string userContent = "private-user-content";
+        var inner = new SingleRedirectHandler(
+            $"https://user:{secret}@evil.example.com/{userContent}?token={secret}#{userContent}");
+        var handler = new EgressEnvelopeHandler(registry, logger, sourceComponent: "test")
+        {
+            InnerHandler = inner
+        };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var act = () => invoker.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, "https://trusted.example.com/start?user=content"),
+            CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<EgressViolationException>();
+        exception.Which.Violation.RequestUri.Should().Be("https://evil.example.com");
+        exception.Which.Violation.Reason.Should().NotContain(secret).And.NotContain(userContent);
+        logger.Messages.Should().ContainSingle();
+        logger.Messages[0].Should().NotContain(secret).And.NotContain(userContent).And.NotContain("user=content");
+        logger.Messages[0].Should().Contain("https://trusted.example.com").And.Contain("https://evil.example.com");
     }
 
     [Fact]
@@ -677,5 +716,22 @@ public class EgressEnvelopeHandlerTests
             length = Headers.ContentLength ?? _actualLength;
             return true;
         }
+    }
+
+    private sealed class CapturingLogger : ILogger<EgressEnvelopeHandler>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
     }
 }

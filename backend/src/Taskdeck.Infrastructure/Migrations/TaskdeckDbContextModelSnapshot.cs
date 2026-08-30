@@ -15,7 +15,7 @@ namespace Taskdeck.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.29");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
 
             modelBuilder.Entity("Taskdeck.Domain.Agents.McpToolHash", b =>
                 {
@@ -250,6 +250,9 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("Scopes")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
@@ -593,6 +596,13 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("CardMutationMarker")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -656,6 +666,72 @@ namespace Taskdeck.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("BoardAccesses", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CapturedAtClient")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CapturedAtServer")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ContextBoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Intent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("LegacyRequestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LegacySource")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Lifecycle")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("OriginAdapter")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PrimaryModality")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Producer")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserTitle")
+                        .HasMaxLength(240)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContextBoardId");
+
+                    b.HasIndex("LegacyRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.HasIndex("UserId", "Lifecycle");
+
+                    b.ToTable("Captures", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
@@ -1396,6 +1472,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TranscriptId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -1409,6 +1488,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("TranscriptId")
+                        .IsUnique();
 
                     b.HasIndex("UserId", "Status");
 
@@ -1999,6 +2081,9 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<int?>("SpanStart")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TranscriptId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("TEXT");
@@ -2007,7 +2092,12 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.HasIndex("ProvenanceFieldId");
 
-                    b.ToTable("ProvenanceEvidenceLinks", (string)null);
+                    b.HasIndex("TranscriptId");
+
+                    b.ToTable("ProvenanceEvidenceLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProvenanceEvidenceLinks_TranscriptId", "(\"SourceType\" = 'Transcript' AND \"TranscriptId\" IS NOT NULL) OR (\"SourceType\" <> 'Transcript' AND \"TranscriptId\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>
@@ -2015,8 +2105,11 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
 
-                    b.Property<double>("Confidence")
+                    b.Property<double?>("Confidence")
                         .HasColumnType("REAL");
+
+                    b.Property<int>("ConfidenceSource")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
@@ -2214,7 +2307,7 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.Property<string>("Text")
                         .IsRequired()
-                        .HasMaxLength(102400)
+                        .HasMaxLength(200000)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
@@ -2419,6 +2512,20 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
+                        .WithMany()
+                        .HasForeignKey("ContextBoardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.Board", "Board")
@@ -2604,6 +2711,11 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("BoardId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Taskdeck.Domain.Entities.Transcript", null)
+                        .WithMany()
+                        .HasForeignKey("TranscriptId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Taskdeck.Domain.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -2723,6 +2835,11 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("ProvenanceFieldId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Transcript", null)
+                        .WithMany()
+                        .HasForeignKey("TranscriptId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.ProvenanceField", b =>

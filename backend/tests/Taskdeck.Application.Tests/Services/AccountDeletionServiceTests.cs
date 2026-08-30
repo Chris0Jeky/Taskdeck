@@ -101,6 +101,44 @@ public class AccountDeletionServiceTests
     }
 
     [Fact]
+    public async Task DeleteAccountAsync_DeletesDurableCaptureMirrorsInsideTheSameTransaction()
+    {
+        // ADR-0065 / PR #2280 review: rows mirrored into Captures while ContextFabric:DualWriteCaptures
+        // was on carry user-authored titles and must not outlive account erasure.
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var captureStoreMock = new Mock<ICaptureStore>();
+        captureStoreMock
+            .Setup(s => s.DeleteByUserAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(3);
+        var service = new AccountDeletionService(
+            _unitOfWorkMock.Object,
+            _historyServiceMock.Object,
+            _artefactRepoMock.Object,
+            _transcriptRepoMock.Object,
+            captureStore: captureStoreMock.Object);
+
+        var result = await service.DeleteAccountAsync(_userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DurableCapturesDeleted.Should().Be(3);
+        captureStoreMock.Verify(s => s.DeleteByUserAsync(_userId, It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAccountAsync_WithoutACaptureStore_ReportsZeroDurableCaptures()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+
+        var result = await _service.DeleteAccountAsync(_userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DurableCapturesDeleted.Should().Be(0);
+    }
+
+    [Fact]
     public async Task DeleteAccountAsync_DeliberatelyRetainsProposalFeedback()
     {
         // ADR-0043 (verified against this service): ProposalFeedback is content-free

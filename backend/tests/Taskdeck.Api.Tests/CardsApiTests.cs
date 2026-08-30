@@ -91,6 +91,23 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateCard_ShouldReturnConflictWithInvalidOperation_WhenBoardIsArchived()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "To Do", wipLimit: null);
+        var archiveResponse = await _client.PutAsJsonAsync(
+            $"/api/boards/{board.Id}",
+            new UpdateBoardDto(null, null, IsArchived: true));
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Blocked card", null, null, null));
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.Conflict, "InvalidOperation");
+    }
+
+    [Fact]
     public async Task MoveCard_ShouldMoveCardAcrossColumns()
     {
         var board = await CreateBoardAsync();
@@ -210,6 +227,27 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
 
         var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
         errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+    }
+
+    [Fact]
+    public async Task CreateCard_ShouldReturnNotFoundAndCreateNothing_WhenColumnBelongsToDifferentBoard()
+    {
+        var boardA = await CreateBoardAsync();
+        var boardB = await CreateBoardAsync();
+        var boardBColumn = await CreateColumnAsync(boardB.Id, "Other board column", wipLimit: null);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardA.Id}/cards",
+            new CreateCardDto(boardA.Id, boardBColumn.Id, "Cross-board card", null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var errorPayload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        errorPayload.GetProperty("errorCode").GetString().Should().Be("NotFound");
+
+        var cardsOnBoardA = await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardA.Id}/cards");
+        var cardsOnBoardB = await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardB.Id}/cards");
+        cardsOnBoardA.Should().BeEmpty();
+        cardsOnBoardB.Should().BeEmpty();
     }
 
     [Fact]

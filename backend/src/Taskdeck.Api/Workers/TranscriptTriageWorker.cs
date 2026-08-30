@@ -2,6 +2,7 @@ using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
+using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 
@@ -134,6 +135,7 @@ public class TranscriptTriageWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var triageService = scope.ServiceProvider.GetRequiredService<ICaptureTriageService>();
+        var transcriptRepository = scope.ServiceProvider.GetRequiredService<ITranscriptRepository>();
 
         var claimed = await unitOfWork.LlmQueue.TryClaimProcessingTranscriptAsync(itemId, expectedUpdatedAt, ct);
         if (!claimed)
@@ -196,11 +198,50 @@ public class TranscriptTriageWorker : BackgroundService
                 return;
             }
 
-            var triageResult = await triageService.CreateProposalFromCaptureAsync(
+            var transcript = item.TranscriptId.HasValue
+                ? await transcriptRepository.GetByIdForUserAsync(item.TranscriptId.Value, item.UserId, ct)
+                : null;
+
+            if (item.TranscriptId.HasValue && transcript is null)
+            {
+                var linkedTranscriptRetryScheduled = await HandleFailureWithRetryAsync(
+                    unitOfWork,
+                    item,
+                    ErrorCodes.NotFound,
+                    "The linked transcript could not be found",
+                    ct);
+
+                outcome = linkedTranscriptRetryScheduled ? "failed_retry" : "failed_permanent";
+                stopWatch.Stop();
+                RecordWorkerProcessingMetrics(stopWatch.Elapsed.TotalMilliseconds, outcome);
+                return;
+            }
+
+            if (transcript is null)
+            {
+                transcript = new Transcript(
+                    item.UserId,
+                    parsedPayloadResult.Value.Source,
+                    parsedPayloadResult.Value.Text,
+                    boardId: item.BoardId,
+                    createdFromCaptureId: item.Id);
+                await transcriptRepository.AddAsync(transcript, ct);
+                item.AttachTranscript(transcript.Id);
+
+                // Persist the transcript and queue linkage together before any provider work. A
+                // replay observes TranscriptId and reuses this canonical text instead of creating
+                // a second transcript.
+                await unitOfWork.SaveChangesAsync(ct);
+            }
+
+            var canonicalPayload = parsedPayloadResult.Value with { Text = transcript.Text };
+
+            var triageResult = await triageService.CreateProposalFromTranscriptAsync(
                 item.Id,
                 item.UserId,
                 item.BoardId,
-                parsedPayloadResult.Value,
+                transcript.Id,
+                canonicalPayload,
                 ct);
 
             if (triageResult.IsSuccess)
@@ -218,9 +259,19 @@ public class TranscriptTriageWorker : BackgroundService
                         triageResult.Value.Model,
                         CaptureRequestContract.MaxModelLength));
 
+                // A degraded run still produced a reviewable proposal, so the item completes; the
+                // notice records WHICH engine produced it so the fallback is not silent (#2192).
                 item.UpdatePayload(CaptureRequestContract.SerializePayload(linkedPayload));
-                item.MarkAsCompleted();
+                item.MarkAsCompleted(triageResult.Value.DegradedNotice);
                 await unitOfWork.SaveChangesAsync(ct);
+
+                if (triageResult.Value.DegradedNotice is { } transcriptDegradedNotice)
+                {
+                    _logger.LogWarning(
+                        "Transcript capture item {ItemId} completed on the deterministic fallback: {DegradedNotice}",
+                        item.Id,
+                        transcriptDegradedNotice);
+                }
 
                 // A null ProposalId is the "triaged, nothing to propose" verdict: the item is
                 // Completed without a linked proposal (capture status: Triaged), never Failed —
@@ -250,9 +301,8 @@ public class TranscriptTriageWorker : BackgroundService
                 return;
             }
 
-            var retryScheduled = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var retryScheduled = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 triageResult.ErrorCode,
                 triageResult.ErrorMessage ?? "Transcript triage failed",
                 ct);
@@ -267,9 +317,8 @@ public class TranscriptTriageWorker : BackgroundService
                 "Unhandled exception triaging transcript queue item {ItemId}. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
-            var scheduledForRetry = await HandleFailureWithRetryAsync(
-                unitOfWork,
-                item,
+            var scheduledForRetry = await HandleFailureWithRetryInFreshScopeAsync(
+                item.Id,
                 ErrorCodes.UnexpectedError,
                 ex.Message,
                 ct);
@@ -328,6 +377,36 @@ public class TranscriptTriageWorker : BackgroundService
             item.Id,
             item.RetryCount + 1);
         return true;
+    }
+
+    /// <summary>
+    /// Records post-triage failures in a fresh scope so a failed proposal/revision save cannot
+    /// leak stale tracked entries into the queue item's failure and retry commits.
+    /// </summary>
+    private async Task<bool> HandleFailureWithRetryInFreshScopeAsync(
+        Guid itemId,
+        string? errorCode,
+        string errorMessage,
+        CancellationToken ct)
+    {
+        using var failureScope = _scopeFactory.CreateScope();
+        var failureUnitOfWork = failureScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var failureItem = await failureUnitOfWork.LlmQueue.GetByIdAsync(itemId, ct);
+        if (failureItem == null || failureItem.Status != RequestStatus.Processing)
+        {
+            _logger.LogWarning(
+                "Transcript queue item {ItemId} could not record triage failure because its current status is {Status}",
+                itemId,
+                failureItem?.Status.ToString() ?? "missing");
+            return false;
+        }
+
+        return await HandleFailureWithRetryAsync(
+            failureUnitOfWork,
+            failureItem,
+            errorCode,
+            errorMessage,
+            ct);
     }
 
     private bool IsTransientFailure(string? errorCode)

@@ -19,6 +19,7 @@ import { expect, test } from '@playwright/test'
 import type { StarterPackManifest } from '../../src/types/starter-packs'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { expectDialog } from './support/dialogs'
+import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated, waitForCardWithTitle, listBoardCards } from './support/captureFlow'
 
@@ -110,11 +111,10 @@ test('V-02: register to create board to capture to triage to approve to board st
   await expect(proposalCard.getByText('Approved, ready to apply')).toBeVisible()
 
   // Step 9: Apply the approved proposal (S1 board mutation)
-  await expectDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click(), {
-    type: 'confirm',
-    message: 'Apply this approved proposal to the board now?',
-  })
-  await expect(proposalCard).not.toBeVisible()
+  await expectApplyConfirmDialog(page, () => proposalCard.getByRole('button', { name: 'Apply to board' }).click())
+  // #1967: after Apply the card either leaves the queue or persists as a
+  // read-only decision record - in both renderings the Apply control is gone.
+  await expect(proposalCard.getByRole('button', { name: 'Apply to board' })).toHaveCount(0)
 
   // Step 10: Verify card appeared on the board (S1 board state)
   const createdCard = await waitForCardWithTitle(request, auth, boardId, cardTitle)
@@ -199,7 +199,7 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
   // Step 6: Verify board appears in archive view (S5 archive)
   await page.goto('/workspace/archive')
   await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
-  const archivedBoardRow = page.locator('.td-archive-row').filter({ hasText: boardName }).first()
+  const archivedBoardRow = page.locator('.paper-archive__row').filter({ hasText: boardName }).first()
   await expect(archivedBoardRow).toBeVisible()
 
   // Step 7: Restore the board from archive (S5 restore)
@@ -207,7 +207,7 @@ test('V-03: login to create board to apply starter pack to archive to restore', 
     type: 'confirm',
     message: /^Restore board "/,
   })
-  await expect(page.locator('.td-archive-row').filter({ hasText: boardName })).toHaveCount(0)
+  await expect(page.locator('.paper-archive__row').filter({ hasText: boardName })).toHaveCount(0)
 
   // Step 8: Verify restored board is back in boards list (S1 board)
   await page.goto('/workspace/boards')

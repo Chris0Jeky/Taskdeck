@@ -1,5 +1,6 @@
 using System.Reflection;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -9,6 +10,7 @@ using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -58,6 +60,9 @@ public class AutomationProposalServiceEdgeCaseTests
         _boardRepoMock
             .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(TestDataBuilder.CreateBoard());
+        _boardRepoMock
+            .Setup(r => r.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { TestDataBuilder.CreateBoard() });
         _boardAccessRepoMock
             .Setup(r => r.HasAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserRole?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -166,7 +171,7 @@ public class AutomationProposalServiceEdgeCaseTests
 
         _proposalRepoMock
             .Setup(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal> { expired1, expired2 });
+            .ReturnsAsync(new ExpiredProposalSweep(new List<AutomationProposal> { expired1, expired2 }, 0));
 
         var result = await _service.ExpireProposalsAsync();
 
@@ -177,11 +182,88 @@ public class AutomationProposalServiceEdgeCaseTests
     }
 
     [Fact]
+    public async Task ExpireProposalsAsync_ShouldExpireAndNotifyOnlyTheExpirableHalf_WhenArchivedBoardProposalsAreWithheld()
+    {
+        // #2197: this path used to call Expire() on everything the expiry query returned, with no
+        // archived-board guard — so a pending proposal on an archived board was silently decided.
+        // The query now withholds those and reports a count. What this test pins is the SERVICE's
+        // half of that contract: the withheld ones must not be counted, must not be saved, and must
+        // not pick up an "expired" notification, and the operator must be told how many were held
+        // back. Both loops in the method read the same list, which is what makes that hold.
+        var expirable = CreatePendingProposal();
+        var logger = new InMemoryLogger<AutomationProposalService>();
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+
+        _proposalRepoMock
+            .Setup(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                new List<AutomationProposal> { expirable },
+                SkippedArchivedBoardCount: 3));
+
+        var result = await service.ExpireProposalsAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(
+            1,
+            "the returned count is how many proposals were actually expired, not how many were considered");
+        expirable.Status.Should().Be(ProposalStatus.Expired);
+
+        // Exactly one notification: a withheld proposal that got an "expired" notification without
+        // being expired would be a user-visible lie about archived history.
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.AtMostOnce());
+
+        var skipEntry = logger.Entries.Should()
+            .ContainSingle(entry => entry.Message.Contains("Skipped expiring"))
+            .Subject;
+        skipEntry.Level.Should().Be(LogLevel.Information);
+        skipEntry.Message.Should().Contain("3");
+        skipEntry.Message.Should().Contain("board is archived");
+    }
+
+    [Fact]
+    public async Task ExpireProposalsAsync_ShouldNotSaveOrLog_WhenEveryExpiredProposalIsWithheld()
+    {
+        // The all-withheld cycle is the exact shape of the defect: a sweep that finds only
+        // archived-board proposals must be a no-op write, not a silent batch of decisions.
+        var logger = new InMemoryLogger<AutomationProposalService>();
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+
+        _proposalRepoMock
+            .Setup(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpiredProposalSweep(Array.Empty<AutomationProposal>(), SkippedArchivedBoardCount: 2));
+
+        var result = await service.ExpireProposalsAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(0);
+        _unitOfWorkMock.Verify(
+            u => u.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never(),
+            "nothing was expired, so nothing may be written — no audit row for a withheld proposal");
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Never());
+        logger.Entries.Should().ContainSingle(entry => entry.Message.Contains("Skipped expiring"));
+    }
+
+    [Fact]
     public async Task ExpireProposalsAsync_ShouldReturnZero_WhenNoneExpired()
     {
         _proposalRepoMock
             .Setup(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<AutomationProposal>());
+            .ReturnsAsync(ExpiredProposalSweep.Empty);
 
         var result = await _service.ExpireProposalsAsync();
 

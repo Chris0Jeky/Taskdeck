@@ -42,6 +42,15 @@ export type CaptureSource =
 
 export type CaptureSourceValue = CaptureSource | number
 
+export type CaptureDisposition = 'Kept' | 'Archived' | 'ProposalRequested'
+
+export interface CaptureDispositionReceipt {
+  kind: CaptureDisposition | number
+  at: string
+  byUserId: string
+  boardId: string | null
+}
+
 export interface CaptureItemSummary {
   id: string
   userId: string
@@ -51,6 +60,10 @@ export interface CaptureItemSummary {
   textExcerpt: string
   createdAt: string
   processedAt: string | null
+  /** Failure reason surfaced on a FAILED capture so the row can explain what went wrong (#1764). */
+  errorMessage?: string | null
+  /** Latest server-stamped routing choice. Absent on records created before M1. */
+  disposition?: CaptureDispositionReceipt | null
 }
 
 export interface CaptureProvenance {
@@ -60,11 +73,22 @@ export interface CaptureProvenance {
   promptVersion: string | null
 }
 
+export interface CaptureSuggestionMetadata {
+  /** Calendar-day intent. Null explicitly means no due date. */
+  dueDate: string | null
+  /** Existing board label names; triage resolves them without creating labels. */
+  labels: string[]
+}
+
 export interface CaptureItem extends CaptureItemSummary {
   rawText: string
   retryCount: number
   errorMessage?: string | null
   provenance?: CaptureProvenance | null
+  /** Optional while older API instances roll out; absent is conservatively not editable. */
+  canEditSuggestion?: boolean
+  /** Optional while older API instances roll out; absent metadata must never be cleared implicitly. */
+  metadata?: CaptureSuggestionMetadata | null
 }
 
 export interface CreateCaptureItemDto {
@@ -73,6 +97,10 @@ export interface CreateCaptureItemDto {
   source?: CaptureSource | null
   titleHint?: string | null
   externalRef?: string | null
+  /** Calendar-day intent from the capture composer; applied only after proposal approval. */
+  dueDate?: string | null
+  /** Names resolve only against the proposal's selected board. */
+  labels?: string[] | null
 }
 
 export interface CaptureListQuery {
@@ -111,4 +139,6 @@ export interface BatchTriageResult {
 export interface UpdateCaptureSuggestionDto {
   text: string
   titleHint?: string | null
+  /** Omit to preserve stored metadata; include as a complete replacement, with null/[] clearing. */
+  metadata?: CaptureSuggestionMetadata
 }
