@@ -25,6 +25,10 @@ owns any Taskdeck-specific intake and review design that remains after consolida
 - MCP-first when an MCP tool can do the job; otherwise shell/CLI and say so in the handoff.
 - OpenAI/Codex docs → openaiDeveloperDocs · third-party library docs → Context7 · UI repro/regression →
   Playwright · issues/PRs/workflows → GitHub MCP (writes only when required).
+- **GitHub quota fallback:** if GitHub MCP or `gh api graphql` reports an exhausted GraphQL quota,
+  continue through GitHub's REST API with `gh api` where the operation has a REST equivalent; record
+  the fallback in the handoff. Wait for GraphQL reset only for operations that genuinely require it
+  (for example, Projects v2 field mutation), and keep unrelated work moving.
 - **Repo search: native `rg`.** The ripgrep MCP is unreliable on Windows; fall back to GitHub `search_code`.
 - **The Docker MCP gateway is declared once, at user scope.** Do not re-declare it in `.mcp.json` or
   `.codex/config.toml` — a second declaration starts a second gateway process per session
