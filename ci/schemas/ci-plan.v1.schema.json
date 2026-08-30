@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/ci-plan.v1.schema.json",
+  "title": "Taskdeck Smart CI plan receipt v1 (ADR-0066)",
+  "description": "Documentation schema for artifacts/ci-plan.json. Executable validation: scripts/ci/smart-ci/lib/plan.mjs validatePlan(). Content-free: paths, SHAs, logins, labels, lane ids and reasons only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyId", "policyDigest", "mode", "event", "baseSha", "headSha", "actor", "labels", "trust", "risk", "executionMode", "escalated", "escalationReasons", "changedFiles", "groups", "unmappedPaths", "controlPathsChanged", "selected", "skipped", "plannerError"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "policyId": { "type": ["string", "null"] },
+    "policyDigest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "mode": { "enum": ["shadow", "enforce"] },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "repository", "pullRequest", "ref", "isDraft"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "repository": { "type": ["string", "null"] },
+        "pullRequest": { "type": ["integer", "null"] },
+        "ref": { "type": ["string", "null"] },
+        "isDraft": { "type": "boolean" }
+      }
+    },
+    "baseSha": { "type": ["string", "null"] },
+    "headSha": { "type": ["string", "null"] },
+    "mergeSha": { "type": ["string", "null"] },
+    "mergeTreeSha": { "type": ["string", "null"], "description": "tree of refs/pull/N/merge at plan time — the binding the landed verifier matches against HEAD^{tree} (CI-03)" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["login", "type", "association", "isFork"],
+      "properties": {
+        "login": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] },
+        "association": { "type": ["string", "null"] },
+        "isFork": { "type": "boolean" }
+      }
+    },
+    "labels": { "type": "array", "items": { "type": "string" } },
+    "trust": { "enum": ["T0", "T1", "T2", "T3", "T4"] },
+    "risk": { "enum": ["R0", "R1", "R2", "R3", "R4"] },
+    "executionMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective", "hostedForced", "reasons"],
+      "properties": {
+        "requested": { "enum": ["hosted", "hybrid", "self-hosted"] },
+        "effective": { "enum": ["hosted", "hybrid", "self-hosted"] },
+        "hostedForced": { "type": "boolean" },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "escalated": { "type": "boolean" },
+    "escalationReasons": { "type": "array", "items": { "type": "string" } },
+    "changedFiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "paths"],
+      "properties": { "count": { "type": "integer", "minimum": 0 }, "paths": { "type": "array", "items": { "type": "string" } } }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "riskFloor", "paths"],
+        "properties": { "id": { "type": "string" }, "riskFloor": { "enum": ["R0", "R1", "R2", "R3", "R4"] }, "paths": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "unmappedPaths": { "type": "array", "items": { "type": "string" } },
+    "controlPathsChanged": { "type": "array", "items": { "type": "string" } },
+    "selected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane", "checkName", "family", "runnerClass", "runner", "hosted", "required", "reasons"],
+        "properties": {
+          "lane": { "type": "string" },
+          "checkName": { "type": "string" },
+          "family": { "type": ["string", "null"] },
+          "runnerClass": { "type": "string" },
+          "runner": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "hosted": { "type": "boolean" },
+          "required": { "const": true },
+          "reasons": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane", "checkName", "family", "reason"],
+        "properties": {
+          "lane": { "type": "string" },
+          "checkName": { "type": "string" },
+          "family": { "type": ["string", "null"] },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "plannerError": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name", "message"],
+      "properties": { "name": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}

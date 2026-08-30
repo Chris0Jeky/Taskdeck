@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/ci-run.v1.schema.json",
+  "title": "Taskdeck Smart CI gate receipt v1 (ADR-0066)",
+  "description": "Documentation schema for artifacts/ci-run.json written by scripts/ci/smart-ci/evaluate-gate.mjs. CI-12 #2336 extends it with per-job timing, allowance-minute, test-count, flake and storage fields; the fields below are the minimal binding a landed verifier (CI-03 #2327) needs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "mode", "ok", "wouldFail", "failures", "notes", "policyId", "policyDigest", "event", "baseSha", "headSha", "mergeSha", "mergeTreeSha", "risk", "trust", "escalated", "selected", "skipped", "generatedAtUtc"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "smart-ci-gate-receipt" },
+    "mode": { "enum": ["shadow", "enforce"] },
+    "ok": { "type": "boolean", "description": "the gate's exit verdict in its mode" },
+    "wouldFail": { "type": "boolean", "description": "what enforce mode would have concluded" },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "detail"],
+        "properties": {
+          "code": { "enum": ["plan-missing", "plan-invalid", "planner-error", "plan-job-failed", "head-sha-mismatch", "base-sha-mismatch", "policy-digest-mismatch", "selected-evidence-missing", "selected-not-success", "evidence-wrong-sha", "skipped-without-reason"] },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "notes": { "type": "array", "items": { "type": "string" } },
+    "policyId": { "type": ["string", "null"] },
+    "policyDigest": { "type": ["string", "null"] },
+    "event": { "type": ["object", "null"] },
+    "baseSha": { "type": ["string", "null"] },
+    "headSha": { "type": ["string", "null"] },
+    "mergeSha": { "type": ["string", "null"] },
+    "mergeTreeSha": { "type": ["string", "null"] },
+    "risk": { "type": ["string", "null"] },
+    "trust": { "type": ["string", "null"] },
+    "escalated": { "type": ["boolean", "null"] },
+    "selected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane", "checkName", "runnerClass", "hosted"],
+        "properties": { "lane": { "type": "string" }, "checkName": { "type": "string" }, "runnerClass": { "type": "string" }, "hosted": { "type": "boolean" } }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane", "checkName", "reason"],
+        "properties": { "lane": { "type": "string" }, "checkName": { "type": "string" }, "reason": { "type": "string" } }
+      }
+    },
+    "generatedAtUtc": { "type": "string", "format": "date-time" }
+  }
+}
