@@ -3,7 +3,6 @@ using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
-using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Exceptions;
 using Xunit;
 
@@ -17,7 +16,7 @@ namespace Taskdeck.Application.Tests.Services;
 /// </summary>
 public class BatchProposalExecutionServiceTests
 {
-    private readonly Mock<IAutomationProposalService> _proposalService = new();
+    private readonly Mock<IProposalExecutionAuthorizationSnapshotReader> _snapshotReader = new();
     private readonly Mock<IAutomationExecutorService> _executorService = new();
     private readonly Mock<IAuthorizationService> _authorizationService = new();
     private readonly BatchProposalExecutionService _service;
@@ -43,7 +42,7 @@ public class BatchProposalExecutionServiceTests
                 Result.Success<IReadOnlySet<Guid>>(boardIds.ToHashSet()));
 
         _service = new BatchProposalExecutionService(
-            _proposalService.Object,
+            _snapshotReader.Object,
             _executorService.Object,
             _authorizationService.Object);
     }
@@ -66,7 +65,12 @@ public class BatchProposalExecutionServiceTests
 
         ArrangeExecute(first, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 2));
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(failing, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                failing,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.WipLimitExceeded, "WIP limit reached"));
         ArrangeExecute(third, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 1));
 
@@ -88,7 +92,12 @@ public class BatchProposalExecutionServiceTests
         // The failing item must not have short-circuited the ones after it: each proposal is its
         // own transaction, so the executor is still asked for every selected proposal.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(third, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                third,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -109,6 +118,56 @@ public class BatchProposalExecutionServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposals_WhenProposalIsAppliedAfterPhaseOneSnapshot_ReportsSkippedFromFreshExecutorReceipt()
+    {
+        var proposal = ArrangeProposal();
+        var concurrentApplyStaged = false;
+        _authorizationService
+            .Setup(a => a.GetReadableBoardIdsAsync(
+                _callerId,
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, IEnumerable<Guid> boardIds, CancellationToken _) =>
+            {
+                concurrentApplyStaged = true;
+                return Result.Success<IReadOnlySet<Guid>>(boardIds.ToHashSet());
+            });
+        _executorService
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                proposal,
+                It.IsAny<string>(),
+                _callerId,
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                concurrentApplyStaged.Should().BeTrue(
+                    "the competing Apply is staged after phase one and before this item's turn");
+                return Result.Success(new ProposalExecutionReceipt(
+                    AlreadyApplied: true,
+                    AppliedOperationCount: 0));
+            });
+
+        var result = await _service.ExecuteProposalsAsync(new[] { Select(proposal) }, _callerId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Results.Should().ContainSingle().Which.Outcome.Should().Be(BatchExecuteOutcome.Skipped);
+        _snapshotReader.Verify(
+            reader => reader.FindAsync(proposal, It.IsAny<CancellationToken>()),
+            Times.Once);
+        _executorService.Verify(
+            executor => executor.ExecuteProposalWithReceiptAsync(
+                proposal,
+                It.IsAny<string>(),
+                _callerId,
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == null),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ExecuteProposals_PassesEachSelectionsOwnIdempotencyKeyThrough()
     {
         var first = ArrangeProposal();
@@ -125,10 +184,20 @@ public class BatchProposalExecutionServiceTests
             _callerId);
 
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(first, "key-first", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                first,
+                "key-first",
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(second, "key-second", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                second,
+                "key-second",
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -160,7 +229,12 @@ public class BatchProposalExecutionServiceTests
         // The unauthorized item must never reach the executor: a 403-class outcome is decided
         // before any board write is attempted.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(forbidden, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                forbidden,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -176,7 +250,12 @@ public class BatchProposalExecutionServiceTests
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
         result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.NotFound);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -193,7 +272,12 @@ public class BatchProposalExecutionServiceTests
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
         result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.Conflict);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -230,9 +314,9 @@ public class BatchProposalExecutionServiceTests
     public async Task ExecuteProposals_WhenProposalIsMissing_FailsThatItemWithNotFound()
     {
         var missing = Guid.NewGuid();
-        _proposalService
-            .Setup(s => s.GetProposalByIdAsync(missing, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.NotFound, "Proposal not found"));
+        _snapshotReader
+            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
         var present = ArrangeProposal();
         ArrangeExecute(present, new ProposalExecutionReceipt(false, 1));
 
@@ -261,7 +345,12 @@ public class BatchProposalExecutionServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -292,9 +381,9 @@ public class BatchProposalExecutionServiceTests
         var foreignBoardId = Guid.NewGuid();
         var foreign = ArrangeProposal(boardId: foreignBoardId);
         var missing = Guid.NewGuid();
-        _proposalService
-            .Setup(s => s.GetProposalByIdAsync(missing, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.NotFound, "Proposal with ID x not found"));
+        _snapshotReader
+            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
 
         // Neither writable nor readable: the caller has no access to that board at all.
         _authorizationService
@@ -356,6 +445,7 @@ public class BatchProposalExecutionServiceTests
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
                 _callerId,
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
@@ -372,7 +462,12 @@ public class BatchProposalExecutionServiceTests
 
         result.IsSuccess.Should().BeFalse();
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -392,39 +487,27 @@ public class BatchProposalExecutionServiceTests
         var proposalId = Guid.NewGuid();
         var resolvedBoardId = boardId ?? (useDefaultBoard ? _boardId : (Guid?)null);
 
-        var dto = new ProposalDto(
+        var snapshot = new ProposalExecutionAuthorizationSnapshot(
             proposalId,
-            ProposalSourceType.Queue,
-            null,
             resolvedBoardId,
             requestedByUserId ?? _callerId,
-            ProposalStatus.Approved,
-            RiskLevel.Low,
-            "Batch execute item",
-            null,
-            null,
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow,
-            DateTime.UtcNow.AddDays(1),
-            DateTime.UtcNow,
-            requestedByUserId ?? _callerId,
-            null,
-            null,
-            Guid.NewGuid().ToString(),
-            new List<ProposalOperationDto>())
-        {
-            ApprovedRevisionId = approvedRevisionId
-        };
+            approvedRevisionId);
 
         _pins[proposalId] = approvedRevisionId;
-        _proposalService
-            .Setup(s => s.GetProposalByIdAsync(proposalId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success(dto));
+        _snapshotReader
+            .Setup(reader => reader.FindAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
         return proposalId;
     }
 
     private void ArrangeExecute(Guid proposalId, ProposalExecutionReceipt receipt) =>
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(proposalId, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                proposalId,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == ProposalPin(proposalId)),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(receipt));
 }
