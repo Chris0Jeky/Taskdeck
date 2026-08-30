@@ -884,5 +884,194 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         ) + "\n"
 
 
+class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
+    """#2233: inherited retired variables start; the same settings in a file stay fatal."""
+
+    @staticmethod
+    def _ready_monitor(warning_markers: list[str]) -> mock.Mock:
+        monitor = mock.Mock()
+        monitor.wait_for_ready.return_value = (
+            "http://127.0.0.1:5000",
+            5000,
+            {"jwtCreated": True, "connectorCreated": True},
+        )
+        monitor.warning_markers = warning_markers
+        monitor.seen_markers = {"TASKDECK_DESKTOP_READY"}
+        return monitor
+
+    def test_ignored_warning_must_be_announced_exactly_once(self) -> None:
+        harness.validate_retired_provider_ignored_warning(
+            [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+            harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+        )
+
+        invalid_marker_sets = (
+            [],
+            [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER] * 2,
+            ["TASKDECK_DESKTOP_WARNING code=something_else"],
+            [
+                "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored "
+                + harness.SYNTHETIC_RETIRED_PROVIDER_VALUE
+            ],
+        )
+        for markers in invalid_marker_sets:
+            with self.subTest(markers=markers):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.validate_retired_provider_ignored_warning(
+                        markers,
+                        harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                    )
+
+    def test_inherited_retired_variables_start_with_and_without_a_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            local_app_data = Path(temp).resolve() / "inherited"
+            local_app_data.mkdir()
+            monitors = [self._ready_monitor([harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER])
+                        for _ in range(2)]
+            with (
+                mock.patch.object(
+                    harness, "start_packaged_process", side_effect=monitors
+                ) as start,
+                mock.patch.object(harness, "request_health_and_spa") as request_health,
+                mock.patch.object(harness, "stop_packaged_process"),
+            ):
+                harness.verify_inherited_retired_provider_configuration_starts(
+                    Path("C:/package/Taskdeck.Api.exe"),
+                    Path("C:/unrelated-cwd"),
+                    local_app_data,
+                )
+
+        self.assertEqual(2, start.call_count)
+        selector_case, children_case = (call.args[2] for call in start.call_args_list)
+        self.assertEqual("Gemini", selector_case["Llm__Provider"])
+        self.assertNotIn("Llm__Provider", children_case)
+        for environment in (selector_case, children_case):
+            self.assertEqual(
+                harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                environment["Llm__Gemini__ApiKey"],
+            )
+        self.assertEqual(2, request_health.call_count)
+        # Each case gets its own data directory so both see a first-run bootstrap.
+        self.assertNotEqual(
+            selector_case["LOCALAPPDATA"],
+            children_case["LOCALAPPDATA"],
+        )
+
+    def test_inherited_retired_variables_require_the_ignored_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            local_app_data = Path(temp).resolve() / "inherited"
+            local_app_data.mkdir()
+            with (
+                mock.patch.object(
+                    harness,
+                    "start_packaged_process",
+                    return_value=self._ready_monitor([]),
+                ),
+                mock.patch.object(harness, "request_health_and_spa"),
+                mock.patch.object(harness, "stop_packaged_process"),
+            ):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.verify_inherited_retired_provider_configuration_starts(
+                        Path("C:/package/Taskdeck.Api.exe"),
+                        Path("C:/unrelated-cwd"),
+                        local_app_data,
+                    )
+
+    def test_ambient_openai_pin_starts_without_an_ignored_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            local_app_data = Path(temp).resolve()
+            with (
+                mock.patch.object(
+                    harness,
+                    "start_packaged_process",
+                    return_value=self._ready_monitor([]),
+                ) as start,
+                mock.patch.object(harness, "request_health_and_spa"),
+                mock.patch.object(harness, "stop_packaged_process"),
+            ):
+                harness.verify_ambient_openai_pins_do_not_block_start(
+                    Path("C:/package/Taskdeck.Api.exe"),
+                    Path("C:/unrelated-cwd"),
+                    local_app_data,
+                )
+
+        environment = start.call_args.args[2]
+        self.assertEqual("stale-pinned-model", environment["Llm__OpenAi__Model"])
+        self.assertNotIn("Llm__Gemini__ApiKey", environment)
+
+    def test_ambient_openai_pin_rejects_an_ignored_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            local_app_data = Path(temp).resolve()
+            with (
+                mock.patch.object(
+                    harness,
+                    "start_packaged_process",
+                    return_value=self._ready_monitor(
+                        [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER]
+                    ),
+                ),
+                mock.patch.object(harness, "request_health_and_spa"),
+                mock.patch.object(harness, "stop_packaged_process"),
+            ):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.verify_ambient_openai_pins_do_not_block_start(
+                        Path("C:/package/Taskdeck.Api.exe"),
+                        Path("C:/unrelated-cwd"),
+                        local_app_data,
+                    )
+
+    def test_durable_settings_file_case_writes_the_retired_section_and_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            executable = root / "Taskdeck.Api.exe"
+            executable.write_bytes(b"stub")
+            local_app_data = root / "local-app-data"
+            local_app_data.mkdir()
+            durable_config = local_app_data / "Taskdeck" / "appsettings.local.json"
+
+            process = mock.Mock()
+            process.communicate.return_value = (
+                "\n".join(
+                    (
+                        harness.RETIRED_PROVIDER_FATAL_MARKER,
+                        harness.RETIRED_PROVIDER_FATAL_GUIDANCE,
+                    )
+                ),
+                None,
+            )
+            process.returncode = 1
+            with mock.patch.object(harness.subprocess, "Popen", return_value=process):
+                harness.verify_retired_provider_configuration_failure(
+                    executable,
+                    root,
+                    local_app_data,
+                )
+
+            written = json.loads(durable_config.read_text(encoding="utf-8"))
+            self.assertEqual(
+                harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                written["Llm"]["Gemini"]["ApiKey"],
+            )
+
+    def test_durable_settings_file_case_requires_a_nonzero_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            executable = root / "Taskdeck.Api.exe"
+            executable.write_bytes(b"stub")
+            local_app_data = root / "local-app-data"
+            local_app_data.mkdir()
+
+            process = mock.Mock()
+            process.communicate.return_value = ("TASKDECK_DESKTOP_READY url=http://127.0.0.1:5000", None)
+            process.returncode = 0
+            with mock.patch.object(harness.subprocess, "Popen", return_value=process):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.verify_retired_provider_configuration_failure(
+                        executable,
+                        root,
+                        local_app_data,
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()

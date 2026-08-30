@@ -48,6 +48,10 @@ RETIRED_PROVIDER_FATAL_GUIDANCE = (
     "No settings were printed."
 )
 SYNTHETIC_RETIRED_PROVIDER_VALUE = "synthetic-secret-never-print"
+LOOPBACK_URL_TEMPLATE = "http://127.0.0.1:{port}"
+RETIRED_PROVIDER_IGNORED_WARNING_MARKER = (
+    "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored"
+)
 SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 3
 FINAL_EVIDENCE_SCHEMA_VERSION = 7
@@ -142,6 +146,7 @@ class ProcessMonitor:
         self.markers: queue.Queue[str] = queue.Queue()
         self.seen_markers: set[str] = set()
         self.bootstrap_identity_markers: list[str] = []
+        self.warning_markers: list[str] = []
         self._thread = threading.Thread(target=self._drain, daemon=True)
         self._thread.start()
 
@@ -154,6 +159,8 @@ class ProcessMonitor:
                 self.seen_markers.add(marker_name)
                 if line.startswith(BOOTSTRAP_IDENTITY_PREFIX):
                     self.bootstrap_identity_markers.append(line)
+                if marker_name == "TASKDECK_DESKTOP_WARNING":
+                    self.warning_markers.append(line)
                 self.markers.put(line)
 
     def wait_for_ready(self, timeout_seconds: float = 120.0) -> tuple[str, int, dict[str, bool]]:
@@ -555,11 +562,110 @@ def validate_retired_provider_failure_output(output: str) -> None:
         raise AcceptanceFailure("The retired-provider failure path exposed raw diagnostics.")
 
 
+def validate_retired_provider_ignored_warning(
+    warning_markers: list[str],
+    forbidden_value: str,
+) -> None:
+    """The ignored-configuration warning is announced exactly once and stays value-blind."""
+    if warning_markers != [RETIRED_PROVIDER_IGNORED_WARNING_MARKER]:
+        raise AcceptanceFailure(
+            "The packaged process did not announce the ignored retired configuration exactly once."
+        )
+    if forbidden_value and forbidden_value in "".join(warning_markers):
+        raise AcceptanceFailure("The ignored-configuration warning exposed a configured value.")
+
+
+def verify_inherited_retired_provider_configuration_starts(
+    executable: Path,
+    cwd: Path,
+    local_app_data: Path,
+) -> None:
+    """#2233: a profile carrying leftover retired provider variables must still start.
+
+    Case A is a retired selector plus retired children; case B is retired children with no
+    selector at all, which is the state of an upgraded Windows profile. Both are inherited from
+    the PROCESS ENVIRONMENT, so both are ignored for selection, announced once, and the app
+    starts on the packaged default. Each case gets its own data directory so the bootstrap
+    identity gate still sees a first run.
+    """
+    cases = (
+        (
+            "selector-and-children",
+            {
+                "Llm__Provider": "Gemini",
+                "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                "Llm__Gemini__Model": "retired-model",
+                "Llm__Gemini__BaseUrl": "https://retired.example.invalid",
+            },
+        ),
+        (
+            "children-only",
+            {
+                "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                "Llm__Gemini__Model": "retired-model",
+                "Llm__Gemini__BaseUrl": "https://retired.example.invalid",
+            },
+        ),
+    )
+    for case_name, retired_variables in cases:
+        case_data = local_app_data / case_name
+        case_data.mkdir(parents=True, exist_ok=False)
+        environment = build_app_environment(os.environ, case_data, None)
+        environment.update(retired_variables)
+        monitor = start_packaged_process(executable, cwd, environment)
+        try:
+            url, _, bootstrap_identity = monitor.wait_for_ready()
+            require_bootstrap_identity(
+                bootstrap_identity,
+                {"jwtCreated": True, "connectorCreated": True},
+            )
+            request_health_and_spa(url)
+            validate_retired_provider_ignored_warning(
+                list(monitor.warning_markers),
+                SYNTHETIC_RETIRED_PROVIDER_VALUE,
+            )
+            if "TASKDECK_DESKTOP_FATAL" in monitor.seen_markers:
+                raise AcceptanceFailure(
+                    "The inherited retired-provider start reported a fatal marker."
+                )
+        finally:
+            stop_packaged_process(monitor)
+
+
+def verify_ambient_openai_pins_do_not_block_start(
+    executable: Path,
+    cwd: Path,
+    local_app_data: Path,
+) -> None:
+    """#2233: a stale ambient OpenAI pin is not retired configuration and starts silently."""
+    environment = build_app_environment(os.environ, local_app_data, None)
+    environment.update({"Llm__OpenAi__Model": "stale-pinned-model"})
+    monitor = start_packaged_process(executable, cwd, environment)
+    try:
+        url, _, bootstrap_identity = monitor.wait_for_ready()
+        require_bootstrap_identity(
+            bootstrap_identity,
+            {"jwtCreated": True, "connectorCreated": True},
+        )
+        request_health_and_spa(url)
+        if monitor.warning_markers:
+            raise AcceptanceFailure(
+                "An ambient OpenAI pin was reported as ignored retired configuration."
+            )
+    finally:
+        stop_packaged_process(monitor)
+
+
 def verify_retired_provider_configuration_failure(
     executable: Path,
     cwd: Path,
     local_app_data: Path,
 ) -> None:
+    """Retired configuration in Taskdeck's OWN durable settings file stays fatal (#2233).
+
+    The user wrote it there deliberately, so the fail-closed contract PR #2016 established is
+    unchanged for that source; only inherited environment variables are ignored.
+    """
     if not executable.is_absolute() or not executable.is_file():
         raise AcceptanceFailure("The packaged executable path is not an absolute file.")
 
@@ -567,14 +673,15 @@ def verify_retired_provider_configuration_failure(
         port_probe.bind(("127.0.0.1", 0))
         expected_port = int(port_probe.getsockname()[1])
 
-    environment = build_app_environment(os.environ, local_app_data, None)
-    environment.update(
-        {
-            "ASPNETCORE_URLS": f"http://127.0.0.1:{expected_port}",
-            "Llm__Provider": "Gemini",
-            "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
-        }
+    durable_directory = local_app_data / "Taskdeck"
+    durable_directory.mkdir(parents=True, exist_ok=True)
+    (durable_directory / "appsettings.local.json").write_text(
+        json.dumps({"Llm": {"Gemini": {"ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE}}}),
+        encoding="utf-8",
     )
+
+    environment = build_app_environment(os.environ, local_app_data, None)
+    environment.update({"ASPNETCORE_URLS": LOOPBACK_URL_TEMPLATE.format(port=expected_port)})
     creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     process = subprocess.Popen(
         [str(executable)],
@@ -1291,13 +1398,32 @@ def run(argv: list[str]) -> int:
         retired_provider_local_app_data = retired_provider_root / "local-app-data"
         retired_provider_cwd.mkdir()
         retired_provider_local_app_data.mkdir()
+        (retired_provider_local_app_data / "inherited").mkdir()
+        (retired_provider_local_app_data / "durable-settings-file").mkdir()
         safe_extract_archive(archive, retired_provider_extract)
         retired_provider_extract_snapshot = snapshot_tree(retired_provider_extract)
         retired_provider_cwd_snapshot = snapshot_tree(retired_provider_cwd)
-        verify_retired_provider_configuration_failure(
-            (retired_provider_extract / "Taskdeck.Api.exe").resolve(),
+        retired_provider_executable = (
+            retired_provider_extract / "Taskdeck.Api.exe"
+        ).resolve()
+        # #2233 cases A and B: leftover retired variables inherited from the profile must start.
+        verify_inherited_retired_provider_configuration_starts(
+            retired_provider_executable,
             retired_provider_cwd,
-            retired_provider_local_app_data,
+            retired_provider_local_app_data / "inherited",
+        )
+        ambient_pin_local_app_data = retired_provider_local_app_data / "ambient-openai-pins"
+        ambient_pin_local_app_data.mkdir()
+        verify_ambient_openai_pins_do_not_block_start(
+            retired_provider_executable,
+            retired_provider_cwd,
+            ambient_pin_local_app_data,
+        )
+        # The same configuration written into Taskdeck's own durable file is still fatal.
+        verify_retired_provider_configuration_failure(
+            retired_provider_executable,
+            retired_provider_cwd,
+            retired_provider_local_app_data / "durable-settings-file",
         )
         assert_tree_unchanged(
             retired_provider_extract_snapshot,
