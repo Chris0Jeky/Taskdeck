@@ -195,8 +195,13 @@ const {
 // #1307, q-14 C. Separate from batch approve on purpose: approve and execute stay two explicit
 // steps (ADR-0003 / GP-06), so this acts only on proposals that are ALREADY Approved and never
 // approves anything itself.
+const batchExecuteReviewScope = computed(() => JSON.stringify({
+  boardId: activeBoardFilter.value?.toLowerCase() ?? null,
+  history: isArchivedHistory.value ? 'archived' : 'live',
+}))
 const {
   executableCount: batchExecutableCount,
+  confirmationCount: batchExecuteConfirmationCount,
   confirmationOpen: batchExecuteOpen,
   busy: batchExecuteBusy,
   receipts: batchExecuteReceipts,
@@ -209,6 +214,7 @@ const {
   currentUserId,
   nowMs,
   loadProposals,
+  batchExecuteReviewScope,
   (proposal) => proposal.summary || t('review.queueItem.noSummary'),
 )
 
@@ -2127,7 +2133,7 @@ async function onClearBoardScope() {
 
     <BatchExecuteDialog
       :open="batchExecuteOpen"
-      :count="batchExecutableCount"
+      :count="batchExecuteConfirmationCount"
       :busy="batchExecuteBusy"
       :receipts="batchExecuteReceipts"
       @confirm="confirmBatchExecute"

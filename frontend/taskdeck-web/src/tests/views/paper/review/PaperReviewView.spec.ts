@@ -565,6 +565,52 @@ describe('PaperReviewView', () => {
     expect(mocks.executeProposals).not.toHaveBeenCalled()
   })
 
+  it('invalidates apply-approved confirmation immediately when board navigation changes scope', async () => {
+    const createCardOp = {
+      ...makeProposal().operations[0],
+      actionType: 'create',
+      targetType: 'card',
+    }
+    const boardA = [
+      makeProposal({ id: 'board-a-approved-1', boardId: 'board-a', status: 'Approved', operations: [createCardOp] }),
+      makeProposal({ id: 'board-a-approved-2', boardId: 'board-a', status: 'Approved', operations: [createCardOp] }),
+    ]
+    const boardB = [
+      makeProposal({ id: 'board-b-approved-1', boardId: 'board-b', status: 'Approved', operations: [createCardOp] }),
+      makeProposal({ id: 'board-b-approved-2', boardId: 'board-b', status: 'Approved', operations: [createCardOp] }),
+    ]
+    const wrapper = await mountView(
+      boardA,
+      '/workspace/review?boardId=board-a',
+      [
+        { id: 'board-a', name: 'Board A' },
+        { id: 'board-b', name: 'Board B' },
+      ],
+    )
+
+    await wrapper.get('[data-testid="queue-batch-execute"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).not.toBeNull()
+
+    let resolveBoardB!: (value: Proposal[]) => void
+    mocks.getProposals.mockImplementationOnce(
+      () => new Promise<Proposal[]>((resolve) => { resolveBoardB = resolve }),
+    )
+    await wrapper.vm.$router.push({ name: 'workspace-review', query: { boardId: 'board-b' } })
+    await nextTick()
+
+    // The route scope itself invalidates consent; the old board-A rows are still present because
+    // board B has not returned yet, so queue replacement cannot be the mechanism closing this.
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).toBeNull()
+    expect(mocks.executeProposals).not.toHaveBeenCalled()
+
+    resolveBoardB(boardB)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="queue-batch-execute"]').exists()).toBe(true)
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).toBeNull()
+    expect(mocks.executeProposals).not.toHaveBeenCalled()
+  })
+
   it('withholds the apply-approved batch action in archived history', async () => {
     // Archived history is read-only, and Apply-approved is a board write. Offering it here would
     // advertise a mutation the mode forbids - the same reason the decision rail and the bulk

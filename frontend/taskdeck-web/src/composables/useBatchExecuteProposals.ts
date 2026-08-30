@@ -24,6 +24,12 @@ export interface BatchExecuteReceiptRow extends BatchExecuteProposalResult {
   title: string
 }
 
+interface CapturedBatchExecuteSelection {
+  proposalId: string
+  approvedRevisionId: string | null
+  title: string
+}
+
 function isExactApproved(status: Proposal['status']): boolean {
   return status === 1 || (typeof status === 'string' && status.toLowerCase() === 'approved')
 }
@@ -75,6 +81,7 @@ export function useBatchExecuteProposals(
   currentUserId: Ref<string | null>,
   nowMs: Ref<number>,
   loadProposals: () => Promise<void>,
+  reviewScopeKey: Ref<string>,
   resolveTitle?: (proposal: Proposal) => string,
 ) {
   const toast = useToastStore()
@@ -82,6 +89,8 @@ export function useBatchExecuteProposals(
   const confirmationOpen = ref(false)
   const busy = ref(false)
   const receipts = ref<BatchExecuteReceiptRow[]>([])
+  const capturedSelections = ref<CapturedBatchExecuteSelection[]>([])
+  const capturedScopeKey = ref<string | null>(null)
 
   const eligible = computed<Proposal[]>(() =>
     proposals.value.filter((proposal) =>
@@ -90,6 +99,7 @@ export function useBatchExecuteProposals(
   )
 
   const executableCount = computed(() => Math.min(eligible.value.length, MAX_BATCH_EXECUTE_COUNT))
+  const confirmationCount = computed(() => capturedSelections.value.length)
 
   function titleFor(proposal: Proposal): string {
     return resolveTitle?.(proposal) ?? proposal.presentation?.plainSummary ?? proposal.summary
@@ -99,6 +109,46 @@ export function useBatchExecuteProposals(
     receipts.value = []
   }
 
+  function clearCapture() {
+    capturedSelections.value = []
+    capturedScopeKey.value = null
+  }
+
+  function captureCurrentSelection(): CapturedBatchExecuteSelection[] {
+    return eligible.value.slice(0, MAX_BATCH_EXECUTE_COUNT).map((proposal) => ({
+      proposalId: proposal.id,
+      approvedRevisionId: proposal.approvedRevisionId,
+      title: titleFor(proposal),
+    }))
+  }
+
+  function approvedRevisionIdsEqual(left: string | null, right: string | null): boolean {
+    return left === null && right === null || proposalIdsEqual(left, right)
+  }
+
+  function confirmationStillCurrent(): boolean {
+    if (capturedSelections.value.length === 0) return false
+    if (capturedScopeKey.value !== reviewScopeKey.value) return false
+
+    const remaining = captureCurrentSelection()
+    if (remaining.length !== capturedSelections.value.length) return false
+
+    return capturedSelections.value.every((captured) => {
+      const matchIndex = remaining.findIndex((current) =>
+        proposalIdsEqual(current.proposalId, captured.proposalId) &&
+        approvedRevisionIdsEqual(current.approvedRevisionId, captured.approvedRevisionId),
+      )
+      if (matchIndex < 0) return false
+      remaining.splice(matchIndex, 1)
+      return true
+    })
+  }
+
+  function invalidateConfirmation() {
+    confirmationOpen.value = false
+    clearCapture()
+  }
+
   function requestConfirmation() {
     if (busy.value) return
     if (executableCount.value === 0) {
@@ -106,6 +156,8 @@ export function useBatchExecuteProposals(
       return
     }
     clearReceipts()
+    capturedSelections.value = captureCurrentSelection()
+    capturedScopeKey.value = reviewScopeKey.value
     confirmationOpen.value = true
   }
 
@@ -122,10 +174,11 @@ export function useBatchExecuteProposals(
     if (receipts.value.length > 0) {
       confirmationOpen.value = false
       clearReceipts()
+      clearCapture()
       return
     }
     if (busy.value) return
-    confirmationOpen.value = false
+    invalidateConfirmation()
   }
 
   /**
@@ -137,9 +190,10 @@ export function useBatchExecuteProposals(
   function forceClose() {
     confirmationOpen.value = false
     clearReceipts()
+    clearCapture()
   }
 
-  watch([proposals, currentUserId, nowMs], () => {
+  watch([proposals, currentUserId, nowMs, reviewScopeKey], () => {
     // The confirmation belongs to a set the reviewer saw. If the queue moved under it and there is
     // nothing left to apply, close it rather than confirm an empty batch.
     //
@@ -151,8 +205,12 @@ export function useBatchExecuteProposals(
     // them, and the better the batch went the more certain the receipts were to vanish. Once
     // receipts exist the dialog stays open until the reviewer dismisses it.
     if (receipts.value.length > 0) return
-    if (confirmationOpen.value && executableCount.value === 0) confirmationOpen.value = false
-  }, { deep: true })
+    // Once Confirm has been activated, the captured set is already authorized and the request may
+    // legitimately overlap a realtime refresh. Pre-click drift invalidates consent; post-click
+    // drift must not retract an in-flight request or destroy the receipts it is about to produce.
+    if (busy.value) return
+    if (confirmationOpen.value && !confirmationStillCurrent()) invalidateConfirmation()
+  }, { deep: true, flush: 'sync' })
 
   async function refreshProposalsBestEffort() {
     try {
@@ -166,16 +224,23 @@ export function useBatchExecuteProposals(
   async function confirmExecute() {
     if (busy.value || !confirmationOpen.value) return
 
-    const submitted = eligible.value.slice(0, MAX_BATCH_EXECUTE_COUNT)
+    // Recheck synchronously at the click boundary as well as in the watcher. A route/queue update
+    // in the same tick must not substitute a different live batch before Vue schedules effects.
+    if (!confirmationStillCurrent()) {
+      invalidateConfirmation()
+      return
+    }
+
+    const submitted = [...capturedSelections.value]
     if (submitted.length === 0) {
-      confirmationOpen.value = false
+      invalidateConfirmation()
       toast.info(t('review.batchExecute.nothingToApply'))
       return
     }
 
-    const titles = new Map(submitted.map((proposal) => [proposal.id, titleFor(proposal)]))
+    const titles = new Map(submitted.map((selection) => [selection.proposalId, selection.title]))
     const selections: BatchExecuteProposalSelection[] = submitted.map((proposal) => ({
-      proposalId: proposal.id,
+      proposalId: proposal.proposalId,
       // Echoed verbatim, null included: the server compares it to the pin it holds and fails that
       // item closed on a mismatch. Never substitute latestRevisionId here.
       approvedRevisionId: proposal.approvedRevisionId,
@@ -214,6 +279,7 @@ export function useBatchExecuteProposals(
       // leave no receipts behind that could be misread as a partial apply.
       clearReceipts()
       confirmationOpen.value = false
+      clearCapture()
       await refreshProposalsBestEffort()
       toast.error(getErrorDisplay(error, t('review.batchExecute.failed')).message)
     } finally {
@@ -224,6 +290,7 @@ export function useBatchExecuteProposals(
   return {
     eligible,
     executableCount,
+    confirmationCount,
     confirmationOpen,
     busy,
     receipts,

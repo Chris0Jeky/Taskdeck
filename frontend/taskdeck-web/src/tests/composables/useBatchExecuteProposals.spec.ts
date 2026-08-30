@@ -71,8 +71,12 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
  * always resolved without touching `rows`, which is precisely why the receipt-destroying auto-close
  * went unnoticed - the condition that triggers it could never arise in a test.
  */
-function harness(proposals: Proposal[], options: { emptiesQueueOnRefresh?: boolean } = {}) {
+function harness(
+  proposals: Proposal[],
+  options: { emptiesQueueOnRefresh?: boolean; scope?: string } = {},
+) {
   const rows = ref<Proposal[]>(proposals)
+  const scope = ref(options.scope ?? JSON.stringify({ boardId: null, history: 'live' }))
   const loadProposals = vi.fn(async () => {
     if (options.emptiesQueueOnRefresh) rows.value = []
   })
@@ -81,8 +85,9 @@ function harness(proposals: Proposal[], options: { emptiesQueueOnRefresh?: boole
     ref<string | null>('u-1'),
     ref(NOW),
     loadProposals,
+    scope,
   )
-  return { rows, loadProposals, ...composable }
+  return { rows, scope, loadProposals, ...composable }
 }
 
 function receipt(results: BatchExecuteProposalsResult['results']): BatchExecuteProposalsResult {
@@ -154,6 +159,16 @@ describe('useBatchExecuteProposals', () => {
 
     h.requestConfirmation()
     expect(h.confirmationOpen.value).toBe(true)
+    expect(h.confirmationCount.value).toBe(2)
+
+    // Reordering and wire-casing changes preserve identity, but the submitted values remain the
+    // exact spellings and revision pins captured when the reviewer opened confirmation.
+    h.rows.value = [
+      makeProposal({ id: 'P-2', approvedRevisionId: null }),
+      makeProposal({ id: 'P-1', approvedRevisionId: 'REV-1' }),
+    ]
+    await nextTick()
+    expect(h.confirmationOpen.value).toBe(true)
     await h.confirmExecute()
 
     const sent = vi.mocked(automationApi.executeProposals).mock.calls[0][0]
@@ -163,6 +178,43 @@ describe('useBatchExecuteProposals', () => {
     expect(sent[0].idempotencyKey).toBeTruthy()
     expect(sent[1].idempotencyKey).toBeTruthy()
     expect(sent[0].idempotencyKey).not.toBe(sent[1].idempotencyKey)
+  })
+
+  it('invalidates a same-count nonempty replacement and never submits unseen proposals', async () => {
+    const h = harness([
+      makeProposal({ id: 'p-1' }),
+      makeProposal({ id: 'p-2' }),
+    ])
+
+    h.requestConfirmation()
+    expect(h.confirmationOpen.value).toBe(true)
+
+    h.rows.value = [
+      makeProposal({ id: 'p-3', boardId: 'b-2' }),
+      makeProposal({ id: 'p-4', boardId: 'b-2' }),
+    ]
+    await nextTick()
+
+    expect(h.executableCount.value).toBe(2)
+    expect(h.confirmationOpen.value).toBe(false)
+    expect(h.confirmationCount.value).toBe(0)
+    await h.confirmExecute()
+    expect(automationApi.executeProposals).not.toHaveBeenCalled()
+  })
+
+  it('invalidates a board/history scope change before the old queue is replaced', async () => {
+    const h = harness([
+      makeProposal({ id: 'p-1', boardId: 'b-1' }),
+      makeProposal({ id: 'p-2', boardId: 'b-1' }),
+    ], { scope: JSON.stringify({ boardId: 'b-1', history: 'live' }) })
+
+    h.requestConfirmation()
+    h.scope.value = JSON.stringify({ boardId: 'b-2', history: 'live' })
+
+    expect(h.rows.value.map((proposal) => proposal.id)).toEqual(['p-1', 'p-2'])
+    expect(h.confirmationOpen.value).toBe(false)
+    await h.confirmExecute()
+    expect(automationApi.executeProposals).not.toHaveBeenCalled()
   })
 
   it('renders per-item receipts and reports a partial outcome honestly', async () => {
@@ -264,6 +316,36 @@ describe('useBatchExecuteProposals receipts survive the post-apply refresh', () 
     expect(h.executableCount.value).toBe(0)
     expect(h.confirmationOpen.value).toBe(true)
     expect(h.receipts.value).toHaveLength(2)
+  })
+
+  it('keeps the captured request and receipt titles when queue and scope drift after Confirm', async () => {
+    const h = harness(
+      [makeProposal({ id: 'p-1', boardId: 'b-1', summary: 'Confirmed card' })],
+      { scope: JSON.stringify({ boardId: 'b-1', history: 'live' }) },
+    )
+    let resolveExecute!: (value: BatchExecuteProposalsResult) => void
+    vi.mocked(automationApi.executeProposals).mockImplementationOnce(
+      () => new Promise<BatchExecuteProposalsResult>((resolve) => { resolveExecute = resolve }),
+    )
+
+    h.requestConfirmation()
+    const execution = h.confirmExecute()
+    await nextTick()
+    expect(h.busy.value).toBe(true)
+
+    h.scope.value = JSON.stringify({ boardId: 'b-2', history: 'live' })
+    h.rows.value = [makeProposal({ id: 'p-9', boardId: 'b-2', summary: 'Unseen card' })]
+    expect(h.confirmationOpen.value).toBe(true)
+
+    resolveExecute(receipt([
+      { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+    ]))
+    await execution
+
+    expect(vi.mocked(automationApi.executeProposals).mock.calls[0][0]
+      .map((selection) => selection.proposalId)).toEqual(['p-1'])
+    expect(h.receipts.value.map((row) => row.title)).toEqual(['Confirmed card'])
+    expect(h.confirmationOpen.value).toBe(true)
   })
 
   it('still closes an unconfirmed dialog when the queue empties under it', async () => {
