@@ -680,6 +680,9 @@ export function buildRecallReport(rawObservations, policy, options) {
   const policyErrors = validatePolicy(policy);
   if (policyErrors.length > 0) throw new Error(`Invalid Smart CI policy: ${policyErrors.join('; ')}`);
   if (!options || !validTimestamp(options.since) || !validTimestamp(options.until)) throw new Error('report window needs valid since/until timestamps');
+  if (Date.parse(options.since) > Date.parse(options.until)) throw new Error('report window since must not be after until');
+  if (!/^[\w.-]+\/[\w.-]+$/.test(String(options.repository ?? ''))) throw new Error('report repository must be owner/name');
+  if (!/^sha256:[0-9a-f]{64}$/i.test(String(options.policyDigest ?? ''))) throw new Error('report policyDigest must be sha256:<hex>');
   if (!Number.isInteger(options.minimumObservations) || options.minimumObservations < MINIMUM_PR_OBSERVATIONS) throw new Error(`minimumObservations must be an integer >= ${MINIMUM_PR_OBSERVATIONS}`);
   if (!Array.isArray(rawObservations)) throw new Error('observations must be an array');
 
