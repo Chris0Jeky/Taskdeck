@@ -77,6 +77,51 @@ describe('PWA navigation fallback denylist', () => {
     '/api%2Fboards',
     '/hubs%2fboards',
     '/health%2Fready',
+    // Case variants (#1992 q-10 A, ADR-0064). These are not machine paths — the prefixes are exact
+    // lowercase — but they are not client-side routes either: nginx and the API both answer them
+    // 404. The shell must not stand in front of that 404 from the precache.
+    '/API',
+    '/Api',
+    '/MCP',
+    '/Mcp',
+    '/HUBS',
+    '/Health',
+    '/API/boards',
+    '/Api/boards',
+    '/MCP/messages',
+    '/Hubs/boards',
+    '/HEALTH/ready',
+    '/API?probe=1',
+    // Both variants at once.
+    '/MCP%2Fmessages',
+    '/Api%2fboards',
+    // Leading duplicate or encoded separators (#1992 round 1). nginx decodes and then merges
+    // slashes, so these reach the API container, while the raw pathname the service worker sees
+    // still carries the duplicated separator.
+    '//api/boards',
+    '//api',
+    '///api/boards',
+    '//hubs/board',
+    '//health/live',
+    '//mcp/messages',
+    '//API/boards',
+    '/%2fapi/boards',
+    '/%2Fapi/boards',
+    '/%2fmcp',
+    '/%2f%2fapi/boards',
+    // Percent-encoded prefix letters (#1992 round 1). nginx and Kestrel both decode before they
+    // match, so these ARE the canonical path everywhere downstream; only the pathname the service
+    // worker sees still carries the escape.
+    '/%61pi/boards',
+    '/ap%69/boards',
+    '/%61%70%69/boards',
+    '/%6Dcp/messages',
+    '/%6dcp',
+    '/hub%73/board',
+    '/%68ealth/live',
+    '/%41PI/boards',
+    '//%61pi/boards',
+    '/%2f%61pi/boards',
   ])('keeps %s off the SPA fallback', (path) => {
     expect(isDenied(path)).toBe(true)
   })
@@ -93,10 +138,65 @@ describe('PWA navigation fallback denylist', () => {
     '/hubsy',
     '/healthy',
     '/mcpx',
+    // The same, in other casings: the fail-closed rule keys on the segment boundary, so widening
+    // the match to any case must not swallow a client-side route that merely starts with a
+    // machine prefix's letters.
+    '/Apidocs',
+    '/HubsY',
+    '/Healthy',
+    '/McpX',
+    // A duplicated separator that does not open onto a machine prefix: nginx merges it and serves
+    // the SPA, so the boundary must survive the widened leading-separator match.
+    '//apidocs',
+    '//mcpx',
+    '//workspace/review',
+    '//',
+    // An escape in the first segment that does not decode to a machine prefix is an ordinary
+    // client-side route and must still be served the shell offline — the per-character alternation
+    // is what keeps this true while `/%61pi/boards` is denied.
+    '/%61pidocs',
+    '/caf%C3%A9',
+    '/a%20b',
+    '/%6Dcpx',
     // Double-encoded: nginx decodes once, leaving literal `%2F` text after the prefix, so the
     // proxy does not treat it as machine surface either — the layers agree it is SPA-side.
     '/mcp%252Fmessages',
   ])('still serves the SPA fallback for %s', (path) => {
     expect(isDenied(path)).toBe(false)
+  })
+})
+
+/**
+ * The runtime API cache is the other half of the browser-side contract (#1992 round 1). The denylist
+ * governs NAVIGATIONS; this rule governs the fetches the app makes, and it used to be
+ * case-insensitive — so an installed PWA could hold a cached `200` under `/API/...` and keep
+ * replaying it for a URL that now answers `404` at every layer.
+ */
+describe('PWA runtime API cache', () => {
+  const rule = viteConfig.match(
+    /urlPattern:\s*(?<pattern>\/\^https\?[^\n]*?),\s*\n\s*handler:\s*'NetworkFirst'[\s\S]*?cacheName:\s*'(?<cacheName>[^']+)'/,
+  )
+
+  it('extracts the NetworkFirst API rule', () => {
+    expect(rule, 'NetworkFirst API runtime rule not found in vite.config.ts').not.toBeNull()
+  })
+
+  it('matches canonical /api/ requests only, case-sensitively', () => {
+    const literal = rule!.groups!.pattern
+    const end = literal.lastIndexOf('/')
+    const flags = literal.slice(end + 1)
+    const pattern = new RegExp(literal.slice(1, end), flags)
+
+    expect(flags, 'the i flag would let a /API/... response into the cache').not.toContain('i')
+    expect(pattern.test('https://taskdeck.example/api/boards')).toBe(true)
+    expect(pattern.test('https://taskdeck.example/API/boards')).toBe(false)
+    expect(pattern.test('https://taskdeck.example/Api/boards')).toBe(false)
+  })
+
+  it('uses a versioned cache name so pre-contract entries are never read again', () => {
+    // Bumping the name is what retires responses cached under the old, case-insensitive rule. They
+    // are orphaned rather than deleted: cleanupOutdatedCaches covers precaches, not runtime caches.
+    expect(rule!.groups!.cacheName).toBe('taskdeck-api-cache-v2')
+    expect(rule!.groups!.cacheName).not.toBe('taskdeck-api-cache')
   })
 })
