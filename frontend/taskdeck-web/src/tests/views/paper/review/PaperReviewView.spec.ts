@@ -3036,6 +3036,43 @@ describe('PaperReviewView', () => {
       expect(bars[3].classes()).not.toContain('paper-review-cadence__bar--today')
     })
 
+    it('binds the scoped weekly Apply rate and preserves applied history after dismissal', async () => {
+      const appliedAt = new Date().toISOString()
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'pending', boardId: 'board-1' }),
+          decidedDaysAgo(0, {
+            id: 'applied-then-dismissed',
+            boardId: 'board-1',
+            status: 'Dismissed',
+            appliedAt,
+          }),
+          decidedDaysAgo(1, {
+            id: 'rejected',
+            boardId: 'board-1',
+            status: 'Rejected',
+            appliedAt: null,
+          }),
+          decidedDaysAgo(0, {
+            id: 'other-user',
+            boardId: 'board-1',
+            decidedByUserId: 'u-2',
+            appliedAt,
+          }),
+          decidedDaysAgo(0, { id: 'other-board', boardId: 'board-2', appliedAt }),
+          decidedDaysAgo(7, { id: 'too-old', boardId: 'board-1', appliedAt }),
+        ],
+        '/workspace/review?boardId=board-1',
+      )
+
+      const stat = wrapper.get('[data-testid="paper-review-apply-rate"]')
+      expect(stat.text()).toContain('Apply rate')
+      expect(stat.text()).toContain('50%')
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+
+      wrapper.unmount()
+    })
+
     it('hides the cadence when only other users have decided proposals', async () => {
       const wrapper = await mountView([
         makeProposal({ id: 'pending' }),

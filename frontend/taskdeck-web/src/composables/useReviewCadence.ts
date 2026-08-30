@@ -28,6 +28,51 @@ export interface WeeklyCadenceOptions {
   includeBoard?: (boardId: string | null | undefined) => boolean
 }
 
+type WeeklyDecisionVisitor = (proposal: ApiProposal, dayDelta: number) => void
+
+/**
+ * Visit every decision in the rail's honest weekly cohort.
+ *
+ * Both cadence and Apply rate use this one predicate so attribution, local-day
+ * boundaries, and board scope cannot drift between the two statistics.
+ */
+function visitWeeklyDecisions(
+  proposals: readonly ApiProposal[] | null | undefined,
+  options: WeeklyCadenceOptions,
+  visit: WeeklyDecisionVisitor,
+): number {
+  const userId = options.userId
+  if (!userId) return 0
+  if (!Array.isArray(proposals) || proposals.length === 0) return 0
+
+  const todayStart = startOfLocalDay(options.nowMs)
+  if (Number.isNaN(todayStart)) return 0
+
+  let decisions = 0
+  for (const proposal of proposals) {
+    if (!proposal) continue
+    if (proposal.decidedByUserId !== userId) continue
+    if (!proposal.decidedAt) continue
+    if (options.includeBoard && !options.includeBoard(proposal.boardId)) continue
+
+    const decidedMs = new Date(proposal.decidedAt).getTime()
+    if (Number.isNaN(decidedMs)) continue
+
+    // Round the day delta rather than flooring it: DST transitions make a
+    // calendar day 23 or 25 hours long, and flooring would shift a bar by one
+    // column across the boundary.
+    const dayDelta = Math.round((todayStart - startOfLocalDay(decidedMs)) / MS_PER_DAY)
+    // Drop anything outside the window, including future-dated decisions from a
+    // skewed clock — they are not "this week" and must not be folded into today.
+    if (dayDelta < 0 || dayDelta >= CADENCE_WINDOW_DAYS) continue
+
+    visit(proposal, dayDelta)
+    decisions += 1
+  }
+
+  return decisions
+}
+
 /**
  * Real per-day counts of proposals **decided by the current user** over the last
  * {@link CADENCE_WINDOW_DAYS} calendar days, oldest → newest (last entry = today).
@@ -55,38 +100,32 @@ export function buildWeeklyCadence(
   proposals: readonly ApiProposal[] | null | undefined,
   options: WeeklyCadenceOptions,
 ): number[] | undefined {
-  const userId = options.userId
-  if (!userId) return undefined
-  if (!Array.isArray(proposals) || proposals.length === 0) return undefined
-
-  const todayStart = startOfLocalDay(options.nowMs)
-  if (Number.isNaN(todayStart)) return undefined
-
   const buckets = new Array<number>(CADENCE_WINDOW_DAYS).fill(0)
-  let decisions = 0
-
-  for (const proposal of proposals) {
-    if (!proposal) continue
-    if (proposal.decidedByUserId !== userId) continue
-    if (!proposal.decidedAt) continue
-    if (options.includeBoard && !options.includeBoard(proposal.boardId)) continue
-
-    const decidedMs = new Date(proposal.decidedAt).getTime()
-    if (Number.isNaN(decidedMs)) continue
-
-    // Round the day delta rather than flooring it: DST transitions make a
-    // calendar day 23 or 25 hours long, and flooring would shift a bar by one
-    // column across the boundary.
-    const dayDelta = Math.round((todayStart - startOfLocalDay(decidedMs)) / MS_PER_DAY)
-    // Drop anything outside the window, including future-dated decisions from a
-    // skewed clock — they are not "this week" and must not be folded into today.
-    if (dayDelta < 0 || dayDelta >= CADENCE_WINDOW_DAYS) continue
-
+  const decisions = visitWeeklyDecisions(proposals, options, (_proposal, dayDelta) => {
     buckets[CADENCE_WINDOW_DAYS - 1 - dayDelta] += 1
-    decisions += 1
-  }
+  })
 
   return decisions > 0 ? buckets : undefined
+}
+
+/**
+ * Portion of the rail's weekly decided cohort that reached Apply.
+ *
+ * `appliedAt` is the lifecycle authority, not the proposal's current status: a
+ * proposal may be dismissed after it was applied and must remain in the
+ * numerator. `undefined` means there is no attributable cohort; numeric zero
+ * means the user made decisions but none reached Apply.
+ */
+export function buildWeeklyApplyRate(
+  proposals: readonly ApiProposal[] | null | undefined,
+  options: WeeklyCadenceOptions,
+): number | undefined {
+  let applied = 0
+  const decisions = visitWeeklyDecisions(proposals, options, (proposal) => {
+    if (typeof proposal.appliedAt === 'string') applied += 1
+  })
+
+  return decisions > 0 ? applied / decisions : undefined
 }
 
 /**
@@ -101,6 +140,22 @@ export function useReviewCadence(
 ): ComputedRef<number[] | undefined> {
   return computed(() =>
     buildWeeklyCadence(proposals.value, {
+      nowMs: nowMs.value,
+      userId: typeof userId === 'function' ? userId() : userId.value,
+      includeBoard,
+    }),
+  )
+}
+
+/** Reactive wrapper over {@link buildWeeklyApplyRate} for the Paper review rail. */
+export function useReviewApplyRate(
+  proposals: Ref<ApiProposal[]>,
+  nowMs: Ref<number>,
+  userId: Ref<string | null> | (() => string | null | undefined),
+  includeBoard?: (boardId: string | null | undefined) => boolean,
+): ComputedRef<number | undefined> {
+  return computed(() =>
+    buildWeeklyApplyRate(proposals.value, {
       nowMs: nowMs.value,
       userId: typeof userId === 'function' ? userId() : userId.value,
       includeBoard,

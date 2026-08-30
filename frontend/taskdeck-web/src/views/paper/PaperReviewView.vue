@@ -15,7 +15,7 @@ import RejectProposalDialog from '../../components/review/RejectProposalDialog.v
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
 import { useReviewProposals, isProposalReadOnly } from '../../composables/useReviewProposals'
-import { useReviewCadence } from '../../composables/useReviewCadence'
+import { useReviewApplyRate, useReviewCadence } from '../../composables/useReviewCadence'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { useBatchApproveProposals } from '../../composables/useBatchApproveProposals'
 import { useBatchExecuteProposals } from '../../composables/useBatchExecuteProposals'
@@ -760,6 +760,12 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
  * hides itself rather than inventing a week (#1782 / #1796 contract).
  */
 const cadence = useReviewCadence(
+  proposals,
+  nowMs,
+  () => session.userId,
+  matchesActiveBoardFilter,
+)
+const applyRate = useReviewApplyRate(
   proposals,
   nowMs,
   () => session.userId,
@@ -1829,6 +1835,7 @@ async function onClearBoardScope() {
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
+      :apply-rate="applyRate"
       :author-partition-available="authorPartitionAvailable"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"

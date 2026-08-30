@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { effectScope, ref } from 'vue'
 import {
   CADENCE_WINDOW_DAYS,
+  buildWeeklyApplyRate,
   buildWeeklyCadence,
+  useReviewApplyRate,
   useReviewCadence,
 } from '../../composables/useReviewCadence'
 import type { Proposal as ApiProposal } from '../../types/automation'
@@ -142,6 +144,81 @@ describe('buildWeeklyCadence', () => {
   })
 })
 
+describe('buildWeeklyApplyRate', () => {
+  const now = new Date('2026-08-19T15:30:00').getTime()
+
+  it('returns applied decisions over the qualifying decided cohort', () => {
+    const proposals = [
+      decided(0, now, { appliedAt: new Date(localNoon(0, now)).toISOString() }),
+      decided(1, now, { status: 'Rejected', appliedAt: null }),
+      decided(2, now, { appliedAt: new Date(localNoon(2, now)).toISOString() }),
+      decided(3, now, { status: 'Rejected', appliedAt: null }),
+    ]
+
+    expect(buildWeeklyApplyRate(proposals, { nowMs: now, userId: USER })).toBe(0.5)
+  })
+
+  it('treats appliedAt as authoritative after the proposal is dismissed', () => {
+    const proposals = [
+      decided(0, now, {
+        status: 'Dismissed',
+        appliedAt: new Date(localNoon(0, now)).toISOString(),
+      }),
+      decided(1, now, { status: 'Rejected', appliedAt: null }),
+    ]
+
+    expect(buildWeeklyApplyRate(proposals, { nowMs: now, userId: USER })).toBe(0.5)
+  })
+
+  it('returns a real zero when decisions exist but none reached Apply', () => {
+    const proposals = [
+      decided(0, now, { status: 'Rejected', appliedAt: null }),
+      decided(1, now, { status: 'Failed', appliedAt: null }),
+    ]
+
+    expect(buildWeeklyApplyRate(proposals, { nowMs: now, userId: USER })).toBe(0)
+  })
+
+  it('returns undefined when no qualifying decision history can be attributed', () => {
+    const history = [decided(0, now, { appliedAt: new Date(localNoon(0, now)).toISOString() })]
+
+    expect(buildWeeklyApplyRate([], { nowMs: now, userId: USER })).toBeUndefined()
+    expect(buildWeeklyApplyRate(history, { nowMs: now, userId: null })).toBeUndefined()
+    expect(
+      buildWeeklyApplyRate([decided(7, now)], { nowMs: now, userId: USER }),
+    ).toBeUndefined()
+  })
+
+  it('uses the same current-user, local-window, and board scope as cadence', () => {
+    const appliedAt = new Date(localNoon(0, now)).toISOString()
+    const proposals = [
+      decided(0, now, { id: 'included-applied', boardId: 'board-1', appliedAt }),
+      decided(1, now, {
+        id: 'included-rejected',
+        boardId: 'board-1',
+        status: 'Rejected',
+        appliedAt: null,
+      }),
+      decided(0, now, {
+        id: 'other-user',
+        boardId: 'board-1',
+        decidedByUserId: OTHER_USER,
+        appliedAt,
+      }),
+      decided(7, now, { id: 'too-old', boardId: 'board-1', appliedAt }),
+      decided(0, now, { id: 'other-board', boardId: 'board-2', appliedAt }),
+    ]
+
+    expect(
+      buildWeeklyApplyRate(proposals, {
+        nowMs: now,
+        userId: USER,
+        includeBoard: (boardId) => boardId === 'board-1',
+      }),
+    ).toBe(0.5)
+  })
+})
+
 describe('useReviewCadence', () => {
   const now = new Date('2026-08-19T15:30:00').getTime()
 
@@ -176,6 +253,35 @@ describe('useReviewCadence', () => {
 
     const cadence = scope.run(() => useReviewCadence(proposals, nowMs, () => USER))!
     expect(cadence.value).toEqual([0, 0, 0, 0, 0, 0, 1])
+
+    scope.stop()
+  })
+})
+
+describe('useReviewApplyRate', () => {
+  const now = new Date('2026-08-19T15:30:00').getTime()
+
+  it('reacts to proposal and session attribution changes', () => {
+    const scope = effectScope()
+    const proposals = ref<ApiProposal[]>([])
+    const nowMs = ref(now)
+    const userId = ref<string | null>(null)
+
+    const applyRate = scope.run(() => useReviewApplyRate(proposals, nowMs, userId))!
+
+    expect(applyRate.value).toBeUndefined()
+
+    proposals.value = [
+      decided(0, now, { appliedAt: new Date(localNoon(0, now)).toISOString() }),
+      decided(1, now, { status: 'Rejected', appliedAt: null }),
+    ]
+    expect(applyRate.value).toBeUndefined()
+
+    userId.value = USER
+    expect(applyRate.value).toBe(0.5)
+
+    proposals.value = proposals.value.map((proposal) => ({ ...proposal, appliedAt: null }))
+    expect(applyRate.value).toBe(0)
 
     scope.stop()
   })
