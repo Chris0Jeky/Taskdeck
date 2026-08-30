@@ -7,19 +7,24 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>
 /// The one canonical writer of the durable <see cref="Capture"/> aggregate and its
-/// <see cref="SourceAsset"/>s (ADR-0065 §Decision 1; CF-01 <c>#2255</c>; amended 2026-08-30 after
-/// the external audit found a second creation path — <c>POST /api/llm-queue</c> — that bypassed the
-/// dual-write seam). Every path that creates a capture-shaped queue row goes through
-/// <see cref="MirrorLegacyCaptureAsync"/>: <see cref="CaptureService.CreateAsync"/> and
-/// <see cref="LlmQueueService.AddToQueueAsync"/> today; CF-01 extends this class into the intake
-/// that creates captures natively (assets first, then jobs) and retires the queue-row mirror.
+/// <see cref="SourceAsset"/>s (ADR-0065 §Decision 1; CF-01 <c>#2255</c>). Every path that admits a
+/// capture goes through <see cref="IntakeAsync"/> — <see cref="CaptureService.CreateAsync"/>,
+/// <see cref="LlmQueueService.AddToQueueAsync"/> and the ID-preserving backfill
+/// (<see cref="CaptureBackfillService"/>, through <see cref="BuildCapture"/>) — and nothing else
+/// constructs a <see cref="Capture"/>; <c>CaptureIntakeIsTheOnlyCaptureWriterTests</c> proves it
+/// over the source tree.
 /// <para>
-/// While <see cref="ContextFabricSettings.DualWriteCaptures"/> is off (the default), this class
-/// does nothing. While it is on, the mirror is staged into the ambient unit of work beside the queue
-/// row so both commit together or not at all, and it must never fail where the queue row succeeds:
-/// the typed or pasted text becomes an immutable inline <see cref="SourceAsset"/> (the raw material
-/// no longer lives only on the processing job), the legacy disposition maps onto the user
-/// disposition axis, and the requested intent is derived from what the legacy contract asked for.
+/// <b>Native intake, not a queue mirror.</b> The order is the ADR's: the sources are stored first
+/// and the capture is valid the moment they are (a capture never becomes unreadable because a job
+/// failed), and the queue row is created beside it as the <i>job record</i> that CF-03 will replace.
+/// The capture takes the queue row's own id (ID-preserving), so every existing
+/// <c>CreatedFromCaptureId</c> / <c>CaptureItemId</c> reference keeps resolving.
+/// </para>
+/// <para>
+/// Both are staged into the ambient unit of work, so they commit together or not at all, and intake
+/// must never fail where the queue row succeeds. While
+/// <see cref="ContextFabricSettings.DualWriteCaptures"/> is off this class does nothing and shipped
+/// behaviour is byte-identical.
 /// </para>
 /// </summary>
 public sealed class CaptureIntakeService
@@ -33,16 +38,17 @@ public sealed class CaptureIntakeService
         _settings = settings ?? new ContextFabricSettings();
     }
 
-    /// <summary>True when mirrors are written; false leaves shipped behaviour byte-identical.</summary>
+    /// <summary>True when the durable aggregate is written; false leaves shipped behaviour byte-identical.</summary>
     public bool DualWriteEnabled => _settings.DualWriteCaptures && _captureStore is not null;
 
     /// <summary>
-    /// Stages the ID-preserving mirror of a legacy capture queue row (<paramref name="request"/>)
-    /// and its inline text asset. Returns the staged capture, or null when dual-write is off.
-    /// The producer dimension comes from <see cref="CaptureSourceMapping"/> unless the caller knows
-    /// the authenticated principal kind (an MCP agent, an integration connector) and passes it.
+    /// Admits a capture: builds the aggregate under <paramref name="request"/>'s id with its
+    /// immutable sources and stages it beside the queue row. Returns the staged capture, or null
+    /// when dual-write is off. The producer dimension comes from <see cref="CaptureSourceMapping"/>
+    /// unless the caller knows the authenticated principal kind (an MCP agent, an integration
+    /// connector) and passes it.
     /// </summary>
-    public async Task<Capture?> MirrorLegacyCaptureAsync(
+    public async Task<Capture?> IntakeAsync(
         LlmRequest request,
         CapturePayloadV1 payload,
         Guid userId,
@@ -56,7 +62,37 @@ public sealed class CaptureIntakeService
             return null;
         }
 
-        var capture = Capture.FromQueueRequest(
+        var capture = BuildCapture(request, payload, userId, boardId, producerOverride, producedByPrincipalId);
+        await _captureStore!.AddAsync(capture, cancellationToken);
+        return capture;
+    }
+
+    /// <summary>
+    /// Builds the aggregate for a capture-shaped queue row. Shared by live intake and the
+    /// ID-preserving backfill so both produce the identical shape: the sources first (the typed or
+    /// pasted text as an immutable inline asset, and the user's locator as an
+    /// <see cref="SourceAssetStorageKind.ExternalReference"/> asset when the payload carries one),
+    /// then the state.
+    /// <para>
+    /// <paramref name="legacyState"/> is the three-axis state derived from what the queue row
+    /// actually recorded; live intake leaves it null and takes the aggregate's own defaults
+    /// (<c>Active</c> / <c>Idle</c> / <c>Unplanned</c>), while the backfill passes the state a
+    /// pre-existing row earned. Nothing is defaulted to <c>Received</c> for a legacy row.
+    /// </para>
+    /// </summary>
+    public static Capture BuildCapture(
+        LlmRequest request,
+        CapturePayloadV1 payload,
+        Guid userId,
+        Guid? boardId,
+        CaptureProducerKind? producerOverride = null,
+        Guid? producedByPrincipalId = null,
+        CaptureLegacyState? legacyState = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(payload);
+
+        return Capture.FromQueueRequest(
             request.Id,
             userId,
             payload.Source,
@@ -67,17 +103,14 @@ public sealed class CaptureIntakeService
             producerOverride: producerOverride,
             capturedAtServer: request.CreatedAt,
             legacyDisposition: payload.Disposition?.Kind,
-            producedByPrincipalId: producedByPrincipalId);
-
-        // The legacy contract rejects blank text before this point; the guard only keeps the
-        // mirror from ever being the reason a capture fails.
-        if (!string.IsNullOrWhiteSpace(payload.Text))
-        {
-            capture.AddInlineTextSource(payload.Text);
-        }
-
-        await _captureStore!.AddAsync(capture, cancellationToken);
-        return capture;
+            producedByPrincipalId: producedByPrincipalId,
+            // The legacy contract rejects blank text before this point; the guard only keeps intake
+            // from ever being the reason a capture fails.
+            sourceText: string.IsNullOrWhiteSpace(payload.Text) ? null : payload.Text,
+            externalReference: string.IsNullOrWhiteSpace(payload.ExternalRef) ? null : payload.ExternalRef,
+            processingSummary: legacyState?.ProcessingSummary,
+            actionState: legacyState?.ActionState,
+            userDisposition: legacyState?.Disposition);
     }
 
     /// <summary>

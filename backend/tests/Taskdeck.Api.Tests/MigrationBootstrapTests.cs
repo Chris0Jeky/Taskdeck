@@ -134,6 +134,126 @@ public class MigrationBootstrapTests : IDisposable
         _context.Database.HasPendingModelChanges().Should().BeFalse();
     }
 
+    [Fact]
+    public void AddCaptureBackfillState_DownAndUpRoundTripOnSqlite()
+    {
+        // CF-01 (#2255). The migration is purely additive, so Down must remove exactly what Up added
+        // and re-applying must land on the same schema the model expects.
+        _context.Database.Migrate();
+        var migrator = _context.GetService<IMigrator>();
+
+        migrator.Migrate("20260830141427_ReconcileContextFabricScaffold");
+
+        GetUserTables().Should().NotContain("CaptureBackfillStates");
+        GetColumns("SourceAssets").Should().NotContain("SupersedesAssetId");
+        GetColumns("SourceAssets").Should().NotContain("SupersededByAssetId");
+
+        migrator.Migrate();
+
+        GetUserTables().Should().Contain("CaptureBackfillStates");
+        GetColumns("SourceAssets").Should().Contain(new[] { "SupersedesAssetId", "SupersededByAssetId" });
+        GetColumns("CaptureBackfillStates").Should().Contain(
+            new[] { "Id", "Key", "StartedAt", "CompletedAt", "MigratedCount", "SkippedCount", "LastSkipReason" });
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CaptureBackfillMarker_RoundTripsThroughTheStoreOnTheMigratedSchema()
+    {
+        // The marker is what arms the CF-01 read switch, so it has to survive a real round trip and
+        // stay a singleton under its fixed id.
+        _context.Database.Migrate();
+        var store = new EfCaptureBackfillStore(_context);
+
+        (await store.GetStateAsync(CaptureBackfillState.LegacyQueueBackfillKey))
+            .Should().BeNull("a database that never ran the backfill has no marker, and reads stay on the queue row");
+
+        var state = CaptureBackfillState.ForLegacyQueue(DateTimeOffset.UtcNow);
+        state.RecordBatch(migrated: 7, skipped: 1, "DomainException: unmappable");
+        await store.SaveStateAsync(state);
+        await _context.SaveChangesAsync();
+
+        state.MarkComplete(DateTimeOffset.UtcNow);
+        await store.SaveStateAsync(state);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetStateAsync(CaptureBackfillState.LegacyQueueBackfillKey);
+        reloaded.Should().NotBeNull();
+        reloaded!.Id.Should().Be(CaptureBackfillState.LegacyQueueBackfillId);
+        reloaded.MigratedCount.Should().Be(7);
+        reloaded.SkippedCount.Should().Be(1);
+        reloaded.LastSkipReason.Should().Be("DomainException: unmappable");
+        reloaded.IsComplete.Should().BeTrue();
+        _context.CaptureBackfillStates.Count().Should().Be(1, "the marker is a singleton");
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_CommitsAggregateMutationsThroughTheTrackedStoreRead()
+    {
+        // The residual the PR #2280 review left open: GetByIdForUserAsync was AsNoTracking and the
+        // store had no update, so Retitle / SetRequestedIntent / a superseding source could not be
+        // persisted at all.
+        _context.Database.Migrate();
+        var user = new User("fabric-tracked", "fabric-tracked@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var requestId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            requestId, user.Id, CaptureSource.Typed, null, null, "Before",
+            sourceText: "original wording");
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var tracked = await store.GetByIdForUpdateAsync(requestId, user.Id);
+        tracked.Should().NotBeNull();
+        tracked!.Retitle("After");
+        tracked.SetRequestedIntent(CaptureIntentMode.Act);
+        tracked.SupersedeInlineTextSource("corrected wording");
+        await store.UpdateAsync(tracked);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetByIdForUserAsync(requestId, user.Id);
+        reloaded!.UserTitle.Should().Be("After");
+        reloaded.RequestedIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.SourceAssets.Should().HaveCount(2);
+        reloaded.SourceAssets[0].TextPayload!.Text.Should().Be("original wording", "sources are immutable");
+        reloaded.SourceAssets[0].SupersededByAssetId.Should().Be(reloaded.SourceAssets[1].Id);
+        reloaded.SourceAssets[1].SupersedesAssetId.Should().Be(reloaded.SourceAssets[0].Id);
+        reloaded.CurrentText.Should().Be("corrected wording");
+        (await store.GetByIdForUpdateAsync(requestId, Guid.NewGuid()))
+            .Should().BeNull("the tracked read is owner-scoped too");
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_BatchReadIsOwnerScoped()
+    {
+        _context.Database.Migrate();
+        var owner = new User("fabric-owner", "fabric-owner@example.com", "hash");
+        var other = new User("fabric-other", "fabric-other@example.com", "hash");
+        _context.Users.AddRange(owner, other);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var mine = Capture.FromQueueRequest(
+            Guid.NewGuid(), owner.Id, CaptureSource.Typed, null, null, null, sourceText: "mine");
+        var theirs = Capture.FromQueueRequest(
+            Guid.NewGuid(), other.Id, CaptureSource.Typed, null, null, null, sourceText: "theirs");
+        await store.AddAsync(mine);
+        await store.AddAsync(theirs);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var batch = await store.GetByIdsForUserAsync(new[] { mine.Id, theirs.Id }, owner.Id);
+
+        batch.Should().ContainSingle().Which.Id.Should().Be(mine.Id, "no cross-user leak through the batch read");
+        batch[0].CurrentText.Should().Be("mine");
+    }
+
     private List<string> GetColumns(string table)
     {
         var connection = _context.Database.GetDbConnection();

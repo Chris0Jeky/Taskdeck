@@ -28,13 +28,24 @@ public class DataExportService : IDataExportService
     private readonly IArtefactExtractionRepository _extractions;
     private readonly ITranscriptRepository _transcripts;
 
+    /// <summary>
+    /// The durable capture aggregate (ADR-0065 / CF-01 #2255). Optional so hosts and tests that
+    /// never wired it keep exporting exactly the previous package; when present, every capture in
+    /// the package also carries its <c>Captures</c> row and its immutable <c>SourceAsset</c>s.
+    /// </summary>
+    private readonly ICaptureStore? _captureStore;
+
+    /// <summary>Bounds one durable-capture lookup; kept under the 900-id batch cap the repositories share.</summary>
+    private const int DurableCaptureChunkSize = 500;
+
     public DataExportService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
         IArtefactExtractionRepository extractions,
         ITranscriptRepository transcripts,
-        ILogger<DataExportService>? logger = null)
+        ILogger<DataExportService>? logger = null,
+        ICaptureStore? captureStore = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -42,6 +53,75 @@ public class DataExportService : IDataExportService
         _artefacts = artefacts;
         _extractions = extractions;
         _transcripts = transcripts;
+        _captureStore = captureStore;
+    }
+
+    /// <summary>
+    /// Loads the durable captures behind the exported capture rows, owner-scoped and chunked. Ids
+    /// without a durable row are simply absent: an install that has never enabled the dual-write
+    /// exports exactly the package it exported before.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, Domain.Entities.Capture>> LoadDurableCapturesAsync(
+        Guid userId,
+        IReadOnlyList<Guid> captureIds,
+        CancellationToken cancellationToken)
+    {
+        if (_captureStore is null || captureIds.Count == 0)
+        {
+            return new Dictionary<Guid, Domain.Entities.Capture>();
+        }
+
+        var result = new Dictionary<Guid, Domain.Entities.Capture>(captureIds.Count);
+        for (var offset = 0; offset < captureIds.Count; offset += DurableCaptureChunkSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = captureIds.Skip(offset).Take(DurableCaptureChunkSize).ToArray();
+            foreach (var capture in await _captureStore.GetByIdsForUserAsync(chunk, userId, cancellationToken))
+            {
+                result[capture.Id] = capture;
+            }
+        }
+
+        return result;
+    }
+
+    private static UserDataExportDurableCaptureDto? MapDurableCapture(Domain.Entities.Capture? capture)
+    {
+        if (capture is null)
+        {
+            return null;
+        }
+
+        return new UserDataExportDurableCaptureDto(
+            capture.Disposition.ToString(),
+            capture.ProcessingSummary.ToString(),
+            capture.ActionState.ToString(),
+            capture.Timeline.ToString(),
+            capture.ProducerKind.ToString(),
+            capture.RequestedIntent.ToString(),
+            capture.EffectiveIntent?.ToString(),
+            capture.PrimaryModality.ToString(),
+            capture.OriginAdapter.ToString(),
+            capture.LegacySourceSnapshot.ToString(),
+            capture.CapturedAtServer,
+            capture.CapturedAtClient,
+            capture.UserTitle,
+            capture.UserNote,
+            capture.SourceAssets
+                .Select(asset => new UserDataExportSourceAssetDto(
+                    asset.Id,
+                    asset.Ordinal,
+                    asset.Modality.ToString(),
+                    asset.MediaType,
+                    asset.ContentHash,
+                    asset.ByteSize,
+                    asset.StorageKind.ToString(),
+                    asset.ExternalReference,
+                    asset.OriginalName,
+                    asset.SupersedesAssetId,
+                    asset.SupersededByAssetId,
+                    asset.TextPayload?.Text))
+                .ToList());
     }
 
     public async Task<Result<UserDataExportDto>> ExportUserDataAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -149,6 +229,10 @@ public class DataExportService : IDataExportService
                 n.CreatedAt)).ToList();
 
             var resolvedCaptures = await ResolveCaptureExportsAsync(captures, cancellationToken);
+            var durableCaptures = await LoadDurableCapturesAsync(
+                userId,
+                resolvedCaptures.Select(c => c.Request.Id).ToList(),
+                cancellationToken);
             var exportCaptures = resolvedCaptures.Select(c =>
             {
                 return new UserDataExportCaptureDto(
@@ -164,7 +248,8 @@ public class DataExportService : IDataExportService
                             c.Payload.Disposition.Kind.ToString(),
                             c.Payload.Disposition.At,
                             c.Payload.Disposition.ByUserId,
-                            c.Payload.Disposition.BoardId));
+                            c.Payload.Disposition.BoardId),
+                    MapDurableCapture(durableCaptures.GetValueOrDefault(c.Request.Id)));
             }).ToList();
 
             var exportProposals = proposals.Select(p => new UserDataExportProposalDto(
@@ -382,6 +467,10 @@ public class DataExportService : IDataExportService
             // capture items (small)
             var captures = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
             var resolvedCaptures = await ResolveCaptureExportsAsync(captures, cancellationToken);
+            var streamedDurableCaptures = await LoadDurableCapturesAsync(
+                userId,
+                resolvedCaptures.Select(c => c.Request.Id).ToList(),
+                cancellationToken);
             writer.WriteStartArray("captureItems");
             foreach (var c in resolvedCaptures)
             {
@@ -394,6 +483,7 @@ public class DataExportService : IDataExportService
                 WriteNullableGuid(writer, "boardId", c.BoardId);
                 WriteCaptureProvenance(writer, c.Payload.Provenance);
                 WriteCaptureDisposition(writer, c.Payload.Disposition);
+                WriteDurableCapture(writer, streamedDurableCaptures.GetValueOrDefault(c.Request.Id));
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -669,6 +759,59 @@ public class DataExportService : IDataExportService
         writer.WriteString("at", disposition.At);
         writer.WriteString("byUserId", disposition.ByUserId);
         WriteNullableGuid(writer, "boardId", disposition.BoardId);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Streams the durable capture beside its queue row. Emitted as <c>null</c> when the capture has
+    /// no durable row, so the streaming package and the buffered package stay the same shape.
+    /// </summary>
+    private static void WriteDurableCapture(Utf8JsonWriter writer, Domain.Entities.Capture? capture)
+    {
+        writer.WritePropertyName("durableCapture");
+        if (capture is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("disposition", capture.Disposition.ToString());
+        writer.WriteString("processingSummary", capture.ProcessingSummary.ToString());
+        writer.WriteString("actionState", capture.ActionState.ToString());
+        writer.WriteString("timeline", capture.Timeline.ToString());
+        writer.WriteString("producerKind", capture.ProducerKind.ToString());
+        writer.WriteString("requestedIntent", capture.RequestedIntent.ToString());
+        writer.WriteString("effectiveIntent", capture.EffectiveIntent?.ToString());
+        writer.WriteString("primaryModality", capture.PrimaryModality.ToString());
+        writer.WriteString("originAdapter", capture.OriginAdapter.ToString());
+        writer.WriteString("legacySourceSnapshot", capture.LegacySourceSnapshot.ToString());
+        writer.WriteString("capturedAtServer", capture.CapturedAtServer);
+        if (capture.CapturedAtClient.HasValue)
+            writer.WriteString("capturedAtClient", capture.CapturedAtClient.Value);
+        else
+            writer.WriteNull("capturedAtClient");
+        writer.WriteString("userTitle", capture.UserTitle);
+        writer.WriteString("userNote", capture.UserNote);
+        writer.WriteStartArray("sourceAssets");
+        foreach (var asset in capture.SourceAssets)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", asset.Id);
+            writer.WriteNumber("ordinal", asset.Ordinal);
+            writer.WriteString("modality", asset.Modality.ToString());
+            writer.WriteString("mediaType", asset.MediaType);
+            writer.WriteString("contentHash", asset.ContentHash);
+            writer.WriteNumber("byteSize", asset.ByteSize);
+            writer.WriteString("storageKind", asset.StorageKind.ToString());
+            writer.WriteString("externalReference", asset.ExternalReference);
+            writer.WriteString("originalName", asset.OriginalName);
+            WriteNullableGuid(writer, "supersedesAssetId", asset.SupersedesAssetId);
+            WriteNullableGuid(writer, "supersededByAssetId", asset.SupersededByAssetId);
+            writer.WriteString("text", asset.TextPayload?.Text);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 

@@ -73,7 +73,52 @@ public record UserDataExportCaptureDto(
     DateTimeOffset CreatedAt,
     Guid? BoardId = null,
     CaptureProvenanceV1? Provenance = null,
-    UserDataExportCaptureDispositionDto? Disposition = null);
+    UserDataExportCaptureDispositionDto? Disposition = null,
+    // ADR-0065 / CF-01 (#2255): the durable aggregate behind this capture, when one exists. Added
+    // as an optional member so a reader of the previous shape keeps working, and null on a host
+    // whose ContextFabric:DualWriteCaptures has never been on.
+    UserDataExportDurableCaptureDto? DurableCapture = null);
+
+/// <summary>
+/// The durable <c>Capture</c> row and its immutable <c>SourceAsset</c>s, exported so a portability
+/// package carries the capture's own record - its three state axes, its provenance dimensions and
+/// the exact material the user gave Taskdeck - and not only the job row that processed it.
+/// </summary>
+public record UserDataExportDurableCaptureDto(
+    string Disposition,
+    string ProcessingSummary,
+    string ActionState,
+    string Timeline,
+    string ProducerKind,
+    string RequestedIntent,
+    string? EffectiveIntent,
+    string PrimaryModality,
+    string OriginAdapter,
+    string LegacySourceSnapshot,
+    DateTimeOffset CapturedAtServer,
+    DateTimeOffset? CapturedAtClient,
+    string? UserTitle,
+    string? UserNote,
+    IReadOnlyList<UserDataExportSourceAssetDto> SourceAssets);
+
+/// <summary>
+/// One immutable source of a capture. <c>Text</c> carries the stored bytes for an inline text asset
+/// (the user's own words - portability means exporting them); binary assets export their locator and
+/// digest, and their bytes travel in the artefacts section.
+/// </summary>
+public record UserDataExportSourceAssetDto(
+    Guid Id,
+    int Ordinal,
+    string Modality,
+    string MediaType,
+    string ContentHash,
+    long ByteSize,
+    string StorageKind,
+    string? ExternalReference,
+    string? OriginalName,
+    Guid? SupersedesAssetId,
+    Guid? SupersededByAssetId,
+    string? Text);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,

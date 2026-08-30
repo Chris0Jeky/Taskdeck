@@ -97,8 +97,12 @@ public sealed class Capture : Entity
     /// </summary>
     public Guid? LegacyRequestId { get; private set; }
 
-    /// <summary>The immutable inputs, in <see cref="SourceAsset.Ordinal"/> order.</summary>
-    public IReadOnlyList<SourceAsset> SourceAssets => _sourceAssets;
+    /// <summary>
+    /// The immutable inputs, in <see cref="SourceAsset.Ordinal"/> order. Sorted rather than returned
+    /// raw because the backing collection is filled by the persistence layer, which makes no row
+    /// order guarantee: ordinal is the aggregate own order and every reader depends on it.
+    /// </summary>
+    public IReadOnlyList<SourceAsset> SourceAssets => Ordered.ToList();
 
     /// <summary>
     /// The inputs as they stand now: every asset that nothing has superseded. A post-intake edit
@@ -106,7 +110,9 @@ public sealed class Capture : Entity
     /// <see cref="SourceAssets"/> while readers of "the current text" use this view.
     /// </summary>
     public IReadOnlyList<SourceAsset> ActiveSourceAssets =>
-        _sourceAssets.Where(asset => asset.IsActive).ToList();
+        Ordered.Where(asset => asset.IsActive).ToList();
+
+    private IEnumerable<SourceAsset> Ordered => _sourceAssets.OrderBy(asset => asset.Ordinal);
 
     private Capture() : base()
     {
@@ -293,7 +299,7 @@ public sealed class Capture : Entity
     {
         EnsureNotArchived("edit the source of");
 
-        var current = _sourceAssets
+        var current = Ordered
             .LastOrDefault(asset => asset.IsActive && asset.StorageKind == SourceAssetStorageKind.InlineText);
 
         // Constructed first: a rejected correction (blank, over the cap) throws here, before the
@@ -315,7 +321,7 @@ public sealed class Capture : Entity
     /// a bare external reference).
     /// </summary>
     public string? CurrentText =>
-        _sourceAssets
+        Ordered
             .LastOrDefault(asset => asset.IsActive && asset.StorageKind == SourceAssetStorageKind.InlineText)
             ?.TextPayload?.Text;
 

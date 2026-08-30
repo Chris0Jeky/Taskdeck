@@ -40,6 +40,32 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
             throw new ArgumentOutOfRangeException(nameof(batchSize), batchSize, "Batch size must be at least 1");
         }
 
+        if (_context.Database.IsSqlite())
+        {
+            // SQLite cannot translate ORDER BY on a DateTimeOffset column from LINQ, so the ordering
+            // and the bound live in raw SQL - the same treatment LlmQueueRepository.GetCapturesByUserAsync
+            // gives the Inbox listing. The NOT EXISTS clause is the anti-join that makes the backfill
+            // idempotent and resumable: a row leaves the backlog the moment its capture is committed.
+            // Oldest first, so the backlog drains in intake order and a partial run leaves the newest
+            // rows outstanding. FromSqlInterpolated parameterises every hole.
+            FormattableString sql =
+                $"""
+                SELECT * FROM LlmRequests
+                WHERE RequestType LIKE {CaptureRequestTypeLike}
+                  AND NOT EXISTS (SELECT 1 FROM Captures WHERE Captures.Id = LlmRequests.Id)
+                ORDER BY CreatedAt, Id
+                LIMIT {batchSize}
+                """;
+            var rows = await _context.LlmRequests
+                .FromSqlInterpolated(sql)
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            return rows
+                .OrderBy(request => request.CreatedAt)
+                .ThenBy(request => request.Id.ToString(), StringComparer.Ordinal)
+                .ToList();
+        }
+
         return await Backlog
             .OrderBy(request => request.CreatedAt)
             .ThenBy(request => request.Id)

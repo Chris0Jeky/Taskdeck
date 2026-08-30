@@ -169,6 +169,12 @@ if (args.Contains("--mcp"))
             Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
         }
 
+        // ADR-0065 / CF-01 (#2255): this host writes captures too, so it owes the same post-migration
+        // data step as the web API. Idempotent and never fatal.
+        Taskdeck.Infrastructure.Persistence.ContextFabricBootstrap.RunCaptureBackfill(
+            mcpHttpApp.Services,
+            mcpHttpApp.Services.GetRequiredService<ILogger<Program>>());
+
         // Honour trusted forwarded headers (default OFF) so the pre-auth failure-budget limiter and
         // per-key partitioning key on the real client address behind a reverse proxy instead of
         // collapsing every client into the proxy's single socket address. Mirrors the co-hosted API
@@ -328,6 +334,12 @@ if (args.Contains("--mcp"))
             .GetRequiredService<Microsoft.Extensions.Options.IOptions<Taskdeck.Application.Services.DatabaseBackupSettings>>().Value;
         Taskdeck.Infrastructure.Persistence.SerializedMigrator.Migrate(dbContext, backupSettings, migrationLogger);
     }
+
+    // ADR-0065 / CF-01 (#2255): same post-migration data step as every other host that writes
+    // captures. Idempotent and never fatal; stdio logs go to stderr, never the JSON-RPC stream.
+    Taskdeck.Infrastructure.Persistence.ContextFabricBootstrap.RunCaptureBackfill(
+        mcpHost.Services,
+        mcpHost.Services.GetRequiredService<ILogger<Program>>());
 
     await mcpHost.RunAsync();
     return 0;

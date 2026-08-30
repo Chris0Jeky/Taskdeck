@@ -75,6 +75,11 @@ public static class PipelineConfiguration
             SerializedMigrator.Migrate(dbContext, backupSettings, app.Logger);
         }
 
+        // ADR-0065 / CF-01 (#2255): with the schema in place, bring pre-existing capture queue rows
+        // into the durable aggregate under their own ids. Idempotent, resumable, and never fatal --
+        // an incomplete backfill simply keeps Inbox reads on the queue row.
+        ContextFabricBootstrap.RunCaptureBackfill(app.Services, app.Logger);
+
         if (app.Environment.IsDevelopment())
         {
             app.UseSwagger();
