@@ -108,9 +108,11 @@ behaviour.
   to `Now / Priority II`, alongside existing `#1271` and `#2230`. REF-0 owns only repository-native
   size × churn × touching-commit measurement tooling; its authoritative baseline waits for the exact
   final `v0.3.0` tag. `#2241` remains Pending until a slot opens.
-- **Execution is serial on this checkout.** Both the fingerprint capture and the required issue-
-  worktree helper fail closed because the canonical OneDrive roots carry `ReparsePoint`; `#1711`
-  holds the exact evidence. No guard is weakened and the coordinator preserves the received bundles.
+- **Execution parks on the canonical checkout.** Both the fingerprint capture and the required issue-
+  worktree helper fail closed because the OneDrive roots carry `ReparsePoint`; `#1711` holds the exact
+  evidence. A write lane may resume only from a short, non-reparse clone through the required worktree
+  helper, its complete printed guard command, and the bounded initializer. If any step fails, the lane
+  parks. No guard is weakened and the coordinator preserves the received bundles.
 
 ## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
 
