@@ -2,6 +2,8 @@ import http from './http'
 import type {
   BatchApproveProposalSelection,
   BatchApproveProposalsResult,
+  BatchExecuteProposalSelection,
+  BatchExecuteProposalsResult,
   Proposal,
   ProposalFilters,
 } from '../types/automation'
@@ -82,6 +84,21 @@ export const automationApi = {
           'Idempotency-Key': idempotencyKey,
         },
       }
+    )
+    return data
+  },
+
+  /**
+   * Per-proposal batch execute (`#1307`, q-14 C). Not all-or-none: the 200 body carries one outcome
+   * row per requested proposal, in request order. Each item's idempotency key travels in the body
+   * rather than a header because there is one key per proposal, not one per request.
+   */
+  async executeProposals(
+    proposals: BatchExecuteProposalSelection[],
+  ): Promise<BatchExecuteProposalsResult> {
+    const { data } = await http.post<BatchExecuteProposalsResult>(
+      '/automation/proposals/execute',
+      { proposals },
     )
     return data
   },

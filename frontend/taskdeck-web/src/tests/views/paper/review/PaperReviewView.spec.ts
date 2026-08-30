@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   rejectProposal: vi.fn(),
   deferProposal: vi.fn(),
   executeProposal: vi.fn(),
+  executeProposals: vi.fn(),
   getProposalDiff: vi.fn(),
   dismissProposals: vi.fn(),
   reportBadSuggestion: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('../../../../api/automationApi', () => ({
     rejectProposal: mocks.rejectProposal,
     deferProposal: mocks.deferProposal,
     executeProposal: mocks.executeProposal,
+    executeProposals: mocks.executeProposals,
     getProposalDiff: mocks.getProposalDiff,
     dismissProposals: mocks.dismissProposals,
     reportBadSuggestion: mocks.reportBadSuggestion,
@@ -529,6 +531,66 @@ describe('PaperReviewView', () => {
     expect(mocks.rejectProposal).not.toHaveBeenCalled()
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(mocks.dismissProposals).not.toHaveBeenCalled()
+  })
+
+  it('force-closes an open apply-approved dialog when archived history activates', async () => {
+    // The withholding test above mounts each mode separately, so it can only prove the affordance
+    // is absent on a fresh archived mount. It cannot see the transition: a reviewer who already has
+    // the confirmation open when the surface flips to read-only history would otherwise be left
+    // holding a dialog whose confirm button performs a board write the mode forbids. Only a flip on
+    // the SAME instance exercises the watcher that closes it.
+    const createCardOp = {
+      ...makeProposal().operations[0],
+      actionType: 'create',
+      targetType: 'card',
+    }
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'approved-1', status: 'Approved', summary: 'Approved one', operations: [createCardOp] }),
+        makeProposal({ id: 'approved-2', status: 'Approved', summary: 'Approved two', operations: [createCardOp] }),
+      ],
+      '/workspace/review',
+    )
+
+    await wrapper.get('[data-testid="queue-batch-execute"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).not.toBeNull()
+
+    await wrapper.vm.$router.push('/workspace/review?history=archived')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-view"]').attributes('data-history-mode')).toBe('archived')
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="batch-execute-confirm"]')).toBeNull()
+    expect(mocks.executeProposals).not.toHaveBeenCalled()
+  })
+
+  it('withholds the apply-approved batch action in archived history', async () => {
+    // Archived history is read-only, and Apply-approved is a board write. Offering it here would
+    // advertise a mutation the mode forbids - the same reason the decision rail and the bulk
+    // file-away action are already withheld above.
+    // Explicit create/card operations: the shared batch gate admits only bounded card creations,
+    // and this file default operation is a 'CreateCard'/'Card' shape that gate does not match.
+    const createCardOp = {
+      ...makeProposal().operations[0],
+      actionType: 'create',
+      targetType: 'card',
+    }
+    const approved = [
+      makeProposal({ id: 'approved-1', status: 'Approved', summary: 'Approved one', operations: [createCardOp] }),
+      makeProposal({ id: 'approved-2', status: 'Approved', summary: 'Approved two', operations: [createCardOp] }),
+    ]
+
+    const live = await mountView(approved, '/workspace/review')
+    expect(live.find('[data-testid="queue-batch-execute"]').exists()).toBe(true)
+
+    const archived = await mountView(
+      [...approved, makeProposal({ id: 'applied-1', status: 'Applied', summary: 'Applied history' })],
+      '/workspace/review?boardId=board-1&history=archived',
+    )
+    expect(archived.get('[data-testid="paper-review-view"]').attributes('data-history-mode')).toBe('archived')
+    expect(archived.find('[data-testid="queue-batch-execute"]').exists()).toBe(false)
+    expect(mocks.executeProposals).not.toHaveBeenCalled()
   })
 
   it('discloses a board-scoped empty queue and clears it back to the loaded proposal', async () => {

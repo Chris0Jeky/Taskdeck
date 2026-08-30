@@ -35,6 +35,12 @@ const props = withDefaults(
     dismissableCount?: number
     /** Eligible proposals selected for the approve-only confirmation. */
     batchSelectedCount?: number
+    /**
+     * Already-approved proposals the reviewer can apply in one batch (#1307). Distinct from
+     * `batchSelectedCount`: approve and execute stay two explicit steps (ADR-0003 / GP-06), so this
+     * count is derived from what is already Approved, never from the approve selection.
+     */
+    batchExecutableCount?: number
     /** Disables the bulk file-away action while any review action is in flight. */
     busy?: boolean
     recentlyApplied: RecentlyAppliedRow[]
@@ -64,6 +70,7 @@ const props = withDefaults(
   {
     dismissableCount: 0,
     batchSelectedCount: 0,
+    batchExecutableCount: 0,
     busy: false,
     authorPartitionAvailable: true,
   },
@@ -75,6 +82,7 @@ const emit = defineEmits<{
   (event: 'file-away-all'): void
   (event: 'toggle-batch', id: string): void
   (event: 'request-batch-approval'): void
+  (event: 'request-batch-execute'): void
   (event: 'clear-scope'): void
 }>()
 
@@ -206,6 +214,15 @@ function onFilterPillClick(key: QueueFilter) {
         :aria-label="$t('review.batchApprove.requestLabel', { count: batchSelectedCount }, batchSelectedCount)"
         @click="emit('request-batch-approval')"
       >{{ $t('review.batchApprove.request', { count: batchSelectedCount }, batchSelectedCount) }}</button>
+      <button
+        v-if="batchExecutableCount > 0"
+        type="button"
+        class="paper-review-rail__batch-execute"
+        data-testid="queue-batch-execute"
+        :disabled="busy"
+        :aria-label="$t('review.batchExecute.requestLabel', { count: batchExecutableCount }, batchExecutableCount)"
+        @click="emit('request-batch-execute')"
+      >{{ $t('review.batchExecute.request', { count: batchExecutableCount }, batchExecutableCount) }}</button>
       <button
         v-if="dismissableCount >= 1"
         type="button"
@@ -348,6 +365,28 @@ function onFilterPillClick(key: QueueFilter) {
   opacity: 0.88;
 }
 .paper-review-rail__batch-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.paper-review-rail__batch-execute {
+  margin-top: 8px;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  padding: 7px 8px;
+  background: var(--paper-card);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.paper-review-rail__batch-execute:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+.paper-review-rail__batch-execute:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

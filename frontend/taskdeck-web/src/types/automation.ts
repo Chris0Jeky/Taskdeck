@@ -122,3 +122,44 @@ export interface BatchApproveProposalSelection {
   expectedProposalUpdatedAt: string
   expectedLatestRevisionId: string | null
 }
+
+
+/**
+ * One proposal submitted to the per-proposal batch execute endpoint (`#1307`, q-14 C).
+ *
+ * `approvedRevisionId` is a REQUIRED member with a nullable value, mirroring `Proposal`'s own pin:
+ * the server rejects a payload that omits the key (400) rather than reading the absence as
+ * "approved from the original operations", which would slip a drifted proposal past the fail-closed
+ * drift check. Echo `proposal.approvedRevisionId` verbatim, including `null`.
+ *
+ * `idempotencyKey` is per proposal, not per request: it is carried into exactly the same executor
+ * call the single-execute `Idempotency-Key` header reaches.
+ */
+export interface BatchExecuteProposalSelection {
+  proposalId: string
+  approvedRevisionId: string | null
+  idempotencyKey: string
+}
+
+/**
+ * Per-item outcome. `Applied` is claimed only by the call that performed the board write; replaying
+ * the same keys reports `Skipped`. Both are success outcomes and the whole response is still 200.
+ */
+export type BatchExecuteOutcome = 'Applied' | 'Skipped' | 'Failed'
+
+/** One item's receipt. `appliedOperations` is populated for `Applied` only. */
+export interface BatchExecuteProposalResult {
+  proposalId: string
+  outcome: BatchExecuteOutcome
+  errorCode: string | null
+  errorMessage: string | null
+  appliedOperations: number | null
+}
+
+/**
+ * Receipt for a per-proposal batch execute, in request order. Partial success is the contract: a
+ * failing item never rolls back its neighbours.
+ */
+export interface BatchExecuteProposalsResult {
+  results: BatchExecuteProposalResult[]
+}

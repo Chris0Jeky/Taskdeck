@@ -66,6 +66,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IAutomationPlannerService, AutomationPlannerService>();
         services.AddScoped<IAutomationExecutorService, AutomationExecutorService>();
+        services.AddScoped<IBatchProposalExecutionService, BatchProposalExecutionService>();
         services.AddScoped<IArchiveRecoveryService, ArchiveRecoveryService>();
         services.AddScoped<IOpsCliService, OpsCliService>();
         services.AddScoped<IBoardContextBuilder, BoardContextBuilder>();
