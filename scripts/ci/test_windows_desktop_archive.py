@@ -916,18 +916,29 @@ class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
         harness.validate_retired_provider_ignored_warning(
             [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
             good_output,
-            harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+            harness.SYNTHETIC_RETIRED_SELECTOR_VALUES,
         )
 
         invalid_cases = (
             ([], good_output, False),
             ([harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER] * 2, good_output, False),
             (["TASKDECK_DESKTOP_WARNING code=something_else"], good_output, False),
-            # The value leaks on the guidance line, which carries no marker prefix at all —
-            # the case a markers-only scan cannot see.
+            # A value leaks on the guidance line, which carries no marker prefix at all —
+            # the case a markers-only scan cannot see. One case per injected setting: a shared
+            # sentinel would let a model or endpoint leak pass unnoticed (#2233 review round 2).
             (
                 [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
                 good_output + [f"Ignored {harness.SYNTHETIC_RETIRED_PROVIDER_VALUE}"],
+                False,
+            ),
+            (
+                [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+                good_output + [f"Ignored model {harness.SYNTHETIC_RETIRED_MODEL_VALUE}"],
+                False,
+            ),
+            (
+                [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+                good_output + [f"Ignored endpoint {harness.SYNTHETIC_RETIRED_ENDPOINT_VALUE}"],
                 False,
             ),
             # Output past the bound cannot be scanned, so it is a failure, not a pass.
@@ -939,9 +950,40 @@ class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
                     harness.validate_retired_provider_ignored_warning(
                         markers,
                         observed,
-                        harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                        harness.SYNTHETIC_RETIRED_SELECTOR_VALUES,
                         truncated,
                     )
+
+        # An empty sentinel list means nothing was scanned; that is a failure, not a pass.
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_retired_provider_ignored_warning(
+                [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+                good_output,
+                (),
+            )
+
+    def test_every_injected_retired_value_is_a_distinct_scanned_sentinel(self) -> None:
+        # The three sentinels must not overlap, or one leak could masquerade as another.
+        self.assertEqual(3, len(set(harness.SYNTHETIC_RETIRED_SELECTOR_VALUES)))
+
+        retired_variables = {
+            "Llm__Provider": "Gemini",
+            "Llm__Gemini__ApiKey": harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+            "Llm__Gemini__Model": harness.SYNTHETIC_RETIRED_MODEL_VALUE,
+            "Llm__Gemini__BaseUrl": harness.SYNTHETIC_RETIRED_ENDPOINT_VALUE,
+        }
+        sentinels = harness.retired_value_sentinels(retired_variables)
+
+        self.assertEqual(
+            {
+                harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                harness.SYNTHETIC_RETIRED_MODEL_VALUE,
+                harness.SYNTHETIC_RETIRED_ENDPOINT_VALUE,
+            },
+            set(sentinels),
+        )
+        # The retired provider NAME is printed by the fixed guidance on purpose.
+        self.assertNotIn("Gemini", sentinels)
 
     def test_process_monitor_captures_non_marker_lines_for_the_value_blind_scan(self) -> None:
         monitor = WindowsDesktopArchiveTests._process_monitor(
@@ -987,12 +1029,47 @@ class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
                 harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
                 environment["Llm__Gemini__ApiKey"],
             )
+            self.assertEqual(
+                harness.SYNTHETIC_RETIRED_MODEL_VALUE,
+                environment["Llm__Gemini__Model"],
+            )
+            self.assertEqual(
+                harness.SYNTHETIC_RETIRED_ENDPOINT_VALUE,
+                environment["Llm__Gemini__BaseUrl"],
+            )
         self.assertEqual(2, request_health.call_count)
         # Each case gets its own data directory so both see a first-run bootstrap.
         self.assertNotEqual(
             selector_case["LOCALAPPDATA"],
             children_case["LOCALAPPDATA"],
         )
+
+    def test_inherited_retired_case_fails_when_the_model_value_is_echoed(self) -> None:
+        leaked = [
+            harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER,
+            f"Ignored model {harness.SYNTHETIC_RETIRED_MODEL_VALUE}",
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            local_app_data = Path(temp).resolve() / "inherited"
+            local_app_data.mkdir()
+            with (
+                mock.patch.object(
+                    harness,
+                    "start_packaged_process",
+                    return_value=self._ready_monitor(
+                        [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+                        leaked,
+                    ),
+                ),
+                mock.patch.object(harness, "request_health_and_spa"),
+                mock.patch.object(harness, "stop_packaged_process"),
+            ):
+                with self.assertRaises(harness.AcceptanceFailure):
+                    harness.verify_inherited_retired_provider_configuration_starts(
+                        Path("C:/package/Taskdeck.Api.exe"),
+                        Path("C:/unrelated-cwd"),
+                        local_app_data,
+                    )
 
     def test_inherited_retired_variables_require_the_ignored_warning(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

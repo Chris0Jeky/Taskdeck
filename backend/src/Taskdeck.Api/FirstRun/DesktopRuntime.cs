@@ -227,6 +227,12 @@ internal static class DesktopRuntime
     /// inherited from the process environment and ignored (#2233). Key names and values are both
     /// withheld; the guidance names the retired variable FAMILY so the user can clean the profile.
     /// <para>
+    /// The guarantee it states is about retention and disclosure, not about reading: the filtering
+    /// provider necessarily loads the environment and compares the <c>Llm:Provider</c> VALUE against
+    /// the retired name in order to recognise it. What is promised is that no retired value is
+    /// retained in configuration, logged, or printed - which is what the filter actually enforces.
+    /// </para>
+    /// <para>
     /// It deliberately makes NO claim about which provider was selected. The warning fires whenever
     /// any retired key was dropped, including a stale retired child sitting beside a valid supported
     /// selector and key — in which case Taskdeck is running on that LIVE provider, not on the
@@ -238,9 +244,9 @@ internal static class DesktopRuntime
         [
             "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored",
             "Taskdeck ignored retired Gemini provider settings left in this profile's environment. " +
-            "No values were read or printed. Remove the leftover Llm__Gemini__* variables (and any " +
-            "Llm__Provider=Gemini) to clear this warning. The provider actually in use is shown in " +
-            "Taskdeck's provider status."
+            "No retired value was kept, logged, or printed. Remove the leftover Llm__Gemini__* " +
+            "variables (and any Llm__Provider=Gemini) to clear this warning. The provider actually " +
+            "in use is shown in Taskdeck's provider status."
         ];
 
     internal static void WriteRetiredProviderConfigurationIgnored()

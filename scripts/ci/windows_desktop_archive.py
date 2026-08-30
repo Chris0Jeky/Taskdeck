@@ -30,6 +30,7 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Mapping
 
 
@@ -48,6 +49,15 @@ RETIRED_PROVIDER_FATAL_GUIDANCE = (
     "No settings were printed."
 )
 SYNTHETIC_RETIRED_PROVIDER_VALUE = "synthetic-secret-never-print"
+# One distinct, non-overlapping sentinel per injected retired setting (#2233 review round 2):
+# a shared value can only ever prove that ONE of them stayed unprinted.
+SYNTHETIC_RETIRED_MODEL_VALUE = "synthetic-retired-model-never-print"
+SYNTHETIC_RETIRED_ENDPOINT_VALUE = "https://synthetic-retired-endpoint-never-print.invalid"
+SYNTHETIC_RETIRED_SELECTOR_VALUES = (
+    SYNTHETIC_RETIRED_PROVIDER_VALUE,
+    SYNTHETIC_RETIRED_MODEL_VALUE,
+    SYNTHETIC_RETIRED_ENDPOINT_VALUE,
+)
 LOOPBACK_URL_TEMPLATE = "http://127.0.0.1:{port}"
 MAX_MONITORED_OUTPUT_LINES = 400
 MAX_MONITORED_OUTPUT_BYTES = 65_536
@@ -580,13 +590,15 @@ def validate_retired_provider_failure_output(output: str) -> None:
 def validate_retired_provider_ignored_warning(
     warning_markers: list[str],
     observed_output: list[str],
-    forbidden_value: str,
+    forbidden_values: Sequence[str],
     output_truncated: bool = False,
 ) -> None:
     """The warning is announced exactly once, and NOTHING printed carries a configured value.
 
     ``observed_output`` is the monitor's bounded capture of every line, not just the marker
     lines, because the marker's human-readable companion line is where a value would leak.
+    ``forbidden_values`` must list EVERY retired value the case injected — key, model, and
+    endpoint each get their own sentinel, so no injected value is left unscanned.
     """
     if warning_markers != [RETIRED_PROVIDER_IGNORED_WARNING_MARKER]:
         raise AcceptanceFailure(
@@ -596,13 +608,26 @@ def validate_retired_provider_ignored_warning(
         raise AcceptanceFailure(
             "The packaged start exceeded its bounded console output, so it could not be scanned."
         )
-    if not forbidden_value:
-        return
+    if not forbidden_values:
+        raise AcceptanceFailure(
+            "The ignored-configuration scan was given no injected values to look for."
+        )
     for line in observed_output:
-        if forbidden_value in line:
-            raise AcceptanceFailure(
-                "The packaged start printed a configured value alongside the ignored-configuration warning."
-            )
+        for forbidden_value in forbidden_values:
+            if forbidden_value and forbidden_value in line:
+                raise AcceptanceFailure(
+                    "The packaged start printed a configured value alongside the "
+                    "ignored-configuration warning."
+                )
+
+
+def retired_value_sentinels(retired_variables: Mapping[str, str]) -> tuple[str, ...]:
+    """Every injected value except the retired provider name, which the guidance prints by design."""
+    return tuple(
+        value
+        for name, value in sorted(retired_variables.items())
+        if name != "Llm__Provider"
+    )
 
 
 def verify_inherited_retired_provider_configuration_starts(
@@ -624,16 +649,16 @@ def verify_inherited_retired_provider_configuration_starts(
             {
                 "Llm__Provider": "Gemini",
                 "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
-                "Llm__Gemini__Model": "retired-model",
-                "Llm__Gemini__BaseUrl": "https://retired.example.invalid",
+                "Llm__Gemini__Model": SYNTHETIC_RETIRED_MODEL_VALUE,
+                "Llm__Gemini__BaseUrl": SYNTHETIC_RETIRED_ENDPOINT_VALUE,
             },
         ),
         (
             "children-only",
             {
                 "Llm__Gemini__ApiKey": SYNTHETIC_RETIRED_PROVIDER_VALUE,
-                "Llm__Gemini__Model": "retired-model",
-                "Llm__Gemini__BaseUrl": "https://retired.example.invalid",
+                "Llm__Gemini__Model": SYNTHETIC_RETIRED_MODEL_VALUE,
+                "Llm__Gemini__BaseUrl": SYNTHETIC_RETIRED_ENDPOINT_VALUE,
             },
         ),
     )
@@ -653,7 +678,10 @@ def verify_inherited_retired_provider_configuration_starts(
             validate_retired_provider_ignored_warning(
                 list(monitor.warning_markers),
                 list(monitor.output_lines),
-                SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                # Every injected value that must never be echoed. The retired provider NAME is
+                # deliberately excluded: the fixed guidance says "Gemini" on purpose so a user can
+                # recognise what to delete, and it is not a configured value.
+                retired_value_sentinels(retired_variables),
                 monitor.output_truncated,
             )
             if "TASKDECK_DESKTOP_FATAL" in monitor.seen_markers:

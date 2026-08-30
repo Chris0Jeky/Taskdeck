@@ -16,12 +16,16 @@ function health(overrides: Partial<ChatProviderHealth> = {}): ChatProviderHealth
   }
 }
 
-function mountBar(chatHealth: ChatProviderHealth | null) {
+function mountBar(
+  chatHealth: ChatProviderHealth | null,
+  overrides: { loadingHealth?: boolean, chatHealthLoadError?: string | null } = {},
+) {
   return mount(LlmHealthStatusBar, {
     props: {
       chatHealth,
       loadingHealth: false,
       chatHealthLoadError: null,
+      ...overrides,
     },
   })
 }
@@ -59,6 +63,28 @@ describe('LlmHealthStatusBar retired-configuration notice (#2233)', () => {
     expect(note.text()).not.toContain('offline')
   })
 
+  it('stays silent while a re-verify is in flight', () => {
+    // The bar hides its provider label while loading, so "the one named above" would point at
+    // nothing; the notice waits for a resolved state (#2233 review round 2).
+    const wrapper = mountBar(
+      health({ retiredProviderConfigurationIgnored: true }),
+      { loadingHealth: true },
+    )
+
+    expect(wrapper.find('[data-llm-health-state="loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="llm-retired-configuration-ignored"]').exists()).toBe(false)
+  })
+
+  it('stays silent after a failed refresh that kept the previous health object', () => {
+    const wrapper = mountBar(
+      health({ retiredProviderConfigurationIgnored: true }),
+      { chatHealthLoadError: 'Taskdeck could not reach the provider status endpoint.' },
+    )
+
+    expect(wrapper.find('[data-llm-health-state="error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="llm-retired-configuration-ignored"]').exists()).toBe(false)
+  })
+
   it('explains that retired settings were found and ignored', () => {
     const wrapper = mountBar(health({ retiredProviderConfigurationIgnored: true }))
 
@@ -66,5 +92,6 @@ describe('LlmHealthStatusBar retired-configuration notice (#2233)', () => {
     expect(note.exists()).toBe(true)
     expect(note.text()).toContain('ignored')
     expect(note.text()).toContain('The provider actually in use is the one named above')
+    expect(note.text()).not.toContain('were read')
   })
 })

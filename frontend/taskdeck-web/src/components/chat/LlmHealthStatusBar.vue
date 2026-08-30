@@ -128,8 +128,14 @@ const llmStatusCopy = computed(() => {
 // not in use. No key names or values are sent by the server, so none can be shown, and the
 // note claims nothing about WHICH provider is running: a stale retired child can sit beside a
 // valid live selector, in which case the provider named above is live.
+// Gated on a RESOLVED health state, matching llmStatusMeta below: while a re-verify is in
+// flight, or after a failed refresh that kept the previous health object, the bar hides the
+// provider label, and "the one named above" would then point at nothing (#2233 review round 2).
 const retiredProviderConfigurationIgnored = computed(
-  () => props.chatHealth?.retiredProviderConfigurationIgnored === true,
+  () =>
+    !props.loadingHealth
+    && !props.chatHealthLoadError
+    && props.chatHealth?.retiredProviderConfigurationIgnored === true,
 )
 
 const llmStatusMeta = computed(() => {
@@ -159,8 +165,8 @@ const llmStatusMeta = computed(() => {
         data-testid="llm-retired-configuration-ignored"
       >
         Taskdeck ignored retired Gemini provider settings left in this profile's environment; no
-        values were read or printed. The provider actually in use is the one named above. Remove
-        those leftover variables to clear this notice.
+        retired value was kept, logged, or printed. The provider actually in use is the one named
+        above. Remove those leftover variables to clear this notice.
       </p>
     </div>
     <span v-if="llmStatusMeta" class="td-chat-status__meta">
