@@ -47,6 +47,11 @@ public static class SettingsRegistration
             ?? new ArtefactStorageSettings();
         services.AddSingleton(artefactStorageSettings);
 
+        // Context Fabric migration switches (ADR-0065). Every flag defaults to the shipped behaviour.
+        var contextFabricSettings = configuration.GetSection("ContextFabric").Get<ContextFabricSettings>()
+            ?? new ContextFabricSettings();
+        services.AddSingleton(contextFabricSettings);
+
         // Extraction permit gate: a process-wide singleton so its permits bound the
         // number of concurrent (and concurrently-abandoned) parse workers box-wide.
         // Built from the same ArtefactStorageSettings bound just above.

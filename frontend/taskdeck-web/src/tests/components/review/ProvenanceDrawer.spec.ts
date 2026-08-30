@@ -122,14 +122,11 @@ describe('ProvenanceDrawer', () => {
   it('renders deterministic capture-triage provenance verbatim (#1273)', () => {
     // Capture triage is a deterministic offline extractor, not an LLM — the drawer must
     // display the extractor identity as-is, without mapping it to an AI provider label.
-    // Note: this is an isolated-component guarantee. The corrected provenance value is
-    // persisted on the capture payload and returned by the capture API today; wiring the
-    // review provenance drawer to actually surface provider/model metadata is tracked separately.
     const deterministicMetadata: ProvenanceMetadata = {
       model: 'capture-triage-v1',
       provider: 'deterministic-extractor',
-      confidence: 1,
-      latencyMs: 0,
+      confidence: null,
+      latencyMs: null,
       promptVersion: 'triage.v1',
     }
     const wrapper = mount(ProvenanceDrawer, {
@@ -145,6 +142,8 @@ describe('ProvenanceDrawer', () => {
     const text = document.querySelector('.prov-drawer__meta')?.textContent ?? ''
     expect(text).toContain('deterministic-extractor/capture-triage-v1')
     expect(text).toContain('triage.v1')
+    expect(text).not.toContain('Confidence')
+    expect(text).not.toContain('Latency')
     wrapper.unmount()
   })
 

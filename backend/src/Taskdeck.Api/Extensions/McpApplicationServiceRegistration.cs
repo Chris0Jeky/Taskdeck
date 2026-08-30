@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 
@@ -35,6 +37,13 @@ public static class McpApplicationServiceRegistration
         // so the MCP container must be able to construct it (only dep is IUnitOfWork via AddInfrastructure).
         services.AddScoped<IAutomationPolicyEngine, AutomationPolicyEngine>();
         services.AddScoped<IProposalRevisionService, ProposalRevisionService>();
+        // ADR-0065: the Context Fabric switches must reach every host that can create a capture —
+        // the standalone MCP stdio/HTTP hosts included — or the dual-write flag would be honoured by
+        // the web API and silently ignored by an MCP server writing the same database. TryAdd keeps
+        // the web host's own registration (AddTaskdeckSettings) authoritative when both run.
+        services.TryAddSingleton(sp =>
+            sp.GetService<IConfiguration>()?.GetSection("ContextFabric").Get<ContextFabricSettings>()
+            ?? new ContextFabricSettings());
         services.AddScoped<CaptureService>();
         services.AddScoped<ICaptureService>(
             sp => sp.GetRequiredService<CaptureService>());

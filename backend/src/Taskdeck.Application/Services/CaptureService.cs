@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -15,14 +16,162 @@ public class CaptureService : ICaptureService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
+    private readonly CaptureIntakeService _captureIntake;
+    private readonly ICaptureStore? _captureStore;
+    private readonly ICaptureBackfillStore? _backfillStore;
+    private readonly ContextFabricSettings _contextFabric;
+    private readonly ILogger<CaptureService>? _logger;
+
+    /// <summary>
+    /// Memoized read-switch decision for this scope (one Inbox request). Cached rather than
+    /// re-queried per item so a page costs one indexed marker lookup, and scoped rather than
+    /// process-wide so a host that completes its backfill while running picks the switch up on the
+    /// next request instead of after a restart.
+    /// </summary>
+    private bool? _readThroughStore;
 
     public CaptureService(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService)
+        : this(unitOfWork, authorizationService, captureStore: null, contextFabricSettings: null)
+    {
+    }
+
+    /// <summary>
+    /// The container-resolved constructor. <paramref name="captureStore"/> receives the ID-preserving
+    /// mirror of every new capture (with its inline text source asset) through the canonical
+    /// <see cref="CaptureIntakeService"/> while <see cref="ContextFabricSettings.DualWriteCaptures"/>
+    /// is on (ADR-0065 §Decision 1, CF-01 #2255); with the default settings, or without a store, the
+    /// service behaves exactly as before.
+    /// </summary>
+    public CaptureService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService authorizationService,
+        ICaptureStore? captureStore,
+        ContextFabricSettings? contextFabricSettings)
+        : this(unitOfWork, authorizationService, captureStore, contextFabricSettings, backfillStore: null, logger: null)
+    {
+    }
+
+    /// <summary>
+    /// The container-resolved constructor. Adds the backfill marker store, which arms the Inbox read
+    /// switch: with the marker complete, a capture's own material (its source text, its capture
+    /// source, its intake time) is read from the durable aggregate through
+    /// <paramref name="captureStore"/> instead of being parsed out of the queue row's payload JSON.
+    /// Without a marker, without a store, or with the flags off, reads stay on the queue row.
+    /// </summary>
+    public CaptureService(
+        IUnitOfWork unitOfWork,
+        IAuthorizationService authorizationService,
+        ICaptureStore? captureStore,
+        ContextFabricSettings? contextFabricSettings,
+        ICaptureBackfillStore? backfillStore,
+        ILogger<CaptureService>? logger)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
+        _captureStore = captureStore;
+        _backfillStore = backfillStore;
+        _contextFabric = contextFabricSettings ?? new ContextFabricSettings();
+        _logger = logger;
+        _captureIntake = new CaptureIntakeService(captureStore, contextFabricSettings);
     }
+
+    /// <summary>
+    /// Whether Inbox reads resolve capture material through <see cref="ICaptureStore"/> for this
+    /// scope. Armed only when the durable aggregate is being written, the read flag is on, a store
+    /// and a marker store are wired, and the ID-preserving backfill has recorded completion on this
+    /// database. Anything else keeps the shipped queue-row read path and says so once, because a
+    /// host whose backfill has not run must never lose a capture from the Inbox.
+    /// </summary>
+    private async ValueTask<bool> ReadThroughStoreAsync(CancellationToken cancellationToken)
+    {
+        if (_readThroughStore.HasValue)
+        {
+            return _readThroughStore.Value;
+        }
+
+        if (!_captureIntake.DualWriteEnabled || !_contextFabric.ReadCapturesFromStore ||
+            _captureStore is null || _backfillStore is null)
+        {
+            _readThroughStore = false;
+            _logger?.LogDebug(
+                "Context Fabric: Inbox reads stay on the legacy queue row " +
+                "(DualWriteCaptures={DualWrite}, ReadCapturesFromStore={ReadFromStore}, store wired={StoreWired}).",
+                _contextFabric.DualWriteCaptures,
+                _contextFabric.ReadCapturesFromStore,
+                _captureStore is not null && _backfillStore is not null);
+            return false;
+        }
+
+        var state = await _backfillStore.GetStateAsync(
+            CaptureBackfillState.LegacyQueueBackfillKey,
+            cancellationToken);
+        _readThroughStore = state?.IsComplete == true;
+        if (!_readThroughStore.Value)
+        {
+            _logger?.LogInformation(
+                "Context Fabric: the ID-preserving capture backfill has not completed on this database, " +
+                "so Inbox reads stay on the legacy queue row.");
+        }
+
+        return _readThroughStore.Value;
+    }
+
+    /// <summary>
+    /// Loads the durable material for a page of queue rows, owner-scoped, through the narrow list
+    /// projection. Ids with no durable row are simply absent, and the caller falls back to that row's
+    /// payload: the read switch never removes an item from the Inbox.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, CaptureListMaterial>> LoadDurableListMaterialAsync(
+        Guid userId,
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0 || !await ReadThroughStoreAsync(cancellationToken))
+        {
+            return EmptyDurableMaterial;
+        }
+
+        var material = await _captureStore!.GetListMaterialForUserAsync(ids, userId, cancellationToken);
+        if (material.Count < ids.Count)
+        {
+            _logger?.LogDebug(
+                "Context Fabric: {Missing} of {Total} Inbox item(s) have no durable capture row yet and " +
+                "were read from their queue row.",
+                ids.Count - material.Count,
+                ids.Count);
+        }
+
+        return material.ToDictionary(entry => entry.Id);
+    }
+
+    private static readonly IReadOnlyDictionary<Guid, CaptureListMaterial> EmptyDurableMaterial =
+        new Dictionary<Guid, CaptureListMaterial>();
+
+    private static CaptureListMaterial? Durable(IReadOnlyDictionary<Guid, CaptureListMaterial> lookup, Guid id) =>
+        lookup.TryGetValue(id, out var material) ? material : null;
+
+    /// <summary>
+    /// The durable aggregate a mutation response may serve. A response is a read like any other, so
+    /// it obeys the same gate: with the read switch disarmed - no marker, no flag, no store - the
+    /// caller must see the queue row, or an operator who turned reads off would still get aggregate
+    /// text back from a keep, an archive or an edit.
+    /// </summary>
+    private async Task<CaptureListMaterial?> ReadableMaterialAsync(
+        Capture? durable,
+        CancellationToken cancellationToken)
+    {
+        if (durable is null || !await ReadThroughStoreAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return ToListMaterial(durable);
+    }
+
+    private static CaptureListMaterial ToListMaterial(Capture capture) =>
+        new(capture.Id, capture.LegacySourceSnapshot, capture.CapturedAtServer, capture.UpdatedAt, capture.CurrentText);
 
     public async Task<Result<CaptureItemDto>> CreateAsync(
         Guid userId,
@@ -77,9 +226,26 @@ public class CaptureService : ICaptureService
             request.UpdatePayload(CaptureRequestContract.SerializePayload(attributedPayload));
 
             await _unitOfWork.LlmQueue.AddAsync(request, cancellationToken);
+
+            // ADR-0065 Decision 1 / CF-01 (#2255): the canonical intake admits the capture into the
+            // durable aggregate under the queue row's own id -- its text and any locator stored as
+            // immutable source assets -- staged into the same unit of work as the queue row, so both
+            // commit together or not at all. This seam does not know the principal kind beyond what
+            // CaptureSourceMapping derives, so it never overrides the mapping's producer.
+            var durable = await _captureIntake.IntakeAsync(
+                request,
+                attributedPayload,
+                userId,
+                dto.BoardId,
+                cancellationToken: cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            return Result.Success(MapToDetailDto(request, attributedPayload));
+            return Result.Success(MapToDetailDto(
+                request,
+                attributedPayload,
+                effectiveBoardId: null,
+                await ReadableMaterialAsync(durable, cancellationToken)));
         }
         catch (DomainException ex)
         {
@@ -157,6 +323,14 @@ public class CaptureService : ICaptureService
                 // capture whose raw BoardId points there. Board-filtered reads are the explicit history
                 // path and deliberately retain archived artifacts. Load the page's boards in one batch,
                 // then let the outer paging loop continue until the requested active limit is filled.
+                // ADR-0065 / CF-01 (#2255): resolve this page's capture material through ICaptureStore
+                // in one owner-scoped batch. A page item with no durable row keeps its queue-row
+                // reading, so the switch can never drop an Inbox item.
+                var durableCaptures = await LoadDurableListMaterialAsync(
+                    userId,
+                    resolvedBatch.Select(candidate => candidate.Item.Id).ToList(),
+                    cancellationToken);
+
                 var archivedBoardIds = new HashSet<Guid>();
                 if (!filter.BoardId.HasValue)
                 {
@@ -193,7 +367,11 @@ public class CaptureService : ICaptureService
                         continue;
                     }
 
-                    var summary = MapToSummaryDto(item, effectivePayload, effectiveBoardId);
+                    var summary = MapToSummaryDto(
+                        item,
+                        effectivePayload,
+                        effectiveBoardId,
+                        Durable(durableCaptures, item.Id));
                     if (filter.Status.HasValue && summary.Status != filter.Status.Value)
                     {
                         continue;
@@ -243,7 +421,31 @@ public class CaptureService : ICaptureService
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
-        return Result.Success(MapToDetailDto(item, effectivePayload, effectiveBoardId));
+        var durable = await LoadDurableCaptureAsync(userId, item.Id, cancellationToken);
+        return Result.Success(MapToDetailDto(item, effectivePayload, effectiveBoardId, durable));
+    }
+
+    /// <summary>Single-item form of <see cref="LoadDurableListMaterialAsync"/>; null keeps the queue-row read.</summary>
+    private async Task<CaptureListMaterial?> LoadDurableCaptureAsync(
+        Guid userId,
+        Guid captureId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ReadThroughStoreAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var capture = await _captureStore!.GetByIdForUserAsync(captureId, userId, cancellationToken);
+        if (capture is null)
+        {
+            _logger?.LogDebug(
+                "Context Fabric: Inbox item {CaptureId} has no durable capture row yet and was read from its queue row.",
+                captureId);
+            return null;
+        }
+
+        return ToListMaterial(capture);
     }
 
     public Task<Result<CaptureItemDto>> KeepAsync(
@@ -625,9 +827,85 @@ public class CaptureService : ICaptureService
         }
 
         item.UpdatePayload(CaptureRequestContract.SerializePayload(updatedPayload));
+
+        // ADR-0065 / CF-01 (#2255): sources are immutable, so a post-intake edit appends a
+        // SUPERSEDING inline text asset and leaves the original readable -- it never rewrites the
+        // stored bytes. The record of what the user first typed or pasted survives every correction,
+        // and a representation can still name the exact asset it was derived from. Staged into the
+        // same unit of work as the queue row, so the edit and the new source commit together.
+        var durable = await SupersedeDurableTextAsync(
+            userId,
+            item.Id,
+            dto.Text,
+            updatedPayload.TitleHint,
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return Result.Success(MapToDetailDto(item, updatedPayload));
+        return Result.Success(MapToDetailDto(
+            item,
+            updatedPayload,
+            effectiveBoardId: null,
+            await ReadableMaterialAsync(durable, cancellationToken)));
+    }
+
+    /// <summary>
+    /// Appends the corrected text as a superseding <c>SourceAsset</c> on the durable capture, if
+    /// there is one, and carries the edited title hint onto the aggregate in the same unit of work.
+    /// Returns the mutated aggregate so the caller's DTO reflects the new current text; null when
+    /// the capture is not (yet) durable, which leaves the queue-row reading intact.
+    /// <para>
+    /// Deliberately NOT gated on <c>DualWriteCaptures</c>. That flag governs whether a NEW capture
+    /// reaches the aggregate; it must never mean that an aggregate which already exists is allowed
+    /// to rot. Turning the flag off and letting a user edit would otherwise leave stale text behind,
+    /// and turning it back on would serve that text through the read switch.
+    /// </para>
+    /// </summary>
+    private async Task<Capture?> SupersedeDurableTextAsync(
+        Guid userId,
+        Guid captureId,
+        string text,
+        string? titleHint,
+        CancellationToken cancellationToken)
+    {
+        if (_captureStore is null)
+        {
+            return null;
+        }
+
+        var capture = await _captureStore.GetByIdForUpdateAsync(captureId, userId, cancellationToken);
+        if (capture is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            capture.SupersedeInlineTextSource(text);
+            // The queue payload carries the edited title hint, so the aggregate has to take it too --
+            // otherwise UserTitle silently keeps the pre-edit value forever.
+            capture.Retitle(titleHint);
+        }
+        catch (DomainException ex)
+        {
+            // The durable side must never be the reason an operation the queue row accepted fails.
+            // The aggregate is now behind its queue row. The divergence guard on the read path
+            // detects that and the reconcile pass repairs it on the next start -- PROVIDED no
+            // disposition change intervenes first. Keep, Archive and Reactivate all Touch the
+            // aggregate, which stamps it newer than the queue row that moved past it and defeats
+            // both the read guard and the divergence join, masking the divergence indefinitely.
+            // Tracked as #2347; until that lands, a divergence followed by a disposition write stays
+            // hidden.
+            _logger?.LogWarning(
+                ex,
+                "Context Fabric: could not record a superseding source for capture {CaptureId}; " +
+                "the edit still applied to the queue row and the backfill will reconcile it.",
+                captureId);
+            return null;
+        }
+
+        await _captureStore.UpdateAsync(capture, cancellationToken);
+        return capture;
     }
 
     private async Task<Result> CancelInternalAsync(
@@ -651,6 +929,13 @@ public class CaptureService : ICaptureService
         try
         {
             item.Cancel();
+
+            // The user's disposition is a durable column now, not JSON on the queue row: putting a
+            // capture away records Archived on the aggregate's disposition axis in the same unit of
+            // work. Processing and action outcomes are deliberately left standing -- archiving is a
+            // decision about the Inbox, not an erasure of what was produced (ADR-0065 Decision 1).
+            await ApplyDurableDispositionAsync(userId, item.Id, CaptureDisposition.Archived, cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             return Result.Success();
         }
@@ -658,6 +943,62 @@ public class CaptureService : ICaptureService
         {
             return Result.Failure(ex.ErrorCode, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Records the user's disposition on the durable aggregate's own axis. Returns the mutated
+    /// aggregate, or null when the capture is not durable (nothing to record) - never an error: a
+    /// disposition the queue row accepted must not fail because the mirror is behind.
+    /// </summary>
+    private async Task<Capture?> ApplyDurableDispositionAsync(
+        Guid userId,
+        Guid captureId,
+        CaptureDisposition disposition,
+        CancellationToken cancellationToken)
+    {
+        // Not gated on DualWriteCaptures, for the same reason as SupersedeDurableTextAsync: the flag
+        // decides whether new captures reach the aggregate, never whether an existing one may drift.
+        if (_captureStore is null)
+        {
+            return null;
+        }
+
+        var capture = await _captureStore.GetByIdForUpdateAsync(captureId, userId, cancellationToken);
+        if (capture is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            switch (CaptureUserDispositionMapping.FromLegacy(disposition))
+            {
+                case CaptureUserDisposition.Archived:
+                    capture.Archive();
+                    break;
+                case CaptureUserDisposition.Kept:
+                    capture.Keep();
+                    break;
+                default:
+                    capture.Reactivate();
+                    break;
+            }
+        }
+        catch (DomainException ex)
+        {
+            // Same rule as every other durable write on a shipped path: never fail where the queue
+            // row succeeded. The queue row has already been updated by this point.
+            _logger?.LogWarning(
+                ex,
+                "Context Fabric: could not record disposition {Disposition} on capture {CaptureId}; " +
+                "the queue row still carries it.",
+                disposition,
+                captureId);
+            return null;
+        }
+
+        await _captureStore.UpdateAsync(capture, cancellationToken);
+        return capture;
     }
 
     private async Task<Result<CaptureItemDto>> SetDispositionAsync(
@@ -683,7 +1024,20 @@ public class CaptureService : ICaptureService
             (status is CaptureStatus.New or CaptureStatus.Failed ||
              disposition == CaptureDisposition.Archived && status == CaptureStatus.Ignored))
         {
-            return Result.Success(MapToDetailDto(item, payload));
+            // The idempotent return still repairs the aggregate. The queue row already carries this
+            // disposition, so a durable row that does not is the residue of an interrupted attempt --
+            // and this early exit is the path every retry takes, so it has to be the path that heals.
+            var repaired = await ApplyDurableDispositionAsync(userId, item.Id, disposition, cancellationToken);
+            if (repaired is not null)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            return Result.Success(MapToDetailDto(
+                item,
+                payload,
+                effectiveBoardId: null,
+                await ReadableMaterialAsync(repaired, cancellationToken)));
         }
 
         if (status is not CaptureStatus.New and not CaptureStatus.Failed)
@@ -704,8 +1058,15 @@ public class CaptureService : ICaptureService
                 "Capture item already has a proposal in review or applied work");
         }
 
+        var transactionOpen = false;
         try
         {
+            // The queue update below is immediate raw SQL while the aggregate commits through the
+            // unit of work. Without one transaction around both, a crash in between leaves the
+            // durable disposition behind the row that describes it.
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionOpen = true;
+
             var expectedStatus = item.Status;
             var expectedUpdatedAt = item.UpdatedAt;
             var updatedPayload = payload with
@@ -733,16 +1094,47 @@ public class CaptureService : ICaptureService
                 cancellationToken);
             if (!updated)
             {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                transactionOpen = false;
                 return Result.Failure<CaptureItemDto>(
                     ErrorCodes.Conflict,
                     "Capture item changed while its disposition was being recorded");
             }
 
-            return Result.Success(MapToDetailDto(item, updatedPayload));
+            // Only after the conditional queue-row update actually won: a lost race must not leave
+            // the durable disposition axis ahead of the row it describes.
+            var durable = await ApplyDurableDispositionAsync(userId, item.Id, disposition, cancellationToken);
+            if (durable is not null)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            transactionOpen = false;
+
+            return Result.Success(MapToDetailDto(
+                item,
+                updatedPayload,
+                effectiveBoardId: null,
+                await ReadableMaterialAsync(durable, cancellationToken)));
         }
         catch (DomainException ex)
         {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
             return Result.Failure<CaptureItemDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
+            throw;
         }
     }
 
@@ -761,9 +1153,58 @@ public class CaptureService : ICaptureService
         return Result.Failure<CaptureSource>(ErrorCodes.ValidationError, "Invalid capture source value");
     }
 
-    private static CaptureItemSummaryDto MapToSummaryDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
+    /// <summary>
+    /// The capture material the read path serves, resolved from the durable aggregate when one
+    /// exists and from the queue row's payload otherwise (ADR-0065; CF-01 <c>#2255</c>).
+    /// <para>
+    /// <b>What the aggregate owns.</b> The immutable source text (its newest asset that nothing has
+    /// superseded), the capture source snapshot and the server intake time - the three things the
+    /// Inbox used to obtain by parsing <c>LlmRequest.Payload</c>. Everything else the DTOs carry is
+    /// still job state (queue status, processed-at, retry count, error message) or has no column
+    /// yet (triage provenance, suggestion metadata, the disposition receipt's who/when/where); those
+    /// keep their shipped source until the slices that own them land, which is what keeps the DTOs
+    /// byte-identical across the switch.
+    /// </para>
+    /// </summary>
+    private (string Text, CaptureSource Source, DateTimeOffset CreatedAt) ResolveCaptureMaterial(
+        LlmRequest item,
+        CapturePayloadV1 payload,
+        CaptureListMaterial? durable)
     {
-        var excerpt = BuildExcerpt(payload.Text);
+        if (durable is null || durable.CurrentText is null)
+        {
+            return (payload.Text, payload.Source, item.CreatedAt);
+        }
+
+        // Divergence guard. The aggregate is authoritative only while it still agrees with the row
+        // it was admitted from. If the texts differ AND the queue row has been written since the
+        // capture last was, the queue row is the newer writer and serving the aggregate would show
+        // stale material -- which is exactly what happens for the window in which dual-write is off,
+        // or after a durable write that failed and was swallowed. Prefer the newer writer and say so;
+        // the reconcile pass repairs the aggregate on the next start.
+        if (!string.Equals(durable.CurrentText, payload.Text, StringComparison.Ordinal) &&
+            item.UpdatedAt > durable.UpdatedAt)
+        {
+            _logger?.LogWarning(
+                "Context Fabric: capture {CaptureId} has diverged from its queue row (queue updated {QueueUpdatedAt}, " +
+                "capture updated {CaptureUpdatedAt}); serving the queue row until the backfill reconciles it.",
+                item.Id,
+                item.UpdatedAt,
+                durable.UpdatedAt);
+            return (payload.Text, payload.Source, item.CreatedAt);
+        }
+
+        return (durable.CurrentText, durable.LegacySourceSnapshot, durable.CapturedAtServer);
+    }
+
+    private CaptureItemSummaryDto MapToSummaryDto(
+        LlmRequest item,
+        CapturePayloadV1 payload,
+        Guid? effectiveBoardId = null,
+        CaptureListMaterial? durable = null)
+    {
+        var material = ResolveCaptureMaterial(item, payload, durable);
+        var excerpt = BuildExcerpt(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemSummaryDto(
@@ -771,17 +1212,22 @@ public class CaptureService : ICaptureService
             item.UserId,
             effectiveBoardId ?? item.BoardId,
             status,
-            payload.Source,
+            material.Source,
             excerpt,
-            item.CreatedAt,
+            material.CreatedAt,
             item.ProcessedAt,
             item.ErrorMessage,
             payload.Disposition);
     }
 
-    private static CaptureItemDto MapToDetailDto(LlmRequest item, CapturePayloadV1 payload, Guid? effectiveBoardId = null)
+    private CaptureItemDto MapToDetailDto(
+        LlmRequest item,
+        CapturePayloadV1 payload,
+        Guid? effectiveBoardId = null,
+        CaptureListMaterial? durable = null)
     {
-        var excerpt = BuildExcerpt(payload.Text);
+        var material = ResolveCaptureMaterial(item, payload, durable);
+        var excerpt = BuildExcerpt(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemDto(
@@ -789,10 +1235,10 @@ public class CaptureService : ICaptureService
             item.UserId,
             effectiveBoardId ?? item.BoardId,
             status,
-            payload.Source,
-            payload.Text,
+            material.Source,
+            material.Text,
             excerpt,
-            item.CreatedAt,
+            material.CreatedAt,
             item.ProcessedAt,
             item.RetryCount,
             item.ErrorMessage,

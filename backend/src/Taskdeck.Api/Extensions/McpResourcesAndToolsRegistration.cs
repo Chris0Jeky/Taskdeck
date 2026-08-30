@@ -10,6 +10,7 @@ using Taskdeck.Api.Mcp;
 using Taskdeck.Api.Middleware;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure.Mcp;
 
 namespace Taskdeck.Api.Extensions;
 
@@ -72,10 +73,20 @@ public static class McpResourcesAndToolsRegistration
                     if (!required.HasValue)
                         return CreateToolAccessDeniedResult();
 
-                    var granted = await GetValidatedScopesAsync(
-                        context.Services,
-                        context.User,
-                        cancellationToken);
+                    ApiKeyScope granted;
+                    try
+                    {
+                        granted = await GetValidatedScopesAsync(
+                            context.Services,
+                            context.User,
+                            cancellationToken,
+                            preserveStdioIdentityFailure: true);
+                    }
+                    catch (StdioIdentityResolutionException exception)
+                    {
+                        return CreateToolErrorResult(exception.Message);
+                    }
+
                     if (!ApiKeyScopeRules.Includes(granted, required.Value))
                         return CreateToolAccessDeniedResult();
 
@@ -192,9 +203,14 @@ public static class McpResourcesAndToolsRegistration
 
     private static CallToolResult CreateToolAccessDeniedResult()
     {
+        return CreateToolErrorResult(AccessDeniedMessage);
+    }
+
+    private static CallToolResult CreateToolErrorResult(string message)
+    {
         return new CallToolResult
         {
-            Content = [new TextContentBlock { Text = AccessDeniedMessage }],
+            Content = [new TextContentBlock { Text = message }],
             IsError = true
         };
     }
@@ -202,7 +218,8 @@ public static class McpResourcesAndToolsRegistration
     private static async Task<ApiKeyScope> GetValidatedScopesAsync(
         IServiceProvider? services,
         ClaimsPrincipal? principal,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preserveStdioIdentityFailure = false)
     {
         var scopeClaim = principal?.FindFirst(ApiKeyMiddleware.ScopesClaimType)?.Value;
         if (scopeClaim is not null)
@@ -229,6 +246,10 @@ public static class McpResourcesAndToolsRegistration
         try
         {
             current = await provider.GetCurrentContextAsync(cancellationToken);
+        }
+        catch (StdioIdentityResolutionException) when (preserveStdioIdentityFailure)
+        {
+            throw;
         }
         catch (InvalidOperationException)
         {

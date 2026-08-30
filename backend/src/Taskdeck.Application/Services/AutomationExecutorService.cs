@@ -57,11 +57,37 @@ public class AutomationExecutorService : IAutomationExecutorService
         return receipt.IsSuccess ? Result.Success() : Result.Failure(receipt.ErrorCode, receipt.ErrorMessage);
     }
 
-    public async Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+    public Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
         Guid proposalId,
         string idempotencyKey,
         Guid? callerUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ExecuteProposalWithReceiptCoreAsync(
+            proposalId,
+            idempotencyKey,
+            callerUserId,
+            revisionExpectation: null,
+            cancellationToken);
+
+    public Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+        Guid proposalId,
+        string idempotencyKey,
+        Guid? callerUserId,
+        ProposalExecutionRevisionExpectation revisionExpectation,
+        CancellationToken cancellationToken = default) =>
+        ExecuteProposalWithReceiptCoreAsync(
+            proposalId,
+            idempotencyKey,
+            callerUserId,
+            revisionExpectation,
+            cancellationToken);
+
+    private async Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptCoreAsync(
+        Guid proposalId,
+        string idempotencyKey,
+        Guid? callerUserId,
+        ProposalExecutionRevisionExpectation? revisionExpectation,
+        CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
 
@@ -91,6 +117,48 @@ public class AutomationExecutorService : IAutomationExecutorService
         }
 
         var proposal = proposalResult.Value;
+
+        // Batch ACL preload is only a phase-one disclosure/fast-fail snapshot. Recheck the human
+        // caller against this freshly loaded proposal before status, idempotency, revision, or
+        // linked-capture decisions. The existing in-transaction check below remains the final bar
+        // for operations; this earlier bar closes the already-Applied path, which has no operation
+        // transaction but can still write capture-sync metadata.
+        if (callerUserId is Guid requestCallerId)
+        {
+            var callerPermission = proposal.BoardId.HasValue
+                ? await _policyEngine.ValidateBoardAccessAsync(
+                    requestCallerId,
+                    proposal.BoardId,
+                    BoardAccessBar.Write,
+                    cancellationToken)
+                : proposal.RequestedByUserId == requestCallerId
+                    ? Result.Success()
+                    : Result.Failure(
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to access this proposal.");
+
+            if (!callerPermission.IsSuccess)
+            {
+                _logger?.LogWarning(
+                    "Automation proposal execution refused for proposal {ProposalId}: caller {CallerUserId} no longer has board write access",
+                    proposalId,
+                    requestCallerId);
+                return Result.Failure<ProposalExecutionReceipt>(
+                    callerPermission.ErrorCode,
+                    callerPermission.ErrorMessage);
+            }
+        }
+
+        // The expectation object itself distinguishes an explicit expected null pin from callers
+        // that supplied no expectation (single execute). Compare it to this SAME fresh proposal
+        // lookup before the already-applied sync and before any operation can run.
+        if (revisionExpectation is not null &&
+            proposal.ApprovedRevisionId != revisionExpectation.ApprovedRevisionId)
+        {
+            return Result.Failure<ProposalExecutionReceipt>(
+                ErrorCodes.Conflict,
+                "The approved revision changed since this proposal was selected. Review it again.");
+        }
 
         // Idempotent behavior across requests/processes: already-applied proposals are treated as success.
         if (proposal.Status == ProposalStatus.Applied)

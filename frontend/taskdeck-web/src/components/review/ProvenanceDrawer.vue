@@ -6,23 +6,17 @@ import TranscriptEvidenceViewer from './TranscriptEvidenceViewer.vue'
 import {
   TRANSCRIPT_EVIDENCE_SOURCE_TYPE,
   type EvidenceLink as ProvenanceEvidenceLink,
+  type ProvenanceMetadata,
   type ProvenanceRow,
   type ProvenanceWeight,
 } from '../../composables/usePaperReviewSelectors'
 
-export interface ProvenanceMetadata {
-  model: string
-  provider: string
-  confidence: number
-  latencyMs: number
-  promptVersion: string | null
-}
-
 /**
  * Re-exported from its canonical home in `usePaperReviewSelectors` so existing
- * importers keep resolving `EvidenceLink` from this component.
+ * importers keep resolving these types from this component.
  */
 export type EvidenceLink = ProvenanceEvidenceLink
+export type { ProvenanceMetadata }
 
 /**
  * Provenance drawer for the Paper deep-Review surface: source rows, model metadata, and the
@@ -51,6 +45,13 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const providerModelLabel = computed(() => {
+  if (!props.metadata) return ''
+  return props.metadata.model
+    ? `${props.metadata.provider}/${props.metadata.model}`
+    : props.metadata.provider
+})
 
 const drawerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
@@ -265,9 +266,9 @@ onUnmounted(() => {
           <div v-if="metadata" class="prov-drawer__meta">
             <div class="prov-drawer__meta-row">
               <span class="prov-drawer__meta-label">{{ $t('review.provenanceDrawer.meta.model') }}</span>
-              <span class="prov-drawer__meta-value">{{ metadata.provider }}/{{ metadata.model }}</span>
+              <span class="prov-drawer__meta-value">{{ providerModelLabel }}</span>
             </div>
-            <div class="prov-drawer__meta-row">
+            <div v-if="metadata.confidence !== null" class="prov-drawer__meta-row">
               <span class="prov-drawer__meta-label">{{
                 $t('review.provenanceDrawer.meta.confidence')
               }}</span>
@@ -277,7 +278,7 @@ onUnmounted(() => {
                 })
               }}</span>
             </div>
-            <div class="prov-drawer__meta-row">
+            <div v-if="metadata.latencyMs !== null" class="prov-drawer__meta-row">
               <span class="prov-drawer__meta-label">{{
                 $t('review.provenanceDrawer.meta.latency')
               }}</span>

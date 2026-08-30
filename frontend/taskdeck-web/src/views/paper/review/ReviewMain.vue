@@ -21,6 +21,7 @@ import type {
   ConflictRow,
   EvidenceLink,
   HistoryRow,
+  ProvenanceMetadata,
   ProvenanceRow,
   SideEffects,
 } from '../../../composables/usePaperReviewSelectors'
@@ -54,6 +55,10 @@ const props = withDefaults(
     fields: FieldDiff[]
     changeSubTitle: string
     provenance: ProvenanceRow[]
+    /** Server-recorded producer metadata for this capture-linked proposal. */
+    metadata?: ProvenanceMetadata | null
+    /** Suppress only the inline producer sentence for an effective saved revision. */
+    suppressProducerFootnote?: boolean
     /** Evidence links behind the provenance rows; drives the drawer's transcript deep link. */
     evidenceLinks?: EvidenceLink[]
     proposalId: string
@@ -85,12 +90,15 @@ const props = withDefaults(
     readOnly: false,
     decisionReceipt: null,
     appliedProposal: null,
+    metadata: null,
+    suppressProducerFootnote: false,
   },
 )
 
 const { t } = useI18n()
 const reviewMainEl = ref<HTMLElement | null>(null)
 const decisionReceiptEl = ref<HTMLElement | null>(null)
+const provenanceExpanded = ref(false)
 
 const isAppliedRecord = computed(
   () =>
@@ -118,6 +126,12 @@ const emit = defineEmits<{
   (event: 'cancel-edit'): void
   (event: 'report', proposalId: string): void
 }>()
+
+function toggleProvenance() {
+  provenanceExpanded.value = !provenanceExpanded.value
+}
+
+defineExpose({ toggleProvenance })
 
 const hasNumericConfidence = computed(
   () =>
@@ -321,9 +335,13 @@ watch(
 
     <ReviewProvenance
       :rows="provenance"
+      :metadata="metadata"
+      :suppress-producer-footnote="suppressProducerFootnote"
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
       :read-only="readOnly"
+      :details-expanded="provenanceExpanded"
+      @update:details-expanded="provenanceExpanded = $event"
       @report="emit('report', $event)"
     />
     <ReviewSideEffects :data="sideEffects" />

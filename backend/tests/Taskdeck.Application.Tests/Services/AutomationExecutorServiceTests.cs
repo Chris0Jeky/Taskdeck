@@ -550,6 +550,87 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposalWithReceipt_WhenAlreadyAppliedCallerLostAccess_RefusesBeforeCaptureSync()
+    {
+        var proposalId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var captureId = Guid.NewGuid();
+        var proposal = CreateApprovedProposal(
+            proposalId,
+            requesterId,
+            boardId,
+            new List<ProposalOperationDto>()) with
+        {
+            SourceType = ProposalSourceType.Queue,
+            SourceReferenceId = captureId.ToString(),
+            Status = ProposalStatus.Applied,
+            AppliedAt = DateTime.UtcNow.AddMinutes(-1)
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidateBoardAccessAsync(
+                callerId,
+                boardId,
+                BoardAccessBar.Write,
+                default))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "Caller access was revoked"));
+
+        var result = await _service.ExecuteProposalWithReceiptAsync(
+            proposalId,
+            "execution-key",
+            callerId,
+            new ProposalExecutionRevisionExpectation(ApprovedRevisionId: null));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _llmQueueRepoMock.Verify(
+            repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "a revoked caller must not repair linked-capture metadata on an already-applied proposal");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExecuteProposalWithReceipt_WhenExplicitNullPinNoLongerMatches_ConflictsBeforeExecution()
+    {
+        var proposalId = Guid.NewGuid();
+        var requesterId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var freshRevisionId = Guid.NewGuid();
+        var proposal = CreateApprovedProposal(
+            proposalId,
+            requesterId,
+            boardId,
+            new List<ProposalOperationDto>()) with
+        {
+            ApprovedRevisionId = freshRevisionId
+        };
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+
+        var result = await _service.ExecuteProposalWithReceiptAsync(
+            proposalId,
+            "execution-key",
+            callerUserId: null,
+            revisionExpectation: new ProposalExecutionRevisionExpectation(ApprovedRevisionId: null));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("approved revision changed");
+        _proposalRevisionRepoMock.Verify(
+            repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "the unconsented revision must not be materialized");
+        _policyEngineMock.Verify(engine => engine.ValidatePolicy(It.IsAny<ProposalDto>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldSkipCaptureConversionSync_WhenLinkedCaptureBelongsToDifferentUser()
     {
         var proposalId = Guid.NewGuid();

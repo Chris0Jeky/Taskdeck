@@ -31,6 +31,7 @@ public static class OptionsValidationRegistration
         services.RegisterValidatedOptions<AnalyticsSettings>(configuration, "Analytics");
         services.RegisterValidatedOptions<MfaPolicySettings>(configuration, "MfaPolicy");
         services.RegisterValidatedOptions<ArtefactStorageSettings>(configuration, "Artefacts");
+        services.RegisterValidatedOptions<ContextFabricSettings>(configuration, "ContextFabric");
 
         // ── Settings from LlmProviderRegistration ──────────────────────────
 

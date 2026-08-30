@@ -491,7 +491,9 @@ export function useReviewProposals() {
       if (requestId !== latestProposalLoadRequestId) return
       proposals.value = loadedProposals
       // An explicit load that succeeded is proof access is back.
+      const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
+      if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
@@ -509,6 +511,11 @@ export function useReviewProposals() {
 
   let refreshInterval: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
+  // A 403 pauses the configured poll without making it forget how the owning
+  // surface asked it to behave. Permanent stop/disposal clears this state so a
+  // late successful explicit load cannot resurrect a surface that has left.
+  let queueRefreshConfigured = false
+  let queueRefreshSuspendedForPermission = false
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
   /**
@@ -661,7 +668,7 @@ export function useReviewProposals() {
         // authorises, and let the surface say so.
         queueAccessRevoked.value = true
         proposals.value = []
-        stopQueueRefresh()
+        suspendQueueRefreshForPermission()
         return
       }
       logError('Review queue background refresh failed:', e)
@@ -686,6 +693,43 @@ export function useReviewProposals() {
     return refreshProposals()
   }
 
+  function clearQueueRefreshRuntime() {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    if (refreshInterval !== null) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+    if (refreshAbort) {
+      // Cancel a read that is still open, so a late answer cannot write into a
+      // suspended or departed surface.
+      refreshAbort.abort()
+      refreshAbort = null
+    }
+  }
+
+  function armQueueRefresh() {
+    if (!queueRefreshConfigured || refreshInterval !== null) return
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onRefreshVisibilityChange)
+    }
+    refreshInterval = setInterval(() => {
+      void maybeRefresh()
+    }, REVIEW_QUEUE_REFRESH_MS)
+  }
+
+  function suspendQueueRefreshForPermission() {
+    clearQueueRefreshRuntime()
+    queueRefreshSuspendedForPermission = queueRefreshConfigured
+  }
+
+  function resumeQueueRefreshAfterPermissionRecovery() {
+    if (!queueRefreshConfigured || !queueRefreshSuspendedForPermission) return
+    queueRefreshSuspendedForPermission = false
+    armQueueRefresh()
+  }
+
   /**
    * Starts the bounded, visibility-aware queue poll. `shouldRefresh` lets the
    * owning surface hold a tick while the reviewer is mid-decision (a confirm
@@ -700,33 +744,24 @@ export function useReviewProposals() {
     shouldRefresh?: () => boolean,
     hooks?: { onQueueReplaced?: () => void },
   ) {
-    // Guard against double-start exactly as startClock does: a second call
-    // would overwrite the handle and leak the first interval forever.
-    if (refreshInterval !== null) return
+    // Guard against double-start exactly as startClock does. Configuration can
+    // outlive the interval while a 403 suspension is active, so key this guard
+    // to configuration rather than the runtime handle.
+    if (queueRefreshConfigured) return
+    queueRefreshConfigured = true
     shouldRefreshNow = shouldRefresh ?? null
     onQueueReplacedByPoll = hooks?.onQueueReplaced ?? null
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onRefreshVisibilityChange)
+    if (queueAccessRevoked.value) {
+      queueRefreshSuspendedForPermission = true
+      return
     }
-    refreshInterval = setInterval(() => {
-      void maybeRefresh()
-    }, REVIEW_QUEUE_REFRESH_MS)
+    armQueueRefresh()
   }
 
   function stopQueueRefresh() {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', onRefreshVisibilityChange)
-    }
-    if (refreshInterval !== null) {
-      clearInterval(refreshInterval)
-      refreshInterval = null
-    }
-    if (refreshAbort) {
-      // Cancel a read that is still open, so a late answer cannot write into a
-      // surface that has already been left.
-      refreshAbort.abort()
-      refreshAbort = null
-    }
+    clearQueueRefreshRuntime()
+    queueRefreshConfigured = false
+    queueRefreshSuspendedForPermission = false
     shouldRefreshNow = null
     onQueueReplacedByPoll = null
   }

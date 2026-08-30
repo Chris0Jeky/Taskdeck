@@ -8,26 +8,26 @@ namespace Taskdeck.Application.Services;
 /// <inheritdoc cref="IBatchProposalExecutionService"/>
 public sealed class BatchProposalExecutionService : IBatchProposalExecutionService
 {
-    private readonly IAutomationProposalService _proposalService;
+    private readonly IProposalExecutionAuthorizationSnapshotReader _snapshotReader;
     private readonly IAutomationExecutorService _executorService;
     private readonly IAuthorizationService _authorizationService;
     private readonly ILogger<BatchProposalExecutionService>? _logger;
 
     public BatchProposalExecutionService(
-        IAutomationProposalService proposalService,
+        IProposalExecutionAuthorizationSnapshotReader snapshotReader,
         IAutomationExecutorService executorService,
         IAuthorizationService authorizationService)
-        : this(proposalService, executorService, authorizationService, logger: null)
+        : this(snapshotReader, executorService, authorizationService, logger: null)
     {
     }
 
     public BatchProposalExecutionService(
-        IAutomationProposalService proposalService,
+        IProposalExecutionAuthorizationSnapshotReader snapshotReader,
         IAutomationExecutorService executorService,
         IAuthorizationService authorizationService,
         ILogger<BatchProposalExecutionService>? logger)
     {
-        _proposalService = proposalService;
+        _snapshotReader = snapshotReader;
         _executorService = executorService;
         _authorizationService = authorizationService;
         _logger = logger;
@@ -45,10 +45,13 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 "At least one proposal is required");
         }
 
-        // Phase 1 - resolve every selected proposal. A resolution failure is that item's outcome;
-        // it never aborts the batch, because a stale row in one reviewer's selection must not block
-        // the proposals they can legitimately apply.
-        var proposals = new Dictionary<Guid, ProposalDto>();
+        // Phase 1 - resolve only the authorization/pin fields through an untracked projection.
+        // Keeping proposal entities out of this request's change tracker is load-bearing: another
+        // request may apply an item while this batch is still preloading, and the executor's later
+        // per-item status/idempotency lookup must see that persisted Apply rather than a stale
+        // Approved entity from here. A resolution failure is that item's outcome; it never aborts
+        // the batch, because one stale review selection must not block legitimate neighbours.
+        var proposals = new Dictionary<Guid, ProposalExecutionAuthorizationSnapshot>();
         var resolutionFailures = new Dictionary<Guid, (string ErrorCode, string ErrorMessage)>();
         foreach (var selection in selections)
         {
@@ -58,11 +61,13 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 continue;
             }
 
-            var proposalResult = await _proposalService.GetProposalByIdAsync(selection.ProposalId, cancellationToken);
-            if (proposalResult.IsSuccess)
-                proposals[selection.ProposalId] = proposalResult.Value;
+            var proposal = await _snapshotReader.FindAsync(selection.ProposalId, cancellationToken);
+            if (proposal is not null)
+                proposals[selection.ProposalId] = proposal;
             else
-                resolutionFailures[selection.ProposalId] = (proposalResult.ErrorCode, proposalResult.ErrorMessage);
+                resolutionFailures[selection.ProposalId] = (
+                    ErrorCodes.NotFound,
+                    $"Proposal with ID {selection.ProposalId} not found");
         }
 
         // Phase 2 - one batched ACL read for every distinct board. Single execute asks
@@ -130,7 +135,7 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
     private async Task<BatchExecuteProposalResultDto> ExecuteOneAsync(
         BatchExecuteProposalSelectionDto selection,
         Guid callerUserId,
-        IReadOnlyDictionary<Guid, ProposalDto> proposals,
+        IReadOnlyDictionary<Guid, ProposalExecutionAuthorizationSnapshot> proposals,
         IReadOnlyDictionary<Guid, (string ErrorCode, string ErrorMessage)> resolutionFailures,
         IReadOnlySet<Guid> writableBoardIds,
         IReadOnlySet<Guid> readableBoardIds,
@@ -200,6 +205,7 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             selection.ProposalId,
             selection.IdempotencyKey,
             callerUserId,
+            new ProposalExecutionRevisionExpectation(selection.ApprovedRevisionId),
             cancellationToken);
         if (!receipt.IsSuccess)
         {

@@ -63,6 +63,17 @@ describe('captureApi', () => {
     expect(http.get).toHaveBeenCalledWith('/capture/items/capture-42')
   })
 
+  it('forwards an abort signal when loading capture item detail', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'capture-42' } })
+    const controller = new AbortController()
+
+    await captureApi.getItem('capture-42', { signal: controller.signal })
+
+    expect(http.get).toHaveBeenCalledWith('/capture/items/capture-42', {
+      signal: controller.signal,
+    })
+  })
+
   it('posts keep and archive dispositions and returns their receipts', async () => {
     vi.mocked(http.post)
       .mockResolvedValueOnce({ data: { id: 'capture-2', disposition: { kind: 'Kept' } } })

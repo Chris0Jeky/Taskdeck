@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Taskdeck Context Fabric architecture</title>
+  <desc id="desc">Inputs enter a durable capture and source layer, pass through capability-based processing and immutable representations, become semantic candidates and context bindings, then change sets evaluated by policy before execution and work-state receipts.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.13"/></filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="#9b3f1b"/></marker>
+    <style>
+      .bg{fill:#f2ecdf}.panel{fill:#fffaf0;stroke:#1f1b18;stroke-width:2}.stage{fill:#fffaf0;stroke:#1f1b18;stroke-width:2;filter:url(#shadow)}
+      .accent{fill:#9b3f1b}.ink{fill:#1f1b18}.muted{fill:#6e665f}.line{stroke:#9b3f1b;stroke-width:4;fill:none;marker-end:url(#arrow)}
+      .softline{stroke:#b6a99a;stroke-width:2;stroke-dasharray:7 8;fill:none}.title{font:700 46px Georgia,serif}.subtitle{font:20px Arial,sans-serif}.h{font:700 22px Arial,sans-serif}.t{font:16px Arial,sans-serif}.small{font:14px Arial,sans-serif}.mono{font:13px Consolas,monospace}
+    </style>
+  </defs>
+  <rect class="bg" width="1800" height="1120"/>
+  <text x="90" y="76" class="title ink">Taskdeck Context Fabric</text>
+  <text x="92" y="112" class="subtitle muted">Capture → Understand → Resolve → Change → Verify</text>
+
+  <!-- Inputs -->
+  <rect x="72" y="170" rx="16" ry="16" width="220" height="120" class="stage"/>
+  <text x="102" y="209" class="h ink">Inputs</text>
+  <text x="102" y="240" class="t muted">Text · Voice · Images</text>
+  <text x="102" y="265" class="t muted">Files · Agents · Connectors</text>
+
+  <!-- Capture -->
+  <rect x="365" y="148" rx="16" ry="16" width="260" height="164" class="stage"/>
+  <rect x="365" y="148" rx="16" ry="16" width="260" height="12" class="accent"/>
+  <text x="397" y="198" class="h ink">Capture</text>
+  <text x="397" y="228" class="t muted">Durable Inbox object</text>
+  <text x="397" y="253" class="t muted">Boardless · Offline-safe</text>
+  <text x="397" y="278" class="t muted">Remember · Organize · Act</text>
+
+  <!-- Sources -->
+  <rect x="700" y="148" rx="16" ry="16" width="270" height="164" class="stage"/>
+  <text x="732" y="198" class="h ink">Source assets</text>
+  <text x="732" y="228" class="t muted">Immutable raw truth</text>
+  <text x="732" y="253" class="t muted">Content-addressed blobs</text>
+  <text x="732" y="278" class="t muted">Modality ≠ origin ≠ producer</text>
+
+  <!-- Processing -->
+  <rect x="1045" y="122" rx="16" ry="16" width="660" height="216" class="stage"/>
+  <rect x="1045" y="122" rx="16" ry="16" width="660" height="12" class="accent"/>
+  <text x="1080" y="175" class="h ink">Capability-based processing fabric</text>
+  <text x="1080" y="207" class="t muted">Planner · jobs · processor registry · budgets · cache · fallbacks</text>
+  <rect x="1080" y="232" rx="10" width="178" height="66" class="panel"/>
+  <text x="1100" y="260" class="small ink">In-process</text><text x="1100" y="282" class="small muted">PDF · text · rules</text>
+  <rect x="1275" y="232" rx="10" width="178" height="66" class="panel"/>
+  <text x="1295" y="260" class="small ink">Local sidecar</text><text x="1295" y="282" class="small muted">WhisperX · OCR</text>
+  <rect x="1470" y="232" rx="10" width="198" height="66" class="panel"/>
+  <text x="1490" y="260" class="small ink">Remote adapter</text><text x="1490" y="282" class="small muted">STT · vision · LLM</text>
+
+  <path d="M292 230 H353" class="line"/>
+  <path d="M625 230 H688" class="line"/>
+  <path d="M970 230 H1033" class="line"/>
+
+  <!-- Representation -->
+  <rect x="130" y="430" rx="16" ry="16" width="440" height="215" class="stage"/>
+  <text x="166" y="482" class="h ink">Immutable representations</text>
+  <text x="166" y="514" class="t muted">Normalized text · transcript · OCR · structure</text>
+  <text x="166" y="544" class="t muted">Segments · words · pages · regions · warnings</text>
+  <rect x="166" y="574" rx="8" width="365" height="42" fill="#f2ecdf" stroke="#b6a99a"/>
+  <text x="184" y="600" class="mono ink">input hash + processor + config + schema</text>
+
+  <!-- Evidence -->
+  <rect x="625" y="430" rx="16" ry="16" width="330" height="215" class="stage"/>
+  <text x="660" y="482" class="h ink">Evidence anchors</text>
+  <text x="660" y="516" class="t muted">Text spans</text>
+  <text x="660" y="544" class="t muted">Audio time ranges</text>
+  <text x="660" y="572" class="t muted">Image / page regions</text>
+  <text x="660" y="600" class="t muted">Whole-source / JSON pointer</text>
+
+  <!-- Candidates -->
+  <rect x="1010" y="430" rx="16" ry="16" width="335" height="215" class="stage"/>
+  <text x="1045" y="482" class="h ink">Semantic candidates</text>
+  <text x="1045" y="516" class="t muted">Action · Decision · Question</text>
+  <text x="1045" y="544" class="t muted">Risk · Fact · Reference</text>
+  <text x="1045" y="578" class="t muted">Field evidence and corrections</text>
+  <text x="1045" y="606" class="t muted">Hidden in minimal mode</text>
+
+  <!-- Context -->
+  <rect x="1400" y="430" rx="16" ry="16" width="305" height="215" class="stage"/>
+  <text x="1435" y="482" class="h ink">Context binding</text>
+  <text x="1435" y="516" class="t muted">Project · board · item</text>
+  <text x="1435" y="544" class="t muted">People · aliases · recency</text>
+  <text x="1435" y="578" class="t muted">Reason + confidence</text>
+  <text x="1435" y="606" class="t muted">Unresolved remains in Inbox</text>
+
+  <path d="M1375 338 V385 H350 V418" class="line"/>
+  <path d="M570 538 H613" class="line"/>
+  <path d="M955 538 H998" class="line"/>
+  <path d="M1345 538 H1388" class="line"/>
+
+  <!-- Change control -->
+  <rect x="185" y="760" rx="16" ry="16" width="430" height="230" class="stage"/>
+  <rect x="185" y="760" rx="16" ry="16" width="430" height="12" class="accent"/>
+  <text x="220" y="816" class="h ink">Change set / proposal</text>
+  <text x="220" y="850" class="t muted">Typed operations · preconditions · diff</text>
+  <text x="220" y="880" class="t muted">Risk · reversibility · source candidates</text>
+  <text x="220" y="910" class="t muted">Approved revision is pinned</text>
+  <text x="220" y="940" class="t muted">No processor can write domain state</text>
+
+  <rect x="685" y="760" rx="16" ry="16" width="420" height="230" class="stage"/>
+  <text x="720" y="816" class="h ink">Authority decision</text>
+  <text x="720" y="850" class="t muted">Block · Review · Confirm · Authorize</text>
+  <text x="720" y="880" class="t muted">Human or named policy</text>
+  <text x="720" y="910" class="t muted">Scope · budget · expiry · evidence</text>
+  <text x="720" y="940" class="t muted">Proposer ≠ policy ≠ executor</text>
+
+  <rect x="1175" y="760" rx="16" ry="16" width="445" height="230" class="stage"/>
+  <text x="1210" y="816" class="h ink">Execution and work state</text>
+  <text x="1210" y="850" class="t muted">Workspace · project · work item</text>
+  <text x="1210" y="880" class="t muted">Board as view · people · relations</text>
+  <text x="1210" y="910" class="t muted">Receipt · before/after · compensation</text>
+  <text x="1210" y="940" class="t muted">Activity stays inspectable</text>
+
+  <path d="M1552 645 V700 H400 V748" class="line"/>
+  <path d="M615 875 H673" class="line"/>
+  <path d="M1105 875 H1163" class="line"/>
+
+  <!-- Cross-cutting -->
+  <rect x="72" y="1040" rx="10" width="1633" height="52" fill="#1f1b18"/>
+  <text x="105" y="1074" font-family="Arial,sans-serif" font-size="17" fill="#fffaf0">Cross-cutting: privacy &amp; egress · retention · security · evaluation · cost · lineage · export · audit · observability</text>
+
+  <path d="M350 645 V730" class="softline"/>
+  <path d="M790 645 V730" class="softline"/>
+  <path d="M1178 645 V730" class="softline"/>
+  <path d="M1552 645 V730" class="softline"/>
+</svg>

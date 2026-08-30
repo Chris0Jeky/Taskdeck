@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import BatchExecuteDialog from '../../../components/review/BatchExecuteDialog.vue'
 import type { BatchExecuteReceiptRow } from '../../../composables/useBatchExecuteProposals'
@@ -28,6 +28,7 @@ afterEach(() => {
   mounted.forEach((wrapper) => wrapper.unmount())
   mounted = []
   document.body.innerHTML = ''
+  vi.restoreAllMocks()
 })
 
 describe('BatchExecuteDialog', () => {
@@ -92,6 +93,242 @@ describe('BatchExecuteDialog', () => {
       .toContain('Board moved on')
     expect(document.body.querySelector('[data-testid="batch-execute-receipt-summary"]')?.textContent)
       .toContain('Applied 1')
+  })
+
+  it('moves focus to Done and keeps Tab contained when confirmation receives receipts', async () => {
+    const wrapper = mountDialog({ count: 2 })
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    const preMountedSummary = document.body.querySelector(
+      '[data-testid="batch-execute-receipt-summary"]',
+    ) as HTMLElement
+    const backgroundSentinel = document.createElement('button')
+    backgroundSentinel.type = 'button'
+    backgroundSentinel.dataset.testid = 'background-sentinel'
+    document.body.append(backgroundSentinel)
+
+    expect(preMountedSummary.textContent).toBe('')
+    expect(preMountedSummary.getAttribute('role')).toBe('status')
+    expect(preMountedSummary.getAttribute('aria-live')).toBe('polite')
+    expect(preMountedSummary.getAttribute('aria-atomic')).toBe('true')
+    expect(preMountedSummary.classList).toContain('batch-execute-receipt-summary--empty')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+
+    confirm.focus()
+    confirm.click()
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    const summary = document.body.querySelector('[data-testid="batch-execute-receipt-summary"]') as HTMLElement
+    expect(document.activeElement).toBe(done)
+    expect(summary).toBe(preMountedSummary)
+    expect(summary.textContent).toContain('Applied 1')
+    expect(summary.classList).not.toContain('batch-execute-receipt-summary--empty')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+
+    done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(done)
+    expect(document.activeElement).not.toBe(backgroundSentinel)
+
+    done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(done)
+    expect(document.activeElement).not.toBe(backgroundSentinel)
+
+    const summaryText = summary.textContent
+    await wrapper.setProps({ busy: true, count: 99 })
+    const stableSummary = document.body.querySelector(
+      '[data-testid="batch-execute-receipt-summary"]',
+    ) as HTMLElement
+    expect(stableSummary).toBe(preMountedSummary)
+    expect(stableSummary.textContent).toBe(summaryText)
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
+  })
+
+  it('keeps receipts open while Enter remains held and rearms Done only after keyup', async () => {
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+
+    confirm.focus()
+    const confirmKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(confirm.dispatchEvent(confirmKeydown)).toBe(true)
+    confirm.click()
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    expect(document.activeElement).toBe(done)
+
+    const repeatedKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(repeatedKeydown)).toBe(false)
+    expect(repeatedKeydown.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    // The held-state guard is primary: even an environment that does not mark
+    // a subsequent keydown as `repeat` must not dismiss before the real keyup.
+    const stillHeldKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(stillHeldKeydown)).toBe(false)
+    expect(stillHeldKeydown.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    done.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }))
+    const freshKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(freshKeydown)).toBe(true)
+    expect(freshKeydown.defaultPrevented).toBe(false)
+
+    // happy-dom does not synthesize native button activation from keydown; the
+    // browser regression below proves that final link in a real engine.
+    done.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('rearms Done when Enter is released outside the busy dialog before receipts arrive', async () => {
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+
+    confirm.focus()
+    confirm.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    confirm.click()
+    await wrapper.setProps({ busy: true })
+
+    // Chromium can move focus out of the dialog when the confirming button is disabled.
+    // Dispatch the physical release from that outside target before the response arrives.
+    const outsideFocus = document.createElement('button')
+    document.body.append(outsideFocus)
+    outsideFocus.focus()
+    expect(outsideFocus.closest('.td-dialog')).toBeNull()
+    outsideFocus.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }))
+
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    expect(document.activeElement).toBe(done)
+    const freshKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(freshKeydown)).toBe(true)
+    expect(freshKeydown.defaultPrevented).toBe(false)
+
+    // happy-dom does not synthesize native activation from the accepted keydown.
+    done.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('removes and resets its outside keyup listener on close, anchor replacement, and unmount', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener')
+    const removeEventListener = vi.spyOn(window, 'removeEventListener')
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+
+    const keyupAdds = () => addEventListener.mock.calls.filter(([type]) => type === 'keyup')
+    const keyupRemoves = () => removeEventListener.mock.calls.filter(([type]) => type === 'keyup')
+    expect(keyupAdds()).toHaveLength(1)
+    const keyupHandler = keyupAdds()[0]![1]
+    expect(keyupAdds()[0]![2]).toBe(true)
+
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    confirm.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await wrapper.setProps({ open: false })
+    const closeRemoves = keyupRemoves().filter(([, handler]) => handler === keyupHandler)
+    expect(closeRemoves).toHaveLength(1)
+    expect(closeRemoves[0]![2]).toBe(true)
+
+    // Reopening replaces the teleported anchor. It gets one fresh listener and no held-key state.
+    await wrapper.setProps({
+      open: true,
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+    expect(keyupAdds().filter(([, handler]) => handler === keyupHandler)).toHaveLength(2)
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    const freshKeydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(freshKeydown)).toBe(true)
+    expect(freshKeydown.defaultPrevented).toBe(false)
+
+    wrapper.unmount()
+    mounted.pop()
+    const lifecycleRemoves = keyupRemoves().filter(([, handler]) => handler === keyupHandler)
+    expect(lifecycleRemoves).toHaveLength(2)
+    expect(lifecycleRemoves.every(([, , capture]) => capture === true)).toBe(true)
+  })
+
+  it('keeps pointer Done, Space, and Escape available while Enter is held', async () => {
+    const wrapper = mountDialog({ count: 1 })
+    await wrapper.vm.$nextTick()
+    const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    confirm.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    await wrapper.setProps({
+      receipts: [
+        { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1, title: 'Card one' },
+      ],
+    })
+
+    const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
+    const spaceKeydown = new KeyboardEvent('keydown', {
+      key: ' ',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(done.dispatchEvent(spaceKeydown)).toBe(true)
+    expect(spaceKeydown.defaultPrevented).toBe(false)
+
+    done.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toHaveLength(2)
   })
 
   it('closes from the receipt view through its own done action', async () => {

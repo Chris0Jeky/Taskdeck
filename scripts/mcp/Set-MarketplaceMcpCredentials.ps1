@@ -3,7 +3,8 @@ param(
     [string]$DockerHubUsername = '',
     [string]$DockerHubPatToken = '',
     [switch]$UseEnvironment,
-    [switch]$Verify
+    [switch]$Verify,
+    [string]$DockerExecutable = 'docker'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +34,7 @@ function Set-DockerMcpSecret {
         [Parameter(Mandatory = $true)] [string]$SecretValue
     )
 
-    $SecretValue | docker mcp secret set $SecretName | Out-Null
+    $SecretValue | & $DockerExecutable mcp secret set $SecretName | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to set Docker MCP secret '$SecretName'."
     }
@@ -147,7 +148,7 @@ if (-not $didChange) {
 }
 
 Write-Host 'Docker MCP secret names currently stored:'
-docker mcp secret ls
+& $DockerExecutable mcp secret ls
 if ($LASTEXITCODE -ne 0) {
     throw 'Failed to list Docker MCP secrets.'
 }
@@ -163,6 +164,17 @@ if ($Verify) {
     }
 
     $serverCsv = ($servers -join ',')
-    docker mcp gateway run --dry-run --servers $serverCsv
+    Write-Host 'Verifying read-only profile membership and container-state neutrality.'
+    Write-Host 'This verification does not authenticate the credential against the remote provider.'
+    $profileTestScript = Join-Path $PSScriptRoot 'Test-DockerMcpProfile.ps1'
+    $powerShellExecutable = (Get-Process -Id $PID).Path
+    & $powerShellExecutable `
+        -NoLogo `
+        -NoProfile `
+        -NonInteractive `
+        -File $profileTestScript `
+        -DefaultServers $serverCsv `
+        -DockerExecutable $DockerExecutable `
+        -CiMode
     exit $LASTEXITCODE
 }

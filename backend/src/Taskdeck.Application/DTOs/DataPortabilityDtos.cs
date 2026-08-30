@@ -73,7 +73,66 @@ public record UserDataExportCaptureDto(
     DateTimeOffset CreatedAt,
     Guid? BoardId = null,
     CaptureProvenanceV1? Provenance = null,
-    UserDataExportCaptureDispositionDto? Disposition = null);
+    UserDataExportCaptureDispositionDto? Disposition = null,
+    // ADR-0065 / CF-01 (#2255): the durable aggregate behind this capture, when one exists. Added
+    // as an optional member so a reader of the previous shape keeps working, and null on a host
+    // whose ContextFabric:DualWriteCaptures has never been on.
+    UserDataExportDurableCaptureDto? DurableCapture = null,
+    // The queue-row material, exported whenever there is no durable row to carry it. Portability
+    // must not depend on a feature flag: a capture the backfill could not map, or one created while
+    // dual-write was off, still has to leave with the words the user gave Taskdeck.
+    UserDataExportCaptureSourceDto? LegacySource = null);
+
+/// <summary>
+/// The capture material as the legacy queue row holds it. Populated only when
+/// <c>DurableCapture</c> is null, so the two never disagree inside one exported record.
+/// </summary>
+public record UserDataExportCaptureSourceDto(
+    string Source,
+    string Text,
+    string? TitleHint,
+    string? ExternalRef);
+
+/// <summary>
+/// The durable <c>Capture</c> row and its immutable <c>SourceAsset</c>s, exported so a portability
+/// package carries the capture's own record - its three state axes, its provenance dimensions and
+/// the exact material the user gave Taskdeck - and not only the job row that processed it.
+/// </summary>
+public record UserDataExportDurableCaptureDto(
+    string Disposition,
+    string ProcessingSummary,
+    string ActionState,
+    string Timeline,
+    string ProducerKind,
+    string RequestedIntent,
+    string? EffectiveIntent,
+    string PrimaryModality,
+    string OriginAdapter,
+    string LegacySourceSnapshot,
+    DateTimeOffset CapturedAtServer,
+    DateTimeOffset? CapturedAtClient,
+    string? UserTitle,
+    string? UserNote,
+    IReadOnlyList<UserDataExportSourceAssetDto> SourceAssets);
+
+/// <summary>
+/// One immutable source of a capture. <c>Text</c> carries the stored bytes for an inline text asset
+/// (the user's own words - portability means exporting them); binary assets export their locator and
+/// digest, and their bytes travel in the artefacts section.
+/// </summary>
+public record UserDataExportSourceAssetDto(
+    Guid Id,
+    int Ordinal,
+    string Modality,
+    string MediaType,
+    string ContentHash,
+    long ByteSize,
+    string StorageKind,
+    string? ExternalReference,
+    string? OriginalName,
+    Guid? SupersedesAssetId,
+    Guid? SupersededByAssetId,
+    string? Text);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,
@@ -145,4 +204,5 @@ public record AccountDeletionResultDto(
     int ExternalLoginsDeleted,
     int PreferencesDeleted,
     int ArtefactsDeleted = 0,
-    int TranscriptsDeleted = 0);
+    int TranscriptsDeleted = 0,
+    int DurableCapturesDeleted = 0);

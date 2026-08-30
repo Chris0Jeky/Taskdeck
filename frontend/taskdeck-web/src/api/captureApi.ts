@@ -26,9 +26,12 @@ export const captureApi = {
     return data
   },
 
-  async getItem(itemId: string): Promise<CaptureItem> {
+  async getItem(itemId: string, options?: { signal?: AbortSignal }): Promise<CaptureItem> {
     const pathItemId = encodePathSegment(itemId)
-    const { data } = await http.get<CaptureItem>(`/capture/items/${pathItemId}`)
+    const path = `/capture/items/${pathItemId}`
+    const { data } = options?.signal
+      ? await http.get<CaptureItem>(path, { signal: options.signal })
+      : await http.get<CaptureItem>(path)
     return data
   },
 

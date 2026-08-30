@@ -1262,6 +1262,83 @@ describe('useReviewProposals', () => {
       expect(mockAutomationApi.getProposals.mock.calls.length).toBe(calls)
     })
 
+    it('restarts one poll after permission recovery with the original guard and replacement hook', async () => {
+      vi.useFakeTimers()
+      const intervalSpy = vi.spyOn(globalThis, 'setInterval')
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      let decisionInProgress = false
+      const onQueueReplaced = vi.fn()
+      rp.startQueueRefresh(() => !decisionInProgress, { onQueueReplaced })
+      expect(intervalSpy).toHaveBeenCalledTimes(1)
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueAccessRevoked.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-recovered' })])
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-recovered'])
+      // The suspended interval is replaced once; an explicit load is not a
+      // poll-driven queue replacement and must not fire the hook itself.
+      expect(intervalSpy).toHaveBeenCalledTimes(2)
+      expect(onQueueReplaced).not.toHaveBeenCalled()
+
+      mockAutomationApi.getProposals.mockClear()
+      decisionInProgress = true
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 2)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+
+      decisionInProgress = false
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-after-recovery' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-after-recovery'])
+      expect(onQueueReplaced).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not resurrect polling when a recovery load resolves after permanent stop', async () => {
+      vi.useFakeTimers()
+      const intervalSpy = vi.spyOn(globalThis, 'setInterval')
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(intervalSpy).toHaveBeenCalledTimes(1)
+
+      let releaseRecovery: (value: unknown[]) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseRecovery = resolve as (value: unknown[]) => void
+        }),
+      )
+      const recoveryLoad = rp.loadProposals()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Mirrors route unmount / scope disposal while the explicit read is open.
+      rp.stopQueueRefresh()
+      releaseRecovery([makeProposal({ id: 'p-late' })])
+      await recoveryLoad
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-late'])
+      expect(intervalSpy).toHaveBeenCalledTimes(1)
+
+      mockAutomationApi.getProposals.mockClear()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+    })
+
     it('treats a transient failure as transient, not as revoked access', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])

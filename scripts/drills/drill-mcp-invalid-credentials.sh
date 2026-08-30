@@ -2,8 +2,8 @@
 # drill-mcp-invalid-credentials.sh - MCP configuration validation and unknown-server handling.
 #
 # Scenario: Optional MCP setup is missing helper scripts, misclassifies optional
-#           servers, or the gateway is asked to launch an unknown (misconfigured)
-#           server name.  This drill validates static config structure and unknown-
+#           servers, or a read-only profile check sees an unknown server name.
+#           This drill validates static config structure and unknown-
 #           server rejection — it does NOT inject bad credentials into a live server.
 #
 # NOTE: Credential injection testing (configured server + wrong secret) requires a
@@ -16,12 +16,6 @@ set -euo pipefail
 
 REPO_ROOT="${1:-.}"
 DRILL_NAME="drill-mcp-invalid-credentials"
-TEMP_DIR="$(mktemp -d)"
-
-cleanup() {
-    rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
 
 echo "[$DRILL_NAME] Scenario: MCP gateway configuration validation and unknown-server handling"
 
@@ -66,9 +60,9 @@ else
     echo "[$DRILL_NAME] WARNING - MCP profile test script not found"
 fi
 
-# Sub-drill 2: Check if docker MCP CLI is available and test dry-run
+# Sub-drill 2: Check if Docker MCP is available and use the read-only profile validator
 echo ""
-echo "[$DRILL_NAME] Sub-drill 2: Docker MCP gateway dry-run validation"
+echo "[$DRILL_NAME] Sub-drill 2: Docker MCP read-only profile validation"
 
 DOCKER_MCP_AVAILABLE=false
 if command -v docker &>/dev/null; then
@@ -83,38 +77,58 @@ else
     echo "[$DRILL_NAME] Docker not available on PATH"
 fi
 
-if $DOCKER_MCP_AVAILABLE; then
-    echo "[$DRILL_NAME] Testing default (credential-free) server dry-run..."
+PROFILE_TEST_HOST=""
+if command -v powershell.exe &>/dev/null; then
+    PROFILE_TEST_HOST="$(command -v powershell.exe)"
+elif command -v pwsh &>/dev/null; then
+    PROFILE_TEST_HOST="$(command -v pwsh)"
+elif command -v powershell &>/dev/null; then
+    PROFILE_TEST_HOST="$(command -v powershell)"
+fi
+
+PROFILE_SCRIPT_ARGUMENT="$MCP_TEST_SCRIPT"
+if [[ -n "$PROFILE_TEST_HOST" ]] && [[ "$PROFILE_TEST_HOST" == *.exe ]]; then
+    if command -v cygpath &>/dev/null; then
+        PROFILE_SCRIPT_ARGUMENT="$(cygpath -w "$MCP_TEST_SCRIPT")"
+    elif command -v wslpath &>/dev/null; then
+        PROFILE_SCRIPT_ARGUMENT="$(wslpath -w "$MCP_TEST_SCRIPT")"
+    fi
+fi
+
+PROFILE_VALIDATION_OK=true
+if $DOCKER_MCP_AVAILABLE && [[ -n "$PROFILE_TEST_HOST" ]] && [[ -f "$MCP_TEST_SCRIPT" ]]; then
+    echo "[$DRILL_NAME] Testing a credential-free server with the read-only validator..."
     set +e
-    docker mcp gateway run --dry-run --servers docker,time 2>"$TEMP_DIR/default-stderr.log" >"$TEMP_DIR/default-stdout.log"
+    "$PROFILE_TEST_HOST" -NoLogo -NoProfile -NonInteractive -File "$PROFILE_SCRIPT_ARGUMENT" -DefaultServers "time" -CiMode
     DEFAULT_EXIT=$?
     set -e
 
     if [[ $DEFAULT_EXIT -eq 0 ]]; then
-        echo "[$DRILL_NAME] Default server dry-run succeeded (expected)"
+        echo "[$DRILL_NAME] Read-only profile validation succeeded (expected)"
     else
-        echo "[$DRILL_NAME] WARNING - Default server dry-run failed (exit $DEFAULT_EXIT)"
+        echo "[$DRILL_NAME] FAIL - Read-only profile validation failed (exit $DEFAULT_EXIT)"
         echo "[$DRILL_NAME] This may indicate Docker MCP is not fully configured"
-        if [[ -s "$TEMP_DIR/default-stderr.log" ]]; then
-            echo "[$DRILL_NAME] stderr:"
-            head -5 "$TEMP_DIR/default-stderr.log" | sed 's/^/  /'
-        fi
+        PROFILE_VALIDATION_OK=false
     fi
 
     echo ""
-    echo "[$DRILL_NAME] Testing dry-run with nonexistent server (expect failure)..."
+    echo "[$DRILL_NAME] Testing read-only validation with a nonexistent server (expect failure)..."
     set +e
-    docker mcp gateway run --dry-run --servers "bogus-nonexistent-server-12345" 2>"$TEMP_DIR/bogus-stderr.log" >"$TEMP_DIR/bogus-stdout.log"
+    "$PROFILE_TEST_HOST" -NoLogo -NoProfile -NonInteractive -File "$PROFILE_SCRIPT_ARGUMENT" -DefaultServers "bogus-nonexistent-server-12345" -CiMode
     BOGUS_EXIT=$?
     set -e
 
-    if [[ $BOGUS_EXIT -ne 0 ]]; then
-        echo "[$DRILL_NAME] Bogus server dry-run correctly failed (exit $BOGUS_EXIT)"
+    if [[ $BOGUS_EXIT -ne 0 ]] && [[ $DEFAULT_EXIT -eq 0 ]]; then
+        echo "[$DRILL_NAME] Bogus server was correctly rejected by read-only validation (exit $BOGUS_EXIT)"
+    elif [[ $BOGUS_EXIT -ne 0 ]]; then
+        echo "[$DRILL_NAME] FAIL - Bogus-server rejection is not attributable because baseline validation also failed"
+        PROFILE_VALIDATION_OK=false
     else
-        echo "[$DRILL_NAME] WARNING - Bogus server dry-run unexpectedly succeeded"
+        echo "[$DRILL_NAME] FAIL - Bogus server unexpectedly passed read-only validation"
+        PROFILE_VALIDATION_OK=false
     fi
 else
-    echo "[$DRILL_NAME] Skipping live Docker MCP tests (CLI not available)"
+    echo "[$DRILL_NAME] Skipping live Docker MCP profile checks (CLI, PowerShell host, or validator unavailable)"
     echo "[$DRILL_NAME] Performing static-only validation"
 fi
 
@@ -182,6 +196,10 @@ echo "[$DRILL_NAME]   5. See scripts/mcp/Set-MarketplaceMcpCredentials.ps1 for c
 
 if ! $FOUND_CRED_MGMT; then
     echo "[$DRILL_NAME] FAIL - No credential management scripts found"
+    exit 1
+fi
+
+if ! $PROFILE_VALIDATION_OK; then
     exit 1
 fi
 

@@ -515,6 +515,50 @@ describe('PaperInboxView', () => {
     expect((textarea.element as HTMLTextAreaElement).value).toBe('Do not lose this draft')
   })
 
+  it('associates the composer body exactly while its capture error receipt is mounted', async () => {
+    mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(PaperInboxView)
+    const textarea = wrapper.get('textarea[aria-label="Capture body"]')
+
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+    expect(textarea.attributes('aria-invalid')).toBeUndefined()
+    expect(textarea.attributes('aria-describedby')).toBeUndefined()
+
+    await textarea.setValue('Keep this linked to its failure')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-inbox-capture-error"]').attributes('id')).toBe(
+      'paper-inbox-capture-error',
+    )
+    expect(textarea.attributes('aria-invalid')).toBe('true')
+    expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+
+    const setVariant = (wrapper.vm as unknown as {
+      setVariant: (next: 'nib' | 'composer') => void
+    }).setVariant
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+    expect(textarea.attributes('aria-invalid')).toBeUndefined()
+    expect(textarea.attributes('aria-describedby')).toBeUndefined()
+
+    setVariant('composer')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(true)
+    expect(textarea.attributes('aria-invalid')).toBe('true')
+    expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+    expect(textarea.attributes('aria-invalid')).toBeUndefined()
+    expect(textarea.attributes('aria-describedby')).toBeUndefined()
+  })
+
   it('guards composer submissions while capture creation is in flight', async () => {
     let resolveCreate: (value: unknown) => void = () => undefined
     mockCaptureStore.createItem.mockReturnValueOnce(new Promise((resolve) => {
