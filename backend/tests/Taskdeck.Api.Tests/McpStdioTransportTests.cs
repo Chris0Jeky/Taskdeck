@@ -12,6 +12,25 @@ namespace Taskdeck.Api.Tests;
 public sealed class McpStdioTransportTests
 {
     [Fact]
+    public Task ProductionStdioTransport_MultipleActiveUsers_ReturnsRemediationAndWarnsOnce()
+    {
+        return AssertIdentityResolutionFailureAsync(
+            IdentityFailureScenario.MultipleActiveUsers,
+            "MCP stdio: multiple active local users exist. " +
+            "Configure McpServer:DefaultUserId (environment variable McpServer__DefaultUserId) " +
+            "with the intended active user ID before starting stdio MCP.");
+    }
+
+    [Fact]
+    public Task ProductionStdioTransport_InactiveConfiguredUser_ReturnsRemediationAndWarnsOnce()
+    {
+        return AssertIdentityResolutionFailureAsync(
+            IdentityFailureScenario.InactiveConfiguredUser,
+            "MCP stdio: McpServer:DefaultUserId does not identify an active local user. " +
+            "Set it to an existing active user ID before starting stdio MCP.");
+    }
+
+    [Fact]
     public async Task ProductionStdioTransport_SearchesSeededCardAndReadsBoardsResource()
     {
         var testRoot = Path.Combine(
@@ -84,6 +103,102 @@ public sealed class McpStdioTransportTests
         }
     }
 
+    private static async Task AssertIdentityResolutionFailureAsync(
+        IdentityFailureScenario scenario,
+        string expectedRemediation)
+    {
+        var testRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-mcp-stdio-identity-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testRoot);
+
+        try
+        {
+            var dbPath = Path.Combine(testRoot, "taskdeck.db");
+            var configuredUserId = await SeedIdentityFailureAsync(dbPath, scenario);
+            var apiDll = ResolveProductionApiAssembly();
+            var stderr = new ConcurrentQueue<string>();
+            var remediationLogged = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var environment = StdioClientTransportOptions.GetDefaultEnvironmentVariables();
+            environment["DOTNET_ENVIRONMENT"] = "Development";
+            environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+            environment["ConnectionStrings__DefaultConnection"] = TestSqlite.ConnectionString(dbPath);
+            environment["Connectors__EncryptionKey"] =
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            environment["Database__Backup__Enabled"] = "false";
+            environment["Llm__Provider"] = "Mock";
+            environment["Llm__EnableLiveProviders"] = "false";
+
+            if (configuredUserId.HasValue)
+            {
+                environment["McpServer__DefaultUserId"] = configuredUserId.Value.ToString();
+            }
+            else
+            {
+                environment.Remove("McpServer__DefaultUserId");
+            }
+
+            var transport = new StdioClientTransport(new StdioClientTransportOptions
+            {
+                Name = $"Taskdeck.Api stdio identity failure {scenario}",
+                Command = "dotnet",
+                Arguments = [apiDll, "--mcp"],
+                WorkingDirectory = Path.GetDirectoryName(apiDll),
+                InheritEnvironmentVariables = false,
+                EnvironmentVariables = environment,
+                ShutdownTimeout = TimeSpan.FromSeconds(5),
+                StandardErrorLines = line =>
+                {
+                    stderr.Enqueue(line);
+                    if (line.Contains(expectedRemediation, StringComparison.Ordinal))
+                        remediationLogged.TrySetResult(true);
+                }
+            });
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            await using var client = await McpClient.CreateAsync(
+                transport,
+                cancellationToken: timeout.Token);
+
+            var firstResult = await client.CallToolAsync(
+                "search_cards",
+                new Dictionary<string, object?> { ["query"] = "synthetic identity denial" },
+                cancellationToken: timeout.Token);
+            var secondResult = await client.CallToolAsync(
+                "search_cards",
+                new Dictionary<string, object?> { ["query"] = "synthetic identity denial" },
+                cancellationToken: timeout.Token);
+
+            foreach (var result in new[] { firstResult, secondResult })
+            {
+                result.IsError.Should().BeTrue(StderrContext(stderr));
+                result.Content
+                    .OfType<TextContentBlock>()
+                    .Select(content => content.Text)
+                    .Should().ContainSingle(
+                        text => text.Contains(expectedRemediation, StringComparison.Ordinal),
+                        StderrContext(stderr));
+            }
+
+            var observedDiagnostic = await Task.WhenAny(
+                remediationLogged.Task,
+                Task.Delay(TimeSpan.FromSeconds(5), timeout.Token));
+            observedDiagnostic.Should().BeSameAs(remediationLogged.Task, StderrContext(stderr));
+
+            stderr.Count(line => line.Contains(
+                    "warn: Taskdeck.Infrastructure.Mcp.StdioUserContextProvider",
+                    StringComparison.Ordinal))
+                .Should().Be(1, StderrContext(stderr));
+            stderr.Count(line => line.Contains(expectedRemediation, StringComparison.Ordinal))
+                .Should().Be(1, StderrContext(stderr));
+        }
+        finally
+        {
+            Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
     private static async Task<Guid> SeedWorkspaceAsync(string dbPath, string sentinel)
     {
         var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
@@ -105,6 +220,37 @@ public sealed class McpStdioTransportTests
         db.AddRange(user, board, column, card);
         await db.SaveChangesAsync();
         return user.Id;
+    }
+
+    private static async Task<Guid?> SeedIdentityFailureAsync(
+        string dbPath,
+        IdentityFailureScenario scenario)
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite(TestSqlite.ConnectionString(dbPath))
+            .AddInterceptors(new SqlitePragmaConnectionInterceptor(5000))
+            .Options;
+
+        await using var db = new TaskdeckDbContext(options);
+        await db.Database.MigrateAsync();
+
+        var firstUser = new User(
+            $"stdio-identity-a-{Guid.NewGuid():N}",
+            $"stdio-identity-a-{Guid.NewGuid():N}@example.com",
+            "synthetic-password-hash");
+        var secondUser = new User(
+            $"stdio-identity-b-{Guid.NewGuid():N}",
+            $"stdio-identity-b-{Guid.NewGuid():N}@example.com",
+            "synthetic-password-hash");
+
+        if (scenario == IdentityFailureScenario.InactiveConfiguredUser)
+            firstUser.Deactivate();
+
+        db.AddRange(firstUser, secondUser);
+        await db.SaveChangesAsync();
+        return scenario == IdentityFailureScenario.InactiveConfiguredUser
+            ? firstUser.Id
+            : null;
     }
 
     private static string ResolveProductionApiAssembly()
@@ -135,5 +281,11 @@ public sealed class McpStdioTransportTests
         return tail.Length == 0
             ? "the child emitted no stderr diagnostics"
             : $"child stderr tail: {string.Join(Environment.NewLine, tail)}";
+    }
+
+    private enum IdentityFailureScenario
+    {
+        MultipleActiveUsers,
+        InactiveConfiguredUser
     }
 }

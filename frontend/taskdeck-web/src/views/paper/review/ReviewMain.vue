@@ -57,6 +57,8 @@ const props = withDefaults(
     provenance: ProvenanceRow[]
     /** Server-recorded producer metadata for this capture-linked proposal. */
     metadata?: ProvenanceMetadata | null
+    /** Suppress only the inline producer sentence for an effective saved revision. */
+    suppressProducerFootnote?: boolean
     /** Evidence links behind the provenance rows; drives the drawer's transcript deep link. */
     evidenceLinks?: EvidenceLink[]
     proposalId: string
@@ -89,6 +91,7 @@ const props = withDefaults(
     decisionReceipt: null,
     appliedProposal: null,
     metadata: null,
+    suppressProducerFootnote: false,
   },
 )
 
@@ -326,6 +329,7 @@ watch(
     <ReviewProvenance
       :rows="provenance"
       :metadata="metadata"
+      :suppress-producer-footnote="suppressProducerFootnote"
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
       :read-only="readOnly"
