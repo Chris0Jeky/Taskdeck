@@ -178,7 +178,7 @@ unverified.
 | Tampered or spoofed download | SHA-256 file plus a custom provenance record, built from a pinned checkout; **no Authenticode signature, no user-grade installer, no release SBOM, no GitHub attestation** | **partial — `#1167` wave (`#2148`–`#2152`)**, `RELEASE_TRUST_AND_DISTRIBUTION.md` "Current truth" |
 | Tampered or substituted **container image** | `release-container.yml` publishes the GHCR image on `v*` tags under `{{version}}`, `{{major}}.{{minor}}` and `latest` (`.github/workflows/release-container.yml:92-96`) via `docker/build-push-action@v7` with **no checksum sidecar, no cosign signature and no `provenance` or `sbom` attestation** (`:98-110`) — the registry addresses it by digest, but nothing signs or attests it | **open** — the `#1167` wave (`#2148`–`#2152`) is scoped to *file* artefacts; container signing and attestation are not covered by it |
 | A mutable tag is repointed under a running operator | None in-product. The operator mitigation is **digest pinning**: deploy the `@sha256:` digest form rather than `:latest` or `:0.2`, record the digest, and re-pin deliberately at upgrade time | **partial (operator procedure)** |
-| `latest` follows a prerelease | **Closed by PR `#2223` (merged 2026-08-29, `ecc02a6ae`):** `release-container.yml` gates `latest` and `{{major}}.{{minor}}` on `!contains(github.ref_name, '-')`, so `v0.3.0-rc.1` publishes only `0.3.0-rc.1`, and `release-desktop.yml` flags the GitHub Release as a prerelease from draft creation through publish. Rehearsals cannot exercise the publish job; the first real prerelease tag is the proof | **shipped — verification pending** until the first real prerelease tag (`v0.3.0-rc.1`) publishes and the `:latest` digest is shown unchanged |
+| `latest` follows a prerelease | **Closed by PR `#2223` (merged 2026-08-29, `ecc02a6ae`) and verified on the first real prerelease tag:** `v0.3.0-rc.1` (2026-08-30) published only `ghcr.io/chris0jeky/taskdeck:0.3.0-rc.1` (`sha256:d47bdf2d…2db67`); `latest` and `0.2` stayed at the pre-tag index digest `sha256:e4915d72…8c752`, no `0.3` alias was created, and the GitHub Release carried `prerelease=true` from creation so `/releases/latest` kept resolving to `v0.2.0` | **shipped — verified 2026-08-30** |
 
 ## 5. Residual risks for the beta — the honest list
 
@@ -309,8 +309,8 @@ unverified.
    (`docs/releases/WINDOWS_QUICK_START.md`, `docs/ops/RELEASE_TRUST_AND_DISTRIBUTION.md`). For the
    Docker stack, **pin the image by digest** (`@sha256:`), not by `:latest` or a floating
    `major.minor` tag: the image carries no checksum sidecar, no signature and no attestation,
-   and `latest` currently follows prereleases as well as stable tags
-   (`.github/workflows/release-container.yml:92-96`).
+   and a floating tag is repointed by every stable release. (`latest` no longer follows
+   prereleases — verified on `v0.3.0-rc.1`, 2026-08-30.)
 10. **MCP stdio.** Set `McpServer:DefaultUserId` explicitly even on a single-user instance.
     Leaving it unset is not fail-closed — the provider selects the only active user and grants
     it a `Full` context (`StdioUserContextProvider.cs:91-96,113-117,48-52`) — and the same

@@ -114,7 +114,10 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## v0.3.0-rc.1 — 2026-08-30 (release candidate, prerelease)
+## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
+
+*Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the
+published `taskdeck-v0.3.0-rc.1-win-x64.zip` links to its anchor.*
 
 **BREAKING: yes, for two kinds of integration** — scripts that create API keys through the API or
 CLI must now name explicit scopes, and clients that treated a non-null capture `errorMessage` as
