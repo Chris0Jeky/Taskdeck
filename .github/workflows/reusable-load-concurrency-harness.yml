@@ -161,6 +161,7 @@ jobs:
             frontend/taskdeck-web/test-results/load/k6-output.log
             frontend/taskdeck-web/test-results/load/backend-load-api.log
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright report
         if: failure()
@@ -169,6 +170,7 @@ jobs:
           name: load-harness-playwright-report
           path: frontend/taskdeck-web/playwright-report
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright test results
         if: failure()
@@ -177,3 +179,4 @@ jobs:
           name: load-harness-playwright-results
           path: frontend/taskdeck-web/test-results
           if-no-files-found: ignore
+          retention-days: 14

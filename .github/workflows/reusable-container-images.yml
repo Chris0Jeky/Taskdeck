@@ -1,7 +1,26 @@
 name: Reusable Container Images
 
+# Artifact policy (CI-09 #2333, tracker #2324): the exported image tars (~170 MB per run)
+# have no consumer on pull requests — 2,067 of them held 359 GB on 2026-08-30. Callers
+# choose the retention class explicitly; the required PR lane neither exports nor uploads.
 on:
   workflow_call:
+    inputs:
+      upload-artifacts:
+        description: Upload the exported image tars, resolved compose file and checksums as a workflow artifact.
+        type: boolean
+        required: false
+        default: true
+      artifact-retention-days:
+        description: Retention (days) for the container image artifact when it is uploaded.
+        type: number
+        required: false
+        default: 7
+      artifact-name:
+        description: Artifact name. Give every retention class its own name so a cleanup scoped by prefix can never reach evidence retained for longer.
+        type: string
+        required: false
+        default: container-image-artifacts
 
 permissions:
   contents: read
@@ -28,19 +47,21 @@ jobs:
         run: docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:ci .
 
       - name: Export container image artifacts
+        if: ${{ inputs.upload-artifacts }}
         run: |
           docker save taskdeck-api:ci | gzip -1 > /tmp/taskdeck-api.tar.gz
           docker save taskdeck-web:ci | gzip -1 > /tmp/taskdeck-web.tar.gz
           sha256sum /tmp/taskdeck-api.tar.gz /tmp/taskdeck-web.tar.gz /tmp/taskdeck-compose.resolved.yml > /tmp/taskdeck-container-artifacts.sha256
 
       - name: Upload container image artifacts
-        if: always()
+        if: ${{ always() && inputs.upload-artifacts }}
         uses: actions/upload-artifact@v7
         with:
-          name: container-image-artifacts
+          name: ${{ inputs.artifact-name }}
           path: |
             /tmp/taskdeck-api.tar.gz
             /tmp/taskdeck-web.tar.gz
             /tmp/taskdeck-compose.resolved.yml
             /tmp/taskdeck-container-artifacts.sha256
           if-no-files-found: ignore
+          retention-days: ${{ inputs.artifact-retention-days }}
